@@ -136,12 +136,15 @@ type App struct {
 	noDefaults bool
 
 	// outbox is the transactional event outbox (WithOutbox). When set,
-	// CRUD lifecycle events are staged in the write transaction and its
-	// relay — started by Start, drained on Shutdown — is the sole
-	// deliverer onto the event bus.
-	outbox        *outbox.Outbox
-	outboxOpts    []outbox.Option
-	outboxEnabled bool
+	// CRUD lifecycle events are staged in the write transaction and a
+	// relay — started by Start, drained on Shutdown — delivers each to
+	// the declared durable consumers (WithOutboxConsumer). The relay no
+	// longer touches the live bus; the real-time lane (EmitEvent) feeds
+	// SSE and ephemeral subscribers independently.
+	outbox           *outbox.Outbox
+	outboxOpts       []outbox.Option
+	outboxEnabled    bool
+	outboxConsumers  []outboxConsumerDecl
 
 	// noAutoMigrate suppresses the boot-time entity auto-migration
 	// (WithoutAutoMigrate) for deployments that require every schema
@@ -401,17 +404,43 @@ func WithoutAutoMigrate() AppOption {
 // WithOutbox enables the transactional event outbox (framework/outbox):
 // CRUD lifecycle events are written to an outbox table INSIDE the same
 // transaction as the entity write, and a relay goroutine (started by
-// App.Start, drained on Shutdown) publishes committed rows to the event
-// bus. This closes the crash window where a plain post-commit emit is
-// lost, and makes delivery at-least-once — consumers that care must
-// dedupe on Event.ID. Requires WithDB; NewApp panics otherwise.
+// App.Start, drained on Shutdown) delivers each committed row to the
+// declared durable consumers. This closes the crash window where a plain
+// post-commit emit is lost, and makes delivery at-least-once per consumer
+// — consumers that care must dedupe on Event.ID. Requires WithDB; NewApp
+// panics otherwise.
 //
-// opts are forwarded to outbox.New (outbox.WithTable,
-// outbox.WithPollInterval, …).
+// The relay delivers ONLY to consumers declared via [WithOutboxConsumer];
+// it no longer publishes to the live event bus. The real-time lane (SSE
+// EventStream, ephemeral On/Subscribe) is fed independently by EmitEvent,
+// so the two lanes never duplicate. opts are forwarded to outbox.New
+// (outbox.WithTable, outbox.WithPollInterval, …).
 func WithOutbox(opts ...outbox.Option) AppOption {
 	return func(a *App) {
 		a.outboxEnabled = true
 		a.outboxOpts = opts
+	}
+}
+
+// outboxConsumerDecl captures a WithOutboxConsumer declaration until the
+// outbox is constructed in NewApp, then registered on it.
+type outboxConsumerDecl struct {
+	name      string
+	eventType string
+	handler   event.EventHandler
+}
+
+// WithOutboxConsumer declares a durable outbox consumer. Requires
+// WithOutbox (NewApp panics if the outbox isn't also enabled). name is a
+// stable identity used to track per-consumer delivery across
+// restarts/replicas; (eventType, name) must be unique. handler is invoked
+// once per delivery with Event.ID set to the outbox row id (dedup key) —
+// it must be idempotent (at-least-once delivery). A handler that errors
+// or panics is retried with backoff and eventually dead-lettered
+// independently of its sibling consumers (sibling isolation).
+func WithOutboxConsumer(name, eventType string, handler event.EventHandler) AppOption {
+	return func(a *App) {
+		a.outboxConsumers = append(a.outboxConsumers, outboxConsumerDecl{name, eventType, handler})
 	}
 }
 
@@ -794,6 +823,11 @@ func NewApp(opts ...AppOption) *App {
 
 	// Construct the transactional outbox after all options have applied,
 	// so option order between WithDB and WithOutbox doesn't matter.
+	if len(a.outboxConsumers) > 0 && !a.outboxEnabled {
+		// A declared consumer with no outbox would be silently dropped —
+		// no durable delivery, no error. Fail loudly at construction.
+		panic("framework: WithOutboxConsumer requires WithOutbox — enable the outbox for durable delivery")
+	}
 	if a.outboxEnabled {
 		if a.DB == nil {
 			panic("framework: WithOutbox requires WithDB — the outbox stages event rows in the entity write transaction")
@@ -802,7 +836,15 @@ func NewApp(opts ...AppOption) *App {
 		if err != nil {
 			panic("framework: WithOutbox: " + err.Error())
 		}
+		// Register declared durable consumers before the relay can start.
+		// Consume panics on a duplicate (eventType, name) or nil handler,
+		// surfacing the misconfiguration at construction rather than as a
+		// silent no-op consumer.
+		for _, c := range a.outboxConsumers {
+			ob.Consume(c.name, c.eventType, c.handler)
+		}
 		a.outbox = ob
+		a.outboxConsumers = nil // released; the registry owns them now
 	}
 
 	// WithIdempotency / WithI18n add entries to the default chain; if
@@ -1519,7 +1561,7 @@ func (a *App) Start(addr string) error {
 	// registered as an OnStop drainer so shutdown blocks until the loop
 	// has fully exited — no half-delivered batch outlives the process.
 	if a.outbox != nil {
-		stopRelay := a.outbox.StartRelay(a.appCtx, a.Events())
+		stopRelay := a.outbox.StartRelay(a.appCtx)
 		a.OnStop(func() error {
 			stopRelay()
 			return nil

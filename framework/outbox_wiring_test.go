@@ -14,12 +14,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/outbox"
 )
 
-// outboxTestApp builds an app with the outbox enabled, one entity, and a
-// relay running (tests drive the router directly, so the Start()-owned
-// relay never launches — start one on the app's outbox by hand).
-func outboxTestApp(t *testing.T, db *sql.DB) (*App, func(method, path, body string) *httptest.ResponseRecorder) {
+// outboxTestApp builds an app with the outbox enabled, one entity, a
+// declared durable witness consumer, and a relay running (tests drive the
+// router directly, so the Start()-owned relay never launches — start one
+// on the app's outbox by hand). Returns the durable witness channel so
+// tests can assert a staged event reached a declared consumer.
+func outboxTestApp(t *testing.T, db *sql.DB) (*App, chan event.Event, func(method, path, body string) *httptest.ResponseRecorder) {
 	t.Helper()
 	// The relay goroutine runs claims concurrently with the HTTP writes.
 	// testdb's sqlite is a plain ":memory:" DSN where every pooled
@@ -27,7 +30,23 @@ func outboxTestApp(t *testing.T, db *sql.DB) (*App, func(method, path, body stri
 	// second conn and see "no such table". One conn serializes them onto
 	// the same memory database (Postgres already pins to 1 in testdb).
 	db.SetMaxOpenConns(1)
-	app := NewApp(WithDB(db), WithOutbox(), WithoutDefaultMiddleware())
+
+	// Durable witness: a declared consumer that records every delivered
+	// lifecycle event. This is the per-consumer delivery lane — distinct
+	// from the real-time bus lane (EmitEvent) that tests also subscribe to.
+	durable := make(chan event.Event, 16)
+	witness := func(_ context.Context, e event.Event) error {
+		durable <- e
+		return nil
+	}
+	// Zero handler grace so parents complete promptly in the test (the age
+	// gate that protects rolling-deploy consumer adds otherwise holds a
+	// parent pending for the grace window).
+	app := NewApp(WithDB(db), WithOutbox(outbox.WithHandlerGrace(0)), WithoutDefaultMiddleware(),
+		WithOutboxConsumer("witness", event.EntityCreated, witness),
+		WithOutboxConsumer("witness", event.EntityUpdated, witness),
+		WithOutboxConsumer("witness", event.EntityDeleted, witness),
+	)
 	app.Entity("posts", entity.EntityConfig{
 		Table:  "posts",
 		Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
@@ -36,7 +55,7 @@ func outboxTestApp(t *testing.T, db *sql.DB) (*App, func(method, path, body stri
 		t.Fatalf("automigrate: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	stop := app.Outbox().StartRelay(ctx, app.Events())
+	stop := app.Outbox().StartRelay(ctx)
 	t.Cleanup(func() { cancel(); stop() })
 
 	do := func(method, path, body string) *httptest.ResponseRecorder {
@@ -51,13 +70,15 @@ func outboxTestApp(t *testing.T, db *sql.DB) (*App, func(method, path, body stri
 		app.Router().ServeHTTP(rec, r)
 		return rec
 	}
-	return app, do
+	return app, durable, do
 }
 
 func TestOutbox_CreateDeliversViaRelay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app, do := outboxTestApp(t, db)
+		app, durable, do := outboxTestApp(t, db)
 
+		// Real-time lane: EmitEvent always notifies the live bus now, so a
+		// plain bus subscription still receives the event.
 		got := make(chan event.Event, 4)
 		app.Events().On(event.EntityCreated, func(_ context.Context, e event.Event) error {
 			got <- e
@@ -68,11 +89,12 @@ func TestOutbox_CreateDeliversViaRelay(t *testing.T) {
 			t.Fatalf("create = %d: %s", rec.Code, rec.Body)
 		}
 
+		// Durable lane: the declared witness consumer received the event.
 		var e event.Event
 		select {
-		case e = <-got:
+		case e = <-durable:
 		case <-time.After(3 * time.Second):
-			t.Fatal("relay never delivered the create event")
+			t.Fatal("declared consumer never received the create event")
 		}
 		if e.ID == "" {
 			t.Error("relayed event has no durable ID")
@@ -84,15 +106,20 @@ func TestOutbox_CreateDeliversViaRelay(t *testing.T) {
 		if data["entity"] != "posts" {
 			t.Errorf("event entity = %v, want posts", data["entity"])
 		}
-		if _, ok := data["record"]; !ok {
-			t.Error("event data missing record")
+
+		// Real-time lane also delivered (EmitEvent → bus).
+		select {
+		case <-got:
+		case <-time.After(3 * time.Second):
+			t.Fatal("real-time bus never received the create event")
 		}
 
-		// Exactly once on the happy path: EmitEvent must not ALSO publish
-		// to the live bus when the outbox staged the event.
+		// No double delivery on the bus: the relay delivers only to the
+		// declared consumer now, never back to the bus, so the bus saw the
+		// event exactly once (from EmitEvent).
 		select {
 		case dup := <-got:
-			t.Fatalf("event delivered twice (second: %+v)", dup)
+			t.Fatalf("bus event delivered twice (second: %+v)", dup)
 		case <-time.After(200 * time.Millisecond):
 		}
 
@@ -102,13 +129,7 @@ func TestOutbox_CreateDeliversViaRelay(t *testing.T) {
 
 func TestOutbox_RollbackStagesNothing(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app, do := outboxTestApp(t, db)
-
-		delivered := make(chan event.Event, 1)
-		app.Events().On(event.EntityCreated, func(_ context.Context, e event.Event) error {
-			delivered <- e
-			return nil
-		})
+		app, durable, do := outboxTestApp(t, db)
 
 		// Missing required title → validation error → tx rollback. The
 		// staged outbox row must roll back with it.
@@ -117,8 +138,8 @@ func TestOutbox_RollbackStagesNothing(t *testing.T) {
 		}
 
 		select {
-		case e := <-delivered:
-			t.Fatalf("rolled-back write still emitted an event: %+v", e)
+		case e := <-durable:
+			t.Fatalf("rolled-back write still delivered an event: %+v", e)
 		case <-time.After(300 * time.Millisecond):
 		}
 		for _, status := range []string{"pending", "dispatched"} {
@@ -135,16 +156,7 @@ func TestOutbox_RollbackStagesNothing(t *testing.T) {
 
 func TestOutbox_UpdateAndDeleteDeliver(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app, do := outboxTestApp(t, db)
-
-		types := make(chan string, 8)
-		for _, et := range []string{event.EntityCreated, event.EntityUpdated, event.EntityDeleted} {
-			et := et
-			app.Events().On(et, func(_ context.Context, _ event.Event) error {
-				types <- et
-				return nil
-			})
-		}
+		app, durable, do := outboxTestApp(t, db)
 
 		rec := do(http.MethodPost, "/posts", `{"title":"hello"}`)
 		if rec.Code != http.StatusCreated {
@@ -176,15 +188,15 @@ func TestOutbox_UpdateAndDeleteDeliver(t *testing.T) {
 		deadline := time.After(3 * time.Second)
 		for n := 0; n < 3; n++ {
 			select {
-			case et := <-types:
-				want[et] = true
+			case e := <-durable:
+				want[e.Type] = true
 			case <-deadline:
-				t.Fatalf("only %d/3 lifecycle events delivered: %+v", n, want)
+				t.Fatalf("only %d/3 lifecycle events reached the consumer: %+v", n, want)
 			}
 		}
 		for et, seen := range want {
 			if !seen {
-				t.Errorf("event %s never delivered", et)
+				t.Errorf("event %s never reached the declared consumer", et)
 			}
 		}
 		waitOutboxStatus(t, app, "dispatched", 3)
@@ -200,8 +212,20 @@ func TestOutbox_WithoutDBPanics(t *testing.T) {
 	NewApp(WithOutbox())
 }
 
+func TestOutboxConsumer_WithoutOutboxPanics(t *testing.T) {
+	// A declared consumer with no WithOutbox would be silently dropped;
+	// NewApp must fail loudly rather than swallow the durable-delivery config.
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewApp(WithOutboxConsumer(...)) without WithOutbox should panic")
+		}
+	}()
+	NewApp(WithOutboxConsumer("email", "entity.created",
+		func(context.Context, event.Event) error { return nil }))
+}
+
 // waitOutboxStatus polls until exactly n rows reach status (relay settles
-// rows asynchronously after emitting).
+// rows asynchronously after delivering).
 func waitOutboxStatus(t *testing.T, app *App, status string, n int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

@@ -111,26 +111,60 @@ The plain event bus emits *after* the transaction commits. A crash in
 the gap between commit and emit silently drops the event. The
 transactional outbox (`framework/outbox`) closes that gap: the event row
 is written **inside** the write transaction, and a background relay
-publishes committed rows to the bus with at-least-once semantics.
+delivers each committed row to every declared durable consumer with
+at-least-once semantics.
 
-Enable it app-wide with one option:
+> **Breaking change (per-consumer delivery).** The outbox shipped in
+> v0.15.0 with whole-row, all-or-nothing delivery (one failing subscriber
+> failed the entire row). It now delivers to each declared consumer
+> **independently**. `StartRelay` lost its `bus` argument; durable
+> delivery now requires declaring named consumers via
+> `framework.WithOutboxConsumer`. **Drain in-flight outbox rows before
+> upgrading** — the new relay ignores the old parent `dead`/single-row
+> state (the DDL only adds the child `event_outbox_delivery` table; there
+> is no automatic backfill of pre-upgrade rows).
+
+### Two delivery lanes
+
+Delivery is split across two disjoint lanes, so neither duplicates the
+other:
+
+- **Real-time lane (best-effort, ephemeral).** The live event bus is
+  notified post-commit by `EmitEvent`, feeding SSE streams and ephemeral
+  `On`/`Subscribe` handlers. This happens whether or not an outbox is
+  configured. It is lossy by design — a crash here drops the in-memory
+  signal, but the durable lane still guarantees delivery.
+- **Durable lane (per-consumer, tracked).** When an outbox is configured,
+  the relay delivers each committed row to the consumers declared via
+  `WithOutboxConsumer`. The relay does **not** touch the live bus, so
+  there is no double delivery.
+
+### Declaring durable consumers
+
+Enable the outbox app-wide, then declare one or more durable consumers.
+A consumer is a stable (name, event-type) identity tracked across
+restarts/replicas:
 
 ```go
 app := framework.NewApp(
     framework.WithDB(db),
-    framework.WithOutbox(), // opts forwarded to outbox.New, e.g. outbox.WithPollInterval(…)
+    framework.WithOutbox(), // opts forwarded to outbox.New
+    framework.WithOutboxConsumer("welcome-email", framework.EntityCreated,
+        func(ctx context.Context, ev framework.Event) error {
+            data := ev.Data.(map[string]any)
+            if data["entity"] != "users" { return nil }
+            return sendWelcome(ctx, data["record"])
+        }),
 )
 ```
 
-With `WithOutbox`, every entity lifecycle event
-(`entity.created`/`updated`/`deleted`) is staged in the same transaction
-as the CRUD write and delivered by the relay — which `App.Start` launches
-and `Shutdown` drains. Subscribers on `app.Events()` see the same payload
-shape as before, now with a durable `Event.ID`, and a rolled-back write
-emits nothing. The live-bus emit is suppressed (the relay is the sole
-deliverer), so nothing arrives twice on the happy path. `app.Outbox()`
-exposes the handle for inspection (`List`), replaying dead rows
-(`Replay`), and staging custom events.
+`WithOutbox` stages every entity lifecycle event in the same transaction
+as the CRUD write; `App.Start` launches the relay and `Shutdown` drains
+it. `app.Outbox()` exposes the handle for inspection (`List`,
+`ListDeliveries`), replaying dead deliveries (`Replay` /
+`ReplayConsumer`), and staging custom events.
+
+### Staging custom events
 
 To stage your own events in the same transaction as a business write,
 call `Append` with the transaction:
@@ -144,68 +178,110 @@ tx.Commit()
 app.Outbox().Nudge() // wake the relay immediately; don't wait for the poll interval
 ```
 
-Standalone use (no App) works the same way: `outbox.New(db)` +
-`StartRelay(ctx, bus)`.
+Standalone use (no App): `outbox.New(db)` + `ob.Consume(name, type,
+handler)` + `ob.StartRelay(ctx)`.
 
-- **At-least-once.** The relay calls the synchronous `Emit`, then marks
-  the row dispatched. A crash between the two re-delivers the row on
-  restart. Consumers **must be idempotent** and deduplicate by
-  `Event.ID` — which the relay stamps from the outbox row's primary key.
-  Events emitted directly via `Emit`/`EmitAsync` carry an empty `ID` and
-  have no durable identity.
-- **Delivery is per-row, all-or-nothing across co-subscribers.** A row is
-  dispatched only if *every* subscriber for its event type succeeds; the
-  first one that errors or panics fails the whole row, so the others don't
-  run on that attempt and any that already succeeded run **again** on
-  retry (hence the idempotency requirement). A chronically-failing
-  subscriber therefore blocks its co-subscribers for that event until it
-  stops failing — and once the row dead-letters, co-subscribers never see
-  it unless you `Replay`. Keep independent side effects in separate event
-  types, or make every subscriber idempotent and resilient.
-- **Stalled claims are logged.** If the relay can't claim a batch (missing
+### Semantics
+
+- **At-least-once, per consumer.** The relay invokes each consumer's
+  handler, then marks that consumer's delivery dispatched only after it
+  returns nil. A crash between the two re-delivers, so consumers **must be
+  idempotent**. Deduplicate on **`(consumer, Event.ID)`**, not `Event.ID`
+  alone: `Event.ID` is the outbox row id and is the *same* for every
+  consumer's delivery of that row, so a dedup store keyed on `Event.ID`
+  alone that is shared across consumers would let one consumer's success
+  suppress another's delivery — breaking sibling isolation.
+- **Sibling isolation.** Each (row, consumer) pair has its own delivery
+  row, retried and dead-lettered independently. One consumer that errors
+  or panics never blocks its siblings or fails the whole row. A parent row
+  is marked `dispatched` once it has no `pending` deliveries left (all
+  `dispatched`/`dead`/`abandoned`) **and** it is older than the handler
+  grace — it may complete with some deliveries dead; `Replay` /
+  `ReplayConsumer` resurrects them.
+- **Completion is age-gated.** A parent is not marked `dispatched` until it
+  is older than `WithHandlerGrace` (default 15m), even once every current
+  delivery is terminal. This is what makes a rolling deploy that *adds* a
+  consumer safe: the added consumer's delivery row is created by an
+  up-to-date replica on its own poll, and a parent completed too early
+  would let the relay skip it forever (expand only touches `pending`
+  parents). **Delivery to consumers is unaffected and prompt** — only the
+  parent's `dispatched` bookkeeping (and retention/GC) lags by the grace.
+- **Dead-letter & replay.** A delivery that returns an error **or
+  panics** (the relay surfaces a panicking consumer as a delivery error
+  rather than swallowing it) increments its `attempts` and schedules an
+  exponential backoff. After `MaxAttempts` (default 10) it is marked
+  `dead`. `Replay(rowID)` resets all dead/abandoned deliveries of a row;
+  `ReplayConsumer(rowID, name)` resets one.
+- **Removed consumers are abandoned (time-based, not snapshot-based).** A
+  delivery whose consumer has no handler on *any* replica is
+  `abandoned` — settled terminal so it can't orphan the parent — but only
+  once it is older than the **handler grace** (`WithHandlerGrace`, default
+  15m). This is deliberately time-based: a lagging replica in a rolling
+  deploy never abandons a *newly-added* consumer's fresh deliveries (the
+  up-to-date replica delivers them first), and a genuinely-removed
+  consumer's deliveries age out and abandon everywhere. The grace **must
+  exceed your rolling-deploy overlap window plus worst-case clock skew**
+  between replicas (delivery/parent timestamps are written on one replica
+  and compared on another) — keep a floor of a few minutes. Re-adding a
+  removed consumer resumes delivery for events staged from the re-add
+  forward automatically; events abandoned during the gap are recovered
+  with `ReplayConsumer`.
+- **Undeclared event types are dropped after the grace.** A staged event
+  whose type has no consumer gets no deliveries and is marked `dispatched`
+  once older than the handler grace (deliveries are expanded oldest-first,
+  so an old parent with none has no consumer anywhere). Events staged more
+  than the grace before a type's *first* consumer is added are not
+  back-delivered — a retention-style boundary. If **no** consumer is
+  declared at all, the relay logs a Warn at start.
+- **Retention (optional).** `WithRetention(d)` makes the relay purge
+  fully-settled (`dispatched`) parent rows and their deliveries once older
+  than `d`. Pending, dead, and abandoned rows are never purged. Unset
+  (default) keeps every row forever.
+- **Stalled relays are logged.** If the relay can't claim/expand (missing
   table under `WithoutEnsureTable`, a renamed table, or a DB outage) it
-  keeps polling rather than crashing, and logs once at Error on the
-  failure onset and once at Info on recovery — so a stalled relay is
-  visible without flooding the log every poll.
-- **Data shape.** The relay stores `Data` as JSON and unmarshals it back
-  into a `map[string]any` before emitting, so **`Data` must marshal to a
-  JSON object** — a struct or map. A scalar or array (`Append(ctx, tx,
-  "t", "hi")` or `[]int{1,2}`) fails to unmarshal into the map and the
-  row is retried then marked `dead`; wrap such values in a map. JSON has
-  no separate integer type, so numbers arrive as `float64` (e.g. a count
-  of `3` becomes `3.0`). Marshal structs to a shape that tolerates this,
-  or pass pre-encoded JSON.
-- **Backoff.** A failing handler — one whose delivery returns an error
-  **or panics** (the relay surfaces a panicking subscriber as a delivery
-  error rather than swallowing it) — increments the row's `Attempts` and
-  schedules an exponential backoff via `next_attempt_at`. After
-  `MaxAttempts` (default 10) the row is marked `dead`; `outbox.Replay`
-  resets a dead row to pending. A row is never marked `dispatched` unless
-  delivery actually succeeded.
-- **Table creation.** `WithOutbox` creates its `event_outbox` table on
-  demand at `NewApp` time (a framework-owned bookkeeping table, like the
-  seed ledger — `WithoutAutoMigrate` does not suppress it). If your policy
-  forbids unattended DDL, pass `framework.WithOutbox(outbox.WithoutEnsureTable())`
-  and create the table yourself through your migration pipeline before the
-  app stages any event; the first `Append` fails fast if it is missing. The
-  schema is:
+  keeps polling rather than crashing, and logs once at Error on onset and
+  once at Info on recovery.
+- **Data shape.** `Data` is stored as JSON and unmarshalled into a
+  `map[string]any` before delivery, so **`Data` must marshal to a JSON
+  object** — a struct or map. A scalar/array fails to unmarshal and the
+  delivery is retried then marked `dead`; wrap such values in a map.
+  Numbers arrive as `float64` (JSON has no separate integer type).
+- **Table creation.** `WithOutbox` creates its tables on demand at
+  `NewApp` time (framework-owned bookkeeping tables;
+  `WithoutAutoMigrate` does not suppress them). If your policy forbids
+  unattended DDL, pass `framework.WithOutbox(outbox.WithoutEnsureTable())`
+  and create them yourself before the app stages any event. The schema:
 
   ```sql
   CREATE TABLE event_outbox (
       id              TEXT PRIMARY KEY,
       type            TEXT NOT NULL,
       payload         TEXT,
-      status          TEXT NOT NULL DEFAULT 'pending',
-      attempts        INTEGER NOT NULL DEFAULT 0,
-      last_error      TEXT,
-      created_at      TIMESTAMPTZ NOT NULL,  -- DATETIME on SQLite
-      dispatched_at   TIMESTAMPTZ,
-      next_attempt_at TIMESTAMPTZ,
-      claimed_until   TIMESTAMPTZ
+      status          TEXT NOT NULL DEFAULT 'pending',  -- pending|dispatched
+      created_at      TIMESTAMPTZ NOT NULL,             -- DATETIME on SQLite
+      dispatched_at   TIMESTAMPTZ
+      -- (attempts/last_error/next_attempt_at/claimed_until are vestigial;
+      --  per-attempt state lives in event_outbox_delivery below)
   );
   CREATE INDEX event_outbox_status_created_idx ON event_outbox (status, created_at);
+
+  CREATE TABLE event_outbox_delivery (
+      row_id          TEXT NOT NULL,                       -- FK event_outbox.id
+      consumer        TEXT NOT NULL,                       -- consumer name
+      status          TEXT NOT NULL DEFAULT 'pending',     -- pending|dispatched|dead|abandoned
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      last_error      TEXT,
+      created_at      TIMESTAMPTZ NOT NULL,                -- when THIS delivery row was created
+      next_attempt_at TIMESTAMPTZ,
+      claimed_until   TIMESTAMPTZ,
+      dispatched_at   TIMESTAMPTZ,
+      PRIMARY KEY (row_id, consumer)
+  );
+  -- The PK's leading row_id column already serves row_id lookups, so no
+  -- separate row_id index is needed.
+  CREATE INDEX event_outbox_delivery_claim_idx ON event_outbox_delivery (status, next_attempt_at);
   ```
-- **Multi-replica safe.** The claim takes a lease (`claimed_until`), so
-  a relay that dies mid-batch releases its rows after the lease expires
-  and another relay reclaims them — no double-processing beyond the
-  at-least-once caveat.
+- **Multi-replica safe.** The claim takes a lease (`claimed_until`) at
+  the delivery grain, so a relay that dies mid-batch releases only its
+  claimed deliveries after the lease expires and another relay reclaims
+  them — no double-processing beyond the at-least-once caveat.

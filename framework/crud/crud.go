@@ -63,7 +63,7 @@ type CrudHandler struct {
 	Hooks      *hook.HookRegistry // optional lifecycle hooks
 	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
 	Events     *event.EventBus    // optional; receives entity.created/updated/deleted on commit
-	Outbox     EventOutbox        // optional; when set, lifecycle events are staged in-tx (transactional outbox) and the relay — not Events — delivers them
+	Outbox     EventOutbox        // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
 	Registry   entity.Registry    // optional; required for nested ?include=author.profile resolution
 	BasePath   string             // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
 

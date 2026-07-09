@@ -23,7 +23,10 @@ func openOutbox(t *testing.T, opts ...Option) (*sql.DB, *Outbox) {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	o, err := New(db, opts...)
+	// Default to a zero handler grace so completion/abandonment/drop happen
+	// promptly in unit tests; grace-specific tests pass their own
+	// WithHandlerGrace after this to override.
+	o, err := New(db, append([]Option{WithHandlerGrace(0)}, opts...)...)
 	if err != nil {
 		t.Fatalf("new outbox: %v", err)
 	}
@@ -50,6 +53,51 @@ func findRow(t *testing.T, rows []Row, id string) Row {
 	}
 	t.Fatalf("row %s not found in %d rows", id, len(rows))
 	return Row{}
+}
+
+// mustDeliveries is a fail-fast ListDeliveries for tests.
+func mustDeliveries(t *testing.T, o *Outbox, rowID string) []Delivery {
+	t.Helper()
+	ds, err := o.ListDeliveries(context.Background(), rowID)
+	if err != nil {
+		t.Fatalf("list deliveries %s: %v", rowID, err)
+	}
+	return ds
+}
+
+// findDelivery returns the delivery for consumer from a ListDeliveries
+// result, or fails.
+func findDelivery(t *testing.T, ds []Delivery, consumer string) Delivery {
+	t.Helper()
+	for _, d := range ds {
+		if d.Consumer == consumer {
+			return d
+		}
+	}
+	t.Fatalf("delivery for consumer %q not found in %d deliveries", consumer, len(ds))
+	return Delivery{}
+}
+
+// insertDelivery seeds a fresh delivery row directly (created_at = now), for
+// tests that construct non-happy-path state without driving the relay.
+// status defaults to pending when empty.
+func insertDelivery(t *testing.T, db *sql.DB, o *Outbox, rowID, consumer, status string, attempts int, lastErr string) {
+	t.Helper()
+	insertDeliveryAged(t, db, o, rowID, consumer, status, attempts, lastErr, 0)
+}
+
+// insertDeliveryAged is insertDelivery with the delivery's created_at set
+// `age` in the past, so tests can exercise the abandonment grace.
+func insertDeliveryAged(t *testing.T, db *sql.DB, o *Outbox, rowID, consumer, status string, attempts int, lastErr string, age time.Duration) {
+	t.Helper()
+	if status == "" {
+		status = "pending"
+	}
+	if _, err := db.Exec(fmt.Sprintf(
+		`INSERT INTO %s (row_id, consumer, status, attempts, last_error, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		o.qd()), rowID, consumer, status, attempts, lastErr, o.now().UTC().Add(-age)); err != nil {
+		t.Fatalf("insert delivery: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -159,13 +207,15 @@ func TestNew_CustomTable(t *testing.T) {
 	if _, err := New(db, WithTable("my_outbox")); err != nil {
 		t.Fatalf("New with custom table: %v", err)
 	}
-	// Table + index exist.
-	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='my_outbox'`).Scan(&n); err != nil {
-		t.Fatalf("query master: %v", err)
-	}
-	if n != 1 {
-		t.Errorf("custom table not created (count=%d)", n)
+	// Parent + child delivery tables both exist.
+	for _, want := range []string{"my_outbox", "my_outbox_delivery"} {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, want).Scan(&n); err != nil {
+			t.Fatalf("query master: %v", err)
+		}
+		if n != 1 {
+			t.Errorf("table %q not created (count=%d)", want, n)
+		}
 	}
 }
 
@@ -183,13 +233,15 @@ func TestNew_WithoutEnsureTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(WithoutEnsureTable): %v", err)
 	}
-	// The table must NOT have been created.
-	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='event_outbox'`).Scan(&n); err != nil {
-		t.Fatalf("query master: %v", err)
-	}
-	if n != 0 {
-		t.Fatalf("event_outbox created despite WithoutEnsureTable (count=%d)", n)
+	// Neither table must have been created.
+	for _, want := range []string{"event_outbox", "event_outbox_delivery"} {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, want).Scan(&n); err != nil {
+			t.Fatalf("query master: %v", err)
+		}
+		if n != 0 {
+			t.Fatalf("table %q created despite WithoutEnsureTable (count=%d)", want, n)
+		}
 	}
 	// Append must then fail fast (no table) rather than silently swallow.
 	tx, _ := db.BeginTx(context.Background(), nil)
@@ -215,16 +267,12 @@ func TestList_FilterByStatus(t *testing.T) {
 		ids[i] = id
 	}
 	exec(t, db, o, "UPDATE %s SET status='dispatched' WHERE id=?", ids[0])
-	exec(t, db, o, "UPDATE %s SET status='dead' WHERE id=?", ids[1])
 
-	if n := len(mustList(t, o, "pending", 0)); n != 1 {
-		t.Errorf("pending = %d, want 1", n)
+	if n := len(mustList(t, o, "pending", 0)); n != 2 {
+		t.Errorf("pending = %d, want 2", n)
 	}
 	if n := len(mustList(t, o, "dispatched", 0)); n != 1 {
 		t.Errorf("dispatched = %d, want 1", n)
-	}
-	if n := len(mustList(t, o, "dead", 0)); n != 1 {
-		t.Errorf("dead = %d, want 1", n)
 	}
 	if n := len(mustList(t, o, "", 0)); n != 3 {
 		t.Errorf("all = %d, want 3", n)
@@ -232,72 +280,172 @@ func TestList_FilterByStatus(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Replay: dead → pending; pending/dispatched/unknown → no-op.
+// Replay (per-consumer): resets dead deliveries of a row + reopens parent.
 // ---------------------------------------------------------------------------
 
-func TestReplay_DeadRow(t *testing.T) {
+func TestReplay_ResurrectsAllDeadDeliveries(t *testing.T) {
+	db, o := openOutbox(t)
+	ctx := context.Background()
+	tx, _ := db.BeginTx(ctx, nil)
+	id, _ := o.Append(ctx, tx, "t", nil)
+	tx.Commit()
+	// Two dead deliveries + one already-dispatched sibling.
+	insertDelivery(t, db, o, id, "a", "dead", 5, "boom")
+	insertDelivery(t, db, o, id, "b", "dead", 5, "boom2")
+	insertDelivery(t, db, o, id, "c", "dispatched", 1, "")
+	if _, err := db.Exec(fmt.Sprintf("UPDATE %s SET status='dispatched', dispatched_at=? WHERE id=?", o.qt()),
+		time.Now().UTC(), id); err != nil {
+		t.Fatalf("set dispatched: %v", err)
+	}
+	if err := o.Replay(ctx, id); err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	ds := mustDeliveries(t, o, id)
+	a := findDelivery(t, ds, "a")
+	if a.Status != "pending" || a.Attempts != 0 || a.LastError != "" {
+		t.Errorf("delivery a = %+v, want pending/0/empty", a)
+	}
+	b := findDelivery(t, ds, "b")
+	if b.Status != "pending" {
+		t.Errorf("delivery b status = %q, want pending", b.Status)
+	}
+	c := findDelivery(t, ds, "c")
+	if c.Status != "dispatched" {
+		t.Errorf("delivery c status = %q, want dispatched (untouched)", c.Status)
+	}
+	// Parent reopened to pending.
+	r := findRow(t, mustList(t, o, "pending", 0), id)
+	if r.Status != "pending" {
+		t.Errorf("parent status = %q, want pending", r.Status)
+	}
+}
+
+func TestReplay_NoDeadDeliveriesIsNoop(t *testing.T) {
 	db, o := openOutbox(t)
 	ctx := context.Background()
 
 	tx, _ := db.BeginTx(ctx, nil)
 	id, _ := o.Append(ctx, tx, "t", nil)
 	tx.Commit()
-	exec(t, db, o, "UPDATE %s SET status='dead', attempts=5, last_error='boom' WHERE id=?", id)
+	insertDelivery(t, db, o, id, "a", "dispatched", 1, "")
+	exec(t, db, o, "UPDATE %s SET status='dispatched' WHERE id=?", id)
 
 	if err := o.Replay(ctx, id); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	r := findRow(t, mustList(t, o, "pending", 0), id)
-	if r.Attempts != 0 {
-		t.Errorf("attempts = %d, want 0 after replay", r.Attempts)
-	}
-	if r.LastError != "" {
-		t.Errorf("last_error = %q, want cleared", r.LastError)
+	// Parent stays dispatched (no dead deliveries to resurrect).
+	if n := len(mustList(t, o, "pending", 0)); n != 0 {
+		t.Errorf("pending = %d, want 0 (replay no-op)", n)
 	}
 }
 
-func TestReplay_PendingIsNoop(t *testing.T) {
+func TestReplayConsumer_ResurrectsOneDeadDelivery(t *testing.T) {
 	db, o := openOutbox(t)
 	ctx := context.Background()
 
 	tx, _ := db.BeginTx(ctx, nil)
 	id, _ := o.Append(ctx, tx, "t", nil)
 	tx.Commit()
-
-	if err := o.Replay(ctx, id); err != nil {
-		t.Fatalf("replay pending: %v", err)
-	}
-	// Still exactly one pending row (untouched).
-	if n := len(mustList(t, o, "pending", 0)); n != 1 {
-		t.Errorf("pending rows = %d, want 1 (replay must be a no-op)", n)
-	}
-}
-
-func TestReplay_DispatchedIsNoop(t *testing.T) {
-	db, o := openOutbox(t)
-	ctx := context.Background()
-
-	tx, _ := db.BeginTx(ctx, nil)
-	id, _ := o.Append(ctx, tx, "t", nil)
-	tx.Commit()
+	insertDelivery(t, db, o, id, "a", "dead", 5, "boom")
+	insertDelivery(t, db, o, id, "b", "dead", 5, "boom2")
 	exec(t, db, o, "UPDATE %s SET status='dispatched' WHERE id=?", id)
 
-	if err := o.Replay(ctx, id); err != nil {
-		t.Fatalf("replay dispatched: %v", err)
+	if err := o.ReplayConsumer(ctx, id, "a"); err != nil {
+		t.Fatalf("replay consumer: %v", err)
 	}
-	if n := len(mustList(t, o, "dispatched", 0)); n != 1 {
-		t.Errorf("dispatched = %d, want 1", n)
+	ds := mustDeliveries(t, o, id)
+	a := findDelivery(t, ds, "a")
+	if a.Status != "pending" || a.Attempts != 0 {
+		t.Errorf("delivery a = %+v, want pending/0", a)
 	}
-	if n := len(mustList(t, o, "pending", 0)); n != 0 {
-		t.Errorf("pending = %d, want 0 (dispatched row must not resurrect)", n)
+	b := findDelivery(t, ds, "b")
+	if b.Status != "dead" {
+		t.Errorf("delivery b status = %q, want dead (untouched)", b.Status)
+	}
+	r := findRow(t, mustList(t, o, "pending", 0), id)
+	if r.Status != "pending" {
+		t.Errorf("parent = %q, want pending (reopened)", r.Status)
 	}
 }
 
-func TestReplay_UnknownIsNoop(t *testing.T) {
-	_, o := openOutbox(t)
-	if err := o.Replay(context.Background(), "does-not-exist"); err != nil {
-		t.Fatalf("replay unknown: %v", err)
+func TestReplayConsumer_UnknownIsNoop(t *testing.T) {
+	db, o := openOutbox(t)
+	tx, _ := db.BeginTx(context.Background(), nil)
+	id, _ := o.Append(context.Background(), tx, "t", nil)
+	tx.Commit()
+	if err := o.ReplayConsumer(context.Background(), id, "ghost"); err != nil {
+		t.Fatalf("replay unknown consumer: %v", err)
 	}
+	if n := len(mustDeliveries(t, o, id)); n != 0 {
+		t.Errorf("deliveries = %d, want 0", n)
+	}
+}
+
+// Replay resurrects an ABANDONED delivery (a removed-then-re-added consumer),
+// not just dead ones.
+func TestReplay_ResurrectsAbandoned(t *testing.T) {
+	db, o := openOutbox(t)
+	ctx := context.Background()
+	tx, _ := db.BeginTx(ctx, nil)
+	id, _ := o.Append(ctx, tx, "t", nil)
+	tx.Commit()
+	insertDelivery(t, db, o, id, "svc", "abandoned", 0, "no consumer handler within grace")
+	exec(t, db, o, "UPDATE %s SET status='dispatched' WHERE id=?", id)
+
+	if err := o.ReplayConsumer(ctx, id, "svc"); err != nil {
+		t.Fatalf("replay consumer: %v", err)
+	}
+	if got := findDelivery(t, mustDeliveries(t, o, id), "svc").Status; got != "pending" {
+		t.Errorf("abandoned delivery after replay = %q, want pending", got)
+	}
+	if got := findRow(t, mustList(t, o, "pending", 0), id).Status; got != "pending" {
+		t.Errorf("parent after replay = %q, want pending (reopened)", got)
+	}
+}
+
+// WithRetention: the relay purges fully-settled (dispatched) parents + their
+// deliveries once older than the window; pending/dead rows are never purged.
+func TestRetention_PurgesDispatchedOnly(t *testing.T) {
+	db, o := openOutbox(t, WithRetention(time.Hour))
+	ctx := context.Background()
+
+	// An old dispatched parent (should purge) and an old pending one (must stay).
+	old := o.now().UTC().Add(-2 * time.Hour)
+	insertParent := func(id, status string) {
+		t.Helper()
+		if _, err := db.Exec(fmt.Sprintf(
+			"INSERT INTO %s (id, type, payload, status, created_at) VALUES (?, 't', 'null', ?, ?)",
+			o.qt()), id, status, old); err != nil {
+			t.Fatalf("insert parent %s: %v", id, err)
+		}
+	}
+	insertParent("done", "dispatched")
+	insertDeliveryAged(t, db, o, "done", "c", "dispatched", 0, "", 2*time.Hour)
+	insertParent("live", "pending")
+
+	if err := o.purgeExpired(ctx); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	rows := mustList(t, o, "", 0)
+	if findRowMaybe(rows, "done") != nil {
+		t.Error("dispatched parent past retention was not purged")
+	}
+	if findRowMaybe(rows, "live") == nil {
+		t.Error("pending parent was wrongly purged")
+	}
+	if n := len(mustDeliveries(t, o, "done")); n != 0 {
+		t.Errorf("purged parent's deliveries remain: %d", n)
+	}
+}
+
+// findRowMaybe returns a pointer to the row with id, or nil.
+func findRowMaybe(rows []Row, id string) *Row {
+	for i := range rows {
+		if rows[i].ID == id {
+			return &rows[i]
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -306,23 +454,22 @@ func TestReplay_UnknownIsNoop(t *testing.T) {
 
 func TestBackoffFor(t *testing.T) {
 	_, o := openOutbox(t)
-	o.backoffBase = time.Second
-	o.backoffMax = 8 * time.Second
-
+	o.backoffBase = 10 * time.Millisecond
+	o.backoffMax = 100 * time.Millisecond
 	cases := []struct {
-		attempts int
-		want     time.Duration
+		att  int
+		want time.Duration
 	}{
-		{1, time.Second},      // base * 2^0
-		{2, 2 * time.Second},  // base * 2^1
-		{3, 4 * time.Second},  // base * 2^2
-		{4, 8 * time.Second},  // base * 2^3 = cap
-		{5, 8 * time.Second},  // capped
-		{20, 8 * time.Second}, // still capped
+		{1, 10 * time.Millisecond},
+		{2, 20 * time.Millisecond},
+		{3, 40 * time.Millisecond},
+		{4, 80 * time.Millisecond},
+		{5, 100 * time.Millisecond}, // capped
+		{9, 100 * time.Millisecond}, // still capped
 	}
 	for _, c := range cases {
-		if got := o.backoffFor(c.attempts); got != c.want {
-			t.Errorf("backoffFor(%d) = %v, want %v", c.attempts, got, c.want)
+		if got := o.backoffFor(c.att); got != c.want {
+			t.Errorf("backoffFor(%d) = %v, want %v", c.att, got, c.want)
 		}
 	}
 }

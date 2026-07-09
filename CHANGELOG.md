@@ -7,6 +7,37 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: transactional outbox now delivers per-consumer, not
+  whole-row.** The `framework/outbox` relay previously published each row
+  to the event bus all-or-nothing across co-subscribers — one failing
+  subscriber failed the whole row and blocked its siblings until `Replay`.
+  Delivery is now split into two disjoint lanes: a best-effort **real-time
+  lane** (the live bus / SSE `EventStream` / ephemeral `On`/`Subscribe`,
+  fed post-commit by `EmitEvent`) and a durable **per-consumer lane**.
+  Durable consumers are now declared and named via
+  `framework.WithOutboxConsumer(name, eventType, handler)` (or
+  `Outbox.Consume`); each `(row, consumer)` pair is tracked in a new
+  `event_outbox_delivery` child table and retried / backed-off /
+  dead-lettered **independently** (sibling isolation). Consumer-set changes
+  are handled by **time**, not by a per-replica snapshot, so rolling
+  deploys can't lose events: a delivery whose consumer has no handler
+  anywhere is `abandoned`, and a parent is completed or an orphan type
+  dropped, only once older than the handler grace (`WithHandlerGrace`,
+  default 15m) — so a lagging replica never destroys, or prematurely
+  completes, a freshly-added consumer's work. (Consequence: a
+  fully-delivered parent's `dispatched` bookkeeping lags by the grace;
+  delivery to consumers stays prompt.) Adds `Outbox.ListDeliveries`,
+  `Outbox.ReplayConsumer`
+  (resurrects dead *or* abandoned deliveries), `WithHandlerGrace`, and
+  `WithRetention` (optional purge of settled rows); `StartRelay` drops its
+  `bus` argument and no longer publishes to the event bus. **Migration:**
+  drain in-flight outbox rows before upgrading — the new relay ignores the
+  old single-delivery row state and there is no automatic backfill.
+  Declaring `WithOutboxConsumer` without `WithOutbox` now panics at
+  construction rather than silently dropping the consumer.
+
 ### Removed
 
 - **OIDC PKCE `code_challenge`.** The confidential OIDC provider no longer

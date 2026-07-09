@@ -87,20 +87,22 @@ func (ch *CrudHandler) StageEvent(ctx context.Context, eventType string, record 
 }
 
 // EmitEvent fires an entity lifecycle event after the operation's transaction
-// has committed. Without an outbox it publishes to the live bus
-// (asynchronously; no-op when no bus is attached). With an outbox configured,
-// the event was already staged durably in-tx by StageEvent — delivery belongs
-// to the relay, so this only nudges it awake; emitting here too would deliver
-// every event twice.
+// has committed. Delivery is split across two disjoint lanes:
+//
+//   - Real-time lane: the live bus is notified always (best-effort, async),
+//     feeding SSE EventStream and ephemeral On/Subscribe handlers. Lossy by
+//     design — a crash here drops the in-memory signal, but the durable lane
+//     still guarantees delivery.
+//   - Durable lane: when an outbox is configured, the row staged in-tx by
+//     StageEvent is delivered to declared consumers by the relay. The relay
+//     no longer touches the bus, so there is no double delivery.
 func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record any) {
+	if ch.Events != nil {
+		ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
+	}
 	if ch.Outbox != nil {
 		ch.Outbox.Nudge()
-		return
 	}
-	if ch.Events == nil {
-		return
-	}
-	ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
 }
 
 // EventStream returns an http.HandlerFunc that serves a Server-Sent Events
