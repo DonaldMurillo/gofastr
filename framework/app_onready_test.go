@@ -57,7 +57,7 @@ func TestStartupBannerUsesAPIPrefix(t *testing.T) {
 	var output bytes.Buffer
 	app.startupOutput = &output
 
-	app.printStartupBanner("127.0.0.1:8080", "test", true, true)
+	app.printStartupBanner("127.0.0.1:8080", "test", true, true, "")
 
 	got := output.String()
 	if !strings.Contains(got, "http://127.0.0.1:8080/api/posts") {

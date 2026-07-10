@@ -273,6 +273,14 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 	return ReadinessResponse{Checks: out}
 }
 
+// RunReadinessChecks executes all registered readiness checks in
+// parallel and returns the structured response. Exported so batteries
+// (e.g. battery/setup's HealthStep) can run the same checks /readyz
+// does without going through HTTP.
+func (a *App) RunReadinessChecks(ctx context.Context) ReadinessResponse {
+	return runReadinessChecks(ctx, a.readinessChecks(), a.readinessVerbose())
+}
+
 // redactError returns a fixed string when verbose mode is off so
 // /readyz cannot leak internal error text (IPs, DSNs, etc.) to an
 // unauthenticated probe. When verbose is on, the original message is

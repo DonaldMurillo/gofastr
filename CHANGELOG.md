@@ -9,6 +9,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **First-run setup (`battery/setup` + `framework.WithSetup`).** A
+  deployed binary against an empty database now has a guided first
+  boot: while the `Complete` predicate reports false, `Start` serves
+  an SSR setup
+  wizard (composed from the design system) instead of the app router —
+  everything else 503s, `/healthz`+`/readyz` stay up, and background
+  consumers (cron/queue/outbox relay) wait until bootstrap finishes,
+  then the handler swaps atomically with no restart. Access requires a
+  **single-use setup token** printed to the boot banner (first visit
+  exchanges it for an HttpOnly cookie and invalidates the URL form;
+  restart mints a fresh one); wizard POSTs are origin-guarded
+  regardless. The same steps run **headless** for IaC installs when
+  their env vars (`GOFASTR_ADMIN_EMAIL`/`GOFASTR_ADMIN_PASSWORD`, or
+  per-field `EnvVar`) fully resolve — before the port binds, failing
+  loud. Steps are pluggable (`setup.Step` with fields, validation, and
+  a `Run`); shipped: `setup.AdminStep(auth, db, usersTable)` (initial
+  admin via the auth battery's hasher + password policy) and
+  `setup.HealthStep(app)` (readiness checks with actionable errors).
+  Completion is derived state, never a marker file — a crash mid-setup
+  re-enters setup. `GOFASTR_SETUP=off|force` overrides; worker-role
+  processes refuse to start while setup is incomplete. See the
+  first-run doc. (#34)
+
 - **Migration groups (`Migration.Group` / `-- +migrate Group <name>`).**
   Migrations can now be scoped to the feature or module that owns them:
   versions are unique per group, `Up`/`Down`/`Status` take an optional

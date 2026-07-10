@@ -257,6 +257,28 @@ type App struct {
 	role    Role
 	roleOpt Role
 	roleSet bool
+
+	// setup is the optional first-run setup runner (WithSetup). When set
+	// and setup is incomplete at boot, Start either runs the steps
+	// headlessly (all required env present) or serves an interactive
+	// wizard until setup finishes — then atomically swaps to the real
+	// router. See SetupRunner for the full lifecycle.
+	setup SetupRunner
+
+	// handlerCell holds the currently-serving http.Handler behind an
+	// atomic.Pointer so the interactive-setup swap can switch from the
+	// wizard surface to the real app router without a restart. We use a
+	// wrapper struct (not atomic.Value) because atomic.Value panics when
+	// the concrete type changes between Stores (http.HandlerFunc vs
+	// *router.Router). The wrapper normalizes both to *servingHandler.
+	handlerCell atomic.Pointer[servingHandler]
+}
+
+// servingHandler wraps an http.Handler so it can be stored in an
+// atomic.Pointer without panicking on concrete-type changes during the
+// setup-to-real-router swap.
+type servingHandler struct {
+	h http.Handler
 }
 
 // AppOption is a functional option for configuring an App.
@@ -1646,11 +1668,53 @@ func (a *App) Start(addr string) error {
 	if err := a.InitPlugins(); err != nil {
 		return abort(fmt.Errorf("init plugins: %w", err))
 	}
+	// Check first-run setup status (WithSetup). When incomplete and not
+	// disabled via GOFASTR_SETUP=off, Start either runs the steps inline
+	// (headless: every required env present) or defers consumer startup
+	// and serves the interactive wizard until the final step completes.
+	// Worker role + incomplete setup is a hard error — setup touches
+	// tables the worker's consumers would race on.
+	setupInteractive := false
+	var setupURL string
+	if a.setup != nil {
+		mode, err := resolveSetupEnv()
+		if err != nil {
+			return abort(fmt.Errorf("setup: %w", err))
+		}
+		if mode != setupOff {
+			incomplete, err := a.setup.Incomplete(a.appCtx)
+			if err != nil {
+				return abort(fmt.Errorf("setup: %w", err))
+			}
+			if mode == setupForce || incomplete {
+				if a.role == RoleWorker {
+					return abort(fmt.Errorf("setup incomplete: run a serve/all process to complete setup first"))
+				}
+				canHeadless, err := a.setup.CanRunHeadless(a.appCtx)
+				if err != nil {
+					return abort(fmt.Errorf("setup: %w", err))
+				}
+				if canHeadless {
+					if err := a.setup.RunSteps(a.appCtx); err != nil {
+						return abort(fmt.Errorf("setup: %w", err))
+					}
+					// Headless bootstrap finished — proceed normally.
+				} else {
+					setupInteractive = true
+				}
+			}
+		}
+	}
 
 	// Run OnStart hooks (cron/queue workers, custom setup). Failure here
 	// aborts before we bind the port — better than a half-up server.
-	if err := a.runStartHooks(); err != nil {
-		return abort(fmt.Errorf("start hooks: %w", err))
+	// Deferred when interactive setup is active: the hooks may start
+	// consumers that touch tables setup owns. They run inside the swap
+	// callback once setup completes.
+	if !setupInteractive {
+		if err := a.runStartHooks(); err != nil {
+			return abort(fmt.Errorf("start hooks: %w", err))
+		}
 	}
 
 	// Start the outbox relay (WithOutbox). Runs on the app lifecycle
@@ -1660,7 +1724,8 @@ func (a *App) Start(addr string) error {
 	// Worker-scoped: a serve-only process stages rows (StageEvent runs in
 	// the write transaction regardless of role) but never claims them —
 	// delivery belongs to the worker/all processes.
-	if a.outbox != nil && a.runsWorkers() {
+	// Deferred when interactive setup is active (started in the swap).
+	if a.outbox != nil && a.runsWorkers() && !setupInteractive {
 		stopRelay := a.outbox.StartRelay(a.appCtx)
 		a.OnStop(func() error {
 			stopRelay()
@@ -1775,14 +1840,58 @@ func (a *App) Start(addr string) error {
 	os.Args[0] = "gofastr-" + name
 
 	a.serverMu.Lock()
+	// Resolve the real handler (full router for all/serve, health mux
+	// for worker). When interactive setup is active, the server delegates
+	// to whatever handlerCell currently points at — initially the setup
+	// wizard, swapped to realHandler by the swap callback on completion.
+	realHandler := a.roleHandler()
+	serveHandler := realHandler
+	if setupInteractive {
+		var swapOnce sync.Once
+		swap := func() {
+			swapOnce.Do(func() {
+				// Serve the real router first: setup IS complete (the
+				// runner only swaps after its Complete predicate flips),
+				// so the app must never keep answering 503 from here on.
+				a.handlerCell.Store(&servingHandler{h: realHandler})
+				// Start the deferred consumers. A failure here gets the
+				// same fail-loud semantics as the identical failure at
+				// normal boot (which aborts Start): log and shut down —
+				// the process exits, and the NEXT boot finds setup
+				// complete and runs the hooks on the normal Start path,
+				// failing Start properly. Silently running without
+				// consumers would be a half-up server.
+				if err := a.runStartHooks(); err != nil {
+					a.Logger().Error("setup: deferred start hooks failed; shutting down (restart will boot normally and surface this error at Start)", "error", err)
+					go func() {
+						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+						defer cancel()
+						_ = a.Shutdown(ctx)
+					}()
+					return
+				}
+				if a.outbox != nil && a.runsWorkers() {
+					stopRelay := a.outbox.StartRelay(a.appCtx)
+					a.OnStop(func() error {
+						stopRelay()
+						return nil
+					})
+				}
+			})
+		}
+		liveness, readiness := a.healthHandlers()
+		a.handlerCell.Store(&servingHandler{h: a.setup.Handler(swap, liveness, readiness)})
+		serveHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if cell := a.handlerCell.Load(); cell != nil {
+				cell.h.ServeHTTP(w, r)
+			} else {
+				realHandler.ServeHTTP(w, r)
+			}
+		})
+	}
 	srv := &http.Server{
-		Addr: addr,
-		// Role-dependent surface: the full app router for all/serve, the
-		// health-only mux (/healthz + /readyz, same handlers) for a worker.
-		Handler: a.roleHandler(),
-		// Conservative defaults so a slow / abandoned / hostile client
-		// can't tie up the listener forever (slowloris-style). Hosts
-		// that need a different shape can wrap the server themselves.
+		Addr:              addr,
+		Handler:           serveHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -1846,7 +1955,10 @@ func (a *App) Start(addr string) error {
 		}()
 	}
 
-	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD)
+	if setupInteractive {
+		setupURL = a.setup.SetupURL(ln.Addr().String())
+	}
+	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD, setupURL)
 	for _, fn := range a.readyHooks {
 		fn(ln.Addr().String())
 	}
@@ -1859,7 +1971,7 @@ func (a *App) Start(addr string) error {
 // printStartupBanner reports readiness only after the listener has bound.
 // boundAddr is the resolved listener address, so Start("127.0.0.1:0") prints
 // the actual port and a bind failure prints nothing.
-func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool) {
+func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, setupURL string) {
 	w := a.startupOutput
 	if w == nil {
 		w = os.Stdout
@@ -1876,6 +1988,9 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool) 
 	fmt.Fprintf(w, "\n  %s %s server ready\n", bold("GoFastr"), name)
 	fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
 	fmt.Fprintf(w, "  %s Listening: http://%s\n", arrow(), boundAddr)
+	if setupURL != "" {
+		fmt.Fprintf(w, "  %s Setup: %s\n", arrow(), setupURL)
+	}
 	if a.Config.DebugEndpoints {
 		fmt.Fprintf(w, "  %s Stats: http://%s/.debug/stats\n", arrow(), boundAddr)
 	}
