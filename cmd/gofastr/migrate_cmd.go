@@ -86,7 +86,7 @@ func runMigrateForce(args []string) {
 	}
 	defer closeDB()
 
-	if err := migrator.Force(context.Background(), version, applied); err != nil {
+	if err := migrator.Force(context.Background(), version, applied, getGroups(args)...); err != nil {
 		fail("Force failed: %v", err)
 		osExit(1)
 	}
@@ -121,7 +121,7 @@ func runMigrateUp(args []string) {
 	}
 	defer closeDB()
 
-	if err := migrator.Up(context.Background()); err != nil {
+	if err := migrator.Up(context.Background(), getGroups(args)...); err != nil {
 		fail("Migration failed: %v", err)
 		osExit(1)
 	}
@@ -146,7 +146,7 @@ func runMigrateDown(args []string) {
 	}
 	defer closeDB()
 
-	if err := migrator.Down(context.Background(), n); err != nil {
+	if err := migrator.Down(context.Background(), n, getGroups(args)...); err != nil {
 		fail("Rollback failed: %v", err)
 		osExit(1)
 	}
@@ -163,21 +163,52 @@ func runMigrateStatus(args []string) {
 	}
 	defer closeDB()
 
-	status, err := migrator.Status(context.Background())
+	status, err := migrator.Status(context.Background(), getGroups(args)...)
 	if err != nil {
 		fail("Could not read migration status: %v", err)
 		osExit(1)
 	}
 
+	// Show the group column only when a non-default group is present, so the
+	// common all-default output stays byte-identical.
+	showGroup := false
+	for _, rec := range status.Applied {
+		if rec.Group != "" {
+			showGroup = true
+			break
+		}
+	}
+	if !showGroup {
+		for _, mig := range status.Pending {
+			if mig.Group != "" {
+				showGroup = true
+				break
+			}
+		}
+	}
+
 	fmt.Printf("    Applied: %d\n", len(status.Applied))
 	fmt.Printf("    Pending: %d\n", len(status.Pending))
 	for _, pending := range status.Pending {
-		fmt.Printf("    %s %d %s\n", yellow("→"), pending.Version, pending.Name)
+		if showGroup {
+			fmt.Printf("    %s %d %s [%s]\n", yellow("→"), pending.Version, pending.Name, groupLabel(pending.Group))
+		} else {
+			fmt.Printf("    %s %d %s\n", yellow("→"), pending.Version, pending.Name)
+		}
 	}
 	for _, rec := range status.Applied {
 		if rec.Dirty {
-			fmt.Printf("    %s %d %s — DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
-				yellow("⚠"), rec.Version, rec.Name, rec.Version)
+			if showGroup {
+				// groupLabel maps the default group to "default", which the
+				// CLI accepts as its alias — the printed command is runnable
+				// verbatim for every group (a raw "" would render --group=,
+				// which getGroups rejects).
+				fmt.Printf("    %s %d %s [%s] — DIRTY (failed mid-apply; run `gofastr migrate force %d --group=%s` after reconciling)\n",
+					yellow("⚠"), rec.Version, rec.Name, groupLabel(rec.Group), rec.Version, groupLabel(rec.Group))
+			} else {
+				fmt.Printf("    %s %d %s — DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
+					yellow("⚠"), rec.Version, rec.Name, rec.Version)
+			}
 		}
 	}
 }
@@ -286,4 +317,31 @@ func getMigrateDriver(args []string) string {
 		}
 	}
 	return "sqlite3"
+}
+
+// getGroups extracts repeatable --group=<name> flags from args. Returns nil
+// when no --group is present (the no-args "all groups" default for up/down/
+// status, and the "default group" target for force).
+func getGroups(args []string) []string {
+	var groups []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "--group=") {
+			val := strings.TrimPrefix(a, "--group=")
+			if val == "" {
+				fail("--group= requires a non-empty group name")
+				osExit(1)
+			}
+			groups = append(groups, val)
+		}
+	}
+	return groups
+}
+
+// groupLabel renders a group name for status output, showing "default" for the
+// empty (default) group.
+func groupLabel(g string) string {
+	if g == "" {
+		return "default"
+	}
+	return g
 }

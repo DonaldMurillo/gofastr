@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -29,6 +30,12 @@ func runMigrateGenerate(args []string) {
 	if opts.from == "" {
 		fail("A blueprint is required: pass --from=<blueprint.yml>.")
 		osExit(1)
+	}
+	if opts.group != "" {
+		if err := migrate.ValidateGroupName(opts.group); err != nil {
+			fail("%v", err)
+			osExit(1)
+		}
 	}
 
 	dialect := framework.DialectSQLite
@@ -82,6 +89,11 @@ func runMigrateGenerate(args []string) {
 	path := filepath.Join(opts.migrationsDir, filename)
 
 	content := framework.RenderMigrationFile(version, slug, up, down)
+	if opts.group != "" {
+		// Stamp the -- +migrate Group directive just before the Up section so
+		// the runner scopes this migration into the named group.
+		content = strings.Replace(content, "-- +migrate Up\n", "-- +migrate Group "+opts.group+"\n-- +migrate Up\n", 1)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		fail("Could not write %s: %v", path, err)
 		osExit(1)
@@ -104,6 +116,7 @@ type migrateGenOptions struct {
 	migrationsDir string
 	snapshotPath  string
 	driver        string
+	group         string
 }
 
 func parseMigrateGenOptions(args []string) migrateGenOptions {
@@ -121,6 +134,8 @@ func parseMigrateGenOptions(args []string) migrateGenOptions {
 			opts.snapshotPath = strings.TrimPrefix(arg, "--snapshot=")
 		case strings.HasPrefix(arg, "--driver="):
 			opts.driver = strings.TrimPrefix(arg, "--driver=")
+		case strings.HasPrefix(arg, "--group="):
+			opts.group = strings.TrimPrefix(arg, "--group=")
 		case strings.HasPrefix(arg, "--"):
 			// unknown flag — ignore
 		default:

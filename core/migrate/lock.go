@@ -39,9 +39,11 @@ const AdvisoryLockKey int64 = 6724469554113028193
 //     pg_advisory_lock on context cancellation — a stuck holder would
 //     otherwise hang boot forever.) This is the guard that makes
 //     auto-migrate-on-boot safe across N replicas.
-//   - SQLite: no lock is taken (SQLite serializes writers at the file level
-//     and the DDL we emit is idempotent), but fn still gets a pinned
-//     connection so callers have one uniform code path.
+//   - SQLite: no lock is taken (SQLite serializes writers at the file level),
+//     but fn still gets a pinned connection so callers have one uniform code
+//     path. The PK upgrade (rebuildTableSQLite) is NOT idempotent against a
+//     table that already has group_name values — that is why only Up/Down/
+//     Force call ensureCompositeKey, never Status (which is unlocked).
 //
 // db == nil runs fn(nil) — callers already treat a nil db as a no-op.
 func WithAdvisoryLock(ctx context.Context, db *sql.DB, dialect Dialect, fn func(conn *sql.Conn) error) error {

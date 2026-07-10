@@ -5,6 +5,34 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Added
+
+- **Migration groups (`Migration.Group` / `-- +migrate Group <name>`).**
+  Migrations can now be scoped to the feature or module that owns them:
+  versions are unique per group, `Up`/`Down`/`Status` take an optional
+  group selection (`m.Up(ctx, "knowledge")`, CLI `--group=<name>`,
+  repeatable), and enabling a feature later applies only its pending
+  group under the same advisory lock. Within a group ordering is
+  strictly by version; across groups a run interleaves in
+  `(version, group)` order — a deterministic tiebreak, not a dependency
+  mechanism (groups must be self-contained). Group-less usage is
+  untouched: the runner emits byte-identical SQL and never alters the
+  tracking table until a non-default group is actually in play, at
+  which point `group_name` is added and the primary key upgrades in
+  place to `(group_name, version)` (atomic ALTER on Postgres, a
+  transactional rebuild on SQLite). Checksums, dirty state, and
+  `force` key on `(group, version)`; `migrate generate --group=<name>`
+  stamps the directive. A named group with no registered migrations is
+  a *disabled module*: its applied rows are shown by `status` but never
+  compared, blocked on, rolled back, or dropped (`force --group` is the
+  reconciliation escape hatch) — the default group is never treated as
+  a module, so drift there still errors. `--group=default` (reserved
+  name) addresses the default group in selections. `Migrator.Register`
+  now returns an error (duplicate `(group, version)` or invalid group
+  name). (#33)
+
 ## [0.16.0] - 2026-07-09
 
 ### Added

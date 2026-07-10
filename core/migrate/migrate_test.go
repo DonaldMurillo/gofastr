@@ -63,9 +63,13 @@ func expectCreateTable(mock sqlmock.Sqlmock) {
 	)).WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
-// expectSelectApplied expects the query that fetches applied migrations.
-// versions is the list of already-applied version numbers.
+// expectSelectApplied expects the hasGroupColumn metadata query (returning 0 =
+// legacy table, no group_name column) followed by the query that fetches
+// applied migrations. versions is the list of already-applied version numbers.
 func expectSelectApplied(mock sqlmock.Sqlmock, versions []uint64) {
+	mock.ExpectQuery(regexp.QuoteMeta(
+		`SELECT COUNT(*) FROM pg_attribute WHERE attrelid = $1::regclass AND attname = 'group_name' AND NOT attisdropped`,
+	)).WithArgs(`"_migrations"`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	rows := sqlmock.NewRows([]string{"version", "name", "applied_at", "checksum", "dirty"})
 	for _, v := range versions {
 		rows.AddRow(v, fmt.Sprintf("migration_%d", v), time.Now().UTC(), "", false)

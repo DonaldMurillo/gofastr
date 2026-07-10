@@ -88,6 +88,27 @@ func TestMigrateHelperFlags(t *testing.T) {
 	}
 }
 
+func TestGetGroupsRejectsEmpty(t *testing.T) {
+	// --group= with empty value must exit 1.
+	code := covT_capExit(t, func() {
+		covT_capStdout(t, func() { getGroups([]string{"--group="}) })
+	})
+	if code != 1 {
+		t.Fatalf("want exit 1 for empty --group=, got %d", code)
+	}
+}
+
+func TestGetGroupsNormal(t *testing.T) {
+	// No --group at all → nil (the no-args "all groups" default).
+	if got := getGroups([]string{"--db-url=x"}); got != nil {
+		t.Fatalf("want nil, got %v", got)
+	}
+	// Valid group names collected.
+	if got := getGroups([]string{"--group=knowledge", "--group=search"}); len(got) != 2 || got[0] != "knowledge" || got[1] != "search" {
+		t.Fatalf("got %v", got)
+	}
+}
+
 func TestGetMigrateDBURLFromEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
@@ -133,6 +154,36 @@ entities:
 	out := covT_capStdout(t, func() { runMigrateGenerate([]string{"noop", "--from=" + bp}) })
 	if !strings.Contains(out, "up to date") {
 		t.Fatalf("expected up to date: %s", out)
+	}
+}
+
+func TestRunMigrateGenerateBadGroupExits(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	bp := filepath.Join(dir, "gofastr.yml")
+	blueprint := `app:
+  name: testapp
+entities:
+  - name: posts
+    table: posts
+    fields:
+      - name: title
+        type: string
+`
+	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code := covT_capExit(t, func() {
+		covT_capStdout(t, func() {
+			runMigrateGenerate([]string{"create_posts", "--from=" + bp, "--group=bad name!"})
+		})
+	})
+	if code != 1 {
+		t.Fatalf("want exit 1 for invalid --group, got %d", code)
+	}
+	matches, _ := filepath.Glob(filepath.Join(dir, "migrations", "*.sql"))
+	if len(matches) != 0 {
+		t.Fatalf("invalid --group should not write a migration file, got %v", matches)
 	}
 }
 

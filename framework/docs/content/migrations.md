@@ -67,6 +67,23 @@ The runner reads `migrations/*.sql` in filename order. Convention:
 zero-pad the version into the filename, e.g.
 `0001_create_posts.sql`.
 
+### Groups
+
+A migration may declare a group, scoping it to a feature or module:
+
+```sql
+-- +migrate Version 1
+-- +migrate Group knowledge
+-- +migrate Name create_articles
+-- +migrate Up
+CREATE TABLE articles (...);
+-- +migrate Down
+DROP TABLE articles;
+```
+
+No directive means the **default group** — exactly today's behavior.
+See "Migration groups" below for semantics.
+
 ## CLI
 
 ```bash
@@ -94,6 +111,11 @@ Flags & inputs:
   building a `gofastr` binary that blank-imports the matching driver.
 - `--not-applied` (`force` only) — remove the version from the tracking
   table (treat as pending) instead of marking it applied.
+- `--group=<name>` — scope `up`/`down`/`status` to one or more groups
+  (repeat the flag); a single `--group` on `force` targets that group's
+  version. `--group=default` addresses the default (ungrouped) set.
+  `generate --group=<name>` stamps the `Group` directive into the
+  generated file. No flag = all groups (today's behavior).
 
 `migrate force <V>` is the recovery path out of a dirty state and the
 way to **baseline** an existing database: it marks a version applied
@@ -105,6 +127,48 @@ The migrations directory is hardcoded to `./migrations` relative to
 the working directory. The tracking table name is `_migrations`. Both
 are configurable via the programmatic API below if you embed the
 runner in your own command.
+
+## Migration groups
+
+An app composed of optional features can scope migrations to the
+feature that owns them: a `knowledge` module's tables apply only when
+that module is enabled, and a battery can own its schema in its own
+stream instead of injecting into the app's flat list.
+
+- **Versions are unique per group.** Two groups may both have a
+  version 1; `Register` rejects a duplicate `(group, version)` pair.
+- **Selection.** `m.Up(ctx)` applies every registered group;
+  `m.Up(ctx, "knowledge")` applies only that group's pending
+  migrations. `Down`, `Status`, and the CLI's repeatable `--group`
+  flag scope the same way. Enabling a feature later just runs its
+  pending group — under the same advisory lock as everything else, so
+  concurrent boots stay safe.
+- **Ordering.** Within a group, strictly by version. When one run
+  applies several groups, migrations interleave in `(version, group)`
+  order — a deterministic tiebreak, **not** a dependency mechanism.
+  Keep groups self-contained: a group must never depend on another
+  group's schema, because the other group may not be enabled at all.
+- **Compatibility.** Apps that never declare a group are untouched:
+  the runner emits the exact pre-group SQL and never alters the
+  tracking table. The first time a non-default group is in play, the
+  tracking table gains a `group_name` column and its primary key is
+  upgraded in place to `(group_name, version)` — atomic on Postgres,
+  a transactional table rebuild on SQLite; existing rows all belong
+  to the default group, so the upgrade cannot conflict.
+- **Integrity.** Checksums, drift detection, and `force` all key on
+  `(group, version)`. A dirty migration in the default group or any
+  registered group blocks all operations; the error names the group.
+  A *named* group with no registered migrations at all is a disabled
+  module: its applied rows are that module's property — shown by
+  `status`, but never compared, blocked on, rolled back, or dropped.
+  (`force --group=<name>` remains the reconciliation escape hatch for
+  a disabled module's rows.) The default group is never treated as a
+  module — an applied default-group row with no matching registration
+  is drift and errors, exactly as before groups existed.
+- **Addressing the default group.** In selections — `--group` on the
+  CLI, group args in Go — the name `default` addresses the default
+  group (`m.Up(ctx, "default")`). It is reserved: `Register` rejects
+  a group literally named "default".
 
 ## Generating migrations from entity changes (declarative workflow)
 
@@ -306,10 +370,12 @@ m := migrate.New(db,
 m.Register(migrate.Migration{
     Version: 1,
     Name:    "create_posts",
+    Group:   "",  // optional; "" = default group
     Up:      "CREATE TABLE posts (...)",
     Down:    "DROP TABLE posts",
 })
-if err := m.Up(ctx); err != nil { … }
+if err := m.Up(ctx); err != nil { … }          // all groups
+if err := m.Up(ctx, "knowledge"); err != nil { … } // one group
 
 // Recovery / baseline: mark a version applied (true) or pending (false).
 if err := m.Force(ctx, 1, true); err != nil { … }
@@ -348,8 +414,11 @@ CREATE TABLE _migrations (
 
 Created lazily on first `Up`/`Down`/`Status` call. The `checksum` and
 `dirty` columns are backfilled automatically onto tables created by an
-older GoFastr, so upgrading is seamless. Never edit the table by hand —
-use `migrate force` to reconcile state instead.
+older GoFastr, so upgrading is seamless. When migration groups are in
+use, the table additionally gains `group_name TEXT NOT NULL DEFAULT ''`
+and the primary key becomes `(group_name, version)` — upgraded in
+place the first time a non-default group is applied. Never edit the
+table by hand — use `migrate force` to reconcile state instead.
 
 ## Auto-migrate path
 

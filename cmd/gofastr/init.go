@@ -548,7 +548,7 @@ func RegisterAll(app *framework.App) {
 
 // RegisterMigrations registers all entity migrations.
 func RegisterMigrations(m *migrate.Migrator) {
-	m.Register(migrate.Migration{
+	if err := m.Register(migrate.Migration{
 		Version: 1,
 		Name:    "create_posts",
 		Up: ` + "`" + `CREATE TABLE IF NOT EXISTS posts (
@@ -560,7 +560,9 @@ func RegisterMigrations(m *migrate.Migrator) {
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)` + "`" + `,
 		Down: ` + "`" + `DROP TABLE IF EXISTS posts` + "`" + `,
-	})
+	}); err != nil {
+		panic(err)
+	}
 }
 
 func ptrFloat(f float64) *float64 { return &f }
