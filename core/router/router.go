@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,22 @@ type Router struct {
 	// invalidates every per-route cached handler in the tree.
 	root         *Router
 	chainVersion atomic.Uint64
+
+	// registerHook, when set on the ROOT router, is called for every
+	// Handle call in the tree (subgroups funnel to root because pattern
+	// recording at router.go:98 already targets r.root). Framework code
+	// uses it to attribute routes to the module whose Init registered
+	// them. Nil = no-op, zero overhead.
+	registerHook func(method, pattern string)
+
+	// routeGate, when set on the ROOT router, is checked in
+	// cachedRoute.ServeHTTP BEFORE the middleware chain runs. Returning
+	// false produces a plain 404 — used by the framework to gate routes
+	// owned by a disabled module. The argument is the "METHOD /path"
+	// key so two modules owning different methods on the same path are
+	// gated independently. Read under r.mu. Nil = no gate. Stored on
+	// root so a single Set call configures the whole tree.
+	routeGate func(pattern string) bool
 }
 
 // RegisteredRoute is the (method, pattern) pair returned by
@@ -74,7 +91,7 @@ func New() *Router {
 func (r *Router) Handle(method, pattern string, handler http.Handler) {
 	fullPath := r.prefix + pattern
 	fullPattern := method + " " + fullPath
-	route := &cachedRoute{raw: handler, router: r}
+	route := &cachedRoute{raw: handler, router: r, method: method, pattern: fullPath}
 	// net/http's ServeMux panics with a terse "conflicts with pattern" message
 	// when two registrations want the same path. That's a common, confusing
 	// failure — e.g. an auto-generated CRUD route and a page/screen both want
@@ -97,6 +114,36 @@ func (r *Router) Handle(method, pattern string, handler http.Handler) {
 	// registered under the tree, including via Groups.
 	r.root.mu.Lock()
 	r.root.patterns = append(r.root.patterns, RegisteredRoute{Method: method, Pattern: fullPath})
+	hook := r.root.registerHook
+	r.root.mu.Unlock()
+	if hook != nil {
+		hook(method, fullPath)
+	}
+}
+
+// SetRegisterHook installs a callback fired for every Handle call across
+// the router tree (subgroups funnel to root). Framework code uses it to
+// attribute routes to the module whose Init registered them. Pass nil to
+// clear. Must be called on the root router; setting on a child forwards
+// to root.
+func (r *Router) SetRegisterHook(fn func(method, pattern string)) {
+	r.root.mu.Lock()
+	r.root.registerHook = fn
+	r.root.mu.Unlock()
+}
+
+// SetRouteGate installs a gate checked before the middleware chain for
+// every matched route. The argument is the "METHOD /path" key (e.g.
+// "GET /users/{id}") so two modules owning different methods on the
+// same path are gated independently. Returning false produces a plain
+// 404 (not 403 — a disabled module's existence must not leak). The gate
+// is also consulted on the 405 path to exclude gated methods from the
+// Allow header. Framework code uses it to gate routes owned by a
+// disabled module. Pass nil to clear. Must be called on the root router;
+// setting on a child forwards to root.
+func (r *Router) SetRouteGate(fn func(pattern string) bool) {
+	r.root.mu.Lock()
+	r.root.routeGate = fn
 	r.root.mu.Unlock()
 }
 
@@ -228,42 +275,44 @@ func (r *Router) RoutesFiltered(hide func(RegisteredRoute) bool) []RegisteredRou
 	}
 	out := make([]RegisteredRoute, 0, len(all))
 	for _, rt := range all {
-		if hide(rt) {
-			continue
+		if !hide(rt) {
+			out = append(out, rt)
 		}
-		out = append(out, rt)
 	}
 	return out
 }
 
-// Use adds middleware to the router. Middleware is applied in the order
-// they are added: the first middleware is the outermost wrapper.
-//
-// Safe to call concurrently with in-flight ServeHTTP — the mutation is
-// guarded by an RWMutex. Bumps the root chain-version so every cached
-// per-route handler in the tree recomposes on the next request.
-func (r *Router) Use(mw ...Middleware) {
-	if len(mw) == 0 {
-		return
-	}
-	r.mu.Lock()
-	r.middlewares = append(r.middlewares, mw...)
-	r.mu.Unlock()
-	r.root.chainVersion.Add(1)
-}
-
 // cachedRoute holds a registered route's raw handler plus an atomically
 // cached version of it composed with the current middleware chain. The
-// cache invalidates whenever the root router's chain-version moves.
 type cachedRoute struct {
-	raw       http.Handler
-	router    *Router
+	raw    http.Handler
+	router *Router
+	method string // HTTP method (combined with pattern to form the gate key)
+	// pattern is the full path pattern (prefix-joined, no method).
+	// The gate key is method + " " + pattern so two modules can own
+	// different methods on the same path independently.
+	pattern   string
 	cached    atomic.Pointer[http.Handler]
 	cachedV   atomic.Uint64
 	composeMu sync.Mutex
 }
 
 func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Route gate fires BEFORE the middleware chain so a disabled module's
+	// path doesn't leak through auth, logging, or recovery. The gate key
+	// is method + " " + pattern so two modules owning different methods
+	// on the same path are gated independently. Read under RLock to avoid
+	// a data race with SetRouteGate.
+	c.router.root.mu.RLock()
+	gate := c.router.root.routeGate
+	c.router.root.mu.RUnlock()
+	if gate != nil {
+		key := c.method + " " + c.pattern
+		if !gate(key) {
+			http.NotFound(w, req)
+			return
+		}
+	}
 	curVer := c.router.root.chainVersion.Load()
 	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
 		(*h).ServeHTTP(w, req)
@@ -330,76 +379,117 @@ func (r *Router) NotFound(handler http.Handler) {
 }
 
 // NOTE: Go 1.22+ ServeMux handles 405 Method Not Allowed responses
-// natively. There is no way to intercept or customise this behaviour
-// through ServeMux, so a MethodNotAllowed API has been intentionally
-// omitted. If you need custom 405 handling, wrap the Router with
-// middleware that checks r.Pattern after ServeHTTP returns.
+// natively. When a route gate is active, we intercept the 405 path to
+// exclude gated-off methods from the Allow header so a disabled module's
+// methods are not advertised.
 
 // ServeHTTP implements http.Handler. It dispatches requests through the
-// underlying ServeMux. If no route matches and a custom notFound handler
-// is set, it delegates to that handler (already a cachedRoute, so the
-// chain composition is memoised between Use bumps).
+// underlying ServeMux. If no route matches, it distinguishes a genuine
+// 404 from a method mismatch (405): when the path exists under some
+// non-gated method, it emits a 405 with the filtered Allow header;
+// otherwise it falls through to the custom NotFound handler (if any)
+// or the mux's native 404.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	_, pattern := r.mux.Handler(req)
 
 	if pattern == "" {
 		// ServeMux returns an empty pattern for BOTH a genuine 404 and a
-		// method mismatch (405). A custom NotFound handler must only
-		// shadow the former — otherwise it masks the mux's native
-		// "405 Method Not Allowed, Allow: …" response and silently
-		// downgrades RFC 7231 method semantics to a 404.
-		if nf := r.effectiveNotFound(); nf != nil && !r.isMethodMismatch(req) {
+		// method mismatch (405). allowedMethods resolves the path against
+		// non-gated routes only: a non-empty set means the path exists
+		// under some live method but the request's method isn't one of
+		// them → 405; an empty set means genuine 404 (or all methods are
+		// gated, which is indistinguishable from 404 by design).
+		allowed := r.allowedMethods(req)
+		if len(allowed) > 0 {
+			w.Header().Set("Allow", strings.Join(allowed, ", "))
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed),
+				http.StatusMethodNotAllowed)
+			return
+		}
+		// No non-gated methods match → 404. Use the custom NotFound
+		// handler if set; otherwise a plain 404. We deliberately do NOT
+		// fall through to the mux here: the mux would produce a 405 with
+		// the full Allow header for a path that exists only under gated
+		// methods, leaking the disabled module's registered methods.
+		if nf := r.effectiveNotFound(); nf != nil {
 			nf.ServeHTTP(w, req)
 			return
 		}
-		r.mux.ServeHTTP(w, req)
+		http.NotFound(w, req)
 		return
 	}
 
 	r.mux.ServeHTTP(w, req)
 }
 
-// isMethodMismatch reports whether req's path is registered under some
-// other method (the 405 case) rather than being genuinely unknown (404).
-//
-// Go's ServeMux returns an empty pattern from Handler for BOTH cases and
-// will only resolve a probe request whose method is actually registered,
-// so probing the real mux with a substitute method is unreliable. Instead
-// we build a method-agnostic mux from the recorded patterns (path only)
-// and ask whether the request path matches any of them; a match means the
-// path exists, so the original "" was a method mismatch (405), not a 404.
+// allowedMethods returns the set of HTTP methods registered for the
+// request's path, EXCLUDING methods whose route is gated-off. An empty
+// result means the path either doesn't exist or all its methods are
+// gated — in both cases a 404 is appropriate. A non-empty result means
+// the path exists under some non-gated method but the request's own
+// method isn't one of them — a 405 with the filtered Allow header.
 //
 // This runs only on the cold 404/405 fallback path, never on a matched
 // route, so the per-call mux build is not on the request hot path.
-func (r *Router) isMethodMismatch(req *http.Request) bool {
+func (r *Router) allowedMethods(req *http.Request) []string {
 	r.root.mu.RLock()
-	patterns := make([]RegisteredRoute, len(r.root.patterns))
-	copy(patterns, r.root.patterns)
+	allPatterns := make([]RegisteredRoute, len(r.root.patterns))
+	copy(allPatterns, r.root.patterns)
+	gate := r.root.routeGate
 	r.root.mu.RUnlock()
-	if len(patterns) == 0 {
-		return false
+	if len(allPatterns) == 0 {
+		return nil
 	}
 
+	// Build a method-agnostic probe mux from non-gated patterns only,
+	// and track which methods each path pattern has.
 	probeMux := http.NewServeMux()
 	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
-	seen := make(map[string]struct{}, len(patterns))
-	for _, rt := range patterns {
-		// Register the path with NO method constraint, deduped, and guard
-		// against a malformed pattern panicking the probe.
-		if _, dup := seen[rt.Pattern]; dup {
-			continue
+	methodsByPath := make(map[string][]string)
+	registered := make(map[string]bool)
+	for _, rt := range allPatterns {
+		if gate != nil {
+			key := rt.Method + " " + rt.Pattern
+			if !gate(key) {
+				continue // gated route excluded from Allow set
+			}
 		}
-		seen[rt.Pattern] = struct{}{}
-		func() {
-			defer func() { _ = recover() }()
-			probeMux.Handle(rt.Pattern, noop)
-		}()
+		methodsByPath[rt.Pattern] = append(methodsByPath[rt.Pattern], rt.Method)
+		if !registered[rt.Pattern] {
+			registered[rt.Pattern] = true
+			func() {
+				defer func() { _ = recover() }()
+				probeMux.Handle(rt.Pattern, noop)
+			}()
+		}
 	}
 
 	probe := req.Clone(req.Context())
 	probe.Method = http.MethodGet
-	_, p := probeMux.Handler(probe)
-	return p != ""
+	_, matchedPattern := probeMux.Handler(probe)
+	if matchedPattern == "" {
+		return nil // path doesn't match any non-gated route
+	}
+
+	methods := methodsByPath[matchedPattern]
+	sort.Strings(methods)
+	return methods
+}
+
+// Use adds middleware to the router. Middleware is applied in the order
+// they are added: the first middleware is the outermost wrapper.
+//
+// Safe to call concurrently with in-flight ServeHTTP — the mutation is
+// guarded by an RWMutex. Bumps the root chain-version so every cached
+// per-route handler in the tree recomposes on the next request.
+func (r *Router) Use(mw ...Middleware) {
+	if len(mw) == 0 {
+		return
+	}
+	r.mu.Lock()
+	r.middlewares = append(r.middlewares, mw...)
+	r.mu.Unlock()
+	r.root.chainVersion.Add(1)
 }
 
 // effectiveChain returns the full middleware chain for this router,

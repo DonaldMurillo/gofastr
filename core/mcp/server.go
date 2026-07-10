@@ -35,6 +35,17 @@ type Server struct {
 	// (serverInfo). Defaults set in NewServer; override via SetServerInfo.
 	name    string
 	version string
+
+	// registerHook, when set, is called for every RegisterTool call.
+	// Framework code uses it to attribute tools to the module whose Init
+	// registered them. Nil = no-op.
+	registerHook func(toolName string)
+
+	// callGate, when set, is checked in callTool right after getTool.
+	// A non-nil error blocks the handler and returns a JSON-RPC error
+	// result without invoking the tool. Framework code uses it to gate
+	// tools owned by a disabled module.
+	callGate func(toolName string) error
 }
 
 // NewServer creates a new MCP server with an empty tool registry.
@@ -73,6 +84,25 @@ func (s *Server) ServerInfo() (name, version string) {
 	return s.name, s.version
 }
 
+// SetRegisterHook installs a callback fired for every RegisterTool call.
+// Framework code uses it to attribute tools to the module whose Init
+// registered them. Pass nil to clear.
+func (s *Server) SetRegisterHook(fn func(toolName string)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.registerHook = fn
+}
+
+// SetCallGate installs a gate checked in callTool right after the tool
+// is resolved. A non-nil error blocks the handler and returns a JSON-RPC
+// error result. Framework code uses it to gate tools owned by a disabled
+// module. Pass nil to clear.
+func (s *Server) SetCallGate(fn func(toolName string) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.callGate = fn
+}
+
 // RegisterTool adds a tool to the server's registry.
 // Returns an error if a tool with the same name already exists.
 func (s *Server) RegisterTool(name, description string, inputSchema map[string]any, fn ToolHandler) error {
@@ -84,9 +114,9 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if _, exists := s.tools[name]; exists {
+		s.mu.Unlock()
 		return fmt.Errorf("mcp: tool %q already registered", name)
 	}
 
@@ -95,6 +125,11 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 		Description: description,
 		InputSchema: inputSchema,
 		Handler:     fn,
+	}
+	hook := s.registerHook
+	s.mu.Unlock()
+	if hook != nil {
+		hook(name)
 	}
 	return nil
 }
@@ -107,19 +142,26 @@ func (s *Server) getTool(name string) (Tool, bool) {
 	return t, ok
 }
 
-// ListTools returns all registered tools (handlers are nilled out for safety).
-// This is the exported version of listTools for external consumption.
+// ListTools returns all registered tools whose call gate (if set)
+// allows them. Tools owned by a disabled module are excluded. Handlers
+// are nilled out for safety. This is the exported version of listTools.
 func (s *Server) ListTools() []Tool {
 	return s.listTools()
 }
 
-// listTools returns all registered tools (without handlers).
+// listTools returns all registered tools (without handlers), excluding
+// any whose call gate refuses them (e.g. tools owned by a disabled
+// module).
 func (s *Server) listTools() []Tool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	gate := s.callGate
 	tools := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
+		if gate != nil && gate(t.Name) != nil {
+			continue // gated tool excluded from listing
+		}
 		tools = append(tools, t)
 	}
 	return tools
@@ -140,6 +182,22 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		return nil, &RPCError{
 			Code:    ErrMethodNotFound,
 			Message: fmt.Sprintf("tool %q not found", name),
+		}
+	}
+
+	// Call gate: framework code uses this to block tools owned by a
+	// disabled module. Read under RLock to avoid a data race with
+	// SetCallGate. The refusal message is deliberately generic — it
+	// must not name the module or its disabled state.
+	s.mu.RLock()
+	gate := s.callGate
+	s.mu.RUnlock()
+	if gate != nil {
+		if err := gate(name); err != nil {
+			return nil, &RPCError{
+				Code:    ErrInternalError,
+				Message: "tool unavailable",
+			}
 		}
 	}
 
