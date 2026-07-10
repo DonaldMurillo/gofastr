@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-10
+
 ### Added
 
 - **Module manifests + runtime enable/disable (#35).** A Module is a
