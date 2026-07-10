@@ -119,3 +119,26 @@ The setup cookie is marked `Secure` when the request arrived over TLS
 or with `X-Forwarded-Proto: https`; plain-http LAN installs work
 without ceremony. If a TLS-terminating proxy fronts the app, forward
 that header (every mainstream proxy does by default).
+
+## Common mistakes
+
+- **A `Complete` predicate that doesn't observe the steps' writes.**
+  E.g. `AdminStep(mgr, db, "users")` while the auth battery writes to
+  `auth_users` — every step succeeds but setup stays incomplete, and
+  the wizard tells you so instead of showing the completion page. Pass
+  the table your auth store actually writes to.
+- **Writing a marker file to record completion.** Completion is
+  derived state on purpose: a marker file survives a crash mid-setup
+  and would boot a half-bootstrapped app straight into serving. Derive
+  it from the data the steps create.
+- **Sharing the setup URL with the token in it.** The token is
+  single-use — the first visit exchanges it for a cookie and
+  invalidates the URL form. A second person following the same link
+  gets a 403; restart the app to mint a fresh token.
+- **Expecting cron/queue/outbox work during setup.** Background
+  consumers deliberately wait for the handler swap. If a step needs a
+  side effect, do it in the step's `Run`.
+- **`GOFASTR_SETUP=off` as a "fix" for a stuck wizard.** It declares
+  bootstrap is handled elsewhere and boots the app with `Complete`
+  still false. Fix the predicate or the step instead; use `force` to
+  re-enter the wizard on a completed install.

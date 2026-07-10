@@ -24,6 +24,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/battery/print"
 	_ "github.com/DonaldMurillo/gofastr/battery/queue"
 	_ "github.com/DonaldMurillo/gofastr/battery/search"
+	_ "github.com/DonaldMurillo/gofastr/battery/setup"
 	_ "github.com/DonaldMurillo/gofastr/battery/storage"
 	_ "github.com/DonaldMurillo/gofastr/battery/webhook"
 	_ "github.com/DonaldMurillo/gofastr/framework"
