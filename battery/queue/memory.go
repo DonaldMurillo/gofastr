@@ -37,6 +37,12 @@ type MemoryQueue struct {
 	closed         bool
 	done           chan struct{}
 
+	// gate, when set, is checked in processJob after handlerFor. A false
+	// return re-enqueues the job with a short delay so it runs when the
+	// module re-enables. Framework code uses it to defer jobs owned by a
+	// disabled module.
+	gate func(jobType string) bool
+
 	// holdover stores jobs that were drained by a type-filtered Dequeue but
 	// could not be re-enqueued onto the bounded jobChan because it was full at
 	// re-enqueue time (concurrent producers refilled it during the drain). It
@@ -46,8 +52,8 @@ type MemoryQueue struct {
 	holdover   []Job
 
 	// inflight tracks jobs handed out by Dequeue but not yet Ack'd/Nack'd, so
-	// Nack(jobID) can re-enqueue the right job. Guarded by inflightMu. The
-	// automatic worker pool processes jobs in-line and never touches this map.
+	// Nack(jobID) can re-enqueue the right job. The automatic worker pool
+	// processes jobs in-line and never touches this map.
 	inflightMu sync.Mutex
 	inflight   map[string]Job
 
@@ -90,6 +96,16 @@ func (q *MemoryQueue) RegisterHandler(jobType string, handler Handler) {
 	q.handlers[jobType] = handler
 }
 
+// SetGate installs a gate checked in processJob after handlerFor. When
+// gate returns false the job is re-enqueued with a short delay so it
+// runs when the module re-enables. Framework code uses it to defer jobs
+// owned by a disabled module. Pass nil to clear.
+func (q *MemoryQueue) SetGate(gate func(jobType string) bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.gate = gate
+}
+
 // Start launches the worker goroutines. Must be called before enqueuing jobs
 // if you want automatic processing. Workers will call the registered handlers.
 func (q *MemoryQueue) Start() {
@@ -109,10 +125,19 @@ func (q *MemoryQueue) worker() {
 func (q *MemoryQueue) processJob(job Job) {
 	q.mu.RLock()
 	handler, ok := q.handlers[job.Type]
+	gate := q.gate
 	q.mu.RUnlock()
 
 	if !ok {
 		// No handler registered — nothing to do.
+		return
+	}
+
+	// Gate: defer jobs whose owning module is disabled. Re-enqueue after
+	// a short delay so the job runs when the module re-enables without
+	// hot-looping the worker.
+	if gate != nil && !gate(job.Type) {
+		q.deferGated(job)
 		return
 	}
 
@@ -323,6 +348,30 @@ func (q *MemoryQueue) popHoldover() (Job, bool) {
 	job := q.holdover[0]
 	q.holdover = q.holdover[1:]
 	return job, true
+}
+
+// deferGated re-enqueues a gate-deferred job after gateDeferDelay,
+// re-arming itself while the bounded channel is full. The holdover slice
+// is NOT a valid parking spot here: in worker-pool mode nothing drains
+// it (only manual Dequeue does), so a job parked there would strand
+// until restart. Re-arming keeps the job live until the channel has
+// room or the queue closes.
+func (q *MemoryQueue) deferGated(job Job) {
+	time.AfterFunc(gateDeferDelay, func() {
+		// Mirror Enqueue's safety: a deferred re-enqueue must not send
+		// on a closed channel (Close may have run after this timer was
+		// armed).
+		defer func() { _ = recover() }()
+		q.mu.RLock()
+		closed := q.closed
+		q.mu.RUnlock()
+		if closed {
+			return
+		}
+		if err := q.enqueueInternal(job); err != nil {
+			q.deferGated(job)
+		}
+	})
 }
 
 // randomID generates a 16-byte hex string ID.

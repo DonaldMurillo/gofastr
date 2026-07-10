@@ -55,6 +55,11 @@ type Scheduler struct {
 	started   bool           // set under mu inside Start; gates Stop's wait on stopped
 	inflight  sync.WaitGroup // one Add per job goroutine; Stop/StopContext join it
 	OnError   func(jobName string, err error)
+
+	// gate, when set, is checked in RunOnce for every firing job before
+	// inflight.Add. Returning false skips the job for this tick.
+	// Framework code uses it to skip jobs owned by a disabled module.
+	gate func(jobName string) bool
 }
 
 type scheduledJob struct {
@@ -91,6 +96,15 @@ func (s *Scheduler) Register(job CronJob) error {
 	s.jobs = append(s.jobs, scheduledJob{job: job, expr: expr})
 	s.mu.Unlock()
 	return nil
+}
+
+// SetGate installs a gate checked in RunOnce for every firing job. When
+// gate returns false the job is skipped for this tick. Framework code
+// uses it to skip jobs owned by a disabled module. Pass nil to clear.
+func (s *Scheduler) SetGate(gate func(jobName string) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gate = gate
 }
 
 // Start begins the tick loop in a goroutine. Returns immediately. Idempotent:
@@ -164,6 +178,9 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 			continue
 		}
 		job := sj.job
+		if s.gate != nil && !s.gate(job.Name) {
+			continue
+		}
 		s.inflight.Add(1)
 		go func(j CronJob) {
 			defer s.inflight.Done()

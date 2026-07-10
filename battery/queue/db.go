@@ -31,10 +31,16 @@ type DBQueue struct {
 	stop           chan struct{}
 	stopped        chan struct{}
 
-	// mu guards post-construction mutation of handlers and lease so that
-	// RegisterHandler/SetLeaseTimeout can race safely against the worker
-	// loop's reads (workerLoop, eligibleWhere).
+	// mu guards post-construction mutation of handlers, lease, and gate so
+	// that RegisterHandler/SetLeaseTimeout/SetGate can race safely against
+	// the worker loop's reads (workerLoop, eligibleWhere).
 	mu sync.RWMutex
+
+	// gate, when set, is checked in the worker loop after handlerFor. A
+	// false return defers the job (release back to pending without consuming
+	// a retry) rather than processing it. Framework code uses it to defer
+	// jobs owned by a disabled module.
+	gate func(jobType string) bool
 
 	// Retry backoff. When backoffBase > 0, a Nack with retries remaining
 	// advances scheduled_at by backoffBase*2^(attempts-1), capped at
@@ -198,6 +204,37 @@ func (q *DBQueue) SetLeaseTimeout(d time.Duration) {
 	q.lease = d
 }
 
+// SetGate installs a gate checked in the worker loop after a handler is
+// resolved. When gate returns false the job is released back to pending
+// (without consuming a retry attempt) and rescheduled slightly into the
+// future to avoid a hot loop. Framework code uses it to defer jobs owned
+// by a disabled module. Pass nil to clear.
+func (q *DBQueue) SetGate(gate func(jobType string) bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.gate = gate
+}
+
+// release returns a claimed job to pending without consuming a retry
+// attempt (attempts is decremented to undo the Dequeue bump). The job's
+// scheduled_at is pushed forward by gateDeferDelay so the worker doesn't
+// immediately re-claim it in a tight loop.
+func (q *DBQueue) release(ctx context.Context, jobID string) error {
+	_, err := q.db.ExecContext(ctx,
+		fmt.Sprintf(`UPDATE %s SET status='pending',
+			attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+			scheduled_at = $1
+			WHERE id = $2`, q.qt()),
+		q.now().UTC().Add(gateDeferDelay), jobID)
+	return err
+}
+
+// gateDeferDelay is how far into the future a gate-deferred job's
+// scheduled_at is pushed. Short enough that re-enabling a module picks
+// up deferred jobs within a second, long enough to break a tight
+// dequeue→release→dequeue loop.
+const gateDeferDelay = 100 * time.Millisecond
+
 // leaseTimeout returns the current lease duration under the read lock.
 func (q *DBQueue) leaseTimeout() time.Duration {
 	q.mu.RLock()
@@ -218,6 +255,30 @@ func (q *DBQueue) handlerTypes() []string {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 	return keys(q.handlers)
+}
+
+// eligibleTypes returns registered job types whose gate (if set) allows
+// processing, so gated types are excluded before Dequeue and their rows are
+// never claimed — eliminating the claim/release churn of grabbing a job only
+// to release it. Both the handler map snapshot and the gate are read under
+// the read lock so the result is consistent and race-free against concurrent
+// SetGate/RegisterHandler. The captured gate function value is then invoked
+// outside the lock (SetGate swaps the pointer, never mutates the old func).
+func (q *DBQueue) eligibleTypes() []string {
+	q.mu.RLock()
+	types := keys(q.handlers)
+	gate := q.gate
+	q.mu.RUnlock()
+	if gate == nil {
+		return types
+	}
+	out := types[:0]
+	for _, t := range types {
+		if gate(t) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // Enqueue inserts a job. Fills in ID/CreatedAt/MaxAttempts/ScheduledAt
@@ -580,6 +641,21 @@ func (q *DBQueue) runWorker(ctx context.Context) (clean bool) {
 
 func (q *DBQueue) workerLoop(ctx context.Context) {
 	backoff := 100 * time.Millisecond
+	// wait sleeps for backoff, or returns true if the queue is stopping or
+	// the context was cancelled. Shared by the no-eligible-types and
+	// ErrNoJob paths so both back off the same way.
+	wait := func() bool {
+		t := time.NewTimer(backoff)
+		defer t.Stop()
+		select {
+		case <-q.stop:
+			return true
+		case <-ctx.Done():
+			return true
+		case <-t.C:
+			return false
+		}
+	}
 	for {
 		select {
 		case <-q.stop:
@@ -588,18 +664,23 @@ func (q *DBQueue) workerLoop(ctx context.Context) {
 			return
 		default:
 		}
-		job, err := q.Dequeue(ctx, q.handlerTypes()...)
+		// Filter gated types out of the eligible set BEFORE Dequeue so
+		// gated jobs are never claimed — eliminating the claim/release
+		// churn that would otherwise fire every ~100ms. When every
+		// registered type is gated (or none are registered yet) there is
+		// nothing to claim; back off and retry.
+		types := q.eligibleTypes()
+		if len(types) == 0 {
+			if wait() {
+				return
+			}
+			continue
+		}
+		job, err := q.Dequeue(ctx, types...)
 		if err != nil {
 			// ErrNoJob is the steady state — sleep briefly and retry.
-			t := time.NewTimer(backoff)
-			select {
-			case <-q.stop:
-				t.Stop()
+			if wait() {
 				return
-			case <-ctx.Done():
-				t.Stop()
-				return
-			case <-t.C:
 			}
 			continue
 		}
@@ -607,6 +688,19 @@ func (q *DBQueue) workerLoop(ctx context.Context) {
 		if !ok {
 			// No handler — drop the row so it doesn't loop forever.
 			_ = q.Ack(ctx, job.ID)
+			continue
+		}
+		// Gate race window: the gate may flip from allow to deny between
+		// eligibleTypes() and this Dequeue claim. Re-check the gate under
+		// the read lock (M4: every q.gate read is lock-protected) and, if
+		// now gated, release the job back to pending without consuming a
+		// retry. release() pushes scheduled_at forward so the worker
+		// doesn't immediately re-claim it.
+		q.mu.RLock()
+		gate := q.gate
+		q.mu.RUnlock()
+		if gate != nil && !gate(job.Type) {
+			_ = q.release(ctx, job.ID)
 			continue
 		}
 		if err := q.runHandler(ctx, h, job); err != nil {
