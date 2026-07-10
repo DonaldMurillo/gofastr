@@ -61,6 +61,12 @@ func (a *App) registerIntrospectionTools() error {
 			handler:     a.toolBatteries,
 		},
 		{
+			name:        "app_modules",
+			description: "List registered modules with their manifest metadata (version, description, dependencies, migration group), enabled state, and owned surface counts (routes, entities, MCP tools). Modules are batteries that carry a manifest and support runtime enable/disable.",
+			schema:      map[string]any{"type": "object"},
+			handler:     a.toolModules,
+		},
+		{
 			name:        "app_config",
 			description: "Return the current AppConfig snapshot: Name, JSONCase, DebugEndpoints, NoLLMMD, RequestTimeout, DisableRequestTimeout. Read-only.",
 			schema:      map[string]any{"type": "object"},
@@ -154,6 +160,28 @@ func (a *App) toolBatteries(_ context.Context, _ map[string]any) (any, error) {
 	return map[string]any{
 		"batteries": out,
 		"count":     len(out),
+	}, nil
+}
+
+func (a *App) toolModules(_ context.Context, _ map[string]any) (any, error) {
+	mods := a.Modules().List()
+	out := make([]map[string]any, 0, len(mods))
+	for _, m := range mods {
+		out = append(out, map[string]any{
+			"name":            m.Name,
+			"version":         m.Version,
+			"description":     m.Description,
+			"depends_on":      m.DependsOn,
+			"migration_group": m.MigrationGroup,
+			"enabled":         m.Enabled,
+			"entity_count":    m.EntityCount,
+			"route_count":     m.RouteCount,
+			"tool_count":      m.ToolCount,
+		})
+	}
+	return map[string]any{
+		"modules": out,
+		"count":   len(out),
 	}, nil
 }
 

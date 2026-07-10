@@ -86,6 +86,7 @@ var docIntents = []docIntent{
 			{"notifications", "Notifications", "Multi-channel fan-out with per-channel templates."},
 			{"batch-endpoints", "Batch endpoints", "Create / update / delete many rows in one request."},
 			{"plugins", "Plugins", "The lifecycle every battery and feature plugs into."},
+			{"modules", "Modules", "Runtime enable/disable for batteries with manifests."},
 		},
 	},
 	{

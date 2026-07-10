@@ -238,7 +238,7 @@ Out-of-contract (NOT part of the layering rules below):
 
 The root package `framework/` itself contains:
 
-- **App spine**: `app.go`, `plugin.go`, `battery.go`, `registry.go`, `typed_hooks.go`
+- **App spine**: `app.go`, `plugin.go`, `battery.go`, `module.go`, `registry.go`, `typed_hooks.go`
 - **App-method-tied helpers**: `audit.go` (App.WithAuditLog),
   `tx.go` (App.InTx), `flags.go` (App feature-flag store),
   `health.go` (App health/readiness probes), `i18n.go` (App.WithI18n / T),
@@ -298,6 +298,7 @@ either require an API redesign or create an unbreakable import cycle.
 | `app.go` | Defines `App` itself plus all `(a *App)` configuration methods. The package whose name is on the import path is by definition where App lives. |
 | `plugin.go` | `Plugin` interface + `PluginManager` consumed by `App.RegisterPlugin`. Both Plugin and Battery use a single `Init(*App)` integration point; the router late-binds middleware so anything Init does wraps existing routes. |
 | `battery.go` | `Battery` interface + `BatteryManager` consumed by `App.RegisterBattery`. Same single-Init shape as plugin, plus dependency-resolved init order and an optional `BatteryLifecycle` for OnStart/OnStop. |
+| `module.go` | `Module` interface + `ModuleManager` consumed by `App.RegisterModule`. Module embeds Battery and adds a manifest; the manager holds enable/disable state and the attribution maps (route→module, tool→module) that the dispatch gates read on every request. Bound to App the same way battery.go is. |
 | `registry.go` | `Registry` is concrete state (`*sql.DB`, entity map). Subpackages reference it through the `entity.Registry` interface instead. |
 | `typed_hooks.go` | Generic `OnBeforeCreate[T any](app *App, …)` etc. Take `*App` directly; their type signatures live with App. |
 | `audit.go` | `(a *App) WithAuditLog(...)` is the public entry; the rest of the file (table creation, hook closures) is intrinsically tied to it. Could be split if the closures move out, but the win is small. |

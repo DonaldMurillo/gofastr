@@ -129,6 +129,10 @@ type App struct {
 
 	Batteries *BatteryManager
 
+	// modules manages registered modules and their enable/disable state.
+	// Created in NewApp; nil-safe (NewModuleManager always returns non-nil).
+	modules *ModuleManager
+
 	serverMu   sync.Mutex // guards server + appCtx/appCancel — Start writes, Shutdown reads/nils
 	server     *http.Server
 	events     *event.EventBus
@@ -952,6 +956,30 @@ func NewApp(opts ...AppOption) *App {
 		})
 	}
 
+	// Create the module manager (SQL store when DB is set, in-memory
+	// otherwise) and wire the attribution hooks. The router register
+	// hook stamps pattern→module during Init; the route gate returns 404
+	// for disabled-module routes before the middleware chain runs. The
+	// MCP register hook and call gate do the same for tools.
+	a.modules = NewModuleManager(a.DB, a.fanout)
+	a.router.SetRegisterHook(func(method, pattern string) {
+		a.modules.recordRoute(method, pattern)
+	})
+	a.router.SetRouteGate(func(key string) bool {
+		return a.modules.routeAllowed(key)
+	})
+	a.MCP.SetRegisterHook(func(toolName string) {
+		a.modules.recordTool(toolName)
+	})
+	a.MCP.SetCallGate(func(toolName string) error {
+		return a.modules.toolAllowed(toolName)
+	})
+	if a.fanout != nil {
+		if err := a.modules.subscribeFanout(); err != nil {
+			panic("framework: module fanout subscribe: " + err.Error())
+		}
+	}
+
 	// WithIdempotency / WithI18n add entries to the default chain; if
 	// the caller also passed WithoutDefaultMiddleware they would never
 	// appear. Surface the misconfiguration immediately rather than
@@ -1032,6 +1060,11 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 			err = fmt.Errorf("entity %q: %v", name, r)
 		}
 	}()
+
+	// Attribute the entity to the module whose Init is running (if any).
+	if a.modules != nil {
+		a.modules.recordEntity(name)
+	}
 
 	// Registration-time validation: SeedFS without SeedPath is a
 	// misconfiguration that would otherwise silently mark the entity
@@ -1361,6 +1394,12 @@ func (a *App) InitPlugins() error {
 		a.initialized.Store(false)
 		return err
 	}
+	// Load module enable/disable state from the store into the in-memory
+	// cache. Modules absent from the store default to enabled.
+	if err := a.modules.loadFromStore(context.Background()); err != nil {
+		a.initialized.Store(false)
+		return err
+	}
 	// Probe both plugins and batteries for the optional
 	// ReadinessRegistrar interface so they can publish health checks
 	// before /readyz mounts in Start.
@@ -1488,6 +1527,11 @@ func (a *App) AddCron(s *cron.Scheduler) *App {
 	if !a.runsWorkers() {
 		return a
 	}
+	// If called during a module's Init, set the scheduler's gate so
+	// jobs skip when the owning module is disabled.
+	if mod := a.modules.currentModule(); mod != "" {
+		s.SetGate(a.modules.cronGate(mod))
+	}
 	a.OnStart(func(ctx context.Context) error {
 		s.Start(ctx)
 		return nil
@@ -1517,6 +1561,14 @@ type schedulerStartStop interface {
 func (a *App) AddQueue(q schedulerStartStop) *App {
 	if !a.runsWorkers() {
 		return a
+	}
+	// If called during a module's Init, duck-type SetGate on the queue
+	// value (mirrors the SetFanout precedent in Mount). The gate defers
+	// jobs whose owning module is disabled.
+	if mod := a.modules.currentModule(); mod != "" {
+		if g, ok := q.(interface{ SetGate(func(string) bool) }); ok {
+			g.SetGate(a.modules.queueGate(mod))
+		}
 	}
 	a.OnStart(func(ctx context.Context) error {
 		q.Start(ctx)

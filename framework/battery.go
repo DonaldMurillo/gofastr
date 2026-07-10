@@ -208,10 +208,25 @@ func (bm *BatteryManager) InitAll(app *App) error {
 		if entry.initialized {
 			continue
 		}
+		// If this battery is a Module, mark it as the current module so
+		// the registration hooks (router, MCP) attribute routes and tools
+		// to it. Non-module batteries clear the marker. Boot is
+		// single-threaded through this loop. Nil-safe for tests that
+		// construct a BatteryManager without NewApp.
+		if app.modules != nil {
+			if _, isMod := entry.battery.(Module); isMod {
+				app.modules.setCurrent(name)
+			} else {
+				app.modules.clearCurrent()
+			}
+		}
 		if err := initBatterySafe(name, entry.battery, app); err != nil {
 			return err
 		}
 		entry.initialized = true
+	}
+	if app.modules != nil {
+		app.modules.clearCurrent()
 	}
 	return nil
 }

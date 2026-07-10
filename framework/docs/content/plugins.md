@@ -140,10 +140,12 @@ difference:
 
 - `Battery` accepts dependency declarations at registration time
   (`app.RegisterBattery(b, "needs-this")`) and runs in dependency-resolved
-  order. Use Battery when one module must initialise before another.
+  order. Use Battery when one battery must initialise before another.
 - `Battery` can also implement `BatteryLifecycle` (OnStart / OnStop)
   for structured per-battery start/stop, separate from the App-wide
   `OnStart` / `OnStop` hooks.
+- **Module**: a Battery that also needs runtime enable/disable. See
+  [Modules](modules.md) for the Module tier.
 
 For everything else, prefer `Plugin`.
 

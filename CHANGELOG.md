@@ -9,6 +9,37 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **Module manifests + runtime enable/disable (#35).** A Module is a
+  Battery plus a manifest (`ModuleManifest` with `DependsOn`,
+  `MigrationGroup`, `Version`, `Description`). Everything a module
+  registers during `Init` — routes, entities, cron jobs, queue
+  consumers, MCP tools — is attributed to the module, and a live
+  enable/disable gate is enforced at dispatch time: disabled → routes
+  404 (before auth, so existence doesn't leak; the gate keys on
+  `METHOD + " " + path` so two modules owning different methods on the
+  same path are gated independently, and 405 `Allow` headers list only
+  non-gated methods), cron jobs skip, queue jobs defer (released to
+  pending without consuming retries — they run on re-enable; gated job
+  types are filtered before claim so the DB queue never churns
+  claim/release cycles), MCP tools refuse with a generic
+  `"tool unavailable"` error and are excluded from `tools/list`.
+  Toggling is persisted (`gofastr_modules` table when a DB is set,
+  in-memory otherwise; if the table cannot be created, `Start` fails
+  closed rather than silently re-enabling every disabled module),
+  fail-closed on dependencies (disable refuses if an enabled module
+  depends on it; enable refuses if a dependency is disabled; both
+  check-then-act sequences are serialized by a toggle mutex), and
+  propagates across replicas via `WithFanout` on topic
+  `gofastr.modules` with node-ID self-dedup. The fanout message is a
+  refresh signal only — the receiving replica re-reads authoritative
+  state from its store rather than trusting the payload. Attribution
+  hooks are string callbacks on `core/router` (`SetRegisterHook` /
+  `SetRouteGate`), `core/mcp` (`SetRegisterHook` / `SetCallGate`),
+  `framework/cron` (`Scheduler.SetGate`), and `battery/queue`
+  (`DBQueue.SetGate` / `MemoryQueue.SetGate`); neither core package
+  imports framework. New `app_modules` introspection tool under
+  `WithMCPIntrospection`. (#35)
+
 - **First-run setup (`battery/setup` + `framework.WithSetup`).** A
   deployed binary against an empty database now has a guided first
   boot: while the `Complete` predicate reports false, `Start` serves
