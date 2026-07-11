@@ -28,7 +28,7 @@ visibility-timeout model.
 ```go
 import "github.com/DonaldMurillo/gofastr/battery/queue"
 
-q := queue.NewMemoryQueue(4) // 4 worker goroutines
+q := queue.NewMemoryQueue(4, queue.WithLogger(logger)) // 4 workers, log failures
 
 q.RegisterHandler("send-email", func(ctx context.Context, job queue.Job) error {
     return sendEmail(ctx, job.Payload)
@@ -53,6 +53,7 @@ q, err := queue.NewDBQueue(db,
     queue.WithLeaseTimeout(2*time.Minute),
     queue.WithBackoff(5*time.Second, 5*time.Minute),
     queue.WithDBHandlerTimeout(30*time.Second), // cancel a stuck handler's ctx
+    queue.WithDBLogger(logger),                 // route failures to your logger
 )
 if err != nil {
     log.Fatal(err)
@@ -147,6 +148,12 @@ job (never silently dropped):
   evicted on overflow).
 - **DBQueue**: row status set to `'failed'`.
 - **RedisQueue**: appended to the `<queue>:dead` Redis list.
+
+`MemoryQueue` and `DBQueue` log every handler failure at WARN and every
+dead-letter at ERROR (via `slog.Default()`, or a custom logger passed as
+`WithLogger` / `WithDBLogger`) — failures are no longer silent. (`RedisQueue`
+has no built-in worker loop, so it logs nothing itself; whatever drives
+Dequeue/Ack/Nack owns its own logging.)
 
 Replay a failed job (reset attempts to 0 and re-enqueue):
 

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -26,10 +27,24 @@ func WithHandlerTimeout(d time.Duration) MemoryQueueOption {
 	}
 }
 
+// WithLogger sets the logger used for handler-failure (WARN) and
+// dead-letter (ERROR) records emitted from the worker pool. Defaults to
+// slog.Default(); passing nil restores the default. Unprefixed to match
+// the MemoryQueue's WithHandlerTimeout (the DBQueue uses WithDBLogger).
+func WithLogger(l *slog.Logger) MemoryQueueOption {
+	return func(q *MemoryQueue) {
+		if l == nil {
+			l = slog.Default()
+		}
+		q.logger = l
+	}
+}
+
 // MemoryQueue is an in-memory queue backed by a goroutine pool.
 type MemoryQueue struct {
 	workers        int
 	handlerTimeout time.Duration
+	logger         *slog.Logger
 	jobChan        chan Job
 	handlers       map[string]Handler
 	wg             sync.WaitGroup
@@ -78,6 +93,7 @@ func NewMemoryQueue(workers int, opts ...MemoryQueueOption) *MemoryQueue {
 	q := &MemoryQueue{
 		workers:        workers,
 		handlerTimeout: defaultHandlerTimeout,
+		logger:         slog.Default(),
 		jobChan:        make(chan Job, 1024),
 		handlers:       make(map[string]Handler),
 		done:           make(chan struct{}),
@@ -147,17 +163,35 @@ func (q *MemoryQueue) processJob(job Job) {
 	err := safeHandle(ctx, handler, job)
 	if err != nil {
 		job.Attempts++
+		q.logger.Warn("queue: handler failed",
+			"job_id", job.ID,
+			"job_type", job.Type,
+			"attempt", job.Attempts,
+			"max_attempts", job.MaxAttempts,
+			"err", err)
 		if job.Attempts < job.MaxAttempts {
 			// Re-enqueue for retry on a FRESH context. `ctx` is the
 			// per-attempt one that just timed out / was cancelled; using
 			// it here made Enqueue fail on the very jobs retries exist for
 			// (the error was discarded, so the retry silently vanished).
 			if enqErr := q.Enqueue(context.Background(), job); enqErr != nil {
+				q.logger.Error("queue: job dead-lettered",
+					"job_id", job.ID,
+					"job_type", job.Type,
+					"attempt", job.Attempts,
+					"max_attempts", job.MaxAttempts,
+					"err", enqErr)
 				q.retainDead(job)
 			}
 		} else {
 			// Retries exhausted — retain as terminally-failed for inspection
 			// and replay instead of dropping it.
+			q.logger.Error("queue: job dead-lettered",
+				"job_id", job.ID,
+				"job_type", job.Type,
+				"attempt", job.Attempts,
+				"max_attempts", job.MaxAttempts,
+				"err", err)
 			q.retainDead(job)
 		}
 	}

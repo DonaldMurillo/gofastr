@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type DBQueue struct {
 	db      *sql.DB
 	table   string
 	dialect dbDialect
+	logger  *slog.Logger
 
 	handlers       map[string]Handler
 	workers        int
@@ -88,6 +90,19 @@ func WithDBHandlerTimeout(d time.Duration) DBQueueOption {
 	return func(q *DBQueue) { q.handlerTimeout = d }
 }
 
+// WithDBLogger sets the logger used for handler-failure (WARN) and
+// dead-letter (ERROR) records emitted from the worker loop. Defaults to
+// slog.Default(); passing nil restores the default. Without it a failing
+// handler dead-letters silently — you lose the job and the reason.
+func WithDBLogger(l *slog.Logger) DBQueueOption {
+	return func(q *DBQueue) {
+		if l == nil {
+			l = slog.Default()
+		}
+		q.logger = l
+	}
+}
+
 // WithLeaseTimeout sets how long a claimed-but-unacked job may stay in-flight
 // before it is considered abandoned (the worker crashed/was killed) and
 // becomes eligible for re-dequeue. Defaults to 5 minutes.
@@ -115,6 +130,7 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	q := &DBQueue{
 		db:       db,
 		table:    "queue_jobs",
+		logger:   slog.Default(),
 		handlers: map[string]Handler{},
 		workers:  1,
 		lease:    5 * time.Minute,
@@ -704,10 +720,32 @@ func (q *DBQueue) workerLoop(ctx context.Context) {
 			continue
 		}
 		if err := q.runHandler(ctx, h, job); err != nil {
-			_ = q.Nack(ctx, job.ID)
+			// job.Attempts was bumped by Dequeue before the handler ran, so it
+			// already equals the DB value Nack consults (attempts >=
+			// max_attempts) — this is the exact terminal predicate, not an
+			// off-by-one estimate.
+			q.logger.Warn("queue: handler failed",
+				"job_id", job.ID,
+				"job_type", job.Type,
+				"attempt", job.Attempts,
+				"max_attempts", job.MaxAttempts,
+				"err", err)
+			if job.Attempts >= job.MaxAttempts {
+				q.logger.Error("queue: job dead-lettered",
+					"job_id", job.ID,
+					"job_type", job.Type,
+					"attempt", job.Attempts,
+					"max_attempts", job.MaxAttempts,
+					"err", err)
+			}
+			if err := q.Nack(ctx, job.ID); err != nil {
+				q.logger.Warn("queue: nack failed", "job_id", job.ID, "err", err)
+			}
 			continue
 		}
-		_ = q.Ack(ctx, job.ID)
+		if err := q.Ack(ctx, job.ID); err != nil {
+			q.logger.Warn("queue: ack failed", "job_id", job.ID, "err", err)
+		}
 	}
 }
 
