@@ -10,7 +10,7 @@ record.
 ```go
 import "github.com/DonaldMurillo/gofastr/core/upload"
 
-storage, _ := upload.NewLocal("./uploads", "/uploads/")
+storage := upload.NewLocalStorage("./uploads")
 app := framework.NewApp(
     framework.WithDB(db),
     framework.WithFileStorage(storage),
@@ -106,13 +106,37 @@ type Storage interface {
 
 Built-in implementations:
 
-- `upload.NewLocal(dir, urlPrefix)` (`core/upload`) — writes to a local
-  directory and serves files from `urlPrefix`. Suitable for tests and
-  single-host deployments.
+- `upload.NewLocalStorage(dir)` (`core/upload`) — writes files under a
+  local directory. It only *stores*; it does not serve. Wire downloads
+  with `upload.ServeHandler`, which sniffs the content type, blocks
+  traversal (delegated to the backend's key sanitization), and
+  neutralizes HTML/SVG to a forced download so an uploaded document
+  can't execute as script in a victim's browser (stored-XSS guard).
+  Suitable for tests and single-host deployments.
 - `battery/storage` — local, S3, and in-memory backends behind the same
   interface, plus a declarative factory registry.
 - (Add GCS / Azure adapters in your own code by implementing
   `Storage`.)
+
+## Serving stored files
+
+`LocalStorage` (and the `battery/storage` backends) only *store* bytes;
+none of them serves files over HTTP. To download a stored file, mount
+`upload.ServeHandler` on the router with a catch-all key:
+
+```go
+app.Router().Get("/uploads/{key...}", upload.ServeHandler(storage))
+```
+
+`ServeHandler` resolves the key from the `{key...}` wildcard, sniffs the
+content type from the first 512 bytes (never trusting the client or the
+key), and sets `X-Content-Type-Options: nosniff` on every response.
+Scriptable content — HTML or SVG, by sniffed type *or* key extension —
+is forced to `application/octet-stream` with
+`Content-Disposition: attachment`, so an uploaded document can't execute
+as script in a victim's browser (stored-XSS guard). Path-traversal
+defense is delegated to the backend's key sanitization; the handler
+echoes no filesystem path on any error.
 
 ## Content checksums
 

@@ -2,6 +2,7 @@ package upload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,19 +24,19 @@ func NewLocalStorage(baseDir string) *LocalStorage {
 func sanitizeKey(key string) (string, error) {
 	// Reject obvious traversal patterns
 	if strings.Contains(key, "..") {
-		return "", fmt.Errorf("invalid key: path traversal detected")
+		return "", fmt.Errorf("%w: path traversal detected", ErrInvalidKey)
 	}
 
 	// Clean the path and ensure it doesn't escape
 	cleaned := filepath.Clean(key)
 	if cleaned == "." {
-		return "", fmt.Errorf("invalid key: empty after cleaning")
+		return "", fmt.Errorf("%w: empty after cleaning", ErrInvalidKey)
 	}
 
 	// Make the path relative (remove leading slashes)
 	cleaned = strings.TrimPrefix(cleaned, "/")
 	if cleaned == "" {
-		return "", fmt.Errorf("invalid key: empty after sanitization")
+		return "", fmt.Errorf("%w: empty after sanitization", ErrInvalidKey)
 	}
 
 	return cleaned, nil
@@ -61,7 +62,7 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 		return fmt.Errorf("resolving file path: %w", err)
 	}
 	if !strings.HasPrefix(absPath, absBase+string(os.PathSeparator)) && absPath != absBase {
-		return fmt.Errorf("invalid key: path escapes base directory")
+		return fmt.Errorf("%w: path escapes base directory", ErrInvalidKey)
 	}
 
 	// Create parent directories. Mode 0o700 keeps tenant upload trees
@@ -120,7 +121,7 @@ func (s *LocalStorage) Delete(_ context.Context, key string) error {
 		return fmt.Errorf("resolving file path: %w", err)
 	}
 	if !strings.HasPrefix(absPath, absBase+string(os.PathSeparator)) && absPath != absBase {
-		return fmt.Errorf("invalid key: path escapes base directory")
+		return fmt.Errorf("%w: path escapes base directory", ErrInvalidKey)
 	}
 
 	if err := os.Remove(fullPath); err != nil {
@@ -155,7 +156,7 @@ func (s *LocalStorage) Get(_ context.Context, key string) (io.ReadCloser, error)
 		return nil, fmt.Errorf("resolving file path: %w", err)
 	}
 	if !strings.HasPrefix(absPath, absBase+string(os.PathSeparator)) && absPath != absBase {
-		return nil, fmt.Errorf("invalid key: path escapes base directory")
+		return nil, fmt.Errorf("%w: path escapes base directory", ErrInvalidKey)
 	}
 
 	f, err := os.Open(fullPath)
@@ -181,6 +182,13 @@ type errNotFound struct{}
 
 func (errNotFound) Error() string { return "upload: not found" }
 func (errNotFound) Unwrap() error { return os.ErrNotExist }
+
+// ErrInvalidKey is wrapped when a storage key is rejected by
+// sanitization (path traversal, empty key, or a path that escapes the
+// base directory). The detection lives in [sanitizeKey] and the
+// backend's escape check — callers (e.g. [ServeHandler]) classify the
+// typed error rather than re-implement path validation.
+var ErrInvalidKey = errors.New("upload: invalid key")
 
 // scrubPath removes occurrences of the absolute base dir and the full
 // resolved path from a string so internal storage paths don't leak
@@ -214,7 +222,7 @@ func (s *LocalStorage) Exists(_ context.Context, key string) (bool, error) {
 		return false, fmt.Errorf("resolving file path: %w", err)
 	}
 	if !strings.HasPrefix(absPath, absBase+string(os.PathSeparator)) && absPath != absBase {
-		return false, fmt.Errorf("invalid key: path escapes base directory")
+		return false, fmt.Errorf("%w: path escapes base directory", ErrInvalidKey)
 	}
 
 	_, err = os.Stat(fullPath)
