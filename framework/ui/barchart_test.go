@@ -167,6 +167,7 @@ func TestBarChartLongLabelsWrap(t *testing.T) {
 		t.Errorf("full label text should survive in <title>:\n%s", h)
 	}
 }
+
 // An unrecognized Color (a bare word like "draft") is not a valid CSS
 // color — an SVG fill="draft" renders black. It must fall back to the
 // theme primary class instead of emitting the bad value verbatim.

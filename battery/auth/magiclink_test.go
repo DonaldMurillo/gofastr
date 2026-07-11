@@ -674,11 +674,11 @@ func TestMagicLinkUsesConfiguredRoles(t *testing.T) {
 	sender := &mockEmailSender{}
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:    "test-secret",
-		SessionTTL:   24 * time.Hour,
+		JWTSecret:     "test-secret",
+		SessionTTL:    24 * time.Hour,
 		SessionCookie: "session_id",
-		UserStore:    userStore,
-		DefaultRoles: []string{"member", "editor"},
+		UserStore:     userStore,
+		DefaultRoles:  []string{"member", "editor"},
 	})
 	plugin := NewMagicLinkPlugin(MagicLinkConfig{
 		BaseURL:      "http://localhost:8080",

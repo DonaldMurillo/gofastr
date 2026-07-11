@@ -29,12 +29,11 @@ type Middleware = middleware.Middleware
 // plugins / batteries / OnStart hooks contribute middleware while
 // requests are already flowing.
 type Router struct {
-	mux      *http.ServeMux
-	prefix   string
+	mux              *http.ServeMux
+	prefix           string
 	notFound         http.Handler
 	methodNotAllowed http.Handler
 	parent           *Router
-
 
 	mu          sync.RWMutex
 	middlewares []Middleware

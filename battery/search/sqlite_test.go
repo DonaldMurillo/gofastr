@@ -444,7 +444,7 @@ func TestSQLiteFieldEqualsMultiPair(t *testing.T) {
 	})
 
 	res, err := idx.Search(ctx, Query{
-		Text: "gofastr",
+		Text:        "gofastr",
 		FieldEquals: map[string]string{"tenant": "acme", "status": "published"},
 	})
 	if err != nil {

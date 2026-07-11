@@ -346,7 +346,7 @@ func Define(name string, config EntityConfig) *Entity {
 				panic(fmt.Sprintf("entity %q: SearchFields entry %q is Hidden (search would disclose its values)", name, sf))
 			}
 			if found.Type != schema.String && found.Type != schema.Text {
-			panic(fmt.Sprintf("entity %q: SearchFields entry %q must be String or Text, got %d", name, sf, found.Type))
+				panic(fmt.Sprintf("entity %q: SearchFields entry %q must be String or Text, got %d", name, sf, found.Type))
 			}
 		}
 	}
