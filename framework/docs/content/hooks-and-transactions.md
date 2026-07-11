@@ -176,6 +176,29 @@ on the provided `tx` is part of the same unit. Without an ambient
 transaction (the normal HTTP path), each CRUD write opens and commits its
 own transaction as before.
 
+### Handling validation errors
+
+When an in-process `CreateOne` / `UpdateOne` / `UpsertOne` / batch call
+fails schema validation, the returned error unwraps to
+`*crud.ValidationError`. Use `errors.As` to detect it and read the
+per-field messages:
+
+```go
+import "errors"
+import "github.com/DonaldMurillo/gofastr/framework/crud"
+
+row, err := ch.CreateOne(ctx, body)
+var ve *crud.ValidationError
+if errors.As(err, &ve) {
+    // ve.Fields() → map[string][]string, e.g. {"email": ["is required"}}
+    return ve.Fields()
+}
+```
+
+`ValidationError.Error()` is the generic string `"validation failed"`
+(matching the HTTP 400 wire shape); the actionable detail lives in
+`Fields()`. The returned map is read-only.
+
 ## Batch behaviour
 
 In a `_batch` request, every item shares one transaction:

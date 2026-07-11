@@ -10,12 +10,13 @@ import (
 // package extraction.
 
 type (
-	CrudHandler  = crud.CrudHandler
-	ListResponse = crud.ListResponse
-	ListOptions  = crud.ListOptions
-	JSONCase     = crud.JSONCase
-	IncludeNode  = crud.IncludeNode
-	DBExecutor   = db.Executor
+	CrudHandler     = crud.CrudHandler
+	ListResponse    = crud.ListResponse
+	ListOptions     = crud.ListOptions
+	JSONCase        = crud.JSONCase
+	IncludeNode     = crud.IncludeNode
+	ValidationError = crud.ValidationError
+	DBExecutor      = db.Executor
 )
 
 const (
@@ -34,6 +35,8 @@ var (
 	IsNotFound             = crud.IsNotFound
 	EagerLoad              = crud.EagerLoad
 	RegisterEntityMCPTools = crud.RegisterEntityMCPTools
+	WithServerWrites       = crud.WithServerWrites
+	NewValidationError     = crud.NewValidationError
 )
 
 // TypedQuery and NewTypedQuery are generics — declared as wrappers since Go

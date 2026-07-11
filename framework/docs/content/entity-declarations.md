@@ -196,8 +196,8 @@ Each entry under `fields:` accepts:
 | `values` | list | Allowed values for `type: enum`. |
 | `pattern` | string | Regex the value must match (validated on write). |
 | `auto_generate` | string | Auto-populate strategy, e.g. `uuid` on an id column — the generated field never appears in write forms. |
-| `read_only` | bool | Accepted from the DB/generator but rejected on client writes. |
-| `hidden` | bool | Excluded from generated UI grids, forms, and MCP tool schemas (still stored and API-readable). |
+| `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
+| `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned — `visibleFields` shapes the projection). |
 | `to` | string | For `type: relation`, the target entity. |
 
 Relation *blocks* (the `relations:` list, distinct from a `relation`

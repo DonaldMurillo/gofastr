@@ -121,9 +121,9 @@ func TestUpsert_BeforeCreateHookError(t *testing.T) {
 
 func TestUpsert_ValidationError(t *testing.T) {
 	ch, _ := covNotesHandler(t) // title required
-	var ve *validationError
+	var ve *ValidationError
 	if _, err := ch.UpsertOne(context.Background(), map[string]any{"id": "x"}); !errors.As(err, &ve) {
-		t.Errorf("upsert validation err = %v, want validationError", err)
+		t.Errorf("upsert validation err = %v, want ValidationError", err)
 	}
 }
 

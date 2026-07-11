@@ -237,7 +237,7 @@ func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
 			continue
 		}
 		if !isSafeMediaURL(s) {
-			return &validationError{fields: map[string][]string{f.Name: {"unsafe URL or path"}}}
+			return &ValidationError{fields: map[string][]string{f.Name: {"unsafe URL or path"}}}
 		}
 	}
 	return nil

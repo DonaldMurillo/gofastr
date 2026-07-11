@@ -733,11 +733,33 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 	}
 }
 
-// validationError carries field-level validation errors from inside inTx
-// out to the response writer.
-type validationError struct{ fields map[string][]string }
+// ValidationError carries field-level validation errors from inside inTx
+// out to the response writer. It is the error type returned by Create /
+// Update / Upsert when schema validation rejects the body. Callers branch
+// on it with errors.As:
+//
+//	var ve *crud.ValidationError
+//	if errors.As(err, &ve) { ... ve.Fields() ... }
+//
+// The fields map is exposed read-only via Fields; mutating it has no
+// effect on the handler or the wire response.
+type ValidationError struct{ fields map[string][]string }
 
-func (e *validationError) Error() string { return "validation failed" }
+// Error implements the error interface. The string is deliberately
+// generic ("validation failed"); per-field detail lives in Fields().
+func (e *ValidationError) Error() string { return "validation failed" }
+
+// Fields returns the per-field validation messages keyed by column name.
+// The returned map is the handler's internal copy; callers MUST treat it
+// as read-only.
+func (e *ValidationError) Fields() map[string][]string { return e.fields }
+
+// NewValidationError constructs a ValidationError from a field→messages
+// map. Intended for tests and host code that needs to synthesize a
+// validation failure (e.g. from a custom BeforeCreate hook).
+func NewValidationError(fields map[string][]string) *ValidationError {
+	return &ValidationError{fields: fields}
+}
 
 // Sentinel errors for CRUD flows.
 var (
@@ -754,14 +776,14 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusBadRequest, bhe.Error())
 		return
 	}
-	var ve *validationError
+	var ve *ValidationError
 	if errors.As(err, &ve) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]any{
 			"error":   "validation failed",
 			"success": false,
-			"fields":  ve.fields,
+			"fields":  ve.Fields(),
 		})
 		return
 	}

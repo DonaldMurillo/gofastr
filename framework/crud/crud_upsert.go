@@ -108,13 +108,17 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		}
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
-			return &validationError{fields: vr.Errors}
+			return &ValidationError{fields: vr.Errors}
 		}
 
 		// Build the column + value lists, same shape Create uses: auto-gen
 		// fields are always included (the body has the generated value);
 		// ReadOnly/Hidden non-auto fields are skipped — except the
 		// framework-managed owner column, which InjectOwner stamps above.
+		// The tenant column is ALWAYS skipped here (appended separately
+		// below from the context-derived tenant id). Other ReadOnly/Hidden
+		// fields are persisted when the caller opted in via
+		// WithServerWrites(ctx).
 		var cols []string
 		var vals []any
 		for _, f := range ch.Entity.GetFields() {
@@ -124,7 +128,10 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.OwnerField {
-				continue
+				isTenantCol := ch.Entity.Config.MultiTenant && f.Name == ch.Entity.Config.TenantColumn()
+				if isTenantCol || !serverWrites(ctx) {
+					continue
+				}
 			}
 			val, ok := body[f.Name]
 			if !ok {

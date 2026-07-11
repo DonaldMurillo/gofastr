@@ -43,7 +43,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 
 	vr := schema.ValidateAll(ch.entitySchema(), body)
 	if !vr.Valid {
-		return nil, &validationError{fields: vr.Errors}
+		return nil, &ValidationError{fields: vr.Errors}
 	}
 
 	var cols []string
@@ -54,11 +54,19 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			vals = append(vals, body[f.Name])
 			continue
 		}
-		// The owner column is framework-managed: InjectOwner stamps it above,
-		// so it must be persisted even when hidden from the UI/API surface.
-		// Every other ReadOnly/Hidden field is client-unsettable and skipped.
+		// The owner column is framework-managed: InjectOwner stamps it
+		// above, so it is always persisted even when hidden from the
+		// UI/API surface. The tenant column is ALWAYS skipped here: it
+		// is appended separately below from the context-derived tenant
+		// id, so letting the field loop persist it from the body would
+		// double-add the column. Every OTHER ReadOnly/Hidden field is
+		// client-unsettable and skipped unless the caller opted in to
+		// server writes via WithServerWrites(ctx).
 		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.OwnerField {
-			continue
+			isTenantCol := ch.Entity.Config.MultiTenant && f.Name == ch.Entity.Config.TenantColumn()
+			if isTenantCol || !serverWrites(ctx) {
+				continue
+			}
 		}
 		val, ok := body[f.Name]
 		if !ok {
@@ -137,14 +145,19 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// columns present in the body.
 	vr := schema.ValidatePartial(ch.entitySchema(), body)
 	if !vr.Valid {
-		return nil, &validationError{fields: vr.Errors}
+		return nil, &ValidationError{fields: vr.Errors}
 	}
 
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
 	ownerField := ch.Entity.Config.OwnerField
 	for _, f := range ch.Entity.GetFields() {
-		if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
+		if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone {
+			continue
+		}
+		// ReadOnly/Hidden fields are client-unsettable and skipped unless
+		// the caller opted in via WithServerWrites(ctx).
+		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) {
 			continue
 		}
 		// Refuse to let a client reassign ownership through an update body.

@@ -16,9 +16,9 @@ import (
 )
 
 func TestValidationError_Error(t *testing.T) {
-	ve := &validationError{fields: map[string][]string{"name": {"required"}}}
+	ve := &ValidationError{fields: map[string][]string{"name": {"required"}}}
 	if ve.Error() != "validation failed" {
-		t.Errorf("validationError.Error() = %q", ve.Error())
+		t.Errorf("ValidationError.Error() = %q", ve.Error())
 	}
 }
 
@@ -30,7 +30,7 @@ func TestTenantMissingError_Error(t *testing.T) {
 }
 
 func TestClassifyDoErr_AllBranches(t *testing.T) {
-	ve := &validationError{fields: map[string][]string{"a": {"x"}}}
+	ve := &ValidationError{fields: map[string][]string{"a": {"x"}}}
 	if msg, fields := classifyDoErr(ve); msg != "validation failed" || fields == nil {
 		t.Errorf("validation classify = %q, %v", msg, fields)
 	}
