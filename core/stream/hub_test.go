@@ -193,8 +193,9 @@ func TestHubConcurrentOperations(t *testing.T) {
 			go conn.writePump()
 			hub.Register(conn)
 			hub.Broadcast([]byte("msg"))
-			ops.Add(1)
-			if ops.Load() == 10 {
+			// Branch on Add's return value: a separate Load() lets two
+			// goroutines both observe 10 and double-close done.
+			if ops.Add(1) == 10 {
 				close(done)
 			}
 		}()
