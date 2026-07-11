@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-10
+
 Backlog from the 2026-07-10 dual blind cold-start eval (two agents each
 built a multi-surface app from the repo alone; every item below was hit
 independently or verified against the running builds).
