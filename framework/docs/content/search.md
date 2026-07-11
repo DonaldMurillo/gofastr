@@ -1,9 +1,10 @@
 # Search
 
 The `battery/search` package defines a pluggable full-text search interface.
-The framework ships two backends: an in-memory backend for dev/tests and a
-Postgres full-text-search backend for production. Other engines (Bleve,
-Meilisearch, etc.) plug in behind the same `Backend` interface.
+The framework ships three backends: an in-memory backend for dev/tests, a
+Postgres full-text-search backend for production, and a SQLite FTS5 backend
+for SQLite-first apps. Other engines (Bleve, Meilisearch, etc.) plug in
+behind the same `Backend` interface.
 
 ## Quickstart
 
@@ -188,6 +189,96 @@ All query text is sanitized before reaching `to_tsquery` (operators and SQL
 metacharacters are stripped), so hostile input neither errors nor matches
 every document.
 
+## The SQLite FTS5 backend
+
+`search.NewSQLiteFTS(db, cfg)` returns a backend backed by a single SQLite FTS5
+virtual table, so a SQLite-first app gets ranked BM25 full-text search with
+zero extra infrastructure. Call `EnsureSchema` once on boot, then
+`Index`/`Search` like any backend:
+
+```go
+idx, err := search.NewSQLiteFTS(db, search.SQLiteFTSConfig{})
+if err != nil {
+    return err
+}
+if err := idx.EnsureSchema(ctx); err != nil {
+    return err
+}
+
+_ = idx.Index(ctx, search.Document{
+    ID:   "post-1",
+    Type: "posts",
+    Text: "GoFastr framework release notes",
+})
+
+results, err := idx.Search(ctx, search.Query{Text: "framework", Limit: 10})
+```
+
+### Build tag
+
+FTS5 is an SQLite compile-time option. The `mattn/go-sqlite3` driver bundles
+FTS5 **only** when built with the `-tags sqlite_fts5` build tag:
+
+```sh
+go build -tags sqlite_fts5 .
+go test -tags sqlite_fts5 ./...
+```
+
+Without the tag, `EnsureSchema` returns an actionable error naming the tag.
+The test suite probes FTS5 availability at runtime and `t.Skip`s when absent,
+so the default `go test ./...` stays green.
+
+### Configuration
+
+`SQLiteFTSConfig`:
+
+| Field   | Type     | Notes                                              |
+|---------|----------|----------------------------------------------------|
+| `Table` | `string` | Destination FTS5 virtual table. Defaults to `search_documents`. |
+
+The schema is fixed: `CREATE VIRTUAL TABLE ... USING fts5(id UNINDEXED, type UNINDEXED, fields UNINDEXED, text, tokenize='porter unicode61')`. Only `Document.Text` is tokenised; structured fields are stored (UNINDEXED) for `FieldEquals` filtering via `json_extract`.
+
+### Ranking
+
+Results are ranked by BM25. The SQLite FTS5 `bm25()` function returns negative
+values (more negative = better match), so the backend exposes
+`Score = -bm25` — callers sort descending consistently with the other backends.
+The tiebreak is `id ASC`.
+
+### Scoping with `FieldEquals`
+
+`FieldEquals` uses `json_extract(fields, '$."key"') = ?` — the key is validated
+against `^[A-Za-z0-9_]+$` before the JSON path is interpolated, and the value
+is parameterised. String-only matching is enforced naturally by SQLite's type
+system: a JSON number and a TEXT parameter are different storage classes and
+never compare equal.
+
+### Indexing
+
+FTS5 has no upsert, so `Index` is `DELETE` by id + `INSERT` in a single
+transaction — re-indexing the same id replaces in place with no duplicate rows.
+
+## Choosing a backend
+
+| Backend | Durable | Ranked | Weighted fields | Infrastructure | Build tag |
+|---------|---------|--------|-----------------|----------------|-----------|
+| `Memory` | No (in-process) | Term frequency | No | None | None |
+| `PostgresSearch` | Yes | `ts_rank` | Yes (`A`..`D`) | Postgres | None |
+| `SQLiteFTS` | Yes | BM25 | No | SQLite | `sqlite_fts5` |
+
+**When to pick:**
+
+- **Memory** — tests, single-binary demos, small read-only sites. Loses
+  everything on restart.
+- **PostgresSearch** — a Postgres-first production app. Ranked search with
+  no extra infrastructure, plus weighted fields for title-vs-body ranking.
+- **SQLiteFTS** — a SQLite-first app (embedded, single-file, edge). Ranked
+  BM25 search without standing up Postgres. Needs the `sqlite_fts5` build tag.
+
+All three share AND-of-terms semantics, prefix matching on the last term,
+the same empty-query (match-all) and pure-punctuation (match-none) edge
+cases, and the string-only `FieldEquals` scoping contract.
+
 ## Battery wrapper
 
 `search.NewBattery(backend)` wraps any `Backend` in a
@@ -223,3 +314,6 @@ automatically.
   index, or be ready for cross-entity results.
 - **Treating the memory backend as durable.** It isn't. Wire a real
   backend before relying on the index surviving restart.
+- **Forgetting the `sqlite_fts5` build tag.** The `SQLiteFTS` backend
+  needs the driver compiled with FTS5 support. Without `-tags sqlite_fts5`,
+  `EnsureSchema` fails with an actionable error; the test suite skips.

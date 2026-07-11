@@ -1,9 +1,10 @@
 # battery/search
 
 Pluggable text search behind a `Backend` interface
-(`Index` / `Delete` / `Search`). Ships two backends: an in-process `Memory`
-backend (dev/tests) and a Postgres FTS backend (`PostgresSearch`) for
-production. Both share AND-of-terms semantics, weighted fields, and
+(`Index` / `Delete` / `Search`). Ships three backends: an in-process `Memory`
+backend (dev/tests), a Postgres FTS backend (`PostgresSearch`) for
+production, and a SQLite FTS5 backend (`SQLiteFTS`) for SQLite-first apps.
+All share AND-of-terms semantics, prefix matching, and
 `Query.FieldEquals` scoping; external engines (Bleve / Elastic) implement
 the same interface.
 
@@ -42,6 +43,8 @@ and call `Search` — the swap is a one-line change at the call site.
 **Backend choice:** `Memory` is fine for tests and small-volume dev data;
 it loses everything on restart. For a Postgres-first app, use
 `search.NewPostgres(db, cfg)` — ranked full-text search straight out of the
-database with zero extra infrastructure. Call `EnsureSchema` once on boot,
+database with zero extra infrastructure. For a SQLite-first app, use
+`search.NewSQLiteFTS(db, cfg)` — BM25-ranked FTS5 search (requires the
+`sqlite_fts5` build tag). Call `EnsureSchema` once on boot,
 then `Index`/`Search` like any backend. See `framework/docs/content/search.md`
 for construction, weighted fields, and the tenant-scoping example.
