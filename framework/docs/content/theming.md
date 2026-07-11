@@ -60,6 +60,44 @@ embedded canonical tokens, app components read the extras directly.
 Verify the result at `/__gofastr/app.css` — your values should appear
 as `:root` custom properties.
 
+## Self-hosting web fonts
+
+Setting `Fonts.Body`/`Fonts.Heading` to a custom family only names the
+font — the browser still needs the files, and **CDN font URLs are
+blocked by the default CSP** (`default-src 'self'`; see
+[security](security.md) → "Content-Security-Policy"). A
+`@font-face` pointing at `rsms.me`, Google Fonts, or any other origin
+silently fails and the stack falls through to its fallback. Self-host
+instead:
+
+1. Put the font files under your static dir:
+   `static/fonts/Inter-Variable.woff2` (serve it with
+   `uihost.WithStaticDir("static")`).
+2. Register the `@font-face` through the styling surface — site CSS via
+   `uihost.WithCustomCSS` / `ReadCustomCSSFile("static/app.css")`:
+
+   ```css
+   @font-face {
+     font-family: "Inter";
+     font-style: normal;
+     font-weight: 100 900;
+     font-display: swap;
+     src: url("/fonts/Inter-Variable.woff2") format("woff2");
+   }
+   ```
+
+3. Name the family in the theme tokens:
+
+   ```go
+   t.Fonts.Body.Value = `"Inter", ui-sans-serif, system-ui, sans-serif`
+   t.Fonts.Heading.Value = t.Fonts.Body.Value
+   ```
+
+Same-origin URLs pass the default CSP untouched. If you genuinely must
+load a third-party font, you have to override
+`ContentSecurityPolicy` explicitly — see the warning in
+[security](security.md) before you do.
+
 ## Dark mode — `DarkColors` and `data-color-scheme`
 
 `Theme.DarkColors` is a map of color-token name → dark value

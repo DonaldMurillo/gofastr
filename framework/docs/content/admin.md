@@ -6,7 +6,9 @@
   your entities, rendered **through your app's UI host** so they hydrate
   with `runtime.js`: the list is a server-driven `DataTable` island
   (paginate without a reload), delete is a `data-fui-confirm` button, and
-  forms are server-rendered. **No bespoke JavaScript.**
+  forms are server-rendered. **No bespoke JavaScript.** The island
+  mechanics behind these (`data-fui-rpc`, signals, fragment swaps) are
+  catalogued in [interactive-patterns](interactive-patterns.md).
 - **Ops dashboards** — read-only **Queue** and **Audit log** pages on top
   of data the framework already collects (`battery/queue`,
   `framework.WithAuditLog`). These are self-contained HTML and don't need a

@@ -398,7 +398,7 @@ Pair with media-query CSS that hides the toggle and shows the nav inline above y
 ## Next
 
 - Section-level theme overrides (`framework/ui.Themed`), dark mode, and the token catalog — see [theming](theming.md)
-- Islands (in-page state changes without a route change) — see [runtime-contract](runtime-contract.md) "The four scenarios"
+- Islands (in-page state changes without a route change) — the cookbook is [interactive-patterns](interactive-patterns.md) (incl. "Writing a hand-written island, end to end"); the underlying model is [runtime-contract](runtime-contract.md) "The four scenarios"
 - The full `data-fui-*` primitive table is in [runtime-contract](runtime-contract.md)
 - Component catalog (Layout, Card, Tooltip, Toggle, Spinner, …) is in [ui-new-components](ui-new-components.md)
 

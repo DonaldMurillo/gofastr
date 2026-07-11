@@ -395,5 +395,6 @@ encoding.
   (see the form-in-a-modal recipe above).
 - **Building in-page content as a widget.** Widgets are overlays that
   float above any page. A sortable table, a form section, or anything
-  that belongs to one page's render tree is a component (or an island)
+  that belongs to one page's render tree is a component (or an island —
+  the island cookbook is [interactive-patterns](interactive-patterns.md))
   — see the component/widget table at the top of this doc.
