@@ -29,6 +29,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
@@ -1813,6 +1814,13 @@ func (ds *UIHost) Mount(r *router.Router) {
 	ds.mountAgentReady(r)
 
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))
+	// MethodNotAllowed catch-all: restores fall-through so a screen at
+	// path /x still renders (200) when a non-GET route like POST /x is
+	// registered — without this, the bare 405 from the router's method
+	// mismatch path shadows the screen. For genuinely unsupported
+	// methods on non-screen paths, serveMethodNotAllowed renders a
+	// styled 405 page preserving the Allow header.
+	r.MethodNotAllowed(http.HandlerFunc(ds.serveMethodNotAllowed))
 }
 
 // methodNotAllowed is registered alongside POST-only endpoints so a wrong-
@@ -1875,9 +1883,118 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 	}
 }
 
+// resolvesStaticOrScreen reports whether serveOrRender would produce
+// content for this request's path rather than a 404: a static file
+// (filesystem or embedded FS), a registered screen, or the favicon
+// shortcut. It MIRRORS serveOrRender's resolution steps without serving
+// (serveOrRender interleaves resolution with ServeFile/redirect calls,
+// so the steps can't be shared outright) — any change to serveOrRender's
+// resolution order or checks must be reflected here; the agreement is
+// pinned by TestResolvePredicateMatchesServeOrRender.
+func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
+	path := r.URL.Path
+	if path == "/favicon.ico" {
+		return true
+	}
+	if path != "/" {
+		if ds.staticDir != "" {
+			filePath := filepath.Join(ds.staticDir, filepath.Clean(path))
+			absPath, _ := filepath.Abs(filePath)
+			absStatic, _ := filepath.Abs(ds.staticDir)
+			if strings.HasPrefix(absPath, absStatic+string(filepath.Separator)) || absPath == absStatic {
+				if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+					return true
+				}
+			}
+		}
+		if ds.staticFS != nil {
+			cleanPath := strings.TrimPrefix(path, "/")
+			if cleanPath != "" {
+				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+					f.Close()
+					return true
+				}
+			}
+		}
+	}
+	if ds.faviconURL != "" && path == ds.faviconURL {
+		return true
+	}
+	if ds.App != nil {
+		if _, _, ok := ds.App.Router.Resolve(path); ok {
+			return true
+		}
+		// Trailing-slash canonical path.
+		if path != "/" && !strings.HasSuffix(path, "/") {
+			if _, _, ok := ds.App.Router.Resolve(path + "/"); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// serveMethodNotAllowed is the router's 405 catch-all. For safe
+// methods (GET/HEAD) where a static file or screen resolves at the
+// path, it delegates to serveOrRender so the page renders normally
+// (200) — this restores fall-through for a screen that shares its path
+// with a POST-only sibling route. For all other cases it renders a
+// styled 405 page through the default layout, preserving the Allow
+// header the router already set.
+func (ds *UIHost) serveMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && ds.resolvesStaticOrScreen(r) {
+		ds.serveOrRender(w, r)
+		return
+	}
+	ds.serveMethodNotAllowedPage(w, r)
+}
+
+// serveMethodNotAllowedPage renders a styled 405 page through the
+// default layout, mirroring serveNotFound's page-building machinery so
+// the 405 is visually consistent with the 404. The Allow header is
+// preserved (set by the router before dispatching). Composed entirely
+// from design-system elements — zero bespoke CSS.
+func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	path := r.URL.Path
+	allow := w.Header().Get("Allow")
+
+	children := []render.HTML{
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("405 — Method Not Allowed")),
+		html.Paragraph(html.TextConfig{}, render.Text("Method "+r.Method+" is not allowed for "),
+			html.Code(html.TextConfig{}, render.Text(path)), render.Text("."),
+		),
+	}
+	if allow != "" {
+		children = append(children, html.Paragraph(html.TextConfig{},
+			render.Text("Allowed methods: "), html.Code(html.TextConfig{}, render.Text(allow)), render.Text(".")))
+	}
+	children = append(children, html.Paragraph(html.TextConfig{},
+		render.HTML(`<a href="/">Back to home</a>`)))
+	body := html.Div(html.DivConfig{Role: "main"}, children...)
+
+	if ds.App != nil && ds.App.Router != nil {
+		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
+			body = layout.Wrap(body)
+		}
+	}
+	appName := "GoFastr"
+	if ds.App != nil && ds.App.Name != "" {
+		appName = ds.App.Name
+	}
+	shell := fmt.Sprintf(
+		`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>405 — %s</title></head><body>%s</body></html>`,
+		stdhtml.EscapeString(appName), string(body))
+	page := ds.injectChrome(shell, path, "")
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	fmt.Fprint(w, page)
+}
+
 // serveOrRender is the catch-all NotFound handler. It first tries static
 // file resolution (filesystem or embedded FS), and if no file matches it
-// falls through to page rendering.
+// falls through to page rendering. Resolution steps are mirrored by
+// resolvesStaticOrScreen (the MethodNotAllowed fall-through predicate) —
+// keep the two in sync.
 func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/favicon.ico" {

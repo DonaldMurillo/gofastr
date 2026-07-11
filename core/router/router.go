@@ -31,8 +31,10 @@ type Middleware = middleware.Middleware
 type Router struct {
 	mux      *http.ServeMux
 	prefix   string
-	notFound http.Handler
-	parent   *Router
+	notFound         http.Handler
+	methodNotAllowed http.Handler
+	parent           *Router
+
 
 	mu          sync.RWMutex
 	middlewares []Middleware
@@ -378,6 +380,34 @@ func (r *Router) NotFound(handler http.Handler) {
 	r.notFound = &cachedRoute{raw: handler, router: r}
 }
 
+// effectiveMethodNotAllowed returns the nearest non-nil
+// MethodNotAllowed handler in the parent chain (this router → parent
+// → ...). Mirrors effectiveNotFound so a sub-router served standalone
+// falls back to the parent's handler even when set after Group.
+func (r *Router) effectiveMethodNotAllowed() http.Handler {
+	if r.methodNotAllowed != nil {
+		return r.methodNotAllowed
+	}
+	if r.parent != nil {
+		return r.parent.effectiveMethodNotAllowed()
+	}
+	return nil
+}
+
+// MethodNotAllowed sets a custom handler for 405 (Method Not Allowed)
+// responses. The router sets the RFC-compliant Allow header (filtered
+// to exclude gated methods) BEFORE dispatching, so the handler inherits
+// it without recomputing the allowed method set.
+//
+// The router's middleware chain wraps the handler at request time, so
+// 405 responses go through the same recovery, logging, security
+// headers, etc. as matched routes — and middleware added after
+// MethodNotAllowed still applies. Mirrors [NotFound] exactly, including
+// the cachedRoute memoisation.
+func (r *Router) MethodNotAllowed(handler http.Handler) {
+	r.methodNotAllowed = &cachedRoute{raw: handler, router: r}
+}
+
 // NOTE: Go 1.22+ ServeMux handles 405 Method Not Allowed responses
 // natively. When a route gate is active, we intercept the 405 path to
 // exclude gated-off methods from the Allow header so a disabled module's
@@ -401,7 +431,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		// gated, which is indistinguishable from 404 by design).
 		allowed := r.allowedMethods(req)
 		if len(allowed) > 0 {
+			// Set the RFC-compliant Allow header (filtered to exclude
+			// gated methods) BEFORE dispatching, so the handler — custom
+			// or default — inherits it without recomputing the set.
 			w.Header().Set("Allow", strings.Join(allowed, ", "))
+			if mna := r.effectiveMethodNotAllowed(); mna != nil {
+				mna.ServeHTTP(w, req)
+				return
+			}
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed),
 				http.StatusMethodNotAllowed)
 			return

@@ -124,6 +124,9 @@ adapter; `examples/meridian/app.go` ships the identical type.
 `fwApp.Mount` installs it: every registered screen becomes a GET
 route rendering the full SSR page, and the host serves `runtime.js`,
 the route manifest for client-side nav, and `/__gofastr/app.css`.
+Once mounted, in-page dynamic behavior (sort, paginate, form-submit
+without a reload) is built from islands — the cookbook is
+[interactive-patterns](interactive-patterns.md).
 Useful options:
 
 - `uihost.WithStaticDir("static")` — serve a static asset directory.
@@ -146,6 +149,20 @@ UI-specific.
   everything on `site` first, then `Mount`; the framework's own
   `Mount` doc says the same: mount the UI host last, since it claims
   the router's NotFound catch-all.
+
+> **405 trap (fixed).** Before the `MethodNotAllowed` hook, registering a
+> non-GET route at a path that also had a screen (e.g. `POST /shipments`
+> from an entity action) made `GET /shipments` return a bare text 405
+> instead of rendering the screen — the router's method-mismatch path
+> fired *before* the NotFound catch-all. The uihost now installs a
+> `Router.MethodNotAllowed` handler that delegates to `serveOrRender`
+> for safe methods (GET/HEAD) when a static file or screen resolves at
+> the path, so screens survive POST-only siblings. Genuinely
+> unsupported methods get a styled 405 page preserving the Allow
+> header. `Router.MethodNotAllowed` works just like `Router.NotFound`:
+> the middleware chain wraps the handler at request time, and the
+> router sets the RFC-compliant Allow header (filtered to exclude
+> gated methods) before dispatching.
 - **Skipping the `routerMounter` shim and wondering why the sidebar
   drawer never opens on mobile.** `ui.Sidebar(cfg)` only renders the
   desktop rail; the `< md` drawer is a widget that must be mounted
