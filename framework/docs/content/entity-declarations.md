@@ -331,7 +331,66 @@ prominent warning from `gofastr generate`, and an `unscoped-pii` finding
 from `gofastr audit lint`. See [blueprints](blueprints.md) → "Unscoped
 PII".
 
-### Reading across owners (`owner.AllowCrossOwner`)
+### Letting a role read every owner's rows (`CrossOwnerRead`)
+
+Owner scoping keeps each user's rows private, but some roles *should* see
+every owner's data on **reads** — a staff dashboard, a support tool, an
+analytics aggregate over user-owned rows. `CrossOwnerRead` is the
+declarative knob for that: name an RBAC permission, and when the request
+context holds it, owner scoping is lifted for List/Get/Count (HTTP and
+in-process) on that entity. Writes stay owner-scoped, always.
+
+```go
+app.Entity("tickets", entity.EntityConfig{
+    Fields:         []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "subject", Type: schema.String}},
+    OwnerField:     "user_id",
+    CrossOwnerRead: "tickets:read:all", // staff who hold this can read every user's tickets
+})
+```
+
+```yaml
+# gofastr.yml
+entities:
+  - name: tickets
+    owner_field: user_id
+    cross_owner_read: tickets:read:all
+    fields:
+      - {name: subject, type: string}
+```
+
+Grant the permission to the role that should see across owners:
+
+```go
+policy := access.NewRolePolicy()
+policy.Grant("staff", "tickets:read:all")
+app.Use(access.Middleware(policy, func(ctx context.Context) []string {
+    // resolve roles from the authenticated user
+    return []string{"staff"}
+}))
+```
+
+The admin battery's wildcard grant (`*`) passes any permission check, so
+an entity opted in via `CrossOwnerRead` is fully visible in the back
+office automatically.
+
+**Fail-closed.** When no access policy is in the request context (an
+un-wired request, or the caller's roles don't include the permission),
+owner scoping stays **on** — the widening never happens implicitly. This
+is the secure-by-default answer: opt in explicitly, and only when the
+policy says yes.
+
+**Read-only.** `CrossOwnerRead` never touches Create/Update/Delete —
+those stay owner-scoped. A staff member can *see* every ticket but
+cannot PUT/DELETE another user's row through the auto-CRUD surface.
+Cross-user writes still return 404. Multi-tenant isolation is also
+preserved: a granted context in tenant A never sees tenant B rows.
+
+Requires `OwnerField` (it only makes sense on an owner-scoped entity);
+`entity.Define` panics when `CrossOwnerRead` is set without it, and the
+blueprint decoder returns a validation error for the same mismatch.
+
+### Reading across owners (`owner.AllowCrossOwner`) — in-process escape hatch
+
 
 Owner scoping is correct for user-facing CRUD, but some
 app-legitimate work is *inherently* cross-owner: computing "spots
@@ -391,6 +450,64 @@ app.Entity("sessions", auth.SessionEntityConfig()) // CRUD=false, MCP=false
 hosts that want full control; the `*EntityConfig()` helpers are the
 safer default.
 
+## Free-text search (`SearchFields` + `?q=`)
+
+Set `SearchFields` to a slice of DB column names and List requests
+carrying `?q=<term>` perform a multi-field, case-insensitive free-text
+search across them:
+
+```go
+app.Entity("articles", entity.EntityConfig{
+    Fields:       []schema.Field{{Name: "title", Type: schema.String}, {Name: "body", Type: schema.Text}},
+    SearchFields: []string{"title", "body"},
+})
+```
+
+```yaml
+# gofastr.yml
+entities:
+  - name: articles
+    search_fields: [title, body]
+    fields:
+      - {name: title, type: string}
+      - {name: body, type: text}
+```
+
+A request like `GET /api/articles?q=go%20concurrency` tokenizes the term
+on whitespace (deduped, capped at 8 tokens), and AND-composes one
+`LOWER(col) LIKE '%token%'` condition per token across the declared
+fields. Every token must match (AND); within one token, any field may
+match (OR). The conditions AND safely with owner, tenant, and soft-delete
+scopes — the query builder wraps each WHERE clause in parens.
+
+**Case contract.** `LOWER()` is ASCII-only on SQLite and locale-aware on
+Postgres, so matching is ASCII-case-insensitive everywhere. Unicode case
+folding is a Postgres bonus. The token is lowercased before building the
+LIKE pattern so the comparison is consistent across dialects.
+
+**Back-compat.** An entity WITHOUT `SearchFields` ignores `?q=` exactly
+as before — no behavioural change.
+
+**The `q`-column edge case.** An entity WITH `SearchFields` that also
+has a physical column named `q`: plain `?q=value` means **search** (the
+OpEq filter on the `q` column is dropped). Suffixed ops (`?q_like=`,
+`?q_gt=`, …) still filter the column normally.
+
+Column names must be known, non-Hidden, and String/Text-typed;
+`entity.Define` panics otherwise (the blueprint decoder returns a
+validation error). A Hidden column would turn `?q=` into a
+value-disclosure oracle — the same rationale as ParseFilters' hidden
+stripping.
+
+In-process callers get the same behaviour via `ListOptions.Search`:
+
+```go
+rows, err := handler.ListAll(ctx, crud.ListOptions{Search: "go concurrency"})
+```
+
+Setting `Search` on an entity without `SearchFields` returns an error
+(fail loud, matching the unknown-sort policy).
+
 ## Code Generation
 
 Generate Go from a `gofastr.yml` blueprint:
@@ -414,7 +531,10 @@ root (`main.go` plus `app.go`, `screens_register.go`, one `screen_<name>.go`
 per screen, and `stubs.go` for endpoint/seed stubs). These are owned Go you
 read, edit, and commit — no `DO NOT EDIT` header. See
 [Blueprints](blueprints.md) for the full blueprint shape, including the
-[generated screen file layout](blueprints.md#generated-screen-files).
+[generated screen file layout](blueprints.md#generated-screen-files). To add
+in-page dynamic behavior to those screens (sort, paginate, mutate without a
+reload), build islands — the cookbook is
+[interactive-patterns](interactive-patterns.md).
 
 Useful flags:
 

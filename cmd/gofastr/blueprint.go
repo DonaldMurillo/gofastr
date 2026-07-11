@@ -505,20 +505,22 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		if err != nil {
 			return nil, nil, err
 		}
-		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "access": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
+		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "cross_owner_read": true, "search_fields": true, "access": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("entities[%d]", i)); err != nil {
 			return nil, nil, err
 		}
 		decl := framework.EntityDeclaration{
-			Name:         stringValue(m["name"]),
-			Table:        stringValue(m["table"]),
-			SoftDelete:   boolValue(m["soft_delete"]),
-			MultiTenant:  boolValue(m["multi_tenant"]),
-			OwnerField:   stringValue(m["owner_field"]),
-			MCP:          boolValue(m["mcp"]),
-			CursorField:  stringValue(m["cursor_field"]),
-			CursorFields: stringListValue(m["cursor_fields"]),
-			Properties:   mapValue(m["properties"]),
+			Name:           stringValue(m["name"]),
+			Table:          stringValue(m["table"]),
+			SoftDelete:     boolValue(m["soft_delete"]),
+			MultiTenant:    boolValue(m["multi_tenant"]),
+			OwnerField:     stringValue(m["owner_field"]),
+			CrossOwnerRead: stringValue(m["cross_owner_read"]),
+			SearchFields:   stringListValue(m["search_fields"]),
+			MCP:            boolValue(m["mcp"]),
+			CursorField:    stringValue(m["cursor_field"]),
+			CursorFields:   stringListValue(m["cursor_fields"]),
+			Properties:     mapValue(m["properties"]),
 		}
 		if m["timestamps"] != nil {
 			v := boolValue(m["timestamps"])
@@ -543,6 +545,34 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 				Type:   "string",
 				Hidden: true,
 			})
+		}
+		// cross_owner_read lifts owner scoping for reads only — it only
+		// makes sense on an owner-scoped entity. Catch the misconfiguration
+		// here with an actionable message rather than letting the knob
+		// silently do nothing at runtime.
+		if decl.CrossOwnerRead != "" && decl.OwnerField == "" {
+			return nil, nil, fmt.Errorf("blueprint: entity %q sets cross_owner_read %q but has no owner_field (cross-owner read only applies to owner-scoped entities)", decl.Name, decl.CrossOwnerRead)
+		}
+		// search_fields must reference known, non-hidden, string/text
+		// columns. entity.Define panics on these too, but the blueprint
+		// decoder returns a friendlier error before code generation.
+		for _, sf := range decl.SearchFields {
+			var found *framework.FieldDeclaration
+			for j := range decl.Fields {
+				if decl.Fields[j].Name == sf {
+					found = &decl.Fields[j]
+					break
+				}
+			}
+			if found == nil {
+				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q is not a declared field", decl.Name, sf)
+			}
+			if found.Hidden {
+				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q is Hidden (search would disclose its values)", decl.Name, sf)
+			}
+			if found.Type != "string" && found.Type != "text" {
+				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
+			}
 		}
 		relations, err := decodeRelations(m["relations"])
 		if err != nil {

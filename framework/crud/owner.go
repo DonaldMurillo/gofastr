@@ -71,6 +71,16 @@ var errOwnerRequired = errors.New("owner context required for owner-scoped entit
 // in-process callers (typed repos, jobs, scripts) bypass that path.
 var errTenantRequired = errors.New("tenant context required for multi-tenant entity")
 
+// crossOwnerReadGranted reports whether the request context holds the
+// entity's declared CrossOwnerRead permission. Returns false when the
+// entity does not opt in (empty permission) or when access.Can denies
+// (including the fail-closed "no policy in context" case). READ-ONLY by
+// construction: only ApplyOwnerScope / ApplyOwnerScopeCount consult it.
+func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
+	perm := ch.Entity.Config.CrossOwnerRead
+	return perm != "" && access.Can(ctx, access.Permission(perm))
+}
+
 // ApplyOwnerScope adds an `<owner_field> = ?` predicate to a SELECT query
 // when the entity declares OwnerField and the request context carries an
 // owner id (registered via framework/owner.SetExtractor — typically by
@@ -79,7 +89,7 @@ var errTenantRequired = errors.New("tenant context required for multi-tenant ent
 // Uses PostgreSQL-style $N placeholders, matching ApplyTenantScope.
 func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) {
 	field := ch.Entity.Config.OwnerField
-	if field == "" || owner.IsCrossOwner(r.Context()) {
+	if field == "" || owner.IsCrossOwner(r.Context()) || ch.crossOwnerReadGranted(r.Context()) {
 		return
 	}
 	if id, ok := owner.Get(r.Context()); ok {
@@ -90,7 +100,7 @@ func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) 
 // ApplyOwnerScopeCount mirrors ApplyOwnerScope for count queries.
 func (ch *CrudHandler) ApplyOwnerScopeCount(cb *query.CountBuilder, r *http.Request) {
 	field := ch.Entity.Config.OwnerField
-	if field == "" || owner.IsCrossOwner(r.Context()) {
+	if field == "" || owner.IsCrossOwner(r.Context()) || ch.crossOwnerReadGranted(r.Context()) {
 		return
 	}
 	if id, ok := owner.Get(r.Context()); ok {

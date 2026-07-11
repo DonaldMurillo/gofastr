@@ -42,6 +42,17 @@ type EntityConfig struct {
 	// pre-existing behaviour.
 	OwnerField string
 
+	// CrossOwnerRead names an RBAC permission (e.g. "tickets:read:all")
+	// that, when held by the request context (installed via access.Middleware
+	// or battery/auth), lifts owner scoping for READ operations only
+	// (List/Get/Count/includes — both HTTP and in-process). Writes stay
+	// owner-scoped, always. Requires OwnerField; leave empty to keep
+	// pre-existing behaviour. Fail-closed: when no access policy is present
+	// in the context the scope stays ON (the secure-by-default answer). The
+	// admin battery's wildcard grant passes any permission, so an entity
+	// opted in here is fully visible in the back office.
+	CrossOwnerRead string
+
 	// Access declares the RBAC permission required for each CRUD operation.
 	// A blank permission leaves that operation un-gated by RBAC (owner and
 	// tenant scoping still apply). When set, auto-CRUD refuses a request
@@ -49,6 +60,18 @@ type EntityConfig struct {
 	// present in the request context — wire them once with access.Middleware
 	// (or battery/auth). See framework/docs/content/access-control.md.
 	Access AccessControl
+
+	// SearchFields names the DB columns that ?q= free-text search operates
+	// on (e.g. []string{"title","body"}). When non-empty, a List request
+	// carrying ?q=<term> tokenizes the term on whitespace (deduped, capped
+	// at filter.MaxSearchTerms) and AND-composes one LOWER(col) LIKE
+	// pattern per token across the listed fields. Matching is
+	// ASCII-case-insensitive everywhere (Unicode-folding on Postgres).
+	// Leave nil to keep pre-existing behaviour (?q= is ignored). Column
+	// names must be known, non-Hidden, and String/Text-typed; Define panics
+	// otherwise. An entity WITHOUT SearchFields ignores ?q= exactly as
+	// before (back-compat).
+	SearchFields []string
 
 	// Seed runs once per entity after AutoMigrate creates the table. The
 	// framework tracks completion in the _gofastr_seeded ledger; subsequent
@@ -290,6 +313,41 @@ func Define(name string, config EntityConfig) *Entity {
 				ReadOnly:     true,
 				Hidden:       true,
 			})
+		}
+	}
+
+	// CrossOwnerRead lifts owner scoping for reads only, so it only makes
+	// sense on an entity that is owner-scoped to begin with. Catch the
+	// misconfiguration here, at definition, with an actionable message —
+	// otherwise the knob silently does nothing.
+	if config.CrossOwnerRead != "" && config.OwnerField == "" {
+		panic(fmt.Sprintf("entity %q: CrossOwnerRead %q requires OwnerField (cross-owner read only applies to owner-scoped entities)", name, config.CrossOwnerRead))
+	}
+
+	// SearchFields must reference known, non-Hidden, String/Text columns.
+	// An unknown name would produce a "no such column" error at query time;
+	// a Hidden column would turn ?q= into a value-disclosure oracle (same
+	// rationale as ParseFilters' hidden stripping); a non-text column can't
+	// meaningfully participate in LOWER() LIKE matching. Catch all three
+	// here, at definition, with an actionable message.
+	if len(config.SearchFields) > 0 {
+		for _, sf := range config.SearchFields {
+			var found *schema.Field
+			for i := range config.Fields {
+				if config.Fields[i].Name == sf {
+					found = &config.Fields[i]
+					break
+				}
+			}
+			if found == nil {
+				panic(fmt.Sprintf("entity %q: SearchFields entry %q is not a declared field", name, sf))
+			}
+			if found.Hidden {
+				panic(fmt.Sprintf("entity %q: SearchFields entry %q is Hidden (search would disclose its values)", name, sf))
+			}
+			if found.Type != schema.String && found.Type != schema.Text {
+			panic(fmt.Sprintf("entity %q: SearchFields entry %q must be String or Text, got %d", name, sf, found.Type))
+			}
 		}
 	}
 

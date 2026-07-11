@@ -214,6 +214,14 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 			listOp.AddParameter(name+"_in", "query", name+" in comma-separated list", false, map[string]any{"type": "string"})
 		}
 
+		// ?q= free-text search: advertised only when the entity declares
+		// SearchFields. The description names the searched columns so SDK
+		// generators and API consumers know the scope.
+		if len(ent.Config.SearchFields) > 0 {
+			desc := "Free-text search across: " + strings.Join(ent.Config.SearchFields, ", ")
+			listOp.AddParameter("q", "query", desc, false, map[string]any{"type": "string"})
+		}
+
 		// 200 is one of two envelopes — clients pick by whether they sent ?cursor.
 		listOp.AddResponse(200, "List of "+entityName, map[string]any{"oneOf": []any{listRef, cursorRef}})
 		listOp.AddResponse(400, "Invalid filters or unknown include", errorRef)

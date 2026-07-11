@@ -256,3 +256,60 @@ func TestLike_WildcardEscaped(t *testing.T) {
 		})
 	}
 }
+
+// TestSearchWildcardEscaped verifies that SearchConditions escapes LIKE
+// metacharacters (% _ \) in the search term so they match literally,
+// mirroring TestLike_WildcardEscaped. Without escaping, a user could
+// supply "%" as a search term to match every row, or "_" to match any
+// single character.
+func TestSearchWildcardEscaped(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string // expected bound arg
+	}{
+		{"plain_substring", "hello", `%hello%`},
+		{"percent_wildcard", "%", `%\%%`},
+		{"underscore_wildcard", "_", `%\_%`},
+		{"escape_char", `\`, `%\\%`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			conds := SearchConditions([]string{"title"}, tc.in)
+			if len(conds) != 1 {
+				t.Fatalf("expected 1 condition, got %d", len(conds))
+			}
+			if got := conds[0].Args[0].(string); got != tc.want {
+				t.Errorf("SECURITY: [filter_search] %q not escaped: arg=%q want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSearchSQLPayloadParameterized proves that SQL injection payloads in
+// the search term never appear in the emitted SQL — they go into bound
+// args, not the SQL string. The only SQL in a Condition is the fixed
+// LOWER(field) LIKE $N ESCAPE pattern.
+func TestSearchSQLPayloadParameterized(t *testing.T) {
+	payloads := []string{
+		"'; DROP TABLE notes--",
+		"' OR '1'='1",
+		"'; INSERT INTO admin VALUES('pwned'); --",
+		"UNION SELECT password FROM users",
+	}
+	for _, p := range payloads {
+		conds := SearchConditions([]string{"title", "body"}, p)
+		if len(conds) == 0 {
+			t.Fatalf("expected conditions for payload %q, got 0", p)
+		}
+		for _, c := range conds {
+			sql := c.SQL
+			// The payload must NOT appear in the SQL string.
+			if strings.Contains(sql, "DROP") || strings.Contains(sql, "INSERT") ||
+				strings.Contains(sql, "UNION") || strings.Contains(sql, "OR '1'='1") {
+				t.Errorf("SECURITY: [filter_search] payload %q leaked into SQL: %q", p, sql)
+			}
+		}
+	}
+}

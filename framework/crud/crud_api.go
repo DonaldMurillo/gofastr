@@ -39,6 +39,12 @@ func syntheticRequest(ctx context.Context, method, path string) *http.Request {
 // AfterCreate hooks) inside a single transaction and emits entity.created on
 // commit. Returns the created row as a snake_cased map; convert to a typed
 // struct in your caller.
+//
+// By default ReadOnly and Hidden fields in body are silently skipped
+// (matching the HTTP Create path). To persist them from trusted server
+// code, wrap ctx with WithServerWrites — the owner and tenant columns
+// remain context-stamped regardless. Hidden fields stay absent from the
+// returned map (visibleFields shapes the projection, not the write set).
 func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[string]any, error) {
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
@@ -65,6 +71,10 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 
 // UpdateOne updates a record by id with the partial body. Hooks + tx +
 // event emission all fire as in the HTTP path.
+//
+// By default ReadOnly and Hidden fields in body are silently skipped.
+// Wrap ctx with WithServerWrites to persist them from trusted server
+// code; the owner and tenant columns are never writable from the body.
 func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string]any) (map[string]any, error) {
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
@@ -160,6 +170,12 @@ type ListOptions struct {
 	Limit         int
 	Offset        int
 	Includes      []string
+	// Search carries a free-text ?q= term for in-process parity with the
+	// HTTP List handler. When non-empty AND the entity declares
+	// SearchFields, it produces AND-composed LOWER(col) LIKE conditions.
+	// Returns an error when set on an entity without SearchFields (fail
+	// loud, matching unknown-sort policy).
+	Search string
 }
 
 // ListAll runs a list query with optional filters/sort/limit/offset/includes
@@ -176,6 +192,11 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if err != nil {
 		return nil, err
 	}
+	// Search: fail loud when Search is set on an entity without SearchFields.
+	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
+		return nil, fmt.Errorf("ListAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
+	}
+	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
 	cols := ch.visibleFields()
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, opts.Filters)
@@ -187,6 +208,9 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
+	for _, c := range searchConds {
+		qb.Where(c.SQL, c.Args...)
+	}
 	filter.ApplySortToQuery(qb, opts.Sorts)
 	if opts.Limit > 0 {
 		qb.Limit(opts.Limit)
@@ -221,6 +245,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 // BatchCreateMany runs CreateOne for each body in a single transaction.
 // Events fire after commit (per item, in input order). Any per-item error
 // rolls back the whole batch — same semantics as the HTTP _batch endpoint.
+// Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
@@ -250,6 +275,7 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 }
 
 // BatchUpdateMany runs UpdateOne for each (id, body) pair atomically.
+// Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies []map[string]any) ([]map[string]any, error) {
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
@@ -321,6 +347,11 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	if err != nil {
 		return 0, err
 	}
+	// Search: fail loud when Search is set on an entity without SearchFields.
+	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
+		return 0, fmt.Errorf("CountAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
+	}
+	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
 	cb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(cb, opts.Filters)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
@@ -331,6 +362,9 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 		func(sql string, args ...any) { cb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
+	for _, c := range searchConds {
+		cb.Where(c.SQL, c.Args...)
+	}
 	sqlStr, args := cb.Build()
 	var total int
 	if err := ch.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&total); err != nil {

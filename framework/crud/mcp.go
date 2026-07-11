@@ -84,6 +84,13 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				}
 			}
 		}
+		// ?q= free-text search: forwarded to the list URL when the entity
+		// declares SearchFields (the schema below advertises it only then).
+		if len(ch.Entity.Config.SearchFields) > 0 {
+			if v, ok := params["q"]; ok {
+				values.Set("q", fmt.Sprint(v))
+			}
+		}
 		path := ch.mcpBase()
 		if encoded := values.Encode(); encoded != "" {
 			path += "?" + encoded
@@ -211,6 +218,9 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 		"page":  map[string]any{"type": "integer", "minimum": 1},
 		"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100},
 		"sort":  map[string]any{"type": "string"},
+	}
+	if len(ent.Config.SearchFields) > 0 {
+		props["q"] = map[string]any{"type": "string", "description": "Free-text search across: " + strings.Join(ent.Config.SearchFields, ", ")}
 	}
 	for _, field := range ent.GetFields() {
 		if field.Hidden {

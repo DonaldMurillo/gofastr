@@ -50,6 +50,10 @@ type crossOwnerKey struct{}
 //   - The auto-generated HTTP CRUD endpoints have no path to this marker and
 //     stay owner-scoped, always. It is an escape for the in-process Go API
 //     surface only.
+//
+// For a declarative, RBAC-checked widening that applies to BOTH HTTP and
+// in-process reads, see EntityConfig.CrossOwnerRead (names a permission;
+// fail-closed; reads only).
 func AllowCrossOwner(ctx context.Context) context.Context {
 	return context.WithValue(ctx, crossOwnerKey{}, true)
 }

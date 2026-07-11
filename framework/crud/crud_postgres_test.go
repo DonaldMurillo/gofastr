@@ -418,3 +418,38 @@ func TestPG_OwnerTenantFailClosed(t *testing.T) {
 		t.Errorf("scoped row body = %q, want a-t1", got)
 	}
 }
+
+// TestPG_SearchFields exercises ?q= free-text search against real
+// Postgres LOWER() — proving the LOWER(col) LIKE $N ESCAPE pattern
+// works on PG's locale-aware LOWER (vs SQLite's ASCII-only). The
+// pgBooksCfg entity is reused but with SearchFields on title+genre.
+func TestPG_SearchFields(t *testing.T) {
+	cfg := pgBooksCfg("pgsrch_books")
+	cfg.SearchFields = []string{"title", "genre"}
+	ch, db := pgCrudSetup(t, cfg, pgBooksDDL("pgsrch_books"))
+	seedBooks(t, db, "pgsrch_books")
+
+	// "go" matches title "Go in Action" and "Go Web Dev" (case-insensitive).
+	got := listIDs(t, ch, "/pgsrch_books?q=go&sort=id")
+	if want := []string{"b1", "b4"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("q=go → %v, want %v", got, want)
+	}
+
+	// "tech" matches genre "tech" on b1 + b4.
+	got = listIDs(t, ch, "/pgsrch_books?q=TECH&sort=id")
+	if want := []string{"b1", "b4"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("q=TECH → %v, want %v (case-insensitive)", got, want)
+	}
+
+	// Multi-token AND: "go tech" → both tokens must match (title OR genre).
+	got = listIDs(t, ch, "/pgsrch_books?q=go%20tech&sort=id")
+	if want := []string{"b1", "b4"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("q='go tech' → %v, want %v (AND composition)", got, want)
+	}
+
+	// No match: "python" matches nothing.
+	got = listIDs(t, ch, "/pgsrch_books?q=python&sort=id")
+	if len(got) != 0 {
+		t.Errorf("q=python → %v, want empty", got)
+	}
+}

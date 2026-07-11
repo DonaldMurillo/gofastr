@@ -959,6 +959,19 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	if decl.OwnerField != "" {
 		sb.WriteString(fmt.Sprintf("\t\tOwnerField: %q,\n", decl.OwnerField))
 	}
+	if decl.CrossOwnerRead != "" {
+		sb.WriteString(fmt.Sprintf("\t\tCrossOwnerRead: %q,\n", decl.CrossOwnerRead))
+	}
+	if len(decl.SearchFields) > 0 {
+		sb.WriteString("\t\tSearchFields: []string{")
+		for i, sf := range decl.SearchFields {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(fmt.Sprintf("%q", sf))
+		}
+		sb.WriteString("},\n")
+	}
 	if literal := renderAccessLiteral(decl.Access); literal != "" {
 		sb.WriteString("\t\tAccess: " + literal + ",\n")
 	}

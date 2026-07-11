@@ -261,6 +261,14 @@ An empty facet value (the auto-prepended "All" choice) submits `status=`;
 the server treats an empty param as "no filter". Pair with `FilterChipBar`
 below the toolbar to show the *active* filters as removable chips.
 
+> **`SearchFields` integration.** When the entity declares
+> `SearchFields`, `FilterSearch{Name: "q"}` maps 1:1 onto the list
+> endpoint — the `?q=` param the toolbar emits is exactly what the
+> auto-CRUD List handler free-text-searches. No manual wiring needed:
+> the server-side search is automatic. Without `SearchFields`, the
+> `?q=` param is ignored by the CRUD layer and the screen must filter
+> rows itself (the pre-existing "wired manually" behaviour).
+
 ---
 
 ## Adding a new component — checklist

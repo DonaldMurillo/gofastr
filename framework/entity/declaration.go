@@ -24,6 +24,15 @@ type EntityDeclaration struct {
 	// current request's owner and auto-stamps Create. Mirrors
 	// EntityConfig.OwnerField; leave empty to keep pre-existing behaviour.
 	OwnerField string `json:"owner_field,omitempty"`
+	// CrossOwnerRead optionally names an RBAC permission that lifts owner
+	// scoping for READ operations only on this entity, when the permission
+	// is held in the request context. Mirrors EntityConfig.CrossOwnerRead;
+	// leave empty to keep pre-existing behaviour. Requires OwnerField.
+	CrossOwnerRead string `json:"cross_owner_read,omitempty"`
+	// SearchFields names the DB columns that ?q= free-text search operates
+	// on (e.g. ["title","body"]). Mirrors EntityConfig.SearchFields; leave
+	// empty to keep pre-existing behaviour (?q= is ignored).
+	SearchFields []string `json:"search_fields,omitempty"`
 	// Access declares the RBAC permission required per CRUD operation.
 	// Mirrors EntityConfig.Access (AccessControl): each entry is a
 	// permission string (e.g. "posts:write"); a blank/omitted entry
@@ -82,20 +91,21 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		fields = append(fields, field)
 	}
 	cfg := EntityConfig{
-		Name:         d.Name,
-		Table:        d.Table,
-		Fields:       fields,
-		Relations:    d.Relations,
-		Endpoints:    d.Endpoints,
-		SoftDelete:   d.SoftDelete,
-		MultiTenant:  d.MultiTenant,
-		OwnerField:   d.OwnerField,
-		CRUD:         d.CRUD,
-		MCP:          d.MCP,
-		CursorField:  d.CursorField,
-		CursorFields: d.CursorFields,
-		Indices:      d.Indices,
-		Properties:   d.Properties,
+		Name:           d.Name,
+		Table:          d.Table,
+		Fields:         fields,
+		Relations:      d.Relations,
+		Endpoints:      d.Endpoints,
+		SoftDelete:     d.SoftDelete,
+		MultiTenant:    d.MultiTenant,
+		OwnerField:     d.OwnerField,
+		CrossOwnerRead: d.CrossOwnerRead,
+		SearchFields:   d.SearchFields,
+		CRUD:           d.CRUD,
+		CursorField:    d.CursorField,
+		CursorFields:   d.CursorFields,
+		Indices:        d.Indices,
+		Properties:     d.Properties,
 	}
 	if d.Access != nil {
 		cfg.Access = AccessControl{

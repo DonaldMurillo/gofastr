@@ -192,6 +192,20 @@ Each has a `*_test.go` you can read for the exact behaviour.
   background worker), or run Postgres. Full discussion in
   `docs/migrations.md` §Concurrency model.
 
+## Owner isolation and `CrossOwnerRead`
+
+Entities with `OwnerField` scope every read/write to the requesting
+user's rows — the framework refuses anonymous requests (401) and
+injects `WHERE <owner_field> = <ctx user id>` into every query so a
+user can never see or mutate another user's data. `CrossOwnerRead`
+optionally widens this for **reads only**: when the request context
+holds the named RBAC permission, List/Get/Count span all owners.
+Writes (Create/Update/Delete) stay owner-scoped regardless, and
+multi-tenant isolation is preserved — a granted context in tenant A
+never sees tenant B rows. The widening is fail-closed: no access policy
+in context ⇒ no widening. See
+[entity-declarations](entity-declarations.md) → "CrossOwnerRead".
+
 ## Common mistakes
 
 - **Relaxing CSP to fix a broken third-party script.** Override only

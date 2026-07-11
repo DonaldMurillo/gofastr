@@ -249,9 +249,10 @@ helpers:
 ## Generated output
 
 Entity declarations reuse the existing `entities` package generator, including
-fields, relations, CRUD, MCP, timestamps, soft delete, multi-tenant,
-`owner_field`, per-operation `access` RBAC, cursor settings, indices, and
-`properties`. The `access` map (keys `read`, `create`, `update`, `delete`;
+`owner_field`, `cross_owner_read` (role-based cross-owner read; requires
+`owner_field`), `search_fields` (multi-field free-text `?q=` search),
+per-operation `access` RBAC, cursor settings, indices, and `properties`.
+The `access` map (keys `read`, `create`, `update`, `delete`;
 each value a permission string) is emitted as `Access:
 framework.AccessControl{...}` in the generated registration — see
 [entity-declarations](entity-declarations.md) for the semantics and

@@ -167,6 +167,8 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 	putBool(m, "soft_delete", e.SoftDelete)
 	putBool(m, "multi_tenant", e.MultiTenant)
 	putStr(m, "owner_field", e.OwnerField)
+	putStr(m, "cross_owner_read", e.CrossOwnerRead)
+	putStrs(m, "search_fields", e.SearchFields)
 	if e.Timestamps != nil {
 		m["timestamps"] = *e.Timestamps
 	}
@@ -1007,6 +1009,12 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 	}
 	if v, ok := cfg["CursorField"]; ok {
 		decl.CursorField = astString(v)
+	}
+	if v, ok := cfg["CrossOwnerRead"]; ok {
+		decl.CrossOwnerRead = astString(v)
+	}
+	if v, ok := cfg["SearchFields"]; ok {
+		decl.SearchFields = astStringSlice(v)
 	}
 	if v, ok := cfg["CursorFields"]; ok {
 		decl.CursorFields = astStringSlice(v)

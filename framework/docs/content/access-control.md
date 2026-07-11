@@ -90,6 +90,14 @@ flips it to `session_id`. If your deployment overrides
 > `owner.AllowCrossOwner(ctx)` — server-side Go only; the HTTP CRUD
 > endpoints have no path to it. See [entity-declarations](entity-declarations.md)
 > → "Reading across owners".
+>
+> **Declarative cross-owner read.** `EntityConfig.CrossOwnerRead` names a
+> permission that, when held by the request context, lifts owner scoping
+> for READ operations only on that entity — letting a staff or admin role
+> see every owner's rows on List/Get/Count while writes stay scoped. It
+> is fail-closed (no policy ⇒ no widening) and requires `OwnerField`. See
+> [entity-declarations](entity-declarations.md) → "Letting a role read
+> every owner's rows".
 
 > Before this existed, exposing an entity granted **every authenticated
 > user full CRUD** unless you hand-composed route-group middleware.

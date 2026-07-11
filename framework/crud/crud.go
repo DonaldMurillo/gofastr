@@ -340,6 +340,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		// q-column edge case: when the entity has SearchFields and ?q= is
+		// present, a plain ?q=value would be parsed as an OpEq filter on a
+		// column named "q". Drop it — plain ?q= means search. Suffixed ops
+		// (?q_like=, ?q_gt=, …) still filter the column.
+		filters = stripQColumnEqFilter(filters, len(ch.Entity.Config.SearchFields) > 0, r.URL.Query().Has("q"))
+
 		// Nested filters like ?author.name=alice. Parsed once and applied to
 		// both the count + data queries below.
 		nested, err := parseNestedFilters(r, ch.Entity, ch.Registry)
@@ -347,6 +353,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+
+		// ?q= free-text search: when the entity declares SearchFields and
+		// the request carries a non-blank ?q=, build filter.SearchConditions
+		// and append them as Where clauses. They feed the count, data,
+		// cursor, and stream sinks uniformly because listPayload.Where is
+		// applied to each. Zero signature changes.
+		searchWheres := ch.searchWhereClauses(r)
 
 		// BeforeList hook — collect any extra WHERE clauses the host wants
 		// to scope the query by. Runs before cursor / streaming branches so
@@ -358,6 +371,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 				return
 			}
 		}
+
+		// Merge ?q= search conditions with hook-appended Where clauses so
+		// both feed the count, data, cursor, and stream sinks.
+		listPayload.Where = append(searchWheres, listPayload.Where...)
 
 		// Cursor pagination is opt-in: presence of the ?cursor key (even
 		// empty for first-page) switches to keyset mode and emits the
@@ -520,6 +537,47 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			returnRowSlice(pooledRows)
 		}
 	}
+}
+
+// searchWhereClauses builds hook.WhereClause entries from ?q= when the
+// entity declares SearchFields. Returns nil when SearchFields is empty
+// or ?q= is blank — the entity then ignores ?q= exactly as before
+// (back-compat). The conditions AND-compose safely with owner/tenant/
+// soft-delete scopes because the query builder wraps each Where clause
+// in parens.
+func (ch *CrudHandler) searchWhereClauses(r *http.Request) []hook.WhereClause {
+	if len(ch.Entity.Config.SearchFields) == 0 {
+		return nil
+	}
+	q := r.URL.Query().Get("q")
+	conds := filter.SearchConditions(ch.Entity.Config.SearchFields, q)
+	if len(conds) == 0 {
+		return nil
+	}
+	wheres := make([]hook.WhereClause, len(conds))
+	for i, c := range conds {
+		wheres[i] = hook.WhereClause{SQL: c.SQL, Args: c.Args}
+	}
+	return wheres
+}
+
+// stripQColumnEqFilter removes a plain OpEq filter on a column named "q"
+// when the entity has SearchFields AND ?q= is present. This resolves the
+// edge case: an entity WITH SearchFields that also has a physical column
+// named "q" — plain ?q= means search (not filter on the column). Suffixed
+// ops (?q_like=, ?q_gt=, …) still filter the column.
+func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPresent bool) []filter.ParsedFilter {
+	if !hasSearchFields || !qPresent || len(filters) == 0 {
+		return filters
+	}
+	out := filters[:0]
+	for _, f := range filters {
+		if f.Op == filter.OpEq && f.Field == "q" {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // Get returns an http.HandlerFunc that fetches a single entity by ID.
