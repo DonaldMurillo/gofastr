@@ -470,7 +470,10 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 		// SECURITY: roles are server-assigned, never client-controlled.
 		// /auth/register is anonymous — see decodeAuthCredentials for
 		// the rationale. Role elevation is a separate admin-gated flow.
-		roles := []string{"user"}
+		// The values come from AuthConfig.DefaultRoles (operator
+		// configuration, fallback ["user"]); any client-supplied roles
+		// key on the request body is ignored.
+		roles := c.mgr.DefaultRoles()
 
 		if err := ValidatePasswordStrength(password); err != nil {
 			if isForm {

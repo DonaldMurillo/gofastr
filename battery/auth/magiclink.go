@@ -321,9 +321,9 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// password and the placeholder bcrypt step is reused.
 		var err error
 		if creator, ok := userStore.(OAuthUserCreator); ok {
-			user, err = creator.CreateUserNoPassword(r.Context(), email, []string{"user"})
+			user, err = creator.CreateUserNoPassword(r.Context(), email, p.mgr.DefaultRoles())
 		} else {
-			user, err = userStore.CreateUser(r.Context(), email, passwordPlaceholderHash, []string{"user"})
+			user, err = userStore.CreateUser(r.Context(), email, passwordPlaceholderHash, p.mgr.DefaultRoles())
 		}
 		if err != nil {
 			writeAuthError(w, http.StatusInternalServerError, "failed to create user")

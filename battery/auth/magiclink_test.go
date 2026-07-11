@@ -666,3 +666,47 @@ func TestMagicLink_RealSender_NoDevMode_Works(t *testing.T) {
 
 // Compile guard: keep context import live in case helpers move.
 var _ = context.Background
+
+// TestMagicLinkUsesConfiguredRoles pins that the magic-link
+// auto-create path stamps AuthManager.DefaultRoles() onto the new
+// account instead of the hardcoded ["user"].
+func TestMagicLinkUsesConfiguredRoles(t *testing.T) {
+	sender := &mockEmailSender{}
+	userStore := newMemoryUserStore()
+	mgr := New(AuthConfig{
+		JWTSecret:    "test-secret",
+		SessionTTL:   24 * time.Hour,
+		SessionCookie: "session_id",
+		UserStore:    userStore,
+		DefaultRoles: []string{"member", "editor"},
+	})
+	plugin := NewMagicLinkPlugin(MagicLinkConfig{
+		BaseURL:      "http://localhost:8080",
+		OnSuccessURL: "/dashboard",
+		TokenTTL:     15 * time.Minute,
+		EmailSender:  sender,
+	})
+	mgr.Use(plugin)
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	r := mountMagicLinkRoutes(mgr)
+
+	email := "newuser@example.com"
+	token, _ := plugin.tokenStore.CreateToken(context.Background(), email, 15*time.Minute)
+	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d: %s", w.Code, w.Body.String())
+	}
+	u, _, err := userStore.FindByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("user should exist after verify: %v", err)
+	}
+	got := u.GetRoles()
+	if len(got) != 2 || got[0] != "member" || got[1] != "editor" {
+		t.Fatalf("expected configured [member editor], got %v", got)
+	}
+}

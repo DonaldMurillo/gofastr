@@ -41,8 +41,11 @@ type AuthConfig struct {
 	// BasePath is the URL prefix for all auth routes. Defaults to "/auth".
 	BasePath string
 
-	// UserStore is the interface for looking up users by email/id.
-	// If nil, an in-memory store is used (dev/test only).
+	// UserStore looks up and creates users. Unlike SessionStore, there
+	// is NO default: if nil, the register/login/magic-link/OAuth
+	// handlers fail with "user store not configured". Wire an
+	// auth.EntityUserStore (or your own implementation) in every
+	// deployment, including dev/test.
 	UserStore UserStore
 
 	// SessionStore is the storage backend for sessions.
@@ -84,6 +87,18 @@ type AuthConfig struct {
 	// accounts to password-only auth after a restart. See the
 	// horizontal-scaling doc for the DB-backed alternatives.
 	AllowInMemoryStores bool
+
+	// DefaultRoles are the server-assigned roles stamped onto every
+	// newly created account — register, magic-link auto-create, and
+	// OAuth auto-create all draw from it. When empty (the default),
+	// ["user"] is used.
+	//
+	// These are operator configuration, NEVER request data: the
+	// registration and auto-create flows are anonymous, so honoring a
+	// client-supplied roles key would let anyone self-promote. The
+	// handlers read this value through AuthManager.DefaultRoles() and
+	// ignore any roles field on the incoming request.
+	DefaultRoles []string
 
 	// AuditSink, when non-nil, receives security events: login success
 	// and failure, 2FA enrolment/challenge/disable, password reset,
@@ -329,6 +344,23 @@ func PluginAs[T AuthPlugin](m *AuthManager, name string) (T, error) {
 // Config returns the auth configuration (read-only copy).
 func (m *AuthManager) Config() AuthConfig {
 	return m.config
+}
+
+// DefaultRoles returns the roles assigned to newly created accounts,
+// from AuthConfig.DefaultRoles or ["user"] when that field is empty.
+// It returns a fresh copy on every call so each caller owns its slice
+// and cannot mutate the shared configuration through it.
+//
+// This is the single source of truth the register handler and the
+// OAuth/magic-link auto-create flows read; it is server-side
+// configuration and is never influenced by request input.
+func (m *AuthManager) DefaultRoles() []string {
+	if len(m.config.DefaultRoles) > 0 {
+		out := make([]string, len(m.config.DefaultRoles))
+		copy(out, m.config.DefaultRoles)
+		return out
+	}
+	return []string{"user"}
 }
 
 // SessionStore returns the session storage backend.

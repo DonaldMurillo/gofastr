@@ -529,3 +529,80 @@ func TestEntityUserStore_DuplicateEmail_ReturnsErrEmailTaken(t *testing.T) {
 		t.Fatalf("expected ErrEmailTaken, got %v", err)
 	}
 }
+
+// TestEntityStoreListUsersPaginates pins the UserLister contract on
+// EntityUserStore: stable email-ordered pages, an accurate total
+// count, and roles round-tripped through parseRoles. SELECTs only
+// id/email/roles — password_hash never appears in the listing.
+func TestEntityStoreListUsersPaginates(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	store := NewEntityUserStore(db, "users")
+	ctx := context.Background()
+	hash, _ := HashPassword("password123")
+
+	// Emails sort lexicographically; seed in shuffled order to prove
+	// the ORDER BY email (not insertion order) drives paging.
+	emails := []string{"u2@x.com", "u0@x.com", "u4@x.com", "u1@x.com", "u3@x.com"}
+	for _, e := range emails {
+		if _, err := store.CreateUser(ctx, e, hash, []string{"editor", "viewer"}); err != nil {
+			t.Fatalf("CreateUser %s: %v", e, err)
+		}
+	}
+
+	// Page 1 (offset 0, limit 2) → u0, u1.
+	page1, total, err := store.ListUsers(ctx, ListUsersOptions{Limit: 2, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListUsers page1: %v", err)
+	}
+	if total != 5 {
+		t.Fatalf("total = %d, want 5", total)
+	}
+	if len(page1) != 2 || page1[0].GetEmail() != "u0@x.com" || page1[1].GetEmail() != "u1@x.com" {
+		t.Fatalf("page1 = %v", emailsOf(page1))
+	}
+
+	// Page 2 (offset 2, limit 2) → u2, u3.
+	page2, _, err := store.ListUsers(ctx, ListUsersOptions{Limit: 2, Offset: 2})
+	if err != nil {
+		t.Fatalf("ListUsers page2: %v", err)
+	}
+	if len(page2) != 2 || page2[0].GetEmail() != "u2@x.com" || page2[1].GetEmail() != "u3@x.com" {
+		t.Fatalf("page2 = %v", emailsOf(page2))
+	}
+
+	// Page 3 (offset 4, limit 2) → u4 only (last partial page).
+	page3, total3, err := store.ListUsers(ctx, ListUsersOptions{Limit: 2, Offset: 4})
+	if err != nil {
+		t.Fatalf("ListUsers page3: %v", err)
+	}
+	if total3 != 5 {
+		t.Fatalf("total3 = %d, want 5", total3)
+	}
+	if len(page3) != 1 || page3[0].GetEmail() != "u4@x.com" {
+		t.Fatalf("page3 = %v", emailsOf(page3))
+	}
+
+	// Roles round-trip.
+	if r := page1[0].GetRoles(); len(r) != 2 || r[0] != "editor" || r[1] != "viewer" {
+		t.Fatalf("roles = %v, want [editor viewer]", r)
+	}
+
+	// Offset past the end → empty page, total unchanged.
+	empty, totalE, err := store.ListUsers(ctx, ListUsersOptions{Limit: 10, Offset: 100})
+	if err != nil {
+		t.Fatalf("ListUsers past-end: %v", err)
+	}
+	if len(empty) != 0 || totalE != 5 {
+		t.Fatalf("past-end page = %v (len %d), total %d", emailsOf(empty), len(empty), totalE)
+	}
+}
+
+func emailsOf(users []User) []string {
+	out := make([]string, len(users))
+	for i, u := range users {
+		out[i] = u.GetEmail()
+	}
+	return out
+}

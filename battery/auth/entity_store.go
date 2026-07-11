@@ -166,6 +166,53 @@ func (s *EntityUserStore) FindByID(ctx context.Context, id string) (User, error)
 	}, nil
 }
 
+// ListUsers enumerates accounts ordered by the email column, returning
+// one page plus the total row count. Implements UserLister.
+//
+// Only id/email/roles are selected — never password_hash — so a paged
+// listing never surfaces password material. Roles are parsed with the
+// store's existing parseRoles helper, matching FindByEmail/FindByID.
+// The caller (AuthManager.ListUsers) clamps opts, so Limit>=1 and
+// Offset>=0 hold here.
+func (s *EntityUserStore) ListUsers(ctx context.Context, opts ListUsersOptions) ([]User, int, error) {
+	listQ := fmt.Sprintf(
+		"SELECT %s, %s, %s FROM %s ORDER BY %s LIMIT $1 OFFSET $2",
+		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteIdent(s.fieldMap.Email),
+		query.QuoteIdent(s.fieldMap.Roles),
+		query.QuoteIdent(s.table),
+		query.QuoteIdent(s.fieldMap.Email),
+	)
+	rows, err := s.db.QueryContext(ctx, listQ, opts.Limit, opts.Offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	users := make([]User, 0, opts.Limit)
+	for rows.Next() {
+		var id, email, rolesStr string
+		if err := rows.Scan(&id, &email, &rolesStr); err != nil {
+			return nil, 0, err
+		}
+		users = append(users, &BasicUser{
+			ID:    id,
+			Email: email,
+			Roles: parseRoles(rolesStr),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	var total int
+	countQ := fmt.Sprintf("SELECT COUNT(*) FROM %s", query.QuoteIdent(s.table))
+	if err := s.db.QueryRowContext(ctx, countQ).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	return users, total, nil
+}
+
 // CreateUser inserts a new user and returns it. Returns ErrEmailTaken
 // when the email already exists; other errors are returned verbatim.
 //

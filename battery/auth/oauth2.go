@@ -366,9 +366,9 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 		createErr error
 	)
 	if creator, ok := store.(OAuthUserCreator); ok {
-		user, createErr = creator.CreateUserNoPassword(ctx, info.Email, []string{"user"})
+		user, createErr = creator.CreateUserNoPassword(ctx, info.Email, p.mgr.DefaultRoles())
 	} else {
-		user, createErr = store.CreateUser(ctx, info.Email, passwordPlaceholderHash, []string{"user"})
+		user, createErr = store.CreateUser(ctx, info.Email, passwordPlaceholderHash, p.mgr.DefaultRoles())
 	}
 	if createErr != nil {
 		return nil, false, createErr

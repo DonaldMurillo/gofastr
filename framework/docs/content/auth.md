@@ -121,6 +121,7 @@ safe-but-reduced path.
 | `SessionTwoFAMarker` | `TwoFAPlugin` | Mark a session as having completed the second factor. Required for `RequireTwoFA` to ever pass — stores that omit it fail closed. |
 | `SessionPendingMarker` | `CorePlugin` | Set `Session.PendingTwoFactor` after login for users who have 2FA enabled. **Fail-closed:** if any registered `TwoFactorChecker` reports a user enrolled and the store omits this interface (or the mark call errors), login is rejected and the session destroyed — a custom store cannot silently downgrade 2FA accounts to password-only auth. |
 | `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |
+| `UserLister` | Host code (`AuthManager.ListUsers`) | Enumerate accounts for a back-office. Returns `ErrListUsersUnsupported` when absent, so a missing implementation fails loudly instead of returning an empty list. See [Listing users](#listing-users). |
 
 The `EntityUserStore` and `EntitySessionStore` provided in this
 package implement every relevant interface; if you start from
@@ -133,6 +134,26 @@ password-only auth after a restart. Production mode logs a WARN at
 Init when either default is active; set
 `AuthConfig.AllowInMemoryStores: true` to acknowledge a deliberate
 single-node deployment, or see [Horizontal scaling](scaling.md).
+
+## Default roles for new accounts
+
+Every newly created account — register, magic-link auto-create, and
+OAuth auto-create — is stamped with `AuthConfig.DefaultRoles`. The
+default is `["user"]`.
+
+```go
+mgr := auth.New(auth.AuthConfig{
+    DefaultRoles: []string{"member"}, // everyone starts as "member", not "user"
+    // …
+})
+```
+
+These are **operator configuration, never request data.** The
+registration and auto-create flows are anonymous, so honoring a
+client-supplied `roles` field would let anyone self-promote to any
+role. The handlers read the value through `mgr.DefaultRoles()` and
+ignore any `roles` key on the incoming request — role elevation is a
+separate admin-gated flow.
 
 ## HTML form support
 
@@ -449,6 +470,32 @@ mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 `auth.UserEntityFields()` and `auth.SessionEntityFields()` are still
 exported for hosts that want to assemble their own config — but the
 `*EntityConfig()` helpers are the safe default.
+
+## Listing users
+
+Back-offices that need to enumerate accounts (an admin user list, a
+back-office screen) should call `mgr.ListUsers` — the supported
+replacement for raw SQL against `auth_users`. It pages through the
+store in a stable email-ordered sequence and returns only
+`id`/`email`/`roles`, never `password_hash`.
+
+```go
+users, total, err := mgr.ListUsers(ctx, auth.ListUsersOptions{
+    Limit:  50, // <=0 → 50, capped at 500
+    Offset: 0,  // <0 → 0
+})
+```
+
+`total` is the full row count (independent of the page), so a UI can
+render "showing 1–50 of 832". There is **no HTTP route** — call it
+from trusted server code (an admin handler you mount yourself), not
+the auth plugin surface.
+
+`ListUsers` type-asserts the configured `UserStore` for the optional
+`UserLister` interface. `EntityUserStore` implements it; a custom
+store that does not gets `auth.ErrListUsersUnsupported` — a loud
+failure rather than a silently empty list, so a deployment that forgot
+a listable store is told explicitly.
 
 ## CSRF protection
 
