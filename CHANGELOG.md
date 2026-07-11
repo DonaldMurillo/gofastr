@@ -7,6 +7,89 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+Backlog from the 2026-07-10 dual blind cold-start eval (two agents each
+built a multi-surface app from the repo alone; every item below was hit
+independently or verified against the running builds).
+
+### Added
+
+- **Role-based cross-owner read (`EntityConfig.CrossOwnerRead`).** An
+  owner-scoped entity can name an RBAC permission (e.g.
+  `"tickets:read:all"`) that lifts owner scoping for READ operations
+  only — list/get/count/cursor/stream/includes, HTTP and in-process.
+  Checked via `access.Can` at the single owner-scope chokepoint, so it
+  is fail-closed (no policy in context ⇒ scoping stays on) and
+  spoof-proof (roles enter context only via server-side middleware).
+  Writes never widen: update/delete stay owner-scoped and creates still
+  stamp the caller. The admin battery's wildcard grant passes any
+  permission, so opted-in entities are fully visible in the back office
+  — per-entity opt-in, decided by the entity author.
+  `owner.AllowCrossOwner` remains the in-process escape hatch.
+  Blueprint key: `cross_owner_read`.
+- **Free-text search (`EntityConfig.SearchFields` + `?q=`).** The list
+  endpoint's `?q=` parameter now searches the declared columns
+  server-side: whitespace-tokenized (deduped, capped at
+  `filter.MaxSearchTerms`), each token an OR-group of
+  `LOWER(col) LIKE` with metacharacters escaped, tokens AND-composed
+  with owner/tenant/soft-delete scoping on every path (count, buffered,
+  cursor, streaming). ASCII-case-insensitive on every dialect. Hidden
+  or non-text columns are rejected at `Define` (value-disclosure
+  oracle). In-process parity via `ListOptions.Search`; OpenAPI and the
+  MCP list tool document/forward `q`; blueprint key: `search_fields`.
+- **SQLite FTS5 search backend (`search.NewSQLiteFTS`).** Durable
+  ranked full-text search without Postgres: FTS5 virtual table (porter
+  tokenizer), bm25 ranking, prefix matching, FTS5 operators neutralized
+  by quoting, `FieldEquals` via allow-listed `json_extract`. Requires
+  building with `-tags sqlite_fts5` (schema creation says so when the
+  module is missing).
+- **`upload.ServeHandler(storage)`.** The download half that uploads.md
+  always claimed existed: GET/HEAD, sniffed content type, `nosniff`
+  always, HTML/SVG neutralized to `application/octet-stream` +
+  attachment. Traversal stays enforced in the storage backends, now
+  classified via `upload.ErrInvalidKey` (400) vs `ErrNotFound` (404).
+- **`Router.MethodNotAllowed` + uihost fall-through.** Registering a
+  non-GET route at a screen path no longer shadows the screen with a
+  bare text 405: the uihost delegates GET/HEAD to the screen render
+  when one resolves, and renders a styled 405 page (Allow header
+  preserved, gated-method 404 semantics unchanged) otherwise.
+- **`crud.ValidationError` (+ `framework.ValidationError`).** Exported
+  with `Fields() map[string][]string` and `NewValidationError`, so
+  in-process callers can branch on per-field messages with `errors.As`.
+  HTTP wire shape unchanged.
+- **`crud.WithServerWrites(ctx)`.** Opt-in for trusted server code to
+  persist ReadOnly/Hidden fields through
+  `CreateOne`/`UpdateOne`/batch/upsert — previously such writes were
+  silently dropped with no error. HTTP handlers never set the flag
+  (mass-assignment protection unchanged); owner and tenant columns stay
+  context-stamped and body-immutable regardless.
+- **`AuthConfig.DefaultRoles` + `AuthManager.ListUsers`.** New-account
+  roles are configurable (register, magic-link, and OAuth auto-create;
+  still strictly server-assigned), and back offices can enumerate users
+  through the optional `UserLister` store interface (implemented on
+  `EntityUserStore`, paginated, never selects the password hash)
+  instead of raw-SQLing `auth_users`.
+- **Queue failure logging.** `battery/queue` DBQueue and MemoryQueue
+  take a logger (`WithDBLogger` / `WithLogger`, default
+  `slog.Default()`): handler failures log at WARN, terminal
+  dead-letters at ERROR, swallowed Ack/Nack errors at WARN. A failing
+  job is no longer silent.
+
+### Fixed
+
+- **BarChart no longer renders black bars** for unrecognized `Color`
+  values: registered status variants resolve to their accent color,
+  syntax-valid CSS colors pass through, anything else falls back to the
+  theme primary.
+- **Docs drift**: `uploads.md` documented a nonexistent
+  `upload.NewLocal(dir, urlPrefix)` API; `entity-declarations.md`
+  claimed hidden fields are "still stored and API-readable" (they are
+  excluded from responses and skipped on client writes); the stale
+  "in-memory user store" comment on `AuthConfig.UserStore`.
+- **Docs discoverability**: the island cookbook
+  (`interactive-patterns.md`) is now cross-linked from the entity,
+  admin, UI, and widget docs; `theming.md` gains a self-hosted web
+  fonts recipe with the explicit CDN-fonts-are-CSP-blocked callout.
+
 ## [0.17.0] - 2026-07-10
 
 ### Added
