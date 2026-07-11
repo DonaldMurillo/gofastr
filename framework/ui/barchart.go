@@ -28,8 +28,19 @@ type BarChartBar struct {
 	Label string
 	// Value is the bar height (≥0).
 	Value float64
-	// Color overrides the default theme primary. Optional CSS color
-	// or one of: "primary", "info", "success", "warning", "danger".
+	// Color overrides the default theme primary. Accepted forms:
+	//   - a palette token: "primary", "info", "success", "warning",
+	//     "danger" (rendered via a theme class, so it re-skins in dark
+	//     mode);
+	//   - a registered status variant name (ui.RegisterStatusVariant),
+	//     resolved to its accent color;
+	//   - a CSS color written as hex (#rgb/#rgba/#rrggbb/#rrggbbaa),
+	//     or a rgb()/rgba()/hsl()/hsla()/oklch()/color() function, or
+	//     var(--…), emitted verbatim as the SVG fill.
+	//
+	// CSS named colors ("tomato") must be written as hex or var(). An
+	// unrecognized value falls back to the theme primary instead of
+	// rendering an invalid (black) fill.
 	Color string
 }
 
@@ -233,10 +244,24 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		barCls := "ui-bar-chart__bar"
 		isPalette := color == "primary" || color == "info" ||
 			color == "success" || color == "warning" || color == "danger"
-		if color == "" {
-			barCls += " ui-bar-chart__bar--primary"
-		} else if isPalette {
+
+		// Resolve the effective fill. Palette tokens and an empty Color
+		// are class-based (theme-aware). Any other value is a raw SVG
+		// fill attribute — but only when it names a registered status
+		// variant (resolved to its accent) or is a plausible CSS color.
+		// Anything else falls back to the primary class so a typo like
+		// "draft" never renders an invalid (black) fill.
+		var fill string
+		if isPalette {
 			barCls += " ui-bar-chart__bar--" + color
+		} else if color == "" {
+			barCls += " ui-bar-chart__bar--primary"
+		} else if c, ok := registeredStatusColor(color); ok {
+			fill = c
+		} else if plausibleCSSColor(color) {
+			fill = color
+		} else {
+			barCls += " ui-bar-chart__bar--primary"
 		}
 
 		sb.WriteString(`<rect x="`)
@@ -250,9 +275,9 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		sb.WriteString(`" rx="3" class="`)
 		sb.WriteString(barCls)
 		sb.WriteString(`"`)
-		if !isPalette && color != "" {
+		if fill != "" {
 			sb.WriteString(` fill="`)
-			sb.WriteString(escapeXML(color))
+			sb.WriteString(escapeXML(fill))
 			sb.WriteString(`"`)
 		}
 		if b.Label != "" {
@@ -342,6 +367,51 @@ func niceCeil(v float64) float64 {
 // niceTicks returns 0, max/2, max — three clean gridline values.
 func niceTicks(max float64) []float64 {
 	return []float64{0, max / 2, max}
+}
+
+// plausibleCSSColor reports whether s is shaped like a CSS color the
+// SVG fill attribute can use: #hex (3/4/6/8 digits), a rgb()/rgba()/
+// hsl()/hsla()/oklch()/color() function, or var(--…). Bare words
+// ("draft", "tomato") are NOT accepted — a bare word is either a
+// registered status variant (handled upstream) or a mistake. CSS named
+// colors must be written as hex or var(). Syntax-only: no parsing of
+// the function arguments, just a prefix + closing ')' shape check.
+func plausibleCSSColor(s string) bool {
+	if s == "" {
+		return false
+	}
+	// #hex — 3/4/6/8 hex digits (4 and 8 carry the alpha channel).
+	if s[0] == '#' {
+		hex := s[1:]
+		switch len(hex) {
+		case 3, 4, 6, 8:
+		default:
+			return false
+		}
+		for i := 0; i < len(hex); i++ {
+			c := hex[i]
+			isHex := c >= '0' && c <= '9' ||
+				c >= 'a' && c <= 'f' ||
+				c >= 'A' && c <= 'F'
+			if !isHex {
+				return false
+			}
+		}
+		return true
+	}
+	low := strings.ToLower(s)
+	if !strings.HasSuffix(s, ")") {
+		return false
+	}
+	if strings.HasPrefix(low, "var(--") {
+		return true
+	}
+	for _, p := range []string{"rgb(", "rgba(", "hsl(", "hsla(", "oklch(", "color("} {
+		if strings.HasPrefix(low, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // wrapChartLabel greedily word-wraps label to at most two lines that each

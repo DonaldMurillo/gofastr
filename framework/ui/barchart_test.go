@@ -167,3 +167,49 @@ func TestBarChartLongLabelsWrap(t *testing.T) {
 		t.Errorf("full label text should survive in <title>:\n%s", h)
 	}
 }
+// An unrecognized Color (a bare word like "draft") is not a valid CSS
+// color — an SVG fill="draft" renders black. It must fall back to the
+// theme primary class instead of emitting the bad value verbatim.
+func TestBarChartInvalidColorFallsBack(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars: []BarChartBar{{Label: "x", Value: 1, Color: "draft"}},
+	}))
+	if !strings.Contains(h, "ui-bar-chart__bar--primary") {
+		t.Errorf("unrecognized Color should fall back to primary class:\n%s", h)
+	}
+	if strings.Contains(h, `fill="draft"`) {
+		t.Errorf("unrecognized Color must not be emitted as a raw fill:\n%s", h)
+	}
+}
+
+// A hex Color is a valid CSS color and passes straight through to fill.
+func TestBarChartHexColorPassesThrough(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars: []BarChartBar{{Label: "x", Value: 1, Color: "#ff6b35"}},
+	}))
+	if !strings.Contains(h, `fill="#ff6b35"`) {
+		t.Errorf("hex Color should pass through as fill:\n%s", h)
+	}
+}
+
+// A var(--…) Color is a valid CSS color and passes straight through.
+func TestBarChartVarColorPassesThrough(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars: []BarChartBar{{Label: "x", Value: 1, Color: "var(--color-success)"}},
+	}))
+	if !strings.Contains(h, `fill="var(--color-success)"`) {
+		t.Errorf("var() Color should pass through as fill:\n%s", h)
+	}
+}
+
+// A registered status variant name resolves to its accent color (token
+// shorthand like {colors.primary} → var(--color-primary)) and becomes
+// the bar fill.
+func TestBarChartStatusVariantColor(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars: []BarChartBar{{Label: "x", Value: 1, Color: string(testBetaStatus)}},
+	}))
+	if !strings.Contains(h, `fill="var(--color-primary)"`) {
+		t.Errorf("registered status variant should resolve to its accent fill:\n%s", h)
+	}
+}

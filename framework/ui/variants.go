@@ -319,6 +319,22 @@ func registeredStatusIcon(v StatusVariant) string {
 	return statusMods.status[string(v)].Icon
 }
 
+// registeredStatusColor returns the resolved accent CSS color for a
+// registered custom status variant, with its {colors.*} token shorthand
+// expanded to var(--color-*) the same way customStatusCSS does (the
+// resolution is purely syntactic — var names come from the token name,
+// never the value — so DefaultTheme yields the same result as any host
+// theme). ok is false when name is not a registered status variant.
+func registeredStatusColor(name string) (color string, ok bool) {
+	statusMods.mu.RLock()
+	defer statusMods.mu.RUnlock()
+	entry, hit := statusMods.status[name]
+	if !hit {
+		return "", false
+	}
+	return style.DefaultTheme().ResolveAll(entry.Color), true
+}
+
 // ─── CSS emission (called from the component styleFns) ──────────────
 
 // customModsCSS renders the registered entries of set as scoped rules
