@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"net/http"
+	"sort"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -75,6 +76,29 @@ func (rp *RolePolicy) permissionsFor(role string) []Permission {
 	out := make([]Permission, len(src))
 	copy(out, src)
 	return out
+}
+
+// Roles returns the sorted list of all roles that currently have at least
+// one granted permission. The slice is a defensive copy — callers can
+// iterate it without holding the lock. Intended for admin UIs that need
+// to enumerate the grant matrix; not used on the hot Can path.
+func (rp *RolePolicy) Roles() []string {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+	roles := make([]string, 0, len(rp.rolePermissions))
+	for r := range rp.rolePermissions {
+		roles = append(roles, r)
+	}
+	sort.Strings(roles)
+	return roles
+}
+
+// PermissionsOf returns a defensive copy of the permissions granted to
+// the given role. Returns nil when the role has no grants. Callers
+// iterate the returned slice without holding the lock so a concurrent
+// Grant/Revoke can't mutate it under them.
+func (rp *RolePolicy) PermissionsOf(role string) []Permission {
+	return rp.permissionsFor(role)
 }
 
 // Wildcard is the superuser permission: a role granted "*" passes every

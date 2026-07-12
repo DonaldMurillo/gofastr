@@ -9,10 +9,12 @@ type (
 	Permission = access.Permission
 	Policy     = access.Policy
 	RolePolicy = access.RolePolicy
+	GrantStore = access.GrantStore
 )
 
 var (
 	NewRolePolicy     = access.NewRolePolicy
+	NewGrantStore     = access.NewGrantStore
 	RequirePermission = access.RequirePermission
 	GetPermissions    = access.GetPermissions
 	WithPolicy        = access.WithPolicy
