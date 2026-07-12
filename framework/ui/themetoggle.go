@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── ThemeToggle ────────────────────────────────────────────────────
@@ -48,6 +51,9 @@ type ThemeToggleConfig struct {
 	// AutoLabel overrides the auto-mode label for pill variant.
 	// Defaults to "Auto".
 	AutoLabel string
+	// Ctx carries the per-request context used to resolve the light/dark/
+	// auto labels and aria-labels. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // ThemeToggle renders a dark/light color scheme toggle button.
@@ -82,10 +88,14 @@ const sunSVG = `<svg class="ui-theme-toggle__sun" xmlns="http://www.w3.org/2000/
 const moonSVG = `<svg class="ui-theme-toggle__moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`
 
 func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeToggleVariant) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	attrs := map[string]string{
 		"type":                  "button",
 		"data-fui-theme-toggle": "",
-		"aria-label":            "Toggle color scheme",
+		"aria-label":            i18nui.T(ctx, i18nui.KeyThemeToggle),
 	}
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
@@ -101,11 +111,11 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 	default: // label
 		lightLabel := cfg.LightLabel
 		if lightLabel == "" {
-			lightLabel = "Light"
+			lightLabel = i18nui.T(ctx, i18nui.KeyThemeLight)
 		}
 		darkLabel := cfg.DarkLabel
 		if darkLabel == "" {
-			darkLabel = "Dark"
+			darkLabel = i18nui.T(ctx, i18nui.KeyThemeDark)
 		}
 		attrs["class"] = cls + " ui-theme-toggle--label"
 		return render.Tag("button", attrs,
@@ -116,24 +126,28 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 }
 
 func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	lightLabel := cfg.LightLabel
 	if lightLabel == "" {
-		lightLabel = "Light"
+		lightLabel = i18nui.T(ctx, i18nui.KeyThemeLight)
 	}
 	darkLabel := cfg.DarkLabel
 	if darkLabel == "" {
-		darkLabel = "Dark"
+		darkLabel = i18nui.T(ctx, i18nui.KeyThemeDark)
 	}
 	autoLabel := cfg.AutoLabel
 	if autoLabel == "" {
-		autoLabel = "Auto"
+		autoLabel = i18nui.T(ctx, i18nui.KeyThemeAuto)
 	}
 
 	rootAttrs := map[string]string{
 		"class":                 cls + " ui-theme-toggle--pill",
 		"data-fui-theme-toggle": "pill",
 		"role":                  "radiogroup",
-		"aria-label":            "Color scheme",
+		"aria-label":            i18nui.T(ctx, i18nui.KeyThemeColorScheme),
 	}
 	if cfg.ID != "" {
 		rootAttrs["id"] = cfg.ID

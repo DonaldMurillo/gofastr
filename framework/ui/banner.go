@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Banner / InlineAlert ───────────────────────────────────────────
@@ -45,6 +48,9 @@ type BannerConfig struct {
 	ID         string
 	Class      string
 	ExtraAttrs html.Attrs
+	// Ctx carries the per-request context used to resolve the dismiss label.
+	// When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // Banner renders a persistent page-status strip.
@@ -62,6 +68,10 @@ func Banner(cfg BannerConfig) render.HTML {
 	default:
 		panic("ui: Banner unknown Variant " + string(cfg.Variant) +
 			` — pick one of: "" (info), success, warn, danger`)
+	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	cls := "ui-banner"
@@ -114,7 +124,7 @@ func Banner(cfg BannerConfig) render.HTML {
 		dismissAttrs := map[string]string{
 			"type":                    "button",
 			"class":                   "ui-banner__dismiss",
-			"aria-label":              "Dismiss",
+			"aria-label":              i18nui.T(ctx, i18nui.KeyBannerDismiss),
 			"data-fui-banner-dismiss": "true",
 		}
 		if cfg.DismissID != "" {

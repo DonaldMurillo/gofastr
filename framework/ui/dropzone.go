@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── FileDropzone ───────────────────────────────────────────────────
@@ -51,6 +53,10 @@ type FileDropzoneConfig struct {
 	Error string
 	ID    string
 	Class string
+
+	// Ctx carries the per-request context used to resolve the prompt
+	// and max-size help labels. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // FileDropzone renders a hero file-drop surface.
@@ -61,6 +67,10 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: FileDropzone requires Label")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	id := cfg.ID
 	if id == "" {
 		id = cfg.Name
@@ -68,9 +78,9 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	prompt := cfg.Prompt
 	if prompt == "" {
 		if cfg.Multiple {
-			prompt = "Drop files here or click to browse"
+			prompt = i18nui.T(ctx, i18nui.KeyDropzoneDropFiles)
 		} else {
-			prompt = "Drop a file here or click to browse"
+			prompt = i18nui.T(ctx, i18nui.KeyDropzoneDropFile)
 		}
 	}
 
@@ -150,9 +160,9 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	help := cfg.Help
 	if cfg.MaxSizeMB > 0 {
 		if help == "" {
-			help = "Max " + strconv.Itoa(cfg.MaxSizeMB) + " MB."
+			help = i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSize, map[string]string{"n": strconv.Itoa(cfg.MaxSizeMB)})
 		} else {
-			help += " (max " + strconv.Itoa(cfg.MaxSizeMB) + " MB)"
+			help += i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSizeSuffix, map[string]string{"n": strconv.Itoa(cfg.MaxSizeMB)})
 		}
 	}
 	if cfg.Error != "" {

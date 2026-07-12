@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── PollingIndicator ───────────────────────────────────────────────
@@ -24,15 +27,22 @@ type PollingIndicatorConfig struct {
 	Paused bool
 	ID     string
 	Class  string
+	// Ctx carries the per-request context used to resolve the live label.
+	// When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // PollingIndicator renders the small pulsing-dot + label combination.
 // Uses role="status" + aria-live="polite" so the label text is
 // announced when it changes (e.g. swapping "Live" for "Paused").
 func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	label := cfg.Label
 	if label == "" {
-		label = "Live"
+		label = i18nui.T(ctx, i18nui.KeyPollingLive)
 	}
 	cls := "ui-polling-indicator"
 	if cfg.Paused {

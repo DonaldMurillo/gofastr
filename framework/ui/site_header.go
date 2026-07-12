@@ -11,10 +11,13 @@ package ui
 // auto-closes the drawer on cross-page SPA navigation.
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // SiteHeaderLink configures one primary-nav entry.
@@ -67,6 +70,9 @@ type SiteHeaderConfig struct {
 	Drawer SiteHeaderDrawerVariant
 	// Class is appended to the ui-site-header wrapper.
 	Class string
+	// Ctx carries the per-request context used to resolve the nav
+	// aria-labels (primary, mobile, toggle). When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // SiteHeaderDrawerVariant selects how the mobile nav opens.
@@ -87,13 +93,17 @@ const (
 // component output in <header role="banner">. Doubling up would emit
 // nested headers.
 func SiteHeader(cfg SiteHeaderConfig) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	primaryLabel := cfg.PrimaryNavAriaLabel
 	if primaryLabel == "" {
-		primaryLabel = "Primary"
+		primaryLabel = i18nui.T(ctx, i18nui.KeyNavPrimary)
 	}
 	mobileLabel := cfg.MobileNavAriaLabel
 	if mobileLabel == "" {
-		mobileLabel = "Mobile primary"
+		mobileLabel = i18nui.T(ctx, i18nui.KeyNavMobilePrimary)
 	}
 
 	navLink := func(item SiteHeaderLink) render.HTML {
@@ -147,7 +157,7 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 			"data-fui-disclosure-trap": "",
 		},
 		render.Tag("summary",
-			map[string]string{"class": "ui-site-header__mobile-toggle", "aria-label": "Toggle navigation"},
+			map[string]string{"class": "ui-site-header__mobile-toggle", "aria-label": i18nui.T(ctx, i18nui.KeyNavToggle)},
 			render.Raw(`<svg class="ui-site-header__icon ui-site-header__icon--menu" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>`),
 			render.Raw(`<svg class="ui-site-header__icon ui-site-header__icon--close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>`),
 		),

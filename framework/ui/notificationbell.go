@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -10,6 +11,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
+
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── NotificationBell ───────────────────────────────────────────────
@@ -66,7 +69,11 @@ type NotificationBellConfig struct {
 	// SSR initial render.
 	SignalList string
 	// Pages, when non-empty, scopes the popover mount to those routes.
-	Pages      []string
+	Pages []string
+	// Ctx carries the per-request context used to resolve the
+	// empty-state text. When nil, English fallbacks apply.
+	Ctx context.Context
+
 	ID         string
 	Class      string
 	ExtraAttrs html.Attrs
@@ -86,9 +93,13 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if cfg.Label == "" {
 		panic("ui: NotificationBell requires Label")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	emptyText := cfg.EmptyText
 	if emptyText == "" {
-		emptyText = "No new notifications"
+		emptyText = i18nui.T(ctx, i18nui.KeyNotificationEmpty)
 	}
 
 	cls := "ui-notification-bell"

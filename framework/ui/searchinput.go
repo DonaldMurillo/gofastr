@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── SearchInput ────────────────────────────────────────────────────
@@ -30,6 +33,9 @@ type SearchInputConfig struct {
 	Class string
 	// Attrs lets callers attach additional attributes.
 	ExtraAttrs map[string]string
+	// Ctx carries the per-request context used to resolve i18n labels
+	// (placeholder, aria-labels). When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // SearchInput renders a search field with icon prefix and clear button.
@@ -40,10 +46,14 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 	if cfg.ID == "" {
 		panic("ui: SearchInput requires ID")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	placeholder := cfg.Placeholder
 	if placeholder == "" {
-		placeholder = "Search..."
+		placeholder = i18nui.T(ctx, i18nui.KeySearchInputPlaceholder)
 	}
 	method := cfg.Method
 	if method == "" {
@@ -65,7 +75,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		"id":          cfg.ID,
 		"class":       "ui-search-input__input",
 		"placeholder": placeholder,
-		"aria-label":  "Search",
+		"aria-label":  i18nui.T(ctx, i18nui.KeySearchLabel),
 	}
 	for k, v := range cfg.ExtraAttrs {
 		inputAttrs[k] = v
@@ -84,7 +94,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		render.Tag("button", map[string]string{
 			"type":       "button",
 			"class":      "ui-search-input__clear",
-			"aria-label": "Clear search",
+			"aria-label": i18nui.T(ctx, i18nui.KeySearchClear),
 			"hidden":     "",
 		}, render.Text("×")),
 	}

@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── PageHeader ─────────────────────────────────────────────────────
@@ -119,6 +121,9 @@ type SectionConfig struct {
 	Label string
 	Class string
 	ID    string
+	// Ctx carries the per-request context used to resolve the default
+	// Section aria-label. When nil, English fallback applies.
+	Ctx context.Context
 }
 
 // Section renders a content section with consistent spacing and an
@@ -131,6 +136,10 @@ type SectionConfig struct {
 // inaccessible region — Section panics in that case to push callers
 // toward the right shape.
 func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cls := "ui-section"
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
@@ -182,7 +191,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	} else {
 		// No heading and no label → default to a generic aria-label so the
 		// region is at least announced, rather than panicking on every call.
-		secCfg.Label = "Section"
+		secCfg.Label = i18nui.T(ctx, i18nui.KeySectionLabel)
 	}
 	return sectionStyle.WrapHTML(html.Section(secCfg, out...))
 }

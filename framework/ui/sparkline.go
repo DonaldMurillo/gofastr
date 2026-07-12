@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Sparkline ──────────────────────────────────────────────────────
@@ -45,14 +47,21 @@ type SparklineConfig struct {
 	LabelledBy string
 	ID         string
 	Class      string
+	// Ctx carries the per-request context used to resolve the no-trend-data label.
+	// When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // Sparkline renders a tiny inline trend chart.
 func Sparkline(cfg SparklineConfig) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if len(cfg.Values) < 2 {
 		// Inline trend with too few points: render a calm "no trend" dash
 		// rather than crashing the host that embeds it.
-		attrs := map[string]string{"data-fui-comp": "ui-sparkline", "aria-label": "No trend data"}
+		attrs := map[string]string{"data-fui-comp": "ui-sparkline", "aria-label": i18nui.T(ctx, i18nui.KeySparklineNoData)}
 		if cfg.Class != "" {
 			attrs["class"] = cfg.Class
 		}

@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── CopyButton ─────────────────────────────────────────────────────
@@ -71,6 +74,10 @@ type CopyButtonConfig struct {
 	// Default 3000.
 	ToastTTLms int
 
+	// Ctx carries the per-request context used to resolve the
+	// Copy/Copied/clipboard labels. When nil, English fallbacks apply.
+	Ctx context.Context
+
 	ID    string
 	Class string
 }
@@ -80,17 +87,21 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	if cfg.Target == "" {
 		panic("ui: CopyButton requires Target")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	label := cfg.Label
 	if label == "" {
-		label = "Copy"
+		label = i18nui.T(ctx, i18nui.KeyCopyCopy)
 	}
 	copied := cfg.CopiedLabel
 	if copied == "" {
-		copied = "Copied"
+		copied = i18nui.T(ctx, i18nui.KeyCopyCopied)
 	}
 	announce := cfg.AnnounceText
 	if announce == "" {
-		announce = "Copied"
+		announce = i18nui.T(ctx, i18nui.KeyCopyCopied)
 	}
 
 	cls := "ui-copy-btn"
@@ -113,7 +124,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		}
 		title := cfg.ToastTitle
 		if title == "" {
-			title = "Copied"
+			title = i18nui.T(ctx, i18nui.KeyCopyCopied)
 		}
 		ttl := cfg.ToastTTLms
 		if ttl <= 0 {
@@ -134,7 +145,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	if cfg.IconOnly {
 		al := cfg.AriaLabel
 		if al == "" {
-			al = "Copy to clipboard"
+			al = i18nui.T(ctx, i18nui.KeyCopyToClipboard)
 		}
 		btnAttrs["aria-label"] = al
 	} else if cfg.AriaLabel != "" {

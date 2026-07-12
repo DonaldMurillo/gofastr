@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // FieldErrors maps form field names to user-visible error messages.
@@ -89,6 +90,10 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if method != "GET" && method != "POST" {
 		panic("ui: Form Method must be GET or POST, got " + method)
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	cls := "ui-form"
 	if cfg.Class != "" {
@@ -111,10 +116,10 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if len(cfg.Errors) > 0 {
 		summary := cfg.Summary
 		if summary == "" {
-			summary = "Please fix the highlighted fields and try again."
+			summary = i18nui.T(ctx, i18nui.KeyFormErrorsSummary)
 		}
 		children = append(children, Callout(
-			CalloutConfig{Variant: StatusDanger, Title: "Form has errors"},
+			CalloutConfig{Variant: StatusDanger, Title: i18nui.T(ctx, i18nui.KeyFormHasErrors)},
 			render.Text(summary),
 		))
 	}
@@ -127,7 +132,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if !cfg.HideSubmit {
 		submitLabel := cfg.SubmitLabel
 		if submitLabel == "" {
-			submitLabel = "Save"
+			submitLabel = i18nui.T(ctx, i18nui.KeyFormSave)
 		}
 		children = append(children,
 			render.Tag("div", map[string]string{"class": "ui-form__actions"},
@@ -212,6 +217,9 @@ type ValidationSummaryConfig struct {
 	Title string
 	// Class adds extra CSS classes to the wrapper.
 	Class string
+	// Ctx carries the per-request context used to resolve the i18n
+	// title. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // ValidationSummary renders an inline summary of form validation errors
@@ -224,13 +232,16 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 	}
 
 	cls := "ui-validation-summary"
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-
 	titleText := cfg.Title
 	if titleText == "" {
-		titleText = "Please fix the following errors:"
+		titleText = i18nui.T(ctx, i18nui.KeyValidationSummaryTitle)
 	}
 	title := html.Strong(
 		html.TextConfig{Class: "ui-validation-summary__title"},

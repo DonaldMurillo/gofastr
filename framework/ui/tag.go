@@ -1,8 +1,12 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Tag / Chip ─────────────────────────────────────────────────────
@@ -38,6 +42,10 @@ type TagConfig struct {
 	// the × button (e.g. data-fui-rpc-signal).
 	DismissAttrs html.Attrs
 
+	// Ctx carries the per-request context used to resolve the
+	// dismiss-label string. When nil, English fallbacks apply.
+	Ctx context.Context
+
 	ID    string
 	Class string
 }
@@ -55,6 +63,10 @@ func Tag(cfg TagConfig) render.HTML {
 		v = StatusNeutral
 	}
 	checkStatusVariant("Tag", v)
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	cls := "ui-tag ui-tag--" + string(v)
 	if cfg.Href != "" {
@@ -70,7 +82,7 @@ func Tag(cfg TagConfig) render.HTML {
 	if cfg.Dismiss != "" {
 		dismissLabel := cfg.DismissLabel
 		if dismissLabel == "" {
-			dismissLabel = "Remove " + cfg.Label
+			dismissLabel = i18nui.TVars(ctx, i18nui.KeyTagRemove, map[string]string{"label": cfg.Label})
 		}
 		attrs := html.Attrs{
 			"data-fui-rpc":        cfg.Dismiss,

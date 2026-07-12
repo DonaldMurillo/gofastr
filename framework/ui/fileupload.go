@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── FileUpload ─────────────────────────────────────────────────────
@@ -56,6 +58,10 @@ type FileUploadConfig struct {
 	Error string
 
 	Class string
+
+	// Ctx carries the per-request context used to resolve the prompt
+	// and max-size help labels. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // FileUpload renders a drag-drop file picker.
@@ -159,19 +165,27 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 }
 
 func uploadPrompt(cfg FileUploadConfig) string {
-	if cfg.Multiple {
-		return "Drop files here, or click to browse"
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return "Drop a file here, or click to browse"
+	if cfg.Multiple {
+		return i18nui.T(ctx, i18nui.KeyFileUploadDrop)
+	}
+	return i18nui.T(ctx, i18nui.KeyFileUploadDropSingle)
 }
 
 func helpText(cfg FileUploadConfig) string {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	bits := []string{}
 	if cfg.Help != "" {
 		bits = append(bits, cfg.Help)
 	}
 	if cfg.MaxSizeMB > 0 {
-		bits = append(bits, "Max "+itoa(cfg.MaxSizeMB)+" MB")
+		bits = append(bits, i18nui.TVars(ctx, i18nui.KeyFileMaxSize, map[string]string{"n": itoa(cfg.MaxSizeMB)}))
 	}
 	return strings.Join(bits, " · ")
 }

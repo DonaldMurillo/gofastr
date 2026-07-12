@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── FilterToolbar ──────────────────────────────────────────────────
@@ -134,6 +137,11 @@ type FilterToolbarConfig struct {
 	// aria-label). Default "Filters".
 	Label string
 
+	// Ctx carries the per-request context used to resolve i18n labels
+	// (Filters / Apply / Reset / Sort by / "All <label>" / Search…).
+	// When nil, English fallbacks are returned.
+	Ctx context.Context
+
 	ID         string
 	Class      string
 	ExtraAttrs html.Attrs
@@ -147,10 +155,14 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if len(cfg.Facets) == 0 && cfg.Search == nil && len(cfg.Sort) == 0 {
 		panic("ui: FilterToolbar requires at least one of Facets, Search, or Sort")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	label := cfg.Label
 	if label == "" {
-		label = "Filters"
+		label = i18nui.T(ctx, i18nui.KeyFilterToolbarLabel)
 	}
 
 	controls := make([]render.HTML, 0, len(cfg.Facets)+3)
@@ -166,9 +178,9 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 			panic("ui: FilterToolbar Facet requires at least one Option")
 		}
 		if f.Kind == FacetPills {
-			controls = append(controls, renderPillFacet(f))
+			controls = append(controls, renderPillFacet(ctx, f))
 		} else {
-			controls = append(controls, renderSelectFacet(f))
+			controls = append(controls, renderSelectFacet(ctx, f))
 		}
 	}
 
@@ -176,17 +188,17 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		if cfg.Search.Name == "" {
 			panic("ui: FilterToolbar Search requires Name")
 		}
-		controls = append(controls, renderSearchFacet(*cfg.Search))
+		controls = append(controls, renderSearchFacet(ctx, *cfg.Search))
 	}
 
 	if len(cfg.Sort) > 0 {
-		controls = append(controls, renderSortFacet(cfg))
+		controls = append(controls, renderSortFacet(ctx, cfg))
 	}
 
 	// Apply (submit) + Reset (link to the bare action → clears params).
 	applyLabel := cfg.ApplyLabel
 	if applyLabel == "" {
-		applyLabel = "Apply"
+		applyLabel = i18nui.T(ctx, i18nui.KeyFilterApply)
 	}
 	actionsKids := []render.HTML{
 		Button(ButtonConfig{
@@ -199,7 +211,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if !cfg.HideReset {
 		resetLabel := cfg.ResetLabel
 		if resetLabel == "" {
-			resetLabel = "Reset"
+			resetLabel = i18nui.T(ctx, i18nui.KeyFilterReset)
 		}
 		actionsKids = append(actionsKids, LinkButton(LinkButtonConfig{
 			Label:   resetLabel,
@@ -231,12 +243,12 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 
 // renderSelectFacet composes ui.Select for a facet, prepending an
 // "all" option (value "") unless one already exists.
-func renderSelectFacet(f Facet) render.HTML {
+func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 	opts := make([]SelectOption, 0, len(f.Options)+1)
 	if !hasEmptyValue(f.Options) {
 		allLabel := f.AllLabel
 		if allLabel == "" {
-			allLabel = "All " + f.Label
+			allLabel = i18nui.TVars(ctx, i18nui.KeyFilterAll, map[string]string{"label": f.Label})
 		}
 		opts = append(opts, SelectOption{Value: "", Text: allLabel, Selected: f.Value == ""})
 	}
@@ -248,14 +260,14 @@ func renderSelectFacet(f Facet) render.HTML {
 }
 
 // renderSortFacet composes ui.Select for the sort control.
-func renderSortFacet(cfg FilterToolbarConfig) render.HTML {
+func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 	name := cfg.SortName
 	if name == "" {
 		name = "sort"
 	}
 	sortLabel := cfg.SortLabel
 	if sortLabel == "" {
-		sortLabel = "Sort by"
+		sortLabel = i18nui.T(ctx, i18nui.KeyFilterSortBy)
 	}
 	opts := make([]SelectOption, 0, len(cfg.Sort))
 	for _, o := range cfg.Sort {
@@ -269,10 +281,10 @@ func renderSortFacet(cfg FilterToolbarConfig) render.HTML {
 }
 
 // renderSearchFacet composes ui.SearchInput (no nested <form>).
-func renderSearchFacet(s FilterSearch) render.HTML {
+func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	placeholder := s.Placeholder
 	if placeholder == "" {
-		placeholder = "Search…"
+		placeholder = i18nui.T(ctx, i18nui.KeySearchPlaceholder)
 	}
 	extra := html.Attrs{}
 	if s.Value != "" {
@@ -293,12 +305,12 @@ func renderSearchFacet(s FilterSearch) render.HTML {
 // renderPillFacet renders a facet as a wrapping radio-pill group inside
 // a labelled <fieldset>/<legend>. Native radio semantics give the caller
 // keyboard nav + a single submitted value for free.
-func renderPillFacet(f Facet) render.HTML {
+func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 	pills := make([]render.HTML, 0, len(f.Options)+1)
 	if !hasEmptyValue(f.Options) {
 		allLabel := f.AllLabel
 		if allLabel == "" {
-			allLabel = "All"
+			allLabel = i18nui.T(ctx, i18nui.KeyFilterAllPlain)
 		}
 		pills = append(pills, pill(f.Name, FacetOption{Label: allLabel, Value: ""}, f.Value == ""))
 	}

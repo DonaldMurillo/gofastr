@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── FilterChipBar ──────────────────────────────────────────────────
@@ -72,19 +75,27 @@ type FilterChipBarConfig struct {
 	// the parent container.
 	SignalName string
 
+	// Ctx carries the per-request context used to resolve i18n labels
+	// (Clear all / "Remove filter <label>"). When nil, English fallbacks.
+	Ctx context.Context
+
 	ID    string
 	Class string
 }
 
 // FilterChipBar renders the toolbar.
 func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	label := cfg.Label
 	if label == "" {
 		label = "Active filters"
 	}
 	clearLabel := cfg.ClearAllLabel
 	if clearLabel == "" {
-		clearLabel = "Clear all"
+		clearLabel = i18nui.T(ctx, i18nui.KeyFilterClearAll)
 	}
 
 	cls := "ui-filter-bar"
@@ -125,7 +136,7 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 			Label:        f.Label,
 			Variant:      f.Variant,
 			Dismiss:      f.DismissPath,
-			DismissLabel: "Remove filter " + f.Label,
+			DismissLabel: i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": f.Label}),
 			DismissAttrs: dismissAttrs,
 		}))
 	}

@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── NumberInput / Stepper ──────────────────────────────────────────
@@ -44,6 +46,9 @@ type NumberInputConfig struct {
 	ID         string
 	Class      string
 	ExtraAttrs html.Attrs
+	// Ctx carries the per-request context used to resolve the Decrement and
+	// Increment aria labels. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // NumberInput renders a number field with explicit +/- buttons.
@@ -53,6 +58,11 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 	}
 	if cfg.Label == "" {
 		panic("ui: NumberInput requires Label")
+	}
+
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	step := cfg.Step
 	if step == 0 {
@@ -105,14 +115,14 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 	minusAttrs := map[string]string{
 		"type":                 "button",
 		"class":                "ui-number-input__step ui-number-input__step--minus",
-		"aria-label":           "Decrement " + cfg.Label,
+		"aria-label":           i18nui.TVars(ctx, i18nui.KeyNumberDecrement, map[string]string{"label": cfg.Label}),
 		"data-fui-number-step": "-" + strconv.Itoa(step),
 		"data-fui-number-for":  id,
 	}
 	plusAttrs := map[string]string{
 		"type":                 "button",
 		"class":                "ui-number-input__step ui-number-input__step--plus",
-		"aria-label":           "Increment " + cfg.Label,
+		"aria-label":           i18nui.TVars(ctx, i18nui.KeyNumberIncrement, map[string]string{"label": cfg.Label}),
 		"data-fui-number-step": strconv.Itoa(step),
 		"data-fui-number-for":  id,
 	}

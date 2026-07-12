@@ -116,9 +116,13 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 }
 
 func repeaterRemoveBtn(cfg RepeaterConfig, index int) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	attrs := map[string]string{
 		"class":      "ui-repeater-remove",
-		"aria-label": fmt.Sprintf("Remove item %d", index+1),
+		"aria-label": i18nui.TVars(ctx, i18nui.KeyRepeaterRemoveItem, map[string]string{"index": strconv.Itoa(index + 1)}),
 	}
 	if cfg.RPCPath != "" {
 		attrs["data-fui-rpc"] = repeaterAppendQuery(cfg.RPCPath, fmt.Sprintf("action=remove&index=%d", index))
