@@ -361,6 +361,17 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// applied to each. Zero signature changes.
 		searchWheres := ch.searchWhereClauses(r)
 
+		// ?where=<json> nested predicate tree (OR-groups / nested AND-OR).
+		// Compiles to ONE parenthesized WHERE clause that AND-composes with
+		// the owner/tenant/soft-delete scopes exactly like the search
+		// clauses above — a user OR-group can never widen past a scope.
+		treeWheres, err := ch.whereTreeClauses(r)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid where: "+err.Error())
+			return
+		}
+		searchWheres = append(searchWheres, treeWheres...)
+
 		// BeforeList hook — collect any extra WHERE clauses the host wants
 		// to scope the query by. Runs before cursor / streaming branches so
 		// both paths inherit the same scope.
@@ -559,6 +570,32 @@ func (ch *CrudHandler) searchWhereClauses(r *http.Request) []hook.WhereClause {
 		wheres[i] = hook.WhereClause{SQL: c.SQL, Args: c.Args}
 	}
 	return wheres
+}
+
+// whereTreeClauses parses a ?where=<json> nested predicate tree, validates
+// every field against the entity's (non-Hidden) schema and every operator
+// against the supported set, and compiles it to one hook.WhereClause. It
+// returns (nil, nil) when ?where= is absent/blank (back-compat). An
+// invalid tree returns an error the caller maps to 400. The single clause
+// AND-composes with owner/tenant/soft-delete scopes because the query
+// builder wraps each Where in parens.
+func (ch *CrudHandler) whereTreeClauses(r *http.Request) ([]hook.WhereClause, error) {
+	raw := r.URL.Query().Get("where")
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	p, err := filter.ParseWhere(raw, ch.Entity.GetFields())
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, nil
+	}
+	c := filter.BuildPredicate(p)
+	if c.SQL == "" {
+		return nil, nil
+	}
+	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, nil
 }
 
 // stripQColumnEqFilter removes a plain OpEq filter on a column named "q"
