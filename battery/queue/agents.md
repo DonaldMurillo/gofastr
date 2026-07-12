@@ -14,7 +14,8 @@ failure, job queue, dead-letter, worker pool.
 ```go
 q, err := queue.NewDBQueue(db,
     queue.WithTable("jobs"),
-    queue.WithWorkers(4),
+    queue.WithWorkers(4),                  // shared pool — claims any lane
+    queue.WithDBLaneWorkers("high", 2),    // reserved lane workers (optional)
 )
 if err != nil { return err }
 q.RegisterHandler("send-welcome", func(ctx context.Context, j queue.Job) error {
@@ -26,7 +27,8 @@ q.Start(ctx)
 _ = q.Enqueue(ctx, queue.Job{
     Type:        "send-welcome",
     Payload:     []byte(`{"user_id":"42"}`),
-    Priority:    0, // higher integers run first
+    Priority:    0, // higher integers run first (DBQueue + MemoryQueue)
+    Lane:        "", // "" = default lane; set to reserve capacity (see below)
     ScheduledAt: time.Now().Add(1 * time.Hour),
     MaxAttempts: 5,
 })
@@ -41,12 +43,21 @@ stop and use `DBQueue` instead:
 - A retry helper like `for i := 0; i < 3; i++ { try(); time.Sleep(...) }`
 - `_, _ = db.Exec("INSERT INTO jobs ...")` because "enqueue can fail"
 
-`DBQueue` ships durable storage, priority ordering, scheduled jobs,
-exponential retry, lease-based worker claim (safe under crashes), and
-a `Browsable` view consumed by `battery/admin`'s `/admin/queue` page.
+`DBQueue` ships durable storage, priority ordering, **lane reservations**
+(`WithDBLaneWorkers`), scheduled jobs, exponential retry, lease-based worker
+claim (safe under crashes), and a `Browsable` view consumed by
+`battery/admin`'s `/admin/queue` page.
 `RedisQueue` and `MemoryQueue` both implement `Browsable` as well —
 they surface dead-lettered jobs under the `"failed"` key so the admin
 queue page works with any backend.
+
+**Lanes / starvation.** `Priority` only chooses among *pending* jobs when a
+worker frees up — it cannot preempt a running handler, so a bulk backfill can
+starve urgent jobs by saturating every worker. `WithDBLaneWorkers(lane, n)`
+(DBQueue) / `WithLaneWorkers(lane, n)` (MemoryQueue) reserve dedicated workers
+that only claim `Job.Lane`-matching jobs; shared workers still take any lane.
+`RedisQueue` has no worker loop — run one instance per lane via `queueName`.
+MemoryQueue now honours `Priority` too (priority heap), not just DBQueue.
 
 **Lease / crash-safety.** Dequeue claims a row by setting `status='claimed'`
 and stamping `claimed_at`. If the worker dies before Ack/Nack the row would

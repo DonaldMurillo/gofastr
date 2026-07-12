@@ -1,11 +1,13 @@
 package queue
 
 import (
+	"container/heap"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 )
@@ -40,17 +42,40 @@ func WithLogger(l *slog.Logger) MemoryQueueOption {
 	}
 }
 
-// MemoryQueue is an in-memory queue backed by a goroutine pool.
+// WithLaneWorkers adds n dedicated worker goroutines that ONLY take jobs
+// whose Lane equals the given lane, on top of the shared workers passed to
+// NewMemoryQueue. This mirrors DBQueue.WithLaneWorkers and prevents a bulk
+// backfill from starving urgent jobs even under worker saturation. Multiple
+// calls for different lanes each add their own workers; multiple calls for
+// the same lane sum. Panics if n <= 0 or lane is "" (use the shared worker
+// count for the default lane).
+func WithLaneWorkers(lane string, n int) MemoryQueueOption {
+	if n <= 0 {
+		panic(fmt.Sprintf("queue.WithLaneWorkers: n must be > 0, got %d", n))
+	}
+	if lane == "" {
+		panic("queue.WithLaneWorkers: lane must be non-empty (use the shared worker count for the default lane)")
+	}
+	return func(q *MemoryQueue) {
+		if q.laneWorkers == nil {
+			q.laneWorkers = map[string]int{}
+		}
+		q.laneWorkers[lane] += n
+	}
+}
+
+// MemoryQueue is an in-memory queue backed by a goroutine pool. Pending jobs
+// live in a priority heap (Priority DESC, enqueue-order ASC tiebreak) so
+// higher-priority jobs are always taken first — priority is honoured, not
+// ignored.
 type MemoryQueue struct {
 	workers        int
+	laneWorkers    map[string]int
 	handlerTimeout time.Duration
 	logger         *slog.Logger
-	jobChan        chan Job
 	handlers       map[string]Handler
 	wg             sync.WaitGroup
 	mu             sync.RWMutex
-	closed         bool
-	done           chan struct{}
 
 	// gate, when set, is checked in processJob after handlerFor. A false
 	// return re-enqueues the job with a short delay so it runs when the
@@ -58,25 +83,26 @@ type MemoryQueue struct {
 	// disabled module.
 	gate func(jobType string) bool
 
-	// holdover stores jobs that were drained by a type-filtered Dequeue but
-	// could not be re-enqueued onto the bounded jobChan because it was full at
-	// re-enqueue time (concurrent producers refilled it during the drain). It
-	// guarantees those valid jobs are never lost; they are re-fed ahead of the
-	// channel by subsequent Dequeue/processing. Guarded by holdoverMu.
-	holdoverMu sync.Mutex
-	holdover   []Job
+	// pmu guards the pending store, the sequence counter, the closed flag,
+	// and the wake cond. cond is bound to pmu.
+	pmu     sync.Mutex
+	cond    *sync.Cond
+	pending pendingHeap
+	seq     uint64
+	closed  bool
 
-	// inflight tracks jobs handed out by Dequeue but not yet Ack'd/Nack'd, so
-	// Nack(jobID) can re-enqueue the right job. The automatic worker pool
-	// processes jobs in-line and never touches this map.
+	// inflight tracks jobs handed out by manual Dequeue but not yet
+	// Ack'd/Nack'd, so Nack(jobID) can re-enqueue the right job. The
+	// automatic worker pool processes jobs in-line and never touches this
+	// map.
 	inflightMu sync.Mutex
 	inflight   map[string]Job
 
 	// dead retains jobs that exhausted MaxAttempts (terminally failed) so they
 	// can be inspected via Browsable and re-queued via Replay, instead of being
-	// silently dropped. Ordered oldest-first. It is BOUNDED at maxDeadJobs: when
-	// the cap is reached, the oldest dead job is evicted so a flood of failing
-	// jobs can never grow memory without limit. Guarded by deadMu.
+	// silently dropped. Ordered oldest-first. It is BOUNDED at maxDeadJobs:
+	// when the cap is reached, the oldest dead job is evicted so a flood of
+	// failing jobs can never grow memory without limit. Guarded by deadMu.
 	deadMu sync.Mutex
 	dead   []Job
 }
@@ -86,19 +112,72 @@ type MemoryQueue struct {
 // has no such cap (rows persist); this is the price of an in-memory backend.
 const maxDeadJobs = 1000
 
-// NewMemoryQueue creates a new in-memory queue with the given number of workers.
-// The internal job channel is buffered to 1024 jobs.
-// Optional functional options (e.g. WithHandlerTimeout) may be passed.
+// pendingJob pairs a Job with the monotonic sequence number assigned at
+// enqueue, used as the FIFO tiebreak when two jobs share a Priority.
+type pendingJob struct {
+	job Job
+	seq uint64
+}
+
+// pendingHeap is a max-priority heap ordered by Priority DESC then enqueue
+// sequence ASC. It implements heap.Interface; the root is always the
+// highest-priority (earliest-enqueued-among-equal) job.
+type pendingHeap struct {
+	items []pendingJob
+}
+
+func (h pendingHeap) Len() int { return len(h.items) }
+func (h pendingHeap) Less(i, j int) bool {
+	if h.items[i].job.Priority != h.items[j].job.Priority {
+		// Higher priority sorts "less" so it rises to the root.
+		return h.items[i].job.Priority > h.items[j].job.Priority
+	}
+	// Equal priority: earlier enqueue sequence first (FIFO).
+	return h.items[i].seq < h.items[j].seq
+}
+func (h pendingHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
+func (h *pendingHeap) Push(x any)   { h.items = append(h.items, x.(pendingJob)) }
+func (h *pendingHeap) Pop() any {
+	n := len(h.items)
+	x := h.items[n-1]
+	h.items = h.items[:n-1]
+	return x
+}
+
+// removeMatching scans the heap for the highest-priority job accepted by
+// match and removes+returns it. Because heap storage order is not fully
+// sorted, this walks every item and tracks the best via Less. Returns
+// (zero, false) when no item matches. Callers must hold pmu.
+func (h *pendingHeap) removeMatching(match func(Job) bool) (pendingJob, bool) {
+	best := -1
+	for i := range h.items {
+		if !match(h.items[i].job) {
+			continue
+		}
+		if best == -1 || h.Less(i, best) {
+			best = i
+		}
+	}
+	if best == -1 {
+		return pendingJob{}, false
+	}
+	return heap.Remove(h, best).(pendingJob), true
+}
+
+// NewMemoryQueue creates a new in-memory queue with the given number of
+// shared workers. Optional functional options (e.g. WithHandlerTimeout,
+// WithLaneWorkers) may be passed. Shared workers take jobs from any lane by
+// priority; dedicated lane workers (added via WithLaneWorkers) take only
+// their own lane.
 func NewMemoryQueue(workers int, opts ...MemoryQueueOption) *MemoryQueue {
 	q := &MemoryQueue{
 		workers:        workers,
 		handlerTimeout: defaultHandlerTimeout,
 		logger:         slog.Default(),
-		jobChan:        make(chan Job, 1024),
 		handlers:       make(map[string]Handler),
-		done:           make(chan struct{}),
 		inflight:       make(map[string]Job),
 	}
+	q.cond = sync.NewCond(&q.pmu)
 	for _, opt := range opts {
 		opt(q)
 	}
@@ -122,19 +201,92 @@ func (q *MemoryQueue) SetGate(gate func(jobType string) bool) {
 	q.gate = gate
 }
 
-// Start launches the worker goroutines. Must be called before enqueuing jobs
-// if you want automatic processing. Workers will call the registered handlers.
+// Start launches the shared worker goroutines plus one goroutine per
+// dedicated lane worker (WithLaneWorkers). Must be called before enqueuing
+// jobs if you want automatic processing.
 func (q *MemoryQueue) Start() {
 	for i := 0; i < q.workers; i++ {
 		q.wg.Add(1)
-		go q.worker()
+		go q.worker("")
+	}
+	for _, lane := range q.sortedLanes() {
+		for i := 0; i < q.laneWorkers[lane]; i++ {
+			q.wg.Add(1)
+			go q.worker(lane)
+		}
 	}
 }
 
-func (q *MemoryQueue) worker() {
+// sortedLanes returns lane names with dedicated workers in sorted order, for
+// deterministic spawn/iteration.
+func (q *MemoryQueue) sortedLanes() []string {
+	lanes := make([]string, 0, len(q.laneWorkers))
+	for lane := range q.laneWorkers {
+		lanes = append(lanes, lane)
+	}
+	sort.Strings(lanes)
+	return lanes
+}
+
+// worker is the per-goroutine loop. lane is "" for a shared worker (takes any
+// lane by priority) or the dedicated lane name (takes only that lane). It
+// blocks on the cond until a claimable job arrives or Close drains+shuts it
+// down.
+func (q *MemoryQueue) worker(lane string) {
 	defer q.wg.Done()
-	for job := range q.jobChan {
+	for {
+		job, ok := q.waitAndPop(lane)
+		if !ok {
+			return
+		}
 		q.processJob(job)
+	}
+}
+
+// waitAndPop blocks until a job claimable by this worker is available, then
+// removes and returns it. lane "" claims any job; a non-empty lane claims
+// only jobs whose Lane matches. On Close, shared workers drain every
+// remaining job (any lane) before exiting; lane workers exit once their lane
+// is empty (shared workers pick up the rest).
+func (q *MemoryQueue) waitAndPop(lane string) (Job, bool) {
+	q.pmu.Lock()
+	defer q.pmu.Unlock()
+	for {
+		if pj, ok := q.pending.removeMatching(matchLane(lane)); ok {
+			return pj.job, true
+		}
+		if q.closed {
+			// Nothing claimable remains for this worker. Shared workers
+			// already drained everything via removeMatching above; lane
+			// workers leave other lanes to the shared pool.
+			return Job{}, false
+		}
+		q.cond.Wait()
+	}
+}
+
+// matchLane returns a predicate selecting jobs for a worker: any job when
+// lane is "" (shared worker), or only jobs whose Lane equals lane.
+func matchLane(lane string) func(Job) bool {
+	if lane == "" {
+		return func(Job) bool { return true }
+	}
+	return func(j Job) bool { return j.Lane == lane }
+}
+
+// matchTypes returns a predicate selecting jobs by type: any when types is
+// empty, or only jobs whose Type is in the set.
+func matchTypes(types []string) func(Job) bool {
+	if len(types) == 0 {
+		return func(Job) bool { return true }
+	}
+	set := make(map[string]struct{}, len(types))
+	for _, t := range types {
+		set[t] = struct{}{}
+	}
+	return func(j Job) bool {
+		_, ok := set[j.Type]
+		return ok
 	}
 }
 
@@ -209,25 +361,16 @@ func safeHandle(ctx context.Context, handler Handler, job Job) (err error) {
 	return handler(ctx, job)
 }
 
-// Enqueue adds a job to the buffered channel. If the job has no ID, one is generated.
-// Uses recover to handle the race between Close() closing the channel and this
-// method sending to it.
-func (q *MemoryQueue) Enqueue(ctx context.Context, job Job) (err error) {
-	// Recover from send on closed channel — Close() can close jobChan
-	// between our RLock check and the channel send below.
-	defer func() {
-		if r := recover(); r != nil {
-			err = ErrQueueClosed
-		}
-	}()
-
-	q.mu.RLock()
-	closed := q.closed
-	q.mu.RUnlock()
-	if closed {
-		return ErrQueueClosed
+// Enqueue adds a job to the priority-ordered pending store. If the job has no
+// ID, one is generated. The store is unbounded, so Enqueue never blocks on
+// capacity (unlike the old buffered channel); it returns ErrQueueClosed only
+// when the queue has been closed.
+func (q *MemoryQueue) Enqueue(ctx context.Context, job Job) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
-
 	if job.ID == "" {
 		job.ID = randomID()
 	}
@@ -237,81 +380,49 @@ func (q *MemoryQueue) Enqueue(ctx context.Context, job Job) (err error) {
 	if job.MaxAttempts == 0 {
 		job.MaxAttempts = 3
 	}
-
-	select {
-	case q.jobChan <- job:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	q.pmu.Lock()
+	defer q.pmu.Unlock()
+	if q.closed {
+		return ErrQueueClosed
 	}
+	q.pushLocked(job)
+	return nil
 }
 
-// Dequeue retrieves the next job from the channel. This is useful for manual
-// consumption without relying on the automatic worker pool.
+// pushLocked appends a job to the pending heap and wakes one waiting worker.
+// Caller must hold pmu.
+func (q *MemoryQueue) pushLocked(job Job) {
+	q.seq++
+	heap.Push(&q.pending, pendingJob{job: job, seq: q.seq})
+	// Broadcast rather than Signal so a lane worker whose lane just got a
+	// job is guaranteed to wake even when a different (non-matching) worker
+	// is at the head of the cond's wait queue.
+	q.cond.Broadcast()
+}
+
+// Dequeue retrieves the highest-priority job from the pending store,
+// optionally filtered by type. Useful for manual consumption without the
+// automatic worker pool. It is non-blocking: returns ErrNoJob when nothing
+// matches. Jobs of every lane are eligible (dedicated lane filtering is a
+// worker-pool concept, not a manual-consumption one).
 func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
-	q.mu.RLock()
-	closed := q.closed
-	q.mu.RUnlock()
-	if closed {
+	select {
+	case <-ctx.Done():
+		return Job{}, ctx.Err()
+	default:
+	}
+	q.pmu.Lock()
+	if q.closed {
+		q.pmu.Unlock()
 		return Job{}, ErrQueueClosed
 	}
-
-	// If specific types are requested, drain and re-enqueue non-matching jobs.
-	if len(types) > 0 {
-		typeSet := make(map[string]struct{}, len(types))
-		for _, t := range types {
-			typeSet[t] = struct{}{}
-		}
-		// Drain the holdover first so earlier-skipped jobs are considered before
-		// anything still on the channel, then drain the channel itself.
-		var skipped []Job
-		pending := q.takeHoldover()
-		i := 0
-		for {
-			var job Job
-			if i < len(pending) {
-				job = pending[i]
-				i++
-			} else {
-				select {
-				case job = <-q.jobChan:
-				default:
-					q.requeueSkipped(skipped)
-					return Job{}, ErrNoJob
-				case <-ctx.Done():
-					q.requeueSkipped(skipped)
-					return Job{}, ctx.Err()
-				}
-			}
-			if _, ok := typeSet[job.Type]; ok {
-				// Requeue everything we drained but did not consume: the
-				// non-matching jobs we skipped plus the not-yet-inspected tail
-				// of the holdover we took. None may be dropped.
-				if i < len(pending) {
-					skipped = append(skipped, pending[i:]...)
-				}
-				q.requeueSkipped(skipped)
-				q.trackInflight(job)
-				return job, nil
-			}
-			skipped = append(skipped, job)
-		}
-	}
-
-	// Holdover jobs (drained by a prior type-filtered Dequeue but bumped off the
-	// full channel) take priority over the channel for untyped consumption.
-	if job, ok := q.popHoldover(); ok {
-		q.trackInflight(job)
-		return job, nil
-	}
-
-	select {
-	case job := <-q.jobChan:
-		q.trackInflight(job)
-		return job, nil
-	default:
+	pj, ok := q.pending.removeMatching(matchTypes(types))
+	q.pmu.Unlock()
+	if !ok {
 		return Job{}, ErrNoJob
 	}
+	q.trackInflight(pj.job)
+	return pj.job, nil
 }
 
 // trackInflight records a manually-dequeued job so a later Nack(jobID) can
@@ -337,74 +448,18 @@ func (q *MemoryQueue) takeInflight(jobID string) (Job, bool) {
 	return job, ok
 }
 
-// requeueSkipped returns drained non-matching jobs to the queue without losing
-// any: it tries the bounded channel first, and stashes the remainder onto the
-// holdover when the channel is full (e.g. concurrent producers refilled it
-// during the drain). Holdover jobs are re-fed by subsequent Dequeue calls.
-func (q *MemoryQueue) requeueSkipped(skipped []Job) {
-	if len(skipped) == 0 {
-		return
-	}
-	var overflow []Job
-	for _, s := range skipped {
-		if err := q.enqueueInternal(s); err != nil {
-			overflow = append(overflow, s)
-		}
-	}
-	if len(overflow) > 0 {
-		q.holdoverMu.Lock()
-		// Prepend overflow so original ordering is preserved relative to any
-		// holdover already present from a concurrent drain.
-		q.holdover = append(overflow, q.holdover...)
-		q.holdoverMu.Unlock()
-	}
-}
-
-// takeHoldover atomically removes and returns all currently-held holdover jobs.
-func (q *MemoryQueue) takeHoldover() []Job {
-	q.holdoverMu.Lock()
-	defer q.holdoverMu.Unlock()
-	if len(q.holdover) == 0 {
-		return nil
-	}
-	h := q.holdover
-	q.holdover = nil
-	return h
-}
-
-// popHoldover removes and returns the oldest holdover job, if any.
-func (q *MemoryQueue) popHoldover() (Job, bool) {
-	q.holdoverMu.Lock()
-	defer q.holdoverMu.Unlock()
-	if len(q.holdover) == 0 {
-		return Job{}, false
-	}
-	job := q.holdover[0]
-	q.holdover = q.holdover[1:]
-	return job, true
-}
-
-// deferGated re-enqueues a gate-deferred job after gateDeferDelay,
-// re-arming itself while the bounded channel is full. The holdover slice
-// is NOT a valid parking spot here: in worker-pool mode nothing drains
-// it (only manual Dequeue does), so a job parked there would strand
-// until restart. Re-arming keeps the job live until the channel has
-// room or the queue closes.
+// deferGated re-enqueues a gate-deferred job after gateDeferDelay. Because the
+// pending store is unbounded the push always succeeds, so there is no
+// re-arm-on-full dance; the only failure mode is Close racing the timer,
+// which the closed-check under pmu handles cleanly (no panic).
 func (q *MemoryQueue) deferGated(job Job) {
 	time.AfterFunc(gateDeferDelay, func() {
-		// Mirror Enqueue's safety: a deferred re-enqueue must not send
-		// on a closed channel (Close may have run after this timer was
-		// armed).
-		defer func() { _ = recover() }()
-		q.mu.RLock()
-		closed := q.closed
-		q.mu.RUnlock()
-		if closed {
+		q.pmu.Lock()
+		defer q.pmu.Unlock()
+		if q.closed {
 			return
 		}
-		if err := q.enqueueInternal(job); err != nil {
-			q.deferGated(job)
-		}
+		q.pushLocked(job)
 	})
 }
 
@@ -413,16 +468,6 @@ func randomID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
-}
-
-// enqueueInternal adds a job without checking the closed flag (for retry re-enqueue).
-func (q *MemoryQueue) enqueueInternal(job Job) error {
-	select {
-	case q.jobChan <- job:
-		return nil
-	default:
-		return ErrQueueClosed
-	}
 }
 
 // Ack confirms a manually-dequeued job is done, discarding any tracked
@@ -486,8 +531,8 @@ func (q *MemoryQueue) retainDead(job Job) {
 // ListJobs implements [Browsable] for the in-memory backend. The only state it
 // can enumerate is the retained dead-letter set, so it returns those jobs for
 // status "failed" (or an empty/"all" status), newest-first, and nothing for any
-// other status — pending/claimed jobs live transiently on an unscannable
-// channel. limit <= 0 defaults to 100.
+// other status — pending/claimed jobs live transiently on the pending heap.
+// limit <= 0 defaults to 100.
 func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit int) ([]Job, error) {
 	if status != "" && status != "failed" {
 		return nil, nil
@@ -507,7 +552,7 @@ func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit int) ([]J
 
 // Stats implements [Browsable]. The in-memory backend can only count the
 // retained dead-letter jobs (pending/claimed jobs are transient on the
-// channel), so it reports those under "failed".
+// heap), so it reports those under "failed".
 func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) {
 	q.deadMu.Lock()
 	n := len(q.dead)
@@ -551,17 +596,20 @@ var (
 	_ Replayable = (*MemoryQueue)(nil)
 )
 
-// Close drains pending jobs and waits for all workers to finish.
+// Close drains pending jobs and waits for all workers to finish. It signals
+// the cond so every waiting worker wakes, processes any remaining claimable
+// job, then exits when the store is empty. Shared workers drain every lane;
+// lane workers drain only their own. No goroutine leaks, no panics.
 func (q *MemoryQueue) Close() error {
-	q.mu.Lock()
+	q.pmu.Lock()
 	if q.closed {
-		q.mu.Unlock()
+		q.pmu.Unlock()
 		return nil
 	}
 	q.closed = true
-	q.mu.Unlock()
+	q.cond.Broadcast()
+	q.pmu.Unlock()
 
-	close(q.jobChan)
 	q.wg.Wait()
 	return nil
 }

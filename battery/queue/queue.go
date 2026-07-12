@@ -15,6 +15,7 @@ type Job struct {
 	Type        string          `json:"type"`
 	Payload     json.RawMessage `json:"payload"`
 	Priority    int             `json:"priority"`
+	Lane        string          `json:"lane"`
 	Attempts    int             `json:"attempts"`
 	MaxAttempts int             `json:"max_attempts"`
 	CreatedAt   time.Time       `json:"created_at"`

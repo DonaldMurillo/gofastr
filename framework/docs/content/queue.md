@@ -11,6 +11,8 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 |---|---|---|---|
 | Durable across restart | No | Yes | Yes |
 | Multiple workers | Yes | Yes | Manual |
+| Priority ordering | Yes (heap) | Yes | No (FIFO list) |
+| Lane reservations | Yes (`WithLaneWorkers`) | Yes (`WithDBLaneWorkers`) | No (instance-per-lane) |
 | Worker loop built in | Yes | Yes | No (bring your own, or use `Start`) |
 | Auto-reclaim crashed workers | — | Yes (lease expiry in SQL) | Yes (visibility timeout + `Start`) |
 | Dead-letter capture | Yes (bounded, 1 000 jobs) | Yes (status `failed`) | Yes (Redis list) |
@@ -109,7 +111,8 @@ type Job struct {
     ID          string          // auto-filled by Enqueue if empty
     Type        string          // required — selects the handler
     Payload     json.RawMessage // arbitrary JSON for the handler
-    Priority    int             // higher = dequeued first (DBQueue only)
+    Priority    int             // higher = dequeued first (DBQueue + MemoryQueue)
+    Lane        string          // capacity-reservation lane; "" = default (see Lanes)
     Attempts    int             // incremented on each claim
     MaxAttempts int             // auto-defaults to 3; 0 means 3
     CreatedAt   time.Time       // auto-filled if zero
@@ -120,6 +123,53 @@ type Job struct {
 Scheduled jobs (future `ScheduledAt`) are invisible to `Dequeue` until
 the moment passes. This lets you implement delayed processing without a
 separate scheduler.
+## Lanes
+
+A **lane** is a capacity-reservation tag on a job (`Job.Lane`; empty string
+is the default lane). `Type` still selects the handler; `Lane` only affects
+which workers can claim the job. It solves a problem priority cannot.
+
+### Why priority is not enough
+
+`Priority` chooses among *pending* jobs when a worker frees up. It cannot
+preempt a running handler. So if a bulk backfill saturates every shared
+worker with long-running jobs, an urgent job — even at the highest priority
+— just sits in the queue: no worker is free to consult the priority order.
+Priority helps pick the next job; lanes guarantee there is always a worker
+whose entire budget is reserved for the jobs that matter.
+
+### Dedicated lane workers
+
+`WithDBLaneWorkers(lane, n)` (DBQueue) and `WithLaneWorkers(lane, n)`
+(MemoryQueue) add `n` dedicated workers **on top** of the shared pool
+(`WithWorkers` / the `NewMemoryQueue` count) that only claim jobs whose
+`Lane` matches. Shared workers keep claiming **any** lane by priority.
+
+```go
+q, _ := queue.NewDBQueue(db,
+    queue.WithWorkers(4),                  // shared pool — claims any lane
+    queue.WithDBLaneWorkers("high", 2),    // 2 workers reserved for the "high" lane
+)
+q.Start(ctx)
+
+// A bulk backfill fills the shared pool…
+_ = q.Enqueue(ctx, queue.Job{Type: "reindex", Lane: "bulk"})
+// …but the high lane always has a free worker:
+_ = q.Enqueue(ctx, queue.Job{Type: "send-alert", Lane: "high"})
+```
+
+Multiple calls for different lanes each add their own workers; multiple
+calls for the same lane sum. Pass a non-empty lane and `n > 0` (both panic
+otherwise). Lease reclaim, backoff, the gate, and handler-timeout behaviour
+all apply identically to lane workers — they run the same claim loop with an
+extra `AND lane = ?` filter.
+
+### RedisQueue
+
+RedisQueue has no worker loop of its own, so lane isolation is "one
+`RedisQueue` instance per lane" via its `queueName`: instantiate a queue per
+lane and dedicate workers to each. There is no `Lane` field consumed by the
+Redis backend.
 
 ## Retry and backoff
 

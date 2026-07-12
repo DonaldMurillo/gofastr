@@ -44,9 +44,9 @@ func TestMemoryQueueGateDefersJob(t *testing.T) {
 }
 
 // TestMemQueueGateDeferNoPanicOnClose ensures the AfterFunc callback armed by
-// a gate-deferral does not send on the closed jobChan after Close. Without the
-// closed-check + recover, the timer firing post-Close panics and kills the
-// process. The test passing == no panic.
+// a gate-deferral does not push onto the pending store after Close. Without
+// the closed-check under pmu, the timer firing post-Close would race the
+// shutdown. The test passing == no panic.
 func TestMemQueueGateDeferNoPanicOnClose(t *testing.T) {
 	q := NewMemoryQueue(1)
 	q.SetGate(func(jobType string) bool { return false }) // gate everything
@@ -272,7 +272,7 @@ func TestDBQueueGateConcurrentSetGate(t *testing.T) {
 	}
 }
 
-func TestGateDeferFullChannelNoStrand(t *testing.T) {
+func TestGateDeferNoStrand(t *testing.T) {
 	q := NewMemoryQueue(1)
 	var enabled atomic.Bool
 	q.SetGate(func(jobType string) bool { return enabled.Load() })
@@ -283,15 +283,18 @@ func TestGateDeferFullChannelNoStrand(t *testing.T) {
 	})
 	q.RegisterHandler("filler", func(_ context.Context, _ Job) error { return nil })
 
-	// Fill the bounded channel to capacity before any worker runs, then
-	// gate-defer a job so its timer fires against the full channel.
-	for i := 0; i < cap(q.jobChan); i++ {
+	// Build a backlog of filler jobs before any worker runs, then gate-defer
+	// a job so its re-enqueue timer fires while filler jobs are still
+	// pending. With the priority-heap store (unbounded) the deferred push
+	// always succeeds; this test guards against any regression that would
+	// strand the deferred job behind the backlog.
+	for i := 0; i < 1024; i++ {
 		if err := q.Enqueue(context.Background(), Job{Type: "filler", Payload: json.RawMessage(`{}`)}); err != nil {
 			t.Fatalf("fill %d: %v", i, err)
 		}
 	}
 	q.processJob(Job{Type: "gated", Payload: json.RawMessage(`{}`)})
-	time.Sleep(3 * gateDeferDelay) // timer fires with jobChan full
+	time.Sleep(3 * gateDeferDelay) // timer fires while backlog is pending
 
 	enabled.Store(true)
 	q.Start()
@@ -302,6 +305,6 @@ func TestGateDeferFullChannelNoStrand(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if gatedRan.Load() == 0 {
-		t.Fatal("gate-deferred job stranded after re-enable with a previously full channel")
+		t.Fatal("gate-deferred job stranded after re-enable behind a backlog")
 	}
 }
