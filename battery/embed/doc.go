@@ -13,7 +13,8 @@
 //   - [Chunker] splits a [Document] into [Chunk]s. The default
 //     [FixedWindow] is language-agnostic and tokenizer-free.
 //   - [Store] holds vectors and metadata. The default [FlatStore] keeps
-//     everything in memory and persists to disk in M2.
+//     everything in memory; [NewPgVector] provides a durable alternative
+//     backed by Postgres + pgvector for multi-replica apps.
 //
 // See battery/embed/README.md for the architecture, retrieval pipeline,
 // and milestone plan.
