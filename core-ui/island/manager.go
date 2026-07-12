@@ -37,6 +37,18 @@ type Manager struct {
 	clients map[string]map[string]bool // sessionID → set of islandIDs
 	streams map[string]*streamEntry    // sessionID → update stream
 
+	// ── Presence (single-replica) ──
+	// presenceConns maps a unique connection id to its presence
+	// registration (identity + topics). The roster is derived from this
+	// live set at read time (dedup by UserID), so there is no manual
+	// ref-count to drift. nextPresenceID is atomically incremented and
+	// is safe to use without holding mu. OnPresenceChange, when set, is
+	// fired outside the lock after a join/leave mutates a topic's
+	// roster. See presence.go.
+	presenceConns    map[uint64]*presenceConn
+	nextPresenceID   uint64
+	OnPresenceChange func(topic string)
+
 	// dropped counts island updates discarded because a client's SSE buffer
 	// was full (slow/stalled consumer). Exposed via DroppedUpdates so the
 	// otherwise-silent loss is observable (wire it to a metric/health check).

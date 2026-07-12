@@ -14,12 +14,25 @@ type ssePayload struct {
 }
 
 // ServeSSE is an http.HandlerFunc that streams island updates to a client.
-// It uses the existing core/stream SSE infrastructure.
-// The client connects via EventSource and receives island updates as SSE events.
+// It is the backward-compatible entry point (no presence); ServeSSEWithPresence
+// is the presence-aware variant.
 //
+// The client connects via EventSource and receives island updates as SSE events.
 // The client must pass a "session" query parameter to identify its session.
 // Example: GET /islands/sse?session=abc123
 func (m *Manager) ServeSSE(w http.ResponseWriter, r *http.Request) {
+	m.ServeSSEWithPresence(w, r, PresenceIdentity{}, nil)
+}
+
+// ServeSSEWithPresence streams island updates AND registers the connection
+// on one or more presence topics for the duration of the SSE stream. identity
+// is the SERVER-DERIVED user identity (from the request context; never a
+// client param). topics is the bounded, parsed ?presence= list. When topics
+// is empty this behaves identically to ServeSSE. The presence handle is
+// removed (Leave) on disconnect, including the ref-counted last-tab case:
+// every ServeSSEWithPresence call gets its own handle, so closing one tab
+// drops exactly that connection's contribution to the roster.
+func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, identity PresenceIdentity, topics []string) {
 	sessionID := r.URL.Query().Get("session")
 	if sessionID == "" {
 		http.Error(w, "missing session query parameter", http.StatusBadRequest)
@@ -37,7 +50,14 @@ func (m *Manager) ServeSSE(w http.ResponseWriter, r *http.Request) {
 	// observe the connection as ready. This was a timing-dependent CI flake
 	// in TestServeSSE (5s timeout) on loaded runners.
 	ch := m.ConnectSession(sessionID)
+	// Presence join happens AFTER the stream exists (so the roster-change
+	// callback can deliver to this session's buffered channel) and BEFORE
+	// we flush headers. Leave runs before Unsubscribe (LIFO defers) so the
+	// departing session's stream is still live while remaining viewers are
+	// notified of the roster change.
+	handle := m.PresenceJoin(sessionID, identity, topics)
 	defer m.Unsubscribe(sessionID)
+	defer handle.Leave()
 
 	// Get the done channel so we can detect unsubscribe.
 	m.mu.RLock()
