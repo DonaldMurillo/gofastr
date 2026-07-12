@@ -67,7 +67,7 @@ func authCardCSS(_ style.Theme) string {
   padding: clamp(20px, 5vw, 32px);
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border, #e4e4e7);
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radii-lg, 12px);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 [data-fui-comp="ui-auth-card"] .ui-auth-card__title {
@@ -81,7 +81,7 @@ func authCardCSS(_ style.Theme) string {
   color: var(--color-danger, #b91c1c);
   background: color-mix(in srgb, var(--color-danger, #b91c1c) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-danger, #b91c1c) 28%, transparent);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radii-md, 8px);
   padding: 0.625rem 0.75rem;
 }
 [data-fui-comp="ui-auth-card"] .ui-auth-card__footer {

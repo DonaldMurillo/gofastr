@@ -260,7 +260,7 @@ func siteHeaderCSS(_ style.Theme) string {
   block-size: 44px;
   background: transparent;
   border: 1px solid var(--ui-site-header-icon-border, transparent);
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radii-sm, 6px);
   cursor: pointer;
   list-style: none;
 }
@@ -291,7 +291,7 @@ func siteHeaderCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 8px);
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radii-md, 8px);
   box-shadow: var(--ui-site-header-drawer-shadow, 0 10px 30px rgba(0,0,0,0.18));
   z-index: 50;
 }
@@ -300,7 +300,7 @@ func siteHeaderCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
   color: currentColor;
   text-decoration: none;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radii-sm, 6px);
 }
 [data-fui-comp="ui-site-header"] .ui-site-header__mobile-links a:hover,
 [data-fui-comp="ui-site-header"] .ui-site-header__mobile-links a:focus-visible {

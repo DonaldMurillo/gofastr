@@ -910,7 +910,7 @@ func themeToggleCSS(_ style.Theme) string {
 button[data-fui-comp="ui-theme-toggle"] {
   cursor: pointer;
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radius-md, 0.375rem);
+  border-radius: var(--radii-md, 0.375rem);
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181B);
   padding: var(--spacing-xs, 0.25rem);
@@ -993,7 +993,7 @@ func backToTopCSS(_ style.Theme) string {
   justify-content: center;
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: var(--radius-full, 9999px);
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-foreground, #fff);
   box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,.1));

@@ -49,7 +49,7 @@ var chartEmptyStyle = registry.RegisterStyle("ui-chart-empty", func(_ style.Them
 	font-size: var(--text-sm, 0.875rem);
 	background: var(--color-surface-soft, transparent);
 	border: 1px dashed var(--color-border, #e5e7eb);
-	border-radius: var(--radius-md, 8px);
+	border-radius: var(--radii-md, 8px);
 	padding: var(--spacing-lg, 1rem);
 	text-align: center;
 }`

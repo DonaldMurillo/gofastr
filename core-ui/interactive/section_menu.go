@@ -292,7 +292,7 @@ func sectionMenuCSS(_ style.Theme) string {
   cursor: pointer;
   padding: var(--spacing-md, 8px) 14px;
   border: 1px solid var(--color-border, rgba(0,0,0,0.12));
-  border-radius: var(--radius-md, 6px);
+  border-radius: var(--radii-md, 6px);
   background: var(--color-surface, transparent);
   color: var(--color-text, currentColor);
   font-size: var(--text-sm, 13px);
@@ -313,7 +313,7 @@ func sectionMenuCSS(_ style.Theme) string {
   width: 40px;
   height: 40px;
   border: 1px solid var(--color-border, rgba(0,0,0,0.12));
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface, transparent);
   color: var(--color-text, currentColor);
   cursor: pointer;

@@ -94,7 +94,7 @@ func factBoxCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 4px);
   padding: var(--spacing-md, 16px);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
 [data-fui-comp="ui-fact-box"].ui-fact-box--full {

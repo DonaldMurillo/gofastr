@@ -137,7 +137,7 @@ func stepRailCSS(_ style.Theme) string {
   gap: var(--spacing-md, 16px);
   padding: var(--spacing-md, 16px);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__title {
@@ -163,7 +163,7 @@ func stepRailCSS(_ style.Theme) string {
   padding: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
   color: var(--color-text-subtle, currentColor);
   text-decoration: none;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radii-sm, 6px);
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__link:hover,
 [data-fui-comp="ui-step-rail"] .ui-step-rail__link:focus-visible {

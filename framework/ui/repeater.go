@@ -139,6 +139,6 @@ var repeaterStyle = registry.RegisterStyle("ui-repeater", repeaterCSS)
 func repeaterCSS(t style.Theme) string {
 	return `.ui-repeater { display: flex; flex-direction: column; gap: var(--spacing-sm); }
 .ui-repeater-items { display: flex; flex-direction: column; gap: var(--spacing-md); }
-.ui-repeater-item { display: flex; gap: var(--spacing-sm); align-items: flex-start; padding: var(--spacing-sm); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.ui-repeater-item { display: flex; gap: var(--spacing-sm); align-items: flex-start; padding: var(--spacing-sm); border: 1px solid var(--color-border); border-radius: var(--radii-md); }
 .ui-repeater-add { align-self: flex-start; }`
 }

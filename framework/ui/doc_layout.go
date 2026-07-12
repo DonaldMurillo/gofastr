@@ -214,7 +214,7 @@ func docLayoutCSS(_ style.Theme) string {
   padding: var(--spacing-lg, 16px);
   background: var(--color-surface, transparent);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
-  border-radius: var(--radius-md, 6px);
+  border-radius: var(--radii-md, 6px);
   text-decoration: none;
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__next { text-align: right; }
