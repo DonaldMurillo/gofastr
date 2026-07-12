@@ -247,3 +247,53 @@ entity declarations. Pick a convention (`posts:read`, `posts:write`,
   hooks — strings should be data, not code.
 - **Trusting client-supplied roles.** Roles come from your auth
   layer; never from a request header or body the user controls.
+
+
+## Persistent grants (GrantStore)
+
+`RolePolicy` grants are code-defined at boot: `policy.Grant("admin", ...)`.
+For apps that need **runtime-editable** RBAC (an admin UI that grants and
+revokes without a redeploy), `access.GrantStore` persists grants to a
+database table and keeps the live `*RolePolicy` in sync.
+
+```go
+policy := framework.NewRolePolicy()
+policy.Grant("admin", framework.Wildcard) // code-defined baseline
+
+store := framework.NewGrantStore(db, policy)
+store.EnsureSchema(ctx)                    // CREATE TABLE IF NOT EXISTS access_grants
+store.LoadInto(ctx, policy)               // hydrate from DB → live policy
+
+// Later: runtime grant (admin screen, CLI, etc.)
+store.Grant(ctx, "editor", "posts:write")  // DB INSERT + policy.Grant
+store.Revoke(ctx, "editor", "posts:write") // DB DELETE + policy.Revoke
+```
+
+### Shape
+
+The store **holds a reference** to the live `*RolePolicy` (store-holds-policy).
+`NewGrantStore(db, policy)` binds the policy; `LoadInto(ctx, policy)` loads
+persisted rows into it (call once at boot). Subsequent `Grant`/`Revoke` calls
+mutate both the DB and the policy in one call — the policy's RWMutex covers
+concurrent `Can` checks, so a grant/revoke is "atomic enough": a reader sees
+the state before or after, never a torn map.
+
+### Security
+
+- Role and permission strings are **bound as `$n` parameters** — never
+  interpolated into SQL. The table name is validated via `query.SafeIdent`.
+- `Grant`/`Revoke` do **not** check authorization — they are trusted
+  server-side calls. The admin battery gates them behind its default-deny
+  `b.gate` (see [Admin UI](admin.md)).
+- There is no unauthenticated or self-service grant path.
+
+### Enumeration API
+
+`RolePolicy` exposes read-only getters for admin UIs:
+
+```go
+roles := policy.Roles()                    // sorted []string
+perms := policy.PermissionsOf("editor")   // []Permission (copy)
+```
+
+Both return defensive copies — callers iterate without holding the lock.

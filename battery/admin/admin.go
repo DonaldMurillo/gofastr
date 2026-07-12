@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -117,6 +118,23 @@ type Config struct {
 	// bare 401. An authenticated user lacking the admin role still gets 403 —
 	// they're signed in, just not allowed. Empty (default) keeps the 401.
 	LoginPath string
+
+	// Policy is the RBAC role policy the admin screens manage. When set
+	// alongside GrantStore, the role→permission matrix screen is active
+	// at <PathPrefix>/rbac/roles and grant/revoke persists across restarts.
+	Policy *access.RolePolicy
+
+	// GrantStore persists role→permission grants to the database. When
+	// set alongside Policy, grant/revoke via the admin screens writes to
+	// both the live policy and the DB. Wire it with
+	// framework.NewGrantStore(db, policy) + EnsureSchema + LoadInto at boot.
+	GrantStore *access.GrantStore
+
+	// Auth is the auth manager used for the user→role assignment screen.
+	// When set, the user roles screen is active at <PathPrefix>/rbac/users.
+	// The underlying UserStore must implement UserLister (for listing) and
+	// UpdateRoles (for assignment) — EntityUserStore does both.
+	Auth *auth.AuthManager
 }
 
 // Battery is the framework Battery implementation.
@@ -250,6 +268,23 @@ func (b *Battery) RegisterRoutes(r *router.Router) {
 	r.Get(b.cfg.PathPrefix+"/queue", guard(b.handleQueue))
 	r.Post(b.cfg.PathPrefix+"/queue/_replay/{id}", guard(b.handleQueueReplay))
 	r.Get(b.cfg.PathPrefix+"/audit", guard(b.handleAudit))
+
+	// RBAC management screens + RPC routes. Same admin gate as every other
+	// surface — an authenticated non-admin gets 403 on both the GET screens
+	// and the POST RPCs. Wired only when Policy/GrantStore/Auth are set.
+	if b.cfg.Policy != nil {
+		r.Get(b.cfg.PathPrefix+"/rbac/roles", guard(b.handleRBACRoles))
+	}
+	if b.cfg.Auth != nil {
+		r.Get(b.cfg.PathPrefix+"/rbac/users", guard(b.handleRBACUsers))
+	}
+	if b.cfg.GrantStore != nil {
+		r.Post(b.cfg.PathPrefix+"/rbac/_grant", guard(b.handleRBACGrant))
+		r.Post(b.cfg.PathPrefix+"/rbac/_revoke", guard(b.handleRBACRevoke))
+	}
+	if b.cfg.Auth != nil {
+		r.Post(b.cfg.PathPrefix+"/rbac/_assign", guard(b.handleRBACAssign))
+	}
 }
 
 // gate wraps a route handler so it refuses unauthorized callers (401). The
@@ -471,6 +506,9 @@ nav a.current { background: color-mix(in oklab, var(--color-text, #111827) 8%, t
 .actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
 pre { white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono, ui-monospace, monospace);
       font-size: 0.85em; margin: 0.5rem 0 0; }
+/* RBAC screens: strict CSP strips inline style=, so layout hooks are classes. */
+.inline-form { display: inline; }
+.perm-input { width: 8rem; }
 `
 
 // writePage emits a complete HTML document. Title is the page-level
@@ -542,6 +580,12 @@ func (b *Battery) navHTML(current string) render.HTML {
 			}
 			links = append(links, link{ent.GetName(), b.cfg.PathPrefix + "/e/" + ent.GetTable()})
 		}
+	}
+	if b.cfg.Policy != nil {
+		links = append(links, link{"Roles", b.cfg.PathPrefix + "/rbac/roles"})
+	}
+	if b.cfg.Auth != nil {
+		links = append(links, link{"User roles", b.cfg.PathPrefix + "/rbac/users"})
 	}
 	var sb strings.Builder
 	sb.WriteString(`<nav>`)

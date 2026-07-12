@@ -7,6 +7,52 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-12
+
+Issues #39, #40, #45, #47, #52.
+
+### Added
+
+- **Nested predicate filters (`?where=<json>`)** (#52). The list endpoint
+  accepts a boolean predicate tree — leaves (`{field, op, value}`) and
+  AND/OR groups — for filters the flat `?field_op=` params can't express
+  (`status = A OR (priority = high AND assignee = me)`). Compiled to one
+  parenthesized WHERE clause: every field is schema-validated (Hidden
+  rejected), every value bound as a placeholder, depth/node bounds
+  fail-closed, and — the invariant — a user OR-group can never widen past
+  the owner/tenant/soft-delete scopes (they stay outer ANDs).
+- **Data export / import registry (`App.ExportData` / `App.ImportData`)**
+  (#39). Anti-lock-in: dump every entity's rows plus registered battery
+  tables (auth, queue) to a portable NDJSON archive + a checksummed
+  manifest, and restore it. Reads and writes RAW (preserving original
+  ids, timestamps, owner/tenant, hidden columns, soft-deleted rows) so
+  referential integrity survives; identifiers are `SafeIdent`-whitelisted,
+  values bound, import staged (validate-then-write in one transaction).
+  No new dependency.
+- **Cross-container (kanban) sortable + version-aware conflict recovery**
+  (#45). `core-ui/patterns/sortablelist` gains `data-fui-sortable-group`
+  (lists sharing a group accept cross-container drag) +
+  `data-fui-sortable-container` (destination column in the commit
+  payload), an optional `data-fui-sortable-version` token with a distinct
+  409 conflict callback (refetch/reconcile instead of blanket rollback),
+  cross-column keyboard moves, and an aria-live announcer. Single-list
+  behavior is unchanged.
+- **Runtime-editable RBAC (`access.GrantStore`) + admin management
+  screens** (#40). A DB-backed grant store that loads role→permission
+  grants into the live `RolePolicy` at boot and persists edits, plus
+  `battery/admin` screens (behind the admin default-deny gate, audited)
+  to manage grants and user→role assignments at runtime. Adds
+  `AuthManager.SetUserRoles` / `UserStore.UpdateRoles`. Role and
+  permission strings are always bound parameters.
+- **Presence foundation (single-replica)** (#47). Live "who's viewing
+  this" rosters: an SSE connection joins `?presence=<topic>`, the island
+  manager tracks a per-topic roster with **server-derived** identity
+  (never a client param; anonymous synthesized from the session), and
+  roster changes push live over the existing SSE lane. In-process
+  `Manager.PresenceRoster` + a demo composing `ui.AvatarGroup`. There is
+  deliberately no ungated HTTP roster endpoint (it would leak identities);
+  cross-replica aggregation is future work (#47 tracks it).
+
 ## [0.19.0] - 2026-07-12
 
 Issues #41, #42, #46, #47, #48, #49, #50.

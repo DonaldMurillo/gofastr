@@ -122,6 +122,45 @@ stub instead of 404'ing. Tune list caps via `QueueListLimit` /
 `created_at`, `entity`, `op`, `record_id`, `actor_id`; the default table
 name is `audit_log` (`Config.AuditTable` to override).
 
+
+## RBAC management (roles + user roles)
+
+When `Config.Policy` + `Config.GrantStore` are wired, the admin exposes a
+**role→permission matrix** at `<PathPrefix>/rbac/roles`. When
+`Config.Auth` is wired, it exposes a **user→role assignment** screen at
+`<PathPrefix>/rbac/users`. Both are behind the same admin default-deny gate
+as every other surface.
+
+```go
+policy := framework.NewRolePolicy()
+store := framework.NewGrantStore(db, policy)
+store.EnsureSchema(ctx)
+store.LoadInto(ctx, policy)
+
+app.RegisterBattery(admin.New(admin.Config{
+    DB:         db,
+    Policy:     policy,
+    GrantStore: store,
+    Auth:       authManager, // from battery/auth
+}))
+```
+
+| Route                                | Purpose                              |
+|--------------------------------------|--------------------------------------|
+| `GET  /admin/rbac/roles`             | Role→permission matrix + grant forms |
+| `GET  /admin/rbac/users`             | User list + role-edit forms          |
+| `POST /admin/rbac/_grant`            | Grant a permission to a role (RPC)   |
+| `POST /admin/rbac/_revoke`           | Revoke a permission from a role (RPC)|
+| `POST /admin/rbac/_assign`           | Replace a user's roles (RPC)         |
+
+The selectable permissions shown in the grant dropdown are the **union of
+all currently-granted permissions** — there is no capability catalog.
+Free-text entry for new permission strings is allowed.
+
+Every mutation (grant, revoke, assign-roles) writes an **audit row** via
+`framework.AppendAuditEvent` with entity `"access"` and op in
+`{"grant","revoke","assign-roles"}`, so changes appear at `/admin/audit`.
+The actor ID is the authenticated admin's user ID.
 ## Authorization
 
 Every admin surface is gated and **secure by default**: the battery

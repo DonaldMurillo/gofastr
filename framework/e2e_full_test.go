@@ -87,6 +87,19 @@ func (s *e2eMemUserStore) FindByID(_ context.Context, id string) (auth.User, err
 	return nil, auth.ErrUserNotFound
 }
 
+func (s *e2eMemUserStore) UpdateRoles(_ context.Context, id string, roles []string) error {
+	e, ok := s.byID[id]
+	if !ok {
+		return auth.ErrUserNotFound
+	}
+	tu := e.user.(fullTestUser)
+	tu.roles = roles
+	e.user = tu
+	s.byID[id] = e
+	s.byEmail[tu.email] = e
+	return nil
+}
+
 func (s *e2eMemUserStore) CreateUser(_ context.Context, email, hashedPassword string, roles []string) (auth.User, error) {
 	if _, exists := s.byEmail[email]; exists {
 		return nil, auth.ErrEmailTaken

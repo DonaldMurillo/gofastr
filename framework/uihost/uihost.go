@@ -918,7 +918,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		setSessionCookie(w, r, sessionID)
 	}
 
-	page := ds.injectChrome(string(html), path, sessionID)
+	page := ds.injectChrome(string(html), path, sessionID, boundedPresenceParam(r))
 	page = injectSignalSeed(ctx, page)
 
 	// SSR-inline registered widgets — open ones whose deep-link
@@ -992,8 +992,8 @@ func replaceChromeMarker(page, marker, replacement, what string) string {
 
 // injectChrome adds links and scripts pointing at the host's served
 // endpoints. pagePath is the route path used for SEOScreen resolution.
-func (ds *UIHost) injectChrome(page, pagePath, sessionID string) string {
-	return ds.injectChromeMode(page, pagePath, sessionID, true)
+func (ds *UIHost) injectChrome(page, pagePath, sessionID, presenceTopic string) string {
+	return ds.injectChromeMode(page, pagePath, sessionID, presenceTopic, true)
 }
 
 // screenHeadHTML returns per-screen head content. It composes from
@@ -1003,8 +1003,6 @@ func (ds *UIHost) injectChrome(page, pagePath, sessionID string) string {
 //     (set automatically at Register time from the ScreenDescriber
 //     interface), a `<meta name="description">` tag is emitted. Per-
 //     page descriptions appear AFTER the global WithDescription tag,
-//     so search engines pick the per-page text. No app code needs to
-//     remember both the interface AND WithDescription().
 //
 //   - SEOScreen.HeadHTML(): the explicit escape hatch for screens
 //     that need to declare canonical, OG, JSON-LD, etc. inline.
@@ -1162,14 +1160,23 @@ func twitterTags(tc TwitterCard) []string {
 // component instead — used by static export, since static hosts
 // don't typically serve query-parameterized files. Live HTTP mode
 // always passes bundle=true. pagePath is used for SEOScreen resolution.
-func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool) string {
+func (ds *UIHost) injectChromeMode(page, pagePath, sessionID, presenceTopic string, bundle bool) string {
 	headClose := borrowBuilder()
 	defer returnBuilder(headClose)
 	bodyClose := borrowBuilder()
 	defer returnBuilder(bodyClose)
 
 	if sessionID != "" {
-		fmt.Fprintf(headClose, `<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`+"\n", sessionID)
+		// The SSE connection URL. presenceTopic (from the page's ?presence=
+		// query param) is appended so the SSE handler joins the connection
+		// onto the named topic — this is what binds a live roster island to
+		// the viewers of the page. QueryEscaped to keep the value safe inside
+		// the HTML attribute and the downstream URL.
+		sseURL := "/__gofastr/sse?session=" + sessionID
+		if presenceTopic != "" {
+			sseURL += "&presence=" + url.QueryEscape(presenceTopic)
+		}
+		fmt.Fprintf(headClose, `<meta name="gofastr-sse" content="%s">`+"\n", sseURL)
 	}
 	// app.css is injected AFTER component CSS (see further down) so
 	// that host overrides win cascade ties against the framework's
@@ -1341,7 +1348,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 		shell := fmt.Sprintf(
 			`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404 — %s</title></head><body>%s</body></html>`,
 			stdhtml.EscapeString(appName), string(body))
-		page := ds.injectChrome(shell, path, "")
+		page := ds.injectChrome(shell, path, "", "")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, page)
 		return
@@ -1439,9 +1446,41 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use the island manager's SSE handler
-	ds.Islands.ServeSSE(w, r)
+	// Resolve the SERVER-DERIVED identity from the request context (a
+	// READ of the middleware-seeded ctx user — never a client param) and
+	// the bounded ?presence= topic list, then delegate to the
+	// presence-aware SSE handler. Anonymous (nil user) is fine: the
+	// manager synthesizes a stable per-session pseudo-identity.
+	identity := island.PresenceIdentityFromContext(r.Context())
+	topics := island.ParsePresenceTopics(r.URL.Query().Get("presence"))
+	ds.Islands.ServeSSEWithPresence(w, r, identity, topics)
 }
+
+// maxPresenceParamLen caps the raw ?presence= query value threaded from the
+// page URL into the SSE meta tag. The per-topic count/length bounds are
+// enforced again by island.ParsePresenceTopics at SSE-connect time; this
+// just keeps a hostile page URL from injecting megabytes into the HTML.
+const maxPresenceParamLen = 4096
+
+// boundedPresenceParam reads the ?presence= query param from the page request
+// and returns it length-capped (not parsed — the SSE handler parses). Empty
+// when absent or oversize. This is the value threaded into the SSE meta tag so
+// the client's EventSource connection joins the named topic(s).
+func boundedPresenceParam(r *http.Request) string {
+	v := r.URL.Query().Get("presence")
+	if len(v) > maxPresenceParamLen {
+		return ""
+	}
+	return v
+}
+
+// NOTE: there is deliberately NO generic HTTP roster endpoint. A presence
+// roster is "who is viewing topic X" — exposing it over an ungated URL leaks
+// identities (emails) to anyone who can guess a topic string. The framework
+// can't know an app's per-topic authorization, so the roster stays an
+// in-process primitive (island.Manager.PresenceRoster) plus live-push via the
+// existing SSE lane. An app that wants an HTTP roster builds one behind its
+// own authz. See framework/docs/content/presence.md.
 
 // handleRuntimeJS serves the core-ui runtime JavaScript.
 func (ds *UIHost) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
@@ -1985,7 +2024,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	shell := fmt.Sprintf(
 		`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>405 — %s</title></head><body>%s</body></html>`,
 		stdhtml.EscapeString(appName), string(body))
-	page := ds.injectChrome(shell, path, "")
+	page := ds.injectChrome(shell, path, "", "")
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	fmt.Fprint(w, page)
 }
@@ -2066,7 +2105,7 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
-	page := ds.injectChromeMode(string(html), path, "", false)
+	page := ds.injectChromeMode(string(html), path, "", "", false)
 	return injectSignalSeed(ctx, page), nil
 }
 

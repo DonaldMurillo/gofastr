@@ -508,6 +508,40 @@ rows, err := handler.ListAll(ctx, crud.ListOptions{Search: "go concurrency"})
 Setting `Search` on an entity without `SearchFields` returns an error
 (fail loud, matching the unknown-sort policy).
 
+## Nested predicate filters (`?where=`)
+
+The flat `?field_op=value` params AND-compose. When you need **boolean
+logic** — OR-groups, nested AND/OR — pass a predicate tree as a JSON
+value in `?where=`:
+
+```
+GET /api/tickets?where={"or":[
+  {"field":"status","value":"open"},
+  {"and":[
+    {"field":"priority","op":"eq","value":"high"},
+    {"field":"assignee","value":"me"}
+  ]}
+]}
+```
+
+compiles to `WHERE ((status = $1) OR ((priority = $2) AND (assignee =
+$3)))`. A node is either a **leaf** (`{"field","op","value"}`, `op`
+defaults to `eq`; use `"values":[...]` or a comma string with
+`op:"in"`) or a **group** (`{"and":[...]}` / `{"or":[...]}`).
+
+Operators are the same set as the flat params: `eq, gt, lt, gte, lte,
+like, in`.
+
+**Safety.** Every field is validated against the entity's schema
+(Hidden fields rejected — the same value-disclosure-oracle rationale as
+flat filters); every value is a bound placeholder, never string-
+interpolated; unknown fields/operators, malformed JSON, or a tree
+exceeding the depth (8) or node (64) bounds return **400**. The whole
+tree compiles to **one** parenthesized WHERE clause, so it AND-composes
+with owner, tenant, and soft-delete scopes exactly like `?q=` — a user
+OR-group can never widen past those scopes. `?where=` combines (AND)
+with any flat `?field_op=` params on the same request.
+
 ## Code Generation
 
 Generate Go from a `gofastr.yml` blueprint:

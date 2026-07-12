@@ -276,6 +276,80 @@ interactive.OnClick(page2Btn,
 
 Attribute injected: `data-fui-push-state="path"`.
 
+
+---
+
+## Sortable List (single + kanban)
+
+`core-ui/patterns/sortablelist` renders a reorderable `<ol>` with HTML5
+drag-and-drop plus a keyboard fallback (Space to grab, Arrow keys to
+move, Space to drop, Esc to cancel). After a successful reorder the
+runtime POSTs the new key sequence to `RPCPath` as form-encoded
+`order=<comma-sep-keys>`. A non-2xx response reverts the DOM.
+
+### Single list (back-compat)
+
+```go
+sortablelist.Render(sortablelist.Config{
+    Label:   "Priorities",
+    RPCPath: "/api/reorder",
+    Items:   []Item{{Key: "a", Label: "A"}, {Key: "b", Label: "B"}},
+})
+```
+
+The POST body is exactly `order=a,b` — no extra fields. Existing
+single-list callers compile and behave identically.
+
+### Kanban (cross-container)
+
+Render one list per column, all sharing the same `Group` (the board id),
+each with a unique `Container` (the column id the server writes to).
+Lists with the same non-empty `Group` allow drag and keyboard moves
+between them; lists with no group (or different groups) stay isolated.
+
+```go
+for _, col := range board.Columns {
+    sortablelist.Render(sortablelist.Config{
+        Label:     col.Title,           // aria-label = column name
+        Group:     "board-1",           // same for every column
+        Container: col.ID,              // unique per column
+        RPCPath:   "/api/board/move",
+        Items:     col.Items,
+    })
+}
+```
+
+A cross-container drop POSTs to the **destination** list's `RPCPath`:
+
+```
+order=<dest-keys>&moved=<key>&container=<col-id>
+```
+
+The server knows which item moved (`moved`), to which column
+(`container`), and the new destination order (`order`). It removes the
+item from its previous column and inserts it into the destination at
+the right position. A same-container reorder still sends only
+`order=<keys>` (back-compat).
+
+Keyboard: Arrow Left/Right moves a grabbed item to the adjacent column
+in the same group; Arrow Up/Down reorders within the column.
+
+### Version-aware 409 conflict recovery
+
+When `Version` is set, the runtime appends `version=<token>` to every
+commit. A `409 Conflict` response then fires a **distinct conflict
+path** instead of a blanket rollback:
+
+1. If `ConflictRPC` is set, the runtime GET-fetches it and replaces the
+   destination list's `innerHTML` with the response (server-rendered
+   reconciliation). The source list is restored from its snapshot.
+2. If `ConflictRPC` is absent, the runtime falls back to rollback + a
+   `console.warn`.
+
+Without `Version`, `409` is treated like any other non-2xx (rollback) —
+back-compat. A polite `aria-live` region announces grab, move (position
++ column), drop-commit success, and rollback/conflict for screen-reader
+users.
 ---
 
 ## Writing a hand-written island, end to end
@@ -470,7 +544,7 @@ own runtime modules for rich client-side behavior.
 | Combobox | `combobox.js` | Debounced search RPC, listbox navigation, type-ahead |
 | Command Palette | (uses Modal + Combobox) | ⌘K overlay with search |
 | Conditional Field | `conditionalfield.js` | Show/hide form sections based on field values |
-| Drag Sortable List | `sortablelist.js` | Native drag-and-drop + keyboard reorder, RPC commit |
+| Drag Sortable List | `sortablelist.js` | Native drag-and-drop + keyboard reorder, cross-container kanban, version-aware 409 conflict recovery, RPC commit |
 | File Dropzone | `dropzone.js` | Drag-and-drop file handling with previews |
 | Gallery + Lightbox | `lightbox.js` | Image zoom overlay, prev/next, keyboard |
 | Infinite Scroll | `infinitescroll.js` | IntersectionObserver-driven lazy loading |

@@ -92,3 +92,54 @@ func TestItemCarriesPerRowAriaLabel(t *testing.T) {
 		t.Errorf("row should carry aria-label=Drag <Label>:\n%s", h)
 	}
 }
+
+func TestGroupContainerEmittedOnList(t *testing.T) {
+	h := string(Render(Config{
+		Label:     "To do",
+		Group:     "board-1",
+		Container: "todo",
+		RPCPath:   "/api/move",
+		Items:     []Item{{Key: "a", Label: "A"}},
+	}))
+	if !strings.Contains(h, `data-fui-sortable-group="board-1"`) {
+		t.Errorf("expected sortable-group attr:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-sortable-container="todo"`) {
+		t.Errorf("expected sortable-container attr:\n%s", h)
+	}
+}
+
+func TestVersionAndConflictEmittedOnList(t *testing.T) {
+	h := string(Render(Config{
+		Label:       "x",
+		Version:     "v3",
+		ConflictRPC: "/api/conflict?col=todo",
+		Items:       []Item{{Key: "a", Label: "A"}},
+	}))
+	if !strings.Contains(h, `data-fui-sortable-version="v3"`) {
+		t.Errorf("expected sortable-version attr:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-sortable-conflict="/api/conflict?col=todo"`) {
+		t.Errorf("expected sortable-conflict attr:\n%s", h)
+	}
+}
+
+func TestNoNewAttrsWhenGroupIsAbsent(t *testing.T) {
+	// Back-compat: a plain single-list render (no Group/Container/
+	// Version/ConflictRPC) must not emit any of the new attrs.
+	h := string(Render(Config{
+		Label:   "x",
+		RPCPath: "/api/reorder",
+		Items:   []Item{{Key: "a", Label: "A"}},
+	}))
+	for _, bad := range []string{
+		`data-fui-sortable-group`,
+		`data-fui-sortable-container`,
+		`data-fui-sortable-version`,
+		`data-fui-sortable-conflict`,
+	} {
+		if strings.Contains(h, bad) {
+			t.Errorf("back-compat: %s should not be emitted without config:\n%s", bad, h)
+		}
+	}
+}

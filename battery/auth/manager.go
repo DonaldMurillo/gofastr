@@ -215,6 +215,12 @@ type UserStore interface {
 	// CreateUser creates a new user account. Returns ErrEmailTaken if the
 	// email is already registered.
 	CreateUser(ctx context.Context, email, hashedPassword string, roles []string) (User, error)
+
+	// UpdateRoles replaces the roles for an existing user. Returns
+	// ErrUserNotFound if the user does not exist. The roles slice is
+	// OPERATOR input (from an admin screen), never request data — the
+	// same security posture as AuthConfig.DefaultRoles.
+	UpdateRoles(ctx context.Context, userID string, roles []string) error
 }
 
 // AuthPlugin is the interface for composable auth features. Each plugin
@@ -387,6 +393,16 @@ func (m *AuthManager) SetUserStore(store UserStore) {
 // SetSessionStore allows plugins or external code to set the session store.
 func (m *AuthManager) SetSessionStore(store SessionStore) {
 	m.sessionStore = store
+}
+
+// SetUserRoles replaces the roles for an existing user via the configured
+// UserStore. It is the supported server-side entry point for operator-driven
+// role assignment (e.g. the admin back-office). There is no HTTP route —
+// call it from trusted server code. The roles are OPERATOR input, never
+// request data: the caller is responsible for sourcing them from an
+// admin-gated screen, not from a client-supplied body.
+func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []string) error {
+	return m.userStore.UpdateRoles(ctx, userID, roles)
 }
 
 // initPlugins initializes all registered plugins in order.

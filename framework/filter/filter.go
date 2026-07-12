@@ -111,7 +111,7 @@ func ParseFilters(r *http.Request, fields []schema.Field) ([]ParsedFilter, error
 	consumed := make(map[string]bool)
 
 	for key, values := range q {
-		if len(values) == 0 || key == "sort" || key == "page" || key == "limit" || key == "offset" || key == "cursor" {
+		if len(values) == 0 || key == "sort" || key == "page" || key == "limit" || key == "offset" || key == "cursor" || key == "where" {
 			continue
 		}
 
