@@ -767,10 +767,14 @@ func main() {
 			},
 		})
 	}},
-	{"avatar", "Avatar", "Data", "User picture or initials.", func() render.HTML {
+	{"avatar", "Avatar", "Data", "User picture or initials, with an optional presence dot.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
 			ui.Avatar(ui.AvatarConfig{Name: "Donald Murillo"}),
 			ui.Avatar(ui.AvatarConfig{Name: "Claude"}),
+			ui.Avatar(ui.AvatarConfig{Name: "Ada Online", Status: ui.AvatarOnline}),
+			ui.Avatar(ui.AvatarConfig{Name: "Grace Away", Status: ui.AvatarAway}),
+			ui.Avatar(ui.AvatarConfig{Name: "Alan Busy", Status: ui.AvatarBusy, Size: ui.AvatarLg}),
+			ui.Avatar(ui.AvatarConfig{Name: "Edsger Offline", Status: ui.AvatarOffline, Size: ui.AvatarLg}),
 		)
 	}},
 	{"avatargroup", "AvatarGroup", "Data", "Stacked avatars with overflow chip.", func() render.HTML {
