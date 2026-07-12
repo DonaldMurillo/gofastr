@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // DataTable is a server-rendered list view that composes core-ui's
@@ -137,6 +139,11 @@ type DataTableConfig struct {
 	// rows into labeled cards via container queries.
 	Responsive ResponsiveMode
 
+	// Ctx carries the per-request context used to resolve i18n strings
+	// (empty-state labels, sort aria-labels, pagination labels). When
+	// nil, English fallbacks are returned — preserving today's behaviour.
+	Ctx context.Context
+
 	ID    string
 	Class string
 }
@@ -145,6 +152,10 @@ type DataTableConfig struct {
 func DataTable(cfg DataTableConfig) render.HTML {
 	if len(cfg.Columns) == 0 {
 		panic("ui: DataTable requires at least one Column")
+	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	for _, c := range cfg.Columns {
 		if c.Key == "" {
@@ -164,9 +175,9 @@ func DataTable(cfg DataTableConfig) render.HTML {
 	if len(cfg.Rows) == 0 {
 		empty := cfg.Empty
 		if empty.Title == "" {
-			empty.Title = "No results"
+			empty.Title = i18nui.T(ctx, i18nui.KeyTableNoResults)
 			if empty.Description == "" {
-				empty.Description = "Adjust your filters or add new entries."
+				empty.Description = i18nui.T(ctx, i18nui.KeyTableEmptyDesc)
 			}
 		}
 		return dataTableStyle.WrapHTML(html.Div(html.DivConfig{
@@ -179,7 +190,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 	// and column-header semantics come from core-ui.
 	thCells := make([]render.HTML, len(cfg.Columns))
 	for i, col := range cfg.Columns {
-		thCells[i] = renderHeader(col, cfg.SortBy, cfg.SortDir, cfg.SortHrefPattern,
+		thCells[i] = renderHeader(ctx, col, cfg.SortBy, cfg.SortDir, cfg.SortHrefPattern,
 			cfg.IslandSignal, cfg.IslandEndpoint)
 	}
 	thead := html.Thead(html.TableSectionConfig{},
@@ -237,6 +248,19 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			pagCfg.IslandSignal = cfg.IslandSignal
 			pagCfg.IslandEndpoint = cfg.IslandEndpoint
 		}
+		// Thread i18n labels into the pagination nav (Previous / Next /
+		// "Pagination") when the caller hasn't set them explicitly. The
+		// pagination package is in core-ui (which may not import i18nui),
+		// so the labels are resolved here and passed via the config.
+		if pagCfg.Label == "" {
+			pagCfg.Label = i18nui.T(ctx, i18nui.KeyPaginationLabel)
+		}
+		if pagCfg.PrevLabel == "" {
+			pagCfg.PrevLabel = i18nui.T(ctx, i18nui.KeyPaginationPrevious)
+		}
+		if pagCfg.NextLabel == "" {
+			pagCfg.NextLabel = i18nui.T(ctx, i18nui.KeyPaginationNext)
+		}
 		children = append(children,
 			html.Div(html.DivConfig{Class: "ui-data-table__footer"},
 				pagination.New(pagCfg)))
@@ -259,7 +283,7 @@ func wrapClass(extra, base string) string {
 	return base + " " + extra
 }
 
-func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, islandSignal, islandEndpoint string) render.HTML {
+func renderHeader(ctx context.Context, col Column, activeKey string, activeDir SortDir, pattern, islandSignal, islandEndpoint string) render.HTML {
 	thCfg := html.THConfig{Scope: "col"}
 	if col.Align != "" && col.Align != "start" {
 		thCfg.Class = "is-align-" + col.Align
@@ -308,7 +332,7 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 	// announced nameless by screen readers.
 	var sortAriaLabel string
 	if col.Header == "" {
-		sortAriaLabel = "Sort by " + col.Key
+		sortAriaLabel = i18nui.TVars(ctx, i18nui.KeyTableSortBy, map[string]string{"column": col.Key})
 	}
 
 	// Island mode: render as a data-fui-rpc button so click fires

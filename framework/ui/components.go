@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── PageHeader ─────────────────────────────────────────────────────
@@ -119,6 +121,9 @@ type SectionConfig struct {
 	Label string
 	Class string
 	ID    string
+	// Ctx carries the per-request context used to resolve the default
+	// Section aria-label. When nil, English fallback applies.
+	Ctx context.Context
 }
 
 // Section renders a content section with consistent spacing and an
@@ -131,6 +136,10 @@ type SectionConfig struct {
 // inaccessible region — Section panics in that case to push callers
 // toward the right shape.
 func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cls := "ui-section"
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
@@ -182,7 +191,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	} else {
 		// No heading and no label → default to a generic aria-label so the
 		// region is at least announced, rather than panicking on every call.
-		secCfg.Label = "Section"
+		secCfg.Label = i18nui.T(ctx, i18nui.KeySectionLabel)
 	}
 	return sectionStyle.WrapHTML(html.Section(secCfg, out...))
 }
@@ -873,13 +882,37 @@ const (
 	AvatarXl AvatarSize = "xl" // ~4rem
 )
 
+// AvatarStatus is a presence indicator drawn as a small dot in the
+// avatar's lower corner. Empty renders no dot. Colors come from the
+// status tokens so a themed app recolors them for free. This is the
+// visual half of presence; the framework does not track who is online
+// — an app feeds the status from its own source (see the presence
+// note in framework/docs/content/interactive-patterns.md).
+type AvatarStatus string
+
+const (
+	AvatarStatusNone AvatarStatus = ""        // no dot (default)
+	AvatarOnline     AvatarStatus = "online"  // success token
+	AvatarAway       AvatarStatus = "away"    // warning token
+	AvatarBusy       AvatarStatus = "busy"    // danger token
+	AvatarOffline    AvatarStatus = "offline" // muted token
+)
+
 // AvatarConfig configures an avatar.
 type AvatarConfig struct {
 	// Name is required; used for alt text and to derive initials when
 	// no image source is set.
-	Name  string
-	Src   string     // optional image URL; falls back to initials when empty
-	Size  AvatarSize // sm | "" (default md) | lg | xl
+	Name string
+	Src  string     // optional image URL; falls back to initials when empty
+	Size AvatarSize // sm | "" (default md) | lg | xl
+
+	// Status draws a presence dot in the lower corner (online / away /
+	// busy / offline). Empty renders no dot.
+	Status AvatarStatus
+	// StatusLabel overrides the dot's accessible name. Defaults to the
+	// status value (e.g. "online"). Ignored when Status is empty.
+	StatusLabel string
+
 	ID    string
 	Class string
 }
@@ -894,26 +927,50 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	if cfg.Size != AvatarMd {
 		cls += " ui-avatar--" + string(cfg.Size)
 	}
+	if cfg.Status != AvatarStatusNone {
+		cls += " ui-avatar--has-status"
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	spanCfg := html.TextConfig{
-		Class: cls, ID: cfg.ID,
-	}
+	spanCfg := html.TextConfig{Class: cls, ID: cfg.ID}
+
+	var inner []render.HTML
 	if cfg.Src != "" {
-		return avatarStyle.WrapHTML(html.Span(spanCfg,
-			html.Image(html.ImageConfig{
-				Src: cfg.Src, Alt: cfg.Name, Class: "ui-avatar__img",
-			})))
+		inner = append(inner, html.Image(html.ImageConfig{
+			Src: cfg.Src, Alt: cfg.Name, Class: "ui-avatar__img",
+		}))
+	} else {
+		inner = append(inner,
+			html.Span(html.TextConfig{
+				Class:      "ui-avatar__initials",
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+			}, render.Text(initials(cfg.Name))),
+			html.Span(html.TextConfig{Class: "ui-visually-hidden"},
+				render.Text(cfg.Name)),
+		)
 	}
-	return avatarStyle.WrapHTML(html.Span(spanCfg,
-		html.Span(html.TextConfig{
-			Class:      "ui-avatar__initials",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-		}, render.Text(initials(cfg.Name))),
-		html.Span(html.TextConfig{Class: "ui-visually-hidden"},
-			render.Text(cfg.Name)),
-	))
+	if cfg.Status != AvatarStatusNone {
+		inner = append(inner, avatarStatusDot(cfg.Status, cfg.StatusLabel))
+	}
+	return avatarStyle.WrapHTML(html.Span(spanCfg, inner...))
+}
+
+// avatarStatusDot renders the presence dot. It carries role="img" +
+// aria-label so the status is announced (a bare aria-label on a span is
+// rejected by axe — the implicit role doesn't accept a name), matching
+// the AvatarGroup overflow-chip pattern.
+func avatarStatusDot(status AvatarStatus, label string) render.HTML {
+	if label == "" {
+		label = string(status)
+	}
+	return html.Span(html.TextConfig{
+		Class: "ui-avatar__status ui-avatar__status--" + string(status),
+		ExtraAttrs: html.Attrs{
+			"role":       "img",
+			"aria-label": label,
+		},
+	})
 }
 
 func initials(name string) string {

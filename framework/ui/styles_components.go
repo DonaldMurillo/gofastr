@@ -539,7 +539,11 @@ func statCardCSS(_ style.Theme) string {
 }
 
 func avatarCSS(_ style.Theme) string {
+	// The root is position:relative (not overflow:hidden) so the presence
+	// dot can sit in the corner without being clipped; the circular clip
+	// moves onto the image itself via border-radius.
 	return `[data-fui-comp="ui-avatar"] {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -548,7 +552,6 @@ func avatarCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   font-weight: 600;
   font-size: var(--text-xs, 0.8rem);
-  overflow: hidden;
   flex-shrink: 0;
   inline-size: 2.5rem;
   block-size:  2.5rem;
@@ -560,10 +563,29 @@ func avatarCSS(_ style.Theme) string {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: var(--radii-full, 9999px);
 }
 [data-fui-comp="ui-avatar"] .ui-avatar__initials {
   letter-spacing: 0.04em;
-}`
+}
+/* Presence dot: sized as a fraction of the avatar so it scales with
+   every size variant, with a ring in the surface color so it reads as
+   an overlay. Colors come from the status tokens. */
+[data-fui-comp="ui-avatar"] .ui-avatar__status {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  inline-size: 30%;
+  block-size: 30%;
+  min-inline-size: 8px;
+  min-block-size: 8px;
+  border-radius: var(--radii-full, 9999px);
+  box-shadow: 0 0 0 0.14em var(--color-surface, #fff);
+}
+[data-fui-comp="ui-avatar"] .ui-avatar__status--online  { background: var(--color-success, #16A34A); }
+[data-fui-comp="ui-avatar"] .ui-avatar__status--away     { background: var(--color-warning, #D97706); }
+[data-fui-comp="ui-avatar"] .ui-avatar__status--busy     { background: var(--color-danger, #DC2626); }
+[data-fui-comp="ui-avatar"] .ui-avatar__status--offline  { background: var(--color-text-muted, #9CA3AF); }`
 }
 
 func formCSS(_ style.Theme) string {
@@ -910,7 +932,7 @@ func themeToggleCSS(_ style.Theme) string {
 button[data-fui-comp="ui-theme-toggle"] {
   cursor: pointer;
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radius-md, 0.375rem);
+  border-radius: var(--radii-md, 0.375rem);
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181B);
   padding: var(--spacing-xs, 0.25rem);
@@ -993,7 +1015,7 @@ func backToTopCSS(_ style.Theme) string {
   justify-content: center;
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: var(--radius-full, 9999px);
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-foreground, #fff);
   box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,.1));

@@ -59,7 +59,7 @@ var terminalBlockStyle = registry.RegisterStyle("ui-terminal-block", terminalBlo
 func terminalBlockCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-terminal-block"] {
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
-  border-radius: var(--radius-md, 6px);
+  border-radius: var(--radii-md, 6px);
   background: var(--color-background, #fff);
   overflow: hidden;
   font-family: var(--font-mono, ui-monospace, monospace);

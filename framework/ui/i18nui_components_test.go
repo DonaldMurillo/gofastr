@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -84,5 +85,116 @@ func TestLightboxLabelsUseI18n(t *testing.T) {
 	}
 	if !strings.Contains(out, "PROBE-DL") {
 		t.Fatalf("missing download probe, got:\n%s", out)
+	}
+}
+
+// DataTable empty-state title + description come from i18nui defaults.
+func TestDataTableEmptyStateI18n(t *testing.T) {
+	swapDefault(t, i18nui.KeyTableNoResults, "PROBE-NOPE")
+	swapDefault(t, i18nui.KeyTableEmptyDesc, "PROBE-DESC")
+	out := htmlString(t, DataTable(DataTableConfig{
+		Columns: []Column{{Key: "x", Header: "X"}},
+	}))
+	if !strings.Contains(out, "PROBE-NOPE") {
+		t.Fatalf("missing empty title probe:\n%s", out)
+	}
+	if !strings.Contains(out, "PROBE-DESC") {
+		t.Fatalf("missing empty desc probe:\n%s", out)
+	}
+}
+
+// DataTable empty-state Title override wins over the i18nui default.
+func TestDataTableEmptyTitleOverrideWins(t *testing.T) {
+	swapDefault(t, i18nui.KeyTableNoResults, "PROBE-NOPE")
+	out := htmlString(t, DataTable(DataTableConfig{
+		Columns: []Column{{Key: "x", Header: "X"}},
+		Empty:   EmptyStateConfig{Title: "Custom title"},
+	}))
+	if !strings.Contains(out, "Custom title") {
+		t.Fatalf("custom title missing:\n%s", out)
+	}
+	if strings.Contains(out, "PROBE-NOPE") {
+		t.Fatalf("default leaked when override set:\n%s", out)
+	}
+}
+
+// DataTable sortable empty-header column uses TVars for its aria-label.
+func TestDataTableSortAriaLabelTVars(t *testing.T) {
+	swapDefault(t, i18nui.KeyTableSortBy, "Sortby {column}")
+	out := htmlString(t, DataTable(DataTableConfig{
+		Columns:         []Column{{Key: "name", Sortable: true}},
+		SortHrefPattern: "?sort=%s&dir=%s",
+		Rows:            []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
+	}))
+	if !strings.Contains(out, `aria-label="Sortby name"`) {
+		t.Fatalf("missing TVars sort aria-label:\n%s", out)
+	}
+}
+
+// DataTable threads i18n labels into the pagination nav.
+func TestDataTableThreadsI18nPagination(t *testing.T) {
+	swapDefault(t, i18nui.KeyPaginationLabel, "PROBE-PAG")
+	swapDefault(t, i18nui.KeyPaginationPrevious, "PROBE-PREV")
+	swapDefault(t, i18nui.KeyPaginationNext, "PROBE-NEXT")
+	out := htmlString(t, DataTable(DataTableConfig{
+		Columns: []Column{{Key: "x", Header: "X"}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
+		Pagination: &pagination.Config{
+			Total: 2, Current: 1, HrefPattern: "?p=%d",
+		},
+	}))
+	for _, want := range []string{"PROBE-PAG", "PROBE-PREV", "PROBE-NEXT"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing pagination probe %q:\n%s", want, out)
+		}
+	}
+}
+
+// FilterToolbar uses i18n defaults for its landmark label + Apply.
+func TestFilterToolbarUsesI18n(t *testing.T) {
+	swapDefault(t, i18nui.KeyFilterToolbarLabel, "PROBE-LBL")
+	swapDefault(t, i18nui.KeyFilterApply, "PROBE-APPLY")
+	out := htmlString(t, FilterToolbar(FilterToolbarConfig{
+		Action: "/list",
+		Facets: []Facet{{
+			Name: "f", Label: "F",
+			Options: []FacetOption{{Value: "a", Label: "A"}},
+		}},
+	}))
+	if !strings.Contains(out, "PROBE-LBL") {
+		t.Fatalf("missing toolbar label probe:\n%s", out)
+	}
+	if !strings.Contains(out, "PROBE-APPLY") {
+		t.Fatalf("missing apply probe:\n%s", out)
+	}
+}
+
+// FilterToolbar "All <label>" select option uses TVars.
+func TestFilterToolbarAllLabelTVars(t *testing.T) {
+	swapDefault(t, i18nui.KeyFilterAll, "All {label}")
+	out := htmlString(t, FilterToolbar(FilterToolbarConfig{
+		Action: "/list",
+		Facets: []Facet{{
+			Name: "status", Label: "Statuses",
+			Options: []FacetOption{{Value: "a", Label: "A"}},
+		}},
+	}))
+	if !strings.Contains(out, "All Statuses") {
+		t.Fatalf("missing TVars All label:\n%s", out)
+	}
+}
+
+// Carousel "Go to slide N" dot aria-labels use TVars.
+func TestCarouselGoToSlideTVars(t *testing.T) {
+	swapDefault(t, i18nui.KeyCarouselGoTo, "Goto {slide}")
+	out := htmlString(t, Carousel(CarouselConfig{
+		Label:  "gallery",
+		Slides: []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
+	}))
+	if !strings.Contains(out, `aria-label="Goto 1"`) {
+		t.Fatalf("missing goto slide 1:\n%s", out)
+	}
+	if !strings.Contains(out, `aria-label="Goto 2"`) {
+		t.Fatalf("missing goto slide 2:\n%s", out)
 	}
 }

@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // counterStyle registers the scoped CSS for fui-counter. The host emits
@@ -38,6 +40,9 @@ type CounterConfig struct {
 
 	// Class is an optional extra CSS class on the wrapper.
 	Class string
+	// Ctx carries the per-request context used to resolve the Decrement,
+	// Increment and Counter group aria labels. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // Counter renders a counter with + and − buttons that mutate a signal
@@ -55,6 +60,11 @@ func Counter(cfg CounterConfig) render.HTML {
 	if name == "" {
 		panic("ui: Counter requires SignalName or Slice")
 	}
+
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	step := cfg.Step
 	if step == 0 {
 		step = 1
@@ -68,7 +78,7 @@ func Counter(cfg CounterConfig) render.HTML {
 	decBtn := render.Tag("button", map[string]string{
 		"class":               "fui-counter__btn fui-counter__dec",
 		"data-fui-signal-inc": name + ":" + strconv.Itoa(-step),
-		"aria-label":          "Decrement",
+		"aria-label":          i18nui.T(ctx, i18nui.KeyCounterDecrement),
 		"type":                "button",
 	}, render.Text("−"))
 
@@ -80,7 +90,7 @@ func Counter(cfg CounterConfig) render.HTML {
 
 	incAttrs := map[string]string{
 		"class":      "fui-counter__btn fui-counter__inc",
-		"aria-label": "Increment",
+		"aria-label": i18nui.T(ctx, i18nui.KeyCounterIncrement),
 		"type":       "button",
 	}
 	if step == 1 {
@@ -94,6 +104,6 @@ func Counter(cfg CounterConfig) render.HTML {
 		"class":         cls,
 		"data-fui-comp": "fui-counter",
 		"role":          "group",
-		"aria-label":    "Counter",
+		"aria-label":    i18nui.T(ctx, i18nui.KeyCounterLabel),
 	}, decBtn, display, incBtn)
 }

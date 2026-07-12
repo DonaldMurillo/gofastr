@@ -228,22 +228,23 @@ func TestRedisDequeueQuarantinesBadJSON(t *testing.T) {
 
 // ============================================================================
 // Property: a type-filtered MemoryQueue.Dequeue must never lose the valid,
-// non-matching jobs it drained while searching — even when the bounded jobChan
-// is full at re-enqueue time. Surface: MemoryQueue.Dequeue type-filter branch.
+// non-matching jobs it inspects while searching — even under a concurrent
+// producer hammering Enqueue. Surface: MemoryQueue.Dequeue type-filter branch
+// (priority-heap pending store).
 // ============================================================================
 
-// TestMemoryDequeueKeepsSkippedUnderLoad runs a type-filtered Dequeue against a
-// near-full jobChan while a concurrent producer keeps refilling it. The drained
-// non-matching jobs must never be silently dropped: with a non-blocking
-// re-enqueue, a producer that steals the freed slot causes permanent job loss.
-// We assert the total job count is conserved across the drain/re-enqueue cycle.
+// TestMemoryDequeueKeepsSkippedUnderLoad runs a type-filtered Dequeue against
+// the pending store while a concurrent producer keeps refilling it. The
+// non-matching jobs inspected during the scan must never be silently dropped:
+// removeMatching leaves them in the heap. We assert the total job count is
+// conserved across the drain cycle.
 func TestMemoryDequeueKeepsSkippedUnderLoad(t *testing.T) {
 	q := NewMemoryQueue(0) // no workers — manual consumption only
 	ctx := context.Background()
 
-	const cap = 1024 // jobChan capacity
+	const cap = 1024 // backlog size (ex-old-channel-capacity)
 
-	// Seed the channel completely full with non-matching jobs.
+	// Seed the store with a backlog of non-matching jobs.
 	for i := 0; i < cap; i++ {
 		if err := q.Enqueue(ctx, Job{ID: fmtID(i), Type: "sms"}); err != nil {
 			t.Fatalf("seed enqueue %d: %v", i, err)

@@ -2,7 +2,7 @@ package ui
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -90,7 +90,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 	children := []render.HTML{}
 
 	// 1. Step indicator bar (visual dots/segments).
-	children = append(children, renderStepIndicator(cfg.Steps, cfg.CurrentStep))
+	children = append(children, renderStepIndicator(ctx, cfg.Steps, cfg.CurrentStep))
 
 	// 2. Current step content wrapped in a section.
 	step := cfg.Steps[cfg.CurrentStep]
@@ -112,7 +112,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 }
 
 // renderStepIndicator builds the visual progress bar.
-func renderStepIndicator(steps []StepWizardStep, current int) render.HTML {
+func renderStepIndicator(ctx context.Context, steps []StepWizardStep, current int) render.HTML {
 	dots := make([]render.HTML, 0, len(steps))
 	for i := range steps {
 		dotCls := "ui-step-wizard__step-dot"
@@ -128,13 +128,13 @@ func renderStepIndicator(steps []StepWizardStep, current int) render.HTML {
 		if i == current {
 			dotAttrs["aria-current"] = "step"
 		}
-		dotAttrs["aria-label"] = fmt.Sprintf("Step %d: %s", i+1, steps[i].Heading)
+		dotAttrs["aria-label"] = i18nui.TVars(ctx, i18nui.KeyStepWizardStep, map[string]string{"step": strconv.Itoa(i + 1), "heading": steps[i].Heading})
 		dots = append(dots, render.Tag("div", dotAttrs))
 	}
 	return render.Tag("div", map[string]string{
 		"class":      "ui-step-wizard__indicator",
 		"role":       "list",
-		"aria-label": fmt.Sprintf("Step %d of %d", current+1, len(steps)),
+		"aria-label": i18nui.TVars(ctx, i18nui.KeyStepWizardStepOf, map[string]string{"step": strconv.Itoa(current + 1), "total": strconv.Itoa(len(steps))}),
 	}, dots...)
 }
 

@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Spinner ────────────────────────────────────────────────────────
@@ -51,6 +54,9 @@ type SpinnerConfig struct {
 
 	ID    string
 	Class string
+	// Ctx carries the per-request context used to resolve the loading label.
+	// When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // Spinner renders a loading indicator.
@@ -61,6 +67,10 @@ type SpinnerConfig struct {
 // rule can switch a sibling Spinner from `visibility:hidden` to
 // visible without any per-component wiring.
 func Spinner(cfg SpinnerConfig) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cls := "ui-spinner"
 	if cfg.Variant != SpinnerRing {
 		cls += " ui-spinner--" + string(cfg.Variant)
@@ -77,7 +87,7 @@ func Spinner(cfg SpinnerConfig) render.HTML {
 
 	label := cfg.Label
 	if label == "" {
-		label = "Loading…"
+		label = i18nui.T(ctx, i18nui.KeyLoading)
 	}
 
 	// Variant visuals: SpinnerDots → three dots; SpinnerGrid → 3×3

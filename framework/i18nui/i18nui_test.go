@@ -105,6 +105,41 @@ func TestTUsesCtxTranslator(t *testing.T) {
 	}
 }
 
+// TVars falls back to the English default when the ctx translator is
+// present but the catalog has no ui.* entry (the miss case — an app
+// catalog won't contain ui.* keys unless the app overrides them).
+func TestTVarsMissFallsBackToDefault(t *testing.T) {
+	cat := i18n.NewMapCatalog() // no ui.* entries
+	tr := i18n.NewTranslator(cat, "en")
+	ctx := WithTranslator(context.Background(), tr)
+	got := TVars(ctx, KeyTableSortBy, map[string]string{"column": "name"})
+	if got != "Sort by name" {
+		t.Fatalf("TVars miss = %q, want %q", got, "Sort by name")
+	}
+}
+
+// TVars uses the translator's value (with interpolation) when the
+// catalog DOES contain the key for the locale.
+func TestTVarsTranslatorHitWins(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", "ui.table.sortBy", i18n.Message{Text: "Trier par {column}"})
+	tr := i18n.NewTranslator(cat, "en")
+	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
+	ctx = WithTranslator(ctx, tr)
+	got := TVars(ctx, KeyTableSortBy, map[string]string{"column": "nom"})
+	if got != "Trier par nom" {
+		t.Fatalf("TVars hit = %q, want %q", got, "Trier par nom")
+	}
+}
+
+// TVars without a translator returns the English default interpolated.
+func TestTVarsNilCtxEnglishDefault(t *testing.T) {
+	got := TVars(nil, KeyCarouselGoTo, map[string]string{"slide": "3"})
+	if got != "Go to slide 3" {
+		t.Fatalf("TVars nil ctx = %q, want %q", got, "Go to slide 3")
+	}
+}
+
 func TestTUnknownKeyReturnsKeyString(t *testing.T) {
 	key := Key("ui.nonexistent.key")
 	got := T(context.Background(), key)

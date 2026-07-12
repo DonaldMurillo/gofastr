@@ -183,7 +183,7 @@ func axePages(t *testing.T) []string {
 		out = append(out, "/docs/"+d.Slug)
 	}
 	out = append(out,
-		"/", "/get-started", "/docs/", "/examples", "/kiln",
+		"/", "/get-started", "/docs/", "/examples", "/examples/workspace", "/kiln",
 		"/philosophy", "/seo", "/seo-bundle", "/components/",
 	)
 	sort.Strings(out)

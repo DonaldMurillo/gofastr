@@ -195,6 +195,30 @@ func TestRuntimeModule_Fileupload(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_PaneHost(t *testing.T) {
+	src, ok := Module("panehost")
+	if !ok {
+		t.Fatal("panehost module not embedded")
+	}
+	for _, want := range []string{
+		"[data-fui-pane-host]", // marker selector the scanner reads
+		"data-fui-pane-open",   // open trigger attribute
+		"openPane",             // programmatic API on __gofastr
+		"matchMedia",           // responsive overlay-drawer collapse
+		"NS._focusSel",         // reuses the shared focusable selector
+		"loadedModules",        // self-registers as loaded
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("panehost module missing %q", want)
+		}
+	}
+	// Per-module raw size bound (consistent with sibling modules; the
+	// gzip 3 KB budget is enforced separately by TestRuntimeModuleSizeBudgets).
+	if size := ModuleSize("panehost"); size > 9000 {
+		t.Errorf("panehost module is %d bytes — budget is 9000", size)
+	}
+}
+
 func TestRuntimeModule_Widgets(t *testing.T) {
 	src, ok := Module("widgets")
 	if !ok {
@@ -278,6 +302,10 @@ func TestRuntimeModule_SSE(t *testing.T) {
 		"data-island",
 		"NS.connectSSE",
 		"loadedModules",
+		"NS.sseStatus",       // connection-state global the banner polls
+		"lastEventAt",        // refreshed per frame + on open
+		"retryCount",         // bumped on each transport error
+		"gofastr:sse-status", // transition CustomEvent
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("sse module missing %q", want)
@@ -285,6 +313,32 @@ func TestRuntimeModule_SSE(t *testing.T) {
 	}
 	if size := ModuleSize("sse"); size > 2500 {
 		t.Errorf("sse module is %d bytes — budget is 2500", size)
+	}
+}
+
+func TestRuntimeModule_NetworkRetryBanner(t *testing.T) {
+	src, ok := Module("networkretrybanner")
+	if !ok {
+		t.Fatal("networkretrybanner module not embedded")
+	}
+	for _, want := range []string{
+		`data-fui-comp="ui-network-retry-banner"`, // on-demand marker
+		"data-fui-network-retry-health",           // health probe URL
+		"data-fui-network-retry-sse-silence",      // opt-in silence threshold
+		"networkStatus",                           // public API on __gofastr
+		"checkHealthOn",                           // recovery helper reused on reconnect
+		"reportRecoveryOn",                        // dismiss path
+		"__gofastr.sseStatus",                     // silence poll reads the SSE global
+		"gofastr:sse-status",                      // reconnect-recovery listener
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("networkretrybanner module missing %q", want)
+		}
+	}
+	// Ceiling near the current minified size (same shape as menu/cop),
+	// not a goal — tighten down if the module shrinks.
+	if size := ModuleSize("networkretrybanner"); size > 4000 {
+		t.Errorf("networkretrybanner module is %d bytes — budget is 4000", size)
 	}
 }
 

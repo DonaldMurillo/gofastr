@@ -425,6 +425,40 @@ never opens" cause.
 
 ---
 
+## Presence rosters (who is here)
+
+`ui.Avatar` and `ui.AvatarGroup` can show a **presence dot** — the
+visual half of "who is viewing this". Set `AvatarConfig.Status` to
+`ui.AvatarOnline`, `AvatarAway`, `AvatarBusy`, or `AvatarOffline`; the
+dot colors come from the status tokens, so a themed app recolors them
+for free. `StatusLabel` overrides the dot's accessible name (default:
+the status word).
+
+```go
+ui.AvatarGroup(ui.AvatarGroupConfig{
+    Avatars: []ui.AvatarConfig{
+        {Name: "Ada Lovelace", Status: ui.AvatarOnline},
+        {Name: "Grace Hopper", Status: ui.AvatarAway},
+        {Name: "Alan Turing",  Status: ui.AvatarBusy, StatusLabel: "In a review"},
+    },
+})
+```
+
+To make the roster **live**, feed the group's HTML through a signal —
+the same pattern NotificationBell uses: render the `AvatarGroup` inside
+a `data-fui-signal="…"` `data-fui-signal-mode="html"` region and push
+new HTML when the roster changes (via an RPC response signal or an
+island re-render). The status values are just data you supply.
+
+> **Presence *transport* is app-owned today.** The framework gives you
+> the roster **rendering** (the status dot) and the live-region
+> **plumbing** (signals + SSE), but it does not yet track *who* holds
+> an open connection to a given entity. Deriving the live roster —
+> binding the authenticated user to their SSE connection, observing
+> connect/disconnect, and aggregating that across replicas — is work an
+> app wires itself for now. A first-class presence source is tracked in
+> issue #47.
+
 ## Complex interactive components
 
 These are full components (not wrapper functions) that ship with their

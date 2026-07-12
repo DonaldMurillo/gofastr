@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // SignOutConfig configures a SignOut control.
@@ -19,6 +21,9 @@ type SignOutConfig struct {
 	// Variant styles the button; defaults to ButtonGhost.
 	Variant ButtonVariant
 	Class   string
+	// Ctx carries the per-request context used to resolve the sign-out label.
+	// When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // SignOut renders a logout control: a minimal form that POSTs to the auth
@@ -30,9 +35,13 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	if action == "" {
 		action = "/auth/logout"
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	label := cfg.Label
 	if label == "" {
-		label = "Sign out"
+		label = i18nui.T(ctx, i18nui.KeySignOut)
 	}
 	variant := cfg.Variant
 	if variant == "" {

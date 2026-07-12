@@ -7,6 +7,89 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-12
+
+Issues #41, #42, #46, #47, #48, #49, #50.
+
+### Added
+
+- **Durable pgvector embedding store (`embed.NewPgVector`)** (#42). A
+  Postgres+pgvector-backed `embed.Store` so multiple app replicas share
+  one vector index instead of each holding an in-process FlatStore.
+  Ranking is server-side cosine distance (`<=>`) and matches FlatStore's
+  top-K order for the same vectors; it implements `chunkLister` so hybrid
+  search composes, and deliberately omits snapshotting (a Postgres table
+  IS the durable copy, so pairing it with `Options.Path` fails closed).
+  `EnsureSchema` creates the `vector` extension + table, with an
+  actionable error when the DB role can't `CREATE EXTENSION`. No new
+  dependency — vectors are encoded in pgvector's text format over the
+  existing `lib/pq`.
+- **Pane-host / split-pane layout primitive (`ui.PaneHost`)** (#50). A
+  master-detail shell: an always-visible primary pane plus one or two
+  openable side panes (`Secondary` / `Tertiary`) with a declarative
+  open/close/swap lifecycle, focus handoff on open and restore on close,
+  and a responsive collapse where — below 768px — an open side pane
+  becomes a fixed overlay drawer (backdrop, focus trap, scroll lock,
+  ESC-to-close). Driven by the `panehost` runtime module +
+  `data-fui-pane-*` attributes; `window.__gofastr.openPane` /
+  `closePane` / `swapPane` expose programmatic control. Pane content
+  loads via the existing RPC→signal(html) rail — pane state is never a
+  route.
+- **Avatar presence dot (`AvatarConfig.Status`)** (#47). `ui.Avatar` /
+  `ui.AvatarGroup` render an optional presence dot (online / away / busy
+  / offline) sized as a fraction of the avatar and colored from the
+  status tokens, with a ring in the surface color. This is the roster
+  *visual*; presence *transport* (binding a user to their live
+  connection and aggregating it across replicas) remains app-owned and
+  is tracked in #47.
+- **Queue lane reservations (`Job.Lane` + `WithDBLaneWorkers` /
+  `WithLaneWorkers`)** (#41). A lane is a capacity-reservation tag on a
+  job: dedicated workers claim only their lane, shared workers keep
+  claiming any lane by priority, so a bulk backfill can no longer starve
+  urgent jobs by saturating every worker. DBQueue adds a `lane` column
+  (auto-migrated onto pre-existing tables, both dialects) plus a
+  `(lane, status, scheduled_at, priority)` index. `RedisQueue` stays
+  instance-per-lane via its `queueName`.
+- **MemoryQueue honours `Job.Priority`** (#41). Dispatch moved from a
+  FIFO channel to a priority heap (`Priority DESC`, enqueue-order
+  tiebreak) for dev parity with DBQueue. The pending store is now
+  unbounded (`Enqueue` no longer blocks at 1024 queued jobs); the
+  dead-letter set stays bounded.
+- **SSE connection state (`window.__gofastr.sseStatus`)** (#46). The SSE
+  runtime module now maintains `{connected, lastEventAt, retryCount}`
+  (one live object, mutated in place) and dispatches a
+  `gofastr:sse-status` event on connect/disconnect.
+  `NetworkRetryBanner`'s `SSESilenceMs` trigger — previously dead
+  because nothing wrote `lastEventAt` — now works, and the banner
+  re-probes its health endpoint on SSE reconnect so it can dismiss.
+- **Per-user locale switching (`framework.WithLocaleResolver` +
+  `i18n.CookieLocale`)** (#48). Locale negotiation accepts resolvers
+  consulted before the `X-Locale`/`Accept-Language` headers, so a
+  stored preference (cookie/session) wins. Resolver values are
+  length/charset-bounded and only accepted when they match a catalog
+  locale — a garbage cookie cannot force an unsupported locale.
+- `i18nui.TVars(ctx, key, vars)` — translate + interpolate `{name}`
+  placeholders on both the catalog and English-default paths (#48).
+
+### Fixed
+
+- **framework/ui components now actually translate** (#48). The i18n
+  middleware attached only the locale — never the translator — so every
+  component rendered English even with a catalog wired. `WithI18n` now
+  bridges the translator onto the request context, and a translator
+  miss on a `ui.*` key falls back to the English default instead of
+  rendering the raw key. On top of the four previously-wired
+  components, all ~30 framework/ui components with user-facing copy
+  (DataTable, FilterToolbar, forms, uploads, navigation, a11y labels,
+  …) now resolve their default labels through `i18nui`; explicit config
+  values always win, and default English output is byte-identical.
+- **Dead `--radius-*` token references** (#49). 18 references across 12
+  component files used `var(--radius-*)` while the token pipeline emits
+  `--radii-*` — those styles silently used hardcoded fallbacks (and
+  `Repeater`, with no fallback, lost its border radius entirely). All
+  renamed to the emitted `--radii-*` tokens, so theme radius overrides
+  now reach every component.
+
 ## [0.18.0] - 2026-07-10
 
 Backlog from the 2026-07-10 dual blind cold-start eval (two agents each

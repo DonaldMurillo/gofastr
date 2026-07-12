@@ -216,6 +216,123 @@ func TestMiddleware_AttachesLocaleToContext(t *testing.T) {
 	}
 }
 
+// ----- locale resolver -----------------------------------------------------
+
+func TestNegotiate_ResolverCookieWinsOverHeaders(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("en", "k", Message{Text: "en"})
+	c.Set("fr", "k", Message{Text: "fr"})
+	c.Set("de", "k", Message{Text: "de"})
+	tr := NewTranslator(c, "en")
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Language", "de")
+	r.Header.Set("X-Locale", "en")
+	r.AddCookie(&http.Cookie{Name: "locale", Value: "fr"})
+
+	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
+	if got.Tag != "fr" {
+		t.Fatalf("cookie resolver should win: got %q want fr", got.Tag)
+	}
+}
+
+func TestNegotiate_ResolverUnknownValueFallsThrough(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("en", "k", Message{Text: "en"})
+	c.Set("de", "k", Message{Text: "de"})
+	tr := NewTranslator(c, "en")
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Language", "de")
+	r.AddCookie(&http.Cookie{Name: "locale", Value: "klingon"}) // not in catalog
+
+	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
+	if got.Tag != "de" {
+		t.Fatalf("unknown cookie should fall through to Accept-Language: got %q want de", got.Tag)
+	}
+}
+
+func TestNegotiate_ResolverOversizedValueRejected(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("en", "k", Message{Text: "en"})
+	c.Set("fr", "k", Message{Text: "fr"})
+	tr := NewTranslator(c, "en")
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "locale", Value: strings.Repeat("a", 40)})
+
+	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
+	if got.Tag != "en" {
+		t.Fatalf("oversized cookie should be rejected → fallback: got %q want en", got.Tag)
+	}
+}
+
+func TestNegotiate_ResolverGarbageCharsRejected(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("en", "k", Message{Text: "en"})
+	c.Set("fr", "k", Message{Text: "fr"})
+	tr := NewTranslator(c, "en")
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "locale", Value: "<script>"})
+
+	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
+	if got.Tag != "en" {
+		t.Fatalf("garbage cookie should be rejected → fallback: got %q want en", got.Tag)
+	}
+}
+
+func TestNegotiate_ResolverFalseFallsThrough(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("en", "k", Message{Text: "en"})
+	c.Set("de", "k", Message{Text: "de"})
+	tr := NewTranslator(c, "en")
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Language", "de")
+	// missing cookie → CookieLocale returns ok=false
+	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
+	if got.Tag != "de" {
+		t.Fatalf("resolver false should fall through: got %q want de", got.Tag)
+	}
+}
+
+func TestNegotiate_ResolverRegionFallbackMatches(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("en", "k", Message{Text: "en"})
+	c.Set("fr", "k", Message{Text: "fr"})
+	tr := NewTranslator(c, "en")
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "locale", Value: "fr-CA"}) // matches "fr" via tag fallback
+
+	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
+	if got.Tag != "fr" {
+		t.Fatalf("fr-CA cookie should match fr: got %q want fr", got.Tag)
+	}
+}
+
+func TestMiddleware_PassesResolverOption(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("en", "k", Message{Text: "en"})
+	c.Set("fr", "k", Message{Text: "fr"})
+	tr := NewTranslator(c, "en")
+
+	var seen string
+	h := Middleware(tr, WithLocaleResolver(CookieLocale("locale")))(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = tr.T(r.Context(), "k")
+		}))
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Language", "en")
+	r.AddCookie(&http.Cookie{Name: "locale", Value: "fr"})
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if seen != "fr" {
+		t.Fatalf("middleware resolver: got %q want fr", seen)
+	}
+}
+
 // ----- JSON catalog loader --------------------------------------------------
 
 func TestLoadJSONCatalog_FlattensNestedKeysAndDetectsPluralBuckets(t *testing.T) {

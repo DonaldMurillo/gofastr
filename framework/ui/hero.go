@@ -114,7 +114,7 @@ func heroCSS(_ style.Theme) string {
 [data-fui-comp="ui-hero"] .ui-hero__media img {
   inline-size: 100%;
   height: auto;
-  border-radius: var(--radius-lg, 16px);
+  border-radius: var(--radii-lg, 16px);
 }
 @media (max-width: 980px) {
   [data-fui-comp="ui-hero"].ui-hero--split { grid-template-columns: 1fr; gap: var(--spacing-lg, 24px); }

@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── ProgressSteps ──────────────────────────────────────────────────
@@ -58,7 +61,11 @@ type ProgressStepsConfig struct {
 	Orientation ProgressStepsOrientation
 	// Label is the optional aria-label for the wrapping nav. Defaults
 	// to "Progress".
-	Label      string
+	Label string
+	// Ctx carries the per-request context used to resolve the
+	// aria-label. When nil, English fallbacks apply.
+	Ctx context.Context
+
 	ID         string
 	Class      string
 	ExtraAttrs html.Attrs
@@ -75,9 +82,13 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		panic("ui: ProgressSteps unknown Orientation " + string(cfg.Orientation) +
 			` — pick one of: "" (horizontal), vertical`)
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	label := cfg.Label
 	if label == "" {
-		label = "Progress"
+		label = i18nui.T(ctx, i18nui.KeyProgressLabel)
 	}
 	cls := "ui-progress-steps"
 	if cfg.Orientation == ProgressStepsVertical {

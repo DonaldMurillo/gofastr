@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -8,6 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
+
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── ConfirmAction ──────────────────────────────────────────────────
@@ -68,6 +72,9 @@ type ConfirmActionConfig struct {
 	// Enter must not fire the action) to Confirm. Set to true for
 	// non-destructive confirmations ("Apply changes?", "Continue?").
 	AutofocusConfirm bool
+	// Ctx carries the per-request context used to resolve the
+	// Confirm/Cancel button labels. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // ConfirmAction returns the trigger button and a *widget.Builder for
@@ -89,17 +96,21 @@ func ConfirmAction(cfg ConfirmActionConfig) (render.HTML, *widget.Builder) {
 	if cfg.RPCPath == "" {
 		panic("ui: ConfirmAction requires RPCPath")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	variant := cfg.TriggerVariant
 	if variant == "" {
 		variant = "danger"
 	}
 	confirm := cfg.ConfirmLabel
 	if confirm == "" {
-		confirm = "Confirm"
+		confirm = i18nui.T(ctx, i18nui.KeyDialogConfirm)
 	}
 	cancel := cfg.CancelLabel
 	if cancel == "" {
-		cancel = "Cancel"
+		cancel = i18nui.T(ctx, i18nui.KeyDialogCancel)
 	}
 	method := cfg.RPCMethod
 	if method == "" {

@@ -1,8 +1,12 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // Notification is the styled content for an ephemeral toast. Drop it
@@ -37,6 +41,10 @@ type NotificationConfig struct {
 	// positioning. Defaults to NotificationInline (in document flow).
 	Position NotificationPosition
 
+	// Ctx carries the per-request context used to resolve the
+	// dismiss-label string. When nil, English fallbacks apply.
+	Ctx context.Context
+
 	ID    string
 	Class string
 }
@@ -59,6 +67,10 @@ const (
 func Notification(cfg NotificationConfig) render.HTML {
 	if cfg.Title == "" {
 		panic("ui: Notification requires Title")
+	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	v := cfg.Variant
 	if v == "" {
@@ -107,7 +119,7 @@ func Notification(cfg NotificationConfig) render.HTML {
 	if cfg.DismissHref != "" {
 		label := cfg.DismissLabel
 		if label == "" {
-			label = "Dismiss notification"
+			label = i18nui.T(ctx, i18nui.KeyNotificationDismiss)
 		}
 		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
 		// protocol-relative //host, and control bytes (see safety.go);

@@ -1164,3 +1164,43 @@ func TestE2E_TextareaAutogrow(t *testing.T) {
 		t.Log("NOTE: textarea module not loaded — autogrow may not work in test env")
 	}
 }
+
+// TestE2EInteractive_WorkspacePanes exercises the /examples/workspace
+// master-detail flow end to end: clicking a ticket row opens the
+// secondary pane AND loads its detail via RPC (no navigation), then
+// "View customer" fills the tertiary pane the same way.
+func TestE2EInteractive_WorkspacePanes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var url1, detail, url2, customer string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/examples/workspace"),
+		chromedp.WaitVisible(`button[data-fui-rpc="/__site/workspace/ticket?id=4021"]`),
+		// Row click: opens the secondary pane + fetches the detail.
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/workspace/ticket?id=4021"]').click()`, nil),
+		chromedp.Sleep(1*time.Second),
+		chromedp.Location(&url1),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="ws-ticket"]').textContent`, &detail),
+		// "View customer" inside the detail fills the tertiary pane.
+		chromedp.Evaluate(`document.querySelector('[data-fui-pane-open="tertiary"]').click()`, nil),
+		chromedp.Sleep(1*time.Second),
+		chromedp.Location(&url2),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="ws-customer"]').textContent`, &customer),
+	); err != nil {
+		t.Fatal(err)
+	}
+	// The whole flow must stay on the same page — panes fill, no nav.
+	if !strings.Contains(url1, "/examples/workspace") || !strings.Contains(url2, "/examples/workspace") {
+		t.Errorf("expected to stay on /examples/workspace, got %q then %q", url1, url2)
+	}
+	if !strings.Contains(detail, "SSO login") {
+		t.Errorf("ticket detail did not load into the pane: %q", detail)
+	}
+	if !strings.Contains(customer, "Northwind") {
+		t.Errorf("customer detail did not load into the tertiary pane: %q", customer)
+	}
+}

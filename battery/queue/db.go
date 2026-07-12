@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,12 @@ type DBQueue struct {
 	// jobs owned by a disabled module.
 	gate func(jobType string) bool
 
+	// laneWorkers maps a lane name to the number of dedicated worker
+	// goroutines that only claim jobs in that lane. Populated by
+	// WithLaneWorkers. Shared workers (from the workers field) claim any
+	// lane. The empty lane ("") is the default lane.
+	laneWorkers map[string]int
+
 	// Retry backoff. When backoffBase > 0, a Nack with retries remaining
 	// advances scheduled_at by backoffBase*2^(attempts-1), capped at
 	// backoffMax. Zero base preserves the original "retry immediately"
@@ -70,6 +77,29 @@ type DBQueueOption func(*DBQueue)
 // WithTable overrides the default "queue_jobs" table name.
 func WithTable(name string) DBQueueOption {
 	return func(q *DBQueue) { q.table = name }
+}
+
+// WithDBLaneWorkers adds n dedicated worker goroutines that ONLY claim jobs
+// whose Lane equals the given lane, on top of the shared workers from
+// WithWorkers. This is the mechanism that prevents bulk backfills from
+// starving urgent jobs: even when every shared worker is busy running a
+// long-running bulk handler, the dedicated lane workers keep draining the
+// reserved lane. Multiple calls for different lanes each add their own
+// workers; multiple calls for the same lane sum. Priority ordering still
+// selects among pending jobs within a worker's claim set. Panics if n <= 0
+// or lane is "" (use WithWorkers for the shared/default pool). Named with
+// the DB prefix to match WithDBHandlerTimeout / WithDBLogger (both backends
+// share this package, so the MemoryQueue variant is WithLaneWorkers).
+func WithDBLaneWorkers(lane string, n int) DBQueueOption {
+	if n <= 0 {
+		panic(fmt.Sprintf("queue.WithDBLaneWorkers: n must be > 0, got %d", n))
+	}
+	if lane == "" {
+		panic("queue.WithDBLaneWorkers: lane must be non-empty (use WithWorkers for the default/shared pool)")
+	}
+	return func(q *DBQueue) {
+		q.laneWorkers[lane] += n
+	}
 }
 
 // WithWorkers sets the number of background worker goroutines started by
@@ -128,15 +158,16 @@ func WithBackoff(base, max time.Duration) DBQueueOption {
 // Panics if the table name contains unsafe characters.
 func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	q := &DBQueue{
-		db:       db,
-		table:    "queue_jobs",
-		logger:   slog.Default(),
-		handlers: map[string]Handler{},
-		workers:  1,
-		lease:    5 * time.Minute,
-		stop:     make(chan struct{}),
-		stopped:  make(chan struct{}),
-		now:      time.Now,
+		db:          db,
+		table:       "queue_jobs",
+		logger:      slog.Default(),
+		handlers:    map[string]Handler{},
+		laneWorkers: map[string]int{},
+		workers:     1,
+		lease:       5 * time.Minute,
+		stop:        make(chan struct{}),
+		stopped:     make(chan struct{}),
+		now:         time.Now,
 	}
 	for _, opt := range opts {
 		opt(q)
@@ -175,6 +206,7 @@ func (q *DBQueue) ensureTable() error {
 		type          TEXT NOT NULL,
 		payload       TEXT,
 		priority      INTEGER NOT NULL DEFAULT 0,
+		lane          TEXT NOT NULL DEFAULT '',
 		attempts      INTEGER NOT NULL DEFAULT 0,
 		max_attempts  INTEGER NOT NULL DEFAULT 3,
 		created_at    %s NOT NULL,
@@ -189,18 +221,62 @@ func (q *DBQueue) ensureTable() error {
 	// lease column existed. Ignore the error: re-running ADD COLUMN on a
 	// table that already has it is the only expected failure here.
 	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN claimed_at %s", q.qt(), tsType))
-	// Index supports the dequeue ORDER BY and the WHERE filter together.
-	idxName := q.table + "_dequeue_idx"
-	safeIdx, err := query.SafeIdent(idxName)
-	if err != nil {
-		return fmt.Errorf("queue: invalid index name %q: %w", idxName, err)
+	// Migrate the lane column onto pre-existing tables created before lane
+	// isolation shipped. Postgres supports ADD COLUMN IF NOT EXISTS; SQLite
+	// does not, so we attempt the ALTER and tolerate only the duplicate-column
+	// error (matching on the message for both drivers).
+	if err := q.migrateLaneColumn(); err != nil {
+		return err
 	}
-	idx := fmt.Sprintf(
-		"CREATE INDEX IF NOT EXISTS %s ON %s (status, scheduled_at, priority)",
-		query.QuoteIdent(safeIdx), q.qt(),
-	)
-	_, err = q.db.Exec(idx)
+	// Index supports the dequeue ORDER BY and the WHERE filter together. The
+	// shared-worker claim (any lane) is served by (status, scheduled_at,
+	// priority); the lane-filtered claim used by dedicated lane workers is
+	// served by (lane, status, scheduled_at, priority).
+	for _, ix := range []struct{ name, cols string }{
+		{q.table + "_dequeue_idx", "(status, scheduled_at, priority)"},
+		{q.table + "_lane_idx", "(lane, status, scheduled_at, priority)"},
+	} {
+		safeIdx, err := query.SafeIdent(ix.name)
+		if err != nil {
+			return fmt.Errorf("queue: invalid index name %q: %w", ix.name, err)
+		}
+		idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s %s",
+			query.QuoteIdent(safeIdx), q.qt(), ix.cols)
+		if _, err := q.db.Exec(idx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateLaneColumn adds the lane column to a pre-existing table, tolerating
+// the "column already exists" case so it is idempotent across versions.
+func (q *DBQueue) migrateLaneColumn() error {
+	if q.dialect == dialectPostgres {
+		// Postgres supports IF NOT EXISTS directly.
+		_, err := q.db.Exec(fmt.Sprintf(
+			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS lane TEXT NOT NULL DEFAULT ''", q.qt()))
+		return err
+	}
+	// SQLite has no IF NOT EXISTS for ADD COLUMN: attempt and tolerate only
+	// the duplicate-column error.
+	_, err := q.db.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN lane TEXT NOT NULL DEFAULT ''", q.qt()))
+	if err != nil && isDuplicateColumnErr(err) {
+		return nil
+	}
 	return err
+}
+
+// isDuplicateColumnErr reports whether err is the "column already exists"
+// failure from ADD COLUMN, for either the SQLite (duplicate column name) or
+// Postgres (already exists) driver.
+func isDuplicateColumnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column") || strings.Contains(msg, "already exists")
 }
 
 // RegisterHandler binds a job type to a handler. Safe to call concurrently
@@ -323,9 +399,9 @@ func (q *DBQueue) Enqueue(ctx context.Context, job Job) error {
 	}
 	_, err := q.db.ExecContext(ctx,
 		fmt.Sprintf(`INSERT INTO %s
-			(id, type, payload, priority, attempts, max_attempts, created_at, scheduled_at, status)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')`, q.qt()),
-		job.ID, job.Type, payload, job.Priority, job.Attempts, job.MaxAttempts,
+			(id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, status)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')`, q.qt()),
+		job.ID, job.Type, payload, job.Priority, job.Lane, job.Attempts, job.MaxAttempts,
 		job.CreatedAt, job.ScheduledAt,
 	)
 	return err
@@ -333,18 +409,25 @@ func (q *DBQueue) Enqueue(ctx context.Context, job Job) error {
 
 // Dequeue claims the highest-priority eligible job in a single atomic step.
 // Returns ErrNoJob when nothing is ready (no pending row whose scheduled_at
-// has passed).
+// has passed). Claims from ANY lane — dedicated lane workers use the
+// internal dequeue with a lane filter instead.
 func (q *DBQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
-	switch q.dialect {
-	case dialectPostgres:
-		return q.dequeuePostgres(ctx, types)
-	default:
-		return q.dequeueSQLite(ctx, types)
-	}
+	return q.dequeue(ctx, "", types)
 }
 
-func (q *DBQueue) dequeuePostgres(ctx context.Context, types []string) (Job, error) {
-	where, args := q.eligibleWhere(types, 2)
+// dequeue is the lane-aware claim used by both the public Dequeue (lane="",
+// any lane) and the dedicated lane workers (lane != "", restricted to that
+// lane). Sharing one code path keeps the two dialects' claim logic in sync.
+func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job, error) {
+	switch q.dialect {
+	case dialectPostgres:
+		return q.dequeuePostgres(ctx, lane, types)
+	default:
+		return q.dequeueSQLite(ctx, lane, types)
+	}
+}
+func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []string) (Job, error) {
+	where, args := q.eligibleWhere(types, 2, lane)
 	// $1 is the claim timestamp (claimed_at = now); eligibleWhere starts its
 	// own placeholders at $2.
 	claimArgs := append([]any{q.now().UTC()}, args...)
@@ -359,13 +442,13 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, types []string) (Job, err
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, type, payload, priority, attempts, max_attempts, created_at, scheduled_at`,
+		RETURNING id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at`,
 		q.qt(), q.qt(), where)
 	row := q.db.QueryRowContext(ctx, sqlStr, claimArgs...)
 	return scanJob(row)
 }
 
-func (q *DBQueue) dequeueSQLite(ctx context.Context, types []string) (Job, error) {
+func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string) (Job, error) {
 	// SQLite serialises writers at the file level, so a plain BEGIN+SELECT+
 	// UPDATE+COMMIT is race-free even without SKIP LOCKED support.
 	tx, err := q.db.BeginTx(ctx, nil)
@@ -374,8 +457,8 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, types []string) (Job, error
 	}
 	defer tx.Rollback()
 
-	where, args := q.eligibleWhere(types, 1)
-	pickSQL := fmt.Sprintf(`SELECT id, type, payload, priority, attempts, max_attempts, created_at, scheduled_at
+	where, args := q.eligibleWhere(types, 1, lane)
+	pickSQL := fmt.Sprintf(`SELECT id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at
 		FROM %s WHERE %s ORDER BY priority DESC, created_at ASC LIMIT 1`, q.qt(), where)
 	row := tx.QueryRowContext(ctx, pickSQL, args...)
 	job, err := scanJob(row)
@@ -396,14 +479,15 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, types []string) (Job, error
 }
 
 // eligibleWhere builds the WHERE fragment for "ready to run", optionally
-// restricted to a set of job types. startIdx is the first $N to use so
-// callers can prepend their own params.
+// restricted to a set of job types and/or a single lane. startIdx is the
+// first $N to use so callers can prepend their own params. A non-empty lane
+// adds "lane = $N" so dedicated lane workers only claim their own lane.
 //
 // A row is eligible when it is 'pending', OR when it is 'claimed' but its
 // lease has expired (the worker that claimed it crashed before Ack/Nack) and
 // it still has retry attempts left. The lease-expiry clause is what makes
 // in-flight work crash-safe: a claimed row is reclaimed instead of lost.
-func (q *DBQueue) eligibleWhere(types []string, startIdx int) (string, []any) {
+func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (string, []any) {
 	var args []any
 	now := q.now().UTC()
 	idx := startIdx
@@ -424,6 +508,12 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int) (string, []any) {
 		leaseIdx,
 	)
 	parts := []string{status, "scheduled_at <= $" + itoa(schedIdx)}
+
+	if lane != "" {
+		parts = append(parts, "lane = $"+itoa(idx))
+		args = append(args, lane)
+		idx++
+	}
 
 	if len(types) > 0 {
 		placeholders := make([]string, len(types))
@@ -530,7 +620,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job
 	if limit <= 0 {
 		limit = 100
 	}
-	base := fmt.Sprintf(`SELECT id, type, payload, priority, attempts, max_attempts,
+	base := fmt.Sprintf(`SELECT id, type, payload, priority, lane, attempts, max_attempts,
 		created_at, scheduled_at FROM %s`, q.qt())
 	args := []any{}
 	if status != "" {
@@ -547,7 +637,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job
 	for rows.Next() {
 		var j Job
 		var payload string
-		if err := rows.Scan(&j.ID, &j.Type, &payload, &j.Priority, &j.Attempts,
+		if err := rows.Scan(&j.ID, &j.Type, &payload, &j.Priority, &j.Lane, &j.Attempts,
 			&j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt); err != nil {
 			return nil, err
 		}
@@ -599,18 +689,35 @@ func (q *DBQueue) Close() error {
 	return nil
 }
 
-// Start launches q.workers polling goroutines. Each loops Dequeue → handle
-// → Ack/Nack until Close. A worker goroutine that dies for any reason
-// (including a panic escaping the handler-recover guard) is respawned so the
-// pool can never be permanently drained by a poison message.
+// Start launches the shared worker pool (q.workers goroutines that claim any
+// lane) plus one goroutine per dedicated lane worker added via
+// WithLaneWorkers. Each loops dequeue → handle → Ack/Nack until Close. A
+// worker goroutine that dies for any reason (including a panic escaping the
+// handler-recover guard) is respawned so the pool can never be permanently
+// drained by a poison message.
 func (q *DBQueue) Start(ctx context.Context) {
-	remaining := q.workers
+	// Count total workers so the done channel and join loop match.
+	laneCount := 0
+	for _, n := range q.laneWorkers {
+		laneCount += n
+	}
+	total := q.workers + laneCount
 	go func() {
 		defer close(q.stopped)
-		done := make(chan struct{}, q.workers)
+		done := make(chan struct{}, total)
+		// Shared workers claim any lane (lane="").
 		for i := 0; i < q.workers; i++ {
-			go q.superviseWorker(ctx, done)
+			go q.superviseWorker(ctx, "", done)
 		}
+		// Dedicated lane workers only claim jobs in their lane. Iterate
+		// lanes in sorted order so spawn order is deterministic (aids
+		// reproducible test runs).
+		for _, lane := range q.sortedLanes() {
+			for i := 0; i < q.laneWorkers[lane]; i++ {
+				go q.superviseWorker(ctx, lane, done)
+			}
+		}
+		remaining := total
 		for remaining > 0 {
 			<-done
 			remaining--
@@ -618,10 +725,21 @@ func (q *DBQueue) Start(ctx context.Context) {
 	}()
 }
 
+// sortedLanes returns the lane names with dedicated workers in sorted order.
+func (q *DBQueue) sortedLanes() []string {
+	lanes := make([]string, 0, len(q.laneWorkers))
+	for lane := range q.laneWorkers {
+		lanes = append(lanes, lane)
+	}
+	sort.Strings(lanes)
+	return lanes
+}
+
 // superviseWorker runs workerLoop and respawns it if it ever returns
 // abnormally (panic). It only reports done on a clean shutdown (stop/ctx),
-// guaranteeing the pool size is preserved across poison-message panics.
-func (q *DBQueue) superviseWorker(ctx context.Context, done chan<- struct{}) {
+// guaranteeing the pool size is preserved across poison-message panics. lane
+// is "" for shared workers (claim any lane) or the dedicated lane name.
+func (q *DBQueue) superviseWorker(ctx context.Context, lane string, done chan<- struct{}) {
 	for {
 		select {
 		case <-q.stop:
@@ -632,7 +750,7 @@ func (q *DBQueue) superviseWorker(ctx context.Context, done chan<- struct{}) {
 			return
 		default:
 		}
-		clean := q.runWorker(ctx)
+		clean := q.runWorker(ctx, lane)
 		if clean {
 			done <- struct{}{}
 			return
@@ -645,17 +763,19 @@ func (q *DBQueue) superviseWorker(ctx context.Context, done chan<- struct{}) {
 // runWorker executes workerLoop, recovering any panic that escapes the
 // per-job guard. Returns true if the loop exited cleanly (stop/ctx), false
 // if it unwound via panic (so the supervisor respawns it).
-func (q *DBQueue) runWorker(ctx context.Context) (clean bool) {
+func (q *DBQueue) runWorker(ctx context.Context, lane string) (clean bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			clean = false
 		}
 	}()
-	q.workerLoop(ctx)
+	q.workerLoop(ctx, lane)
 	return true
 }
 
-func (q *DBQueue) workerLoop(ctx context.Context) {
+func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
+	// lane is "" for shared workers (claim any lane) or the dedicated lane
+	// name (claim only jobs whose lane column matches).
 	backoff := 100 * time.Millisecond
 	// wait sleeps for backoff, or returns true if the queue is stopping or
 	// the context was cancelled. Shared by the no-eligible-types and
@@ -692,7 +812,7 @@ func (q *DBQueue) workerLoop(ctx context.Context) {
 			}
 			continue
 		}
-		job, err := q.Dequeue(ctx, types...)
+		job, err := q.dequeue(ctx, lane, types)
 		if err != nil {
 			// ErrNoJob is the steady state — sleep briefly and retry.
 			if wait() {
@@ -785,14 +905,15 @@ func itoa(n int) string {
 }
 
 // scanJob materialises a Job from a row that selects every column in the
-// canonical order used by Dequeue.
+// canonical order used by Dequeue (lane included).
 func scanJob(row interface {
 	Scan(dest ...any) error
 }) (Job, error) {
 	var job Job
 	var payload sql.NullString
+	var lane sql.NullString
 	if err := row.Scan(
-		&job.ID, &job.Type, &payload, &job.Priority,
+		&job.ID, &job.Type, &payload, &job.Priority, &lane,
 		&job.Attempts, &job.MaxAttempts, &job.CreatedAt, &job.ScheduledAt,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -802,6 +923,9 @@ func scanJob(row interface {
 	}
 	if payload.Valid && payload.String != "" {
 		job.Payload = json.RawMessage(payload.String)
+	}
+	if lane.Valid {
+		job.Lane = lane.String
 	}
 	return job, nil
 }

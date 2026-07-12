@@ -234,10 +234,43 @@ if err := embedder.Probe(ctx); err != nil {
 }
 ```
 
+## Durable store (pgvector)
+
+The default [FlatStore] is in-process: fast, zero-dep, and the right choice for a single-replica app. Its limitation (called out above under "Why this lives in the framework") is that the index lives in one process's RAM. When you need a **shared, durable** index — multiple app replicas hitting the same vectors, or survival across restarts with no snapshot/WAL plumbing — use `PgVectorStore`, a [Store] backed by a Postgres table with a [pgvector](https://github.com/pgvector/pgvector) embedding column.
+
+```go
+embedder := embed.NewOllamaEmbedder(embed.OllamaConfig{Model: "nomic-embed-text"})
+
+store, err := embed.NewPgVector(db, embed.PgVectorConfig{
+    Dim:   embedder.Dim(), // REQUIRED — pgvector columns are fixed-dim
+    Table: "embed_chunks",  // optional, defaults to "embed_chunks"
+})
+if err != nil { return err }
+if err := store.EnsureSchema(ctx); err != nil { return err } // creates extension + table
+
+idx, err := embed.Open(embed.Options{
+    Embedder: embedder,
+    Store:    store,
+    Keyword:  embed.NewMemoryKeyword(), // PgVectorStore implements chunkLister → hybrid works
+})
+```
+
+**Ranking parity.** `PgVectorStore` scores with pgvector's cosine-distance operator (`<=>`); because the embedder produces L2-normalized vectors, cosine equals the dot product `FlatStore` uses, so the two stores return the same top-K order given identical vectors (`Hit.Score = 1 − distance`). Default retrieval is brute-force cosine (correct, matches `FlatStore`); an operator can add an HNSW index for scale without code changes:
+
+```sql
+CREATE INDEX ON embed_chunks USING hnsw (embedding vector_cosine_ops);
+```
+
+**Extension note.** `EnsureSchema` runs `CREATE EXTENSION IF NOT EXISTS vector`. On managed Postgres (RDS, Cloud SQL) that is a one-time superuser action the app role often lacks — pre-install it once as admin. If the `vector` type is genuinely absent, `EnsureSchema` fails closed with an actionable error rather than proceeding.
+
+**No snapshot, no `Path`.** A Postgres table *is* the durable copy, so `PgVectorStore` deliberately does not implement the gob-snapshot capability. Pairing it with `Options.Path` fails closed at `Open` with an error — do not set `Path` with this store.
+
+**Honest trade-off.** `FlatStore` brute-force-scans a memory slice (~3 ms / 100k chunks on M-class, no network hop). `PgVectorStore` pays a Postgres round-trip per query but gains durability, multi-replica sharing, and a growth path to ANN indexing. Use `FlatStore` until the in-process limitation bites; switch when it does.
+
 ## Limitations and follow-ups
 
 - The watcher does not honour `.gitignore` — only an explicit `ExcludeDirs` list. Glob-level ignore parsing is deferred.
-- The flat store is the only backend. ANN backends (HNSW, IVF) are intentional non-goals until benchmarks show brute-force losing.
+- Two store backends ship: `FlatStore` (in-process, brute-force, default) and `PgVectorStore` (durable Postgres+pgvector, multi-replica). Out-of-process ANN services (dedicated HNSW/IVF servers) remain out of scope until benchmarks show brute-force losing; an HNSW index on the pgvector table covers the scale path today.
 - Multiple named indexes per process are not supported; the design is one index per app, mirroring the `Options.Keyword` and `Options.Path` shape.
 
 ## Common mistakes

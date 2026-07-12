@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -11,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── CommandPalette ─────────────────────────────────────────────────
@@ -68,6 +70,11 @@ type CommandPaletteConfig struct {
 	// set (docs/nav links) so the palette works on a serverless export
 	// where no RPC handler exists. Takes precedence over RPCPath.
 	Commands []PaletteCommand
+
+	// Ctx carries the per-request context used to resolve i18n labels
+	// (placeholder, trigger + dialog titles, hint chips). When nil,
+	// English fallbacks apply.
+	Ctx context.Context
 }
 
 // PaletteCommand is one entry in a static command-palette list.
@@ -84,13 +91,17 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	if cfg.RPCPath == "" && len(cfg.Commands) == 0 {
 		panic("ui: CommandPalette requires RPCPath or Commands")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	name := cfg.Name
 	if name == "" {
 		name = "command-palette"
 	}
 	placeholder := cfg.Placeholder
 	if placeholder == "" {
-		placeholder = "Type a command or search…"
+		placeholder = i18nui.T(ctx, i18nui.KeyCommandPalettePlaceholder)
 	}
 	shortcut := cfg.Shortcut
 	if shortcut == "" {
@@ -102,7 +113,7 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	}
 	triggerLabel := cfg.TriggerLabel
 	if triggerLabel == "" {
-		triggerLabel = "Open command palette"
+		triggerLabel = i18nui.T(ctx, i18nui.KeyCommandPaletteOpen)
 	}
 
 	trigger := render.Tag("button", map[string]string{
@@ -114,12 +125,16 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	}, render.Text(triggerLabel))
 
 	slot := &commandPaletteSlot{
-		widgetName:  name,
-		rpcPath:     cfg.RPCPath,
-		placeholder: placeholder,
-		debounceMs:  debounce,
-		emptyHTML:   cfg.EmptyHTML,
-		options:     paletteCommandsToOptions(cfg.Commands),
+		widgetName:    name,
+		rpcPath:       cfg.RPCPath,
+		placeholder:   placeholder,
+		debounceMs:    debounce,
+		emptyHTML:     cfg.EmptyHTML,
+		options:       paletteCommandsToOptions(cfg.Commands),
+		title:         i18nui.T(ctx, i18nui.KeyCommandPaletteTitle),
+		navigateLabel: i18nui.T(ctx, i18nui.KeyCommandPaletteNavigate),
+		selectLabel:   i18nui.T(ctx, i18nui.KeyCommandPaletteSelect),
+		closeLabel:    i18nui.T(ctx, i18nui.KeyCommandPaletteClose),
 	}
 	b := preset.Modal(name).
 		Hidden().
@@ -143,27 +158,39 @@ func paletteCommandsToOptions(cmds []PaletteCommand) []combobox.Option {
 }
 
 type commandPaletteSlot struct {
-	widgetName  string
-	rpcPath     string
-	placeholder string
-	debounceMs  int
-	emptyHTML   string
-	options     []combobox.Option
+	widgetName    string
+	rpcPath       string
+	placeholder   string
+	debounceMs    int
+	emptyHTML     string
+	options       []combobox.Option
+	title         string
+	navigateLabel string
+	selectLabel   string
+	closeLabel    string
 }
 
 func (s *commandPaletteSlot) Render() render.HTML {
 	titleID := s.widgetName + "-title"
 	signalName := s.widgetName + "-results"
 	inputID := s.widgetName + "-input"
+	// title is resolved at CommandPalette() call time and stashed on
+	// the slot. Slots constructed directly (e.g. in tests) may leave it
+	// empty — fall back to the localized default so combobox.Render's
+	// non-empty Label contract holds.
+	title := s.title
+	if title == "" {
+		title = i18nui.T(context.Background(), i18nui.KeyCommandPaletteTitle)
+	}
 
 	srTitle := html.Heading(html.HeadingConfig{
 		Level: 2, ID: titleID, Class: "ui-visually-hidden",
-	}, render.Text("Command palette"))
+	}, render.Text(title))
 
 	combo := combobox.Render(combobox.Config{
 		ID:          inputID,
+		Label:       title,
 		Name:        "q",
-		Label:       "Command palette",
 		RPCPath:     s.rpcPath,
 		SignalName:  signalName,
 		DebounceMs:  s.debounceMs,
@@ -176,9 +203,9 @@ func (s *commandPaletteSlot) Render() render.HTML {
 
 	// Footer hints (visible row of useful shortcuts).
 	hints := html.Div(html.DivConfig{Class: "ui-cmd-palette__hints"},
-		hintChip("↑↓", "Navigate"),
-		hintChip("↵", "Select"),
-		hintChip("Esc", "Close"),
+		hintChip("↑↓", s.navigateLabel),
+		hintChip("↵", s.selectLabel),
+		hintChip("Esc", s.closeLabel),
 	)
 	footer := html.Div(html.DivConfig{Class: "ui-cmd-palette__footer", ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
 		hints,

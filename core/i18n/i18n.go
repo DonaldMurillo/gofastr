@@ -373,50 +373,176 @@ func T(ctx context.Context, key string, params ...map[string]any) string {
 
 // ----- middleware ----------------------------------------------------------
 
+// NegotiateOption configures locale negotiation (see [Negotiate] and
+// [Middleware]).
+type NegotiateOption func(*negotiateConfig)
+
+type negotiateConfig struct {
+	resolvers []func(*http.Request) (string, bool)
+}
+
+// WithLocaleResolver installs a custom locale resolver consulted BEFORE
+// the X-Locale / Accept-Language headers. The resolver returns a BCP 47
+// tag and ok=true when it has a preference (e.g. a stored per-user
+// locale cookie); ok=false falls through to header-based negotiation.
+//
+// The returned tag is matched against the catalog's locales (with the
+// same tag fallbacks as Accept-Language: "fr-ca" → "fr"). An unknown,
+// malformed, or over-long value falls through to the next source
+// rather than producing an unmatched locale — resolver values are
+// attacker-controlled (cookies), so they are length- and
+// character-bounded before any matching.
+func WithLocaleResolver(f func(*http.Request) (string, bool)) NegotiateOption {
+	return func(c *negotiateConfig) {
+		if f != nil {
+			c.resolvers = append(c.resolvers, f)
+		}
+	}
+}
+
+// CookieLocale returns a resolver that reads the caller's preferred
+// locale from the named cookie. A missing or empty cookie returns
+// ok=false so negotiation falls through to the headers. Pair with
+// [WithLocaleResolver] and a set-cookie handler for per-user locale
+// switching.
+func CookieLocale(name string) func(*http.Request) (string, bool) {
+	return func(r *http.Request) (string, bool) {
+		if r == nil || name == "" {
+			return "", false
+		}
+		c, err := r.Cookie(name)
+		if err != nil {
+			return "", false
+		}
+		return c.Value, c.Value != ""
+	}
+}
+
+// maxResolverTagLen bounds how long an attacker-controlled resolver
+// value (cookie) may be before it is rejected. Mirrors the Accept-
+// Language bounding: real BCP 47 tags are well under this.
+const maxResolverTagLen = 35
+
+// sanitizeResolverTag normalises a resolver-supplied tag and rejects
+// values that are empty, too long, or contain characters outside the
+// BCP 47 subset (lowercase letters, digits, hyphen). Returns "" on
+// rejection so the caller falls through to the next source.
+func sanitizeResolverTag(tag string) string {
+	tag = normalize(tag)
+	if tag == "" || len(tag) > maxResolverTagLen {
+		return ""
+	}
+	for _, ch := range tag {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-') {
+			return ""
+		}
+	}
+	return tag
+}
+
+// availableLocales returns the set of locales the catalog can serve,
+// keyed by tag. Empty (but non-nil) when the translator has no catalog.
+func availableLocales(tr *Translator) map[string]struct{} {
+	available := map[string]struct{}{}
+	if tr != nil && tr.catalog != nil {
+		for _, l := range tr.catalog.Locales() {
+			available[l] = struct{}{}
+		}
+	}
+	return available
+}
+
+// matchCatalog returns the catalog locale matching tag (trying tag
+// fallbacks: "fr-ca" → "fr"), or "" when nothing matches.
+func matchCatalog(tag string, available map[string]struct{}) string {
+	for _, candidate := range tagFallbacks(tag) {
+		if _, ok := available[candidate]; ok {
+			return candidate
+		}
+	}
+	return ""
+}
+
 // Middleware returns an HTTP middleware that resolves the caller's
-// locale from the `Accept-Language` header (negotiating against the
-// catalog's available locales) and attaches it to the request context.
-// Handlers downstream call [T] / [Translator.T] with `r.Context()`.
+// locale and attaches it to the request context. Handlers downstream
+// call [T] / [Translator.T] with `r.Context()`.
 //
-// If an `X-Locale` header is set, it wins outright — useful for tests
-// and for apps that already do locale routing.
+// Resolution order: locale resolver(s) (see [WithLocaleResolver]) →
+// explicit `X-Locale` header → highest-quality `Accept-Language` entry
+// that matches a catalog locale → fallback. Pass resolvers to add a
+// stored per-user locale (e.g. a cookie) that wins over the headers.
 //
-// Locale negotiation falls through to the Translator's fallback when
-// no Accept-Language entry matches any catalog locale.
-func Middleware(tr *Translator) func(http.Handler) http.Handler {
+// If an `X-Locale` header is set, it wins outright over Accept-Language
+// — useful for tests and for apps that already do locale routing.
+//
+// Locale negotiation falls through to the Translator's fallback when no
+// Accept-Language entry matches any catalog locale.
+func Middleware(tr *Translator, opts ...NegotiateOption) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			loc := Negotiate(tr, r)
+			loc := Negotiate(tr, r, opts...)
 			ctx := WithContext(r.Context(), loc)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// Negotiate picks the best locale for the request: explicit X-Locale
-// header → highest-quality Accept-Language entry that matches a
-// catalog locale → fallback. Exposed separately so callers that don't
-// want the middleware can still drive locale resolution.
-func Negotiate(tr *Translator, r *http.Request) Locale {
+// Negotiate picks the best locale for the request. Resolution order:
+// locale resolver(s) → explicit X-Locale header → highest-quality
+// Accept-Language entry that matches a catalog locale → fallback.
+//
+// A resolver value only wins when it matches a catalog locale (after
+// tag fallbacks); otherwise the resolver is ignored and negotiation
+// continues with the headers, so a garbage cookie cannot force an
+// unsupported locale. Exposed separately so callers that don't want
+// the middleware can still drive locale resolution.
+func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale {
+	cfg := negotiateConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	available := availableLocales(tr)
+
+	// 1. Custom resolver(s) — a stored per-user locale wins when it
+	//    matches the catalog; a garbage/unknown value falls through.
+	for _, res := range cfg.resolvers {
+		if res == nil {
+			continue
+		}
+		tag, ok := res(r)
+		if !ok {
+			continue
+		}
+		tag = sanitizeResolverTag(tag)
+		if tag == "" {
+			continue
+		}
+		if tr == nil {
+			// No catalog to validate against — accept the resolver's
+			// value, mirroring the raw Accept-Language behaviour below.
+			return Locale{Tag: tag}
+		}
+		if hit := matchCatalog(tag, available); hit != "" {
+			return Locale{Tag: hit}
+		}
+	}
+
+	// 2. X-Locale header — wins outright (backward-compatible).
 	if forced := normalize(r.Header.Get("X-Locale")); forced != "" {
 		return Locale{Tag: forced}
 	}
+
+	// 3. Accept-Language.
 	if tr == nil {
 		return Locale{Tag: normalize(r.Header.Get("Accept-Language"))}
 	}
-	available := map[string]struct{}{}
-	if tr.catalog != nil {
-		for _, l := range tr.catalog.Locales() {
-			available[l] = struct{}{}
-		}
-	}
 	for _, want := range parseAcceptLanguage(r.Header.Get("Accept-Language")) {
-		for _, candidate := range tagFallbacks(want) {
-			if _, ok := available[candidate]; ok {
-				return Locale{Tag: candidate}
-			}
+		if hit := matchCatalog(want, available); hit != "" {
+			return Locale{Tag: hit}
 		}
 	}
+
+	// 4. Fallback.
 	if tr.fallback != "" {
 		return Locale{Tag: tr.fallback}
 	}

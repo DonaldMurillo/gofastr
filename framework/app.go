@@ -36,6 +36,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/lifecycle"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -210,6 +211,11 @@ type App struct {
 	// Optional translator. When set, the i18n middleware is wired into
 	// the default chain so handlers can call App.T(ctx, key, ...).
 	translator *i18n.Translator
+
+	// Optional locale resolver (set via WithLocaleResolver). Consulted
+	// before X-Locale / Accept-Language during negotiation so a stored
+	// per-user locale (cookie) can win. Only effective with WithI18n.
+	localeResolver func(*http.Request) (string, bool)
 
 	// Optional metrics. When set (via WithMetrics), the metrics middleware
 	// joins the default chain and a Prometheus /metrics endpoint is mounted.
@@ -584,6 +590,29 @@ func WithI18n(tr *i18n.Translator) AppOption {
 	}
 }
 
+// WithLocaleResolver installs a custom locale resolver consulted BEFORE
+// the X-Locale / Accept-Language headers during locale negotiation. Use
+// it to make a stored per-user locale (e.g. a cookie set by a "change
+// language" handler) win over the browser's Accept-Language.
+//
+// Pair with [i18n.CookieLocale] for the common cookie case:
+//
+//	a := framework.NewApp(
+//	    framework.WithI18n(tr),
+//	    framework.WithLocaleResolver(i18n.CookieLocale("locale")),
+//	)
+//
+// Panics if used without WithI18n — locale resolution is meaningless
+// without a translator/catalog to resolve against.
+func WithLocaleResolver(f func(*http.Request) (string, bool)) AppOption {
+	return func(a *App) {
+		if a.translator == nil {
+			panic("framework: WithLocaleResolver requires WithI18n — install a translator first")
+		}
+		a.localeResolver = f
+	}
+}
+
 // Logger returns the App-local *slog.Logger. Middleware and plugins
 // should call this — not slog.Default() — so that a logging plugin can
 // replace the destination without rewiring globals.
@@ -633,6 +662,7 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	timeout := 30 * time.Second
 	var idempotency *middleware.IdempotencyConfig
 	var translator *i18n.Translator
+	var localeResolver func(*http.Request) (string, bool)
 	if a != nil {
 		getLogger = a.Logger
 		if a.Config.RequestTimeout > 0 {
@@ -640,6 +670,7 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		}
 		idempotency = a.idempotency
 		translator = a.translator
+		localeResolver = a.localeResolver
 	}
 	chain := []router.Middleware{
 		middleware.RecoveryFn(getLogger),
@@ -661,7 +692,24 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		chain = append(chain, middleware.Idempotency(*idempotency))
 	}
 	if translator != nil {
-		chain = append(chain, i18n.Middleware(translator))
+		var negOpts []i18n.NegotiateOption
+		if localeResolver != nil {
+			negOpts = append(negOpts, i18n.WithLocaleResolver(localeResolver))
+		}
+		chain = append(chain, i18n.Middleware(translator, negOpts...))
+		// Bridge: stash the translator on the request ctx so framework/ui
+		// components (DataTable, FilterToolbar, Carousel, …) resolve their
+		// labels via i18nui.T(r.Context(), …) using the caller's locale.
+		// Without this the components silently render English even when a
+		// catalog is wired, because i18n.Middleware only attaches the
+		// Locale — not the translator. Framework may import i18nui; core
+		// may not, which is why this bridge lives here and not in core/i18n.
+		chain = append(chain, func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx := i18nui.WithTranslator(r.Context(), translator)
+				next.ServeHTTP(w, r.WithContext(ctx))
+			})
+		})
 	}
 	chain = append(chain, middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}))
 	if a == nil || !a.Config.DisableRequestTimeout {

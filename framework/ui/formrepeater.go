@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── DynamicFormRepeater ────────────────────────────────────────────
@@ -38,6 +40,9 @@ type FormRepeaterConfig struct {
 	RemoveLabel string
 
 	Class string
+	// Ctx carries the per-request context used to resolve i18n labels
+	// (Add / Remove). When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // FormRepeater renders a dynamic list of repeating field groups with
@@ -50,14 +55,17 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: FormRepeater requires Name")
 	}
-
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	addLabel := cfg.AddLabel
 	if addLabel == "" {
-		addLabel = "Add item"
+		addLabel = i18nui.T(ctx, i18nui.KeyRepeaterAdd)
 	}
 	removeLabel := cfg.RemoveLabel
 	if removeLabel == "" {
-		removeLabel = "Remove"
+		removeLabel = i18nui.T(ctx, i18nui.KeyRepeaterRemove)
 	}
 
 	// D-2: Reject impossible constraint: MinItems > MaxItems.

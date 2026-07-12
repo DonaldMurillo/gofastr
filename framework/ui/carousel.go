@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Carousel ───────────────────────────────────────────────────────
@@ -83,6 +85,9 @@ type CarouselConfig struct {
 	ID                       string
 	Class                    string
 	ExtraAttrs               html.Attrs
+	// Ctx carries the per-request context used to resolve the Previous/Next,
+	// Go-to-slide and pagination aria labels. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // Carousel renders the slider.
@@ -92,6 +97,11 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	}
 	if cfg.Label == "" {
 		panic("ui: Carousel requires Label")
+	}
+
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	visible := cfg.VisiblePerView
 	if visible == 0 {
@@ -218,14 +228,14 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		prev := render.Tag("button", map[string]string{
 			"type":                   "button",
 			"class":                  "ui-carousel__nav ui-carousel__nav--prev",
-			"aria-label":             "Previous slide",
+			"aria-label":             i18nui.T(ctx, i18nui.KeyCarouselPrevious),
 			"aria-controls":          id,
 			"data-fui-carousel-prev": "true",
 		}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`))
 		next := render.Tag("button", map[string]string{
 			"type":                   "button",
 			"class":                  "ui-carousel__nav ui-carousel__nav--next",
-			"aria-label":             "Next slide",
+			"aria-label":             i18nui.T(ctx, i18nui.KeyCarouselNext),
 			"aria-controls":          id,
 			"data-fui-carousel-next": "true",
 		}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`))
@@ -240,7 +250,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 			dotAttrs := map[string]string{
 				"type":                  "button",
 				"class":                 "ui-carousel__dot",
-				"aria-label":            "Go to slide " + strconv.Itoa(i+1),
+				"aria-label":            i18nui.TVars(ctx, i18nui.KeyCarouselGoTo, map[string]string{"slide": strconv.Itoa(i + 1)}),
 				"aria-controls":         id,
 				"data-fui-carousel-dot": strconv.Itoa(i),
 			}
@@ -254,7 +264,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		// axe enforces via aria-required-children).
 		children = append(children, render.Tag("div", map[string]string{
 			"class":      "ui-carousel__dots",
-			"aria-label": "Slide pagination",
+			"aria-label": i18nui.T(ctx, i18nui.KeyCarouselPagination),
 		}, dots...))
 	}
 

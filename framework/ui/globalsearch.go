@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/combobox"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── GlobalSearch ───────────────────────────────────────────────────
@@ -51,6 +54,9 @@ type GlobalSearchConfig struct {
 	// Sticky toggles position: sticky on the wrapper. Default true.
 	Sticky bool
 	Class  string
+	// Ctx carries the per-request context used to resolve i18n labels
+	// (placeholder). When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
 // GlobalSearch renders the search bar.
@@ -70,9 +76,13 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	if cfg.SignalName == "" {
 		panic("ui: GlobalSearch requires SignalName")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	placeholder := cfg.Placeholder
 	if placeholder == "" {
-		placeholder = "Search…"
+		placeholder = i18nui.T(ctx, i18nui.KeySearchPlaceholder)
 	}
 	shortcut := cfg.Shortcut
 	if cfg.Shortcut == "" && cfg.Shortcut != " " {

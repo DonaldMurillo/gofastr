@@ -189,20 +189,19 @@ func TestEnqueueAfterClose(t *testing.T) {
 func TestJobPriorityOrdering(t *testing.T) {
 	q := NewMemoryQueue(1)
 
-	// Pause processing so we can enqueue jobs first.
-	// We'll use a manual dequeue approach to test priority ordering.
+	// Enqueue jobs of differing priority without starting workers, then
+	// drain via manual Dequeue to observe the order the store yields.
 	jobs := []Job{
 		{ID: "low", Type: "test", Priority: 1},
 		{ID: "high", Type: "test", Priority: 10},
 		{ID: "mid", Type: "test", Priority: 5},
 	}
 
-	// Enqueue directly into channel (bypass any sorting).
 	for _, j := range jobs {
 		_ = q.Enqueue(context.Background(), j)
 	}
 
-	// Collect jobs in order.
+	// Collect jobs in priority order.
 	var order []string
 	for i := 0; i < 3; i++ {
 		job, err := q.Dequeue(context.Background())
@@ -212,10 +211,9 @@ func TestJobPriorityOrdering(t *testing.T) {
 		order = append(order, job.ID)
 	}
 
-	// FIFO ordering from the channel: low, high, mid.
-	// Priority is an attribute on the Job for backends that support it;
-	// the MemoryQueue channel is FIFO.
-	expected := []string{"low", "high", "mid"}
+	// Priority DESC (high → mid → low). MemoryQueue now honours Priority
+	// via a priority heap; ties break by enqueue order (FIFO).
+	expected := []string{"high", "mid", "low"}
 	for i, id := range expected {
 		if order[i] != id {
 			t.Errorf("position %d: expected %q, got %q", i, id, order[i])
