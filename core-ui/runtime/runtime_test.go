@@ -195,6 +195,30 @@ func TestRuntimeModule_Fileupload(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_PaneHost(t *testing.T) {
+	src, ok := Module("panehost")
+	if !ok {
+		t.Fatal("panehost module not embedded")
+	}
+	for _, want := range []string{
+		"[data-fui-pane-host]", // marker selector the scanner reads
+		"data-fui-pane-open",   // open trigger attribute
+		"openPane",             // programmatic API on __gofastr
+		"matchMedia",           // responsive overlay-drawer collapse
+		"NS._focusSel",         // reuses the shared focusable selector
+		"loadedModules",        // self-registers as loaded
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("panehost module missing %q", want)
+		}
+	}
+	// Per-module raw size bound (consistent with sibling modules; the
+	// gzip 3 KB budget is enforced separately by TestRuntimeModuleSizeBudgets).
+	if size := ModuleSize("panehost"); size > 9000 {
+		t.Errorf("panehost module is %d bytes — budget is 9000", size)
+	}
+}
+
 func TestRuntimeModule_Widgets(t *testing.T) {
 	src, ok := Module("widgets")
 	if !ok {

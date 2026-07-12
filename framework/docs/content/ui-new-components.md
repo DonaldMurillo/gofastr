@@ -132,6 +132,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **container** — `framework/ui.Container` — max-width page wrapper with breakpoint padding
 - **section** — `framework/ui.Section` — labelled content section with heading + description
 - **responsive** — `framework/ui.Responsive` — viewport-swap pair (independent desktop / mobile variants)
+- **panehost** — `framework/ui.PaneHost` — primary pane + openable secondary/tertiary side panes with a responsive overlay-drawer collapse
 - **themed** — `framework/ui.Themed` — wraps a subtree in a registered section-level theme override
 - **card** — `framework/ui.Card` — labelled `<section>` with header/body/footer
 - **sticky** — `framework/ui.Sticky` — theme-token sticky wrapper for top or bottom edge pinning

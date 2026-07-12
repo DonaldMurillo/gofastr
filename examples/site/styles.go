@@ -46,6 +46,7 @@ func createStyleSheet(t style.Theme) string {
 	pageConceptsDoc(ss)
 	pageExamples(ss)
 	pageKiln(ss)
+	pageWorkspace(ss)
 	pagePhilosophy(ss)
 	pageNotFound(ss)
 	pageComponents(ss)

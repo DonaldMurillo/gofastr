@@ -93,6 +93,7 @@
 //	OptimisticAction     — instant-flip button with rollback on error
 //	OptimizedImage       — responsive <picture> with srcset + lazy + Width/Height
 //	PageHeader           — top-of-page header with title/eyebrow/subtitle/actions
+//	PaneHost             — primary pane + openable secondary/tertiary side panes
 //	PasswordInput        — password field with show/hide toggle
 //	PieChart             — SVG ratio chart (donut variant via InnerRadius)
 //	PipelineImage        — multi-format <picture> consuming framework/image

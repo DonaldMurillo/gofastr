@@ -237,6 +237,30 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+
+	// Workspace example (/examples/workspace): GET handlers returning the
+	// detail HTML fragment the pane-host's data-fui-signal (mode=html)
+	// regions swap in. The runtime uses r.text() for non-JSON responses,
+	// so we return trusted server-rendered HTML with a text/html type.
+	// Read-only demo lookups — no CSRF needed (see the note above).
+	fwApp.Router().Get("/__site/workspace/ticket", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t, ok := wsTicketByID(r.URL.Query().Get("id"))
+		if !ok {
+			http.Error(w, "unknown ticket", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, string(renderTicketDetail(t)))
+	}))
+	fwApp.Router().Get("/__site/workspace/customer", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, ok := wsCustomers[r.URL.Query().Get("id")]
+		if !ok {
+			http.Error(w, "unknown customer", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, string(renderCustomerDetail(c)))
+	}))
 	fwApp.Router().Post("/__site/interactive/error", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, "something went wrong")
@@ -328,6 +352,7 @@ var paletteCatalog = []paletteRoute{
 	{"Docs index", "/docs/"},
 	{"Entity declarations — modeling the domain", "/docs/entity-declarations"},
 	{"Examples — six reference apps", "/examples"},
+	{"Workspace — master-detail pane-host example", "/examples/workspace"},
 	{"Kiln — agent build mode (experimental)", "/kiln"},
 	{"Philosophy — the convictions essay", "/philosophy"},
 	{"Components — gallery index", "/components/"},
@@ -407,6 +432,10 @@ func registerScreens(site *app.App) {
 		site.Register("/docs/"+dp.Slug, &DocPageScreen{Entry: dp}, nil)
 	}
 	site.Register("/examples", &ExamplesScreen{}, nil)
+	// Advanced, full-page interactive example: a master-detail workspace
+	// on ui.PaneHost. Its /__site/workspace/* detail endpoints are mounted
+	// in setupServer.
+	site.Register("/examples/workspace", &WorkspaceScreen{}, nil)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
 	// SEO demo pages (per-concern interfaces + the ScreenSEO bundle).

@@ -396,6 +396,38 @@ var componentCatalog = []componentEntry{
 			html.Div(html.DivConfig{Class: "fact full"}, render.Text("16:9 box")),
 		)
 	}},
+	{"panehost", "PaneHost", "Layout", "Master-detail shell: a primary pane plus openable side panes that collapse to an overlay drawer on narrow screens.", func() render.HTML {
+		primary := html.Div(html.DivConfig{},
+			html.Div(html.DivConfig{Class: "demo-row"},
+				ui.Button(ui.ButtonConfig{
+					Label:      "Open details",
+					Variant:    ui.ButtonSecondary,
+					ExtraAttrs: html.Attrs{"data-fui-pane-open": "secondary"},
+				}),
+			),
+			html.Paragraph(html.TextConfig{}, render.Text(
+				"Primary pane — the list or main view. Open the side pane to see the split layout; narrow the window and it becomes an overlay drawer.")),
+			html.Paragraph(html.TextConfig{},
+				ui.Link(ui.LinkConfig{Href: "/examples/workspace", Text: "→ Full-page master-detail workspace example"})),
+		)
+		secondary := html.Div(html.DivConfig{},
+			html.Div(html.DivConfig{Class: "demo-row"},
+				html.Heading(html.HeadingConfig{Level: 3}, render.Text("Details")),
+				ui.Button(ui.ButtonConfig{
+					Label:      "Close",
+					Variant:    ui.ButtonGhost,
+					ExtraAttrs: html.Attrs{"data-fui-pane-close": ""},
+				}),
+			),
+			html.Paragraph(html.TextConfig{}, render.Text("Secondary pane content.")),
+		)
+		return ui.PaneHost(ui.PaneHostConfig{
+			ID:             "demo-pane-host",
+			Primary:        primary,
+			Secondary:      secondary,
+			SecondaryLabel: "Details",
+		})
+	}},
 	{"sticky", "Sticky", "Layout", "Sticky-positioned wrapper.", func() render.HTML {
 		return ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop, Offset: ui.StickyOffsetLg},
 			html.Div(html.DivConfig{Class: "fact"}, render.Text("Stick scroll past me")),

@@ -1194,7 +1194,7 @@
         if (txt != null) n.textContent = txt;
         return n;
       };
-      const item = mk('div', 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui,sans-serif;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;');
+      const item = mk('div', 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;');
       item.setAttribute('role', isAssertive ? 'alert' : 'status');
       item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
       const text = mk('div', 'flex:1;');
@@ -2121,6 +2121,10 @@
     { name: 'reveal',           selector: '[data-fui-reveal]' },
     // Animate: signal-driven CSS class toggling.
     { name: 'animate',          selector: '[data-fui-animate-signal]' },
+    // PaneHost: primary pane + openable secondary/tertiary side panes
+    // with a responsive overlay-drawer collapse. Wires open/close/swap
+    // triggers + the focus/scroll-lock lifecycle.
+    { name: 'panehost',         selector: '[data-fui-pane-host]' },
 ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

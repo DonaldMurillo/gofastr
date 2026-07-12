@@ -224,6 +224,13 @@ server side and the runtime does the work.
 | `data-fui-screen-group="<prefix>"` | On the layout wrapper div emitted by `ScreenGroup.RenderLayout`. Identifies the screen group boundary so the runtime can preserve the layout shell during sibling-screen navigation (swap only inner content, not the layout). The prefix matches the group's URL prefix. |
 | `data-fui-inline-edit="<id>"` | On the display span of an `InlineEdit` component. Clicking it triggers edit mode (span hides, input shows). Enter saves, Escape reverts. |
 | `data-fui-password-toggle="<input-id>"` | On the toggle button inside a `PasswordInput`. The runtime toggles the linked input's type between `password` and `text`. |
+| `data-fui-pane-host` | Emitted by `framework/ui.PaneHost` on its root `<div>` (alongside `data-fui-comp="ui-pane-host"`). Marker the demand-loaded `panehost` runtime module scans for to wire open/close/swap triggers and the responsive overlay-drawer collapse. |
+| `data-fui-pane="primary\|secondary\|tertiary"` | Emitted by `PaneHost` on each of its three slot children. The runtime addresses a pane by this value when opening/closing it; CSS keys the open-state grid columns and the overlay-drawer chrome off the combination of the root's open modifier classes and this slot marker. |
+| `data-fui-pane-open="secondary\|tertiary"` | On a button: click opens the named side pane (reveals the column, hands focus to the pane's first focusable, remembers the trigger for restore). The trigger resolves its host via the nearest `[data-fui-pane-host]` ancestor, or via `data-fui-pane-host-target` for triggers outside the host. |
+| `data-fui-pane-close="secondary\|tertiary"` | On a button: click hides the named pane and restores focus to the element that opened it. Value may be omitted (bare attribute) to close the topmost open pane. |
+| `data-fui-pane-swap="secondary\|tertiary"` | On a button: click opens the named pane AND closes the other secondary/tertiary sibling — the "opening a link fills the third pane instead of navigating" flow that swaps which side pane is shown. |
+| `data-fui-pane-host-target="<id>"` | On an open/close/swap trigger that lives OUTSIDE its `[data-fui-pane-host]` ancestor: the `id` of the host the trigger drives. Without it the runtime resolves the host by `closest('[data-fui-pane-host]')`. |
+| `data-fui-pane-mode="overlay"` | Written by the `panehost` runtime module onto the host when `matchMedia('(max-width: 768px)')` matches AND a pane is open. CSS flips the open pane to a fixed overlay drawer (backdrop scrim via `::before`, right edge, full height) and the module applies a focus trap + scroll lock + ESC/backdrop-to-close. Cleared when the viewport widens or the pane closes. |
 | `data-fui-repeater="<name>"` | On the items container of a `Repeater` component. The runtime uses `data-min-items` and `data-max-items` attributes to enforce item count limits during dynamic add/remove. |
 | `data-wizard-steps="<n>"` | On the `<form>` wrapper of a `Wizard` component. The runtime uses this to know the total number of steps for navigation. |
 | `data-fui-drag-dismiss="true"` | On a widget root whose Definition has `DragDismiss=true` (e.g. `preset.BottomSheet`). Driven by the demand-loaded `runtime/src/dragdismiss.js` module (the marker itself is the load trigger — present at boot for SSR-inlined sheets; dynamically-opened chrome is caught by the MutationObserver scan). Drag starts only from the `data-fui-drag-handle` bar; the module follows pointer Y movement with `transform: translateY` and closes the widget on `pointerup` when distance > 80px or downward velocity > 0.5 px/ms. Snaps back otherwise. While dragging, `data-fui-dragging` is set on the root (used by CSS to suppress conflicting animations). |
@@ -306,9 +313,11 @@ by the SPA full-shell swap after it replaces `[data-fui-layout]`.
 
 The viewport scroll lock (`documentElement.style.overflow`) is also
 owned by `doc` but is keyed by owner, not name: the widgets module locks
-with `widget:<name>` per mounted modal. Any new surface that needs a
-scroll lock (lightbox zoom, drawer) calls `lockScroll`/`unlockScroll`
-with its own owner token instead of touching the style property.
+with `widget:<name>` per mounted modal; the `panehost` module locks
+with `panehost:<host-id>` while a side pane is open in overlay-drawer
+mode. Any new surface that needs a scroll lock (lightbox zoom, drawer)
+calls `lockScroll`/`unlockScroll` with its own owner token instead of
+touching the style property.
 
 Deliberately NOT wrapped: transient DOM that exists only within one
 synchronous operation (the copy module's clipboard `<textarea>`), and
@@ -316,6 +325,37 @@ pure reads (`#fui-route-announce` is SSR-provided; the runtime only
 writes its text). Per-widget body children (chrome, backdrops) are
 transient per-widget elements, not singletons — they go through
 `doc.appendBody` and are removed on dismiss.
+
+### Pane-host layout (`framework/ui.PaneHost`)
+
+`PaneHost` is a layout shell — an always-visible **primary** pane plus
+one or two openable side panes (`secondary`, `tertiary`). It owns the
+PANE LIFECYCLE (show/hide, focus handoff on open, focus restore on
+close, and a responsive collapse), not content loading. SSR emits the
+primary plus any side panes; a side pane closed at first paint carries
+`hidden` and the host carries an open modifier class per open pane, so
+first paint matches server state (Hard Rule 6) and the CSS grid columns
+derive purely from those classes — no inline style.
+
+Open/close/swap is in-page state, never a URL route (Hard Rule 1).
+Triggers are attribute-driven (`data-fui-pane-open` / `-close` /
+`-swap`); app code can also drive panes through `__gofastr.openPane` /
+`closePane` / `swapPane`. To fill a pane from a link, use the EXISTING
+`data-fui-rpc` + `data-fui-rpc-signal` rail broadcasting into a
+`data-fui-signal` + `data-fui-signal-mode="html"` region inside the
+pane — `PaneHost` does not fetch. Optional URL round-tripping is a
+future extension, out of scope for v1.
+
+Responsive collapse: when `matchMedia('(max-width: 768px)')` matches
+AND a pane is open, the `panehost` demand module sets
+`data-fui-pane-mode="overlay"` on the host. CSS repositions the open
+pane as a fixed right-edge drawer with a backdrop scrim (`::before`);
+the module applies a focus trap (Tab cycles within the pane, reusing
+`NS._focusSel`), a refcounted scroll lock (`doc.lockScroll('panehost:<id>')`),
+and ESC / backdrop-click-to-close. Widening the viewport or closing the
+pane clears overlay mode and releases the lock. The 768px breakpoint
+literal MUST stay in sync between this module and the `ui-pane-host`
+CSS.
 
 ### Shared state: the signal store (`core-ui/store`)
 

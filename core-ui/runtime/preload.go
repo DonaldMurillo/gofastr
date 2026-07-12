@@ -61,6 +61,7 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-reveal", "reveal"},
 	{"data-fui-animate-signal", "animate"},
 	{"data-fui-drag-dismiss", "dragdismiss"},
+	{"data-fui-pane-host", "panehost"},
 }
 
 // NeededModules returns the deduplicated, sorted list of demand-load

@@ -1271,3 +1271,88 @@ func pageNotFound(ss *style.StyleSheet) {
 	ss.Rule(".nf__suggest li:last-child a").Set("border-bottom", "0").End()
 	ss.Rule(".nf__suggest .arrow").Set("color", "{colors.primary}").End()
 }
+
+// -----------------------------------------------------------------------------
+// /examples/workspace — full-page master-detail on ui.PaneHost. The
+// pane-host component owns the grid/drawer; these rules only style the
+// queue list rows, the intro, and the pane chrome (all token-driven).
+// -----------------------------------------------------------------------------
+
+func pageWorkspace(ss *style.StyleSheet) {
+	ss.Rule(".ws-page").Set("padding", "var(--s-8) 0 {spacing.xxl}").End()
+	ss.Rule(".ws-intro").Set("margin-bottom", "{spacing.xl}").End()
+	ss.Rule(".ws-intro h1").
+		Set("font-size", "clamp(28px, 3.4vw, 40px)",
+			"line-height", "1.1",
+			"letter-spacing", "-0.02em",
+			"margin-bottom", "{spacing.sm}").End()
+	ss.Rule(".ws-lede").
+		Set("color", "{colors.text-muted}",
+			"font-size", "var(--t-md)",
+			"line-height", "1.55",
+			"max-width", "68ch").End()
+
+	// Give the side panes usable widths + a workspace-height floor.
+	ss.Rule(".ws-host").
+		Set("--ui-pane-host-secondary-w", "22rem",
+			"--ui-pane-host-tertiary-w", "20rem",
+			"min-height", "60vh").End()
+
+	// The queue list.
+	ss.Rule(".ws-list").Set("display", "flex", "flex-direction", "column", "gap", "{spacing.sm}").End()
+	ss.Rule(".ws-title").
+		Set("font-family", "{fonts.mono}",
+			"font-size", "12px",
+			"text-transform", "uppercase",
+			"letter-spacing", "0.06em",
+			"color", "{colors.text-subtle}",
+			"margin", "0 0 {spacing.xs}").End()
+
+	// Ticket row — a full-width semantic button styled as a list row.
+	ss.Rule(".ws-row").
+		Set("display", "flex",
+			"align-items", "center",
+			"gap", "{spacing.md}",
+			"width", "100%",
+			"padding", "{spacing.md}",
+			"text-align", "left",
+			"background", "var(--color-surface, #fff)",
+			"border", "1px solid var(--line-faint)",
+			"border-radius", "{radii.md}",
+			"cursor", "pointer",
+			"font", "inherit",
+			"color", "{colors.text}",
+			"transition", "border-color 0.12s, background 0.12s").End()
+	ss.Rule(".ws-row:hover").
+		Set("border-color", "{colors.primary}",
+			"background", "var(--color-surface-soft, #f6f6f7)").End()
+	ss.Rule(".ws-row:focus-visible").
+		Set("outline", "2px solid {colors.primary}", "outline-offset", "2px").End()
+	ss.Rule(".ws-row__id").
+		Set("font-family", "{fonts.mono}",
+			"font-size", "var(--t-sm)",
+			"color", "{colors.text-subtle}",
+			"flex-shrink", "0").End()
+	ss.Rule(".ws-row__subject").
+		Set("flex", "1",
+			"min-width", "0",
+			"overflow", "hidden",
+			"text-overflow", "ellipsis",
+			"white-space", "nowrap").End()
+
+	// Pane chrome + detail.
+	ss.Rule(".ws-pane-head").
+		Set("display", "flex",
+			"align-items", "center",
+			"justify-content", "space-between",
+			"gap", "{spacing.md}",
+			"margin-bottom", "{spacing.md}").End()
+	ss.Rule(".ws-pane-title").Set("margin", "0", "font-size", "var(--t-md)").End()
+	ss.Rule(".ws-detail").Set("display", "flex", "flex-direction", "column", "gap", "{spacing.md}").End()
+	ss.Rule(".ws-detail__subject").Set("margin", "0", "font-size", "var(--t-md)", "line-height", "1.3").End()
+	ss.Rule(".ws-detail__body").
+		Set("margin", "0",
+			"color", "{colors.text-muted}",
+			"font-size", "var(--t-sm)",
+			"line-height", "1.55").End()
+}
