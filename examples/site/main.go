@@ -24,6 +24,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core-ui/island"
+	patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -92,6 +94,12 @@ func exportBase(args []string) string {
 	}
 	return ""
 }
+
+// ── Presence demo wiring (additive) ────────────────────────────────
+// siteIslands holds the host's island manager so the presence demo
+// screen (screen_presence.go) can read the live roster at render time.
+// Set once in setupServer.
+var siteIslands *island.Manager
 
 // setupServer wires the whole site and returns the framework.App without
 // binding a port — main() calls Start, tests drive app.Router() directly so
@@ -169,6 +177,22 @@ func setupServer() *framework.App {
 		}),
 	)
 
+	// ── Presence demo wiring (additive) ────────────────────────────
+	// Expose the island manager to the presence screen and wire the live
+	// roster push: when a topic's roster changes (join/leave), re-render the
+	// AvatarGroup and push it to every session on that topic via the existing
+	// island SSE lane. This reuses PushUpdate — no new transport.
+	siteIslands = host.Islands
+	host.Islands.OnPresenceChange = func(topic string) {
+		rosterHTML := string(renderPresenceRoster(host.Islands.PresenceRoster(topic)))
+		for _, sid := range host.Islands.PresenceSessions(topic) {
+			host.Islands.PushUpdate(island.IslandUpdate{
+				IslandID: "presence-roster-" + topic,
+				HTML:     rosterHTML,
+			}, sid)
+		}
+	}
+
 	fwApp := framework.NewUIHostApp(host,
 		framework.WithConfig(framework.AppConfig{Name: "site"}),
 		// Expose the framework's own docs + app introspection as MCP tools
@@ -236,6 +260,100 @@ func setupServer() *framework.App {
 	}))
 	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// Sortable kanban demo (/components/sortablelist): a 3-column board
+	// backed by the package-level kanbanBoard store. The move endpoint
+	// accepts order/moved/container/version; the conflict endpoint
+	// returns fresh <li> HTML for 409 reconciliation.
+	fwApp.Router().Post("/__site/sortable/move", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		container := r.FormValue("container")
+		moved := r.FormValue("moved")
+		orderStr := r.FormValue("order")
+		version := r.FormValue("version")
+
+		kanbanBoard.Lock()
+		defer kanbanBoard.Unlock()
+
+		// Optimistic-concurrency check (only when version is sent).
+		if version != "" {
+			if version != fmt.Sprintf("v%d", kanbanBoard.Version) {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+		}
+
+		destIdx, destCol := kanbanColumnByID(container)
+		if destCol == nil {
+			http.Error(w, "unknown container", http.StatusBadRequest)
+			return
+		}
+
+		// Build a card lookup across all columns.
+		cardMap := map[string]kanbanCard{}
+		for _, col := range kanbanBoard.Columns {
+			for _, c := range col.Cards {
+				cardMap[c.Key] = c
+			}
+		}
+
+		// Parse the new destination order.
+		var newCards []kanbanCard
+		for _, k := range strings.Split(orderStr, ",") {
+			k = strings.TrimSpace(k)
+			if k == "" {
+				continue
+			}
+			if c, ok := cardMap[k]; ok {
+				newCards = append(newCards, c)
+			}
+		}
+
+		// Cross-container: remove the moved card from its source column.
+		if moved != "" {
+			for i := range kanbanBoard.Columns {
+				if i == destIdx {
+					continue
+				}
+				for j, c := range kanbanBoard.Columns[i].Cards {
+					if c.Key == moved {
+						kanbanBoard.Columns[i].Cards = append(
+							kanbanBoard.Columns[i].Cards[:j],
+							kanbanBoard.Columns[i].Cards[j+1:]...)
+						break
+					}
+				}
+			}
+		}
+
+		kanbanBoard.Columns[destIdx].Cards = newCards
+		kanbanBoard.Version++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	fwApp.Router().Get("/__site/sortable/conflict", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		container := r.URL.Query().Get("container")
+		kanbanBoard.Lock()
+		defer kanbanBoard.Unlock()
+		_, col := kanbanColumnByID(container)
+		if col == nil {
+			http.Error(w, "unknown container", http.StatusNotFound)
+			return
+		}
+		items := make([]patternsSortablelist.Item, len(col.Cards))
+		for i, c := range col.Cards {
+			items[i] = patternsSortablelist.Item{Key: c.Key, Label: c.Title}
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, string(patternsSortablelist.RenderItems(patternsSortablelist.Config{
+			Label:       col.Title,
+			Group:       "kanban-demo",
+			Container:   col.ID,
+			RPCPath:     "/__site/sortable/move",
+			Version:     fmt.Sprintf("v%d", kanbanBoard.Version),
+			ConflictRPC: "/__site/sortable/conflict?container=" + col.ID,
+			Items:       items,
+		})))
 	}))
 
 	// Workspace example (/examples/workspace): GET handlers returning the
@@ -353,6 +471,7 @@ var paletteCatalog = []paletteRoute{
 	{"Entity declarations — modeling the domain", "/docs/entity-declarations"},
 	{"Examples — six reference apps", "/examples"},
 	{"Workspace — master-detail pane-host example", "/examples/workspace"},
+	{"Live presence — viewer roster demo", "/examples/presence?presence=presence-demo"},
 	{"Kiln — agent build mode (experimental)", "/kiln"},
 	{"Philosophy — the convictions essay", "/philosophy"},
 	{"Components — gallery index", "/components/"},
@@ -436,6 +555,11 @@ func registerScreens(site *app.App) {
 	// on ui.PaneHost. Its /__site/workspace/* detail endpoints are mounted
 	// in setupServer.
 	site.Register("/examples/workspace", &WorkspaceScreen{}, nil)
+	// ── Presence demo (additive) ───────────────────────────────────
+	// /examples/presence?presence=presence-demo — a live avatar roster.
+	// The ?presence= param is threaded into the SSE <meta> tag by
+	// handlePage so the connection joins the topic.
+	site.Register("/examples/presence", &PresenceScreen{}, nil)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
 	// SEO demo pages (per-concern interfaces + the ScreenSEO bundle).

@@ -22,6 +22,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -34,6 +36,7 @@ import (
 	patternsNestedlist "github.com/DonaldMurillo/gofastr/core-ui/patterns/nestedlist"
 	patternsPagination "github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	patternsProgress "github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
+	patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
 	patternsTree "github.com/DonaldMurillo/gofastr/core-ui/patterns/tree"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -43,6 +46,96 @@ import (
 // demoCompany is a page-scoped store slice powering the /components/signal-store
 // demo: one producer renames it, every bound consumer updates client-side.
 var demoCompany = store.New("sitedemo").String("company", "Acme Corp")
+
+// ── Kanban board demo (/components/sortablelist) ────────────────────
+// Package-level in-memory board store — same idiom as wsTickets.
+// The RPC handler in main.go mutates it; Demo() reads it at render
+// time so a reload reflects moves.
+type kanbanCard struct{ Key, Title string }
+type kanbanColumn struct {
+	ID, Title string
+	Cards     []kanbanCard
+}
+
+var kanbanBoard = struct {
+	sync.Mutex
+	Columns []kanbanColumn
+	Version int
+}{
+	Columns: []kanbanColumn{
+		{ID: "todo", Title: "To do", Cards: []kanbanCard{
+			{Key: "k1", Title: "Design API"},
+			{Key: "k2", Title: "Write tests"},
+		}},
+		{ID: "doing", Title: "Doing", Cards: []kanbanCard{
+			{Key: "k3", Title: "Build sortable kanban"},
+		}},
+		{ID: "done", Title: "Done", Cards: []kanbanCard{
+			{Key: "k4", Title: "Read ARCHITECTURE.md"},
+		}},
+	},
+	Version: 1,
+}
+
+// renderKanbanBoard renders 3 linked sortable columns (kanban). Each
+// column shares Group "kanban-demo" and has a unique Container id.
+// Version + ConflictRPC wire the 409 conflict-recovery path.
+func renderKanbanBoard() render.HTML {
+	kanbanBoard.Lock()
+	defer kanbanBoard.Unlock()
+	cols := make([]render.HTML, 0, len(kanbanBoard.Columns))
+	for _, c := range kanbanBoard.Columns {
+		items := make([]patternsSortablelist.Item, len(c.Cards))
+		for i, card := range c.Cards {
+			items[i] = patternsSortablelist.Item{Key: card.Key, Label: card.Title}
+		}
+		cols = append(cols, html.Div(html.DivConfig{Class: "kanban-col"},
+			html.Heading(html.HeadingConfig{Level: 3, Class: "kanban-col__title"},
+				render.Text(c.Title)),
+			patternsSortablelist.Render(patternsSortablelist.Config{
+				Label:       c.Title,
+				Group:       "kanban-demo",
+				Container:   c.ID,
+				RPCPath:     "/__site/sortable/move",
+				Version:     fmt.Sprintf("v%d", kanbanBoard.Version),
+				ConflictRPC: "/__site/sortable/conflict?container=" + c.ID,
+				Items:       items,
+			}),
+		))
+	}
+	return ui.Grid(ui.GridConfig{Min: "14rem", Gap: ui.GapMD}, cols...)
+}
+
+// kanbanColumnByID looks up a column by its container id. Caller must
+// hold kanbanBoard.Lock().
+func kanbanColumnByID(id string) (int, *kanbanColumn) {
+	for i := range kanbanBoard.Columns {
+		if kanbanBoard.Columns[i].ID == id {
+			return i, &kanbanBoard.Columns[i]
+		}
+	}
+	return -1, nil
+}
+
+// resetKanbanBoard restores the demo board to its initial state.
+// Called by the e2e test to guarantee isolation across runs.
+func resetKanbanBoard() {
+	kanbanBoard.Lock()
+	defer kanbanBoard.Unlock()
+	kanbanBoard.Columns = []kanbanColumn{
+		{ID: "todo", Title: "To do", Cards: []kanbanCard{
+			{Key: "k1", Title: "Design API"},
+			{Key: "k2", Title: "Write tests"},
+		}},
+		{ID: "doing", Title: "Doing", Cards: []kanbanCard{
+			{Key: "k3", Title: "Build sortable kanban"},
+		}},
+		{ID: "done", Title: "Done", Cards: []kanbanCard{
+			{Key: "k4", Title: "Read ARCHITECTURE.md"},
+		}},
+	}
+	kanbanBoard.Version = 1
+}
 
 // componentEntry — one component in the catalog.
 type componentEntry struct {
@@ -63,7 +156,7 @@ var noteOnlyComponents = map[string]bool{
 	"conditionalfield": true, "formrepeater": true, "repeater": true,
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
-	"confirmaction": true, "scrollspy": true, "sortablelist": true,
+	"confirmaction": true, "scrollspy": true,
 	"infinitescroll": true,
 }
 
@@ -182,6 +275,19 @@ widget.MountBuilder(r, preset.Modal("user-edit").
 <button data-fui-toast='{"variant":"success","title":"Saved"}'>Save</button>
 // Server: any data-fui-rpc handler attaches the header on 2xx.
 func push(w http.ResponseWriter, r *http.Request) { ui.AddToastSuccess(w, "Saved", "", 5000) }`,
+
+	"sortablelist": `// Single list (back-compat — sends only order=<keys>)
+sortablelist.Render(sortablelist.Config{
+    Label: "Priorities", RPCPath: "/api/reorder",
+    Items: []sortablelist.Item{{Key: "a", Label: "A"}},
+})
+// Kanban — one Render per column, same Group, unique Container
+sortablelist.Render(sortablelist.Config{
+    Label: "To do", Group: "board-1", Container: "todo",
+    RPCPath: "/api/move", Version: "v1",
+    ConflictRPC: "/api/conflict?col=todo",
+    Items: items,
+})`,
 }
 
 // componentPkg returns the Go source package for a component, used to
@@ -1321,9 +1427,8 @@ func main() {
 				"ScrollSpy wraps a nav like the one above with scrollspy.Wrap(cfg, nav) and sets aria-current + .is-active on the link whose target is in view. It needs a tall, scrollable page region — see it working live in the left rail of any /docs/* page.")),
 		)
 	}},
-	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list that POSTs the new order to an RPC.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"}, render.Text(
-			"sortablelist.Render(cfg) needs a per-page RPCPath that accepts POST ?order=<comma-keys>; a non-2xx reverts the DOM. Drag with the mouse or grab with Space + Arrow keys. Wire the endpoint to see it live."))
+	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list — single list or linked kanban columns with version-aware 409 recovery.", func() render.HTML {
+		return renderKanbanBoard()
 	}},
 	{"infinitescroll", "InfiniteScroll", "Data", "Sentinel-driven lazy pagination — server appends HTML + a next-cursor header.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"}, render.Text(

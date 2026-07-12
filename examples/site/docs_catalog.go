@@ -117,6 +117,8 @@ var docIntents = []docIntent{
 		Path: []string{"Audit log", "Isolation", "Factories"},
 		Docs: []docEntry{
 			{"audit-log", "Audit log", "WithAuditLog writes a row for every Create/Update/Delete."},
+			{"data-export", "Data export & import", "Dump every entity's rows to a portable archive and restore it with validation."},
+			{"presence", "Presence", "Live 'who's here' rosters over the SSE lane — server-derived identity, single-replica."},
 			{"isolation", "Isolation", "Linked git worktrees get isolated local DBs."},
 			{"testkit", "Testkit", "Public helpers for host apps that need an isolated Postgres in integration tests."},
 			{"factories", "Factories", "Rails-style fixtures for tests."},
