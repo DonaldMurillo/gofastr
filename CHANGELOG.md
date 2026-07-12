@@ -7,6 +7,58 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+Issues #41, #46, #48, #49.
+
+### Added
+
+- **Queue lane reservations (`Job.Lane` + `WithDBLaneWorkers` /
+  `WithLaneWorkers`)** (#41). A lane is a capacity-reservation tag on a
+  job: dedicated workers claim only their lane, shared workers keep
+  claiming any lane by priority, so a bulk backfill can no longer starve
+  urgent jobs by saturating every worker. DBQueue adds a `lane` column
+  (auto-migrated onto pre-existing tables, both dialects) plus a
+  `(lane, status, scheduled_at, priority)` index. `RedisQueue` stays
+  instance-per-lane via its `queueName`.
+- **MemoryQueue honours `Job.Priority`** (#41). Dispatch moved from a
+  FIFO channel to a priority heap (`Priority DESC`, enqueue-order
+  tiebreak) for dev parity with DBQueue. The pending store is now
+  unbounded (`Enqueue` no longer blocks at 1024 queued jobs); the
+  dead-letter set stays bounded.
+- **SSE connection state (`window.__gofastr.sseStatus`)** (#46). The SSE
+  runtime module now maintains `{connected, lastEventAt, retryCount}`
+  (one live object, mutated in place) and dispatches a
+  `gofastr:sse-status` event on connect/disconnect.
+  `NetworkRetryBanner`'s `SSESilenceMs` trigger — previously dead
+  because nothing wrote `lastEventAt` — now works, and the banner
+  re-probes its health endpoint on SSE reconnect so it can dismiss.
+- **Per-user locale switching (`framework.WithLocaleResolver` +
+  `i18n.CookieLocale`)** (#48). Locale negotiation accepts resolvers
+  consulted before the `X-Locale`/`Accept-Language` headers, so a
+  stored preference (cookie/session) wins. Resolver values are
+  length/charset-bounded and only accepted when they match a catalog
+  locale — a garbage cookie cannot force an unsupported locale.
+- `i18nui.TVars(ctx, key, vars)` — translate + interpolate `{name}`
+  placeholders on both the catalog and English-default paths (#48).
+
+### Fixed
+
+- **framework/ui components now actually translate** (#48). The i18n
+  middleware attached only the locale — never the translator — so every
+  component rendered English even with a catalog wired. `WithI18n` now
+  bridges the translator onto the request context, and a translator
+  miss on a `ui.*` key falls back to the English default instead of
+  rendering the raw key. On top of the four previously-wired
+  components, all ~30 framework/ui components with user-facing copy
+  (DataTable, FilterToolbar, forms, uploads, navigation, a11y labels,
+  …) now resolve their default labels through `i18nui`; explicit config
+  values always win, and default English output is byte-identical.
+- **Dead `--radius-*` token references** (#49). 18 references across 12
+  component files used `var(--radius-*)` while the token pipeline emits
+  `--radii-*` — those styles silently used hardcoded fallbacks (and
+  `Repeater`, with no fallback, lost its border radius entirely). All
+  renamed to the emitted `--radii-*` tokens, so theme radius overrides
+  now reach every component.
+
 ## [0.18.0] - 2026-07-10
 
 Backlog from the 2026-07-10 dual blind cold-start eval (two agents each
