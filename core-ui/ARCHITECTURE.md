@@ -161,7 +161,7 @@ server side and the runtime does the work.
 | `data-fui-toggle-endpoint` / `data-fui-toggle-method` / `data-fui-toggle-allow-untoggle` / `data-fui-toggle-untoggle-endpoint` | On a three-state ToggleAction button (`framework/ui.ToggleAction`, `framework/ui/toggleaction.go`): `endpoint`+`method` (default POST) hit when toggling from idle → committed; `allow-untoggle="true"` lets a second click reverse the action, hitting `untoggle-endpoint` (same method) if set — with NO untoggle endpoint configured the button flips back to idle locally without issuing any request. Driven by `runtime/src/toggleaction.js` with a three-state mutex so rapid clicks can't race. |
 | `data-fui-toggle-idle` / `data-fui-toggle-committed` | Markers on the two label spans inside a ToggleAction button. The runtime shows/hides them as the button transitions between idle and committed states. SSR ships the initial visible state. |
 | `data-fui-toggle-group="<key>"` | Joins a ToggleAction button to a client-side mutex: committing any button with the same group key optimistically reverts the previously-committed sibling (no extra RPC — the server stays the source of truth and a later navigation refreshes from server state). Maps from `ToggleActionConfig.Group`. |
-| `data-fui-network-retry-threshold` / `data-fui-network-retry-health` / `data-fui-network-retry-button` / `data-fui-network-retry-sse-silence` | On a NetworkRetryBanner element: threshold = number of consecutive fetch failures before the banner shows; health = the URL the runtime probes to detect recovery; button = the retry trigger; sse-silence = grace period (ms) after the last SSE frame before the banner considers the link unhealthy. |
+| `data-fui-network-retry-threshold` / `data-fui-network-retry-health` / `data-fui-network-retry-button` / `data-fui-network-retry-sse-silence` | On a NetworkRetryBanner element: threshold = number of consecutive fetch failures before the banner shows; health = the URL the runtime probes to detect recovery; button = the retry trigger; sse-silence = grace period (ms) after the last SSE frame before the banner considers the link unhealthy — the runtime polls `window.__gofastr.sseStatus.lastEventAt` (kept current by the SSE module on every frame) and, on a `gofastr:sse-status` reconnect, re-probes `health` so the banner can dismiss. |
 | `data-fui-network-retry-demo-trigger` / `data-fui-network-retry-demo-recover` | Demo-only attributes (`examples/site` NetworkRetryBanner page): trigger forces the banner into the failed state for screenshot/dev purposes; recover restores it. Not used in production wiring. |
 | `data-fui-banner-dismiss-id="<id>"` | Optional companion to `data-fui-banner-dismiss`. When set, the dismissal is recorded in `localStorage` under `gofastr.banner-dismiss.<id>` and the same banner is auto-hidden on every subsequent page load until the key is cleared. Use for "deprecation notice — got it" banners. |
 | `data-fui-slider-mirror` | On an `<input type="range">` inside a `framework/ui.Slider`: opt the slider into runtime value-mirroring. The slider module listens for `input` events on these elements and writes the current value into the associated `<output for="<id>">` so the displayed number tracks the thumb as the user drags. Auto-emitted when `SliderConfig.ShowValue` is true. |
@@ -348,6 +348,27 @@ client-side with no per-consumer round-trip.
   `__gofastr` namespace wholesale on boot.
 
 See `framework/docs/content/signal-store.md` for the full guide.
+
+### SSE connection state (`__gofastr.sseStatus`)
+
+The island-stream module (`runtime/src/sse.js`, demand-loaded when a
+`<meta name="gofastr-sse">` marker is present) mirrors its transport
+state onto ONE live object, mutated in place so every reference (the
+NetworkRetryBanner, app code) sees updates without re-reading:
+
+| Field | Updated when |
+| --- | --- |
+| `window.__gofastr.sseStatus.connected` | `true` on EventSource `open`, `false` on `error` |
+| `window.__gofastr.sseStatus.lastEventAt` | every received `island` frame and on `open` (a `Date.now()` ms timestamp) |
+| `window.__gofastr.sseStatus.retryCount` | incremented on each transport error, reset to 0 on `open` |
+
+Connect/disconnect transitions also dispatch
+`document.dispatchEvent(new CustomEvent('gofastr:sse-status', { detail: sseStatus }))`.
+Per-frame updates only touch `lastEventAt` silently — no event is
+fired per message, to avoid a notification storm. The `gofastr:`
+prefix matches the existing `gofastr:navigate` convention. The
+NetworkRetryBanner reads `lastEventAt` for its silence trigger and
+listens for the event to re-probe its health endpoint on reconnect.
 
 ---
 

@@ -49,8 +49,11 @@ type NetworkRetryBannerConfig struct {
 	FailureThreshold int
 
 	// SSESilenceMs triggers the banner if no SSE event arrives for
-	// this many milliseconds. Default 0 (disabled — opt-in until the
-	// SSE module exposes lastEventAt).
+	// this many milliseconds. Default 0 (disabled — opt-in). When set,
+	// the runtime polls window.__gofastr.sseStatus.lastEventAt (kept
+	// current by the SSE module on every frame) and shows the banner
+	// after this much silence; on SSE reconnect a gofastr:sse-status
+	// event re-probes the health endpoint so the banner can dismiss.
 	SSESilenceMs int
 
 	// Title is the banner heading. Default "Connection lost".

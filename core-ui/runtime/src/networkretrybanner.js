@@ -140,6 +140,20 @@
     requestAnimationFrame(() => scan(document));
   });
 
+  // SSE reconnect recovery: when the stream comes back, re-probe the
+  // health endpoint on any banner that's currently showing so it can
+  // dismiss (checkHealthOn → reportRecoveryOn on 2xx). Registered
+  // once at module load — iterating the live `banners` Set inside it
+  // avoids stacking duplicate document listeners across
+  // gofastr:navigate re-scans (same single-listener pattern as the
+  // networkStatus public API below).
+  document.addEventListener('gofastr:sse-status', (e) => {
+    if (!e.detail || !e.detail.connected) return;
+    banners.forEach((banner) => {
+      if (!banner.hasAttribute('hidden')) checkHealthOn(banner);
+    });
+  });
+
   window.__gofastr.networkStatus = {
     reportFailure,
     reportRecovery,
