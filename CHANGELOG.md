@@ -7,10 +7,41 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-Issues #41, #46, #48, #49.
+## [0.19.0] - 2026-07-12
+
+Issues #41, #42, #46, #47, #48, #49, #50.
 
 ### Added
 
+- **Durable pgvector embedding store (`embed.NewPgVector`)** (#42). A
+  Postgres+pgvector-backed `embed.Store` so multiple app replicas share
+  one vector index instead of each holding an in-process FlatStore.
+  Ranking is server-side cosine distance (`<=>`) and matches FlatStore's
+  top-K order for the same vectors; it implements `chunkLister` so hybrid
+  search composes, and deliberately omits snapshotting (a Postgres table
+  IS the durable copy, so pairing it with `Options.Path` fails closed).
+  `EnsureSchema` creates the `vector` extension + table, with an
+  actionable error when the DB role can't `CREATE EXTENSION`. No new
+  dependency — vectors are encoded in pgvector's text format over the
+  existing `lib/pq`.
+- **Pane-host / split-pane layout primitive (`ui.PaneHost`)** (#50). A
+  master-detail shell: an always-visible primary pane plus one or two
+  openable side panes (`Secondary` / `Tertiary`) with a declarative
+  open/close/swap lifecycle, focus handoff on open and restore on close,
+  and a responsive collapse where — below 768px — an open side pane
+  becomes a fixed overlay drawer (backdrop, focus trap, scroll lock,
+  ESC-to-close). Driven by the `panehost` runtime module +
+  `data-fui-pane-*` attributes; `window.__gofastr.openPane` /
+  `closePane` / `swapPane` expose programmatic control. Pane content
+  loads via the existing RPC→signal(html) rail — pane state is never a
+  route.
+- **Avatar presence dot (`AvatarConfig.Status`)** (#47). `ui.Avatar` /
+  `ui.AvatarGroup` render an optional presence dot (online / away / busy
+  / offline) sized as a fraction of the avatar and colored from the
+  status tokens, with a ring in the surface color. This is the roster
+  *visual*; presence *transport* (binding a user to their live
+  connection and aggregating it across replicas) remains app-owned and
+  is tracked in #47.
 - **Queue lane reservations (`Job.Lane` + `WithDBLaneWorkers` /
   `WithLaneWorkers`)** (#41). A lane is a capacity-reservation tag on a
   job: dedicated workers claim only their lane, shared workers keep
