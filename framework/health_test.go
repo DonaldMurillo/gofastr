@@ -127,7 +127,57 @@ func TestReadiness_ChecksRunInParallel(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
-	if took > 200*time.Millisecond {
-		t.Fatalf("parallel checks should finish in ~80ms; took %v", took)
+	// Two 80ms checks: ~80ms in parallel, ~160ms serial. The threshold must
+	// sit between the two so the test actually distinguishes them (a 200ms
+	// bar passed even when serial). 140ms leaves ~60ms of scheduling slack
+	// over the parallel floor while still failing on serial execution.
+	if took > 140*time.Millisecond {
+		t.Fatalf("parallel checks should finish in ~80ms; took %v (serial?)", took)
+	}
+}
+
+// TestRunReadinessChecks_InProcess pins the exported in-process API that
+// battery/setup's HealthStep uses: same checks as /readyz, no HTTP, and
+// error text redacted by default so callers can't leak internals.
+func TestRunReadinessChecks_InProcess(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	app.RegisterReadiness("ok-thing", func(ctx context.Context) error { return nil })
+	app.RegisterReadiness("broken-thing", func(ctx context.Context) error {
+		return errors.New("dial 10.0.0.5: connection refused")
+	})
+
+	resp := app.RunReadinessChecks(context.Background())
+	if len(resp.Checks) != 2 {
+		t.Fatalf("checks: got %d want 2", len(resp.Checks))
+	}
+	byName := map[string]ReadinessResult{}
+	for _, c := range resp.Checks {
+		byName[c.Name] = c
+	}
+	if byName["ok-thing"].Status != "ok" {
+		t.Errorf("ok-thing status: got %q want ok", byName["ok-thing"].Status)
+	}
+	if byName["broken-thing"].Status != "error" {
+		t.Errorf("broken-thing status: got %q want error", byName["broken-thing"].Status)
+	}
+	if got := byName["broken-thing"].Error; got != "check failed" {
+		t.Errorf("error must be redacted by default: got %q", got)
+	}
+}
+
+// TestRunReadinessChecks_Verbose pins the verbose opt-in: original error
+// text passes through for operator-side debugging.
+func TestRunReadinessChecks_Verbose(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware(), WithVerboseReadiness())
+	app.RegisterReadiness("broken-thing", func(ctx context.Context) error {
+		return errors.New("dial 10.0.0.5: connection refused")
+	})
+
+	resp := app.RunReadinessChecks(context.Background())
+	if len(resp.Checks) != 1 {
+		t.Fatalf("checks: got %d want 1", len(resp.Checks))
+	}
+	if got := resp.Checks[0].Error; got != "dial 10.0.0.5: connection refused" {
+		t.Errorf("verbose error passthrough: got %q", got)
 	}
 }
