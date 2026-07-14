@@ -246,7 +246,7 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	case 1:
 		actions = actionList[0]
 	default:
-		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: true}, actionList...)
+		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, actionList...)
 	}
 	title := c.Title
 	if c.Heading != "" {

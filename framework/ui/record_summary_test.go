@@ -119,6 +119,9 @@ func TestMetricBandCSSIsFlatWideAndTwoColumnMobile(t *testing.T) {
 		`grid-column: 1 / -1`,
 		`text-align: center`,
 		`font-variant-numeric: tabular-nums`,
+		// The phone divider between the two columns must not paint on a
+		// single-item band, whose sole (odd) item spans the full width.
+		`:not(.ui-metric-band--1) .ui-metric-band__item:nth-child(odd)`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("MetricBand CSS missing %q\ncss=%s", want, css)

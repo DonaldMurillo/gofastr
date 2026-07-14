@@ -24,7 +24,7 @@ func (s *HomeScreen) Render() render.HTML {
 		// the page keeps the canonical theme.
 		ui.Themed(inkBand,
 			ui.Card(ui.CardConfig{Heading: "Simple, honest pricing", Description: "Start free. Upgrade when revenue does."},
-				ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: true},
+				ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 					ui.LinkButton(ui.LinkButtonConfig{Label: "Compare plans", Href: "/pricing", Variant: ui.ButtonPrimary}),
 					ui.LinkButton(ui.LinkButtonConfig{Label: "Start free", Href: "/signup", Variant: ui.ButtonSecondary}),
 				),

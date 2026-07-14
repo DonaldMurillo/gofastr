@@ -231,7 +231,9 @@ func metricBandCSS(t style.Theme) string {
 		Media("(max-width: 720px)", func(s *style.ComponentSheet) {
 			s.Rule("&.ui-metric-band--2, &.ui-metric-band--3, &.ui-metric-band--4, &.ui-metric-band--5, &.ui-metric-band--6").Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End()
 			s.Rule(".ui-metric-band__item").Set("border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
-			s.Rule(".ui-metric-band__item:nth-child(odd)").Set("border-inline-end", "1px solid var(--color-border, #e4e4e7)").End()
+			// Column divider for the two-up phone grid. A single-item band's
+			// sole item is odd AND full-width — no divider to paint.
+			s.Rule("&:not(.ui-metric-band--1) .ui-metric-band__item:nth-child(odd)").Set("border-inline-end", "1px solid var(--color-border, #e4e4e7)").End()
 			s.Rule(".ui-metric-band__item:first-child, .ui-metric-band__item:nth-child(2)").Set("border-block-start", "0").End()
 			s.Rule("&.ui-metric-band--3 .ui-metric-band__item:last-child, &.ui-metric-band--5 .ui-metric-band__item:last-child").Set("grid-column", "1 / -1", "align-items", "center", "text-align", "center", "border-inline-end", "0").End()
 		}).
