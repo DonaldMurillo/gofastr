@@ -40,8 +40,10 @@ type SiteHeaderLink struct {
 // owns visual identity.
 type SiteHeaderConfig struct {
 	// Brand is the left-most slot. Usually a link with logo + wordmark.
-	// Keep operational status in page content rather than overloading a
-	// long identity lockup.
+	// The consumer owns its visual identity: the framework ships only
+	// zero-specificity typography defaults for a linked brand, so any
+	// consumer CSS rule overrides them. Keep operational status in page
+	// content rather than overloading a long identity lockup.
 	Brand render.HTML
 	// MobileBrand, when set, replaces Brand at widths up to 720px. Use a
 	// concise mark or short product name so status and navigation never push
@@ -224,11 +226,19 @@ func siteHeaderCSS(_ style.Theme) string {
   align-items: center;
   min-inline-size: 0;
 }
+/* Slot LAYOUT is framework-owned (like the wrapper flex row), so it keeps
+   normal specificity and survives a host's generic anchor reset. */
 [data-fui-comp="ui-site-header"] .ui-site-header__brand a {
   display: inline-flex;
   align-items: center;
   gap: var(--ui-site-header-brand-gap, var(--spacing-sm, 8px));
   min-inline-size: 0;
+}
+/* Visual IDENTITY is consumer-owned: these are defaults, not a takeover.
+   :where() keeps them at zero specificity so they replace browser-default
+   link styling when the consumer ships none, and lose to ANY consumer
+   selector — even a bare element reset — when they do. */
+:where([data-fui-comp="ui-site-header"] .ui-site-header__brand a) {
   color: var(--ui-site-header-brand-color, var(--color-text, currentColor));
   text-decoration: none;
   font-weight: var(--ui-site-header-brand-weight, 700);
