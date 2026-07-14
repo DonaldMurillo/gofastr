@@ -7,6 +7,59 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-14
+
+First-class installable-PWA support and blueprint-generated LLM page
+documentation (#54).
+
+### Added
+
+- **Installable PWA (`uihost.WithPWA`)** — one opt-in option turns a UIHost
+  app into an installable Progressive Web App: a typed web app manifest at
+  `/manifest.webmanifest` (emitted via `encoding/json`, defaults derived at
+  serve time — name from the app title, `/` start URL/scope, standalone
+  display), a generated service worker at `/service-worker.js`, a CSP-safe
+  external registration script, and an offline fallback screen at
+  `/__gofastr/pwa/offline` (framework default or `PWAConfig.OfflineScreen`;
+  deliberately not wrapped in the app layout — it is precached, so nothing
+  personalized may render into it). The worker is conservative by
+  construction: document navigations are **network-first and never cached**
+  (rendered HTML can be personalized), falling back to the precached offline
+  screen; Cache Storage only ever holds the versioned app shell (runtime,
+  split modules under their content-addressed `?v=` URLs, `app.css`, the
+  offline page + its per-component stylesheets, icons, declared `Precache`
+  extras), matched **exactly** — content-addressed URLs are cache-first
+  (immutable), everything else is network-first so post-deploy HTML never
+  pairs with the previous deployment's runtime/CSS. Sensitive endpoints
+  (SSE, session, signal, action, widgets, `/api`, `/auth`, plus
+  `PWAConfig.DenyPaths` for custom mounts) can never be precached and are
+  never intercepted. Cache names version deterministically — the fingerprint
+  includes the bytes of static-served precache entries, so swapping an icon
+  in place rotates the cache — and activation deletes only obsolete caches
+  owned by the app. Updates never force a reload: no `skipWaiting`; a
+  waiting worker dispatches `gofastr:pwa-update` on `window`. Precached
+  responses are re-wrapped at install time so a static host's redirects
+  can't poison the offline fallback. Verified end-to-end by a serialized
+  Chrome test (registration, installability metadata, offline fallback
+  against a dead server, v1→v2 cache-version cleanup). See `gofastr docs
+  pwa`.
+- **Static export emits the PWA surface** — `ExportStatic` writes the
+  manifest, service worker, registration script, and offline page; under a
+  non-root `BasePath` the manifest URLs, the worker's precache/deny lists,
+  and the registration target are all prefixed, so the exported app installs
+  and works offline from a subpath (GitHub Pages project sites included).
+- **Blueprint `app.pwa`** — `gofastr generate` scaffolds the full surface
+  from one block, including replaceable 192px/512px/maskable placeholder
+  icons (deterministic in-process PNGs colored from `theme_color`, falling
+  back to the theme's `primary` token) so a generated app is installable
+  immediately. A custom `api_prefix` or auth `base_path` flows into
+  `DenyPaths` automatically. Round-trips through `pack`.
+- **Blueprint `app.llm_md`** — emits `uihost.WithPublicLLMMD()` so every
+  registered screen serves its `/llm.md` document plus the `/llm-pages.md`
+  index; app-level and per-screen `NoLLMMD` opt-outs keep working.
+  Independent of `app.pwa` by design; both default off, and existing
+  blueprints generate byte-identical output.
+
 ## [0.21.0] - 2026-07-13
 
 Multi-replica auth durability + a hardened third-party plugin isolation
