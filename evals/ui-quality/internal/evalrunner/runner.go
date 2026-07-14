@@ -767,6 +767,12 @@ func applyAgentOptions(cfg *AgentConfig, backend, program string, prefixArgs []s
 				cfg.Model = "glm-5.2"
 			case "claude":
 				cfg.Model = "opus"
+			default:
+				// codex has no baked-in model alias: catalogs vary per
+				// install and model IDs are provenance. Clear the previous
+				// backend's model so validation demands an explicit
+				// --*-model instead of launching `codex --model opus`.
+				cfg.Model = ""
 			}
 		}
 	}

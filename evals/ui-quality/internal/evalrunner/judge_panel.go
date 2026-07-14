@@ -126,10 +126,12 @@ func prepareJudgeWorkspace(workspace, schemaSource string, sourceImages []string
 	images := make([]string, 0, len(sourceImages))
 	for i, source := range sourceImages {
 		destination := filepath.Join(workspace, fmt.Sprintf("evidence-%02d.png", i+1))
-		if err := os.Link(source, destination); err != nil {
-			if err := copyFile(source, destination); err != nil {
-				return nil, fmt.Errorf("prepare evidence %d: %w", i+1, err)
-			}
+		// Always copy, never hard-link: a hard link shares the inode with
+		// the canonical blind/ evidence and every other judge workspace, so
+		// one misbehaving judge process writing through its "own" file would
+		// corrupt the evidence for the whole panel.
+		if err := copyFile(source, destination); err != nil {
+			return nil, fmt.Errorf("prepare evidence %d: %w", i+1, err)
 		}
 		images = append(images, destination)
 	}

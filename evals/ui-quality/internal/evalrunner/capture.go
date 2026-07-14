@@ -284,13 +284,10 @@ const browserLayoutAuditJS = `(() => {
 	};
 })()`
 
-const initialAssetSettlingJS = `(async () => {
-	const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-	const failures = [];
-	if (document.fonts && document.fonts.ready) {
-		await Promise.race([document.fonts.ready, delay(5000)]);
-	}
-	const images = Array.from(document.images).filter(image => image.currentSrc || image.getAttribute("src"));
+// imageSettlingJS is the shared settle-and-report block: wait for every
+// image (bounded), recording ones that fail to load/decode into `failures`.
+// It expects `delay` and `failures` to be in scope.
+const imageSettlingJS = `	const images = Array.from(document.images).filter(image => image.currentSrc || image.getAttribute("src"));
 	await Promise.all(images.map(image => new Promise(resolve => {
 		if (image.complete) {
 			if (!image.naturalWidth) failures.push(image.currentSrc || image.getAttribute("src"));
@@ -308,7 +305,15 @@ const initialAssetSettlingJS = `(async () => {
 		image.addEventListener("error", () => done(true), {once: true});
 		setTimeout(() => done(!image.complete || !image.naturalWidth), 5000);
 	})));
-	await delay(100);
+`
+
+const initialAssetSettlingJS = `(async () => {
+	const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+	const failures = [];
+	if (document.fonts && document.fonts.ready) {
+		await Promise.race([document.fonts.ready, delay(5000)]);
+	}
+` + imageSettlingJS + `	await delay(100);
 	return Array.from(new Set(failures)).join("\n");
 })()`
 
@@ -329,25 +334,7 @@ const hydrateFullPageAssetsJS = `(async () => {
 	window.scrollTo(0, Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0));
 	await nextPaint();
 	await delay(150);
-	const images = Array.from(document.images).filter(image => image.currentSrc || image.getAttribute("src"));
-	await Promise.all(images.map(image => new Promise(resolve => {
-		if (image.complete) {
-			if (!image.naturalWidth) failures.push(image.currentSrc || image.getAttribute("src"));
-			if (image.decode) image.decode().catch(() => failures.push(image.currentSrc || image.getAttribute("src"))).finally(resolve); else resolve();
-			return;
-		}
-		let settled = false;
-		const done = failed => {
-			if (settled) return;
-			settled = true;
-			if (failed) failures.push(image.currentSrc || image.getAttribute("src"));
-			resolve();
-		};
-		image.addEventListener("load", () => done(false), {once: true});
-		image.addEventListener("error", () => done(true), {once: true});
-		setTimeout(() => done(!image.complete || !image.naturalWidth), 5000);
-	})));
-	if (document.fonts && document.fonts.ready) {
+` + imageSettlingJS + `	if (document.fonts && document.fonts.ready) {
 		await Promise.race([document.fonts.ready, delay(5000)]);
 	}
 	window.scrollTo(0, 0);

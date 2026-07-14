@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -77,10 +78,37 @@ func candidateEnvironment(home string, overrides ...string) []string {
 		"TMP=" + filepath.Join(home, "tmp"),
 		"TMPDIR=" + filepath.Join(home, "tmp"),
 	}
+	// go derives GOMODCACHE from $HOME/go/pkg/mod when unset. The isolated
+	// home would relocate it to an empty directory, forcing every gate to
+	// re-download the dependency graph `go mod tidy` just resolved into the
+	// real cache — and failing outright without network access. Pin the
+	// runner's resolved cache; the module cache is safe to share.
+	if modCache := resolvedGoModCache(); modCache != "" {
+		homeOverrides = append(homeOverrides, "GOMODCACHE="+modCache)
+	}
 	if volume := filepath.VolumeName(home); volume != "" {
 		homeOverrides = append(homeOverrides, "HOMEDRIVE="+volume, "HOMEPATH="+strings.TrimPrefix(home, volume))
 	}
 	return environmentWithOverrides(allowed, append(homeOverrides, overrides...)...)
+}
+
+var (
+	goModCacheOnce sync.Once
+	goModCachePath string
+)
+
+// resolvedGoModCache resolves `go env GOMODCACHE` once, under the runner's
+// own (non-isolated) environment — the same resolution the warm-up
+// `go mod tidy` used.
+func resolvedGoModCache() string {
+	goModCacheOnce.Do(func() {
+		out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+		if err != nil {
+			return
+		}
+		goModCachePath = strings.TrimSpace(string(out))
+	})
+	return goModCachePath
 }
 
 func prepareCandidateHome(home string) error {

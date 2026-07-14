@@ -155,3 +155,24 @@ func TestCandidateEnvironmentTempHelper(t *testing.T) {
 	}
 	fmt.Println(name)
 }
+
+// The isolated HOME must not silently relocate Go's module cache: go
+// resolves GOMODCACHE from $HOME/go/pkg/mod when unset, so pointing HOME at
+// an empty directory would force every candidate gate to re-download the
+// dependency graph `go mod tidy` just resolved into the real cache (and fail
+// outright offline).
+func TestCandidateEnvKeepsWarmModuleCache(t *testing.T) {
+	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		t.Skipf("go env GOMODCACHE unavailable: %v", err)
+	}
+	want := strings.TrimSpace(string(out))
+	if want == "" {
+		t.Skip("empty GOMODCACHE")
+	}
+	env := candidateEnvironment(filepath.Join(t.TempDir(), "home"))
+	joined := "\n" + strings.Join(env, "\n") + "\n"
+	if !strings.Contains(joined, "\nGOMODCACHE="+want+"\n") {
+		t.Fatalf("candidate environment must pin the runner's module cache %q: %v", want, env)
+	}
+}

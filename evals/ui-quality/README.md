@@ -94,6 +94,11 @@ result or used as variant names.
 This is a reproducible local evaluation protocol, not an OS security boundary.
 Do not place secrets in candidate or judge workspaces.
 
+On a host with TLS interception (corporate proxy or AV web shield), export
+`NODE_EXTRA_CA_CERTS` with the interception root before running: it passes
+through to agent processes untouched. The runner deliberately never probes
+for machine-specific certificate paths itself.
+
 ## Gates
 
 Before visual judging, every candidate must pass:

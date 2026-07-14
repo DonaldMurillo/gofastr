@@ -226,7 +226,7 @@ func normalizeAgentConfig(role string, cfg *AgentConfig, defaultTimeout int) err
 		cfg.Program = cfg.Backend
 	}
 	if strings.TrimSpace(cfg.Model) == "" {
-		return fmt.Errorf("agents.%s.model must be an explicit model ID", role)
+		return fmt.Errorf("agents.%s.model must be an explicit model ID (set it in the suite, or pass the role's --*-model flag alongside a backend switch)", role)
 	}
 	switch cfg.Backend {
 	case "codex":

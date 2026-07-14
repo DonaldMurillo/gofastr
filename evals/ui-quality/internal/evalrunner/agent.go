@@ -2,6 +2,7 @@ package evalrunner
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -135,23 +136,18 @@ func runCapturedAgent(ctx context.Context, cfg AgentConfig, args []string, dir s
 	var runErr error
 	var stdoutErr error
 	if cfg.Backend == "omp" {
-		pipe, pipeErr := cmd.StdoutPipe()
-		if pipeErr != nil {
-			_ = stdout.Close()
-			_ = stderr.Close()
-			return pipeErr
-		}
-		cleanup, startErr := startOwnedCommand(cmd)
-		if startErr != nil {
-			_ = stdout.Close()
-			_ = stderr.Close()
-			return startErr
-		}
-		copyDone := make(chan error, 1)
-		go func() { copyDone <- copyCompactOMPLog(stdout, pipe) }()
-		runErr = cmd.Wait()
-		cleanup()
-		stdoutErr = <-copyDone
+		// OMP's stream is filtered through a line-buffered Stdout writer
+		// rather than a StdoutPipe + goroutine: os/exec documents that
+		// calling Wait before all pipe reads complete is incorrect (Wait
+		// closes the pipe on process exit, which can truncate the final
+		// message_end event and turn a successful build into a technical
+		// failure). With cmd.Stdout set, exec's own copier drains the pipe
+		// and Wait blocks on it, bounded by WaitDelay if an orphaned
+		// descendant holds stdout open.
+		compact := &ompCompactWriter{dst: stdout}
+		cmd.Stdout = compact
+		runErr = runOwnedCommand(cmd)
+		stdoutErr = compact.Flush()
 	} else {
 		cmd.Stdout = stdout
 		runErr = runOwnedCommand(cmd)
@@ -173,27 +169,103 @@ func runCapturedAgent(ctx context.Context, cfg AgentConfig, args []string, dir s
 	return stderrErr
 }
 
-// OMP's JSON stream repeats the entire accumulated assistant message in every
-// message_update delta. Persisting those redundant partial snapshots makes a
+// ompMaxBufferedLine bounds how much of one line the compact writer holds
+// while looking for its newline. A line that outgrows it degrades to raw
+// passthrough (bytes survive uncompacted) instead of failing the run like
+// the old 16MiB-capped scanner, and instead of buffering without bound.
+const ompMaxBufferedLine = 16 * 1024 * 1024
+
+// ompCompactWriter drops OMP's message_update lines on the way to the log.
+// The JSON stream repeats the entire accumulated assistant message in every
+// message_update delta; persisting those redundant partial snapshots makes a
 // normal build trace grow quadratically (hundreds of MB for one candidate).
-// Keep turn/tool/final events byte-for-byte and drop only message_update lines;
-// extractOMPFinal reads the preserved message_end event.
-func copyCompactOMPLog(dst io.Writer, src io.Reader) error {
-	scanner := bufio.NewScanner(src)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		var envelope struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal(line, &envelope) == nil && envelope.Type == "message_update" {
-			continue
-		}
-		if _, err := dst.Write(append(append([]byte(nil), line...), '\n')); err != nil {
-			return err
-		}
+// Turn/tool/final events pass through byte-for-byte; extractOMPFinal reads
+// the preserved message_end event.
+type ompCompactWriter struct {
+	dst     io.Writer
+	pending []byte
+	// passthrough marks that the current line exceeded ompMaxBufferedLine
+	// and is being streamed raw until its newline arrives.
+	passthrough bool
+	// err is sticky: after a destination write fails (possibly partially),
+	// nothing may be re-emitted — a Flush retry would duplicate the line's
+	// already-written prefix and corrupt the log evidence.
+	err error
+}
+
+func (w *ompCompactWriter) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
 	}
-	return scanner.Err()
+	// io.Copy demands n == len(p) on success; p is re-sliced below, so the
+	// consumed total is captured up front.
+	total := len(p)
+	if w.passthrough {
+		idx := bytes.IndexByte(p, '\n')
+		if idx < 0 {
+			if _, err := w.dst.Write(p); err != nil {
+				w.err = err
+				return 0, err
+			}
+			return total, nil
+		}
+		if _, err := w.dst.Write(p[:idx+1]); err != nil {
+			w.err = err
+			return 0, err
+		}
+		w.passthrough = false
+		p = p[idx+1:]
+	}
+	w.pending = append(w.pending, p...)
+	for {
+		idx := bytes.IndexByte(w.pending, '\n')
+		if idx < 0 {
+			if len(w.pending) > ompMaxBufferedLine {
+				if _, err := w.dst.Write(w.pending); err != nil {
+					w.err = err
+					return 0, err
+				}
+				w.pending = nil
+				w.passthrough = true
+			}
+			return total, nil
+		}
+		line := w.pending[:idx+1]
+		if err := w.emit(line); err != nil {
+			w.err = err
+			return 0, err
+		}
+		w.pending = w.pending[idx+1:]
+	}
+}
+
+// Flush forwards a final line that arrived without a trailing newline. Call
+// after the producing process has exited.
+func (w *ompCompactWriter) Flush() error {
+	if w.err != nil {
+		return w.err
+	}
+	if len(w.pending) == 0 {
+		return nil
+	}
+	line := w.pending
+	w.pending = nil
+	if err := w.emit(line); err != nil {
+		w.err = err
+		return err
+	}
+	return nil
+}
+
+func (w *ompCompactWriter) emit(line []byte) error {
+	var envelope struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(bytes.TrimRight(line, "\r\n"), &envelope) == nil && envelope.Type == "message_update" {
+		return nil
+	}
+	_, err := w.dst.Write(line)
+	return err
 }
 
 func extractOMPFinal(logPath, outputPath string) error {
@@ -203,34 +275,40 @@ func extractOMPFinal(logPath, outputPath string) error {
 	}
 	defer f.Close()
 	var final string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
-		var event struct {
-			Type    string `json:"type"`
-			Message struct {
-				Role    string `json:"role"`
-				Content []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
-			} `json:"message"`
-		}
-		if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Type != "message_end" || event.Message.Role != "assistant" {
-			continue
-		}
-		var parts []string
-		for _, content := range event.Message.Content {
-			if content.Type == "text" {
-				parts = append(parts, content.Text)
+	// ReadBytes instead of a capped Scanner: a large final assistant
+	// message must be extracted, not fail the run with ErrTooLong.
+	reader := bufio.NewReaderSize(f, 64*1024)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			var event struct {
+				Type    string `json:"type"`
+				Message struct {
+					Role    string `json:"role"`
+					Content []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"content"`
+				} `json:"message"`
+			}
+			if json.Unmarshal(line, &event) == nil && event.Type == "message_end" && event.Message.Role == "assistant" {
+				var parts []string
+				for _, content := range event.Message.Content {
+					if content.Type == "text" {
+						parts = append(parts, content.Text)
+					}
+				}
+				if len(parts) > 0 {
+					final = strings.Join(parts, "\n")
+				}
 			}
 		}
-		if len(parts) > 0 {
-			final = strings.Join(parts, "\n")
+		if readErr == io.EOF {
+			break
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return err
+		if readErr != nil {
+			return readErr
+		}
 	}
 	if strings.TrimSpace(final) == "" {
 		return fmt.Errorf("omp produced no final assistant message (log: %s)", logPath)
@@ -283,22 +361,10 @@ func agentEnvironment(cfg AgentConfig, codexHome string) []string {
 	if cfg.Backend == "codex" {
 		return codexEnvironment(codexHome)
 	}
+	// Machine-specific TLS interception (corporate/AV root CAs) is the
+	// host's concern: export NODE_EXTRA_CA_CERTS in the runner's
+	// environment and it passes through untouched.
 	env := filteredAgentEnvironment(cfg.Backend)
-	hasNodeCert := false
-	for _, entry := range env {
-		name, _, _ := strings.Cut(entry, "=")
-		if strings.EqualFold(name, "NODE_EXTRA_CA_CERTS") {
-			hasNodeCert = true
-		}
-	}
-	if cfg.Backend == "omp" && !hasNodeCert {
-		if home, err := os.UserHomeDir(); err == nil {
-			cert := filepath.Join(home, ".omp", "norton-webshield-root.pem")
-			if _, err := os.Stat(cert); err == nil {
-				env = append(env, "NODE_EXTRA_CA_CERTS="+cert)
-			}
-		}
-	}
 	sort.Strings(env)
 	return env
 }
