@@ -70,8 +70,17 @@ func buttonCSS(t style.Theme) string {
   font: inherit;
   font-size: var(--text-base, 0.95rem);
   font-weight: 600;
-  white-space: nowrap;
+  /* flex: 0 0 auto sizes the button to its unwrapped label (max-content), so
+     wrapping action rows move whole controls to the next line first. The
+     clamp below is container-driven, not viewport-driven: only a label wider
+     than its own container (a sidebar rail, a card cell — at any viewport)
+     wraps inside the bounded button. break-word, NOT anywhere: break-word
+     adds emergency break points at render time without entering min-content
+     sizing, so table/grid layout (a DataTable actions column under column
+     pressure) keeps the intact label as the button's minimum and overflows
+     horizontally instead of letter-stacking it. */
   max-inline-size: 100%;
+  overflow-wrap: break-word;
   cursor: pointer;
   background: var(--color-primary);
   color: var(--color-primary-fg);
@@ -154,15 +163,7 @@ func buttonCSS(t style.Theme) string {
      so reading it here would collapse --large into the default size. */
   font-size: var(--text-lg, 1.05rem);
 }
-/* Action rows wrap whole controls first. If one label is itself wider than a
-   phone viewport (localization or enlarged text), that single control may
-   wrap internally instead of forcing the page off canvas. */
-@media (max-width: 40rem) {
-  [data-fui-comp="ui-button"], .ui-button {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-}` +
+` +
 		// ToggleAction renders class="ui-button ui-button--<variant>"
 		// under its own data-fui-comp marker, so registered custom
 		// variants/sizes are dual-scoped into it (built-in variants are

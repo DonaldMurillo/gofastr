@@ -65,15 +65,33 @@ func TestButtonLargeUsesTextLgToken(t *testing.T) {
 	}
 }
 
-func TestButtonLabelsDoNotWrapInsideControls(t *testing.T) {
+func TestButtonWrapIsContainerDriven(t *testing.T) {
 	css := buttonCSS(style.DefaultTheme())
-	if !strings.Contains(css, "white-space: nowrap") || !strings.Contains(css, "flex: 0 0 auto") {
-		t.Fatalf("button CSS must keep short action labels intact so the action row wraps whole controls:\n%s", css)
+	// flex: 0 0 auto gives the button a max-content base size, so wrapping
+	// action rows (Cluster) move the whole control to the next line before
+	// any label breaks.
+	if !strings.Contains(css, "flex: 0 0 auto") {
+		t.Fatalf("button CSS must size to max-content so action rows wrap whole controls:\n%s", css)
 	}
-	for _, want := range []string{"max-inline-size: 100%", "@media (max-width: 40rem)", "white-space: normal", "overflow-wrap: anywhere"} {
+	// The clamp + break must be container-driven: a label wider than ITS
+	// container (a sidebar rail, a card cell — at any viewport) wraps inside
+	// the bounded button instead of clipping. break-word, NOT anywhere:
+	// anywhere lets emergency breaks into min-content sizing, so table/grid
+	// layout (a DataTable actions column) could compress the button to one
+	// character per line; break-word breaks only at render time.
+	for _, want := range []string{"max-inline-size: 100%", "overflow-wrap: break-word"} {
 		if !strings.Contains(css, want) {
-			t.Fatalf("button CSS must let a viewport-wide localized label wrap safely; missing %q:\n%s", want, css)
+			t.Fatalf("button CSS must let an oversized label wrap inside its bounded control; missing %q:\n%s", want, css)
 		}
+	}
+	if strings.Contains(css, "overflow-wrap: anywhere") {
+		t.Fatalf("overflow-wrap: anywhere collapses button min-content in table/grid layouts:\n%s", css)
+	}
+	if strings.Contains(css, "white-space: nowrap") {
+		t.Fatalf("white-space: nowrap clips long labels in narrow containers on wide viewports:\n%s", css)
+	}
+	if strings.Contains(css, "@media (max-width: 40rem)") {
+		t.Fatalf("button wrapping must not key on viewport width — containers constrain buttons at every viewport:\n%s", css)
 	}
 }
 
