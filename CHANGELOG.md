@@ -7,6 +7,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-14
+
+AI-native UI composition (#57): framework-owned operational components,
+generated apps that ship zero bespoke CSS with an app-owned `DESIGN.md`, an
+adaptive-by-default canonical theme (**BREAKING** — see below), and a
+framework-snapshot UI-quality evaluation harness.
+
 ### Added
 
 - **Framework-owned operational composition.** `ui.RecordSummary` provides one
