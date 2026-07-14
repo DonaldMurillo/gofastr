@@ -112,16 +112,16 @@ func tabsCSS(_ style.Theme) string {
 	// WrapHTML stamps data-fui-comp onto the wrapper itself, so the
 	// wrapper-targeting rules are compound (no descendant combinator).
 	b.WriteString(`[data-fui-comp="fui-tabs"].fui-tabs{margin:0}`)
-	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tabs-nav{display:flex;gap:0;border-bottom:1px solid var(--fui-border,#e2e8f0);margin-bottom:0}`)
-	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab{padding:var(--spacing-md, .5rem) var(--spacing-lg, 1rem);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:500;color:var(--fui-muted,#64748b);transition:color .15s,border-color .15s}`)
-	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground,#0f172a)}`)
-	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab:focus-visible{outline:2px solid var(--fui-primary,#3b82f6);outline-offset:-2px;border-radius:2px}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tabs-nav{display:flex;gap:0;border-bottom:1px solid var(--fui-border, var(--color-border, #e2e8f0));margin-bottom:0}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab{padding:var(--spacing-md, .5rem) var(--spacing-lg, 1rem);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:500;color:var(--fui-muted, var(--color-text-muted, #64748b));transition:color .15s,border-color .15s}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground, var(--color-text, #0f172a))}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px;border-radius:2px}`)
 	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tabs-content{padding-top:1rem}`)
 	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab-panel{display:none}`)
 	// Active button + visible panel both keyed off the wrapper's
 	// data-active so the highlight follows the selected tab.
 	for i := 0; i < tabsMaxPanels; i++ {
-		b.WriteString(fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-fui-tab-index="%d"]{color:var(--fui-primary,#3b82f6);border-bottom-color:var(--fui-primary,#3b82f6)}`, i, i))
+		b.WriteString(fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-fui-tab-index="%d"]{color:var(--fui-primary, var(--color-primary, #3b82f6));border-bottom-color:var(--fui-primary, var(--color-primary, #3b82f6))}`, i, i))
 		b.WriteString(fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-fui-tab-index="%d"]{display:block}`, i, i))
 	}
 	return b.String()

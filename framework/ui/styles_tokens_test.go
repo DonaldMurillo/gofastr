@@ -148,3 +148,34 @@ func TestFontSizeLiteralBudget(t *testing.T) {
 	}
 	t.Logf("TOTAL literal font-size declarations: %d", total)
 }
+
+// The interactive set (Counter, Toggle, Tabs, Collapsible) predates the
+// canonical --color-* theme and exposed --fui-* custom properties as its host
+// override surface. Both surfaces must stay wired: every --fui-* bridge read
+// chains to the matching canonical token before its literal fallback —
+// var(--fui-border, var(--color-border, #e2e8f0)) — so the adaptive theme
+// reaches these components with no host aliases AND a host's --fui-*
+// overrides keep winning.
+var fuiBridgeRe = regexp.MustCompile(`var\(--fui-(?:border|foreground|muted-bg|muted|primary|surface)\s*,\s*([^)\s,]+)`)
+
+func assertBridgeChainsToCanonical(t *testing.T, name, css string) {
+	t.Helper()
+	for _, m := range fuiBridgeRe.FindAllStringSubmatch(css, -1) {
+		if !strings.HasPrefix(m[1], "var(--color-") {
+			t.Errorf("%s: %q must chain to a canonical --color-* token before its literal fallback", name, m[0])
+		}
+	}
+}
+
+func TestFuiBridgeChainsToColorTokens(t *testing.T) {
+	for name, css := range map[string]string{
+		"counter": counterCSS(style.DefaultTheme()),
+		"tabs":    tabsCSS(style.DefaultTheme()),
+		"toggle":  signalToggleCSS(style.DefaultTheme()),
+	} {
+		if !strings.Contains(css, "var(--fui-") {
+			t.Errorf("%s: the --fui-* bridge reads must remain for host compatibility", name)
+		}
+		assertBridgeChainsToCanonical(t, name, css)
+	}
+}
