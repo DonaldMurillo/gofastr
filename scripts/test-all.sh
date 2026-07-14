@@ -1,4 +1,6 @@
 #!/bin/bash
+# Shell scripts are pinned to LF in .gitattributes so this entrypoint also
+# executes directly from WSL against a Windows checkout.
 # Run every Go test in the repo. Use before/after large refactors to
 # verify nothing regressed — including the slow chromedp suite in
 # examples/site and the long kiln/integration suite.
@@ -25,15 +27,18 @@
 #              Override via TEST_PARALLELISM=N if you have a beefier
 #              machine or a tuned net.inet.ip.portrange sysctl.
 #
-# Port-exhaustion self-heal: even at -p 2 a long run can momentarily
+# Resource-contention self-heal: even at -p 2 a long run can momentarily
 # drain the ephemeral pool (loopback-heavy packages like battery/auth,
 # battery/setup, battery/webhook landing next to a chromedp or
 # subprocess suite). When — and only when — the failing run's output
 # carries the kernel signature ("can't assign requested address"), the
 # failed packages are re-run serially (-p 1) after a TIME_WAIT drain.
+# Meridian's 16-surface visual canary can also exhaust its bounded capture
+# attempts when the larger examples/site Chrome suite runs beside it. That exact
+# signature is retried serially without the port-drain delay.
 # A DETERMINISTIC real failure fails the retry too (the retry re-runs the
-# actual tests with -count=1), and failures WITHOUT the kernel signature
-# fail the script immediately with no retry. The residual risk is narrow:
+# actual tests with -count=1), and failures without either known resource
+# signature fail immediately with no retry. The residual risk is narrow:
 # a genuinely flaky race in package A that happens to co-occur with a
 # port message from package B could pass on the serial retry — acceptable
 # versus the alternative of a suite that can't complete in parallel at all.
@@ -63,7 +68,7 @@ echo "==> go vet $PKGS"
 go vet $PKGS
 
 echo "==> go test ${FLAGS[*]} $PKGS"
-LOG=$(mktemp -t gofastr-test-all)
+LOG=$(mktemp "${TMPDIR:-/tmp}/gofastr-test-all.XXXXXX")
 trap 'rm -f "$LOG"' EXIT
 
 set +e
@@ -74,9 +79,16 @@ if [ "$status" -eq 0 ]; then
   exit 0
 fi
 
-# Only self-heal the macOS ephemeral-port exhaustion class. Anything
-# else is a real failure — surface it untouched.
-if ! grep -q "can't assign requested address" "$LOG"; then
+# Only self-heal the two known resource-contention signatures. Anything else
+# is a real failure — surface it untouched.
+port_exhausted=0
+browser_starved=0
+grep -q "can't assign requested address" "$LOG" && port_exhausted=1
+if grep -q '^FAIL[[:space:]].*github.com/DonaldMurillo/gofastr/examples/meridian' "$LOG" &&
+   grep -q 'capture attempt [0-9][0-9]* failed: context deadline exceeded' "$LOG"; then
+  browser_starved=1
+fi
+if [ "$port_exhausted" -eq 0 ] && [ "$browser_starved" -eq 0 ]; then
   exit "$status"
 fi
 
@@ -85,11 +97,15 @@ if [ -z "$FAILED" ]; then
   exit "$status"
 fi
 
-# Drain TIME_WAIT (2×MSL; macOS default MSL is 15s) so the retry starts
-# with a full ephemeral pool, then re-run the failed packages serially.
-echo "==> ephemeral-port exhaustion detected; draining TIME_WAIT (30s), then retrying serially:"
+# Drain TIME_WAIT (2×MSL; macOS default MSL is 15s) for the port class.
+# Browser starvation needs only package serialization.
+if [ "$port_exhausted" -eq 1 ]; then
+  echo "==> ephemeral-port exhaustion detected; draining TIME_WAIT (30s), then retrying serially:"
+  sleep 30
+else
+  echo "==> Meridian browser capture starved beside another Chrome suite; retrying failed packages serially:"
+fi
 echo "$FAILED" | sed 's/^/      /'
-sleep 30
 
 # Rebuild the flag set with -p 1 replacing the parallel cap.
 RETRY_FLAGS=()

@@ -23,6 +23,7 @@ func TestThemeStarterPassesValidation(t *testing.T) {
 	// with style.Theme — adding a field to Theme without updating the
 	// scaffold IS the bug this test catches.
 	required := []string{
+		"DarkColors:",
 		"Colors:",
 		"Spacing:",
 		"Radii:",

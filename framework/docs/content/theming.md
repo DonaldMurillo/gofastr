@@ -38,20 +38,21 @@ resolves to the variable: `{colors.primary}` → `var(--color-primary)`,
 
 ## Setting the theme
 
-Three equivalent entry points, all producing a `style.Theme` you pass
-to `site.WithTheme(...)`:
+Three entry points produce a `style.Theme` you pass to
+`site.WithTheme(...)`:
 
-- **`style.DefaultTheme()`** — the fully-populated baseline. Mutate
-  token values on the copy (this is what generated apps do; see
-  `examples/meridian/app.go` → `appTheme()`).
-- **`framework/ui/theme.Default(theme.Overrides{Primary: "#14B8A6"})`**
-  — the framework's canonical theme (same shape, slightly adjusted
-  defaults) with a flat override struct for the tokens hosts most
-  often swap: the palette, the three font stacks, and the radius
-  scale. Unset fields keep their defaults.
+- **`style.DefaultTheme()`** — the fully-populated lower-level light
+  baseline. It intentionally leaves `DarkColors` empty for compatibility.
+- **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", DarkColors: map[string]string{"primary": "#5EEAD4"}})`**
+  — the framework's canonical adaptive theme used by fresh scaffolds. It
+  includes complete, contrast-safe light and dark palettes plus a flat override
+  struct for the tokens hosts most often swap: the light palette, explicit dark
+  token values, the three font stacks, and the radius scale. Light overrides
+  are deliberately not copied into dark mode because contrast-safe values
+  normally differ. Unset fields keep their defaults.
 - **`gofastr theme init`** — writes `theme/theme.go`, the complete
-  default as a literal you own and edit. Best for apps that will keep
-  diverging.
+  adaptive default as a literal you own and edit. Best for apps that will keep
+  diverging; edit `Colors` and `DarkColors` together.
 
 Apps that need tokens beyond the canonical set embed `style.Theme` in
 their own struct and add fields; framework components only read the
@@ -101,9 +102,9 @@ load a third-party font, you have to override
 ## Dark mode — `DarkColors` and `data-color-scheme`
 
 `Theme.DarkColors` is a map of color-token name → dark value
-(`"background": "#15141B"`, …). Empty by default: an app opts into
-dark mode by supplying it, and a light-only app is never surprised
-into dark by an OS preference.
+(`"background": "#15141B"`, …). `framework/ui/theme.Default()` and
+`gofastr theme init` supply a complete map; the lower-level
+`style.DefaultTheme()` leaves it empty for compatibility.
 
 When non-empty, the emitted CSS re-declares those tokens under
 `:root[data-color-scheme="dark"]`, plus a `prefers-color-scheme: dark`
@@ -124,6 +125,10 @@ Two rules follow:
 2. **Reference tokens, not literal colors,** in any CSS you write —
    a hardcoded hex is invisible to the dark re-declaration and
    becomes a light-colored island on a dark page.
+3. **Do not render `ui.ThemeToggle` with a light-only custom theme.** Keep the
+   scaffold's adaptive default or provide every semantic dark token first. The
+   toggle also updates the browser's native color-scheme state, so a partial
+   palette can mix dark UA link/control colors with light app surfaces.
 
 ## Section-level overrides — `ui.Themed`
 

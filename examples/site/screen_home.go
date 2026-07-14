@@ -250,12 +250,12 @@ screens:
 // can demonstrate "a real screen" without standing up the entity + RPC a live
 // DataTable island requires.
 func screenMock() render.HTML {
-	badge := func(label, tone string) render.HTML {
-		return html.Span(html.TextConfig{Class: "mock-badge mock-badge--" + tone}, render.Text(label))
+	badge := func(label string, tone ui.StatusVariant) render.HTML {
+		return ui.StatusBadge(ui.StatusBadgeConfig{Label: label, Variant: tone})
 	}
 	cell := func(c render.HTML) render.HTML { return html.TD(html.TDConfig{}, c) }
 	th := func(s string) render.HTML { return html.TH(html.THConfig{}, render.Text(s)) }
-	row := func(name, plan, mrr, status, tone string) render.HTML {
+	row := func(name, plan, mrr, status string, tone ui.StatusVariant) render.HTML {
 		return html.TableRow(html.TableRowConfig{},
 			cell(render.Text(name)),
 			cell(render.Text(plan)),
@@ -269,10 +269,10 @@ func screenMock() render.HTML {
 			html.TableRow(html.TableRowConfig{}, th("Name"), th("Plan"), th("MRR"), th("Status")),
 		),
 		html.Tbody(html.TableSectionConfig{},
-			row("Acme Corp", "pro", "$1,240", "active", "ok"),
-			row("Globex", "enterprise", "$8,900", "active", "ok"),
-			row("Initech", "free", "$0", "churned", "off"),
-			row("Umbrella", "pro", "$2,150", "active", "ok"),
+			row("Acme Corp", "pro", "$1,240", "active", ui.StatusSuccess),
+			row("Globex", "enterprise", "$8,900", "active", ui.StatusSuccess),
+			row("Initech", "free", "$0", "churned", ui.StatusNeutral),
+			row("Umbrella", "pro", "$2,150", "active", ui.StatusSuccess),
 		),
 	)
 

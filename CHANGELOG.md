@@ -7,6 +7,67 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Framework-owned operational composition.** `ui.RecordSummary` provides one
+  compact dominant record/event summary with bounded status, next-decision,
+  metrics, support, ownership, and natural-width action slots. Its optional
+  `Aside` fills a purposeful wide-screen rail, while `Actions` stays in the
+  lead region and ahead of support context on phones; `ui.MetricBand` renders
+  one to six related signals as a flat semantic row that becomes two columns
+  on phones. `SiteHeaderConfig.MobileBrand` now swaps long desktop identities
+  for a concise phone mark/name without app CSS.
+- **Natural UI composition guidance.** `gofastr init` now creates an app-owned
+  `DESIGN.md`, points generated agent onboarding at it, and embeds a
+  `ui-composition-recipes` reference for product-specific desktop/mobile page
+  structures composed from `framework/ui`.
+- **Framework-snapshot UI evaluation.** The UI-quality harness can use Codex,
+  OMP / GLM-5.2, or Claude Code / Opus builders and Codex or Claude visual
+  judges, with role-specific provenance retained in run manifests.
+
+### Changed
+
+- **Generated apps start with a complete adaptive theme.** `gofastr init` now
+  mounts `framework/ui/theme.Default()`, whose canonical dark palette makes
+  `ThemeToggle` and OS dark preference safe without host setup;
+  `gofastr theme init` emits the same complete `DarkColors` map. `SiteHeader`
+  now owns linked-brand typography/color instead of exposing browser-default
+  anchor styling, and forced-theme browser gates synchronize both the HTML
+  attribute and native color-scheme meta. `theme.Overrides.DarkColors` lets a
+  small brand reskin provide explicit contrast-safe dark values instead of
+  silently reverting to the canonical palette.
+- **Responsive and touch-target hardening.** `ui.DocLayout` now shrinks inside
+  flex/grid parents instead of preserving a desktop min-content width on
+  phones, and `ui.ValidationSummary` field links meet the WCAG 2.2 24px target
+  floor. Buttons keep short action labels intact so responsive action rows wrap
+  whole controls, while a single viewport-wide localized label can wrap inside
+  its bounded button instead of pushing the page off canvas. `ui.AvatarGroup`
+  now uses a 10% overlap that keeps initials readable, an adaptive overflow
+  chip, and compact corner presence dots.
+- **Balanced phone signal bands.** Odd three- and five-item `ui.MetricBand`
+  sets now make their final signal span the phone row instead of rendering an
+  accidental empty quadrant.
+- **`ui.Cluster` zero value now matches its contract.** Clusters wrap whole
+  controls by default; `ClusterConfig.NoWrap` is the explicit opt-out for
+  compact chrome. The old boolean `Wrap` field remains source-compatible but
+  is deprecated because its zero value could not represent the documented
+  wrapping default.
+- **The init scaffold emits zero app-owned CSS.** The generated
+  `screens/styles.go` and `WithCustomCSS` wiring are removed; the starter page
+  now composes framework UI primitives. Reinit preserves `DESIGN.md` even with
+  `--force`.
+- **UI evaluation variants now represent framework roots, not injected design
+  prompts.** Generated onboarding is fingerprinted and must remain untouched;
+  historical prompt-treatment scores are explicitly invalid for framework
+  quality claims.
+- **UI evaluation runs fail closed on contamination.** Exclusive run creation
+  and locks prevent mixed concurrent artifacts; reuse rejects linked run
+  directories; candidate and framework fingerprints are rechecked around
+  mutating gates; result JSON is atomically replaced; agent and candidate
+  environments omit unrelated credentials; Windows jobs and Unix process
+  groups own descendants; capture blocks non-candidate network requests and
+  broken images; and visual judges treat screenshot text as untrusted output.
+
 ## [0.22.0] - 2026-07-14
 
 First-class installable-PWA support and blueprint-generated LLM page

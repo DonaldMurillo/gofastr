@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -31,7 +32,11 @@ func e2eBootApp(t *testing.T) string {
 		t.Setenv("ADMIN_SEED_PASSWORD", "e2e-seed-admin-pw")
 	}
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "app")
+	binName := "app"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {

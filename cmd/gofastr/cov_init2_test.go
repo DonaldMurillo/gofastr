@@ -54,12 +54,9 @@ func TestWriteHomeScreenWriteFailureExits(t *testing.T) {
 	}
 }
 
-func TestWriteStylesGoWriteFailureExits(t *testing.T) {
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { writeStylesGo(covT_missingDir(t)) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+func TestWriteDesignMDWriteFailure(t *testing.T) {
+	if err := writeDesignMD(covT_missingDir(t)); err == nil {
+		t.Fatal("writeDesignMD should fail when the target directory is missing")
 	}
 }
 

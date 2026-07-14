@@ -14,6 +14,7 @@ because each release lands the demo + the code together.
 | ------------------------------------ | ---------------------------------------------------------------- |
 | Live behavior (click it, drag it)    | Run the website: `./scripts/dev-watch.sh` → `/components/<slug>` |
 | Constructor signature + every field  | `go doc github.com/DonaldMurillo/gofastr/framework/ui.<Name>`    |
+| Full-page composition choice          | `gofastr docs ui-composition-recipes`                           |
 | Pattern packages (Combobox, Tree, …) | `go doc github.com/DonaldMurillo/gofastr/core-ui/patterns/<pkg>` |
 | Widget presets (Modal, Drawer, …)    | `go doc github.com/DonaldMurillo/gofastr/core-ui/widget/preset`  |
 | Runtime data-fui-\* attributes       | [runtime-contract](runtime-contract.md)                          |
@@ -46,7 +47,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **kbd** — `core-ui/html.Kbd` — semantic `<kbd>` for keyboard input
 - **shortcuthint** — `framework/ui.ShortcutHint` — OS-aware chord chips (⌘ on Mac / Ctrl elsewhere)
 - **avatar** — `framework/ui.Avatar` — circular avatar with image → initials fallback (sm/md/lg/xl)
-- **avatargroup** — `framework/ui.AvatarGroup` — overlapping avatar stack with overflow chip
+- **avatargroup** — `framework/ui.AvatarGroup` — readable 10% overlap, compact corner presence dots, and an adaptive-surface overflow chip
 - **icon** — `framework/ui.Icon` — inline-SVG primitive backed by `RegisterIcon`; 10 built-ins, `currentColor` stroke, `AriaLabel` flips to `role="img"`
 - **link** — `framework/ui.Link` — typed anchor with external-link affordances + unsafe-scheme href sanitizing
 - **muted** — `framework/ui.Muted` — subdued inline `<span>` for secondary text
@@ -93,9 +94,11 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 
 ### Navigation
 
+- **recordsummary** — `framework/ui.RecordSummary` — compact dominant record or event summary with status, next-decision, balanced phone metrics, a bounded support rail, ownership, and a lead-region natural-width action that stays early on phones
+
 - **skiplink** — `framework/ui.SkipLink` — focus-visible bypass link for jumping to main content
 - **pageheader** — `framework/ui.PageHeader` — top-of-page header with title / eyebrow / subtitle / actions
-- **siteheader** — `framework/ui.SiteHeader` — top bar with brand + nav + actions + mobile drawer
+- **siteheader** — `framework/ui.SiteHeader` — top bar with brand + nav + actions + mobile drawer; `MobileBrand` swaps in a concise phone identity
 - **sitefooter** — `framework/ui.SiteFooter` — multi-column footer grid + bottom strip
 - **anchoredrail** — `framework/ui.AnchoredRail` — sticky in-page nav rail with scrollspy-tracked active state
 - **doclayout** — `framework/ui.DocLayout` / `DocPrevNext` — documentation page skeleton (nav rail + article + prev/next pager)
@@ -128,7 +131,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 
 ### Layout & display
 
-- **layout** — `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`
+- **layout** — `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`; `Cluster` wraps by default and exposes the explicit `NoWrap` opt-out
 - **container** — `framework/ui.Container` — max-width page wrapper with breakpoint padding
 - **section** — `framework/ui.Section` — labelled content section with heading + description
 - **responsive** — `framework/ui.Responsive` — viewport-swap pair (independent desktop / mobile variants)
@@ -152,6 +155,8 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **networkretrybanner** — `framework/ui.NetworkRetryBanner` — persistent banner that shows on RPC-failure threshold or SSE silence; retry button pings a health endpoint to recover
 
 ### Data display
+
+- **metricband** — `framework/ui.MetricBand` — flat semantic signal band (one row wide, two columns on phones) for related facts that should not become a wall of cards; `Hint` adds a trend or qualifier
 
 - **datatable** — `framework/ui.DataTable` — sortable / paginated / island-swappable rows
 - **statcard** — `framework/ui.StatCard` — metric card with label/value/trend. A 4-card dashboard row lives in a `ui.Grid`; the Grid default `Min: "16rem"` wraps 3+1 inside a sidebar-narrowed content column (~900px). For a 4-up row that fits (and degrades to 2+2 on tablet), pass `Grid(GridConfig{Min: "13rem"}, …)` — the `Min` knob is the intended control, not a Grid default change (16rem stays right for general content cards).
@@ -185,7 +190,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 
 ### Status & banners
 
-- **themetoggle** — `framework/ui.ThemeToggle` — dark/light/auto toggle that persists color-scheme mode
+- **themetoggle** — `framework/ui.ThemeToggle` — dark/light/auto toggle that persists color-scheme mode; fresh scaffolds mount the adaptive `framework/ui/theme.Default()` palette, while app-owned themes must keep `DarkColors` complete
 - **backtotop** — `framework/ui.BackToTop` — fixed scroll affordance that appears after a threshold
 - **banner** — `framework/ui.Banner` — page-level persistent status strip
 - **callout** — `framework/ui.Callout` — persistent inline info / warning / danger / neutral block

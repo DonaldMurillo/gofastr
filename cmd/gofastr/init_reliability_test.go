@@ -123,10 +123,12 @@ func TestInitWritesCLAUDEmd(t *testing.T) {
 	body := string(data)
 	for _, substr := range []string{
 		"AGENTS.md",
+		"DESIGN.md",
 		"gofastr-host",
 		"gofastr agents sync",
 		"gofastr docs",
 		"gofastr docs --grep",
+		"gofastr docs ui-composition-recipes",
 	} {
 		if !strings.Contains(body, substr) {
 			t.Errorf("CLAUDE.md missing %q", substr)

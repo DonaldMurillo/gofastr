@@ -11,13 +11,13 @@ import (
 var collapsibleStyle = registry.RegisterStyle("fui-collapsible", collapsibleCSS)
 
 func collapsibleCSS(_ style.Theme) string {
-	return `[data-fui-comp="fui-collapsible"]{border:1px solid var(--fui-border,#e2e8f0);border-radius:.5rem;overflow:hidden}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary{padding:.75rem var(--spacing-lg, 1rem);cursor:pointer;font-weight:600;color:var(--fui-foreground,#0f172a);list-style:none;display:flex;align-items:center;justify-content:space-between;user-select:none}` +
+	return `[data-fui-comp="fui-collapsible"]{border:1px solid var(--color-border,#e2e8f0);border-radius:var(--radii-md,.5rem);background:var(--color-surface,#fff);color:var(--color-text,#0f172a);overflow:hidden}` +
+		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary{padding:.75rem var(--spacing-lg, 1rem);cursor:pointer;font-weight:600;color:var(--color-text,#0f172a);list-style:none;display:flex;align-items:center;justify-content:space-between;user-select:none}` +
 		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary::-webkit-details-marker{display:none}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"\25B8";transition:transform .15s;color:var(--fui-muted,#64748b)}` +
+		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"\25B8";transition:transform var(--duration-fast,150ms) var(--easing-standard,ease);color:var(--color-text-muted,#64748b)}` +
 		`[data-fui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(90deg)}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:2px solid var(--fui-primary,#3b82f6);outline-offset:-2px}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__content{padding:.75rem var(--spacing-lg, 1rem);border-top:1px solid var(--fui-border,#e2e8f0)}`
+		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:2px solid var(--color-primary,#3b82f6);outline-offset:-2px}` +
+		`[data-fui-comp="fui-collapsible"] .fui-collapsible__content{padding:.75rem var(--spacing-lg, 1rem);color:var(--color-text,#0f172a);border-top:1px solid var(--color-border,#e2e8f0)}`
 }
 
 // ─── Collapsible ────────────────────────────────────────────────────

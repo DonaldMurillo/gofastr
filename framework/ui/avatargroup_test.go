@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestAvatarGroupRendersAll(t *testing.T) {
@@ -102,5 +104,38 @@ func TestAvatarGroupCustomLabel(t *testing.T) {
 	}))
 	if !strings.Contains(out, `aria-label="Project team"`) {
 		t.Errorf("expected custom Label, got: %s", out)
+	}
+}
+
+func TestAvatarGroupOverflowUsesAdaptiveSurfaceToken(t *testing.T) {
+	css := avatarGroupCSS(style.Theme{})
+	for _, want := range []string{
+		`background: var(--color-surface-soft, #e5e5e5)`,
+		`margin-inline-start: -0.25rem`,
+		`margin-inline-start: -0.15rem`,
+		`margin-inline-start: -0.3rem`,
+		`margin-inline-start: -0.4rem`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("AvatarGroup CSS missing %q:\n%s", want, css)
+		}
+	}
+	if strings.Contains(css, `var(--color-muted`) {
+		t.Fatalf("overflow chip references undefined --color-muted token:\n%s", css)
+	}
+}
+
+func TestAvatarPresenceDotIsInsetInsideCorner(t *testing.T) {
+	css := avatarCSS(style.Theme{})
+	for _, want := range []string{
+		`inset-block-end: 0.0625rem`,
+		`inset-inline-end: 0.0625rem`,
+		`inline-size: 25%`,
+		`min-inline-size: 6px`,
+		`max-inline-size: 12px`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("avatar presence dot CSS missing %q:\n%s", want, css)
+		}
 	}
 }

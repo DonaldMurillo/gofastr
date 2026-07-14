@@ -79,6 +79,7 @@ func TestInitDropsAIAgentFiles(t *testing.T) {
 
 	for _, rel := range []string{
 		"smoke/AGENTS.md",
+		"smoke/DESIGN.md",
 		"smoke/agents/framework.md",
 		"smoke/agents/battery-admin.md",
 		"smoke/agents/battery-log.md",
@@ -133,6 +134,38 @@ func TestInitGeneratedMainUsesIsolationHelpers(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("generated main.go missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestInitGeneratedUIIsFrameworkComposed(t *testing.T) {
+	dir := t.TempDir()
+	project := filepath.Join(dir, "demo")
+	if err := os.MkdirAll(filepath.Join(project, "screens"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeMainGo(project, "example.com/demo", true, "sqlite", "")
+	writeHomeScreen(project, true)
+
+	mainBody, err := os.ReadFile(filepath.Join(project, "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	homeBody, err := os.ReadFile(filepath.Join(project, "screens", "home.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := string(mainBody) + "\n" + string(homeBody)
+	for _, forbidden := range []string{
+		"WithCustomCSS", "CreateStyleSheet", "style.NewStyleSheet", "render.Tag(",
+	} {
+		if strings.Contains(combined, forbidden) {
+			t.Errorf("generated UI must not contain app-owned styling or structural markup %q", forbidden)
+		}
+	}
+	for _, required := range []string{"ui.Container", "ui.Stack", "ui.PageHeader", "ui.Section"} {
+		if !strings.Contains(string(homeBody), required) {
+			t.Errorf("generated home screen missing framework primitive %q", required)
 		}
 	}
 }

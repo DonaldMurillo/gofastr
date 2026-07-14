@@ -81,9 +81,15 @@ type ClusterConfig struct {
 	Gap     Gap
 	Align   Align
 	Justify Justify
-	Wrap    bool // when true (default), children wrap onto multiple lines
-	ID      string
-	Class   string
+	// NoWrap opts out of the default responsive wrapping behavior. Use it only
+	// for compact chrome that is guaranteed to fit, such as two icon controls.
+	NoWrap bool
+	// Wrap is retained for source compatibility. Clusters wrap by default,
+	// including when this zero-value field is false; use NoWrap to opt out.
+	// Deprecated: wrapping is now the documented zero-value behavior.
+	Wrap  bool
+	ID    string
+	Class string
 }
 
 // Cluster renders children in a horizontal row that wraps onto
@@ -91,7 +97,7 @@ type ClusterConfig struct {
 // breadcrumb trails.
 func Cluster(cfg ClusterConfig, children ...render.HTML) render.HTML {
 	cls := layoutClass("ui-cluster", cfg.Class, cfg.Gap, cfg.Align, cfg.Justify)
-	if !cfg.Wrap {
+	if cfg.NoWrap {
 		cls += " ui-cluster--nowrap"
 	}
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, children...))

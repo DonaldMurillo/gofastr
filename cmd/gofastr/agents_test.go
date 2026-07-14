@@ -28,6 +28,12 @@ func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 	mustContain(t, body, "(agents/framework.md)") // link to detail
 	mustContain(t, body, "(agents/ui.md)")
 	mustContain(t, body, "(agents/battery-admin.md)")
+	mustContain(t, body, "RecordSummary + MetricBand")
+	mustContain(t, body, "description to one or two sentences")
+	mustContain(t, body, "compact Aside")
+	mustContain(t, body, "SiteHeader.MobileBrand")
+	mustContain(t, body, "ClusterConfig.NoWrap")
+	mustContain(t, body, "do not repeat the same state in a Banner")
 
 	// AGENTS.md must NOT inline the full per-section bodies anymore.
 	// `**Shape:**` only appears in battery agents.md bodies (never in

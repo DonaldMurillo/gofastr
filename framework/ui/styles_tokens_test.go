@@ -65,6 +65,18 @@ func TestButtonLargeUsesTextLgToken(t *testing.T) {
 	}
 }
 
+func TestButtonLabelsDoNotWrapInsideControls(t *testing.T) {
+	css := buttonCSS(style.DefaultTheme())
+	if !strings.Contains(css, "white-space: nowrap") || !strings.Contains(css, "flex: 0 0 auto") {
+		t.Fatalf("button CSS must keep short action labels intact so the action row wraps whole controls:\n%s", css)
+	}
+	for _, want := range []string{"max-inline-size: 100%", "@media (max-width: 40rem)", "white-space: normal", "overflow-wrap: anywhere"} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("button CSS must let a viewport-wide localized label wrap safely; missing %q:\n%s", want, css)
+		}
+	}
+}
+
 // fontSizeDeclRe matches every font-size: declaration, capturing the
 // value (up to the next ; or }). RE2 has no lookahead, so the value
 // is inspected in Go: a var()-led value is the sweep's token-with-

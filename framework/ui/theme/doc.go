@@ -5,6 +5,8 @@
 // that every framework/ui component references via CSS custom
 // properties. To re-skin an app, pass overrides to [Default]; every
 // component re-resolves to the new values without code changes.
+// Default includes a complete adaptive dark palette, so ThemeToggle and the
+// synchronous OS-preference bootstrap are safe without extra host setup.
 //
 // Tokens are single-tier semantic: names carry meaning ("primary",
 // "danger", "surface-soft") rather than raw values ("indigo-500"). If

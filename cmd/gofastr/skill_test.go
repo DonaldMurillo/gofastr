@@ -18,6 +18,19 @@ func TestEmbeddedHostSkillMatchesRepo(t *testing.T) {
 	if gofastrHostSkill != string(repoCopy) {
 		t.Fatalf("embedded skill drifted from .claude/skills/gofastr-host/SKILL.md — copy the latter over cmd/gofastr/embedded/gofastr-host-skill.md")
 	}
+	for _, want := range []string{
+		"ui.RecordSummary` + `ui.MetricBand",
+		"description to one or two sentences",
+		"`Aside` for owner/presence context",
+		"first useful phone viewport",
+		"SiteHeaderConfig.MobileBrand",
+		"ClusterConfig.NoWrap",
+		"Host apps ship zero bespoke CSS",
+	} {
+		if !strings.Contains(gofastrHostSkill, want) {
+			t.Errorf("embedded host skill missing %q", want)
+		}
+	}
 }
 
 func TestWriteHostSkillDropsFileWithFrontmatter(t *testing.T) {
@@ -30,7 +43,8 @@ func TestWriteHostSkillDropsFileWithFrontmatter(t *testing.T) {
 		t.Fatalf("read written skill: %v", err)
 	}
 	body := string(got)
-	if !strings.HasPrefix(body, "---\n") {
+	normalized := strings.ReplaceAll(body, "\r\n", "\n")
+	if !strings.HasPrefix(normalized, "---\n") {
 		t.Fatalf("written skill missing frontmatter:\n%s", body[:120])
 	}
 	if !strings.Contains(body, "name: gofastr-host") {

@@ -55,6 +55,7 @@ func TestEvalNewUserPlansSite(t *testing.T) {
 		for _, f := range []string{
 			"CLAUDE.md",
 			"AGENTS.md",
+			"DESIGN.md",
 			".claude/skills/gofastr-host/SKILL.md",
 			".gitignore",
 			".git/HEAD", // git init ran
@@ -76,7 +77,9 @@ func TestEvalNewUserPlansSite(t *testing.T) {
 		for _, want := range []string{
 			"gofastr docs",
 			"gofastr docs --grep",
+			"gofastr docs ui-composition-recipes",
 			"AGENTS.md",
+			"DESIGN.md",
 			"gofastr-host",
 		} {
 			if !strings.Contains(body, want) {
@@ -185,6 +188,7 @@ func TestEvalNewUserPlansSiteNoEntity(t *testing.T) {
 		for _, f := range []string{
 			"CLAUDE.md",
 			"AGENTS.md",
+			"DESIGN.md",
 			".claude/skills/gofastr-host/SKILL.md",
 			".git/HEAD",
 		} {
@@ -240,7 +244,7 @@ func TestReinitRefreshesOnboarding(t *testing.T) {
 	}
 
 	// Verify files still exist
-	for _, f := range []string{"CLAUDE.md", "AGENTS.md", ".claude/skills/gofastr-host/SKILL.md"} {
+	for _, f := range []string{"CLAUDE.md", "AGENTS.md", "DESIGN.md", ".claude/skills/gofastr-host/SKILL.md"} {
 		if _, err := os.Stat(filepath.Join(project, f)); err != nil {
 			t.Errorf("missing %q after reinit: %v", f, err)
 		}

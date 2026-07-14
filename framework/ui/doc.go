@@ -46,7 +46,7 @@
 //	Center               — layout centering wrapper
 //	Checkbox             — labelled checkbox with FieldErrors wiring
 //	CheckboxGroup        — <fieldset> of checkboxes with shared label + errors
-//	Cluster              — horizontal wrapping layout with gap
+//	Cluster              — horizontal layout that wraps by default (NoWrap opts out)
 //	CodeBlock            — styled <pre><code> sample block
 //	Collapsible          — styled <details> disclosure with summary
 //	ColorPicker          — styled native <input type=color>
@@ -85,6 +85,7 @@
 //	LinkButton           — anchor styled as Button — for CTAs that navigate
 //	Markdown             — themed wrapper over core/markdown
 //	Menu                 — <details>-driven dropdown menu (keyboard + ARIA)
+//	MetricBand           — compact semantic band of one to six related signals
 //	Muted                — subdued inline <span> for secondary text
 //	NetworkRetryBanner   — RPC-failure banner with health-probe retry
 //	Notification         — toast-styled inline notification (variant + dismiss)
@@ -105,6 +106,7 @@
 //	RadioGroup           — <fieldset> of radios with shared label + errors
 //	RangeSlider          — dual-thumb range with cross-clamp
 //	RatingInput          — 1-N star/heart rating input
+//	RecordSummary        — dominant record/event summary with bounded support rail
 //	Repeater             — dynamic add/remove item list with min/max limits
 //	Responsive           — viewport-swap pair (desktop / mobile variant)
 //	SearchInput          — search field with icon prefix + clear button

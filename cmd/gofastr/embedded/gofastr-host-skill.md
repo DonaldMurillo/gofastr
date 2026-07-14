@@ -11,6 +11,36 @@ ships ~70% of the surface a real app needs. Before writing anything new,
 file under `agents/`** — they exist to keep you from reinventing what's
 already there.
 
+For UI work, also read and complete the project's `DESIGN.md` before selecting
+components, then open `agents/ui.md` and run
+`gofastr docs ui-composition-recipes`. The app owns product intent and
+information hierarchy; the framework supplies the structural and visual
+primitives. Render desktop/mobile in both schemes and revise the three weakest
+visible decisions before calling the UI complete.
+
+For record, incident, and operational pages, reach first for
+`ui.RecordSummary` + `ui.MetricBand`: one dominant summary, one compact signal
+band, and actions in the summary's natural-width `Actions` slot. Do not repeat
+the same state in a Banner. Keep its description to one or two sentences and
+its highlight to one decision plus one short condition. Use the compact
+`Aside` for owner/presence context, use `MetricBandItem.Hint` for trends, and
+move the full narrative or roster later. The component keeps `Actions` in its
+lead region so the primary path stays in the first useful phone viewport. Use
+`SiteHeaderConfig.MobileBrand` when the desktop identity is too long for the
+phone header. On wide detail routes, pair related bounded modules such as
+`DetailList`s in `ui.Grid`; do not leave a narrow stacked column beside an
+accidental empty rail. Reflow the pair to one column on phones. `ui.Cluster`
+wraps whole controls by default; use `ClusterConfig.NoWrap` only for compact
+chrome that is guaranteed to fit.
+
+A fresh scaffold already mounts the adaptive `framework/ui/theme.Default()`
+palette, so `ui.ThemeToggle` and OS dark preference have complete light/dark
+tokens. Keep that `WithTheme` call. If you replace it with an app-owned theme,
+define every semantic `DarkColors` value before rendering a toggle. Use
+`ui.Link` for visible text links and `ui.SiteFooter` for linked footer chrome;
+do not rely on browser-default `<a>` colors. A linked `SiteHeader` Brand slot is
+the exception because SiteHeader owns its appearance.
+
 `AGENTS.md` is a thin TOC of every framework primitive with its
 trigger phrases. When your task matches a row, open the linked file
 under `agents/` (e.g. `agents/battery-admin.md`) for the full
@@ -34,7 +64,7 @@ generate both the TOC and the `agents/` detail files. Refresh with
 | full-text search | `battery/search` |
 | outbound signed webhooks with retry | `battery/webhook` |
 | cache key/value, memoize, "remember for N seconds" | `battery/cache` |
-| UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components) — `gofastr docs ui-new-components` for the catalog, `go doc github.com/DonaldMurillo/gofastr/framework/ui` for signatures, live demos at `/components/<slug>` on the docs site (`examples/site`) |
+| UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components) — `gofastr docs ui-composition-recipes` for page grammar, `gofastr docs ui-new-components` for the catalog, live demos at `/components/<slug>` on the docs site (`examples/site`) |
 | structured request log, panic recovery, log MCP debug tools | `battery/log` |
 | browser refresh on `gofastr dev` rebuild | auto-wired if your `main.go` uses `framework.NewApp` + `uihost.New` — no host code; for custom bootstraps call `dev.RegisterLiveReload(router)` manually |
 | load `.env` files | auto-wired by `framework.NewApp` — do nothing |
@@ -52,9 +82,11 @@ generate both the TOC and the `agents/` detail files. Refresh with
    `auth.UserEntityFields()` are the contract.
 4. **Audit log writes are not best-effort.** Failing audit fails the
    user write — that's the point.
-5. **Strict CSP, no inline scripts/styles.** Add CSS rules in your
-   theme module + classes on tags. The framework's runtime is the only
-   script tag; the rest is `WithExtraScripts(externalURL)`.
+5. **Strict CSP and one styling surface.** Host apps ship zero bespoke CSS and
+   zero hand-rolled structural markup. Themes mutate tokens; missing visual or
+   layout treatments are framework component gaps to add upstream. The
+   framework runtime is the only script tag; extra scripts use
+   `WithExtraScripts(externalURL)`.
 6. **`gofastr dev` sets `GOFASTR_DEV=1`** on the child process — the
    framework auto-wires browser reload via SSE. Don't write your own
    livereload. Opt out with `GOFASTR_DEV_LIVERELOAD=0`.

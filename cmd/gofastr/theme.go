@@ -133,6 +133,28 @@ import (
 // ── Brand: edit these first ─────────────────────────────────────────
 var App = style.Theme{
 	Name: "app",
+	// DarkColors makes ThemeToggle and OS dark preference complete: every
+	// semantic color used by framework components has a dark counterpart.
+	// Edit this alongside Colors when changing the brand palette.
+	DarkColors: map[string]string{
+		"accent":        "#67E8F9",
+		"background":    "#111113",
+		"border":        "#3F3F46",
+		"border-strong": "#71717A",
+		"danger":        "#F87171",
+		"info":          "#60A5FA",
+		"primary":       "#A5B4FC",
+		"primary-fg":    "#111827",
+		"secondary":     "#D4D4D8",
+		"secondary-fg":  "#18181B",
+		"success":       "#4ADE80",
+		"surface":       "#18181B",
+		"surface-soft":  "#27272A",
+		"text":          "#FAFAFA",
+		"text-muted":    "#D4D4D8",
+		"text-subtle":   "#A1A1AA",
+		"warning":       "#FBBF24",
+	},
 	Colors: style.ColorSet{
 		// Primary brand colors — the most-edited values.
 		Primary:   style.Color{Value: "#4F46E5"},

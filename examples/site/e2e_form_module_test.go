@@ -202,12 +202,13 @@ func TestE2E_ValidationSummary_RendersLinks(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify((() => {
 			var summaries = document.querySelectorAll('[data-fui-comp="ui-validation-summary"]');
-			if (summaries.length === 0) return {links:0, anchor:false};
+			if (summaries.length === 0) return {links:0, anchor:false, minHeight:0};
 			var last = summaries[summaries.length - 1];
 			var links = last.querySelectorAll('a[href^="#"]');
 			return {
 				links: links.length,
-				anchor: links.length > 0 && links[0].getAttribute('href').startsWith('#')
+				anchor: links.length > 0 && links[0].getAttribute('href').startsWith('#'),
+				minHeight: Math.min(...Array.from(links, a => a.getBoundingClientRect().height))
 			};
 		})())`, &raw),
 	)
@@ -215,8 +216,9 @@ func TestE2E_ValidationSummary_RendersLinks(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	var result struct {
-		Links  int  `json:"links"`
-		Anchor bool `json:"anchor"`
+		Links     int     `json:"links"`
+		Anchor    bool    `json:"anchor"`
+		MinHeight float64 `json:"minHeight"`
 	}
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		t.Fatalf("json: %v", err)
@@ -227,6 +229,9 @@ func TestE2E_ValidationSummary_RendersLinks(t *testing.T) {
 	}
 	if !result.Anchor {
 		t.Error("expected anchor links in validation summary")
+	}
+	if result.MinHeight < 24 {
+		t.Errorf("validation summary link height = %.1fpx, want >= 24px", result.MinHeight)
 	}
 }
 

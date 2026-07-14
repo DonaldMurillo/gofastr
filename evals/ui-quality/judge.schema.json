@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "candidate_id": {"type": "string", "pattern": "^candidate-[a-f0-9]{12}$"},
+    "dimensions": {
+      "type": "object",
+      "properties": {
+        "hierarchy": {"type": "number", "minimum": 0, "maximum": 10},
+        "composition": {"type": "number", "minimum": 0, "maximum": 10},
+        "typography": {"type": "number", "minimum": 0, "maximum": 10},
+        "product_specificity": {"type": "number", "minimum": 0, "maximum": 10},
+        "density": {"type": "number", "minimum": 0, "maximum": 10},
+        "component_polish": {"type": "number", "minimum": 0, "maximum": 10},
+        "responsive_intent": {"type": "number", "minimum": 0, "maximum": 10},
+        "theme_coherence": {"type": "number", "minimum": 0, "maximum": 10}
+      },
+      "required": [
+        "hierarchy", "composition", "typography", "product_specificity",
+        "density", "component_polish", "responsive_intent", "theme_coherence"
+      ],
+      "additionalProperties": false
+    },
+    "strongest_visible_decisions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 20, "maxLength": 1200},
+      "minItems": 1,
+      "maxItems": 4
+    },
+    "weakest_visible_decisions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 20, "maxLength": 1200},
+      "minItems": 1,
+      "maxItems": 4
+    },
+    "shadcn_level": {"type": "boolean"},
+    "shadcn_level_rationale": {"type": "string", "minLength": 20, "maxLength": 1000},
+    "next_iteration": {"type": "string", "minLength": 20, "maxLength": 700}
+  },
+  "required": [
+    "candidate_id", "dimensions", "strongest_visible_decisions",
+    "weakest_visible_decisions", "shadcn_level", "shadcn_level_rationale",
+    "next_iteration"
+  ],
+  "additionalProperties": false
+}

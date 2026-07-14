@@ -39,9 +39,14 @@ type SiteHeaderLink struct {
 // slots — the framework owns layout + drawer mechanics; the consumer
 // owns visual identity.
 type SiteHeaderConfig struct {
-	// Brand is the left-most slot. Usually a link with logo + wordmark
-	// + optional status pill. No constraint on shape.
+	// Brand is the left-most slot. Usually a link with logo + wordmark.
+	// Keep operational status in page content rather than overloading a
+	// long identity lockup.
 	Brand render.HTML
+	// MobileBrand, when set, replaces Brand at widths up to 720px. Use a
+	// concise mark or short product name so status and navigation never push
+	// the identity off-screen. The framework owns the responsive swap.
+	MobileBrand render.HTML
 	// NavItems renders both the desktop nav and the mobile drawer list.
 	NavItems []SiteHeaderLink
 	// Actions is the right-cluster slot for search, theme toggle,
@@ -176,6 +181,13 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 	}
 	rightChildren = append(rightChildren, mobile)
 	right := html.Div(html.DivConfig{Class: "ui-site-header__right"}, rightChildren...)
+	brand := html.Div(html.DivConfig{Class: "ui-site-header__brand"}, cfg.Brand)
+	if cfg.MobileBrand != "" {
+		brand = render.Join(
+			html.Div(html.DivConfig{Class: "ui-site-header__brand ui-site-header__brand--desktop"}, cfg.Brand),
+			html.Div(html.DivConfig{Class: "ui-site-header__brand ui-site-header__brand--mobile"}, cfg.MobileBrand),
+		)
+	}
 
 	cls := "ui-site-header"
 	if cfg.NavUnderline {
@@ -188,7 +200,7 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 		cls = cls + " " + cfg.Class
 	}
 	return siteHeaderStyle.WrapHTML(html.Div(html.DivConfig{Class: cls},
-		cfg.Brand, primary, right,
+		brand, primary, right,
 	))
 }
 
@@ -207,6 +219,21 @@ func siteHeaderCSS(_ style.Theme) string {
   block-size: 100%;
   padding-inline: var(--spacing-lg, 24px);
 }
+[data-fui-comp="ui-site-header"] .ui-site-header__brand {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+[data-fui-comp="ui-site-header"] .ui-site-header__brand a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-site-header-brand-gap, var(--spacing-sm, 8px));
+  min-inline-size: 0;
+  color: var(--ui-site-header-brand-color, var(--color-text, currentColor));
+  text-decoration: none;
+  font-weight: var(--ui-site-header-brand-weight, 700);
+}
+[data-fui-comp="ui-site-header"] .ui-site-header__brand--mobile { display: none; }
 [data-fui-comp="ui-site-header"] .ui-site-header__links {
   display: flex;
   align-items: center;
@@ -329,6 +356,8 @@ func siteHeaderCSS(_ style.Theme) string {
   border-block-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
 @media (max-width: 720px) {
+  [data-fui-comp="ui-site-header"] .ui-site-header__brand--desktop { display: none; }
+  [data-fui-comp="ui-site-header"] .ui-site-header__brand--mobile { display: flex; }
   [data-fui-comp="ui-site-header"] .ui-site-header__links { display: none; }
   [data-fui-comp="ui-site-header"] .ui-site-header__mobile { display: block; }
   /* Collapse the bar actions into the drawer so the phone bar is just brand +

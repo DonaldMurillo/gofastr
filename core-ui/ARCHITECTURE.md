@@ -1071,11 +1071,14 @@ your need:
 | You want | Use | Notes |
 | --- | --- | --- |
 | Primary navigation | `framework/ui.Sidebar` | Inline column ≥ md, hamburger + `preset.Drawer` < md, same content tree, active-route highlighting from the current URL. |
+| Site top bar with mobile-safe identity | `framework/ui.SiteHeader` | Set `MobileBrand` when the desktop wordmark/identity is too long for the phone row; the component owns the breakpoint swap. |
+| Dominant record, incident, or operational summary | `framework/ui.RecordSummary` | Bounded status, next-decision, signal, compact support rail, ownership, and natural-width action slots. Actions stay in the lead region and move ahead of support context on phones. One page summary; do not duplicate it in a Banner. |
+| Compact related signals without a card grid | `framework/ui.MetricBand` | Semantic description list; one flat row wide, two columns on phones, with an odd final signal spanning the row instead of leaving an empty quadrant. |
 | Action menu on a row | `framework/ui.Menu` | Built on `<details data-fui-disclosure>` so Esc / SPA-nav close come free. Keyboard nav handled by the runtime. |
 | Command palette (Cmd+K) | `framework/ui.CommandPalette` | Modal + `core-ui/patterns/combobox`. Debounced server search, keyboard nav, listbox selection. Returns trigger + preset pair. |
 | Global search input | `framework/ui.GlobalSearch` | Combobox-based search field with `data-fui-shortcut-focus` for keyboard shortcut opening. |
 | Page-width wrapper | `framework/ui.Container` | Max-width page wrapper with breakpoint-aware padding. Narrow / default / wide / full variants. |
-| Vertical/horizontal spacing | `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` | Six spatial primitives sharing one stylesheet (all in `layout.go`). Replace hand-rolled `display:flex` divs. |
+| Vertical/horizontal spacing | `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` | Six spatial primitives sharing one stylesheet (all in `layout.go`). `Cluster` wraps by default; `ClusterConfig.NoWrap` is the explicit compact-chrome opt-out. Replace hand-rolled `display:flex` divs. |
 | Labelled content surface | `framework/ui.Card` | Header / body / footer regions, elevated / outlined / flat variants, optional interactive (whole surface is an `<a>`) form. |
 | Toolbar of action buttons | `framework/ui.Toolbar` | `role="toolbar"` wrapper with optional named groups. Horizontal strip of buttons/links with visual separators. |
 | Step progress indicator | `framework/ui.ProgressSteps` | Linear step indicator (upcoming / current / complete). Horizontal or vertical. `<ol>` with `aria-current="step"`. |
@@ -1122,7 +1125,7 @@ your need:
 | You want | Use | Notes |
 | --- | --- | --- |
 | Responsive lazy-loaded imagery | `framework/ui.OptimizedImage` | `<picture>` + `srcset`, lazy by default, mandatory `Width`+`Height` to eliminate CLS. |
-| Overlapping avatar stack | `framework/ui.AvatarGroup` | Negative-margin stack with "+N" overflow indicator. Size propagates to children. |
+| Overlapping avatar stack | `framework/ui.AvatarGroup` | Readable 10% negative-margin stack with compact corner presence dots and an adaptive-surface "+N" overflow indicator. Size propagates to children. |
 | Animated number counter | `framework/ui.AnimatedCounter` | Ticks from → to on scroll-into-view. Respects `prefers-reduced-motion`. |
 | Text link (inline / action / muted) | `framework/ui.Link` | Three variants: inline prose link, 44px action link, subdued muted link. |
 | Markdown rendered as HTML | `framework/ui.Markdown` | Themed prose wrapper over `core/markdown`. Headings, lists, code blocks get theme tokens. |

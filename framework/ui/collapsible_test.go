@@ -24,6 +24,22 @@ func TestCollapsibleRegistersCSS(t *testing.T) {
 	}
 }
 
+func TestCollapsibleUsesCanonicalThemeTokens(t *testing.T) {
+	css := collapsibleStyle.Entry().CSSFor(style.DefaultTheme())
+	for _, token := range []string{
+		"var(--color-border", "var(--color-surface", "var(--color-text",
+		"var(--color-text-muted", "var(--color-primary", "var(--radii-md",
+		"var(--duration-fast", "var(--easing-standard",
+	} {
+		if !strings.Contains(css, token) {
+			t.Errorf("collapsible CSS missing canonical token %q:\n%s", token, css)
+		}
+	}
+	if strings.Contains(css, "var(--fui-") {
+		t.Fatalf("collapsible CSS must not use legacy --fui-* tokens:\n%s", css)
+	}
+}
+
 // ─── Collapsible ───
 
 func TestCollapsibleBasic(t *testing.T) {

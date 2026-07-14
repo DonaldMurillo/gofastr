@@ -48,6 +48,46 @@ func TestSiteHeaderRendersBrandPrimaryAndRight(t *testing.T) {
 	}
 }
 
+func TestSiteHeaderMobileBrandOwnsResponsiveIdentitySwap(t *testing.T) {
+	h := string(SiteHeader(SiteHeaderConfig{
+		Brand:       render.Raw(`<a href="/">Relay Incident Command</a>`),
+		MobileBrand: render.Raw(`<a href="/">Relay</a>`),
+	}))
+	for _, want := range []string{
+		`ui-site-header__brand--desktop`,
+		`Relay Incident Command`,
+		`ui-site-header__brand--mobile`,
+		`>Relay</a>`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("mobile brand swap missing %q\nhtml=%s", want, h)
+		}
+	}
+	css := siteHeaderCSS(style.Theme{})
+	for _, want := range []string{
+		`.ui-site-header__brand--mobile { display: none; }`,
+		`.ui-site-header__brand--desktop { display: none; }`,
+		`.ui-site-header__brand--mobile { display: flex; }`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("mobile brand CSS missing %q\ncss=%s", want, css)
+		}
+	}
+}
+
+func TestSiteHeaderOwnsLinkedBrandAppearance(t *testing.T) {
+	css := siteHeaderCSS(style.Theme{})
+	for _, want := range []string{
+		`.ui-site-header__brand a {`,
+		`color: var(--ui-site-header-brand-color, var(--color-text, currentColor));`,
+		`text-decoration: none;`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("linked brand CSS missing %q\n%s", want, css)
+		}
+	}
+}
+
 func TestSiteHeaderDesktopNavOmitsExternalAttrs(t *testing.T) {
 	// External flag should only affect the mobile drawer copy, not
 	// the desktop bar — keeps "primary" links semantically internal.

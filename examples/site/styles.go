@@ -906,14 +906,6 @@ func realAppLayout(ss *style.StyleSheet) {
 	ss.Rule(".mock-table tr:last-child td").Set("border-bottom", "0").End()
 	ss.Rule(".mock-mrr").
 		Set("font-family", "ui-monospace, SFMono-Regular, Menlo, monospace").End()
-	ss.Rule(".mock-badge").
-		Set("font-size", "var(--t-xs)", "font-weight", "600",
-			"padding", "2px 8px", "border-radius", "999px").End()
-	ss.Rule(".mock-badge--ok").
-		Set("color", "var(--color-success)",
-			"background", "color-mix(in oklch, var(--color-success) 16%, transparent)").End()
-	ss.Rule(".mock-badge--off").
-		Set("color", "var(--fg-4)", "background", "var(--color-surface-soft)").End()
 	ss.Rule(".screen-mock__cap").
 		Set("margin-top", "{spacing.sm}", "font-size", "var(--t-xs)", "color", "var(--fg-4)").End()
 }
