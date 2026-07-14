@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -203,7 +205,7 @@ func TestTwoFAPlugin_Name(t *testing.T) {
 
 func TestTwoFAPlugin_InitDefaults(t *testing.T) {
 	p := NewTwoFAPlugin(TwoFAConfig{})
-	mgr := New(AuthConfig{JWTSecret: "test-secret", UserStore: newMemoryUserStore()})
+	mgr := New(AuthConfig{JWTSecret: "test-secret", AllowInMemoryStores: true, UserStore: newMemoryUserStore()})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(p)
 	if err := mgr.Init(nil); err != nil {
@@ -223,7 +225,7 @@ func TestTwoFAPlugin_InitCustomConfig(t *testing.T) {
 		Period:          60,
 		BackupCodeCount: 5,
 	})
-	mgr := New(AuthConfig{JWTSecret: "test-secret", UserStore: newMemoryUserStore()})
+	mgr := New(AuthConfig{JWTSecret: "test-secret", AllowInMemoryStores: true, UserStore: newMemoryUserStore()})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(p)
 	if err := mgr.Init(nil); err != nil {
@@ -246,10 +248,11 @@ func newTwoFATestEnv(t *testing.T) (*AuthManager, *MemoryTwoFAStore, *memoryUser
 	userStore := newMemoryUserStore()
 
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionCookie: "session_id",
-		SessionTTL:    24 * time.Hour,
-		UserStore:     userStore,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionCookie:       "session_id",
+		SessionTTL:          24 * time.Hour,
+		UserStore:           userStore,
 	})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twoFAStore}))
@@ -330,6 +333,84 @@ func TestTwoFA_EnrollAndVerify(t *testing.T) {
 	backupCodes, _ := verifyResp["backup_codes"].([]any)
 	if len(backupCodes) == 0 {
 		t.Fatal("expected backup codes after verify")
+	}
+}
+
+// toggleErrTwoFAStore wraps a real store and, once armed, fails GetTwoFA —
+// simulating a durable store hitting a DB error (the memory store never
+// could). Armed AFTER login, because a GetTwoFA error during login makes
+// login itself fail closed (see the 2FA flow's fail-closed pending check).
+type toggleErrTwoFAStore struct {
+	TwoFAStore
+	failing atomic.Bool
+	err     error
+}
+
+func (e *toggleErrTwoFAStore) GetTwoFA(ctx context.Context, uid string) (*TwoFAState, error) {
+	if e.failing.Load() {
+		return nil, e.err
+	}
+	return e.TwoFAStore.GetTwoFA(ctx, uid)
+}
+
+// Regression: enroll must FAIL CLOSED when the store errors reading the
+// current state. Treating an unreadable state as "not enabled" would let
+// enroll overwrite a victim's live second factor (Enabled=false secret),
+// downgrading the account to password-only.
+func TestTwoFA_Enroll_FailsClosedOnStoreError(t *testing.T) {
+	userStore := newMemoryUserStore()
+	errStore := &toggleErrTwoFAStore{
+		TwoFAStore: NewMemoryTwoFAStore(),
+		err:        errors.New("simulated DB read failure"),
+	}
+	mgr := New(AuthConfig{
+		JWTSecret:           "test-secret",
+		AllowInMemoryStores: true,
+		SessionCookie:       "session_id",
+		SessionTTL:          24 * time.Hour,
+		UserStore:           userStore,
+	})
+	mgr.Use(NewCorePlugin())
+	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: errStore}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	user := seedUser(t, userStore, "alice@test.com", "testpass")
+
+	r := mountRoutes(mgr)
+	login := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"email":"alice@test.com","password":"testpass"}`))
+	login.Header.Set("Content-Type", "application/json")
+	lw := httptest.NewRecorder()
+	r.ServeHTTP(lw, login)
+	var cookie string
+	for _, c := range lw.Result().Cookies() {
+		if c.Name == "session_id" {
+			cookie = c.Value
+		}
+	}
+	if cookie == "" {
+		t.Fatal("no session cookie after login")
+	}
+
+	// Arm the store failure only now — login is past, enroll is next.
+	errStore.failing.Store(true)
+
+	req := httptest.NewRequest("POST", "/auth/2fa/enroll", nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: cookie})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("enroll on a store read error must fail closed with 500, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// The actual security property: on a store-read error the handler must
+	// return BEFORE persisting anything, so no secret/state was written.
+	// (Read the underlying store directly, bypassing the error toggle.)
+	if st, err := errStore.TwoFAStore.GetTwoFA(context.Background(), user.GetID()); err != nil {
+		t.Fatalf("underlying store read: %v", err)
+	} else if st != nil {
+		t.Fatalf("enroll persisted state despite failing closed: %+v", st)
 	}
 }
 
@@ -569,10 +650,11 @@ func setupP17(t *testing.T) (*AuthManager, *TwoFAPlugin, *router.Router) {
 	t.Helper()
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     userStore,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           userStore,
 	})
 	core := NewCorePlugin()
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
@@ -673,10 +755,11 @@ func TestPendingTwoFA_Me_AllowedAfterChallenge(t *testing.T) {
 func TestPendingTwoFA_NoEnrollmentUnaffected(t *testing.T) {
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     userStore,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           userStore,
 	})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))
@@ -801,8 +884,9 @@ func reqWithSession(method, path, sessionToken string, body []byte) *http.Reques
 func newTwoFAEnforceManager(t *testing.T) (*AuthManager, *TwoFAPlugin) {
 	t.Helper()
 	mgr := New(AuthConfig{
-		JWTSecret:  "test-secret", // prod-mode Init fails closed without one
-		SessionTTL: time.Hour, SessionCookie: "session_id",
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour, SessionCookie: "session_id",
 		UserStore: newMemoryUserStore(),
 	})
 	mgr.Use(NewCorePlugin())

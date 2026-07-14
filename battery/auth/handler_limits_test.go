@@ -126,10 +126,11 @@ func newTestAuthManagerWithSession(t *testing.T) *AuthManager {
 	t.Helper()
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     userStore,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           userStore,
 	})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))

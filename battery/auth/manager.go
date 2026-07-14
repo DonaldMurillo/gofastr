@@ -81,11 +81,14 @@ type AuthConfig struct {
 
 	// AllowInMemoryStores acknowledges a deliberate single-node
 	// deployment. Without it, production mode (DevMode=false) logs a
-	// WARN at Init when auth state lives in the default in-memory
-	// stores: sessions don't survive restarts and never resolve on a
-	// second replica, and in-memory 2FA state silently reverts enrolled
-	// accounts to password-only auth after a restart. See the
-	// horizontal-scaling doc for the DB-backed alternatives.
+	// WARN at Init when sessions live in the default in-memory store
+	// (they don't survive restarts and never resolve on a second
+	// replica), and REFUSES to boot when 2FA state does — a restart
+	// silently reverting enrolled accounts to password-only auth is a
+	// security downgrade, not a scaling nuisance. With the flag set,
+	// the session warning is silenced and the 2FA refusal downgrades
+	// to a WARN. See the horizontal-scaling doc for the DB-backed
+	// alternatives (EntitySessionStore, EntityTwoFAStore).
 	AllowInMemoryStores bool
 
 	// DefaultRoles are the server-assigned roles stamped onto every

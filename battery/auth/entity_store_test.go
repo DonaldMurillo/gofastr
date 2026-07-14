@@ -346,11 +346,12 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 	defer db.Close()
 
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     newMemoryUserStore(),
-		SessionStore:  NewEntitySessionStore(db, "sessions"),
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           newMemoryUserStore(),
+		SessionStore:        NewEntitySessionStore(db, "sessions"),
 	})
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mgr.Use(NewCorePlugin())

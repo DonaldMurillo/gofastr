@@ -191,7 +191,7 @@ func NewTwoFAPlugin(config TwoFAConfig) *TwoFAPlugin {
 	config.defaults()
 	p := &TwoFAPlugin{config: config}
 	if config.RateLimit != nil {
-		p.challengeLimit = NewRateLimiter(*config.RateLimit)
+		p.challengeLimit = newScopedRateLimiter(*config.RateLimit, "twofa")
 	}
 	return p
 }
@@ -199,21 +199,39 @@ func NewTwoFAPlugin(config TwoFAConfig) *TwoFAPlugin {
 // Name returns the plugin identifier.
 func (p *TwoFAPlugin) Name() string { return "twofa" }
 
-// Init stores a reference to the AuthManager and selects the store.
+// Init stores a reference to the AuthManager, selects the store, and
+// self-migrates its schema when the store supports it.
+//
+// Init fails closed when DevMode=false and no durable store is
+// configured: in-memory 2FA state in production is worse than a scaling
+// gap — a restart wipes enrollment, silently reverting every 2FA account
+// to password-only auth. A security control that quietly stops applying
+// is not a warning-grade condition, so the app refuses to boot unless
+// the host acknowledges a deliberate single-node deployment via
+// AuthConfig.AllowInMemoryStores.
 func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
 	if p.config.Store != nil {
 		p.store = p.config.Store
 	} else {
-		p.store = NewMemoryTwoFAStore()
-		// In-memory 2FA state in production is worse than a scaling
-		// gap: a restart wipes enrollment, silently reverting every
-		// 2FA account to password-only auth.
 		cfg := mgr.Config()
 		if !cfg.DevMode && !cfg.AllowInMemoryStores {
-			slog.Default().Warn("auth: production mode is running on the in-memory 2FA store — a restart wipes enrollment, reverting 2FA accounts to password-only auth",
-				"fix", "set TwoFAConfig.Store to a durable TwoFAStore",
-				"single-node opt-in", "set AuthConfig.AllowInMemoryStores: true to acknowledge and silence this")
+			return fmt.Errorf("auth: production mode refuses the in-memory 2FA store — a restart wipes enrollment, silently reverting every 2FA account to password-only auth; set TwoFAConfig.Store (e.g. auth.NewEntityTwoFAStore(db, \"auth_twofa\")), or set AuthConfig.AllowInMemoryStores: true to acknowledge a deliberate single-node deployment")
+		}
+		p.store = NewMemoryTwoFAStore()
+		if !cfg.DevMode {
+			// Acknowledged single-node: still leave a trace in the log.
+			slog.Default().Warn("auth: production mode is running on the in-memory 2FA store (acknowledged via AllowInMemoryStores) — a restart wipes enrollment, reverting 2FA accounts to password-only auth")
+		}
+	}
+	// The battery owns its table: create it if absent so hosts never
+	// hand-roll the 2FA DDL. Custom stores without a managed schema
+	// simply don't implement the optional interface.
+	if se, ok := p.store.(interface {
+		EnsureSchema(context.Context) error
+	}); ok {
+		if err := se.EnsureSchema(context.Background()); err != nil {
+			return fmt.Errorf("auth: 2FA store EnsureSchema: %w", err)
 		}
 	}
 	return nil
@@ -282,7 +300,16 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 	// which would let an attacker with a non-pending but un-stepped-up
 	// session disable the victim's working second factor. Callers must
 	// disable (which itself requires step-up) before re-enrolling.
-	if existing, err := p.store.GetTwoFA(r.Context(), userID); err == nil && existing != nil && existing.Enabled {
+	//
+	// Fail CLOSED on a store error: a durable store can now error (the
+	// memory store never did), and treating an unreadable state as
+	// "not enabled" would skip this guard and overwrite a live factor.
+	existing, err := p.store.GetTwoFA(r.Context(), userID)
+	if err != nil {
+		writeAuthError(w, http.StatusInternalServerError, "could not read 2FA state")
+		return
+	}
+	if existing != nil && existing.Enabled {
 		writeAuthError(w, http.StatusConflict, "2FA already enabled; disable it before re-enrolling")
 		return
 	}
