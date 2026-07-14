@@ -61,6 +61,15 @@ Set `Overrides.DarkColors` alongside any brand color that should also change in
 dark mode; light values are not copied automatically because their contrast may
 not be safe on dark surfaces.
 
+An app whose own styling assumes light tokens can stay light-only while it
+audits dark mode:
+
+```go
+t := uitheme.Default()
+t.DarkColors = nil // opt out of the adaptive dark palette
+site := app.NewApp("myapp").WithTheme(t)
+```
+
 When the app needs to own the whole palette, run:
 
 ```bash
