@@ -760,6 +760,53 @@ role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
 that admin account on a fresh database (idempotent — created only when absent),
 so the back-office is reachable on first boot. Requires `app.auth.enabled`.
 
+### Installable PWA (`app.pwa`)
+
+```yaml
+app:
+  pwa:
+    enabled: true
+    name: Meridian          # optional — defaults to app.name at serve time
+    short_name: Meridian    # optional home-screen label
+    description: ...        # optional
+    start_url: /            # optional, default /
+    scope: /                # optional, default /
+    display: standalone     # optional: standalone | fullscreen | minimal-ui | browser
+    theme_color: "#4f46e5"  # optional; also drives the placeholder icon color
+    background_color: "#ffffff"
+```
+
+With `enabled: true` the generated app passes `uihost.WithPWA(...)` to the
+UI host — manifest, service worker, offline screen, registration script;
+see the [PWA guide](pwa.md) for the full runtime behavior — and
+scaffolds three **replaceable placeholder icons** under
+`<static_dir>/icons/`: `icon-192.png`, `icon-512.png`, and
+`icon-maskable.png` (colored from `theme_color`, falling back to the
+theme's `primary` token). A fresh `app.pwa` app is installable
+immediately; swap the PNG files for real branding when you have it.
+When no `static_dir` is set, the generator defaults it to `static/` so
+the icons have a home (same rule as self-hosted fonts). Only the fields
+you declare are emitted into `main.go`; the framework applies defaults
+at serve time. A custom `api_prefix` or auth `base_path` is emitted as
+`DenyPaths` so the service worker's never-precache/never-intercept
+guarantee follows the app's real mounts.
+
+### Public LLM markdown (`app.llm_md`)
+
+```yaml
+app:
+  llm_md: true
+```
+
+Emits `uihost.WithPublicLLMMD()`, which mounts the LLM-friendly page
+documentation on the generated app: `/llm-pages.md` (an index of every
+registered screen) and `/<screen-path>/llm.md` per screen (`/` → `/llm.md`,
+`/docs/` → `/docs/llm.md`). Application-level and per-screen `NoLLMMD`
+opt-outs keep working. Off by default because the documents enumerate every
+screen and its data shape — useful for AI agents in trusted environments,
+schema disclosure elsewhere. `app.pwa` and `app.llm_md` are independent:
+enabling one never emits the other.
+
 ### app.module and the enclosing go.mod
 
 Generated imports are `<app.module>/<output-dir>` — by default the output

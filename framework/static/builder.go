@@ -184,6 +184,15 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, err
 	}
 
+	// PWA surface — manifest, service worker, registration script, and
+	// offline fallback, mirroring the live WithPWA routes. The uihost
+	// generators take BasePath directly (manifest start_url/scope/id,
+	// worker precache list, and registration target must all resolve
+	// under the mount path), so none of these go through rewriteJSAsset.
+	if err := b.dumpPWAAssets(&res); err != nil {
+		return res, err
+	}
+
 	// Static assets — either filesystem dir or embedded FS.
 	if dir := b.Host.StaticDir(); dir != "" {
 		if err := copyDir(dir, b.OutDir, &res, b.log); err != nil {
@@ -306,12 +315,7 @@ func validateParamValue(key, v string) error {
 //     set, every root-absolute asset/nav URL is rewritten to resolve
 //     under the mount path.
 func (b *Builder) applyStaticMode(page string) string {
-	// Stamp <html>. The first "<html" in the document is always the
-	// real root element (it precedes any body content); the marker is
-	// value-agnostic, so a bare boolean attribute suffices.
-	if i := strings.Index(page, "<html"); i >= 0 {
-		page = page[:i+len("<html")] + " data-fui-static" + page[i+len("<html"):]
-	}
+	page = stampStatic(page)
 	page = b.rewriteBaseURLs(page)
 	notice := string(ui.Banner(ui.BannerConfig{
 		Title:       "Static preview",
@@ -326,6 +330,17 @@ func (b *Builder) applyStaticMode(page string) string {
 			at := j + k + 1
 			page = page[:at] + notice + page[at:]
 		}
+	}
+	return page
+}
+
+// stampStatic marks <html> with data-fui-static — the runtime's
+// static-mode switch. The first "<html" in the document is always the
+// real root element (it precedes any body content); the marker is
+// value-agnostic, so a bare boolean attribute suffices.
+func stampStatic(page string) string {
+	if i := strings.Index(page, "<html"); i >= 0 {
+		return page[:i+len("<html")] + " data-fui-static" + page[i+len("<html"):]
 	}
 	return page
 }
@@ -400,6 +415,53 @@ func (b *Builder) dumpWidgetAssets() error {
 			return err
 		}
 		b.log("wrote widget %s (chrome + css)", d.Name)
+	}
+	return nil
+}
+
+// dumpPWAAssets emits the WithPWA surface for a serverless deploy:
+// manifest.webmanifest, service-worker.js, the registration script, and
+// the offline fallback page (as offline/index.html so a plain static
+// server resolves the extension-less precache URL). No-op when the host
+// did not opt into WithPWA.
+func (b *Builder) dumpPWAAssets(res *Result) error {
+	if !b.Host.PWAEnabled() {
+		return nil
+	}
+	manifest, err := b.Host.PWAManifestJSON(b.BasePath)
+	if err != nil {
+		return fmt.Errorf("static: pwa manifest: %w", err)
+	}
+	sw, err := b.Host.PWAServiceWorkerJS(b.BasePath)
+	if err != nil {
+		return fmt.Errorf("static: pwa service worker: %w", err)
+	}
+	// The offline page is rendered basePath-neutral by the host; its
+	// asset links get the same base rewrite as every exported page. It
+	// also gets the data-fui-static stamp so the runtime's static-mode
+	// guards apply, but not the "run locally" banner — an offline
+	// fallback is not a demo page.
+	offline := b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML()))
+	files := []struct {
+		urlPath string
+		relFile string
+		body    []byte
+	}{
+		{"/manifest.webmanifest", "manifest.webmanifest", manifest},
+		{"/service-worker.js", "service-worker.js", []byte(sw)},
+		{"/__gofastr/pwa/register.js", filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
+		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
+	}
+	for _, f := range files {
+		dst := filepath.Join(b.OutDir, f.relFile)
+		if err := b.ensureContained(dst); err != nil {
+			return err
+		}
+		if err := writeFile(dst, f.body); err != nil {
+			return err
+		}
+		res.Assets = append(res.Assets, f.urlPath)
+		b.log("wrote %s", f.urlPath)
 	}
 	return nil
 }

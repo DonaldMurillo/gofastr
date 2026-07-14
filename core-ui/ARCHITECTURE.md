@@ -420,6 +420,43 @@ prefix matches the existing `gofastr:navigate` convention. The
 NetworkRetryBanner reads `lastEventAt` for its silence trigger and
 listens for the event to re-probe its health endpoint on reconnect.
 
+### PWA surface (`uihost.WithPWA`)
+
+Opt-in installable-app support lives in `framework/uihost` (see
+`framework/docs/content/pwa.md` for the user guide). The contract with
+the rest of this document:
+
+- **Chrome injection.** `WithPWA` adds `<link rel="manifest">` (+ a
+  `theme-color` meta when configured) to `<head>` and an external
+  `<script src="/__gofastr/pwa/register.js" defer>` before `</body>` —
+  no inline JS, same CSP posture as `runtime.js`. Routes mounted:
+  `/manifest.webmanifest`, `/service-worker.js` (root-scoped),
+  `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`.
+- **The service worker never interferes with the runtime's rails.**
+  Its fetch handler has a baked deny list (`/__gofastr/sse`,
+  `/__gofastr/session`, `/__gofastr/signal/*`, `/__gofastr/action`,
+  `/__gofastr/widgets`, `/api/*`, `/auth/*`, plus `PWAConfig.DenyPaths`
+  for custom mounts) and ignores non-GET, so island RPCs, SSE streams,
+  sessions, and auth always hit the network untouched. Documents are
+  network-first and never cached (SSR HTML can be personalized); only
+  the versioned app-shell precache (runtime, split modules under their
+  `?v=<hash>` URLs, app.css, offline page + its per-component
+  stylesheets — never the comp-bundle, whose names-set is per-page —
+  icons, declared extras) lives in Cache Storage, and nothing is added
+  at runtime. Matching is exact: `?v=` content-addressed URLs are
+  cache-first (immutable), everything else is network-first with the
+  cache as offline fallback, so post-deploy HTML never pairs with the
+  old deployment's runtime/CSS.
+- **The offline screen renders through the document shell but NOT the
+  app layout** — it is precached at install time, so nothing
+  personalized may render into it.
+- **Updates never force a reload.** No `skipWaiting`; a waiting worker
+  dispatches `gofastr:pwa-update` on `window` (via register.js) and
+  activates when the old version's tabs close.
+- **Static export** (`framework/static.Builder`) emits the same four
+  assets with `BasePath` baked into the manifest URLs, precache/deny
+  lists, and registration target.
+
 ---
 
 ## Forms

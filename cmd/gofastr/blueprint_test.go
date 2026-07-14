@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1034,6 +1035,51 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 	checkBodyContains(t, baseURL+"/", http.StatusOK, "details-section")
 	checkBodyContains(t, baseURL+"/hello.txt", http.StatusOK, "static from generated app")
 
+	// Installable-PWA surface (the fixture enables app.pwa).
+	checkBodyContains(t, baseURL+"/manifest.webmanifest", http.StatusOK, `"name": "Demo"`)
+	checkBodyContains(t, baseURL+"/service-worker.js", http.StatusOK, "gofastr-pwa-")
+	checkBodyContains(t, baseURL+"/icons/icon-192.png", http.StatusOK, "PNG")
+	checkBodyContains(t, baseURL+"/icons/icon-512.png", http.StatusOK, "PNG")
+	checkBodyContains(t, baseURL+"/icons/icon-maskable.png", http.StatusOK, "PNG")
+	checkBodyContains(t, baseURL+"/__gofastr/pwa/offline", http.StatusOK, "offline")
+	checkBodyContains(t, baseURL+"/", http.StatusOK, `<link rel="manifest" href="/manifest.webmanifest">`)
+
+	// LLM markdown (the fixture enables app.llm_md): the index lists the
+	// screens and every screen llm.md link it emits resolves. The /api/llm.md
+	// prose pointer is skipped — it belongs to the entity API surface, not
+	// the screen inventory.
+	idxResp, err := http.Get(baseURL + "/llm-pages.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idxBody, _ := io.ReadAll(idxResp.Body)
+	idxResp.Body.Close()
+	if idxResp.StatusCode != http.StatusOK {
+		t.Fatalf("/llm-pages.md status = %d", idxResp.StatusCode)
+	}
+	if !strings.Contains(string(idxBody), "[/](") {
+		t.Errorf("/llm-pages.md should list the root screen:\n%s", idxBody)
+	}
+	llmLink := regexp.MustCompile(`\((/[^)]*llm\.md)\)`)
+	seenScreenLink := false
+	for _, m := range llmLink.FindAllStringSubmatch(string(idxBody), -1) {
+		if m[1] == "/api/llm.md" {
+			continue
+		}
+		seenScreenLink = true
+		linkResp, err := http.Get(baseURL + m[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		linkResp.Body.Close()
+		if linkResp.StatusCode != http.StatusOK {
+			t.Errorf("llm-pages.md link %s = %d, want 200", m[1], linkResp.StatusCode)
+		}
+	}
+	if !seenScreenLink {
+		t.Errorf("/llm-pages.md emitted no screen links:\n%s", idxBody)
+	}
+
 	// CRUD routes mount under the default api_prefix ("api") so root paths
 	// stay free for the generated HTML screens.
 	created := requestJSON(t, http.MethodPost, baseURL+"/api/posts", map[string]any{"title": "HTTP Post", "status": "draft"}, http.StatusCreated)
@@ -1387,6 +1433,11 @@ app:
   name: Demo
   module: example.com/demo
   static_dir: public
+  pwa:
+    enabled: true
+    short_name: Demo
+    theme_color: "#F2AA4C"
+  llm_md: true
   theme:
     background: "#101820"
     primary: "#F2AA4C"

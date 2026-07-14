@@ -87,6 +87,10 @@ type UIHost struct {
 	sitemapConfig  *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
 	robotsConfig   *RobotsConfig                        // when set, /robots.txt is served from this config
 	agentReady     *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
+	pwaConfig      *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
+	pwaSWOnce      sync.Once                            // guards the memoized service-worker body below
+	pwaSW          string                               // deployment-constant service worker, computed on first request
+	pwaSWErr       error                                // paired with pwaSW
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -1846,6 +1850,15 @@ func (ds *UIHost) Mount(r *router.Router) {
 	}
 	if ds.robotsConfig != nil {
 		r.Get("/robots.txt", http.HandlerFunc(ds.handleRobots))
+	}
+	// Installable-PWA surface — only mounted via WithPWA. The manifest
+	// and worker live at the root so the worker's default scope covers
+	// the whole app.
+	if ds.pwaConfig != nil {
+		r.Get("/manifest.webmanifest", http.HandlerFunc(ds.handlePWAManifest))
+		r.Get("/service-worker.js", http.HandlerFunc(ds.handlePWAServiceWorker))
+		r.Get("/__gofastr/pwa/register.js", http.HandlerFunc(ds.handlePWARegisterJS))
+		r.Get("/__gofastr/pwa/offline", http.HandlerFunc(ds.handlePWAOffline))
 	}
 	// Agent-discovery surface (/llms.txt, /.well-known/agent-card.json,
 	// legacy /.well-known/agent.json). Opt-in via WithAgentReady or the

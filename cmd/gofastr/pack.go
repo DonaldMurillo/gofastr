@@ -153,6 +153,22 @@ func appToMap(a BlueprintApp) map[string]any {
 		putStr(admin, "seed_password", a.Admin.SeedPassword)
 		m["admin"] = admin
 	}
+	if a.PWA.Enabled {
+		pwa := map[string]any{}
+		putBool(pwa, "enabled", a.PWA.Enabled)
+		putStr(pwa, "name", a.PWA.Name)
+		putStr(pwa, "short_name", a.PWA.ShortName)
+		putStr(pwa, "description", a.PWA.Description)
+		putStr(pwa, "start_url", a.PWA.StartURL)
+		putStr(pwa, "scope", a.PWA.Scope)
+		putStr(pwa, "display", a.PWA.Display)
+		putStr(pwa, "theme_color", a.PWA.ThemeColor)
+		putStr(pwa, "background_color", a.PWA.BackgroundColor)
+		m["pwa"] = pwa
+	}
+	if a.LLMMD {
+		m["llm_md"] = true
+	}
 	return m
 }
 
@@ -1326,21 +1342,38 @@ func packReadApp(dir string) (BlueprintApp, error) {
 		return true
 	})
 
-	// Admin config lives in main.go.
+	// Admin, PWA, and LLM-markdown config live in main.go.
 	if mainFile, err := packParseFile(filepath.Join(dir, "main.go")); err == nil {
 		ast.Inspect(mainFile, func(n ast.Node) bool {
-			cl, ok := n.(*ast.CompositeLit)
-			if !ok || astSelLast(cl.Type) != "Config" {
-				return true
+			switch t := n.(type) {
+			case *ast.CompositeLit:
+				switch astSelLast(t.Type) {
+				case "Config":
+					cv := fieldVals(t)
+					if _, ok := cv["PathPrefix"]; !ok {
+						return true // not an admin.Config
+					}
+					app.Admin.Enabled = true
+					app.Admin.Path = astString(cv["PathPrefix"])
+					app.Admin.Role = astString(cv["AdminRole"])
+					app.Admin.LoginPath = astString(cv["LoginPath"])
+				case "PWAConfig":
+					cv := fieldVals(t)
+					app.PWA.Enabled = true
+					app.PWA.Name = astString(cv["Name"])
+					app.PWA.ShortName = astString(cv["ShortName"])
+					app.PWA.Description = astString(cv["Description"])
+					app.PWA.StartURL = astString(cv["StartURL"])
+					app.PWA.Scope = astString(cv["Scope"])
+					app.PWA.Display = packPWADisplay(astSelLast(cv["Display"]))
+					app.PWA.ThemeColor = astString(cv["ThemeColor"])
+					app.PWA.BackgroundColor = astString(cv["BackgroundColor"])
+				}
+			case *ast.CallExpr:
+				if astSelLast(t.Fun) == "WithPublicLLMMD" {
+					app.LLMMD = true
+				}
 			}
-			cv := fieldVals(cl)
-			if _, ok := cv["PathPrefix"]; !ok {
-				return true // not an admin.Config
-			}
-			app.Admin.Enabled = true
-			app.Admin.Path = astString(cv["PathPrefix"])
-			app.Admin.Role = astString(cv["AdminRole"])
-			app.Admin.LoginPath = astString(cv["LoginPath"])
 			return true
 		})
 	}
@@ -1378,6 +1411,23 @@ func packReadDotEnv(path string) map[string]string {
 		return map[string]string{}
 	}
 	return out
+}
+
+// packPWADisplay maps a generated uihost.PWADisplay* constant name back
+// to the blueprint's display string — the reverse of
+// blueprintPWADisplayConst. Unknown/absent → "" (the omitted default).
+func packPWADisplay(constName string) string {
+	switch constName {
+	case "PWADisplayStandalone":
+		return "standalone"
+	case "PWADisplayFullscreen":
+		return "fullscreen"
+	case "PWADisplayMinimalUI":
+		return "minimal-ui"
+	case "PWADisplayBrowser":
+		return "browser"
+	}
+	return ""
 }
 
 // astSelLast returns the trailing identifier of a selector/ident type expr
