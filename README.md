@@ -257,8 +257,10 @@ prefix automatically.
 
 `gofastr generate` is a one-shot generator: it emits ordinary owned Go
 (flat `package main` at the root) and gets out of the way. It refuses to
-overwrite an existing project — pass `--force` to regenerate. The blueprint is
-a scaffold you can delete once the generated Go is yours — see
+overwrite an existing project — pass `--force` to regenerate, or use
+`generate --add` / `generate entity <name>` to scaffold *new* files into
+an existing app (owned files are never touched). The blueprint is a
+scaffold you can delete once the generated Go is yours — see
 [ARCHITECTURE.md](framework/ARCHITECTURE.md).
 
 See [`examples/meridian`](examples/meridian/) for the flagship blueprint — a SaaS

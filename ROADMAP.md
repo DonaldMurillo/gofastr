@@ -1040,3 +1040,90 @@ static host. Replaces the pages.yml crawl when it lands.
 - `gofastr export` on examples/site reproduces what the CI crawl produces
   today, minus the dynamic-endpoint 404 noise, byte-stable across runs.
 - pages.yml switches from crawl to export and gets simpler.
+
+---
+
+## 15. v0.20 assessment findings — verified, not yet built
+
+**Status:** backlog (2026-07-13). Three independent model reviews of
+v0.20.0 (consolidated; every item below re-verified against HEAD before
+landing here). The convergent findings — durable 2FA store + production
+boot refusal, shared SQL rate-limit store, coverage floor, doc drift —
+shipped the same day; these are the remaining serious items, ranked.
+
+### 15.1 OAuth provider-ID linking must be mandatory (security)
+
+`resolveOAuthUser` deliberately falls back to email-only matching when
+the configured `UserStore` doesn't implement `OAuthLinker`
+(`battery/auth/oauth2.go:306-356`), and `EntityUserStore` — the store
+the auth docs recommend — does not implement it. An IdP that emits an
+unverified email claim (the OIDC checks cover issuer/audience/expiry/
+subject, not `email_verified` — `battery/auth/oidc.go:503-560`) can
+therefore mint a session as an existing local account. Fix shape: a
+DB-backed `(provider, provider_id) → user_id` table integrated with
+`EntityUserStore`, `OAuth2Plugin.Init` fails without a linker (mirroring
+the 2FA store refusal), email-only fallback removed. BREAKING note +
+migration path for already-linked users.
+
+### 15.2 Presence topics need an authorization seam (security)
+
+`handleSSE` joins any client-named `?presence=` topic for any minted
+island session (`framework/uihost/uihost.go:1449-1456`) — no per-topic
+authz hook exists (`core-ui/island/stream.go:35-58` has no reject path).
+Under the documented `OnPresenceChange` push pattern the roster —
+`DisplayName` is the user's email (`core-ui/island/presence.go:86`) —
+reaches every joiner, including anonymous topic-guessers. That defeats
+the exact threat cited for refusing an HTTP roster endpoint
+(`uihost.go:1477-1483`). Fix shape: `AuthorizeTopic(ctx, topic) bool` on
+the manager/uihost; land it before anyone builds presence on non-public
+topics.
+
+### 15.3 Runtime RBAC edits don't propagate across replicas (security)
+
+`GrantStore.Grant/Revoke` writes the DB but mutates only the local
+replica's live `RolePolicy` (`framework/access/store.go:121-141`) — a
+permission revoked through the v0.20 admin screens keeps working on
+every other replica until restart. The module registry's fanout
+invalidation (`framework/module.go:486-540`) is the in-tree pattern to
+copy. Also document the limitation in `access-control.md` until fixed.
+
+### 15.4 Unknown top-level filter params silently return unfiltered rows
+
+`ParseFilters` skips unknown fields (`framework/filter/filter.go:113-125`,
+pinned as "lenient" by `framework/crud/cov_lastmile_test.go:33-40`), so
+`?titel=x` returns 200 with the full result set, while the identical
+typo inside `?where=` correctly 400s (`framework/filter/predicate.go:141-143`).
+Silent-wrong is the worst failure class for a data API. Fix shape:
+reject unknown keys (BREAKING — changelog note) or an opt-in strict
+mode, aligned with the `?where=` posture either way.
+
+### 15.5 Startup seeds race across replicas
+
+`RunSeeds` admits two fresh processes can both see "not seeded" and both
+run the callback (`framework/migrate/seed.go:102-117`); `App.Start` runs
+seeds in every role (`framework/app.go:1741-1763`). Contradicts the
+scaling guide's "two web replicas + one worker, no shared-state
+caveats" shape. Fix shape: put ledger-check → callback → ledger-write
+(and app-level `WithSeed` hooks) behind the existing Postgres advisory
+lock primitive (`core/migrate/lock.go`), or pin seeding to one role.
+
+### 15.6 Stateful islands don't scale past one replica (design)
+
+Even with `WithFanout`, island widget state (objects + signals) is
+per-replica — an RPC landing on the wrong replica can't re-render the
+widget, so widget-heavy apps need sticky sessions
+(`framework/docs/content/scaling.md`, "SSE across replicas"). This is
+the ceiling on the flagship interaction model, and cross-replica
+presence aggregation (#47) is blocked behind the same decision. Choose
+one contract: stateless islands that reload from the DB, a pluggable
+shared island-state backend, or documented sticky-only.
+
+### 15.7 God-file concentration (debt)
+
+`cmd/gofastr/blueprint.go` (~7k lines: decode, validation, IR, render,
+CSS, font fetching), `framework/app.go` (`Start` is a ~350-line
+orchestration spanning isolation → migration → seeds → setup → workers →
+outbox → listener), `framework/ui` (23k LOC, the `styles_*`/`components`
+seam is already visible). No behavior change wanted — extract internal
+coordinators around stable data structures, keep the public facade.
+

@@ -43,8 +43,10 @@ type TenantConfig struct {
 	// Defaults to "tenant_id".
 	Field string
 
-	// Header is the HTTP header name from which the tenant ID is extracted.
-	// Defaults to "X-Tenant-ID".
+	// Header is a legacy field retained for API compatibility. It is NOT
+	// read anywhere — the tenant ID is resolved exclusively from the
+	// server-side authenticated context (never a client-sent header), so
+	// setting this changes no behavior. See TenantMiddleware.
 	Header string
 
 	// AutoScope, when true, automatically adds tenant filtering to all queries.
@@ -100,17 +102,18 @@ func ApplyTenantFilter(builder *query.QueryBuilder, tenantID string) {
 // TenantMiddleware returns an HTTP middleware that resolves the tenant
 // ID for the request from server-side state.
 //
-// SECURITY: the middleware does NOT trust the raw `header` value sent by
-// the client. Doing so would let any caller impersonate any tenant by
-// setting an HTTP header. Instead, the header is treated as a *hint* and
-// the middleware looks up a server-resolved tenant for the
-// authenticated user (via handler.GetTenant). Hosts that need a different
-// resolution strategy (subdomain, JWT claim, etc.) should compose their
-// own middleware and call SetTenantID directly.
+// SECURITY: the middleware does NOT trust any client-sent header. Doing
+// so would let any caller impersonate any tenant by setting an HTTP
+// header. The tenant comes exclusively from the server-resolved
+// authenticated context (handler.GetTenant, seeded by the auth layer).
+// Hosts that need a different resolution strategy (subdomain, JWT
+// claim, etc.) should compose their own middleware and call SetTenantID
+// directly.
 //
-// The legacy `header` parameter is retained for API compatibility but
-// only consulted when the resolved tenant matches it — preventing
-// header-only privilege escalation.
+// The `header` parameter is IGNORED — it is retained only so existing
+// call sites keep compiling from the era when the header was consulted.
+// Passing a header name here does not (and must not) make the
+// middleware read it.
 func TenantMiddleware(header string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

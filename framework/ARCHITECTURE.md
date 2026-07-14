@@ -114,12 +114,13 @@ permanent. Stating this is the firewall that stops `pack` → edit →
 
 ### No `gen/` — generated code lands where a hand-written app would put it
 
-A directory named `gen/`, wiped and rewritten under `clean: true` on
-every run (today's default; see `examples/ecommerce` = `gofastr.yml` +
-`gen/main.go`), is the giveaway of canonical-declaration output: you
-cannot own a file the tool deletes on the next run. Scaffold-and-own
-emits an idiomatic layout the user owns
-immediately:
+A directory named `gen/`, wiped and rewritten under a `clean: true`
+flag on every run, is the giveaway of canonical-declaration output: you
+cannot own a file the tool deletes on the next run. (An earlier
+iteration of this generator worked exactly that way; nothing in the
+tree does anymore — `examples/ecommerce` scaffolds into an owned `app/`
+subpackage via `output_dir`, no `gen/`.) Scaffold-and-own emits an
+idiomatic layout the user owns immediately:
 
 ```
 main.go            # wires App + batteries + Start()           — yours
@@ -140,12 +141,14 @@ calls `RegisterGenerated(...)` directly.
 the module root — used by monorepo examples like `examples/ecommerce`,
 which keeps its app in an owned `app/` subpackage.)
 
-`generate` is **one-shot**: it scaffolds the app once, then you own the
-code and edit it in place. There is no separate `generate entity`
-subcommand and no incremental re-run/merge — the blueprint is a one-way
-on-ramp, not a canonical source you keep regenerating from. To add an
-entity after the fact, edit the owned Go (or start a fresh scaffold in a
-scratch dir and copy what you want across).
+`generate` is **one-shot for the app**: it scaffolds once, refuses to
+overwrite an existing project (`--force` to insist), then you own the
+code and edit it in place. Growth after that is **additive, never a
+merge**: `generate --add` (partial yml) and the `generate entity|screen
+<name>` scaffold subcommands write only files that don't exist yet — an
+owned file is never touched, so there is no re-run/merge loop and the
+blueprint never becomes a canonical source you keep regenerating from.
+Anything the additive path can't scaffold, you write in the owned Go.
 
 Two rules fall out, and both are load-bearing:
 
@@ -215,6 +218,13 @@ framework/
 │                    URL builders (EntityEndpointPath etc.)
 ├── owner/           "Who owns this row" seam — OwnerField scoping for CRUD
 ├── pagination/      Cursor + offset pagination
+├── pluginhost/      Heavy-JS plugin platform: sandboxed-iframe isolation host
+│                    (opaque origin), versioned postMessage broker (host/
+│                    pluginhost.js, go:embed'd — never in runtime.js budgets),
+│                    plugin manifest, same-origin AssetServer with framed-CSP
+│                    relaxation, data-fui-plugin* mount markers, capability
+│                    gate over battery/auth scopes. Extracted from the
+│                    gofastr-plugins wysiwyg build (#37 client mirror).
 ├── routegroup/      Route groups — prefix, middleware, access, OpenAPI tags
 ├── slowquery/       SlowQueryLogger — wraps any db.Executor
 ├── softdelete/      SoftDelete / Restore / ForceDelete + filter
