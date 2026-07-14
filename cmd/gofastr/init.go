@@ -427,9 +427,11 @@ isolation:
 // writeHomeScreen generates screens/home.go entirely from framework/ui
 // primitives. The scaffold owns no CSS or hand-rolled structural markup.
 func writeHomeScreen(name string, noEntity bool) {
+	// The entity hint is prose for the Section description; the CodeBlock
+	// stays commands-only so nothing nonsensical is copy-pasteable.
 	var entityHint string
 	if !noEntity {
-		entityHint = "; entities live in entities/entities.go and serve at /posts"
+		entityHint = " The sample posts entity lives in entities/entities.go and serves at /posts."
 	}
 	content := fmt.Sprintf(`package screens
 
@@ -451,9 +453,9 @@ func (h *HomeScreen) Render() render.HTML {
 			}),
 			ui.Section(ui.SectionConfig{
 				Heading:     "Start with intent",
-				Description: "Complete DESIGN.md before selecting components, then use the composition recipes embedded in the GoFastr CLI.",
+				Description: "Complete DESIGN.md before selecting components, then use the composition recipes embedded in the GoFastr CLI.%[2]s",
 			}, ui.CodeBlock(ui.CodeBlockConfig{
-				Code:     "gofastr docs ui-composition-recipes\ngofastr theme init%[2]s",
+				Code:     "gofastr docs ui-composition-recipes\ngofastr theme init",
 				Language: "shell",
 			})),
 		),
