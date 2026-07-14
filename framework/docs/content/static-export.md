@@ -50,6 +50,12 @@ go build -o site ./examples/site/
 - `/__gofastr/app.css` and `/__gofastr/comp/<name>.css` — global and
   per-component stylesheets.
 - Per-route `llm.md` (unless `NoLLMMD` is set).
+- With [`uihost.WithPWA`](pwa.md): `manifest.webmanifest`,
+  `service-worker.js`, `__gofastr/pwa/register.js`, and
+  `__gofastr/pwa/offline/index.html`. Under `--export-base` the
+  manifest's `start_url`/`scope`/`id`/icon paths, the worker's precache
+  and deny lists, and the registration target are all prefixed, so the
+  exported app installs and works offline from the subpath.
 
 Dynamic routes require the screen to implement `StaticPathsProvider`:
 
