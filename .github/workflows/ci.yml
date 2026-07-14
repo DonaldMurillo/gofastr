@@ -116,10 +116,10 @@ jobs:
   browser-e2e:
     name: "browser e2e (blocking)"
     runs-on: ubuntu-latest
-    # Per-step go-test timeouts sum to 95m (15+15+15+15+10+10+10+5); the
+    # Per-step go-test timeouts sum to 105m (15+15+15+25+10+10+10+5); the
     # job budget must exceed that so the !cancelled() always-report steps
     # can run.
-    timeout-minutes: 100
+    timeout-minutes: 110
     env:
       CGO_ENABLED: "1"
     steps:
@@ -183,10 +183,10 @@ jobs:
       - name: examples/meridian visual canary (isolated)
         if: ${{ !cancelled() }}
         # The 16-surface rendered canary (desktop/mobile × light/dark ×
-        # marketing/auth/app/admin) uses bounded 12s capture attempts that
-        # exhaust under parallel Chrome load — serialized like the site
-        # suites.
-        run: go test -count=1 -timeout=15m ./examples/meridian/
+        # marketing/auth/app/admin) captures in software on the two-core
+        # runner: bounded 30s attempts × up to 6 retries per surface need a
+        # budget well past the local ~2m runtime.
+        run: go test -count=1 -timeout=25m ./examples/meridian/
 
       - name: evals/ui-quality evalrunner (isolated)
         if: ${{ !cancelled() }}

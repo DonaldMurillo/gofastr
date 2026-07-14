@@ -77,7 +77,11 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 				var lastErr error
 				for attempt := 1; attempt <= 6; attempt++ {
 					tab, tabCancel := chromedp.NewContext(browser)
-					ctx, timeoutCancel := context.WithTimeout(tab, 12*time.Second)
+					// 30s, not ~12s: CI runners raster in software on two
+					// cores and routinely need >12s for a cold 1440px
+					// navigate+capture even serialized — a tight deadline
+					// there burns every attempt and times the package out.
+					ctx, timeoutCancel := context.WithTimeout(tab, 30*time.Second)
 					shot = nil
 					lastErr = chromedp.Run(ctx,
 						chromedp.EmulateViewport(viewport.width, viewport.height),

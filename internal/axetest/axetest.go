@@ -75,6 +75,10 @@ func NewBrowser(t *testing.T) context.Context {
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
+		// CI Chrome backs raster/screenshot buffers with /dev/shm, which is
+		// undersized on hosted runners; spilling to disk-backed tmp avoids
+		// slow or hung large-viewport captures.
+		chromedp.Flag("disable-dev-shm-usage", true),
 		// CI runners intermittently take >20s (the chromedp default)
 		// to cold-start Chrome; a generous websocket-URL deadline turns
 		// that from a flaky suite failure into a few slow seconds.
