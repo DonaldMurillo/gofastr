@@ -2,9 +2,13 @@ package main
 
 import (
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // runTheme dispatches `gofastr theme <subcommand>`.
@@ -104,7 +108,30 @@ func runThemeInit(args []string) {
 // auto-derives token Names from the struct field path, so the user
 // writes only Values. The CSS variable for Colors.Primary is
 // `--color-primary` (lowercase + kebab) — no second source of truth.
-const themeStarter = `// Package theme defines this app's typed design system.
+// The DarkColors block is generated from the canonical framework palette
+// (framework/ui/theme.Default) for the same reason.
+var themeStarter = themeStarterSource()
+
+func themeStarterSource() string {
+	dark := uitheme.Default().DarkColors
+	keys := make([]string, 0, len(dark))
+	for k := range dark {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, "\t\t%q: %q,\n", k, dark[k])
+	}
+	src := strings.Replace(themeStarterTemplate, "\t\t__DARK_COLORS__\n", b.String(), 1)
+	formatted, err := format.Source([]byte(src))
+	if err != nil {
+		panic("gofastr: theme starter template does not parse: " + err.Error())
+	}
+	return string(formatted)
+}
+
+const themeStarterTemplate = `// Package theme defines this app's typed design system.
 //
 // Every field of style.Theme is required — the framework needs
 // every primitive token to render correctly. This file was
@@ -137,23 +164,7 @@ var App = style.Theme{
 	// semantic color used by framework components has a dark counterpart.
 	// Edit this alongside Colors when changing the brand palette.
 	DarkColors: map[string]string{
-		"accent":        "#67E8F9",
-		"background":    "#111113",
-		"border":        "#3F3F46",
-		"border-strong": "#71717A",
-		"danger":        "#F87171",
-		"info":          "#60A5FA",
-		"primary":       "#A5B4FC",
-		"primary-fg":    "#111827",
-		"secondary":     "#D4D4D8",
-		"secondary-fg":  "#18181B",
-		"success":       "#4ADE80",
-		"surface":       "#18181B",
-		"surface-soft":  "#27272A",
-		"text":          "#FAFAFA",
-		"text-muted":    "#D4D4D8",
-		"text-subtle":   "#A1A1AA",
-		"warning":       "#FBBF24",
+		__DARK_COLORS__
 	},
 	Colors: style.ColorSet{
 		// Primary brand colors — the most-edited values.
