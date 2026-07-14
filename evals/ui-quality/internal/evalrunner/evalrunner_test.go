@@ -749,7 +749,19 @@ func TestResolveRunDirectoryRejectsTraversalAndUnsafeSegments(t *testing.T) {
 	}
 }
 
+// requireBrowser gates the capture tests that drive a real headless Chrome,
+// matching the examples/site and examples/meridian convention: -short skips
+// them so `go test -short ./...` (and SHORT=1 test-all.sh) never needs a
+// browser.
+func requireBrowser(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("capture tests drive headless Chrome; skipped in -short mode")
+	}
+}
+
 func TestMobileCaptureUsesTouchPortraitDPRAndFullDocument(t *testing.T) {
+	requireBrowser(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
@@ -808,6 +820,7 @@ func TestCandidateNetworkGuardAllowsOnlyCandidateOriginAndLocalSchemes(t *testin
 }
 
 func TestFullPageCaptureScrollsToHydrateLazyImages(t *testing.T) {
+	requireBrowser(t)
 	var lazyRequested atomic.Bool
 	pngBytes, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
 	if err != nil {
@@ -841,6 +854,7 @@ func TestFullPageCaptureScrollsToHydrateLazyImages(t *testing.T) {
 }
 
 func TestBoundsAuditCatchesClippedEssentialAndVisibleAriaHiddenContent(t *testing.T) {
+	requireBrowser(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
@@ -876,6 +890,7 @@ func TestBoundsAuditCatchesClippedEssentialAndVisibleAriaHiddenContent(t *testin
 }
 
 func TestContrastAuditCatchesInvisibleInteractiveLabel(t *testing.T) {
+	requireBrowser(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
@@ -925,6 +940,7 @@ func TestContrastAuditCatchesInvisibleInteractiveLabel(t *testing.T) {
 }
 
 func TestCaptureFreezesTransitionsBeforeForcingColorScheme(t *testing.T) {
+	requireBrowser(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<!doctype html><html data-color-scheme="light"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><style>

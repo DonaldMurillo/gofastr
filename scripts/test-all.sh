@@ -34,8 +34,13 @@
 # carries the kernel signature ("can't assign requested address"), the
 # failed packages are re-run serially (-p 1) after a TIME_WAIT drain.
 # Meridian's 16-surface visual canary can also exhaust its bounded capture
-# attempts when the larger examples/site Chrome suite runs beside it. That exact
-# signature is retried serially without the port-drain delay.
+# attempts when the larger examples/site Chrome suite runs beside it (exact
+# signature: "capture attempt N failed: context deadline exceeded"), and the
+# evalrunner capture tests can hit their 90s deadlines under the same Chrome
+# contention (looser signature: an evalrunner FAIL plus a capture/screenshot
+# deadline message anywhere in the log — its tests fail through varied
+# t.Fatalf texts, so this pairing accepts the same narrow residual risk as
+# the port class below). Both retry serially without the port-drain delay.
 # A DETERMINISTIC real failure fails the retry too (the retry re-runs the
 # actual tests with -count=1), and failures without either known resource
 # signature fail immediately with no retry. The residual risk is narrow:
@@ -86,6 +91,10 @@ browser_starved=0
 grep -q "can't assign requested address" "$LOG" && port_exhausted=1
 if grep -q '^FAIL[[:space:]].*github.com/DonaldMurillo/gofastr/examples/meridian' "$LOG" &&
    grep -q 'capture attempt [0-9][0-9]* failed: context deadline exceeded' "$LOG"; then
+  browser_starved=1
+fi
+if grep -q '^FAIL[[:space:]].*github.com/DonaldMurillo/gofastr/evals/ui-quality/internal/evalrunner' "$LOG" &&
+   grep -qE '(capture|screenshot).*context deadline exceeded' "$LOG"; then
   browser_starved=1
 fi
 if [ "$port_exhausted" -eq 0 ] && [ "$browser_starved" -eq 0 ]; then
