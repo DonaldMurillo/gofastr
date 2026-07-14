@@ -310,6 +310,11 @@ func TestScopeMatches(t *testing.T) {
 		if got := scopeMatches(c.held, c.want); got != c.ok {
 			t.Errorf("scopeMatches(%v, %q) = %v, want %v", c.held, c.want, got, c.ok)
 		}
+		// The exported wrapper must be byte-for-byte the same matcher (it's
+		// reused by framework/pluginhost's capability gate).
+		if got := ScopeMatch(c.held, c.want); got != c.ok {
+			t.Errorf("ScopeMatch(%v, %q) = %v, want %v", c.held, c.want, got, c.ok)
+		}
 	}
 }
 

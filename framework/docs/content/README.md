@@ -67,6 +67,10 @@ contract) are exempt — the exemption list lives in
   panic recovery, lifecycle events; fan-out to file (default or chosen
   path) and webhook sinks.
 - [Plugins](plugins.md) — `Plugin` + optional capability interfaces.
+- [Heavy-JS plugin platform](plugin-platform.md) — sandboxed-iframe
+  isolation host for megabyte-class client plugins; capability grants
+  over auth scopes; the trusted-mount opt-out; the plugins.json
+  registry convention.
 - [Dev-mode livereload](dev-livereload.md) — auto-wired SSE refresh
   under `gofastr dev`; env kill switches for prod.
 - [Runtime JS minification](runtime-minification.md) — embedded
