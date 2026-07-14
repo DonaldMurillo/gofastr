@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"math"
 	"net/http"
@@ -67,6 +71,29 @@ type BlueprintApp struct {
 	ThemeDark map[string]string // optional dark-scheme color overrides (app.theme.dark)
 	Auth      BlueprintAuth
 	Admin     BlueprintAdmin
+	PWA       BlueprintPWA
+	// LLMMD emits uihost.WithPublicLLMMD() so every registered screen
+	// serves its /llm.md document (plus the /llm-pages.md index).
+	// Independent of PWA — a screen inventory is schema disclosure, so
+	// it never rides along with another feature.
+	LLMMD bool
+}
+
+// BlueprintPWA configures the generated app's installable-PWA surface
+// (app.pwa). Enabled emits uihost.WithPWA(...) plus replaceable 192px,
+// 512px, and maskable icons under <static>/icons/. Every other field is
+// optional; the framework derives the defaults (name from the app
+// title, start_url/scope "/", standalone display).
+type BlueprintPWA struct {
+	Enabled         bool
+	Name            string
+	ShortName       string
+	Description     string
+	StartURL        string
+	Scope           string
+	Display         string // standalone | fullscreen | minimal-ui | browser
+	ThemeColor      string
+	BackgroundColor string
 }
 
 // BlueprintAdmin configures the auto-generated admin back-office (battery/admin).
@@ -355,7 +382,7 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 	if err != nil {
 		return BlueprintApp{}, err
 	}
-	allowed := map[string]bool{"name": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "theme": true, "auth": true, "admin": true}
+	allowed := map[string]bool{"name": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true}
 	if err := rejectUnknownKeys(m, allowed, "app"); err != nil {
 		return BlueprintApp{}, err
 	}
@@ -405,7 +432,39 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 		}
 		app.Admin = admin
 	}
+	if pwaNode := m["pwa"]; pwaNode != nil {
+		pwa, err := decodeBlueprintPWA(pwaNode)
+		if err != nil {
+			return BlueprintApp{}, err
+		}
+		app.PWA = pwa
+	}
+	if v, ok := m["llm_md"]; ok {
+		app.LLMMD = boolValue(v)
+	}
 	return app, nil
+}
+
+func decodeBlueprintPWA(node *coreyaml.Node) (BlueprintPWA, error) {
+	m, err := expectMap(node, "app.pwa")
+	if err != nil {
+		return BlueprintPWA{}, err
+	}
+	allowed := map[string]bool{"enabled": true, "name": true, "short_name": true, "description": true, "start_url": true, "scope": true, "display": true, "theme_color": true, "background_color": true}
+	if err := rejectUnknownKeys(m, allowed, "app.pwa"); err != nil {
+		return BlueprintPWA{}, err
+	}
+	return BlueprintPWA{
+		Enabled:         boolValue(m["enabled"]),
+		Name:            stringValue(m["name"]),
+		ShortName:       stringValue(m["short_name"]),
+		Description:     stringValue(m["description"]),
+		StartURL:        stringValue(m["start_url"]),
+		Scope:           stringValue(m["scope"]),
+		Display:         stringValue(m["display"]),
+		ThemeColor:      stringValue(m["theme_color"]),
+		BackgroundColor: stringValue(m["background_color"]),
+	}, nil
 }
 
 func decodeBlueprintAdmin(node *coreyaml.Node) (BlueprintAdmin, error) {
@@ -1394,6 +1453,19 @@ func validateBlueprint(bp Blueprint) error {
 			return fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy — subdomain, JWT claim, user's org — is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name)
 		}
 	}
+	if bp.App.PWA.Enabled {
+		switch bp.App.PWA.Display {
+		case "", "standalone", "fullscreen", "minimal-ui", "browser":
+		default:
+			return fmt.Errorf("blueprint: app.pwa.display %q is not a web-app-manifest display mode; use standalone, fullscreen, minimal-ui, or browser (or omit it for standalone)", bp.App.PWA.Display)
+		}
+		if u := bp.App.PWA.StartURL; u != "" && !strings.HasPrefix(u, "/") {
+			return fmt.Errorf("blueprint: app.pwa.start_url %q must be a root-relative path (start with /)", u)
+		}
+		if s := bp.App.PWA.Scope; s != "" && !strings.HasPrefix(s, "/") {
+			return fmt.Errorf("blueprint: app.pwa.scope %q must be a root-relative path (start with /)", s)
+		}
+	}
 	for key := range bp.App.Theme {
 		if _, ok := blueprintThemeColorPath(key); ok {
 			continue
@@ -1989,6 +2061,10 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 	// path remains.
 	fontFiles, _ := blueprintFontAssets(bp)
 	files = append(files, fontFiles...)
+	// PWA placeholder icons: generated deterministic PNGs so a fresh
+	// app.pwa blueprint is installable immediately. Replaceable — swap
+	// the files under <static>/icons/ with real branding.
+	files = append(files, blueprintPWAIconAssets(bp)...)
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
 	return files, nil
 }
@@ -2460,6 +2536,34 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	b.WriteString("\t\t\tt.Errorf(\"public screen %s = %d, want 200\", p, code)\n")
 	b.WriteString("\t\t} else if len(body) < 120 { t.Errorf(\"public screen %s body suspiciously short (%d bytes)\", p, len(body)) }\n")
 	b.WriteString("\t}\n")
+
+	if bp.App.PWA.Enabled {
+		b.WriteString("\n\t// Installable-PWA surface (app.pwa).\n")
+		b.WriteString("\tif code, body := e2eDo(t, http.DefaultClient, \"GET\", base+\"/manifest.webmanifest\", \"\"); code != http.StatusOK || !strings.Contains(body, `\"name\"`) {\n")
+		b.WriteString("\t\tt.Errorf(\"manifest.webmanifest = %d, want 200 with a name\", code)\n")
+		b.WriteString("\t}\n")
+		b.WriteString("\tif code, body := e2eDo(t, http.DefaultClient, \"GET\", base+\"/service-worker.js\", \"\"); code != http.StatusOK || !strings.Contains(body, \"gofastr-pwa-\") {\n")
+		b.WriteString("\t\tt.Errorf(\"service-worker.js = %d, want 200 with a versioned cache\", code)\n")
+		b.WriteString("\t}\n")
+		b.WriteString("\tfor _, p := range []string{\"/icons/icon-192.png\", \"/icons/icon-512.png\", \"/icons/icon-maskable.png\", \"/__gofastr/pwa/register.js\", \"/__gofastr/pwa/offline\"} {\n")
+		b.WriteString("\t\tif code, _ := e2eDo(t, http.DefaultClient, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
+		b.WriteString("\t\t\tt.Errorf(\"pwa asset %s = %d, want 200\", p, code)\n")
+		b.WriteString("\t\t}\n")
+		b.WriteString("\t}\n")
+	}
+
+	if bp.App.LLMMD {
+		b.WriteString("\n\t// Public LLM markdown (app.llm_md): the index and every screen document resolve.\n")
+		b.WriteString("\tif code, body := e2eDo(t, http.DefaultClient, \"GET\", base+\"/llm-pages.md\", \"\"); code != http.StatusOK || body == \"\" {\n")
+		b.WriteString("\t\tt.Errorf(\"llm-pages.md = %d, want 200\", code)\n")
+		b.WriteString("\t}\n")
+		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(public)))
+		b.WriteString("\t\tmd := strings.TrimRight(p, \"/\") + \"/llm.md\"\n")
+		b.WriteString("\t\tif code, _ := e2eDo(t, http.DefaultClient, \"GET\", base+md, \"\"); code != http.StatusOK {\n")
+		b.WriteString("\t\t\tt.Errorf(\"llm.md for %s = %d, want 200\", p, code)\n")
+		b.WriteString("\t\t}\n")
+		b.WriteString("\t}\n")
+	}
 
 	if len(gated) > 0 {
 		b.WriteString("\n\t// Gated screens redirect anonymous callers to the login page.\n")
@@ -3626,10 +3730,20 @@ func renderBlueprintMain(bp Blueprint) string {
 	// appBaseCSS ships first so the user's static/app.css (loaded
 	// after) overrides it; it gives the generated entity blocks modern,
 	// responsive defaults out of the box (scrollable tables, form rhythm).
+	// Opt-in host surfaces (PWA, public LLM markdown) append to the same
+	// uihost.New call. Independent by design: enabling one never emits
+	// the other.
+	extraUIOpts := ""
+	if bp.App.PWA.Enabled {
+		extraUIOpts += ", " + blueprintPWAOptionLiteral(bp)
+	}
+	if bp.App.LLMMD {
+		extraUIOpts += ", uihost.WithPublicLLMMD()"
+	}
 	if staticDir != "" {
-		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithStaticDir(%q), uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile(%q))))\n", staticDir, staticDir+"/app.css"))
+		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithStaticDir(%q), uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile(%q))%s))\n", staticDir, staticDir+"/app.css", extraUIOpts))
 	} else {
-		sb.WriteString("\tfwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS())))\n")
+		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS())%s))\n", extraUIOpts))
 	}
 	if bp.App.Admin.Enabled {
 		// Auto-generated back-office over every CRUD entity. Registered as a
@@ -6562,6 +6676,11 @@ func blueprintEffectiveStaticDir(bp Blueprint) string {
 	if len(blueprintConfiguredFontFamilies(bp.App.Theme)) > 0 {
 		return "static"
 	}
+	// A PWA needs a home for its scaffolded icons (and a serving route
+	// for them), same as self-hosted fonts.
+	if bp.App.PWA.Enabled {
+		return "static"
+	}
 	return ""
 }
 
@@ -6669,6 +6788,149 @@ func blueprintFontAssets(bp Blueprint) (files []generatedFile, missing []string)
 		files = append(files, generatedFile{name: rel, content: string(data)})
 	}
 	return files, missing
+}
+
+// blueprintPWAOptionLiteral renders the uihost.WithPWA(...) call for the
+// generated main.go. Only author-declared fields are emitted (so pack
+// recovers exactly the authored blueprint); the framework applies the
+// defaults at serve time. The icon set always points at the scaffolded
+// placeholder files.
+func blueprintPWAOptionLiteral(bp Blueprint) string {
+	p := bp.App.PWA
+	var fields []string
+	if p.Name != "" {
+		fields = append(fields, fmt.Sprintf("Name: %q", p.Name))
+	}
+	if p.ShortName != "" {
+		fields = append(fields, fmt.Sprintf("ShortName: %q", p.ShortName))
+	}
+	if p.Description != "" {
+		fields = append(fields, fmt.Sprintf("Description: %q", p.Description))
+	}
+	if p.StartURL != "" {
+		fields = append(fields, fmt.Sprintf("StartURL: %q", p.StartURL))
+	}
+	if p.Scope != "" {
+		fields = append(fields, fmt.Sprintf("Scope: %q", p.Scope))
+	}
+	if p.Display != "" {
+		fields = append(fields, "Display: "+blueprintPWADisplayConst(p.Display))
+	}
+	if p.ThemeColor != "" {
+		fields = append(fields, fmt.Sprintf("ThemeColor: %q", p.ThemeColor))
+	}
+	if p.BackgroundColor != "" {
+		fields = append(fields, fmt.Sprintf("BackgroundColor: %q", p.BackgroundColor))
+	}
+	// The framework's built-in deny list covers the default /api and
+	// /auth mounts; a custom api_prefix or auth base_path must follow
+	// its app's real mounts or the never-precache/never-intercept
+	// guarantee silently stops covering the API.
+	var deny []string
+	if prefix := strings.Trim(bp.App.APIPrefix, "/"); prefix != "" && prefix != "api" {
+		deny = append(deny, "/"+prefix)
+	}
+	if bp.App.Auth.Enabled {
+		if base := strings.TrimRight(bp.App.Auth.BasePath, "/"); base != "" && base != "/auth" {
+			deny = append(deny, base)
+		}
+	}
+	if len(deny) > 0 {
+		quoted := make([]string, len(deny))
+		for i, d := range deny {
+			quoted[i] = fmt.Sprintf("%q", d)
+		}
+		fields = append(fields, "DenyPaths: []string{"+strings.Join(quoted, ", ")+"}")
+	}
+	fields = append(fields, `Icons: []uihost.PWAIcon{{Src: "/icons/icon-192.png", Sizes: "192x192", Type: "image/png"}, {Src: "/icons/icon-512.png", Sizes: "512x512", Type: "image/png"}, {Src: "/icons/icon-maskable.png", Sizes: "512x512", Type: "image/png", Purpose: uihost.PWAIconPurposeMaskable}}`)
+	return "uihost.WithPWA(uihost.PWAConfig{" + strings.Join(fields, ", ") + "})"
+}
+
+// blueprintPWADisplayConst maps a validated blueprint display mode to
+// the typed uihost constant emitted into generated code.
+func blueprintPWADisplayConst(display string) string {
+	switch display {
+	case "fullscreen":
+		return "uihost.PWADisplayFullscreen"
+	case "minimal-ui":
+		return "uihost.PWADisplayMinimalUI"
+	case "browser":
+		return "uihost.PWADisplayBrowser"
+	default:
+		return "uihost.PWADisplayStandalone"
+	}
+}
+
+// blueprintPWAIconAssets emits the replaceable placeholder icons an
+// app.pwa blueprint scaffolds: 192px and 512px "any" icons plus a 512px
+// maskable variant, colored from the declared theme_color (falling back
+// to the theme's primary token, then the framework indigo). Generated
+// in-process — deterministic PNG bytes, no network fetch.
+func blueprintPWAIconAssets(bp Blueprint) []generatedFile {
+	if !bp.App.PWA.Enabled {
+		return nil
+	}
+	dir := blueprintEffectiveStaticDir(bp)
+	fill := bp.App.PWA.ThemeColor
+	if fill == "" {
+		fill = bp.App.Theme["primary"]
+	}
+	bg, ok := blueprintParseHexColor(fill)
+	if !ok {
+		bg = color.NRGBA{R: 0x4f, G: 0x46, B: 0xe5, A: 0xff} // indigo fallback
+	}
+	rel := func(name string) string {
+		return filepath.ToSlash(filepath.Join(dir, "icons", name))
+	}
+	return []generatedFile{
+		{name: rel("icon-192.png"), content: string(blueprintPWAIconPNG(192, bg))},
+		{name: rel("icon-512.png"), content: string(blueprintPWAIconPNG(512, bg))},
+		// The maskable icon uses the same full-bleed art: a solid
+		// background with a centered dot keeps all content inside the
+		// mask safe zone regardless of the platform's crop shape.
+		{name: rel("icon-maskable.png"), content: string(blueprintPWAIconPNG(512, bg))},
+	}
+}
+
+// blueprintPWAIconPNG draws the placeholder icon: a solid brand-color
+// square with a centered translucent-white dot, well inside the
+// maskable safe zone.
+func blueprintPWAIconPNG(size int, bg color.NRGBA) []byte {
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	dot := color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xd9}
+	c := float64(size) / 2
+	r := float64(size) * 0.22
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			dx, dy := float64(x)+0.5-c, float64(y)+0.5-c
+			if dx*dx+dy*dy <= r*r {
+				img.SetNRGBA(x, y, dot)
+			} else {
+				img.SetNRGBA(x, y, bg)
+			}
+		}
+	}
+	var buf bytes.Buffer
+	// Encode cannot fail on an in-memory buffer with a valid image.
+	_ = png.Encode(&buf, img)
+	return buf.Bytes()
+}
+
+// blueprintParseHexColor parses #rgb / #rrggbb into an opaque color.
+func blueprintParseHexColor(s string) (color.NRGBA, bool) {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
+	switch len(s) {
+	case 3:
+		s = string([]byte{s[0], s[0], s[1], s[1], s[2], s[2]})
+	case 6:
+	default:
+		return color.NRGBA{}, false
+	}
+	v, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
+		return color.NRGBA{}, false
+	}
+	return color.NRGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 0xff}, true
 }
 
 // blueprintFontRelPath is the emitted path for a family's woff2 file, matching
