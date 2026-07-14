@@ -323,6 +323,19 @@ POST to `/auth/login` from an SSR login page lands the user on the
 next screen without a hard refresh — and without the host needing
 client-side glue.
 
+## Heavy-JS plugin markers
+
+Pages that mount a sandboxed heavy-JS plugin (see
+[plugin-platform](plugin-platform.md)) carry a mount marker emitted by
+`framework/pluginhost.MountMarker`: `data-fui-plugin="<name>"` with
+`data-fui-plugin-docid`, `data-fui-plugin-doc` (server-rendered initial
+JSON), `data-fui-plugin-minheight`, and `data-fui-plugin-capabilities`
+(the grant set, `resource:verb` grammar). These are scanned by the plugin
+host broker — a separate script served at its own route, NOT part of
+`runtime.js` or its budgets. Plugins may add namespaced extras (the
+wysiwyg editor adds `data-fui-plugin-for` naming its hidden form fields);
+those are documented by the owning plugin.
+
 ---
 
 ## Common mistakes

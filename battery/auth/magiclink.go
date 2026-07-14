@@ -186,7 +186,7 @@ func NewMagicLinkPlugin(config MagicLinkConfig) *MagicLinkPlugin {
 		tokenStore: store,
 	}
 	if config.RateLimit != nil {
-		p.sendLimit = NewRateLimiter(*config.RateLimit)
+		p.sendLimit = newScopedRateLimiter(*config.RateLimit, "magiclink")
 	}
 	return p
 }

@@ -123,17 +123,27 @@ safe-but-reduced path.
 | `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |
 | `UserLister` | Host code (`AuthManager.ListUsers`) | Enumerate accounts for a back-office. Returns `ErrListUsersUnsupported` when absent, so a missing implementation fails loudly instead of returning an empty list. See [Listing users](#listing-users). |
 
-The `EntityUserStore` and `EntitySessionStore` provided in this
-package implement every relevant interface; if you start from
-`EntityUserStore` you get the full feature matrix.
+The `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore`
+provided in this package implement every relevant interface; if you
+start from `EntityUserStore` you get the full feature matrix.
 
 The default stores are **in-memory**: fine for dev and tests, a trap
 in production — sessions vanish on restart and never resolve on a
 second replica, and in-memory 2FA enrollment reverts accounts to
-password-only auth after a restart. Production mode logs a WARN at
-Init when either default is active; set
-`AuthConfig.AllowInMemoryStores: true` to acknowledge a deliberate
-single-node deployment, or see [Horizontal scaling](scaling.md).
+password-only auth after a restart. Production mode enforces this at
+Init: the in-memory session store logs a WARN; the in-memory 2FA
+store **fails Init** — a silently-expiring security control is not
+warning-grade. Wire the durable store:
+
+```go
+mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{
+    Store: auth.NewEntityTwoFAStore(db, "auth_twofa"), // plugin creates the table
+}))
+```
+
+or set `AuthConfig.AllowInMemoryStores: true` to acknowledge a
+deliberate single-node deployment (the 2FA refusal downgrades to a
+WARN). See [Horizontal scaling](scaling.md).
 
 ## Default roles for new accounts
 
@@ -610,6 +620,27 @@ runs behind a reverse proxy that strips client-supplied XFF headers
 and rewrites it from the real source IP. Without that posture, an
 attacker rotates the header per request and bypasses every per-IP
 limit.
+
+**Limits are per-process by default.** At N replicas the brute-force
+budget multiplies by N and a block on one replica doesn't hold on the
+others. Share the ledger through the database:
+
+```go
+shared := auth.NewSQLRateLimitStore(db, "auth_rate_limits") // creates its tables itself
+
+auth.AuthConfig{
+    LoginRateLimit:           &auth.RateLimiterConfig{Store: shared},
+    LoginRateLimitPerAccount: &auth.RateLimiterConfig{Store: shared},
+}
+auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{Store: shared} }
+```
+
+One store instance can back every limiter: keys are namespaced by
+`RateLimiterConfig.Scope`, which each built-in surface defaults to a
+distinct value (`login_ip`, `login_account`, `register`, `twofa`, …).
+A store error **fails closed** (denies with a short Retry-After) — an
+attacker must never lift the limit by degrading its backend. See
+[Horizontal scaling](scaling.md).
 
 ## Security audit trail
 

@@ -7,6 +7,71 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-13
+
+Multi-replica auth durability + a hardened third-party plugin isolation
+boundary. **BREAKING:** production mode refuses the in-memory 2FA store
+(see below).
+
+### Added
+
+- **Heavy-JS plugin platform (`framework/pluginhost`)** — the client mirror
+  of the process-isolation track (#37). Hosts third-party-grade JS plugins
+  in a sandboxed **opaque-origin iframe** (`sandbox="allow-scripts"`, never
+  `allow-same-origin`) with a versioned postMessage protocol (ready→init
+  handshake, capability grants, save/upload/theme/resize events; source
+  check by `event.source`, never origin strings). Isolation is enforced by
+  the runtime, not by convention: the sandbox derivation
+  (`Manifest.SandboxString` + the broker's `sandboxFor`) is **authoritative**
+  — it strips `allow-same-origin` and forces `allow-scripts` regardless of
+  manifest input — and the framed-asset CSP carries `sandbox allow-scripts`
+  so a **top-level** load of the frame document is opaque too, not just an
+  embed. The capability gate is **default-deny**: `pluginhost.Allow(ctx,
+  granted, required)` is `grant-set ∩ caller-authority` (reusing the
+  battery/auth `resource:verb` matcher via the new `auth.ScopeMatch`), so a
+  plugin can't exceed its grants even under a session cookie;
+  `pluginhost.Guard` is the fail-closed route chokepoint (`403
+  E_CAPABILITY_DENIED`). Framed assets validate the request origin before
+  interpolating it into the CSP (no header-injected directives) and carry
+  `nosniff`; the mount marker drops unsafe attribute names. Ships plugin
+  `Manifest` + validating `NewClientModule`, `MountMarker`
+  (`data-fui-plugin*` markers — see core-ui/ARCHITECTURE.md attribute
+  table), the same-origin `AssetServer`, and the host broker
+  (`host/pluginhost.js`, served at its own route — core `runtime.js`
+  budgets untouched). Distilled from the proven `gofastr-plugins` wysiwyg
+  build; that repo now aliases this package.
+
+- **Shared login rate limiting (`auth.SQLRateLimitStore`)**. Every auth
+  limiter (login per-IP / per-account, register, 2FA challenge,
+  magic-link, password-reset, email-verification) accepts
+  `RateLimiterConfig.Store` — a database-backed attempt ledger so the
+  brute-force budget stays `MaxAttempts` total across N replicas (not
+  `× N`) and a block on one replica holds on all. One store instance
+  backs every limiter (keys namespaced per `Scope`, defaulted by each
+  surface); schema self-creates; a store error fails **closed**. The
+  in-process limiter remains the zero-config default.
+- **Durable 2FA store (`auth.EntityTwoFAStore`)**. The missing sibling of
+  `EntitySessionStore`: TOTP secrets, enrollment state, and bcrypt-hashed
+  backup codes persist in a database table (SQLite or PostgreSQL) instead
+  of process memory, so a restart or a second replica no longer wipes
+  enrollment. `TwoFAPlugin.Init` self-migrates the table (no host DDL);
+  backup-code consumption is replica-safe via an optimistic
+  compare-and-swap (two replicas racing to burn the same code — exactly
+  one wins). `TwoFAEntityFields()` exposes the table to the entity system
+  with the secret and code hashes `Hidden`.
+
+### Changed
+
+- **BREAKING: production mode refuses the in-memory 2FA store.**
+  Previously `DevMode: false` + `TwoFAPlugin` without a configured store
+  logged a WARN and booted — a restart then silently reverted every
+  enrolled account to password-only auth. A security control that
+  quietly stops applying is not warning-grade: Init now fails closed.
+  Fixes: set `TwoFAConfig.Store: auth.NewEntityTwoFAStore(db, "auth_twofa")`,
+  or acknowledge a deliberate single-node deployment with
+  `AuthConfig.AllowInMemoryStores: true` (downgrades the refusal to a
+  WARN). DevMode is unaffected.
+
 ## [0.20.0] - 2026-07-12
 
 Issues #39, #40, #45, #47, #52.

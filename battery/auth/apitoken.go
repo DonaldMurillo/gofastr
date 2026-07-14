@@ -259,6 +259,14 @@ func HasScope(ctx context.Context, scope string) bool {
 	return scopeMatches(held, scope)
 }
 
+// ScopeMatch reports whether any scope in held grants want, using the same
+// resource:verb wildcard grammar as HasScope (exact match, or res/verb "*").
+// Exported so other capability gates (e.g. framework/pluginhost) check grant
+// sets against the SAME matcher rather than reimplementing a weaker one.
+func ScopeMatch(held []string, want string) bool {
+	return scopeMatches(held, want)
+}
+
 // scopeMatches is the pure wildcard matcher used by HasScope and tested in
 // isolation. It does not consult ctx.
 func scopeMatches(held []string, want string) bool {

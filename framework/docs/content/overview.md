@@ -163,3 +163,5 @@ Every doc is grounded in the actual code, and every guide doc ends with a
 "common mistakes" callout (data/index artifacts like the benchmark results
 and the risk register are exempt — a test in `framework/docs` enforces the
 split). This same content is browsable offline with `gofastr docs`.
+
+- [plugin-platform](plugin-platform.md) — heavy-JS plugin isolation host + registry convention.

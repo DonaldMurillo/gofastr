@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"sort"
@@ -25,11 +27,28 @@ import (
 // reverse proxy that strips client-supplied XFF headers — otherwise an
 // attacker rotates the header per request and bypasses every per-IP limit.
 // Default is false (use the connection's RemoteAddr).
+//
+// Store: when non-nil, attempts are recorded in the shared backend
+// (e.g. SQLRateLimitStore) instead of process memory, so the budget
+// holds across replicas: MaxAttempts total, not MaxAttempts × N, and a
+// block on one replica blocks on all. On a store error the limiter
+// fails CLOSED (denies) — an attacker must never be able to lift the
+// limit by degrading its backend. One store instance can back several
+// limiters: keys are namespaced by Scope.
+//
+// Scope namespaces this limiter's keys inside a shared Store (an IP
+// tracked by the login limiter must not consume the 2FA challenge
+// budget). Each built-in consumer defaults its own scope
+// ("login_ip", "login_account", "register", "twofa", "magiclink",
+// "password_reset", "email_verification"); set it explicitly only for
+// custom limiters. Ignored when Store is nil.
 type RateLimiterConfig struct {
 	MaxAttempts       int
 	Window            time.Duration
 	BlockDuration     time.Duration
 	TrustForwardedFor bool
+	Store             RateLimitStore
+	Scope             string
 }
 
 // maxRateLimitKeys caps the number of distinct keys the in-memory limiter
@@ -43,6 +62,12 @@ type RateLimiterConfig struct {
 // process death, and the cap is far above any legitimate concurrent caller
 // count.
 const maxRateLimitKeys = 100_000
+
+// storeErrRetryAfter is the Retry-After hint returned when the shared
+// rate-limit store errors and the limiter fails closed. Short: the
+// outage is likely transient, and the login path is failing on the same
+// backend anyway.
+const storeErrRetryAfter = 30 * time.Second
 
 // RateLimiter is an in-memory sliding-window rate limiter keyed by an
 // arbitrary string (typically the client IP).
@@ -73,10 +98,40 @@ func NewRateLimiter(cfg RateLimiterConfig) *RateLimiter {
 	return &RateLimiter{cfg: cfg, states: make(map[string]*rlState)}
 }
 
+// newScopedRateLimiter is NewRateLimiter with a default Scope, used by
+// the built-in consumers so limiters sharing one RateLimitStore never
+// collide on raw IP/email keys. An explicit cfg.Scope wins.
+func newScopedRateLimiter(cfg RateLimiterConfig, scope string) *RateLimiter {
+	if cfg.Scope == "" {
+		cfg.Scope = scope
+	}
+	return NewRateLimiter(cfg)
+}
+
 // Allow records an attempt for key and returns whether it is allowed.
 // If not allowed, retryAfter is the duration the caller should communicate
-// in a Retry-After header.
+// in a Retry-After header. Equivalent to AllowContext with a background
+// context — HTTP paths should prefer AllowContext(r.Context(), key).
 func (rl *RateLimiter) Allow(key string) (allowed bool, retryAfter time.Duration) {
+	return rl.AllowContext(context.Background(), key)
+}
+
+// AllowContext records an attempt for key against the configured backend:
+// the shared Store when one is set (replica-wide budget), the in-process
+// sliding window otherwise. A store failure DENIES the attempt — the
+// limiter guards brute-force surfaces, so it must fail closed: degrading
+// its backend must never lift the limit.
+func (rl *RateLimiter) AllowContext(ctx context.Context, key string) (allowed bool, retryAfter time.Duration) {
+	if rl.cfg.Store != nil {
+		ok, retry, err := rl.cfg.Store.Allow(ctx, rl.cfg.Scope+"|"+key, rl.cfg)
+		if err != nil {
+			slog.Default().Warn("auth: shared rate-limit store error — failing closed",
+				"scope", rl.cfg.Scope, "err", err)
+			return false, storeErrRetryAfter
+		}
+		return ok, retry
+	}
+
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -204,7 +259,7 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 // wrapping. Writes 429 + Retry-After when blocked and returns false.
 func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 	key := rl.clientIP(r)
-	allowed, retry := rl.Allow(key)
+	allowed, retry := rl.AllowContext(r.Context(), key)
 	if !allowed {
 		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
 		writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")

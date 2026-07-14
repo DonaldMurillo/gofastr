@@ -39,13 +39,13 @@ func (c *CorePlugin) Init(mgr *AuthManager) error {
 	c.mgr = mgr
 	cfg := mgr.Config()
 	if cfg.LoginRateLimit != nil {
-		c.loginLimit = NewRateLimiter(*cfg.LoginRateLimit)
+		c.loginLimit = newScopedRateLimiter(*cfg.LoginRateLimit, "login_ip")
 	}
 	if cfg.LoginRateLimitPerAccount != nil {
-		c.loginLimitAccount = NewRateLimiter(*cfg.LoginRateLimitPerAccount)
+		c.loginLimitAccount = newScopedRateLimiter(*cfg.LoginRateLimitPerAccount, "login_account")
 	}
 	if cfg.RegisterRateLimit != nil {
-		c.registerLimit = NewRateLimiter(*cfg.RegisterRateLimit)
+		c.registerLimit = newScopedRateLimiter(*cfg.RegisterRateLimit, "register")
 	}
 	return nil
 }
@@ -107,7 +107,7 @@ func guardAuthLimit(rl *RateLimiter, w http.ResponseWriter, r *http.Request) boo
 	if rl == nil {
 		return true
 	}
-	allowed, retry := rl.Allow(rl.clientIP(r))
+	allowed, retry := rl.AllowContext(r.Context(), rl.clientIP(r))
 	if allowed {
 		return true
 	}
@@ -161,7 +161,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// every non-empty email gets the same treatment.
 		if c.loginLimitAccount != nil {
 			key := "account:" + strings.ToLower(strings.TrimSpace(email))
-			allowed, retry := c.loginLimitAccount.Allow(key)
+			allowed, retry := c.loginLimitAccount.AllowContext(r.Context(), key)
 			if !allowed {
 				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
 				if isForm {

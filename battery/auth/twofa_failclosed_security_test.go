@@ -51,11 +51,12 @@ func setupFailClosed(t *testing.T, store SessionStore, extra ...AuthPlugin) *rou
 	t.Helper()
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret",
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     userStore,
-		SessionStore:  store,
+		JWTSecret:           "test-secret",
+		AllowInMemoryStores: true, // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           userStore,
+		SessionStore:        store,
 	})
 	mgr.Use(NewCorePlugin())
 	for _, p := range extra {

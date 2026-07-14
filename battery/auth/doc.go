@@ -75,8 +75,12 @@
 // and tests. There is no in-memory UserStore — bring your own (typically
 // [EntityUserStore], which adapts a database table via the framework's
 // entity system) or write a thin map-backed one for tests. For production
-// multi-instance deployments, supply [EntityUserStore] + [EntitySessionStore]
-// (backed by SQLite or PostgreSQL).
+// deployments, supply [EntityUserStore] + [EntitySessionStore] +
+// [EntityTwoFAStore] (backed by SQLite or PostgreSQL). Production mode
+// (DevMode=false) refuses to boot on the in-memory 2FA store unless
+// [AuthConfig.AllowInMemoryStores] acknowledges a deliberate single-node
+// deployment — a restart wiping 2FA enrollment is a silent security
+// downgrade, not a scaling nuisance.
 //
 // # Sentinel errors
 //
