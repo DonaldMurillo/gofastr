@@ -99,11 +99,12 @@ func TestRateLimit_TwoFAChallenge(t *testing.T) {
 func newRLAuthManager(t *testing.T, rlCfg RateLimiterConfig) *AuthManager {
 	t.Helper()
 	mgr := New(AuthConfig{
-		JWTSecret:      "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:     time.Hour,
-		SessionCookie:  "session_id",
-		UserStore:      newMemoryUserStore(),
-		LoginRateLimit: &rlCfg,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           newMemoryUserStore(),
+		LoginRateLimit:      &rlCfg,
 	})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{
@@ -164,10 +165,11 @@ func TestRateLimit_IgnoresUnconfiguredXFF(t *testing.T) {
 // per-IP-only posture is bypassable by any botnet.
 func TestRateLimit_PerAccount_BlocksIPRotationAttack(t *testing.T) {
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     newMemoryUserStore(),
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           newMemoryUserStore(),
 		// Generous per-IP limit so it never fires in this test.
 		LoginRateLimit: &RateLimiterConfig{MaxAttempts: 1000, Window: time.Minute, BlockDuration: time.Minute},
 		LoginRateLimitPerAccount: &RateLimiterConfig{
@@ -208,10 +210,11 @@ func TestRateLimit_PerAccount_BlocksIPRotationAttack(t *testing.T) {
 // burning through the per-account budget on their own account.
 func TestRateLimit_PerAccount_DifferentEmailsNotBlocked(t *testing.T) {
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     newMemoryUserStore(),
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		AllowInMemoryStores: true,          // 2FA on the memory store is fail-closed in prod
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           newMemoryUserStore(),
 		LoginRateLimitPerAccount: &RateLimiterConfig{
 			MaxAttempts:   2,
 			Window:        time.Minute,

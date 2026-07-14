@@ -87,7 +87,7 @@ func NewPasswordResetPlugin(cfg PasswordResetConfig) *PasswordResetPlugin {
 		store: store,
 	}
 	if cfg.RateLimit != nil {
-		p.limit = NewRateLimiter(*cfg.RateLimit)
+		p.limit = newScopedRateLimiter(*cfg.RateLimit, "password_reset")
 	}
 	return p
 }

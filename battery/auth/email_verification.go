@@ -79,7 +79,7 @@ func NewEmailVerificationPlugin(cfg EmailVerificationConfig) *EmailVerificationP
 		store: store,
 	}
 	if cfg.RateLimit != nil {
-		p.limit = NewRateLimiter(*cfg.RateLimit)
+		p.limit = newScopedRateLimiter(*cfg.RateLimit, "email_verification")
 	}
 	return p
 }

@@ -18,17 +18,21 @@ shared store) or run on exactly one replica.
 | Subsystem | Default | Two-replica symptom | Replica-safe fix |
 |---|---|---|---|
 | Auth sessions | in-memory `MemorySessionStore` | login on A, logged-out on B; all sessions lost on restart | `auth.NewEntitySessionStore(db, "sessions")` |
-| 2FA enrollment | in-memory `MemoryTwoFAStore` | worse than scaling: a **restart** silently reverts 2FA accounts to password-only | set `TwoFAConfig.Store` to a durable `TwoFAStore` |
-| Login rate limits | in-process `RateLimiter` | attacker gets N attempts **per replica**; blocks don't propagate | no shipped shared store — size `MaxAttempts` for `attempts × replicas`, or rate-limit at the ingress |
+| 2FA enrollment | in-memory `MemoryTwoFAStore` | worse than scaling: a **restart** silently reverts 2FA accounts to password-only | `auth.NewEntityTwoFAStore(db, "auth_twofa")` — the plugin creates the table itself |
+| Login rate limits | in-process `RateLimiter` | attacker gets N attempts **per replica**; blocks don't propagate | set `RateLimiterConfig.Store: auth.NewSQLRateLimitStore(db, "auth_rate_limits")` — one budget across replicas, blocks propagate |
 | `framework/cron` scheduler | ticks in every process | every replica fires every job | one `GOFASTR_ROLE=worker` process owns it (see "Serve/worker roles"), or use `battery/queue`'s `DBQueue` (see below) |
 | `battery/queue` in-memory queue + Scheduler | per-process | duplicate jobs, lost jobs on restart | `queue.DBQueue` — `FOR UPDATE SKIP LOCKED` makes competing workers safe |
 | Live events / SSE / island push | in-process `EventBus` + `island.Manager` | an event emitted on A never reaches a browser connected to B | `framework.WithFanout(fanout.NewPostgres(dsn, db))` — see "SSE across replicas" below |
 | `battery/cache` memory backend | per-process | stale reads after another replica writes | `cache.NewRedisCache(client)`, or accept per-replica caching for derived-only data |
+| File uploads on local storage | per-replica disk (`storage.NewLocalStorage`, `upload.NewLocalStorage`) | upload lands on A, download from B 404s | S3-compatible backend (`battery/storage`'s S3 client), or a shared volume mounted on every replica |
 
-Auth warns about the first two at boot: production mode (`DevMode:
-false`) on the default in-memory stores logs a WARN unless you set
-`AuthConfig.AllowInMemoryStores: true` to acknowledge a deliberate
-single-node deployment.
+Auth enforces the first two at boot in production mode (`DevMode:
+false`): the in-memory session store logs a WARN; the in-memory 2FA
+store **refuses to boot** — a security control that silently stops
+applying is not warning-grade. Setting
+`AuthConfig.AllowInMemoryStores: true` acknowledges a deliberate
+single-node deployment: the session warning is silenced and the 2FA
+refusal downgrades to a WARN.
 
 ## What is already replica-safe
 
@@ -119,7 +123,9 @@ the connection. Options, in order of preference:
 - [ ] 2FA store durable (if the 2FA plugin is enabled).
 - [ ] Cron scheduler runs on exactly one process (`GOFASTR_ROLE=worker`), or jobs moved to `DBQueue`.
 - [ ] Queue is `DBQueue`, not the in-memory variant.
-- [ ] Login rate-limit budget sized for N replicas (or enforced at the ingress).
+- [ ] Rate limits on a shared store (`RateLimiterConfig.Store:
+      auth.NewSQLRateLimitStore(db, "auth_rate_limits")`), or enforced at
+      the ingress.
 - [ ] SSE push crosses replicas: `WithFanout` attached (and side-effect
       handlers moved to outbox consumers), or sticky sessions configured.
 - [ ] Cache backend shared (Redis) if cached data must be coherent across replicas.
@@ -141,9 +147,11 @@ the connection. Options, in order of preference:
 - **Relying on SSE push without sticky sessions.** Everything appears
   to work in staging (one replica) and half of live updates silently
   vanish in production.
-- **Treating the login rate limit as a security boundary at N replicas.**
-  The budget multiplies by replica count; enforce hard limits at the
-  ingress if the number matters.
+- **Treating the in-process login rate limit as a security boundary at
+  N replicas.** Without a shared store the budget multiplies by replica
+  count and blocks don't propagate. Set `RateLimiterConfig.Store` (one
+  `SQLRateLimitStore` can back every auth limiter — keys are namespaced
+  per limiter scope) or enforce hard limits at the ingress.
 
 See [Deployment](deploy.md) for the single-replica production checklist
 and [Job queue](queue.md) for `DBQueue` worker sizing.
