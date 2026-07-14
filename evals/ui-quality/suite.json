@@ -1,0 +1,95 @@
+{
+  "name": "gofastr-ui-quality-v2-natural-framework",
+  "repo_root": "../..",
+  "artifact_dir": "../../dist/ui-eval",
+  "agents": {
+    "builder": {
+      "backend": "claude",
+      "program": "claude",
+      "model": "opus",
+      "timeout_minutes": 30
+    },
+    "judge": {
+      "backend": "claude",
+      "program": "claude",
+      "model": "opus",
+      "timeout_minutes": 12
+    },
+    "mobile_judge": {
+      "backend": "claude",
+      "program": "claude",
+      "model": "opus",
+      "timeout_minutes": 12
+    }
+  },
+  "variants": [
+    {
+      "id": "working-tree",
+      "framework_root": "../.."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "incident-command-center",
+      "title": "Incident command center",
+      "brief": "Build a production incident command center for an infrastructure team. The overview must cover the active incident, current impact, timeline, responders, affected services, and next decision. Use realistic seeded content. An on-call engineer must be able to review the incident and identify the next action from a phone.",
+      "pages": [
+        {"name": "overview", "path": "/", "ready_selector": "main"},
+        {"name": "incident", "path": "/incidents/inc-482", "ready_selector": "main"}
+      ]
+    },
+    {
+      "id": "developer-product",
+      "title": "Developer infrastructure product",
+      "brief": "Build the public site and documentation entry page for a developer infrastructure product that turns event streams into durable workflows. Explain the product model, show a realistic code example, cover core capabilities, and provide clear paths into documentation and getting started.",
+      "pages": [
+        {"name": "home", "path": "/", "ready_selector": "main"},
+        {"name": "docs", "path": "/docs", "ready_selector": "main"}
+      ]
+    },
+    {
+      "id": "maker-marketplace",
+      "title": "Independent maker marketplace",
+      "brief": "Build a marketplace for independent makers selling small-batch physical objects. The browse page needs useful filtering and enough product and maker information to support discovery. The detail page must cover imagery, maker identity, price, provenance, availability, shipping, and purchase action.",
+      "pages": [
+        {"name": "browse", "path": "/", "ready_selector": "main"},
+        {"name": "product", "path": "/objects/field-lamp", "ready_selector": "main"}
+      ]
+    },
+    {
+      "id": "field-service-mobile",
+      "title": "Mobile field-service workflow",
+      "brief": "Build a field-service app for technicians completing scheduled equipment inspections. The primary flow is seeing today's route, opening the next job, recording readings, noting an issue, and completing the visit. Technicians primarily use a 390px phone under time pressure; desktop use is secondary but supported.",
+      "pages": [
+        {"name": "route", "path": "/", "ready_selector": "main"},
+        {"name": "job", "path": "/jobs/chiller-07", "ready_selector": "main"}
+      ]
+    },
+    {
+      "id": "research-workspace",
+      "title": "Research investigation workspace",
+      "brief": "Build a research workspace for investigating a corpus of interviews. The main screen must support query, evidence excerpts, source navigation, annotations, and an emerging synthesis. On mobile, researchers must be able to read a source, move among evidence, and add an annotation.",
+      "pages": [
+        {"name": "workspace", "path": "/", "ready_selector": "main"},
+        {"name": "source", "path": "/sources/interview-12", "ready_selector": "main"}
+      ]
+    }
+  ],
+  "viewports": [
+    {"id": "mobile-light", "width": 390, "height": 844, "scheme": "light"},
+    {"id": "mobile-dark", "width": 390, "height": 844, "scheme": "dark"},
+    {"id": "desktop-light", "width": 1440, "height": 1000, "scheme": "light"},
+    {"id": "desktop-dark", "width": 1440, "height": 1000, "scheme": "dark"}
+  ],
+  "judge": {
+    "rubric": "rubric.md",
+    "schema": "judge.schema.json",
+    "runs": 3,
+    "mobile_runs": 3,
+    "minimum_overall": 8.5,
+    "minimum_dimension": 7.5,
+    "minimum_mobile_overall": 8.5,
+    "minimum_mobile_dimension": 7.5,
+    "require_shadcn_consensus": true
+  }
+}

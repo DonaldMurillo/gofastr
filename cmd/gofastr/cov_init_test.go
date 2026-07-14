@@ -12,12 +12,27 @@ func TestRunInitFullProject(t *testing.T) {
 	covT_chdir(t, dir)
 	covT_capStdout(t, func() { runInit([]string{"myapp"}) })
 	for _, rel := range []string{
-		"myapp/main.go", "myapp/screens/home.go", "myapp/screens/styles.go",
+		"myapp/main.go", "myapp/screens/home.go", "myapp/DESIGN.md",
 		"myapp/entities/entities.go", "myapp/.env", "myapp/.gitignore",
 		"myapp/AGENTS.md", "myapp/CLAUDE.md", "myapp/go.mod",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("missing %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "myapp", "screens", "styles.go")); !os.IsNotExist(err) {
+		t.Fatalf("generated app must not contain screens/styles.go: %v", err)
+	}
+	main, err := os.ReadFile(filepath.Join(dir, "myapp", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"`,
+		`app.NewApp("myapp").WithTheme(uitheme.Default())`,
+	} {
+		if !strings.Contains(string(main), want) {
+			t.Errorf("generated main.go missing adaptive framework theme %q\n%s", want, main)
 		}
 	}
 }
@@ -97,7 +112,7 @@ func TestValidateProjectName(t *testing.T) {
 }
 
 func TestClaudeMDContentAndWrite(t *testing.T) {
-	if !strings.Contains(string(claudeMDContent()), "GoFastr host project") {
+	if body := string(claudeMDContent()); !strings.Contains(body, "GoFastr host project") || !strings.Contains(body, "DESIGN.md") {
 		t.Fatal("claudeMDContent")
 	}
 	dir := t.TempDir()
@@ -109,17 +124,52 @@ func TestClaudeMDContentAndWrite(t *testing.T) {
 	}
 }
 
+func TestDesignMDContentCapturesCompositionFailureModes(t *testing.T) {
+	body := string(designMDContent())
+	for _, want := range []string{
+		"Chosen recipe and named framework primitives",
+		"repeated across Banner/summary/header",
+		"actions stay natural-width",
+		"Opening summary is one or two sentences",
+		"SiteHeader.MobileBrand",
+		"next decision/action appears in the first useful viewport",
+		"No narrow desktop detail column leaves an accidental empty half-canvas",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("DESIGN.md template missing %q", want)
+		}
+	}
+}
+
 func TestRunReinitFreshAndIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	// Fresh: no AGENTS.md / CLAUDE.md yet → both created.
 	covT_capStdout(t, func() { runReinit(dir, false) })
-	for _, f := range []string{"AGENTS.md", "CLAUDE.md"} {
+	for _, f := range []string{"AGENTS.md", "CLAUDE.md", "DESIGN.md"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("reinit did not create %s: %v", f, err)
 		}
 	}
 	// Second run: files exist & unchanged → refresh path.
 	covT_capStdout(t, func() { runReinit(dir, false) })
+}
+
+func TestRunReinitPreservesDesignDirection(t *testing.T) {
+	dir := t.TempDir()
+	covT_capStdout(t, func() { runReinit(dir, false) })
+	designPath := filepath.Join(dir, "DESIGN.md")
+	const custom = "# Product-specific direction\n\nKeep this exact composition decision.\n"
+	if err := os.WriteFile(designPath, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	covT_capStdout(t, func() { runReinit(dir, true) })
+	got, err := os.ReadFile(designPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != custom {
+		t.Fatalf("reinit must preserve app-owned DESIGN.md; got:\n%s", got)
+	}
 }
 
 func TestRunReinitModifiedClaude(t *testing.T) {

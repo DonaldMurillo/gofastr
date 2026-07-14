@@ -45,18 +45,32 @@ func TestKitchenSinkGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden html (run with -update to create): %v", err)
 	}
-	if string(doc.HTML) != string(wantHTML) {
+	gotHTML := normalizeGoldenNewlines(string(doc.HTML))
+	wantHTMLText := normalizeGoldenNewlines(string(wantHTML))
+	if gotHTML != wantHTMLText {
 		t.Errorf("HTML mismatch (run with -update to refresh).\n--- got ---\n%s\n--- want ---\n%s",
-			doc.HTML, wantHTML)
+			gotHTML, wantHTMLText)
 	}
 
 	wantFM, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("read golden frontmatter: %v", err)
 	}
-	gotFM := serializeFrontmatter(doc.Frontmatter, doc.Title)
-	if gotFM != string(wantFM) {
-		t.Errorf("frontmatter mismatch.\n--- got ---\n%s\n--- want ---\n%s", gotFM, wantFM)
+	gotFM := normalizeGoldenNewlines(serializeFrontmatter(doc.Frontmatter, doc.Title))
+	wantFMText := normalizeGoldenNewlines(string(wantFM))
+	if gotFM != wantFMText {
+		t.Errorf("frontmatter mismatch.\n--- got ---\n%s\n--- want ---\n%s", gotFM, wantFMText)
+	}
+}
+
+func normalizeGoldenNewlines(value string) string {
+	return strings.ReplaceAll(value, "\r\n", "\n")
+}
+
+func TestNormalizeGoldenNewlines(t *testing.T) {
+	const want = "first\nsecond\n"
+	if got := normalizeGoldenNewlines("first\r\nsecond\r\n"); got != want {
+		t.Fatalf("normalizeGoldenNewlines() = %q, want %q", got, want)
 	}
 }
 

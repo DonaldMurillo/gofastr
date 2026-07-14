@@ -89,6 +89,12 @@ jobs:
         #     core-ui/widget (whole packages — the latter two host the
         #     hydration chromedp suites and are documented flaky under
         #     parallel package load; see CLAUDE.md)
+        #   - examples/meridian (the 16-surface visual canary exhausts its
+        #     bounded 12s capture attempts when another chromedp suite runs
+        #     beside it under -p 2 — the exact starvation class the other
+        #     exclusions document)
+        #   - evals/ui-quality/internal/evalrunner (its capture tests drive
+        #     a real headless Chrome; same class)
         #   - cmd/gofastr browser tests via -skip (the rest of the
         #     package stays blocking). These drive a real Chrome over a
         #     livereload websocket; under -p 2 with every other package
@@ -98,7 +104,7 @@ jobs:
           # shellcheck disable=SC2046  # word splitting of go list output is intended
           go test -count=1 -timeout=20m -p 2 \
             -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
-            $(go list ./... | grep -vE 'gofastr/(examples/site|kiln/integration|core-ui/runtime|core-ui/widget)$')
+            $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
 
       - name: Coverage floors (claimed packages)
         # Re-runs `go test -cover` for only the packages with numeric
@@ -110,10 +116,10 @@ jobs:
   browser-e2e:
     name: "browser e2e (blocking)"
     runs-on: ubuntu-latest
-    # Per-step go-test timeouts sum to 70m (15+15+15+10+10+5); the job
-    # budget must exceed that so the !cancelled() always-report steps can
-    # run.
-    timeout-minutes: 75
+    # Per-step go-test timeouts sum to 105m (15+15+15+25+10+10+10+5); the
+    # job budget must exceed that so the !cancelled() always-report steps
+    # can run.
+    timeout-minutes: 110
     env:
       CGO_ENABLED: "1"
     steps:
@@ -173,3 +179,17 @@ jobs:
         # Same class as core-ui/runtime — documented flaky when sharing
         # a go-test run with other chromedp suites.
         run: go test -count=1 -timeout=5m ./core-ui/widget/
+
+      - name: examples/meridian visual canary (isolated)
+        if: ${{ !cancelled() }}
+        # The 16-surface rendered canary (desktop/mobile × light/dark ×
+        # marketing/auth/app/admin) captures in software on the two-core
+        # runner: bounded 30s attempts × up to 6 retries per surface need a
+        # budget well past the local ~2m runtime.
+        run: go test -count=1 -timeout=25m ./examples/meridian/
+
+      - name: evals/ui-quality evalrunner (isolated)
+        if: ${{ !cancelled() }}
+        # Its capture tests drive a real headless Chrome; kept out of the
+        # deterministic -p 2 run for the same contention reason.
+        run: go test -count=1 -timeout=10m ./evals/ui-quality/...

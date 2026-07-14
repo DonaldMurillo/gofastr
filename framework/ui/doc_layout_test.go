@@ -68,6 +68,11 @@ func TestDocLayoutPagerAfterBody(t *testing.T) {
 
 func TestDocLayoutCSSCollapsesOnMobile(t *testing.T) {
 	css := docLayoutCSS(style.Theme{})
+	for _, want := range []string{"inline-size: 100%", "min-inline-size: 0"} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("DocLayout must shrink inside flex/grid parents; missing %q", want)
+		}
+	}
 	mq := strings.Index(css, "max-width: 900px")
 	if mq < 0 {
 		t.Fatal("DocLayout CSS missing its mobile breakpoint")

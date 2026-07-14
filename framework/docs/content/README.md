@@ -79,7 +79,10 @@ contract) are exempt — the exemption list lives in
 ## Building UI
 
 - [UI getting started](ui-getting-started.md) — the 15-minute path:
-  scaffold → theme → screen → custom-styled component.
+  scaffold → design direction → theme → framework-native composition.
+- [UI composition recipes](ui-composition-recipes.md) — product-shaped
+  desktop/mobile page structures composed entirely from `framework/ui`
+  primitives.
 - [UI wiring](ui-wiring.md) — adding the UI system to a plain
   `framework.App` by hand: site app, theme, layout, `uihost.New`,
   and the `WidgetMounter` shim, with a complete `main.go`.

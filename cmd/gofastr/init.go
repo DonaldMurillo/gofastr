@@ -108,9 +108,6 @@ func runInit(args []string) {
 	// Write screens/home.go
 	writeHomeScreen(name, noEntity)
 
-	// Write screens/styles.go — CSS via the framework's StyleSheet builder.
-	writeStylesGo(name)
-
 	// Write entities/entities.go (only when --no-entity is not set)
 	if !noEntity {
 		writeEntitiesGo(name)
@@ -194,6 +191,10 @@ bin/
 		fail("Failed to write CLAUDE.md: %v", err)
 		osExit(1)
 	}
+	if err := writeDesignMD(name); err != nil {
+		fail("Failed to write DESIGN.md: %v", err)
+		osExit(1)
+	}
 
 	// Run go mod init to generate a proper go.mod
 	cmd := exec.Command("go", "mod", "init", modulePath)
@@ -217,9 +218,8 @@ bin/
 	success("Created project %s in ./%s/", name, name)
 	fmt.Println()
 	fmt.Printf("  %s:\n", bold("App files"))
-	fmt.Println("    main.go              — Application entry point (UI + CSS)")
+	fmt.Println("    main.go              — Application entry point + UI host")
 	fmt.Println("    screens/home.go      — Sample UI page served at /")
-	fmt.Println("    screens/styles.go    — CSS via theme tokens + StyleSheet")
 	if !noEntity {
 		fmt.Println("    entities/entities.go — Sample entity (posts) served at /posts")
 	}
@@ -230,6 +230,7 @@ bin/
 	fmt.Printf("  %s (read by AI coding tools so they reach for framework primitives instead of reinventing):\n", bold("AI-agent onboarding"))
 	fmt.Println("    CLAUDE.md            — Claude Code entry point; links to AGENTS.md + skill")
 	fmt.Println("    AGENTS.md            — Top-level TOC; refresh with `gofastr agents sync`")
+	fmt.Println("    DESIGN.md            — App-owned product and composition direction")
 	fmt.Println("    agents/              — Auto-generated per-battery detail files linked from AGENTS.md")
 	fmt.Println("    .claude/skills/      — Claude Code skill (safe to delete if you only use Cursor/Aider)")
 	fmt.Println()
@@ -264,6 +265,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 
 	"%[1]s/screens"
@@ -280,11 +282,10 @@ func main() {
 	)
 
 	// Wire the UI layer: site app + home screen + host.
-	site := app.NewApp("%[2]s")
+	site := app.NewApp("%[2]s").WithTheme(uitheme.Default())
 	site.Register("/", &screens.HomeScreen{}, nil)
 
-	css := screens.CreateStyleSheet()
-	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(css)))
+	fwApp.Mount(uihost.New(site))
 
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
@@ -330,6 +331,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	%[3]s
 
@@ -361,11 +363,10 @@ func main() {
 	entities.RegisterAll(fwApp)
 
 	// Wire the UI layer: site app + home screen + host.
-	site := app.NewApp("%[2]s")
+	site := app.NewApp("%[2]s").WithTheme(uitheme.Default())
 	site.Register("/", &screens.HomeScreen{}, nil)
 
-	css := screens.CreateStyleSheet()
-	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(css)))
+	fwApp.Mount(uihost.New(site))
 
 	// Run migrations
 	migrator := migrate.New(db, migrate.WithTableName("_migrations"), migrate.WithDialect(%[6]s))
@@ -423,31 +424,41 @@ isolation:
 	}
 }
 
-// writeHomeScreen generates screens/home.go using CSS classes instead of
-// inline style attributes. The CSS lives in screens/styles.go using the
-// framework's StyleSheet builder with theme tokens.
+// writeHomeScreen generates screens/home.go entirely from framework/ui
+// primitives. The scaffold owns no CSS or hand-rolled structural markup.
 func writeHomeScreen(name string, noEntity bool) {
+	// The entity hint is prose for the Section description; the CodeBlock
+	// stays commands-only so nothing nonsensical is copy-pasteable.
 	var entityHint string
 	if !noEntity {
-		entityHint = "; entities live in entities/entities.go and serve at /posts"
+		entityHint = " The sample posts entity lives in entities/entities.go and serves at /posts."
 	}
 	content := fmt.Sprintf(`package screens
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 type HomeScreen struct{}
 
 func (h *HomeScreen) Render() render.HTML {
-	return render.Tag("div", map[string]string{"class": "home-container"},
-		render.Tag("h1", nil, render.Text("%[1]s")),
-		render.Tag("p", nil, render.Text("Your GoFastr app is running. Edit screens/home.go to replace this page.")),
-		render.Tag("p", nil,
-			render.Text("Next steps: "),
-			render.Tag("code", nil, render.Text("gofastr theme init")),
-			render.Text(" scaffolds a typed theme%[2]s.")),
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
+		ui.Stack(ui.StackConfig{Gap: ui.GapXL},
+			ui.PageHeader(ui.PageHeaderConfig{
+				Eyebrow:  "GoFastr",
+				Title:    "%[1]s",
+				Subtitle: "Your app is running. Replace this screen with a composition chosen from DESIGN.md.",
+			}),
+			ui.Section(ui.SectionConfig{
+				Heading:     "Start with intent",
+				Description: "Complete DESIGN.md before selecting components, then use the composition recipes embedded in the GoFastr CLI.%[2]s",
+			}, ui.CodeBlock(ui.CodeBlockConfig{
+				Code:     "gofastr docs ui-composition-recipes\ngofastr theme init",
+				Language: "shell",
+			})),
+		),
 	)
 }
 
@@ -457,69 +468,6 @@ func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 `, name, entityHint)
 	if err := os.WriteFile(filepath.Join(name, "screens", "home.go"), []byte(content), 0o644); err != nil {
 		fail("Failed to write screens/home.go: %v", err)
-		osExit(1)
-	}
-}
-
-// writeStylesGo generates screens/styles.go — the site CSS built with the
-// framework's Go-native StyleSheet builder using theme tokens. No raw CSS
-// files, no inline style attributes.
-func writeStylesGo(name string) {
-	const content = `package screens
-
-import (
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
-)
-
-// CreateStyleSheet builds the site CSS using the framework's
-// theme tokens. Edit this to add your own styles — use
-// {colors.primary}, {spacing.md}, etc. to reference tokens.
-func CreateStyleSheet() string {
-	theme := style.DefaultTheme()
-	ss := style.NewStyleSheet(theme)
-
-	ss.Rule("*, *::before, *::after").
-		Set("box-sizing", "border-box", "margin", "0", "padding", "0").
-		End()
-
-	ss.Rule("body").
-		Set("font-family", "{fonts.body}",
-			"font-size", "16px",
-			"line-height", "1.6",
-			"color", "{colors.text}",
-			"background", "{colors.background}").
-		End()
-
-	ss.Rule(".home-container").
-		Set("max-width", "640px",
-			"margin", "0 auto",
-			"padding", "{spacing.2xl}").
-		End()
-
-	ss.Rule(".home-container h1").
-		Set("font-size", "1.5rem",
-			"font-weight", "700",
-			"margin-bottom", "{spacing.md}").
-		End()
-
-	ss.Rule(".home-container p").
-		Set("margin-bottom", "{spacing.sm}").
-		End()
-
-	ss.Rule(".home-container code").
-		Set("background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
-			"padding", "1px 6px",
-			"border-radius", "{radii.sm}",
-			"font-size", "0.9em",
-			"font-family", "{fonts.mono}").
-		End()
-
-	return ss.CSS()
-}
-`
-	if err := os.WriteFile(filepath.Join(name, "screens", "styles.go"), []byte(content), 0o644); err != nil {
-		fail("Failed to write screens/styles.go: %v", err)
 		osExit(1)
 	}
 }
@@ -611,6 +559,9 @@ This project uses the [GoFastr](https://github.com/DonaldMurillo/gofastr) framew
 - **[AGENTS.md](AGENTS.md)** — TOC of every framework primitive with trigger
   phrases. When your task matches a row, open the linked detail file under
   ` + "`" + `agents/` + "`" + ` for the full shape/import/don't-reinvent breakdown.
+- **[DESIGN.md](DESIGN.md)** — app-owned product direction. Complete its user
+  task, density, hierarchy, composition, and mobile decisions before choosing
+  UI components.
 - **[.claude/skills/gofastr-host/SKILL.md](.claude/skills/gofastr-host/SKILL.md)**
   — Auto-loaded skill that encodes the "reach for the battery first" rule and
   the import paths you need.
@@ -623,6 +574,7 @@ built in — no internet needed, always matches your installed version.
 - ` + "`" + `gofastr docs` + "`" + `                — list every topic
 - ` + "`" + `gofastr docs <topic>` + "`" + `        — read a topic's full markdown
 - ` + "`" + `gofastr docs --grep <term>` + "`" + `  — search across every topic
+- ` + "`" + `gofastr docs ui-composition-recipes` + "`" + ` — choose a framework-native page composition
 
 ## Refreshing after a framework upgrade
 
@@ -639,6 +591,74 @@ built in — no internet needed, always matches your installed version.
 	return []byte(content)
 }
 
+func writeDesignMD(dir string) error {
+	return os.WriteFile(filepath.Join(dir, "DESIGN.md"), designMDContent(), 0o644)
+}
+
+func designMDContent() []byte {
+	return []byte(`# Design direction
+
+Complete this file before selecting UI components. Keep it product-specific:
+describe what this app's users need, not a generic preferred aesthetic.
+
+## Product intent
+
+- Primary user:
+- Primary task on each route:
+- Decision or action that must be obvious first:
+- Information that is secondary or archival:
+
+## Visual direction
+
+- Personality (three concrete adjectives):
+- Density (compact, balanced, or spacious) and why:
+- Dominant element on each route:
+- Typography posture (display, body, and data):
+- Surface posture (flat, bordered, elevated, or mixed):
+
+## Composition
+
+Read ` + "`" + `gofastr docs ui-composition-recipes` + "`" + `, then record:
+
+- Chosen recipe and named framework primitives for each route:
+- Composition model for each route:
+- How section widths and visual weight vary:
+- Wide-screen use on detail routes; which bounded modules pair into columns:
+- What groups without a Card:
+- Content shown once rather than repeated across Banner/summary/header:
+- Where actions stay natural-width (component Actions slot or Cluster):
+- Two familiar patterns this product should avoid:
+
+## Mobile contract
+
+- Primary mobile action:
+- First-viewport priority order:
+- Opening summary is one or two sentences; full narrative moves to:
+- Concise mobile header identity (` + "`" + `SiteHeader.MobileBrand` + "`" + ` when needed):
+- What moves later, collapses, or becomes a separate view:
+- Long labels, metadata, and edge-aligned row behavior:
+
+## Verification
+
+- [ ] Rendered at about 390px and 1440px.
+- [ ] Checked in light and dark schemes.
+- [ ] One element is clearly dominant on every route.
+- [ ] The next decision/action appears in the first useful viewport.
+- [ ] Repeated status/summary content and stretched standalone CTAs were removed.
+- [ ] Cards, pills, elevation, and equal-width grids are used only when the content warrants them.
+- [ ] No narrow desktop detail column leaves an accidental empty half-canvas.
+- [ ] Mobile is reprioritized for its user task, not merely stacked.
+- [ ] The three weakest visible decisions were identified and revised.
+
+## Framework boundary
+
+Applications compose ` + "`" + `framework/ui` + "`" + `, ` + "`" + `core-ui/app` + "`" + `, and ` + "`" + `core-ui/patterns` + "`" + `.
+They do not ship bespoke CSS or recreate structural components. When the design
+system cannot express a required treatment, record the gap and add the reusable
+capability upstream.
+`)
+}
+
 // runReinit refreshes AI onboarding files in an existing project.
 // It does NOT touch Go source files, go.mod, or git.
 //
@@ -647,6 +667,7 @@ built in — no internet needed, always matches your installed version.
 //   - .claude/skills/gofastr-host/* — always overwritten (framework-owned)
 //   - AGENTS.md   — uses sync logic (preserves user content outside markers)
 //   - CLAUDE.md   — overwrites if unmodified; prompts if user changed it
+//   - DESIGN.md   — created when missing, never overwrites app-owned direction
 func runReinit(dir string, force bool) {
 	fmt.Printf("\n  %s AI onboarding files in %s\n\n", bold("Refreshing"), bold(dir))
 
@@ -723,6 +744,20 @@ func runReinit(dir string, force bool) {
 			info("     To overwrite: gofastr init --reinit --force")
 			info("     To keep your version: no action needed")
 		}
+	}
+
+	designPath := filepath.Join(dir, "DESIGN.md")
+	if _, err := os.Stat(designPath); os.IsNotExist(err) {
+		if err := writeDesignMD(dir); err != nil {
+			fail("Failed to write DESIGN.md: %v", err)
+			osExit(1)
+		}
+		info("  ✓ DESIGN.md created")
+	} else if err != nil {
+		fail("Failed to inspect DESIGN.md: %v", err)
+		osExit(1)
+	} else {
+		info("  ✓ DESIGN.md preserved (app-owned)")
 	}
 
 	fmt.Println()

@@ -7,6 +7,105 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Framework-owned operational composition.** `ui.RecordSummary` provides one
+  compact dominant record/event summary with bounded status, next-decision,
+  metrics, support, ownership, and natural-width action slots. Its optional
+  `Aside` fills a purposeful wide-screen rail, while `Actions` stays in the
+  lead region and ahead of support context on phones; `ui.MetricBand` renders
+  one to six related signals as a flat semantic row that becomes two columns
+  on phones. `SiteHeaderConfig.MobileBrand` now swaps long desktop identities
+  for a concise phone mark/name without app CSS.
+- **Natural UI composition guidance.** `gofastr init` now creates an app-owned
+  `DESIGN.md`, points generated agent onboarding at it, and embeds a
+  `ui-composition-recipes` reference for product-specific desktop/mobile page
+  structures composed from `framework/ui`.
+- **Framework-snapshot UI evaluation.** The UI-quality harness can use Codex,
+  OMP / GLM-5.2, or Claude Code / Opus builders and Codex or Claude visual
+  judges, with role-specific provenance retained in run manifests.
+
+### Changed
+
+- **BREAKING: `theme.Default()` is now adaptive.** The canonical framework
+  theme carries a complete contrast-safe `DarkColors` palette, so every app
+  mounting `theme.Default()` — new or existing — follows the OS dark
+  preference and `ThemeToggle` works without host setup. An existing app whose
+  own CSS assumes light tokens should either audit its surfaces in dark mode
+  or opt out explicitly (`t := theme.Default(); t.DarkColors = nil`).
+  `gofastr theme init` emits the same palette (generated from the canonical
+  map, not a copy), and `theme.Overrides.DarkColors` lets a small brand reskin
+  provide explicit dark values instead of silently reverting to the canonical
+  palette. Forced-theme browser gates synchronize both the HTML attribute and
+  the native color-scheme meta.
+- **BREAKING: `SiteHeader` wraps its Brand slot.** Brand (and the new
+  `MobileBrand`) render inside a `.ui-site-header__brand` wrapper div, so host
+  CSS or tests selecting the brand as a direct child of the header must adjust
+  one level. The framework now ships typography defaults for a linked brand
+  (replacing browser-default blue underlines) at **zero specificity** via
+  `:where()` — any consumer rule still wins, preserving the "consumer owns
+  visual identity" contract.
+- **Responsive and touch-target hardening.** `ui.DocLayout` now shrinks inside
+  flex/grid parents instead of preserving a desktop min-content width on
+  phones, and `ui.ValidationSummary` field links meet the WCAG 2.2 24px target
+  floor. Button wrapping is container-driven: `flex: 0 0 auto` sizes each
+  control to its unwrapped label so action rows wrap whole controls first,
+  while a label wider than its own container — a sidebar rail or card cell at
+  any viewport, not just a phone — wraps inside the bounded button instead of
+  clipping. `ui.AvatarGroup` now uses a 10% overlap that keeps initials
+  readable, an adaptive overflow chip, and compact corner presence dots.
+- **The interactive set reads both theming surfaces.** Counter, Tabs, Toggle,
+  Dropdown, and Collapsible chain every legacy `--fui-*` bridge read to its
+  canonical token — `var(--fui-border, var(--color-border, …))` — so the
+  adaptive theme reaches them with no host aliases while existing `--fui-*`
+  host overrides keep winning. Collapsible also gains an opaque
+  `--color-surface` background to hold contrast on tinted panels.
+- **Balanced phone signal bands.** Odd three- and five-item `ui.MetricBand`
+  sets now make their final signal span the phone row instead of rendering an
+  accidental empty quadrant, and a single-item band no longer paints a stray
+  column divider.
+- **BREAKING: `ui.Cluster` zero value now wraps.** Clusters wrap whole
+  controls by default; `ClusterConfig.NoWrap` is the explicit opt-out for
+  compact chrome. The old boolean `Wrap` field remains source-compatible but
+  is now ignored — it is deprecated because its zero value could not represent
+  the documented wrapping default. A caller that relied on `ClusterConfig{}`
+  or `Wrap: false` rendering nowrap must set `NoWrap: true`.
+- **The init scaffold emits zero app-owned CSS.** The generated
+  `screens/styles.go` and `WithCustomCSS` wiring are removed; the starter page
+  now composes framework UI primitives. Reinit preserves `DESIGN.md` even with
+  `--force`.
+- **UI evaluation variants now represent framework roots, not injected design
+  prompts.** Generated onboarding is fingerprinted and must remain untouched;
+  historical prompt-treatment scores are explicitly invalid for framework
+  quality claims.
+- **UI evaluation runs fail closed on contamination.** Exclusive run creation
+  and locks prevent mixed concurrent artifacts; reuse rejects linked run
+  directories; candidate and framework fingerprints are rechecked around
+  mutating gates; result JSON is atomically replaced; agent and candidate
+  environments omit unrelated credentials; Windows jobs and Unix process
+  groups own descendants; capture blocks non-candidate network requests and
+  broken images; and visual judges treat screenshot text as untrusted output.
+
+### Fixed
+
+- **Eval-runner hardening (post-review).** The OMP stream is drained through a
+  line-buffered `Stdout` writer instead of a `StdoutPipe` raced against
+  `Wait`, so a successful build can no longer lose its final `message_end`
+  event (and an oversized final message no longer fails extraction); switching
+  an agent to the codex backend clears the previous backend's model and
+  demands an explicit `--*-model` instead of launching `codex --model opus`;
+  candidate gates pin the runner's resolved `GOMODCACHE` so the isolated home
+  no longer forces a full re-download of the dependency graph `go mod tidy`
+  just warmed; judge evidence is always copied rather than hard-linked so one
+  judge process cannot corrupt the panel's shared pixels; and a
+  machine-specific `NODE_EXTRA_CA_CERTS` fallback path was removed (export the
+  variable instead). The five capture tests that drive a real headless Chrome
+  are now gated behind `-short` like the other browser suites, and
+  `test-all.sh` retries their contention deadline signature serially.
+- **Generated home screen keeps prose out of the shell block.** The sample
+  entity hint is part of the Section description; the `CodeBlock` contains
+  only runnable commands.
+
 ## [0.22.0] - 2026-07-14
 
 First-class installable-PWA support and blueprint-generated LLM page

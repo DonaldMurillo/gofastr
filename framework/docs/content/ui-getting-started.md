@@ -1,6 +1,6 @@
 # UI getting started
 
-Take `gofastr init` → a themed app with a custom-styled component in roughly 15 minutes. This doc is the linear path: do the steps in order; you'll have a working app after every one.
+Take `gofastr init` → a themed, product-specific app composed from framework primitives. This doc is the linear path: do the steps in order; you'll have a working app after every one.
 
 The module is published — `go mod tidy` resolves it from the Go module proxy. Pin a tagged version (e.g. `v0.4.0`) rather than tracking `main`.
 
@@ -26,9 +26,9 @@ Scaffold layout:
 
 ```
 myapp/
-  main.go            # wires entities + UI host
+  main.go            # wires entities + adaptive framework theme + UI host
   screens/home.go    # the home page you'll edit
-  screens/styles.go  # CSS via theme tokens + StyleSheet builder
+  DESIGN.md          # product intent, hierarchy, composition, and mobile direction
   entities/entities.go # Go-declared CRUD entities (try /posts)
   migrations/
   .env
@@ -44,24 +44,56 @@ binary; `gofastr docs --grep <term>` searches them. No internet needed.
 
 ---
 
-## 2. Add a theme
+## 2. Customize the theme
+
+A fresh scaffold already mounts the canonical adaptive theme:
+
+```go
+import uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+
+site := app.NewApp("myapp").WithTheme(uitheme.Default())
+```
+
+That default includes complete light and dark semantic palettes, so
+`ui.ThemeToggle` and the OS preference work without more setup. For small brand
+changes, pass `uitheme.Overrides` to `Default`.
+Set `Overrides.DarkColors` alongside any brand color that should also change in
+dark mode; light values are not copied automatically because their contrast may
+not be safe on dark surfaces.
+
+An app whose own styling assumes light tokens can stay light-only while it
+audits dark mode:
+
+```go
+t := uitheme.Default()
+t.DarkColors = nil // opt out of the adaptive dark palette
+site := app.NewApp("myapp").WithTheme(t)
+```
+
+When the app needs to own the whole palette, run:
 
 ```bash
 gofastr theme init
 ```
 
-This writes `theme/theme.go` — a typed `style.Theme` literal with the framework's defaults inline. **You own this file forever**; the framework never regenerates it.
+This writes `theme/theme.go` — a typed `style.Theme` literal with the
+framework's complete light and dark defaults inline. **You own this file
+forever**; the framework never regenerates it.
 
-Then wire it into `main.go`:
+Then replace the canonical theme in `main.go`:
 
 ```go
 import "myapp/theme"
 
-// inside main(), after `site := app.NewApp("myapp")`:
-site.WithTheme(theme.App)
+site := app.NewApp("myapp").WithTheme(theme.App)
 ```
 
-`app.WithTheme` auto-derives token names from struct paths (`Colors.PrimaryFg` → `--color-primary-fg`) and validates that every required token has a value. Booting with a half-populated theme panics at startup with a field path naming the missing piece.
+`app.WithTheme` auto-derives token names from struct paths (`Colors.PrimaryFg`
+→ `--color-primary-fg`) and validates that every required token has a value.
+Keep the generated `DarkColors` complete when changing brand colors; rendering
+`ui.ThemeToggle` with a light-only custom theme produces an incomplete scheme.
+Booting with a half-populated typed theme panics at startup with a field path
+naming the missing piece.
 
 `go run .` — visit <http://localhost:8080/__gofastr/app.css> to confirm your tokens are emitted as `:root` custom properties.
 
@@ -208,190 +240,84 @@ handle above still works and remains the simplest path for a single app.
 
 ---
 
-## 4. Custom-styled component
+## 4. Compose a product-specific screen
 
-A component with its own scoped CSS, lazy-loaded on first use. Add `components/statcard.go`:
+Open `DESIGN.md` before selecting components. Name the primary user and task,
+the dominant element on each route, the intended density and hierarchy, and
+what mobile keeps, condenses, or moves. Then choose the closest framework-native
+composition:
+
+```bash
+gofastr docs ui-composition-recipes
+```
+
+For example, a focused operational page can lead with one compact decision
+summary and a flat signal band, then continue into the primary work region
+without host-owned CSS:
 
 ```go
-package components
-
-import (
-    "github.com/DonaldMurillo/gofastr/core-ui/registry"
-    "github.com/DonaldMurillo/gofastr/core-ui/style"
-    "github.com/DonaldMurillo/gofastr/core/render"
-)
-
-var statCardStyle = registry.RegisterStyle("stat-card", statCardCSS)
-
-func statCardCSS(t style.Theme) string {
-    return style.NewComponentSheet("stat-card", t).
-        Rule("&").
-            Set("display", "flex", "flex-direction", "column", "gap", "{spacing.xs}",
-                "padding", "{spacing.lg}",
-                "background", "{colors.surface}",
-                "border", "1px solid {colors.border}",
-                "border-radius", "{radii.md}").
-            End().
-        Rule(".label").Set("color", "{colors.text-muted}", "font-size", "0.875rem").End().
-        Rule(".value").Set("color", "{colors.text}", "font-size", "1.5rem", "font-weight", "700").End().
-        MustBuild()
+func (s *OverviewScreen) Render() render.HTML {
+    return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide},
+        ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+            ui.RecordSummary(ui.RecordSummaryConfig{
+                Eyebrow:     "Operations · East hub",
+                Title:       "12 shipments need a decision",
+                Description: "Resolve today's exceptions before the carrier cutoff.",
+                Highlight: ui.Callout(
+                    ui.CalloutConfig{Title: "Next decision · 15:20"},
+                    render.Text("Approve the alternate carrier for ORD-1842."),
+                ),
+                Metrics: ui.MetricBand(ui.MetricBandConfig{Items: []ui.MetricBandItem{
+                    {Label: "Ready", Value: "184", Hint: "up 12 today"},
+                    {Label: "At risk", Value: "12", Hint: "carrier cutoff"},
+                    {Label: "Blocked", Value: "3", Hint: "owner assigned"},
+                }}),
+                Aside: ui.Muted(render.Text("East hub · Mina leads")),
+                Actions: ui.LinkButton(ui.LinkButtonConfig{
+                    Label: "Review next exception", Href: "/exceptions/ord-1842",
+                }),
+                Tone: ui.RecordSummaryToneWarning,
+            }),
+            ui.Section(ui.SectionConfig{
+                Heading:     "Exceptions requiring attention",
+                Description: "Prioritized by promised ship time.",
+            }, exceptionTable()),
+        ),
+    )
 }
-
-type StatCardConfig struct {
-    Label string
-    Value string
-}
-
-func StatCard(cfg StatCardConfig) render.HTML {
-    return statCardStyle.WrapHTML(render.Tag("div", nil,
-        render.Tag("div", map[string]string{"class": "label"}, render.Text(cfg.Label)),
-        render.Tag("div", map[string]string{"class": "value"}, render.Text(cfg.Value)),
-    ))
-}
 ```
 
-Use it in a screen:
+The optional `Aside` becomes a bounded support rail on wide screens. The
+natural-width `Actions` slot lives in that lead region and precedes the compact
+aside context on phones, keeping the primary path early. Keep the opening
+description to one or two sentences, keep the highlight to one decision plus
+one short condition, and move the full narrative below the summary.
 
-```go
-import "myapp/components"
-
-// inside Render():
-components.StatCard(components.StatCardConfig{Label: "Users", Value: "1,247"})
-```
-
-What happened:
-
-- `registry.RegisterStyle` returned a `*Style` handle. The CSS function only runs once per theme (cached by content hash).
-- `WrapHTML` injected `data-fui-comp="stat-card"` onto the outermost `<div>`. The runtime scans the DOM after every paint/swap and inserts `<link rel="stylesheet" href="/__gofastr/comp/stat-card.css">` exactly once — even across SPA navigations.
-- The CSS body is scoped to `[data-fui-comp="stat-card"]` automatically by `ComponentSheet`. Unscoped selectors (`body`, `:root`, `::backdrop`, etc.) cause `Build()` to return an error wrapping `style.ErrUnscopable` — `MustBuild` panics on it at startup.
-
-### `Render(c)` vs `WrapHTML(html)`
-
-- `Style.Render(c)` — pass a `component.Component`; the framework calls `c.Render()` and injects the marker. Use for components built as Go types.
-- `Style.WrapHTML(html)` — pass already-built `render.HTML`. Use for components built as functions (`StatCard(cfg)`), which is the common case in `framework/ui/`.
-
-### Co-located screen styles (`style.Contribute`)
-
-For one-off screen styles that don't deserve a reusable component, use
-`style.Contribute` to declare CSS next to the Go render code. The host
-serves every contribution automatically: it fans them into
-`/__gofastr/app.css` (theme tokens resolved) with no wiring on your part —
-no `WithCustomCSS`, no `style.Apply` call:
-
-```go
-// screen_home.go
-var _ = style.Contribute(func(ss *style.StyleSheet) {
-    ss.Rule(".home-hero").
-        Set("padding", "{spacing.lg}", "background", "{colors.surface}").
-        End()
-    ss.Rule(".home-card").
-        Set("border-radius", "{radii.md}").
-        End()
-})
-
-func (s *HomeScreen) Render() render.HTML { /* uses .home-hero, .home-card */ }
-```
-
-Contributions are emitted after the app's `WithCustomCSS` payload, so
-co-located declarations can override base rules by re-declaring the same
-selector. Final CSS is identical between dev and prod — no nonces, no
-inline `<style>`, no CSP relaxation. (Only a custom host that builds its
-own stylesheet instead of serving `app.css` needs to call `style.Apply`
-itself.)
-
-**When to reach for what:**
-
-| Use case                      | Tool                              |
-|-------------------------------|-----------------------------------|
-| Reusable component with CSS   | `registry.RegisterStyle` + `Style.WrapHTML` (scoped, lazy-loaded per-component sheet) |
-| Brand variant of a framework component | `ui.RegisterButtonVariant` / `RegisterButtonSize` / `RegisterCardVariant` / `RegisterStatusVariant` (next section) |
-| One-off screen / page styles  | `style.Contribute` (this section — fragment added to the host's global theme stylesheet) |
-| Site-wide tokens & primitives | Host `createStyleSheet` directly  |
-
-### Custom variants on framework components
-
-`ui.Button`, `ui.LinkButton`, `ui.Card`, and the status-coded components
-(`StatusBadge`, `Callout`, `Tag`, `Notification`) validate their
-`Variant` at render time — an unknown value panics so typos surface
-immediately instead of shipping an unstyled element. To add a brand
-variant, don't write loose CSS against the `ui-button--…` classes;
-register it, so it joins the validation set and its CSS ships inside the
-component's own registered stylesheet:
-
-```go
-// Package-level — registration is init-time and process-global, like
-// registry.RegisterStyle. Registering after the app starts serving
-// (once the component's sheet has been built) panics.
-var Brand = ui.RegisterButtonVariant("brand", ui.VariantCSS{
-    Props: []string{
-        "background", "{colors.primary}",
-        "color", "#fff",
-    },
-    Hover: []string{"filter", "none", "opacity", "0.9"},
-})
-
-// At render sites — works for Button AND LinkButton (shared set):
-ui.Button(ui.ButtonConfig{Label: "Upgrade", Variant: Brand})
-```
-
-- `Props` / `Hover` / `Focus` are flat prop/value pairs — the same shape
-  `style.StyleSheet.Set` takes. Values may reference theme tokens:
-  `{colors.primary}` resolves to `var(--color-primary)`.
-- The emitted rules are scoped to the component's marker
-  (`[data-fui-comp="ui-button"].ui-button--brand`), which outranks the
-  base rules, so `Props` override the default look without `!important`.
-  The CSS loads, dedupes, and content-hashes exactly like the built-in
-  variants — it lives in the same sheet.
-- Duplicate names, built-in names (`primary`, `outlined`, `success`, …),
-  and malformed pairs panic at registration. Unregistered variants still
-  panic at render.
-
-The other registrars:
-
-- `ui.RegisterButtonSize(name, css)` — custom `ButtonSize`, shared with
-  `LinkButton`. Sizes and variants share the `ui-button--<name>` class
-  namespace, so a name can only be one or the other.
-- `ui.RegisterCardVariant(name, css)` — custom `CardVariant`.
-- `ui.RegisterStatusVariant(name, ui.StatusVariantCSS{…})` — one
-  registration extends every `StatusVariant` consumer at once:
-  `StatusBadge`, `Tag` (and therefore `FilterChipBar` chips), `Callout`,
-  and `Notification`. You supply the accent color plus an optional icon
-  glyph (used by Callout and Notification); each component derives its
-  own variant rules from the color in its own sheet, the same way the
-  built-in success/warning/… variants do:
-
-```go
-var Beta = ui.RegisterStatusVariant("beta", ui.StatusVariantCSS{
-    Color: "{colors.primary}",
-    Icon:  "β",
-})
-
-ui.StatusBadge(ui.StatusBadgeConfig{Label: "Beta", Variant: Beta})
-ui.Callout(ui.CalloutConfig{Title: "Beta feature", Variant: Beta}, body)
-```
-
-**Common mistake:** registering inside a handler or after
-`app.Serve()`. Validation would pass but the sheet is already built and
-cached, so the framework panics on the late registration instead of
-silently rendering an unstyled variant. Keep registrations in
-package-level `var` declarations.
+Use realistic content while composing; placeholder repetition hides hierarchy
+and density problems. Render the page at desktop and mobile widths, inspect the
+pixels, and revise `DESIGN.md` or the composition if the primary task is not
+obvious. If the framework lacks a reusable primitive, layout, token, or variant,
+add it upstream to `framework/ui` or `core-ui`; a GoFastr host app does not add a
+local stylesheet or hand-roll structural markup.
 
 ---
 
-## 5. Mobile hamburger nav (optional)
+## 5. Add responsive navigation
 
-The runtime understands `data-fui-disclosure` on a `<details>` element — closes on SPA navigation and on Escape automatically. Use the `html.Details` shortcut:
+Choose the navigation primitive that matches the product shell:
 
-```go
-import "github.com/DonaldMurillo/gofastr/core-ui/html"
+- `ui.SiteHeader` provides brand, desktop navigation, actions, and its mobile
+  drawer as one component. Set `MobileBrand` when the desktop identity is too
+  long for the phone row.
+- `ui.Sidebar` provides the desktop rail; pair the same `SidebarConfig` with
+  `ui.MountSidebar` for the framework-owned mobile drawer.
+- `ui.Responsive` is for cases where mobile needs a genuinely different
+  priority or order, not merely narrower columns.
 
-html.Details(html.DetailsConfig{Disclosure: true},
-    html.Summary(html.SummaryConfig{Class: "site-nav__toggle"}, render.Text("☰ Menu")),
-    html.Nav(html.NavConfig{Label: "Main"}, /* links */),
-)
-```
-
-Pair with media-query CSS that hides the toggle and shows the nav inline above your mobile breakpoint. See `examples/site/styles.go` (`.site-nav` rules) for the canonical pattern.
+See [UI wiring](ui-wiring.md) for the complete mount pattern and
+[UI components](ui-new-components.md) for the navigation configs. Do not
+hand-roll a `<details>` menu plus route-local media-query CSS: that bypasses the
+framework's navigation, focus, and mobile-drawer contract.
 
 ---
 
@@ -413,7 +339,8 @@ the example website:
 
 - `Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` — six
   spatial wrappers covering vertical stacking, horizontal flow, CSS
-  grid, centring, flex filler, and padded surface.
+  grid, centring, flex filler, and padded surface. `Cluster` wraps by default;
+  set `ClusterConfig.NoWrap` only for compact chrome guaranteed to fit.
 - `Card` — labelled `<section>` with header / body / footer slots
   and elevated / outlined / flat / interactive variants.
 - `OptimizedImage` — responsive `<picture>` with `srcset`, lazy

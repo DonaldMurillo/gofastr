@@ -29,15 +29,22 @@ func TestStackAlignJustifyEmitClasses(t *testing.T) {
 }
 
 func TestClusterWrapDefaultsOnNoModifierEmitted(t *testing.T) {
-	h := Cluster(ClusterConfig{Wrap: true}, render.Text("x"))
+	h := Cluster(ClusterConfig{}, render.Text("x"))
 	if strings.Contains(string(h), "ui-cluster--nowrap") {
-		t.Fatalf("Wrap:true should NOT emit nowrap modifier:\n%s", h)
+		t.Fatalf("zero-value ClusterConfig must wrap and must NOT emit nowrap modifier:\n%s", h)
 	}
 }
 
 func TestClusterNoWrapAddsModifier(t *testing.T) {
-	h := Cluster(ClusterConfig{Wrap: false}, render.Text("x"))
+	h := Cluster(ClusterConfig{NoWrap: true}, render.Text("x"))
 	mustContain(t, h, "ui-cluster--nowrap")
+}
+
+func TestClusterLegacyWrapTrueStillWraps(t *testing.T) {
+	h := Cluster(ClusterConfig{Wrap: true}, render.Text("x"))
+	if strings.Contains(string(h), "ui-cluster--nowrap") {
+		t.Fatalf("legacy Wrap:true must remain wrapping:\n%s", h)
+	}
 }
 
 func TestGridRendersMinAsDataAttribute(t *testing.T) {

@@ -17,8 +17,17 @@ import (
 
 var (
 	ledgerHeaderRe = regexp.MustCompile(`(\d+) verified findings`)
-	ledgerRowRe    = regexp.MustCompile(`(?m)^\|\s*(\d+)\s*\|.*\|\s*(\S+)\s*\|$`)
+	ledgerRowRe    = regexp.MustCompile(`(?m)^\|\s*(\d+)\s*\|.*\|\s*(\S+)\s*\|\r?$`)
 )
+
+func TestLedgerRowPatternAcceptsLFAndCRLF(t *testing.T) {
+	for _, ending := range []string{"\n", "\r\n"} {
+		rows := ledgerRowRe.FindAllStringSubmatch("| 7 | P1 | vuln | pkg | title | fixed |"+ending, -1)
+		if len(rows) != 1 || rows[0][1] != "7" || rows[0][2] != "fixed" {
+			t.Fatalf("ending %q parsed rows %#v", ending, rows)
+		}
+	}
+}
 
 func readLedger(t *testing.T) string {
 	t.Helper()

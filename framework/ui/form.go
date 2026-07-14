@@ -325,6 +325,9 @@ func validationSummaryCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-validation-summary"] .ui-validation-summary__list a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 24px;
   color: var(--color-danger, #DC2626);
   text-decoration: underline;
 }

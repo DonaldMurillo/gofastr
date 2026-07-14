@@ -361,6 +361,24 @@ const agentsPreamble = `# AGENTS.md
 > exists to keep you from reinventing primitives the framework
 > already provides.
 
+## UI starts with product direction
+
+Before selecting UI components, complete or refresh ` + "`" + `DESIGN.md` + "`" + `: primary
+task, density, dominant element, composition model, mobile priority, and two
+patterns to avoid. Then read ` + "`" + `agents/ui.md` + "`" + ` and
+` + "`" + `gofastr docs ui-composition-recipes` + "`" + `; use the recipe's named primitives rather
+than approximating its shape with Box/Card/Stack. For a dominant record or
+operational state, start with RecordSummary + MetricBand, keep actions in an
+Actions slot or Cluster, and do not repeat the same state in a Banner. Keep a
+RecordSummary description to one or two sentences; use its compact Aside for
+supporting owner/presence context and MetricBand hints for trends. Use
+SiteHeader.MobileBrand for a long phone identity. On wide detail routes, pair
+related bounded modules such as DetailLists in Grid rather than leaving a
+narrow stacked column beside an accidental empty rail; reflow the pair on
+phones. Cluster wraps whole controls by default; reserve ClusterConfig.NoWrap
+for compact chrome guaranteed to fit. Visual review at desktop and mobile is
+part of completion, not an optional polish pass.
+
 ## Don't reinvent — index
 
 Scan the table below. When your task matches a **Use this when**

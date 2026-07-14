@@ -223,6 +223,7 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 	mobileSubset := []string{
 		"/", "/get-started", "/components/", "/components/datatable",
 		"/components/filtertoolbar", "/components/multiselect",
+		"/components/recordsummary", "/components/metricband",
 		"/components/toggleaction", "/components/pagination",
 	}
 	for _, p := range mobileSubset {

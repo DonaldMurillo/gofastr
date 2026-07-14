@@ -122,8 +122,9 @@ var avatarGroupStyle = registry.RegisterStyle("ui-avatar-group", avatarGroupCSS)
 
 func avatarGroupCSS(_ style.Theme) string {
 	// Overlap is sized per-variant so the stack looks tight regardless
-	// of Avatar size — roughly 40% of each avatar's width tucks under
-	// the previous one. Stacking order (z-index via :nth-child reverse)
+	// of Avatar size — roughly 10% of each avatar's width tucks under
+	// the previous one. This preserves identity initials while still
+	// reading as one group. Stacking order (z-index via :nth-child reverse)
 	// keeps the first avatar on top, which matches the natural reading
 	// order ("Ada, then Grace, then …").
 	return `[data-fui-comp="ui-avatar-group"] {
@@ -133,16 +134,16 @@ func avatarGroupCSS(_ style.Theme) string {
   isolation: isolate;
 }
 [data-fui-comp="ui-avatar-group"] > *:not(:first-child) {
-  margin-inline-start: -1rem; /* default md: ~40% overlap on 2.5rem avatars */
+  margin-inline-start: -0.25rem; /* default md: ~10% overlap on 2.5rem avatars */
 }
 [data-fui-comp="ui-avatar-group"].ui-avatar-group--sm > *:not(:first-child) {
-  margin-inline-start: -0.6rem;
+  margin-inline-start: -0.15rem;
 }
 [data-fui-comp="ui-avatar-group"].ui-avatar-group--lg > *:not(:first-child) {
-  margin-inline-start: -1.25rem;
+  margin-inline-start: -0.3rem;
 }
 [data-fui-comp="ui-avatar-group"].ui-avatar-group--xl > *:not(:first-child) {
-  margin-inline-start: -1.6rem;
+  margin-inline-start: -0.4rem;
 }
 /* Reverse z-index so earlier siblings sit on top of later ones — the
    first avatar is the most prominent. */
@@ -167,10 +168,11 @@ func avatarGroupCSS(_ style.Theme) string {
   inline-size: 2.5rem;
   block-size: 2.5rem;
   border-radius: 9999px;
-  background: var(--color-muted, #e5e5e5);
+  background: var(--color-surface-soft, #e5e5e5);
   color: var(--color-text, #111);
   font-size: var(--text-xs, 0.8rem);
   font-weight: 600;
+  line-height: 1;
   border: 2px solid var(--color-surface, #fff);
 }
 [data-fui-comp="ui-avatar-group"].ui-avatar-group--sm .ui-avatar-group__overflow {

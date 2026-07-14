@@ -75,6 +75,10 @@ func NewBrowser(t *testing.T) context.Context {
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
+		// CI Chrome backs raster/screenshot buffers with /dev/shm, which is
+		// undersized on hosted runners; spilling to disk-backed tmp avoids
+		// slow or hung large-viewport captures.
+		chromedp.Flag("disable-dev-shm-usage", true),
 		// CI runners intermittently take >20s (the chromedp default)
 		// to cold-start Chrome; a generous websocket-URL deadline turns
 		// that from a flaky suite failure into a few slow seconds.
@@ -100,7 +104,8 @@ func NewTab(t *testing.T, browser context.Context) (context.Context, context.Can
 }
 
 // Prepare is a chromedp action that freezes CSS transitions/animations and
-// forces the given color scheme on the current document. Run it AFTER
+// forces the given color scheme on the current document and its UA controls.
+// Run it AFTER
 // navigating (and a brief settle), BEFORE any widget interaction and [Scan].
 //
 // The freeze is load-bearing AND must be a constructed stylesheet: the scheme
@@ -121,9 +126,27 @@ func Prepare(scheme string) chromedp.Action {
 		})()`, nil).Do(ctx); err != nil {
 			return err
 		}
-		// Force the color scheme via the same attribute ui.ThemeToggle flips.
+		// Force the scheme through the public bootstrap API when present so the
+		// html attribute, persisted preference, and color-scheme meta stay in
+		// agreement. Falling back still mirrors both DOM signals; setting only
+		// the attribute leaves Chromium's UA link/control palette in the previous
+		// scheme and can create a mixed-palette screenshot.
 		if err := chromedp.Evaluate(fmt.Sprintf(
-			`document.documentElement.setAttribute("data-color-scheme", %q);`, scheme), nil).Do(ctx); err != nil {
+			`(() => {
+				const mode = %q;
+				if (window.__gofastr_colorScheme && typeof window.__gofastr_colorScheme.set === "function") {
+					window.__gofastr_colorScheme.set(mode);
+					return;
+				}
+				document.documentElement.setAttribute("data-color-scheme", mode);
+				let meta = document.querySelector('meta[name="color-scheme"]');
+				if (!meta) {
+					meta = document.createElement("meta");
+					meta.setAttribute("name", "color-scheme");
+					document.head.appendChild(meta);
+				}
+				meta.setAttribute("content", mode);
+			})()`, scheme), nil).Do(ctx); err != nil {
 			return err
 		}
 		// Settle so any scheme-attribute listeners run before axe measures.

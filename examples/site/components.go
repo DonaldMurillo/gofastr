@@ -164,6 +164,33 @@ var noteOnlyComponents = map[string]bool{
 // the actual usage that produces the live demo. Keyed by slug so adding
 // a snippet never disturbs the catalog tuples. Rendered by usage().
 var componentCode = map[string]string{
+	"recordsummary": `ui.RecordSummary(ui.RecordSummaryConfig{
+    Eyebrow: "INC-2841 · Payments",
+    Title: "Checkout latency is elevated",
+    Status: ui.StatusBadge(ui.StatusBadgeConfig{Label: "SEV-1 active", Variant: ui.StatusDanger}),
+    Highlight: ui.Callout(ui.CalloutConfig{Title: "Next decision · 14:30 UTC"}, render.Text("Rollback if latency stays high.")),
+    Metrics: ui.MetricBand(ui.MetricBandConfig{Items: []ui.MetricBandItem{
+        {Label: "Impact", Value: "32%", Hint: "checkout requests"},
+        {Label: "p95 latency", Value: "1.4 s", Hint: "down from 1.6 s"},
+    }}),
+    Aside: ui.Muted(render.Text("Mina leads · 6 responders live")),
+    Actions: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
+        ui.LinkButton(ui.LinkButtonConfig{Label: "Open incident", Href: "/incidents/2841"}),
+        ui.Button(ui.ButtonConfig{Label: "Join bridge", Variant: ui.ButtonSecondary}),
+        ui.Button(ui.ButtonConfig{Label: "Acknowledge", Variant: ui.ButtonGhost}),
+    ),
+})`,
+
+	"metricband": `ui.MetricBand(ui.MetricBandConfig{
+    Label: "System signals",
+    Items: []ui.MetricBandItem{
+        {Label: "Availability", Value: "99.98%"},
+        {Label: "Latency p95", Value: "142 ms"},
+        {Label: "Error rate", Value: "0.04%"},
+        {Label: "Throughput", Value: "18.2k", Hint: "requests / min"},
+    },
+})`,
+
 	"counter": `ui.Counter(ui.CounterConfig{SignalName: "qty"})
 // or typed + auto-seeded via a store slice:
 ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})`,
@@ -549,6 +576,43 @@ var componentCatalog = []componentEntry{
 			Actions:  ui.Button(ui.ButtonConfig{Label: "Save changes", Variant: ui.ButtonPrimary}),
 		})
 	}},
+	{"recordsummary", "RecordSummary", "Navigation", "Dominant record or event summary with compact responsive composition.", func() render.HTML {
+		return ui.RecordSummary(ui.RecordSummaryConfig{
+			HeadingLevel: 2,
+			Eyebrow:      "INC-2841 · Payments",
+			Title:        "Checkout latency is elevated",
+			Description:  "Card authorizations are slower than normal while the payments team validates the latest mitigation.",
+			Status:       ui.StatusBadge(ui.StatusBadgeConfig{Label: "SEV-1 active", Variant: ui.StatusDanger}),
+			Highlight: ui.Callout(ui.CalloutConfig{Title: "Next decision · 14:30 UTC", Variant: ui.StatusWarning},
+				render.Text("Rollback if authorization latency remains above 800 ms.")),
+			Metrics: ui.MetricBand(ui.MetricBandConfig{Label: "Incident signals", Items: []ui.MetricBandItem{
+				{Label: "Impact", Value: "32%", Hint: "checkout requests"},
+				{Label: "Started", Value: "13:42 UTC", Hint: "32 min ago"},
+				{Label: "p95 latency", Value: "1.4 s", Hint: "down from 1.6 s"},
+				{Label: "Services", Value: "3", Hint: "2 recovering"},
+				{Label: "Open", Value: "32 min", Hint: "since 13:42 UTC"},
+			}}),
+			Aside: ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+				ui.Muted(render.Text("Live bridge · Mina leads")),
+				ui.AvatarGroup(ui.AvatarGroupConfig{
+					Avatars: []ui.AvatarConfig{
+						{Name: "Mina Chen", Status: ui.AvatarOnline},
+						{Name: "Devon Park", Status: ui.AvatarOnline},
+						{Name: "Aiko Tan", Status: ui.AvatarAway},
+						{Name: "Luis Ortega", Status: ui.AvatarOnline},
+					},
+					Max: 3, Label: "Responders on the live bridge", ShowNames: true,
+				}),
+			),
+			Footer: ui.Muted(render.Text("Commander: Mina Chen · Updated 2 min ago")),
+			Actions: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
+				ui.LinkButton(ui.LinkButtonConfig{Label: "Open incident", Href: "#", Variant: ui.ButtonPrimary}),
+				ui.Button(ui.ButtonConfig{Label: "Join bridge", Variant: ui.ButtonSecondary}),
+				ui.Button(ui.ButtonConfig{Label: "Acknowledge", Variant: ui.ButtonGhost}),
+			),
+			Tone: ui.RecordSummaryToneDanger,
+		})
+	}},
 	{"breadcrumbs", "Breadcrumbs", "Navigation", "Hierarchy trail.", func() render.HTML {
 		return patternsBreadcrumbs.New(patternsBreadcrumbs.Config{},
 			patternsBreadcrumbs.Crumb{Text: "Docs", Href: "/docs/"},
@@ -895,6 +959,14 @@ func main() {
 			ui.StatCard(ui.StatCardConfig{Label: "Errors / hr", Value: "47", Trend: "−12%", Direction: ui.TrendDown}),
 			ui.StatCard(ui.StatCardConfig{Label: "Latency p99", Value: "142ms", Trend: "stable", Direction: ui.TrendFlat}),
 		)
+	}},
+	{"metricband", "MetricBand", "Data", "Flat responsive band for a small set of related signals.", func() render.HTML {
+		return ui.MetricBand(ui.MetricBandConfig{Label: "System signals", Items: []ui.MetricBandItem{
+			{Label: "Availability", Value: "99.98%"},
+			{Label: "Latency p95", Value: "142 ms"},
+			{Label: "Error rate", Value: "0.04%"},
+			{Label: "Throughput", Value: "18.2k", Hint: "requests / min"},
+		}})
 	}},
 	{"animatedcounter", "AnimatedCounter", "Data", "Number that animates on appearance.", func() render.HTML {
 		return ui.AnimatedCounter(ui.AnimatedCounterConfig{To: 12483})

@@ -157,6 +157,8 @@ func docLayoutCSS(_ style.Theme) string {
   display: grid;
   grid-template-columns: var(--ui-doc-layout-rail, 220px) minmax(0, 1fr) var(--ui-doc-layout-rail, 220px);
   gap: var(--ui-doc-layout-gap, var(--spacing-2xl, 48px));
+  inline-size: 100%;
+  min-inline-size: 0;
   max-width: var(--ui-doc-layout-max-width, 1360px);
   margin-inline: auto;
   padding: var(--ui-doc-layout-pad, var(--spacing-xl, 32px));
@@ -229,9 +231,10 @@ func docLayoutCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__pager-ttl { color: var(--color-text, #18181B); font-weight: 500; }
 
-/* Collapse to a single column on narrow viewports. A grid track resolves to
-   its content's min-content and overflows; display:block lets each child take
-   the container width and the content scroll internally. */
+/* Collapse to a single column on narrow viewports. The root's explicit
+   min-inline-size above is required when DocLayout is itself a flex child;
+   otherwise its automatic min-content width can exceed the viewport even
+   after the internal grid becomes block layout. */
 @media (max-width: 900px) {
   [data-fui-comp="ui-doc-layout"] {
     display: block;

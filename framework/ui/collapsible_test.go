@@ -24,6 +24,33 @@ func TestCollapsibleRegistersCSS(t *testing.T) {
 	}
 }
 
+func TestCollapsibleUsesCanonicalThemeTokens(t *testing.T) {
+	css := collapsibleStyle.Entry().CSSFor(style.DefaultTheme())
+	for _, token := range []string{
+		"var(--color-border", "var(--color-surface", "var(--color-text",
+		"var(--color-text-muted", "var(--color-primary", "var(--radii-md",
+		"var(--duration-fast", "var(--easing-standard",
+	} {
+		if !strings.Contains(css, token) {
+			t.Errorf("collapsible CSS missing canonical token %q:\n%s", token, css)
+		}
+	}
+	// Hosts theming the interactive set via the --fui-* bridge must reach
+	// Collapsible exactly like its siblings (tabs, counter, toggle).
+	for _, chained := range []string{
+		"var(--fui-border, var(--color-border",
+		"var(--fui-foreground, var(--color-text",
+		"var(--fui-muted, var(--color-text-muted",
+		"var(--fui-primary, var(--color-primary",
+		"var(--fui-surface, var(--color-surface",
+	} {
+		if !strings.Contains(css, chained) {
+			t.Errorf("collapsible CSS missing bridge chain %q:\n%s", chained, css)
+		}
+	}
+	assertBridgeChainsToCanonical(t, "collapsible", css)
+}
+
 // ─── Collapsible ───
 
 func TestCollapsibleBasic(t *testing.T) {

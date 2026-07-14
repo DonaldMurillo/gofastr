@@ -65,6 +65,36 @@ func TestButtonLargeUsesTextLgToken(t *testing.T) {
 	}
 }
 
+func TestButtonWrapIsContainerDriven(t *testing.T) {
+	css := buttonCSS(style.DefaultTheme())
+	// flex: 0 0 auto gives the button a max-content base size, so wrapping
+	// action rows (Cluster) move the whole control to the next line before
+	// any label breaks.
+	if !strings.Contains(css, "flex: 0 0 auto") {
+		t.Fatalf("button CSS must size to max-content so action rows wrap whole controls:\n%s", css)
+	}
+	// The clamp + break must be container-driven: a label wider than ITS
+	// container (a sidebar rail, a card cell — at any viewport) wraps inside
+	// the bounded button instead of clipping. break-word, NOT anywhere:
+	// anywhere lets emergency breaks into min-content sizing, so table/grid
+	// layout (a DataTable actions column) could compress the button to one
+	// character per line; break-word breaks only at render time.
+	for _, want := range []string{"max-inline-size: 100%", "overflow-wrap: break-word"} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("button CSS must let an oversized label wrap inside its bounded control; missing %q:\n%s", want, css)
+		}
+	}
+	if strings.Contains(css, "overflow-wrap: anywhere") {
+		t.Fatalf("overflow-wrap: anywhere collapses button min-content in table/grid layouts:\n%s", css)
+	}
+	if strings.Contains(css, "white-space: nowrap") {
+		t.Fatalf("white-space: nowrap clips long labels in narrow containers on wide viewports:\n%s", css)
+	}
+	if strings.Contains(css, "@media (max-width: 40rem)") {
+		t.Fatalf("button wrapping must not key on viewport width — containers constrain buttons at every viewport:\n%s", css)
+	}
+}
+
 // fontSizeDeclRe matches every font-size: declaration, capturing the
 // value (up to the next ; or }). RE2 has no lookahead, so the value
 // is inspected in Go: a var()-led value is the sweep's token-with-
@@ -135,4 +165,35 @@ func TestFontSizeLiteralBudget(t *testing.T) {
 		t.Errorf("literal font-size declarations across registered sheets = %d, budget = %d — use var(--text-*) tokens (see log for offenders)", total, budget)
 	}
 	t.Logf("TOTAL literal font-size declarations: %d", total)
+}
+
+// The interactive set (Counter, Toggle, Tabs, Collapsible) predates the
+// canonical --color-* theme and exposed --fui-* custom properties as its host
+// override surface. Both surfaces must stay wired: every --fui-* bridge read
+// chains to the matching canonical token before its literal fallback —
+// var(--fui-border, var(--color-border, #e2e8f0)) — so the adaptive theme
+// reaches these components with no host aliases AND a host's --fui-*
+// overrides keep winning.
+var fuiBridgeRe = regexp.MustCompile(`var\(--fui-(?:border|foreground|muted-bg|muted|primary|surface)\s*,\s*([^)\s,]+)`)
+
+func assertBridgeChainsToCanonical(t *testing.T, name, css string) {
+	t.Helper()
+	for _, m := range fuiBridgeRe.FindAllStringSubmatch(css, -1) {
+		if !strings.HasPrefix(m[1], "var(--color-") {
+			t.Errorf("%s: %q must chain to a canonical --color-* token before its literal fallback", name, m[0])
+		}
+	}
+}
+
+func TestFuiBridgeChainsToColorTokens(t *testing.T) {
+	for name, css := range map[string]string{
+		"counter": counterCSS(style.DefaultTheme()),
+		"tabs":    tabsCSS(style.DefaultTheme()),
+		"toggle":  signalToggleCSS(style.DefaultTheme()),
+	} {
+		if !strings.Contains(css, "var(--fui-") {
+			t.Errorf("%s: the --fui-* bridge reads must remain for host compatibility", name)
+		}
+		assertBridgeChainsToCanonical(t, name, css)
+	}
 }

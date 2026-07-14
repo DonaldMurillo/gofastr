@@ -379,10 +379,10 @@ func dropdownCSS(_ style.Theme) string {
 	// renders as a flat, full-width, unstyled strip (functional but not a
 	// dropdown).
 	return `[data-fui-comp="fui-dropdown"]{position:relative;display:inline-block}` +
-		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface,#fff);border:1px solid var(--fui-border,#e2e8f0);border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:var(--spacing-sm, .25rem);z-index:50}` +
-		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:var(--spacing-md, .5rem) .75rem;border-radius:.375rem;color:var(--fui-foreground,#0f172a);text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:var(--text-sm, .875rem)}` +
-		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:hover,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:hover{background:var(--fui-muted-bg,#f1f5f9)}` +
-		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:focus-visible,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:focus-visible{outline:2px solid var(--fui-primary,#3b82f6);outline-offset:-2px}`
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface, var(--color-surface, #fff));border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:var(--spacing-sm, .25rem);z-index:50}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:var(--spacing-md, .5rem) .75rem;border-radius:.375rem;color:var(--fui-foreground, var(--color-text, #0f172a));text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:var(--text-sm, .875rem)}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:hover,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9))}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:focus-visible,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px}`
 }
 
 // AnimateOnSignal wraps an element so it gets a CSS class when a signal

@@ -2,6 +2,7 @@ package interactive
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -771,5 +772,23 @@ func TestDropdownPanelInitiallyHidden(t *testing.T) {
 	panelTag := s[tagStart : idx+tagEnd+1]
 	if !strings.Contains(panelTag, `hidden`) {
 		t.Errorf("panel tag should have hidden attr, got:\n%s", panelTag)
+	}
+}
+
+// Dropdown belongs to the interactive set whose host override surface is the
+// legacy --fui-* bridge. Every bridge read must chain to the canonical
+// adaptive --color-* token before its literal fallback so the theme reaches
+// the panel without host aliases while host --fui-* overrides keep winning
+// (framework/ui's TestFuiBridgeChainsToColorTokens is the sibling sweep).
+func TestDropdownFuiBridgeChainsToColorTokens(t *testing.T) {
+	css := dropdownCSS(style.Theme{})
+	if !strings.Contains(css, "var(--fui-") {
+		t.Fatal("dropdown CSS lost its --fui-* bridge reads")
+	}
+	re := regexp.MustCompile(`var\(--fui-(?:border|foreground|muted-bg|muted|primary|surface)\s*,\s*([^)\s,]+)`)
+	for _, m := range re.FindAllStringSubmatch(css, -1) {
+		if !strings.HasPrefix(m[1], "var(--color-") {
+			t.Errorf("dropdown: %q must chain to a canonical --color-* token before its literal fallback", m[0])
+		}
 	}
 }

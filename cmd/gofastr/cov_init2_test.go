@@ -54,12 +54,9 @@ func TestWriteHomeScreenWriteFailureExits(t *testing.T) {
 	}
 }
 
-func TestWriteStylesGoWriteFailureExits(t *testing.T) {
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { writeStylesGo(covT_missingDir(t)) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+func TestWriteDesignMDWriteFailure(t *testing.T) {
+	if err := writeDesignMD(covT_missingDir(t)); err == nil {
+		t.Fatal("writeDesignMD should fail when the target directory is missing")
 	}
 }
 
@@ -84,4 +81,19 @@ func TestWriteHomeScreenNoEntityVsEntity(t *testing.T) {
 		t.Fatal(err)
 	}
 	covT_capStdout(t, func() { writeHomeScreen(d2, false) })
+
+	// The entity hint is prose. It must land in the Section description,
+	// never inside the shell CodeBlock — a sentence concatenated onto a
+	// command renders as a nonsense line a new user may copy-paste.
+	b, err := os.ReadFile(filepath.Join(d2, "screens", "home.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if !strings.Contains(src, `Code:     "gofastr docs ui-composition-recipes\ngofastr theme init",`) {
+		t.Errorf("generated CodeBlock must contain shell commands only:\n%s", src)
+	}
+	if !strings.Contains(src, "entities/entities.go") || !strings.Contains(src, "/posts") {
+		t.Errorf("entity hint prose missing from generated screen:\n%s", src)
+	}
 }

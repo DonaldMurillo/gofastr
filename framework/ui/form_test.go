@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
@@ -91,6 +92,15 @@ func TestValidationSummaryRendersErrors(t *testing.T) {
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in: %s", want, h)
+		}
+	}
+}
+
+func TestValidationSummaryLinksMeetTouchTargetFloor(t *testing.T) {
+	css := validationSummaryCSS(style.Theme{})
+	for _, want := range []string{"display: inline-flex", "min-block-size: 24px"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("ValidationSummary CSS missing %q", want)
 		}
 	}
 }

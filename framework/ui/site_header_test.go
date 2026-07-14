@@ -48,6 +48,66 @@ func TestSiteHeaderRendersBrandPrimaryAndRight(t *testing.T) {
 	}
 }
 
+func TestSiteHeaderMobileBrandOwnsResponsiveIdentitySwap(t *testing.T) {
+	h := string(SiteHeader(SiteHeaderConfig{
+		Brand:       render.Raw(`<a href="/">Relay Incident Command</a>`),
+		MobileBrand: render.Raw(`<a href="/">Relay</a>`),
+	}))
+	for _, want := range []string{
+		`ui-site-header__brand--desktop`,
+		`Relay Incident Command`,
+		`ui-site-header__brand--mobile`,
+		`>Relay</a>`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("mobile brand swap missing %q\nhtml=%s", want, h)
+		}
+	}
+	css := siteHeaderCSS(style.Theme{})
+	for _, want := range []string{
+		`.ui-site-header__brand--mobile { display: none; }`,
+		`.ui-site-header__brand--desktop { display: none; }`,
+		`.ui-site-header__brand--mobile { display: flex; }`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("mobile brand CSS missing %q\ncss=%s", want, css)
+		}
+	}
+}
+
+func TestSiteHeaderBrandDefaultsLoseToConsumerCSS(t *testing.T) {
+	css := siteHeaderCSS(style.Theme{})
+	// Slot layout keeps normal specificity (framework-owned, must survive a
+	// host's generic `a` reset); visual identity lives in a :where() rule at
+	// zero specificity so ANY consumer selector overrides it — the Brand
+	// slot contract is "consumer owns visual identity".
+	i := strings.Index(css, `:where([data-fui-comp="ui-site-header"] .ui-site-header__brand a) {`)
+	if i < 0 {
+		t.Fatalf("zero-specificity brand identity rule missing:\n%s", css)
+	}
+	identity := css[i:]
+	identity = identity[:strings.Index(identity, "}")]
+	for _, want := range []string{
+		`color: var(--ui-site-header-brand-color, var(--color-text, currentColor));`,
+		`text-decoration: none;`,
+	} {
+		if !strings.Contains(identity, want) {
+			t.Errorf("brand identity defaults missing %q\n%s", want, identity)
+		}
+	}
+	j := strings.Index(css, `[data-fui-comp="ui-site-header"] .ui-site-header__brand a {`)
+	if j < 0 {
+		t.Fatalf("framework-owned brand layout rule missing:\n%s", css)
+	}
+	layout := css[j:]
+	layout = layout[:strings.Index(layout, "}")]
+	for _, forbidden := range []string{"color:", "text-decoration", "font-weight"} {
+		if strings.Contains(layout, forbidden) {
+			t.Errorf("identity declaration %q must not sit in the full-specificity layout rule:\n%s", forbidden, layout)
+		}
+	}
+}
+
 func TestSiteHeaderDesktopNavOmitsExternalAttrs(t *testing.T) {
 	// External flag should only affect the mobile drawer copy, not
 	// the desktop bar — keeps "primary" links semantically internal.

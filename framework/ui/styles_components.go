@@ -55,6 +55,7 @@ var (
 func buttonCSS(t style.Theme) string {
 	return `[data-fui-comp="ui-button"], .ui-button {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm);
@@ -69,6 +70,17 @@ func buttonCSS(t style.Theme) string {
   font: inherit;
   font-size: var(--text-base, 0.95rem);
   font-weight: 600;
+  /* flex: 0 0 auto sizes the button to its unwrapped label (max-content), so
+     wrapping action rows move whole controls to the next line first. The
+     clamp below is container-driven, not viewport-driven: only a label wider
+     than its own container (a sidebar rail, a card cell — at any viewport)
+     wraps inside the bounded button. break-word, NOT anywhere: break-word
+     adds emergency break points at render time without entering min-content
+     sizing, so table/grid layout (a DataTable actions column under column
+     pressure) keeps the intact label as the button's minimum and overflows
+     horizontally instead of letter-stacking it. */
+  max-inline-size: 100%;
+  overflow-wrap: break-word;
   cursor: pointer;
   background: var(--color-primary);
   color: var(--color-primary-fg);
@@ -150,7 +162,8 @@ func buttonCSS(t style.Theme) string {
   /* --text-lg, NOT --text-base: :root always emits --text-base (1rem),
      so reading it here would collapse --large into the default size. */
   font-size: var(--text-lg, 1.05rem);
-}` +
+}
+` +
 		// ToggleAction renders class="ui-button ui-button--<variant>"
 		// under its own data-fui-comp marker, so registered custom
 		// variants/sizes are dual-scoped into it (built-in variants are
@@ -573,12 +586,14 @@ func avatarCSS(_ style.Theme) string {
    an overlay. Colors come from the status tokens. */
 [data-fui-comp="ui-avatar"] .ui-avatar__status {
   position: absolute;
-  inset-block-end: 0;
-  inset-inline-end: 0;
-  inline-size: 30%;
-  block-size: 30%;
-  min-inline-size: 8px;
-  min-block-size: 8px;
+  inset-block-end: 0.0625rem;
+  inset-inline-end: 0.0625rem;
+  inline-size: 25%;
+  block-size: 25%;
+  min-inline-size: 6px;
+  min-block-size: 6px;
+  max-inline-size: 12px;
+  max-block-size: 12px;
   border-radius: var(--radii-full, 9999px);
   box-shadow: 0 0 0 0.14em var(--color-surface, #fff);
 }
