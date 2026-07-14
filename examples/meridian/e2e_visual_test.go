@@ -87,6 +87,16 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 						chromedp.EmulateViewport(viewport.width, viewport.height),
 						chromedp.Navigate(base+path),
 						chromedp.WaitReady("body", chromedp.ByQuery),
+						// New-headless Chrome produces compositor frames only
+						// for the active target. A fresh tab opened while
+						// another target held focus (the warm-up tab, the
+						// login tab) can stay occluded, and the fromSurface
+						// screenshot below then waits forever for a frame that
+						// never comes — deterministic on CI, invisible on
+						// macOS. Activate the tab before capturing.
+						chromedp.ActionFunc(func(ctx context.Context) error {
+							return page.BringToFront().Do(ctx)
+						}),
 						chromedp.Sleep(300*time.Millisecond),
 						axetest.Prepare(scheme),
 						chromedp.Evaluate(`({viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth})`, &metrics),
