@@ -115,6 +115,8 @@ that swap just one fragment — no hard refreshes, no client re-render.
 - **[Interactive patterns](/docs/interactive-patterns)** · **[Signal store](/docs/signal-store)** —
   client state that fans out to many consumers from one declaration.
 - **[Forms](/docs/form-module)** — server-validated, island-swapped error states.
+- **[PWA](/docs/pwa)** — installable manifest + a safe offline shell via
+  `uihost.WithPWA`; works on the live server and in static exports.
 - **[Image pipeline](/docs/image)** — pure-Go resize + WebP. **[Print documents](/docs/print)** —
   chrome-free print/PDF. **[Runtime modules](/docs/runtime-minification)** —
   carved per-feature so a page ships only the JS it uses.

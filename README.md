@@ -460,6 +460,7 @@ connected to a running app.
 - [Deployment](framework/docs/content/deploy.md) — single-binary build, graceful shutdown, production checklist
 - [Horizontal scaling](framework/docs/content/scaling.md) — what's process-local by default and the replica-safe alternative for each
 - [Observability](framework/docs/content/observability.md) — metrics and tracing
+- [PWA](framework/docs/content/pwa.md) — installable app manifest + versioned offline shell via `uihost.WithPWA`
 - [Agent-ready](framework/docs/content/agent-ready.md) — the discovery surface for AI agents (llms.txt, agent card, MCP)
 - [Current risk register](framework/docs/content/project-architecture-review.md) — revalidated architecture risks and maintenance rules
 - [Agent notes](framework/docs/content/agent-notes.md) — running notes for AI contributors
