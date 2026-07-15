@@ -67,8 +67,9 @@ generate both the TOC and the `agents/` detail files. Refresh with
 | UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components) — `gofastr docs ui-composition-recipes` for page grammar, `gofastr docs ui-new-components` for the catalog, live demos at `/components/<slug>` on the docs site (`examples/site`) |
 | structured request log, panic recovery, log MCP debug tools | `battery/log` |
 | browser refresh on `gofastr dev` rebuild | auto-wired if your `main.go` uses `framework.NewApp` + `uihost.New` — no host code; for custom bootstraps call `dev.RegisterLiveReload(router)` manually |
+| agent debugging under `gofastr dev` | auto-wired by `framework.NewApp`: /mcp mount + introspection (`app_routes`, `framework_docs_search`, …) + control (`app_module_enable/disable`) + battery/log debug tools — opt out with `GOFASTR_DEV_MCP=0`; production needs explicit `WithMCP`/`WithMCPIntrospection`/`WithMCPControl` |
 | load `.env` files | auto-wired by `framework.NewApp` — do nothing |
-| per-test isolated Postgres DB | `framework/testkit.NewIsolatedDB(t, dsn)` |
+| per-test isolated Postgres DB | `framework/testkit.NewIsolatedDB(t, adminDSN, migrate)` |
 
 ## Hard rules
 
@@ -101,7 +102,7 @@ generate both the TOC and the `agents/` detail files. Refresh with
   RPCs, not new routes.
 - Migrations: prefer `auto-migrate` for greenfield schemas; otherwise
   versioned migrations under `migrations/`.
-- Tests against Postgres: `framework/testkit.NewIsolatedDB(t, dsn)`
+- Tests against Postgres: `framework/testkit.NewIsolatedDB(t, adminDSN, migrate)`
   carves a fresh DB per test. **Don't `t.Skip` when the DB is missing —
   hard-fail.**
 
@@ -112,4 +113,5 @@ generate both the TOC and the `agents/` detail files. Refresh with
 3. Run `gofastr docs --grep <term>` to search the embedded docs, or `gofastr docs <topic>` to read one.
 4. Use the live `/mcp` introspection tools (`framework_docs_search`,
    `app_routes`, `app_batteries`, etc.) if the app is running locally
-   with `framework.WithMCPIntrospection()`.
+   with `framework.WithMCPIntrospection()` — blueprint-generated apps
+   wire it (plus `framework.WithMCP()`) by default.

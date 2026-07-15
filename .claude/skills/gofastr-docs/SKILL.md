@@ -27,7 +27,7 @@ skill applies. Docs are part of the change, not a follow-up.
 
 There is no `docs/api-reference/` — the public API is documented via
 README's "Surfaces" table + per-feature reference page + the
-`framework.doc.go` package doc. Keep these consistent.
+`framework/doc.go` package doc. Keep these consistent.
 
 ## The change→doc mapping (use this as a checklist)
 
@@ -46,7 +46,7 @@ was needed.
 **You added a new entity field type** (e.g. `schema.JSON`, `schema.Money`):
 - `framework/docs/content/entity-declarations.md` — field type table
 - README "Declare an entity" example if it changes the canonical shape
-- `framework/column.go` column constructors — same PR
+- `framework/entity/column.go` column constructors — same PR
 
 **You added a new auto-generated route or endpoint pattern**
 (e.g. `_batch`, `_events`, `_search`):
@@ -63,11 +63,11 @@ was needed.
 
 **You changed the query DSL grammar or operator set:**
 - `framework/docs/content/query-dsl.md`
-- `framework/dsl.go` parser table — same PR
+- `framework/dsl/dsl.go` parser table — same PR
 
 **You changed migration directives or the migrate CLI:**
 - `framework/docs/content/migrations.md`
-- `cmd/gofastr/migrate.go` — same PR
+- `cmd/gofastr/migrate_cmd.go` (+ `migrate_generate.go`) — same PR
 
 **You changed `core-ui/` or `framework/uihost/`:**
 - `core-ui/ARCHITECTURE.md` — this is mandatory; the doc is the contract

@@ -6,7 +6,7 @@ App-level helpers worth surfacing to AI agents alongside the batteries.
 reload, dev server, browser auto-refresh, livereload, run the app while
 developing, `.env` loading, live app introspection.
 
-## `framework.WithAuditLog(cfg)` — automatic CRUD audit
+## `app.WithAuditLog(cfg)` — automatic CRUD audit
 
 **Use this when** the prompt mentions: audit trail, who did what, track
 changes, compliance log, history of modifications, admin accountability.
@@ -72,10 +72,21 @@ already done.
 
 ## `framework.WithMCPIntrospection()` — live-app agent debug
 
-Adds `framework_docs_list/get/search`, `app_routes`, `app_plugins`,
-`app_batteries`, `app_config`, `app_readiness` to the app's MCP
-endpoint so a connected agent can answer "what routes exist" /
-"is the app ready" without leaving the session.
+Adds `framework_docs_list`, `framework_docs_get`,
+`framework_docs_search`, `app_routes`, `app_plugins`, `app_batteries`,
+`app_modules`, `app_config`, `app_readiness` to the app's MCP endpoint
+so a connected agent can answer "what routes exist" / "is the app
+ready" without leaving the session.
+
+`framework.WithMCPControl()` is the mutating counterpart: adds
+`app_module_enable` / `app_module_disable` for runtime state control
+on trusted /mcp endpoints.
+
+**Under `gofastr dev` the whole surface auto-enables** (mount +
+introspection + control + battery/log's `log_*` debug tools) with no
+options — livereload for agents. Opt out with `GOFASTR_DEV_MCP=0`.
+Production processes never see `GOFASTR_DEV`, so the explicit options
+stay the only path there.
 
 **Use this when** the prompt asks about live introspection, debugging
 a running server, or "is this app healthy". See the

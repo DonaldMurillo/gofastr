@@ -261,10 +261,31 @@ endpoints generate Go handler stubs (in `stubs.go`) plus router registration.
 
 When `app.module` is present, blueprint generation also emits a
 `main.go`: a runnable app entrypoint that opens the configured SQLite
-database, registers generated entities, exposes generated MCP tools at `/mcp`,
-wires generated screens/endpoints/middleware/plugins through
-`RegisterGenerated` (in `app.go`, same `package main`), mounts the UI host,
-and serves `app.static_dir` through the generated UI host.
+database, registers generated entities, wires generated
+screens/endpoints/middleware/plugins through `RegisterGenerated` (in
+`app.go`, same `package main`), mounts the UI host, and serves
+`app.static_dir` through the generated UI host.
+
+The generated app is agent-ready out of the box: `framework.WithMCP()`
+mounts `/mcp` (POST JSON-RPC + GET SSE) plus the discovery well-knowns
+(`/mcp/server-card`, `/.well-known/mcp/server-card.json`,
+`/.well-known/mcp/catalog.json`), serving the per-entity CRUD tools
+(`mcp: true`) alongside the `framework.WithMCPIntrospection()` set
+(`app_routes`, `app_readiness`, `framework_docs_search`, …). The
+introspection tools are read-only but reveal the app's shape — remove
+`WithMCPIntrospection()` from `main.go` if `/mcp` is reachable by
+untrusted callers in production.
+
+The generated `main.go` also registers battery/log with its canonical
+zero config: per-app file sink, access log, panic recovery. Under
+`gofastr dev` the framework additionally auto-enables the mutating
+control tools (`app_module_enable` / `app_module_disable`), the log
+debug tools (`log_recent`, `log_filter`, `log_metrics`,
+`log_set_level`), and MCP data tools for every CRUD entity (even
+without `mcp: true`), so a connected agent can read recent requests
+and errors, read and write app data, and toggle modules during
+development — none of which registers on a production boot. See
+[agent-ready](agent-ready.md) and [dev-livereload](dev-livereload.md).
 
 ### Generated screen files
 
