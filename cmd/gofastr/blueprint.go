@@ -3654,6 +3654,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	if hasSeed {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/filter\"\n")
 	}
+	sb.WriteString("\tfwimage \"github.com/DonaldMurillo/gofastr/framework/image\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/isolation\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/uihost\"\n")
 	if imp := blueprintDriverImport(driver); imp != "" {
@@ -3755,7 +3756,13 @@ func renderBlueprintMain(bp Blueprint) string {
 	// Opt-in host surfaces (PWA, public LLM markdown) append to the same
 	// uihost.New call. Independent by design: enabling one never emits
 	// the other.
-	extraUIOpts := ""
+	// Always-on SEO/icon defaults: a generated app ships a favicon (derived
+	// at startup from the theme's primary color — replace appIconPNG with
+	// real logo bytes when there is one) and a robots.txt that keeps the
+	// framework's internal endpoints out of the index while allowing
+	// everything else. Explicit PWA icons (app.pwa) still win the manifest.
+	extraUIOpts := ", uihost.WithAppIcon(appIconPNG())"
+	extraUIOpts += `, uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}})`
 	if bp.App.PWA.Enabled {
 		extraUIOpts += ", " + blueprintPWAOptionLiteral(bp)
 	}
@@ -3827,6 +3834,21 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("func getEnv(key, fallback string) string {\n")
 	sb.WriteString("\tif v := os.Getenv(key); v != \"\" {\n\t\treturn v\n\t}\n")
 	sb.WriteString("\treturn fallback\n")
+	sb.WriteString("}\n\n")
+	iconFrom, iconTo := blueprintIconStops(bp)
+	sb.WriteString("// appIconPNG generates the app's icon source at startup — a diagonal\n")
+	sb.WriteString("// gradient in the blueprint's primary color. uihost.WithAppIcon derives\n")
+	sb.WriteString("// /favicon.ico, the sized PNGs, and the head links from this one image.\n")
+	sb.WriteString("// Have a real logo? Embed it and return those bytes instead:\n")
+	sb.WriteString("//\n")
+	sb.WriteString("//\t//go:embed logo.png\n")
+	sb.WriteString("//\tvar logo []byte\n")
+	sb.WriteString("func appIconPNG() []byte {\n")
+	sb.WriteString(fmt.Sprintf("\timg, err := fwimage.NewGradient(512, 512, %q, %q)\n", iconFrom, iconTo))
+	sb.WriteString("\tif err != nil {\n\t\treturn nil // WithAppIcon warns and skips on undecodable input\n\t}\n")
+	sb.WriteString("\tb, err := img.PNG().Bytes()\n")
+	sb.WriteString("\tif err != nil {\n\t\treturn nil\n\t}\n")
+	sb.WriteString("\treturn b\n")
 	sb.WriteString("}\n")
 	if hasSeed {
 		sb.WriteString("\n// resolveSeedRefs rewrites \"@entity.field=value\" reference strings in a\n")
@@ -3852,6 +3874,36 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("}\n")
 	}
 	return sb.String()
+}
+
+// blueprintIconStops picks the generated app icon's gradient stops from
+// the blueprint theme: the primary color when it's a plain #RRGGBB hex
+// (theme values may be any CSS color — oklch etc. can't feed the PNG
+// generator, so those fall back to the framework's indigo), and a 45%-
+// darkened variant of the from-stop for depth.
+func blueprintIconStops(bp Blueprint) (string, string) {
+	from := "#4338CA"
+	if v, ok := bp.App.Theme["primary"]; ok && isHexRGB(v) {
+		from = strings.ToUpper(v)
+	}
+	var r, g, b int
+	fmt.Sscanf(from[1:], "%02X%02X%02X", &r, &g, &b)
+	to := fmt.Sprintf("#%02X%02X%02X", r*55/100, g*55/100, b*55/100)
+	return from, to
+}
+
+func isHexRGB(s string) bool {
+	if len(s) != 7 || s[0] != '#' {
+		return false
+	}
+	for _, c := range s[1:] {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func blueprintDriverImport(driver string) string {
