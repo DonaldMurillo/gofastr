@@ -7,6 +7,74 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Hot reload now reaches every HTML surface.** `framework.NewApp` mounts
+  dev-only middleware (active only under `gofastr dev`'s `GOFASTR_DEV=1`)
+  that splices the livereload client into full HTML documents — responses
+  declaring `Content-Type: text/html` that contain `</body>` and don't
+  already carry the tag. `static.Handler` file serving (the SPA and
+  static-site shapes), widget-server pages, and hand-rolled handlers that
+  set the type now auto-refresh like uihost screens. Fragments (island
+  swaps, SPA-nav partials), compressed bodies, HEAD/Range requests,
+  WebSocket upgrades, JSON/SSE/streams, and flushed progressive HTML all
+  pass through untouched.
+- **HMR-readiness evals.** An examples sweep boots every runnable example
+  under `GOFASTR_DEV=1` and asserts the livereload endpoint plus client
+  injection; a blueprint dev-loop e2e generates an app, runs it under
+  `gofastr dev`, edits a screen, and asserts the rebuilt content serves; a
+  docs tripwire pins that the dev-loop docs lead with `gofastr dev`.
+- **Static site as an app: full-site offline PWA for static exports.**
+  A static export with `uihost.WithPWA` now emits a full-site service
+  worker (`PWAStaticServiceWorkerJS`): the exported page set is closed and
+  immutable, so the whole site — pages, widget chrome, `llm.md`, component
+  stylesheets under their versioned `?v=` URLs — is precached at install
+  and navigations are cache-first (trailing-slash tolerant) — land once,
+  install the app, and the whole site works offline, including
+  never-visited pages. User static-dir files precache best-effort so one
+  un-servable file cannot brick the install; the cache version
+  fingerprints the exported tree (unchanged rebuilds stay byte-identical);
+  static caches use their own `gofastr-pwa-static-…` prefix so live and
+  static deployments on one origin never delete each other's caches; and
+  a user-supplied manifest or worker in the static dir wins over the
+  generated one. The live app's conservative network-first worker is
+  unchanged and deny rules apply to both. Proven by a Chrome e2e:
+  install, kill the server, navigate to a never-visited page, get its
+  real content.
+- **Non-deterministic dev-loop funnel signal in the UI-quality eval.**
+  Builders now get the snapshot's own `gofastr` CLI first on PATH via a
+  logging shim (previously `gofastr docs`/`gofastr dev` depended on a
+  possibly version-mismatched global install), the builder prompt stays
+  neutral about dev commands, and each candidate records whether the blind
+  builder discovered `gofastr dev` from the generated guidance alone —
+  surfaced in `result.json` and the leaderboard as funnel telemetry.
+
+### Changed
+
+- **`gofastr migrate` honors an exported `DATABASE_URL`.** The docs always
+  promised the 12-factor pattern, but only `--db-url=` and a `.env` file
+  worked; the process environment now sits between them (flag > env > .env,
+  matching the framework's dotenv precedence).
+- **Documentation-accuracy sweep** (77 guidance surfaces audited against the
+  code): the audit-log example now shows the real chained
+  `app.WithAuditLog(cfg)` wiring instead of a NewApp option that never
+  compiled (framework agents file + host skill); the ecommerce example's
+  README pointed at a `gen/` directory that hasn't existed since it moved to
+  `output_dir: app`; the notify battery no longer advertises a nonexistent
+  `WebhookChannel` (signed outbound webhooks are `battery/webhook`);
+  `pack` is no longer marked *(future)* in the architecture doc; the
+  migrations quick-reference shows the required `--from=`; and the harness
+  docs (and one error string) now say plainly that `verify-ack`,
+  `conformance`, `ack`, `token`, and `--auth-token-file` are specified but
+  not yet wired into the CLI.
+- **The development loop funnels to `gofastr dev`.** `go run .` never
+  hot-reloads (only `gofastr dev` sets `GOFASTR_DEV=1`), yet the
+  highest-traffic guidance led with it. `ui-getting-started`,
+  `tutorial-blueprint-app`, `project-structure`, the README quickstart, the
+  post-`generate` next-steps output, the generated AGENTS.md trigger row,
+  and the UI-eval builder prompt now lead with `gofastr dev` for iteration,
+  keeping `go run .`/`go build` for one-shot runs and production.
+
 ## [0.23.0] - 2026-07-14
 
 AI-native UI composition (#57): framework-owned operational components,
