@@ -57,6 +57,25 @@ go build -o site ./examples/site/
   and deny lists, and the registration target are all prefixed, so the
   exported app installs and works offline from the subpath.
 
+  A static export gets the **full-site worker**, not the live app's
+  conservative one: the exported page set is closed and immutable, so
+  the worker precaches the whole site at install — every page, every
+  framework asset (widget chrome, `llm.md`, component stylesheets under
+  their versioned `?v=` URLs), the shell — and serves navigations
+  cache-first, tolerating static hosts' trailing-slash redirects. A
+  visitor who lands once has the entire site cached — install the PWA
+  and every page works offline, including pages never visited. User
+  static-dir files are precached best-effort so one un-servable file
+  cannot brick the install. The worker's cache version fingerprints the
+  exported content, so a redeploy (even one that only edits page text)
+  ships byte-different worker JS and the fresh export replaces the old
+  cache; an unchanged rebuild reproduces identical worker bytes. Static
+  caches live under their own `gofastr-pwa-static-…` prefix, so a live
+  deployment on the same origin never deletes them. Denied endpoints
+  (`/api`, `/auth`, framework session/SSE paths) are still never
+  precached or intercepted, and a user-supplied `manifest.webmanifest`
+  or `service-worker.js` in the static dir wins over the generated one.
+
 Dynamic routes require the screen to implement `StaticPathsProvider`:
 
 ```go

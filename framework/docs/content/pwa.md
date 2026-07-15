@@ -100,6 +100,31 @@ The generated worker is deliberately conservative:
   proxy, say — contributes only its URL; give it a new path or query
   when it changes.)
 
+## Static exports: the full-site worker
+
+The rules above protect a LIVE app, where rendered HTML can be
+personalized. A [static export](static-export.md) has no such concern —
+the page set is closed and every byte is immutable — so the exported
+`service-worker.js` flips strategy: the whole site is precached at
+install — every page, every framework asset (including component
+stylesheets under their versioned `?v=` URLs), the shell — and
+navigations are served cache-first, tolerating static hosts' trailing-
+slash redirects, with the network as fallback. Land once, install the
+app, and every page works offline — including pages never visited.
+
+User static-dir files are precached best-effort: one un-servable file
+does not fail the install and pin clients to a previous deployment.
+The cache version fingerprints the exported content, so any redeploy
+(even a text-only edit) rotates the cache through the normal
+worker-update cycle, and the static worker's caches use a separate
+`gofastr-pwa-static-…` prefix carrying the base path, so a live
+deployment and static exports on one origin never delete each other's
+caches. The deny list (`/api`, `/auth`, framework session/SSE paths,
+plus your `DenyPaths`) applies unchanged. If the app's static dir
+ships its own `manifest.webmanifest` or `service-worker.js`, the
+export keeps the user-supplied file.
+
+
 ## Offline screen
 
 The default screen is a minimal "You're offline" notice rendered

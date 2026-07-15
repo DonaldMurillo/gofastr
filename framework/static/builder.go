@@ -2,6 +2,8 @@ package static
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -107,6 +109,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 				if err := writeFile(dst, []byte(md)); err != nil {
 					return res, err
 				}
+				res.Assets = append(res.Assets, "/"+filepath.ToSlash(pathToLLMFile(p)))
 				b.log("wrote llm.md for %s -> %s", p, dst)
 			}
 		}
@@ -115,6 +118,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		if err := writeFile(filepath.Join(b.OutDir, "llm-pages.md"), []byte(indexMD)); err != nil {
 			return res, err
 		}
+		res.Assets = append(res.Assets, "/llm-pages.md")
 		b.log("wrote llm-pages.md index")
 	}
 
@@ -179,19 +183,16 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	// Widget catalog + chrome + CSS — dumped as query-free files so the
 	// runtime's data-fui-open overlays resolve against the static tree
-	// instead of 404'ing against the live widget endpoints.
-	if err := b.dumpWidgetAssets(); err != nil {
+	// instead of 404'ing against the live widget endpoints. Recorded in
+	// res.Assets so the full-site worker precaches them — overlays must
+	// keep opening offline.
+	if err := b.dumpWidgetAssets(&res); err != nil {
 		return res, err
 	}
 
-	// PWA surface — manifest, service worker, registration script, and
-	// offline fallback, mirroring the live WithPWA routes. The uihost
-	// generators take BasePath directly (manifest start_url/scope/id,
-	// worker precache list, and registration target must all resolve
-	// under the mount path), so none of these go through rewriteJSAsset.
-	if err := b.dumpPWAAssets(&res); err != nil {
-		return res, err
-	}
+	// Everything recorded so far is framework-generated and precached
+	// atomically; user static-dir files below are precached best-effort.
+	frameworkAssetCount := len(res.Assets)
 
 	// Static assets — either filesystem dir or embedded FS.
 	if dir := b.Host.StaticDir(); dir != "" {
@@ -202,6 +203,18 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		if err := copyFS(fsys, b.OutDir, &res, b.log); err != nil {
 			return res, err
 		}
+	}
+
+	// PWA surface — manifest, service worker, registration script, and
+	// offline fallback, mirroring the live WithPWA routes. Runs LAST so
+	// the full-site worker can precache the complete export (pages,
+	// runtime assets, AND the static dir copied above) and fingerprint
+	// its content. The uihost generators take BasePath directly
+	// (manifest start_url/scope/id, worker precache list, and
+	// registration target must all resolve under the mount path), so
+	// none of these go through rewriteJSAsset.
+	if err := b.dumpPWAAssets(&res, frameworkAssetCount); err != nil {
+		return res, err
 	}
 
 	return res, nil
@@ -386,7 +399,7 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 // the runtime fetches their chrome from cfg.chromePath on open — which 404s
 // on a serverless host. Dumping the same bytes as files lets openWidget
 // resolve against the static tree, so every data-fui-open overlay works.
-func (b *Builder) dumpWidgetAssets() error {
+func (b *Builder) dumpWidgetAssets(res *Result) error {
 	defs := widget.AllForSSR()
 	if len(defs) == 0 {
 		return nil
@@ -403,6 +416,7 @@ func (b *Builder) dumpWidgetAssets() error {
 	if err := b.writeRawAsset("/__gofastr/widgets.json", []byte(cat)); err != nil {
 		return err
 	}
+	res.Assets = append(res.Assets, "/__gofastr/widgets.json")
 	b.log("wrote %s", "/__gofastr/widgets.json")
 	for _, d := range defs {
 		// Chrome HTML may carry root-absolute nav links (/docs/…); rewrite
@@ -411,9 +425,11 @@ func (b *Builder) dumpWidgetAssets() error {
 		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/chrome", []byte(chrome)); err != nil {
 			return err
 		}
+		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/chrome")
 		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/style.css", []byte(widget.RenderCSS(d))); err != nil {
 			return err
 		}
+		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/style.css")
 		b.log("wrote widget %s (chrome + css)", d.Name)
 	}
 	return nil
@@ -424,7 +440,7 @@ func (b *Builder) dumpWidgetAssets() error {
 // the offline fallback page (as offline/index.html so a plain static
 // server resolves the extension-less precache URL). No-op when the host
 // did not opt into WithPWA.
-func (b *Builder) dumpPWAAssets(res *Result) error {
+func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	if !b.Host.PWAEnabled() {
 		return nil
 	}
@@ -432,7 +448,23 @@ func (b *Builder) dumpPWAAssets(res *Result) error {
 	if err != nil {
 		return fmt.Errorf("static: pwa manifest: %w", err)
 	}
-	sw, err := b.Host.PWAServiceWorkerJS(b.BasePath)
+	// Static exports get the full-site worker: the page set is closed and
+	// immutable, so every exported page and asset is precached at install
+	// and the whole site works offline. The tree hash makes a
+	// content-only redeploy rotate the cache version.
+	contentHash, err := hashExportTree(b.OutDir)
+	if err != nil {
+		return fmt.Errorf("static: fingerprint export: %w", err)
+	}
+	if frameworkAssetCount > len(res.Assets) {
+		frameworkAssetCount = len(res.Assets)
+	}
+	sw, err := b.Host.PWAStaticServiceWorkerJS(b.BasePath, uihost.PWAStaticExport{
+		Pages:          res.Pages,
+		Assets:         res.Assets[:frameworkAssetCount],
+		OptionalAssets: res.Assets[frameworkAssetCount:],
+		ContentHash:    contentHash,
+	})
 	if err != nil {
 		return fmt.Errorf("static: pwa service worker: %w", err)
 	}
@@ -453,6 +485,16 @@ func (b *Builder) dumpPWAAssets(res *Result) error {
 		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
 	}
 	for _, f := range files {
+		// User-supplied files win: before this surface moved to the end of
+		// the build, a manifest/worker shipped in the app's static dir
+		// landed after (and therefore over) the generated one. Preserve
+		// that precedence by never clobbering a file the static SOURCE
+		// provides (the source, not OutDir — a previous build's leftovers
+		// in a reused OutDir must not suppress regeneration).
+		if b.staticSourceHas(f.relFile) {
+			b.log("kept user-supplied %s", f.urlPath)
+			continue
+		}
 		dst := filepath.Join(b.OutDir, f.relFile)
 		if err := b.ensureContained(dst); err != nil {
 			return err
@@ -464,6 +506,70 @@ func (b *Builder) dumpPWAAssets(res *Result) error {
 		b.log("wrote %s", f.urlPath)
 	}
 	return nil
+}
+
+// staticSourceHas reports whether the host's static asset source (dir or
+// embedded FS) provides rel — meaning the user shipped their own copy.
+func (b *Builder) staticSourceHas(rel string) bool {
+	if dir := b.Host.StaticDir(); dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err == nil {
+			return true
+		}
+		return false
+	}
+	if fsys := b.Host.StaticFS(); fsys != nil {
+		if f, err := fsys.Open(filepath.ToSlash(rel)); err == nil {
+			_ = f.Close()
+			return true
+		}
+	}
+	return false
+}
+
+// hashExportTree fingerprints every file already written to outDir
+// (deterministic sorted walk over relative path + streamed bytes). The
+// PWA outputs themselves are excluded — they are (re)generated after
+// this hash, and a reused OutDir still holds the PREVIOUS build's
+// copies; hashing those would make every rebuild byte-different even
+// with identical content. A content-only redeploy therefore changes
+// the hash → the worker bytes → the cache version, and installed
+// clients re-precache; an unchanged rebuild reproduces the same worker.
+func hashExportTree(outDir string) (string, error) {
+	skip := map[string]bool{
+		"manifest.webmanifest": true,
+		"service-worker.js":    true,
+	}
+	h := sha256.New()
+	err := filepath.WalkDir(outDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(outDir, path)
+		if err != nil {
+			return err
+		}
+		slashRel := filepath.ToSlash(rel)
+		if skip[slashRel] || strings.HasPrefix(slashRel, "__gofastr/pwa/") {
+			return nil
+		}
+		h.Write([]byte(slashRel))
+		h.Write([]byte{0})
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(h, f)
+		_ = f.Close()
+		if err != nil {
+			return err
+		}
+		h.Write([]byte{0})
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16], nil
 }
 
 // writeRawAsset writes body to the OutDir path derived from urlPath WITHOUT
