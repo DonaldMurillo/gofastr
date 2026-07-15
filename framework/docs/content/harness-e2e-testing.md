@@ -125,13 +125,17 @@ In a Claude Code conversation:
 
 ```bash
 # Start the harness with the WS listener.
-gofastr harness --listen 127.0.0.1:8421 --auth-token-file ~/.config/gofastr/harness/ci-token.json &
+gofastr harness --listen 127.0.0.1:8421 &
 
-# In another terminal, mint a token via the auth flow (see
-# control/auth/issuance.go) and connect with `websocat` or a small
-# WebSocket client:
+# Token issuance requires the interactive confirmation channel (a code
+# printed to the harness TTY — see control/auth/issuance.go), so mint
+# the token from that interactive session, then connect with `websocat`
+# or a small WebSocket client:
 websocat -H 'X-Harness-Token: <token>' ws://127.0.0.1:8421/v1/ws?session=sess_...
 ```
+
+There is no headless token-file flag yet — fully non-interactive CI
+setups must mint interactively once and reuse the token.
 
 ## 5. What this guide does NOT cover
 

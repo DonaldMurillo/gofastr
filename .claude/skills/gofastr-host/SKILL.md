@@ -54,7 +54,7 @@ generate both the TOC and the `agents/` detail files. Refresh with
 
 | Task phrasing | Use this |
 |---|---|
-| audit trail, who-did-what, compliance log | `framework.WithAuditLog(cfg)` |
+| audit trail, who-did-what, compliance log | `app.WithAuditLog(cfg)` (chained *App method) |
 | admin pages, ops dashboard, queue browser | `battery/admin` |
 | login, signup, session, CSRF, bcrypt, "require admin" | `battery/auth` |
 | send notification, password reset link, fan-out across channels | `battery/notify` |
@@ -93,7 +93,8 @@ generate both the TOC and the `agents/` detail files. Refresh with
 
 ## Project shape
 
-- `main.go` builds the App: `framework.NewApp(WithDB, WithConfig, WithAuditLog, …)`.
+- `main.go` builds the App: `framework.NewApp(WithDB, WithConfig, …)`; chained
+  methods like `app.WithAuditLog(cfg)` come after.
 - `entities/` declares `EntityConfig`s — use `Seed` + `SeedFS` instead
   of hand-rolled `seedIfEmpty` helpers.
 - `screens/` is one screen per page; in-page state changes are island

@@ -277,6 +277,12 @@ func getMigrateDBURL(args []string) string {
 			return strings.TrimPrefix(a, "--db-url=")
 		}
 	}
+	// The exported env var is the 12-factor path the docs promise.
+	// Precedence follows the framework's dotenv rule: the process
+	// environment always beats file values.
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		return v
+	}
 	// Check .env file via the shared parser — handles quoted values,
 	// escapes, and the `export` prefix that the prior ad-hoc 1-key
 	// scanner mishandled.

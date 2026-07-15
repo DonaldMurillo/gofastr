@@ -206,3 +206,24 @@ func TestParseMigrateGenOptions(t *testing.T) {
 		t.Fatalf("default snapshot = %q", def.snapshotPath)
 	}
 }
+
+// The docs promise the 12-factor pattern: `export DATABASE_URL=…` must reach
+// `gofastr migrate` without a .env file. Precedence follows the framework's
+// dotenv rule — flag beats process env beats .env file.
+func TestGetMigrateDBURLFromProcessEnv(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	t.Setenv("DATABASE_URL", "from-process-env")
+	if got := getMigrateDBURL(nil); got != "from-process-env" {
+		t.Fatalf("exported DATABASE_URL ignored, got %q", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DATABASE_URL=from-file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := getMigrateDBURL(nil); got != "from-process-env" {
+		t.Fatalf("process env must beat the .env file, got %q", got)
+	}
+	if got := getMigrateDBURL([]string{"--db-url=from-flag"}); got != "from-flag" {
+		t.Fatalf("flag must beat everything, got %q", got)
+	}
+}
