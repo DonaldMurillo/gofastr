@@ -83,6 +83,7 @@ type UIHost struct {
 	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
 	headTags       []string                             // typed head tags built from convenience options
 	faviconURL     string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
+	appIcons       map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
 	notFoundScreen component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
 	sitemapConfig  *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
 	robotsConfig   *RobotsConfig                        // when set, /robots.txt is served from this config
@@ -145,6 +146,14 @@ type ScreenHreflangs interface {
 // issues when a page is reachable at multiple URLs (filters, sorts).
 type ScreenCanonical interface {
 	ScreenCanonical() string
+}
+
+// ScreenRobots is an optional screen interface that declares the
+// per-page robots directive. Emitted as <meta name="robots"> (e.g.
+// "noindex,nofollow" for drafts or duplicate views). The bundle-style
+// [SEO].Robots field overrides it when both are present.
+type ScreenRobots interface {
+	ScreenRobots() string
 }
 
 // ScreenSchema is an optional screen interface that returns one or
@@ -263,6 +272,17 @@ func WithThemeColor(color string) Option {
 func WithDescription(desc string) Option {
 	return func(ds *UIHost) {
 		ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="description" content="%s">`, stdhtml.EscapeString(desc)))
+	}
+}
+
+// WithRobotsMeta adds a sitewide <meta name="robots"> tag to <head>
+// (e.g. "noindex" for a staging deploy). Per-screen directives via
+// [ScreenRobots] or [SEO].Robots are emitted in addition to — and
+// before — this global tag; crawlers apply the most restrictive
+// combination.
+func WithRobotsMeta(directives string) Option {
+	return func(ds *UIHost) {
+		ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="robots" content="%s">`, stdhtml.EscapeString(directives)))
 	}
 }
 
@@ -598,6 +618,9 @@ func New(application *app.App, opts ...Option) *UIHost {
 	for _, opt := range opts {
 		opt(ds)
 	}
+	// WithAppIcon ↔ WithPWA reconciliation happens after ALL options so
+	// their relative order doesn't matter.
+	ds.reconcileAppIcons()
 	// Auto-inject the livereload client script when dev-mode env says so.
 	// The matching SSE/JS routes are auto-registered by framework.NewApp
 	// (see framework/dev/livereload.go). Both halves are gated by the
@@ -1041,11 +1064,17 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 			stdhtml.EscapeString(desc),
 		))
 	}
-	// Robots: bundle only.
-	if bundle.Robots != "" {
+	// Robots: bundle → ScreenRobots.
+	robots := bundle.Robots
+	if robots == "" {
+		if r, ok := screen.Component.(ScreenRobots); ok {
+			robots = r.ScreenRobots()
+		}
+	}
+	if robots != "" {
 		parts = append(parts, fmt.Sprintf(
 			`<meta name="robots" content="%s">`,
-			stdhtml.EscapeString(bundle.Robots),
+			stdhtml.EscapeString(robots),
 		))
 	}
 	// Canonical: bundle → ScreenCanonical.
@@ -1851,6 +1880,11 @@ func (ds *UIHost) Mount(r *router.Router) {
 	if ds.robotsConfig != nil {
 		r.Get("/robots.txt", http.HandlerFunc(ds.handleRobots))
 	}
+	// Generated app icons (WithAppIcon) — including the /favicon.ico
+	// alias, which takes precedence over serveOrRender's 204 fallback.
+	ds.mountAppIcons(func(path string, h http.HandlerFunc) {
+		r.Get(path, h)
+	})
 	// Installable-PWA surface — only mounted via WithPWA. The manifest
 	// and worker live at the root so the worker's default scope covers
 	// the whole app.

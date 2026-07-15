@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -120,6 +121,25 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 		res.Assets = append(res.Assets, "/llm-pages.md")
 		b.log("wrote llm-pages.md index")
+	}
+
+	// SEO surface — sitemap.xml and robots.txt, mirroring the live
+	// WithSitemap/WithRobots handlers so a static deploy keeps the same
+	// crawler contract as the live server. Same bytes as the HTTP
+	// handlers (single source: UIHost.SitemapXML / UIHost.RobotsTXT),
+	// with BasePath folded into <loc> entries and the derived Sitemap:
+	// URL. User-supplied files in the static source win, matching the
+	// PWA-surface precedence below.
+	if err := b.dumpSEOAssets(&res); err != nil {
+		return res, err
+	}
+
+	// Generated app icons (uihost.WithAppIcon) — the /__gofastr/icons/
+	// PNGs plus the /favicon.ico alias, so a static deploy ships the
+	// same icon surface the live server serves. User-supplied files in
+	// the static source win, matching the SEO/PWA precedence.
+	if err := b.dumpAppIcons(&res); err != nil {
+		return res, err
 	}
 
 	// /__gofastr/* assets — runtime, compiled actions, theme CSS, custom
@@ -431,6 +451,66 @@ func (b *Builder) dumpWidgetAssets(res *Result) error {
 		}
 		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/style.css")
 		b.log("wrote widget %s (chrome + css)", d.Name)
+	}
+	return nil
+}
+
+// dumpSEOAssets writes sitemap.xml and robots.txt when the host
+// configured WithSitemap/WithRobots. Skips any file the app's static
+// source already provides (the user's copy is copied verbatim later and
+// must win). No-op when neither option is configured.
+func (b *Builder) dumpSEOAssets(res *Result) error {
+	type seoFile struct {
+		name string
+		body string
+		ok   bool
+	}
+	sitemap, sitemapOK := b.Host.SitemapXML(b.BasePath)
+	robots, robotsOK := b.Host.RobotsTXT(b.BasePath)
+	for _, f := range []seoFile{
+		{"sitemap.xml", sitemap, sitemapOK},
+		{"robots.txt", robots, robotsOK},
+	} {
+		if !f.ok {
+			continue
+		}
+		if b.staticSourceHas(f.name) {
+			b.log("kept user-supplied /%s", f.name)
+			continue
+		}
+		if err := b.writeRawAsset("/"+f.name, []byte(f.body)); err != nil {
+			return err
+		}
+		res.Assets = append(res.Assets, "/"+f.name)
+		b.log("wrote /%s", f.name)
+	}
+	return nil
+}
+
+// dumpAppIcons writes the WithAppIcon-generated PNGs (and the
+// /favicon.ico alias) to the export tree. No-op when the host has no
+// generated icons.
+func (b *Builder) dumpAppIcons(res *Result) error {
+	icons := b.Host.AppIconAssets()
+	if len(icons) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(icons))
+	for p := range icons {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		rel := filepath.FromSlash(strings.TrimPrefix(p, "/"))
+		if b.staticSourceHas(rel) {
+			b.log("kept user-supplied %s", p)
+			continue
+		}
+		if err := b.writeRawAsset(p, icons[p]); err != nil {
+			return err
+		}
+		res.Assets = append(res.Assets, p)
+		b.log("wrote %s", p)
 	}
 	return nil
 }

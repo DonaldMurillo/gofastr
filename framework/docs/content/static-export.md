@@ -50,6 +50,15 @@ go build -o site ./examples/site/
 - `/__gofastr/app.css` and `/__gofastr/comp/<name>.css` — global and
   per-component stylesheets.
 - Per-route `llm.md` (unless `NoLLMMD` is set).
+- With `uihost.WithSitemap` / `uihost.WithRobots`: `sitemap.xml` and
+  `robots.txt`, byte-identical to what the live handlers serve (same
+  route expansion via `StaticPathsProvider`, same `ExcludePaths`, same
+  AI-bot rules). Under `--export-base` every sitemap `<loc>` and the
+  derived `Sitemap:` line in robots.txt include the subpath. A
+  `sitemap.xml` or `robots.txt` in the app's static dir wins over the
+  generated one. Note that on a subpath deploy (e.g. a GitHub Pages
+  *project* site) crawlers only honor a robots.txt at the origin root —
+  the file is still emitted for apex/custom-domain deploys.
 - With [`uihost.WithPWA`](pwa.md): `manifest.webmanifest`,
   `service-worker.js`, `__gofastr/pwa/register.js`, and
   `__gofastr/pwa/offline/index.html`. Under `--export-base` the

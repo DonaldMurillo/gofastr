@@ -81,12 +81,29 @@ func WithRobots(cfg RobotsConfig) Option {
 // ─── Internals ─────────────────────────────────────────────────────
 
 func (ds *UIHost) handleSitemap(w http.ResponseWriter, _ *http.Request) {
-	if ds.sitemapConfig == nil || ds.App == nil {
+	doc, ok := ds.SitemapXML("")
+	if !ok {
 		http.Error(w, "sitemap not configured", http.StatusNotFound)
 		return
 	}
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Write([]byte(doc))
+}
+
+// SitemapXML builds the sitemap document WithSitemap configured. It is
+// the single source for both the live /sitemap.xml handler and the
+// static exporter (framework/static), which writes the same bytes to
+// disk. basePath is the URL subpath a static deploy is mounted under
+// (e.g. "/gofastr" for a GitHub Pages project site) and is inserted
+// between the configured BaseURL and each route path; pass "" for the
+// live server or an apex deploy. ok is false when WithSitemap was not
+// configured.
+func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
+	if ds.sitemapConfig == nil || ds.App == nil {
+		return "", false
+	}
 	cfg := ds.sitemapConfig
-	base := strings.TrimRight(cfg.BaseURL, "/")
+	base := strings.TrimRight(cfg.BaseURL, "/") + strings.TrimRight(basePath, "/")
 	lastmod := cfg.LastMod.UTC().Format("2006-01-02")
 
 	var b strings.Builder
@@ -107,15 +124,28 @@ func (ds *UIHost) handleSitemap(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	b.WriteString(`</urlset>` + "\n")
-
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.Write([]byte(b.String()))
+	return b.String(), true
 }
 
 func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
-	if ds.robotsConfig == nil {
+	doc, ok := ds.RobotsTXT("")
+	if !ok {
 		http.Error(w, "robots not configured", http.StatusNotFound)
 		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte(doc))
+}
+
+// RobotsTXT builds the robots.txt document WithRobots configured. Like
+// [UIHost.SitemapXML] it serves both the live handler and the static
+// exporter. basePath only affects the derived Sitemap: URL (Allow/
+// Disallow prefixes are emitted as authored — they are the app's own
+// route prefixes, and a subpath deploy that needs them prefixed should
+// author them that way). ok is false when WithRobots was not configured.
+func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
+	if ds.robotsConfig == nil {
+		return "", false
 	}
 	cfg := ds.robotsConfig
 	ua := cfg.UserAgent
@@ -164,7 +194,7 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 	}
 	sm := cfg.SitemapURL
 	if sm == "" && ds.sitemapConfig != nil {
-		sm = strings.TrimRight(ds.sitemapConfig.BaseURL, "/") + "/sitemap.xml"
+		sm = strings.TrimRight(ds.sitemapConfig.BaseURL, "/") + strings.TrimRight(basePath, "/") + "/sitemap.xml"
 	}
 	if sm != "" {
 		fmt.Fprintf(&b, "Sitemap: %s\n", sm)
@@ -174,9 +204,7 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 	if ds.agentReady != nil && ds.agentReady.contentSignals != "" {
 		fmt.Fprintf(&b, "Content-Signal: %s\n", ds.agentReady.contentSignals)
 	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte(b.String()))
+	return b.String(), true
 }
 
 // expandRouteForSitemap returns the concrete URLs to emit. Static

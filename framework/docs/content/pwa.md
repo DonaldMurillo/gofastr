@@ -25,8 +25,11 @@ fwApp.Mount(uihost.New(site,
 
 Chromium's installability check needs HTTPS (or localhost), a manifest
 with a name, and 192px + 512px icons — supply the icon files as static
-assets. Blueprint-generated apps scaffold placeholder icons
-automatically (see [Blueprints](/docs/blueprints), `app.pwa`).
+assets, or skip file management entirely: `uihost.WithAppIcon(logo)`
+derives the 192/512 manifest icons (plus favicon and apple-touch-icon)
+from one source image when `Icons` is left empty (see [SEO](/docs/seo)).
+Blueprint-generated apps scaffold placeholder icons automatically (see
+[Blueprints](/docs/blueprints), `app.pwa`).
 
 ## What gets mounted
 
