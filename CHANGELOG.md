@@ -7,6 +7,50 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+Technical SEO and ADA compliance become first-class: static export now
+ships the full crawler contract, one image becomes the whole favicon/app
+icon surface, and accessibility moves from "tests some examples run" to a
+guided `gofastr audit a11y` command with an enforced (escape-hatched)
+`gofastr build` gate.
+
+### Added
+
+- `uihost.WithAppIcon(source)` — derives the entire icon surface from one
+  image: 32/180/192/512px PNGs under `/__gofastr/icons/`, `/favicon.ico`,
+  the `rel="icon"` + `apple-touch-icon` head links, the PWA manifest
+  192/512 icons when `PWAConfig.Icons` is empty, and the same files in
+  static export. Non-square sources are center-cropped; undecodable
+  sources warn and skip.
+- `image.NewGradient(w, h, from, to)` — generated placeholder imagery
+  (diagonal #RRGGBB gradient) so apps ship an icon without committing
+  binary assets; blueprint-generated apps use it for their default icon.
+- `uihost.ScreenRobots` per-screen interface and `uihost.WithRobotsMeta`
+  sitewide option — `<meta name="robots">` parity with the other
+  per-concern SEO interfaces (previously bundle-only).
+- Static export writes `sitemap.xml` and `robots.txt` when
+  `WithSitemap`/`WithRobots` are configured — same bytes as the live
+  handlers (new `UIHost.SitemapXML`/`UIHost.RobotsTXT` single source),
+  with `--export-base` folded into `<loc>` entries and the derived
+  `Sitemap:` line; user-supplied files in the static dir win.
+- `gofastr audit a11y` — guided static accessibility lint: flags missing
+  required a11y fields on core-ui/html element configs (Alt, Label,
+  Legend, For, …) with a teach-the-rule fix hint per finding; exits 1 on
+  findings. `--url <base>` mode runs the vendored axe-core engine via
+  headless Chrome against a running app under BOTH color schemes, with
+  pages discovered from `/sitemap.xml` (or `--pages`).
+- `gofastr build` now enforces the static accessibility lint between
+  `go vet` and compilation (guided failure output; `--no-a11y` skips).
+- `check.LintA11yFile` — a11y-only linter entry point that works on any
+  .go file (import-alias aware, no false positives on non-core-ui/html
+  calls), backing both the audit command and the build gate.
+- Blueprint-generated apps ship `uihost.WithAppIcon` (gradient derived
+  from the theme's primary color) and a protective default `robots.txt`
+  (`Disallow: /__gofastr/`).
+- Docs: new `seo` and `accessibility` topics; static-export and PWA docs
+  updated for the new surfaces. Meridian and examples/site showcase the
+  SEO stack (sitewide OG/description, per-screen `ScreenSEO` bundle with
+  Product JSON-LD, Organization/WebSite schema, sitemap + robots, icons).
+
 ## [0.25.0] - 2026-07-15
 
 The MCP surface gets the funnel treatment (#61): the dev loop implies the
