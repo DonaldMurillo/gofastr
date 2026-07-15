@@ -510,6 +510,7 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		result.BuilderDuration = time.Since(builderStarted).Seconds()
 		_, result.BuilderTokens = builderMetricsFromArtifacts(mapping.ResultDir)
 		result.BuilderCLICalls, result.BuilderUsedDevServer = cliInvocationStats(cliLog)
+		result.BuilderUsedMCP = builderUsedMCP(inv.LogPath, buildOutput)
 		integrityErr := verifyFrameworkIntegrity(variant.FrameworkRoot, gofastrBin, mapping.FrameworkFingerprint)
 		if integrityErr != nil {
 			result.TechnicalIssues = append(result.TechnicalIssues, "framework integrity after builder: "+integrityErr.Error())
@@ -616,6 +617,10 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		result.TechnicalIssues = append(result.TechnicalIssues, "server health: "+err.Error())
 		return result
 	}
+	// Agent-surface probe on the served candidate (prod-style boot): did
+	// the MCP contract survive the builder, and did the dev-only log
+	// tools stay off outside the dev loop?
+	result.CandidateMCPTools, result.CandidateMCPIntrospection, result.CandidateMCPLogToolsProd = probeCandidateMCP(ctx, baseURL)
 
 	if err := os.MkdirAll(blindDir, 0o755); err != nil {
 		result.TechnicalIssues = append(result.TechnicalIssues, "blind dir: "+err.Error())
