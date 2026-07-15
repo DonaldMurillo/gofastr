@@ -181,6 +181,27 @@ Linked Git worktrees automatically get isolated local ports and database
 paths when isolation is enabled in `gofastr.yml`; see
 [`framework/docs/content/isolation.md`](framework/docs/content/isolation.md).
 
+### Updating GoFastr
+
+The module dependency and the installed CLI version independently —
+keep them on the same release. Read the [release
+notes](https://github.com/DonaldMurillo/gofastr/releases) for the
+release you're moving to first (breaking changes are marked), then:
+
+```bash
+go list -m -versions github.com/DonaldMurillo/gofastr    # what's available
+go get github.com/DonaldMurillo/gofastr@vX.Y.Z           # the app dependency
+go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z  # the CLI (doesn't update with go.mod)
+go mod tidy && go build ./... && go test ./...
+go list -m github.com/DonaldMurillo/gofastr              # confirm the selected version
+```
+
+Or let the CLI guide it: `gofastr upgrade` reads your `go.mod`, lists
+every migration note between your version and the target, and points at
+the affected lines in your code (`--apply` runs the steps). Full guide:
+[`framework/docs/content/upgrading.md`](framework/docs/content/upgrading.md)
+or `gofastr docs upgrading`.
+
 With the blog example running (`go run ./examples/blog`), open
 <http://localhost:8080> and try:
 

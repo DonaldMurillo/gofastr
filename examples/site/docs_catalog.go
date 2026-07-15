@@ -53,6 +53,7 @@ var docIntents = []docIntent{
 			{"tutorial-blueprint-app", "Tutorial: blueprint app", "The thesis tutorial: one blueprint becomes a UI + API you own, in about twenty minutes."},
 			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
 			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
+			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release — plus gofastr upgrade, the guided helper."},
 		},
 	},
 	{
@@ -107,6 +108,8 @@ var docIntents = []docIntent{
 			{"dev-livereload", "Dev livereload", "SSE-driven reload while you edit — zero config."},
 			{"static-export", "Static-site export", "Render the whole app to static HTML + assets for apex or project-path hosting."},
 			{"pwa", "PWA", "uihost.WithPWA: installable manifest, versioned offline shell, and a safe service worker."},
+			{"seo", "SEO", "Meta tags, Open Graph, JSON-LD, sitemap, robots, and the one-image icon surface."},
+			{"accessibility", "Accessibility", "Built-in ARIA guarantees, the guided audit command, and the build gate."},
 			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions."},
 			{"pane-host", "Pane host", "Master-detail split-pane layout that collapses to an overlay drawer on narrow screens."},
 			{"plugin-platform", "Plugin platform", "Host third-party JS plugins in a sandboxed opaque-origin iframe with a capability-gated postMessage protocol."},
