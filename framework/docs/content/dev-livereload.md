@@ -39,6 +39,16 @@ When enabled:
 - `uihost.New()` auto-appends `/__livereload.js` to the `extraScripts`
   list so every rendered page links to the client script before
   `</body>`. CSP-safe — it's a `<script src="...">`, no inline JS.
+- For every OTHER way an app serves a page — `static.Handler` file
+  serving (SPA shells, exported static pages), widget-server pages,
+  hand-rolled handlers — `framework.NewApp` mounts dev-only middleware
+  that splices the same `<script src>` into responses that declare
+  `Content-Type: text/html` (no sniffing — set the type) and are full
+  documents (contain `</body>`) and don't already carry the tag.
+  Fragments (island RPC swaps, SPA-nav partials), compressed bodies,
+  HEAD/Range requests, and non-HTML responses (JSON, SSE, streams) pass
+  through untouched and unbuffered; a handler that Flushes mid-HTML
+  streams from that point on, uninjected.
 
 One persistent SSE connection per tab, near-zero idle traffic, no
 polling.
