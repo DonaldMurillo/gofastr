@@ -220,17 +220,7 @@ func formatAuditReport(findings []AuditFinding) string {
 
 // runAudit is the CLI entry point. Subcommand: `gofastr audit deps`.
 func runAudit(args []string) {
-	// `audit --help` (or a help flag on deps/lint) prints the usage
-	// below; a11y owns its flags and prints its own richer help.
-	if len(args) > 0 && args[0] != "a11y" {
-		for _, a := range args {
-			if a == "--help" || a == "-h" {
-				args = nil
-				break
-			}
-		}
-	}
-	if len(args) == 0 {
+	auditUsage := func() {
 		fmt.Println("Usage: gofastr audit <subcommand>")
 		fmt.Println()
 		fmt.Println("Subcommands:")
@@ -238,6 +228,20 @@ func runAudit(args []string) {
 		fmt.Println("  lint    Scan for AI-typical mistakes (ignored Exec, missing CSRF, render.HTML concat, t.Skip, …)")
 		fmt.Println("  a11y    Accessibility audit: static lint of core-ui/html usage, or a full")
 		fmt.Println("          axe-core scan of a running app with --url (see `gofastr audit a11y --help`)")
+	}
+	// `audit --help` (or a help flag on deps/lint) prints the usage and
+	// exits 0 — asking for help is not a usage error. a11y owns its
+	// flags and prints its own richer help.
+	if len(args) > 0 && args[0] != "a11y" {
+		for _, a := range args {
+			if a == "--help" || a == "-h" {
+				auditUsage()
+				osExit(0)
+			}
+		}
+	}
+	if len(args) == 0 {
+		auditUsage()
 		osExit(2)
 	}
 	switch args[0] {

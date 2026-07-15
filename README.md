@@ -183,8 +183,8 @@ paths when isolation is enabled in `gofastr.yml`; see
 
 ### Updating GoFastr
 
-The module dependency and the installed CLI version independently —
-keep them on the same release. Read the [release
+The module dependency and the installed CLI are versioned
+independently — keep them on the same release. Read the [release
 notes](https://github.com/DonaldMurillo/gofastr/releases) for the
 release you're moving to first (breaking changes are marked), then:
 

@@ -184,19 +184,22 @@ func dispatch(args []string) {
 		return
 	}
 
-	// Global flags. Subcommands in ownsHelp implement their own
-	// --help/-h, so `gofastr <cmd> --help` is routed to them; for every
-	// other command the flags are intercepted anywhere in args (a
-	// side-effectful command like `dev --help` must never start a
-	// server because it lacks its own help path).
+	// Global flags. --version/-v is intercepted anywhere for EVERY
+	// command (no subcommand defines its own). --help/-h is routed
+	// through to subcommands in ownsHelp, which implement it; for every
+	// other command it is intercepted anywhere in args (a side-effectful
+	// command like `dev --help` must never start a server because it
+	// lacks its own help path).
+	for _, a := range args {
+		if a == "--version" || a == "-v" {
+			fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
+			return
+		}
+	}
 	if !ownsHelp[args[0]] {
 		for _, a := range args {
-			switch a {
-			case "--help", "-h":
+			if a == "--help" || a == "-h" {
 				printHelp()
-				return
-			case "--version", "-v":
-				fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
 				return
 			}
 		}

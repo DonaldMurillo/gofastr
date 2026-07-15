@@ -210,3 +210,48 @@ func TestUpgradeRegistryDetectorsCompile(t *testing.T) {
 		}
 	}
 }
+
+func TestGoModGofastrVersionBlockReplace(t *testing.T) {
+	dir := t.TempDir()
+	writeUpgradeFixture(t, dir, "go.mod", `module example.com/app
+
+go 1.26
+
+require github.com/DonaldMurillo/gofastr v0.21.0
+
+replace (
+	github.com/DonaldMurillo/gofastr => ../gofastr
+	github.com/other/dep => ../dep
+)
+`)
+	v, replaced, err := goModGofastrVersion(dir)
+	if err != nil {
+		t.Fatalf("goModGofastrVersion: %v", err)
+	}
+	if v != "v0.21.0" || !replaced {
+		t.Errorf("block-form replace must be detected: v=%q replaced=%v", v, replaced)
+	}
+}
+
+func TestSemverPrereleaseAndPseudoVersions(t *testing.T) {
+	// A pseudo-version sits between its base's predecessor and the base.
+	if !semverLess("v0.25.0", "v0.25.1-0.20260715120000-abcdef123456") {
+		t.Errorf("pseudo-version of v0.25.1 must be newer than v0.25.0")
+	}
+	if !semverLess("v0.25.1-0.20260715120000-abcdef123456", "v0.25.1") {
+		t.Errorf("prerelease must sort before its release")
+	}
+	if semverLess("v0.25.1", "v0.25.1-0.20260715120000-abcdef123456") {
+		t.Errorf("release must not sort before its own prerelease")
+	}
+	// Prerelease targets parse.
+	if _, err := parseSemver("v0.26.0-rc.1"); err != nil {
+		t.Errorf("prerelease target must parse: %v", err)
+	}
+	// releasesInRange with a pseudo-version current skips already-crossed releases.
+	reg := []upgradeRelease{{Version: "v0.23.0"}, {Version: "v0.25.0"}}
+	got := releasesInRange(reg, "v0.24.1-0.20260701000000-aaaaaaaaaaaa", "v0.25.0")
+	if len(got) != 1 || got[0].Version != "v0.25.0" {
+		t.Errorf("pseudo-version current must not re-include older notes, got %+v", got)
+	}
+}

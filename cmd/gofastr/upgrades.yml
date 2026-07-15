@@ -15,6 +15,11 @@
 # Maintenance rule: EVERY release PR bumps `through` below; a release
 # that lands BREAKING changes also adds its entry under `releases`
 # (same policy as CHANGELOG.md).
+#
+# Queued for the v0.26.0 release entry: `gofastr build` now enforces the
+# static accessibility lint by default (fails builds with guided
+# findings; --no-a11y skips) — behavior change worth a note even though
+# no API broke.
 
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
@@ -41,6 +46,20 @@ releases:
         breaking: true
         guidance: "theme.css / styles.css / routes.js / catalog.js now 404. Use /__gofastr/app.css; routes + catalog ship inline in the SSR page."
         detect: '/__gofastr/(theme|styles)\.css|/__gofastr/(routes|catalog)\.js'
+      - change: RenderPage / RenderPartial wrap richer *Result variants
+        breaking: true
+        guidance: "core-ui/app.App.RenderPage and RenderPartial return an error for Redirect/Block policy decisions instead of inline HTML; callers that consumed the raw string switch to the *Result variants."
+      - change: Router.Render renamed to Router.RenderRaw; App.RenderScreen to App.RenderScreenRaw
+        breaking: true
+        guidance: "The renames call out that the raw variants bypass policies and layouts. Mechanical rename at each call site."
+        detect: 'Router\.Render\(|\.RenderScreen\('
+      - change: Screen.Policies field unexported
+        breaking: true
+        guidance: "Use Screen.WithPolicy(p) to add a policy and Screen.PolicyChain() to read a copy; direct field access no longer compiles."
+        detect: '\.Policies\b'
+      - change: Access control installs via framework.WithAccessControl / AccessMiddleware
+        breaking: true
+        guidance: "Policy + roles install in one line via the new helpers; hand-wired policy plumbing from v0.2 needs the new install path."
   - version: v0.4.0
     title: Declaration-driven entities
     notes:

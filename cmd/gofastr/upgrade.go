@@ -114,13 +114,31 @@ func yamlBool(n *coreyaml.Node) bool {
 	return b
 }
 
-// parseSemver parses a strict vMAJOR.MINOR.PATCH tag.
-func parseSemver(v string) ([3]int, error) {
-	var out [3]int
+// semver is a parsed version: the vX.Y.Z core plus any prerelease
+// suffix (which is also how Go pseudo-versions look:
+// v0.25.1-0.20260715120000-abcdef123456).
+type semver struct {
+	nums [3]int
+	pre  string // "" for a release; the "-…" tail (sans dash) otherwise
+}
+
+// parseSemver parses vMAJOR.MINOR.PATCH with an optional -prerelease
+// (or +build, ignored) suffix, covering the pseudo-versions Go writes
+// into go.mod.
+func parseSemver(v string) (semver, error) {
+	var out semver
 	if !strings.HasPrefix(v, "v") {
 		return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
 	}
-	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
+	core := strings.TrimPrefix(v, "v")
+	if i := strings.IndexByte(core, '+'); i >= 0 {
+		core = core[:i]
+	}
+	if i := strings.IndexByte(core, '-'); i >= 0 {
+		out.pre = core[i+1:]
+		core = core[:i]
+	}
+	parts := strings.Split(core, ".")
 	if len(parts) != 3 {
 		return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
 	}
@@ -129,13 +147,16 @@ func parseSemver(v string) ([3]int, error) {
 		if err != nil || n < 0 {
 			return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
 		}
-		out[i] = n
+		out.nums[i] = n
 	}
 	return out, nil
 }
 
-// semverLess reports a < b. Malformed versions compare as lowest so an
-// unknown current version includes every registry entry up to target.
+// semverLess reports a < b. Same-core comparisons follow semver: a
+// prerelease (or pseudo-version) sorts before its release; two
+// prereleases compare lexically (exact enough for pseudo-version
+// timestamps). Malformed versions compare as lowest so an unknown
+// current version includes every registry entry up to target.
 func semverLess(a, b string) bool {
 	av, aerr := parseSemver(a)
 	bv, berr := parseSemver(b)
@@ -146,11 +167,14 @@ func semverLess(a, b string) bool {
 		return false
 	}
 	for i := 0; i < 3; i++ {
-		if av[i] != bv[i] {
-			return av[i] < bv[i]
+		if av.nums[i] != bv.nums[i] {
+			return av.nums[i] < bv.nums[i]
 		}
 	}
-	return false
+	if (av.pre == "") != (bv.pre == "") {
+		return av.pre != "" // prerelease < release
+	}
+	return av.pre < bv.pre
 }
 
 // releasesInRange returns the registry entries in (current, target],
@@ -179,13 +203,30 @@ func goModGofastrVersion(root string) (version string, replaced bool, err error)
 	if err != nil {
 		return "", false, fmt.Errorf("read go.mod: %w", err)
 	}
+	inReplaceBlock := false
 	for _, raw := range strings.Split(string(body), "\n") {
 		line := strings.TrimSpace(raw)
-		if strings.HasPrefix(line, "replace "+gofastrModule+" ") || strings.HasPrefix(line, "replace "+gofastrModule+"=>") {
+		switch {
+		case strings.HasPrefix(line, "replace ("):
+			inReplaceBlock = true
+			continue
+		case inReplaceBlock && line == ")":
+			inReplaceBlock = false
+			continue
+		case inReplaceBlock:
+			// Block-form replace: the module sits on its own line
+			// ("github.com/… => ../local"). Never parse versions here —
+			// the "=>" token would be misread as one.
+			if fields := strings.Fields(line); len(fields) > 0 && fields[0] == gofastrModule {
+				replaced = true
+			}
+			continue
+		case strings.HasPrefix(line, "replace "+gofastrModule+" ") || strings.HasPrefix(line, "replace "+gofastrModule+"=>"):
 			replaced = true
+			continue
 		}
-		// Matches both the block form ("\tmodule vX.Y.Z") and the
-		// single-line form ("require module vX.Y.Z").
+		// Matches both the require-block form ("\tmodule vX.Y.Z") and
+		// the single-line form ("require module vX.Y.Z").
 		fields := strings.Fields(strings.TrimPrefix(line, "require "))
 		if len(fields) >= 2 && fields[0] == gofastrModule {
 			version = fields[1]
@@ -391,16 +432,18 @@ func runUpgrade(args []string) {
 		fmt.Println("the notes below describe what you'd be undoing.")
 		fmt.Println()
 	}
-	if semverLess(through, target) {
-		fmt.Printf("NOTE: this CLI's migration registry is complete through %s — the\n", through)
-		fmt.Println("target is newer, so it may carry notes this binary doesn't know.")
-		fmt.Println("Install the target CLI first and re-run:")
-		fmt.Printf("    go install %s/cmd/gofastr@%s\n\n", gofastrModule, target)
-	}
-
 	lo, hi := current, target
 	if semverLess(target, current) {
 		lo, hi = target, current
+	}
+	// Key the staleness warning on the UPPER bound of the inspected
+	// range, not just the target — a downgrade FROM a version newer
+	// than the registry also spans releases this binary doesn't know.
+	if semverLess(through, hi) {
+		fmt.Printf("NOTE: this CLI's migration registry is complete through %s — the\n", through)
+		fmt.Printf("range shown reaches %s, so it may cross notes this binary doesn't\n", hi)
+		fmt.Println("know. Install the newest involved CLI first and re-run:")
+		fmt.Printf("    go install %s/cmd/gofastr@%s\n\n", gofastrModule, hi)
 	}
 	fmt.Print(formatUpgradeNotes(opts.root, releasesInRange(reg, lo, hi)))
 	fmt.Println("Consult the release notes for the full story:")
