@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/mattn/go-sqlite3"
@@ -86,7 +87,7 @@ func main() {
 	})
 	site := uiapp.NewApp(appName)
 	RegisterGenerated(fwApp, site, db)
-	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS())))
+	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()), uihost.WithAppIcon(appIconPNG()), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}})))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)
@@ -127,6 +128,25 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// appIconPNG generates the app's icon source at startup — a diagonal
+// gradient in the blueprint's primary color. uihost.WithAppIcon derives
+// /favicon.ico, the sized PNGs, and the head links from this one image.
+// Have a real logo? Embed it and return those bytes instead:
+//
+//	//go:embed logo.png
+//	var logo []byte
+func appIconPNG() []byte {
+	img, err := fwimage.NewGradient(512, 512, "#2563EB", "#143681")
+	if err != nil {
+		return nil // WithAppIcon warns and skips on undecodable input
+	}
+	b, err := img.PNG().Bytes()
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // resolveSeedRefs rewrites "@entity.field=value" reference strings in a
