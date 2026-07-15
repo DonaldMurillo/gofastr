@@ -485,18 +485,31 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		}
 		result.GuidanceFingerprint = guidanceFingerprint
 
+		// The snapshot's own CLI goes first on the builder's PATH via a
+		// logging shim: the generated guidance tells agents to run
+		// `gofastr docs` / `gofastr dev`, and a globally installed gofastr
+		// would leak a different framework version into the treatment. The
+		// shim log doubles as the non-deterministic dev-loop funnel signal.
+		cliLog := filepath.Join(mapping.ResultDir, "cli-invocations.log")
+		shimDir := filepath.Join(mapping.ResultDir, "cli")
+		if err := installCLIShim(shimDir, gofastrBin, cliLog); err != nil {
+			result.TechnicalIssues = append(result.TechnicalIssues, "install CLI shim: "+err.Error())
+			return result
+		}
 		buildOutput := filepath.Join(mapping.ResultDir, "builder-final.md")
 		inv := agentRequest{
 			Config: suite.Agents.Builder,
 			Env: append(append([]string(nil), builderEnv...),
 				"GOCACHE="+filepath.Join(mapping.Workspace, ".cache", "go-build"),
-				"GOFLAGS=-buildvcs=false"),
+				"GOFLAGS=-buildvcs=false",
+				"PATH="+shimDir+string(os.PathListSeparator)+os.Getenv("PATH")),
 			Workspace: mapping.Workspace, OutputPath: buildOutput, Prompt: builderPrompt(), LogPath: filepath.Join(mapping.ResultDir, "builder.log"),
 		}
 		builderStarted := time.Now()
 		builderErr := runAgent(ctx, inv)
 		result.BuilderDuration = time.Since(builderStarted).Seconds()
 		_, result.BuilderTokens = builderMetricsFromArtifacts(mapping.ResultDir)
+		result.BuilderCLICalls, result.BuilderUsedDevServer = cliInvocationStats(cliLog)
 		integrityErr := verifyFrameworkIntegrity(variant.FrameworkRoot, gofastrBin, mapping.FrameworkFingerprint)
 		if integrityErr != nil {
 			result.TechnicalIssues = append(result.TechnicalIssues, "framework integrity after builder: "+integrityErr.Error())

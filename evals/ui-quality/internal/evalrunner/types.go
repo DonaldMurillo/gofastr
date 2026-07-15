@@ -70,24 +70,30 @@ type CandidateMapping struct {
 }
 
 type CandidateResult struct {
-	BlindID                 string             `json:"blind_id"`
-	VariantID               string             `json:"variant_id"`
-	ScenarioID              string             `json:"scenario_id"`
-	Repetition              int                `json:"repetition"`
-	BuilderFingerprint      string             `json:"builder_fingerprint"`
-	FrameworkRoot           string             `json:"framework_root"`
-	FrameworkFingerprint    string             `json:"framework_fingerprint"`
-	GuidanceFingerprint     string             `json:"scaffold_guidance_fingerprint"`
-	ProtocolFingerprint     string             `json:"protocol_fingerprint"`
-	WorkspaceFingerprint    string             `json:"workspace_fingerprint"`
-	BuilderProvenance       AgentProvenance    `json:"builder_provenance"`
-	BuilderModel            string             `json:"builder_model"`
-	HolisticJudgeModel      string             `json:"holistic_judge_model"`
-	MobileJudgeModel        string             `json:"mobile_judge_model"`
-	HolisticJudgeProvenance AgentProvenance    `json:"holistic_judge_provenance"`
-	MobileJudgeProvenance   AgentProvenance    `json:"mobile_judge_provenance"`
-	BuilderDuration         float64            `json:"builder_duration_seconds,omitempty"`
-	BuilderTokens           int64              `json:"builder_tokens,omitempty"`
+	BlindID                 string          `json:"blind_id"`
+	VariantID               string          `json:"variant_id"`
+	ScenarioID              string          `json:"scenario_id"`
+	Repetition              int             `json:"repetition"`
+	BuilderFingerprint      string          `json:"builder_fingerprint"`
+	FrameworkRoot           string          `json:"framework_root"`
+	FrameworkFingerprint    string          `json:"framework_fingerprint"`
+	GuidanceFingerprint     string          `json:"scaffold_guidance_fingerprint"`
+	ProtocolFingerprint     string          `json:"protocol_fingerprint"`
+	WorkspaceFingerprint    string          `json:"workspace_fingerprint"`
+	BuilderProvenance       AgentProvenance `json:"builder_provenance"`
+	BuilderModel            string          `json:"builder_model"`
+	HolisticJudgeModel      string          `json:"holistic_judge_model"`
+	MobileJudgeModel        string          `json:"mobile_judge_model"`
+	HolisticJudgeProvenance AgentProvenance `json:"holistic_judge_provenance"`
+	MobileJudgeProvenance   AgentProvenance `json:"mobile_judge_provenance"`
+	BuilderDuration         float64         `json:"builder_duration_seconds,omitempty"`
+	BuilderTokens           int64           `json:"builder_tokens,omitempty"`
+	// BuilderCLICalls / BuilderUsedDevServer come from the PATH shim's
+	// invocation log — a non-deterministic funnel signal: the harness
+	// prompt names no command, so a `gofastr dev` here means the builder
+	// discovered the hot-reload loop from the generated guidance alone.
+	BuilderCLICalls         int                `json:"builder_cli_calls"`
+	BuilderUsedDevServer    bool               `json:"builder_used_dev_server"`
 	BuildSucceeded          bool               `json:"build_succeeded"`
 	TestsSucceeded          bool               `json:"tests_succeeded"`
 	ServerSucceeded         bool               `json:"server_succeeded"`
