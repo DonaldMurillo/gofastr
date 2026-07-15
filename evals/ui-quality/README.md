@@ -74,7 +74,16 @@ result or used as variant names.
 - Candidates are isolated Git workspaces containing the normal scaffold plus a
   neutral `EVAL_TASK.md`.
 - The builder prompt does not prescribe layouts, aesthetics, component choices,
-  or exceptions to GoFastr's ownership rules.
+  or exceptions to GoFastr's ownership rules — nor does it name any dev
+  command.
+- Builders get the snapshot's own `gofastr` CLI first on PATH through a
+  logging shim, so `gofastr docs` / `gofastr dev` always match the framework
+  under evaluation (a globally installed CLI would leak another version into
+  the treatment). The shim log is recorded per candidate
+  (`cli-invocations.log`) and produces a non-deterministic dev-loop funnel
+  signal in results and the leaderboard: whether the builder discovered
+  `gofastr dev` from the generated guidance alone, and how many CLI calls it
+  made.
 - The generated onboarding fingerprint is captured before the builder and
   checked afterward. Mutation is contamination and fails the candidate.
 - The framework snapshot and built CLI are fingerprinted before the matrix and

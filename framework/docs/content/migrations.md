@@ -90,7 +90,7 @@ See "Migration groups" below for semantics.
 gofastr migrate up                       # uses DATABASE_URL or .env
 gofastr migrate status --db-url=file:app.db
 gofastr migrate down 1
-gofastr migrate generate add_email       # write a versioned migration file from entity changes
+gofastr migrate generate add_email --from=gofastr.yml   # write a versioned migration file from entity changes
 gofastr migrate force 7                  # mark version 7 cleanly applied
 gofastr migrate force 7 --not-applied    # treat version 7 as pending again
 ```

@@ -1248,6 +1248,10 @@ CI engineers verify acks without launching the agent loop using:
 gofastr harness verify-ack             # exits non-zero on hash drift
 ```
 
+(`verify-ack` is specified here but not yet wired into `cmd/gofastr` —
+today the CLI dispatches only the `mcp` and `creds` subcommands, and
+anything else starts an interactive session.)
+
 Drift between the lockfile and live content **fails the CI run
 explicitly** with the changed file paths in the error — never
 silently approves.
@@ -1464,6 +1468,10 @@ gofastr harness conformance --against http://localhost:8080
 gofastr harness conformance --against unix:///path/to/control.sock
 gofastr harness conformance --against stdio:///usr/local/bin/some-other-harness
 ```
+
+(The `conformance` subcommand is specified here but not yet wired into
+`cmd/gofastr`; the suite itself lives in `control/conformance/` and runs
+via `go test`.)
 
 The suite is versioned alongside `protocol_version`. v0.1's suite
 runs against v0.1 servers; v0.2 adds new scenarios behind the
@@ -2259,6 +2267,11 @@ the user contract. Both are stable within a minor release.
 
 Plugin-introduced errors use `Reason: Custom:<namespace>:<code>`
 with a `string` payload field the client surfaces verbatim.
+
+Two of the remediation strings above reference `gofastr harness token`
+and `gofastr harness ack` — specified subcommands that are not yet
+wired into `cmd/gofastr` (which today dispatches only `mcp` and
+`creds`).
 
 ---
 

@@ -92,8 +92,8 @@ Validate, generate, run:
 ```bash
 gofastr validate gofastr.yml
 gofastr generate --from=gofastr.yml   # scaffolds owned Go: main.go + app.go + screens_register.go + screen_*.go + entities/
-go mod tidy
-go run .
+go mod tidy                           # the scaffold pulls new imports; dev builds need this first
+gofastr dev                           # dev server with hot reload — the loop for everything below
 ```
 
 The scaffold is normal, owned Go — a flat `package main` at the module root:
@@ -197,13 +197,10 @@ line in `RegisterGenerated`:
 		}))
 ```
 
-Restart. Auto-migrate converges the schema on boot — it adds the new
+Save — `gofastr dev` rebuilds and restarts the server automatically.
+Auto-migrate converges the schema on the new boot: it adds the new
 `user_id` column to the existing `notes` table (additive only; it never
-drops or retypes):
-
-```bash
-go run .
-```
+drops or retypes).
 
 Prefer to review schema changes before they run rather than lean on boot
 auto-migrate? Generate a versioned migration from the owned entities and
@@ -311,12 +308,8 @@ screen:
 	site.Register("/about", &AboutScreen{}, nil)
 ```
 
-Restart, then verify the full model — log in again so the session
-reflects Ana's new role:
-
-```bash
-go run .
-```
+Save — the dev server rebuilds — then verify the full model. Log in
+again so the session reflects Ana's new role:
 
 ```bash
 curl -s -c ana.jar -X POST http://localhost:8080/auth/login \

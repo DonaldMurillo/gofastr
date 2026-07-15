@@ -575,3 +575,132 @@ func TestPWANoHeadTagsWithoutOption(t *testing.T) {
 		t.Errorf("no PWA markup should be emitted without WithPWA:\n%s", body)
 	}
 }
+
+// Static exports are a closed, immutable page set: the static worker
+// precaches the WHOLE site at install and serves navigations cache-first,
+// so an installed PWA works fully offline. The version must track exported
+// CONTENT (not just the path list) or a redeploy with edited pages would
+// never rotate the cache.
+func TestStaticServiceWorkerPrecachesWholeSite(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	ds := New(a, WithPWA(PWAConfig{}))
+	sw, err := ds.PWAStaticServiceWorkerJS("", PWAStaticExport{
+		Pages:          []string{"/", "/docs", "/api/tokens"},
+		Assets:         []string{"/static/hero.png"},
+		OptionalAssets: []string{"/media/big-video.mp4"},
+		ContentHash:    "content-hash-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"/"`, `"/docs"`, `"/static/hero.png"`, `"/__gofastr/runtime.js"`, "/__gofastr/pwa/offline"} {
+		if !strings.Contains(sw, want) {
+			t.Errorf("static worker missing %s:\n%s", want, sw)
+		}
+	}
+	if strings.Contains(sw, "/api/tokens") {
+		t.Errorf("denied path must never be precached:\n%s", sw)
+	}
+	if strings.Contains(sw, "skipWaiting") {
+		t.Errorf("static worker must not force skipWaiting:\n%s", sw)
+	}
+	if strings.Contains(sw, "ignoreSearch") {
+		t.Errorf("URL matching stays exact — no ignoreSearch:\n%s", sw)
+	}
+	// Same page set, different content → the cache version must rotate.
+	sw2, err := ds.PWAStaticServiceWorkerJS("", PWAStaticExport{
+		Pages:          []string{"/", "/docs", "/api/tokens"},
+		Assets:         []string{"/static/hero.png"},
+		OptionalAssets: []string{"/media/big-video.mp4"},
+		ContentHash:    "content-hash-2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := func(s string) string {
+		i := strings.Index(s, "gofastr-pwa-")
+		j := i + strings.IndexAny(s[i:], `"`)
+		return s[i:j]
+	}
+	if name(sw) == name(sw2) {
+		t.Error("content change must rotate the cache version")
+	}
+}
+
+func TestStaticServiceWorkerHonorsBasePath(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	ds := New(a, WithPWA(PWAConfig{}))
+	sw, err := ds.PWAStaticServiceWorkerJS("/sub", PWAStaticExport{Pages: []string{"/docs"}, ContentHash: "h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sw, `"/sub/docs"`) {
+		t.Errorf("basePath not applied to precached pages:\n%s", sw)
+	}
+}
+
+func TestStaticServiceWorkerRequiresPWA(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	if _, err := New(a).PWAStaticServiceWorkerJS("", PWAStaticExport{ContentHash: "h"}); err == nil {
+		t.Fatal("expected error without WithPWA")
+	}
+}
+
+// Review-driven contracts for the static worker: versioned component CSS in
+// the precache (pages request ?v= URLs and matching is exact), best-effort
+// tier for user static-dir files, slash-tolerant navigation lookup, and a
+// cache prefix that can never collide with the live worker's.
+func TestStaticServiceWorkerReviewContracts(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	ds := New(a, WithPWA(PWAConfig{}))
+	sw, err := ds.PWAStaticServiceWorkerJS("", PWAStaticExport{
+		Pages:          []string{"/"},
+		OptionalAssets: []string{"/media/huge.mp4"},
+		ContentHash:    "h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Component CSS must be precached under the SAME ?v= form pages request.
+	if !strings.Contains(sw, `/__gofastr/comp/`) || !strings.Contains(sw, `.css?v=`) {
+		t.Errorf("versioned component CSS missing from precache:\n%s", sw)
+	}
+	// Optional tier: present, and installed best-effort (failure swallowed).
+	if !strings.Contains(sw, `"/media/huge.mp4"`) || !strings.Contains(sw, "PRECACHE_OPT") {
+		t.Errorf("optional best-effort precache tier missing:\n%s", sw)
+	}
+	if !strings.Contains(sw, `.catch(function () {})`) {
+		t.Errorf("optional entries must not fail the install:\n%s", sw)
+	}
+	// Slash-tolerant navigation lookup.
+	if !strings.Contains(sw, "matchPage") || !strings.Contains(sw, `pathname + "/"`) {
+		t.Errorf("navigation lookup must tolerate trailing-slash redirects:\n%s", sw)
+	}
+	// Prefix isolation: the live worker cleans caches under
+	// "gofastr-pwa-<slug>-"; the static prefix must NOT fall under it.
+	liveSW, err := ds.PWAServiceWorkerJS("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := func(s string) string {
+		i := strings.Index(s, "var CACHE_PREFIX = \"")
+		rest := s[i+len("var CACHE_PREFIX = \""):]
+		return rest[:strings.Index(rest, `"`)]
+	}
+	livePrefix, staticPrefix := prefix(liveSW), prefix(sw)
+	if strings.HasPrefix(staticPrefix, livePrefix) || strings.HasPrefix(livePrefix, staticPrefix) {
+		t.Errorf("live (%q) and static (%q) cache prefixes overlap — activates would delete each other's caches", livePrefix, staticPrefix)
+	}
+	// Two static exports at different subpaths stay isolated too.
+	swSub, err := ds.PWAStaticServiceWorkerJS("/docs", PWAStaticExport{Pages: []string{"/"}, ContentHash: "h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefix(swSub) == staticPrefix {
+		t.Errorf("static exports at different basePaths must not share a cache prefix")
+	}
+}

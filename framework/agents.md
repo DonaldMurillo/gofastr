@@ -2,20 +2,23 @@
 
 App-level helpers worth surfacing to AI agents alongside the batteries.
 
+**Use this when** the prompt mentions: audit trail / who did what, hot
+reload, dev server, browser auto-refresh, livereload, run the app while
+developing, `.env` loading, live app introspection.
+
 ## `framework.WithAuditLog(cfg)` — automatic CRUD audit
 
 **Use this when** the prompt mentions: audit trail, who did what, track
 changes, compliance log, history of modifications, admin accountability.
 
 ```go
-app := framework.NewApp(
-    framework.WithDB(db),
-    framework.WithAuditLog(framework.AuditConfig{
-        Actor:    func(ctx context.Context) string { return currentUserID(ctx) },
-        Entities: []string{"users", "orders"},   // restrict to non-PHI entities
-        Redact:   nil,                            // optional func(entityName, row) row to redact JSON diff
-    }),
-)
+// WithAuditLog is a chained *App method, not a NewApp option.
+app := framework.NewApp(framework.WithDB(db))
+app.WithAuditLog(framework.AuditConfig{
+    Actor:    func(ctx context.Context) string { return currentUserID(ctx) },
+    Entities: []string{"users", "orders"},   // restrict to non-PHI entities
+    Redact:   nil,                            // optional func(entityName, row) row to redact JSON diff
+})
 ```
 
 Writes one `audit_log` row per AfterCreate / AfterUpdate / AfterDelete
@@ -37,9 +40,15 @@ not arbitrary domain events.
 
 ## `framework/dev` — auto-wired livereload
 
-`gofastr dev` rebuilds the binary; `framework.NewApp` + `uihost.New`
-auto-wire `/__livereload` + `/__livereload.js` so every open tab
-refreshes when the new binary boots. No host code needed.
+**Develop with `gofastr dev`, not `go run .`** — it is the only
+first-party command that sets `GOFASTR_DEV=1`, so plain `go run .` never
+hot-reloads. `gofastr dev` rebuilds the binary on save;
+`framework.NewApp` auto-wires `/__livereload` + `/__livereload.js`, and
+full HTML documents get the reload client — uihost screens inject it
+themselves, and dev middleware splices it into any other response that
+declares `Content-Type: text/html` and contains `</body>` (static file
+serving, widget pages, hand-rolled handlers that set the type). So every
+open tab refreshes when the new binary boots. No host code needed.
 
 **Disable:** `GOFASTR_DEV_LIVERELOAD=0` (keeps rebuild loop). Production
 is hard-killed by `GOFASTR_ENV=production`.

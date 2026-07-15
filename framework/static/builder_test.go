@@ -526,3 +526,109 @@ func TestBuildDumpsWidgetCatalogAndChrome(t *testing.T) {
 		}
 	}
 }
+
+type textScreen struct{ Text string }
+
+func (s *textScreen) ScreenTitle() string            { return "T" }
+func (s *textScreen) ScreenDescription() string      { return "" }
+func (s *textScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (s *textScreen) Render() render.HTML {
+	return html.Heading(html.HeadingConfig{Level: 1}, render.Text(s.Text))
+}
+
+// A static export is a closed page set: the emitted service worker must
+// precache every exported page and asset so the installed PWA serves the
+// whole site offline, and a content-only redeploy must change the worker
+// bytes (or browsers would never rotate the stale cache).
+func TestBuildStaticWorkerPrecachesExportedSite(t *testing.T) {
+	build := func(text string) (Result, string) {
+		a := coreapp.NewApp("SSGPWA")
+		a.Register("/", &textScreen{Text: text}, nil)
+		a.Register("/products/:slug", &productScreen{}, nil)
+		host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+		out := t.TempDir()
+		res, err := (&Builder{Host: host, OutDir: out}).Build(context.Background())
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		sw, err := os.ReadFile(filepath.Join(out, "service-worker.js"))
+		if err != nil {
+			t.Fatalf("service-worker.js: %v", err)
+		}
+		return res, string(sw)
+	}
+	res, sw := build("one")
+	if len(res.Pages) != 3 {
+		t.Fatalf("expected 3 pages, got %v", res.Pages)
+	}
+	for _, p := range res.Pages {
+		if !strings.Contains(sw, `"`+p+`"`) {
+			t.Errorf("exported page %s missing from worker precache:\n%s", p, sw)
+		}
+	}
+	for _, a := range []string{"/__gofastr/runtime.js", "/__gofastr/color-scheme.js"} {
+		if !strings.Contains(sw, `"`+a+`"`) {
+			t.Errorf("exported asset %s missing from worker precache", a)
+		}
+	}
+	_, sw2 := build("two")
+	if sw == sw2 {
+		t.Error("content-only change must alter the worker bytes so the SW update cycle fires")
+	}
+}
+
+// Review-driven builder contracts: widget assets and llm.md reach the
+// precache, a reused OutDir stays deterministic, and a user-supplied
+// manifest wins over the generated one.
+func TestBuildStaticWorkerReviewContracts(t *testing.T) {
+	a := coreapp.NewApp("SSGPWA2")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	sw1, err := os.ReadFile(filepath.Join(out, "service-worker.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"/llm.md"`, `"/llm-pages.md"`, `.css?v=`} {
+		if !strings.Contains(string(sw1), want) {
+			t.Errorf("worker precache missing %s", want)
+		}
+	}
+	// Rebuild into the SAME OutDir with identical content: the worker must
+	// be byte-identical (a hash that eats the previous build's PWA output
+	// would rotate the cache on every no-op deploy).
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	sw2, err := os.ReadFile(filepath.Join(out, "service-worker.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(sw1) != string(sw2) {
+		t.Error("no-op rebuild into a reused OutDir must reproduce identical worker bytes")
+	}
+}
+
+func TestBuildKeepsUserSuppliedManifest(t *testing.T) {
+	staticDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(staticDir, "manifest.webmanifest"), []byte(`{"name":"user-owned"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := coreapp.NewApp("SSGPWA3")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}), uihost.WithStaticDir(staticDir))
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(out, "manifest.webmanifest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "user-owned") {
+		t.Errorf("generated manifest clobbered the user-supplied one: %s", b)
+	}
+}

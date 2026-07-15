@@ -17,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -466,15 +467,53 @@ func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
 	version := ds.pwaVersion(manifest, precache, offlineHTML)
 	prefix := "gofastr-pwa-" + pwaSlug(cfg.Name) + "-"
 
-	prefixed := make([]string, len(precache))
-	for i, p := range precache {
-		prefixed[i] = pwaPrefix(basePath, p)
-	}
-	precacheJSON, err := json.Marshal(prefixed)
+	precacheJSON, err := pwaMarshalPrefixed(basePath, precache)
 	if err != nil {
 		return "", err
 	}
-	deny := pwaDenyPaths(cfg)
+	shared, err := pwaSharedWorkerArgs(basePath, pwaDenyPaths(cfg))
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf(pwaServiceWorkerTemplate,
+		prefix+version,
+		prefix,
+		shared.offlineURL,
+		precacheJSON,
+		shared.denyExactJSON,
+		shared.denyPreJSON,
+	), nil
+}
+
+// PWAStaticExport describes a completed static export to the full-site
+// worker generator.
+type PWAStaticExport struct {
+	// Pages are the exported route paths — precached atomically.
+	Pages []string
+	// Assets are framework-generated files (runtime, CSS, widget chrome,
+	// llm.md) — precached atomically with the pages.
+	Assets []string
+	// OptionalAssets are user static-dir files — precached best-effort:
+	// one un-servable file (a dotfile a host strips, say) must not brick
+	// the install and pin clients to a previous deployment forever.
+	OptionalAssets []string
+	// ContentHash fingerprints the exported tree's bytes: a redeploy
+	// that edits content without changing the path list must still
+	// produce a byte-different worker, or browsers would never rotate
+	// the stale cache.
+	ContentHash string
+}
+
+// pwaWorkerArgs is the marshaling shared by both worker generators:
+// deny lists, basePath prefixing, and JSON encoding.
+type pwaWorkerArgs struct {
+	offlineURL    string
+	denyExactJSON []byte
+	denyPreJSON   []byte
+}
+
+func pwaSharedWorkerArgs(basePath string, deny []string) (pwaWorkerArgs, error) {
 	denyExact := make([]string, len(deny))
 	denyPrefix := make([]string, len(deny))
 	for i, d := range deny {
@@ -483,20 +522,112 @@ func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
 	}
 	denyExactJSON, err := json.Marshal(denyExact)
 	if err != nil {
+		return pwaWorkerArgs{}, err
+	}
+	denyPreJSON, err := json.Marshal(denyPrefix)
+	if err != nil {
+		return pwaWorkerArgs{}, err
+	}
+	return pwaWorkerArgs{
+		offlineURL:    pwaPrefix(basePath, pwaOfflinePath),
+		denyExactJSON: denyExactJSON,
+		denyPreJSON:   denyPreJSON,
+	}, nil
+}
+
+func pwaMarshalPrefixed(basePath string, paths []string) ([]byte, error) {
+	prefixed := make([]string, len(paths))
+	for i, p := range paths {
+		prefixed[i] = pwaPrefix(basePath, p)
+	}
+	return json.Marshal(prefixed)
+}
+
+// PWAStaticServiceWorkerJS generates the service worker for a STATIC
+// export ("static site as an app"). A static export is a closed,
+// immutable page set, so the personalization concern that keeps the
+// live worker's navigations network-first does not exist: this worker
+// precaches the WHOLE exported site — app shell, every page, every
+// component stylesheet (under the versioned ?v= URLs pages actually
+// request), every asset (deny-filtered) — and serves navigations
+// cache-first, tolerating the trailing-slash redirects of static
+// hosts, so the installed PWA works fully offline from the first
+// install. Everything else mirrors PWAServiceWorkerJS: exact URL
+// matching, no skipWaiting, denied endpoints never intercepted. The
+// cache prefix carries a "static" + basePath discriminator so a live
+// deployment and static exports on the same origin never delete each
+// other's caches.
+func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExport) (string, error) {
+	if ds.pwaConfig == nil {
+		return "", fmt.Errorf("uihost: PWA not configured")
+	}
+	cfg := ds.resolvedPWA()
+	offlineHTML := ds.PWAOfflineHTML()
+	manifest, err := ds.PWAManifestJSON("")
+	if err != nil {
 		return "", err
 	}
-	denyPrefixJSON, err := json.Marshal(denyPrefix)
+	deny := pwaDenyPaths(cfg)
+	seen := map[string]bool{}
+	add := func(dst *[]string, paths ...string) {
+		for _, p := range paths {
+			if !seen[p] && pwaAllowedPrecache(p, deny) {
+				seen[p] = true
+				*dst = append(*dst, p)
+			}
+		}
+	}
+	var precache []string
+	add(&precache, ds.pwaPrecachePaths(cfg, offlineHTML)...)
+	add(&precache, export.Pages...)
+	add(&precache, export.Assets...)
+	// Component stylesheets are requested under content-addressed ?v=
+	// URLs (page <link> tags and the runtime's lazy loader both append
+	// the version). URL matching is exact, so the precache must hold the
+	// SAME versioned form for every registered component or never-visited
+	// pages render unstyled offline.
+	theme := ds.activeTheme()
+	for _, e := range registry.All() {
+		add(&precache, "/__gofastr/comp/"+e.Name+".css?v="+e.VersionFor(theme))
+	}
+	sort.Strings(precache)
+	var optional []string
+	add(&optional, export.OptionalAssets...)
+	sort.Strings(optional)
+
+	versionInputs := append(append([]string(nil), precache...), optional...)
+	versionInputs = append(versionInputs, "static-content:"+export.ContentHash)
+	version := ds.pwaVersion(manifest, versionInputs, offlineHTML)
+	// "static" + basePath discriminator: does NOT share a prefix with the
+	// live worker's "gofastr-pwa-<slug>-" caches, and two static exports
+	// at different subpaths of one origin stay isolated too.
+	pathSlug := "root"
+	if basePath != "" {
+		pathSlug = pwaSlug(basePath)
+	}
+	prefix := "gofastr-pwa-static-" + pwaSlug(cfg.Name) + "-" + pathSlug + "-"
+
+	precacheJSON, err := pwaMarshalPrefixed(basePath, precache)
+	if err != nil {
+		return "", err
+	}
+	optionalJSON, err := pwaMarshalPrefixed(basePath, optional)
+	if err != nil {
+		return "", err
+	}
+	shared, err := pwaSharedWorkerArgs(basePath, deny)
 	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf(pwaServiceWorkerTemplate,
+	return fmt.Sprintf(pwaStaticServiceWorkerTemplate,
 		prefix+version,
 		prefix,
-		pwaPrefix(basePath, pwaOfflinePath),
+		shared.offlineURL,
 		precacheJSON,
-		denyExactJSON,
-		denyPrefixJSON,
+		optionalJSON,
+		shared.denyExactJSON,
+		shared.denyPreJSON,
 	), nil
 }
 
@@ -575,6 +706,107 @@ self.addEventListener("fetch", function (event) {
       if (hit) return hit;
       throw err;
     });
+  }));
+});
+`
+
+// pwaStaticServiceWorkerTemplate is the full-site worker for static
+// exports. Install/activate/deny mirror the live template; the fetch
+// strategy differs: the exported site is immutable, so navigations are
+// cache-first (network fallback, then the offline screen) and every
+// precached asset answers from cache. ES5-safe, dependency-free.
+const pwaStaticServiceWorkerTemplate = `/* goFastr service worker (static full-site) — generated by uihost.WithPWA + static export. Do not edit. */
+var CACHE_NAME = %q;
+var CACHE_PREFIX = %q;
+var OFFLINE_URL = %q;
+var PRECACHE = %s;
+var PRECACHE_OPT = %s;
+var DENY_EXACT = %s;
+var DENY_PREFIX = %s;
+
+function precacheOne(cache, u) {
+  // Each response is re-wrapped into a fresh Response before caching:
+  // static hosts answer extension-less URLs with a 301 to index.html,
+  // and a cached redirected response is rejected when used to answer a
+  // navigation fetch (redirect mode "manual").
+  return fetch(u, { cache: "no-cache" }).then(function (r) {
+    if (!r.ok) throw new Error("precache " + u + ": " + r.status);
+    return r.blob().then(function (body) {
+      return cache.put(u, new Response(body, { status: 200, headers: r.headers }));
+    });
+  });
+}
+
+self.addEventListener("install", function (event) {
+  event.waitUntil(caches.open(CACHE_NAME).then(function (cache) {
+    // Pages and framework assets install atomically — the offline
+    // guarantee is all-or-nothing for them. User static-dir files are
+    // best-effort: one un-servable file must not fail the install and
+    // pin every client to the previous deployment.
+    return Promise.all(PRECACHE.map(function (u) {
+      return precacheOne(cache, u);
+    })).then(function () {
+      return Promise.all(PRECACHE_OPT.map(function (u) {
+        return precacheOne(cache, u).catch(function () {});
+      }));
+    });
+  }));
+});
+
+self.addEventListener("activate", function (event) {
+  event.waitUntil(caches.keys().then(function (names) {
+    return Promise.all(names.filter(function (n) {
+      return n.indexOf(CACHE_PREFIX) === 0 && n !== CACHE_NAME;
+    }).map(function (n) { return caches.delete(n); }));
+  }).then(function () { return self.clients.claim(); }));
+});
+
+function denied(pathname) {
+  if (DENY_EXACT.indexOf(pathname) !== -1) return true;
+  for (var i = 0; i < DENY_PREFIX.length; i++) {
+    if (pathname.indexOf(DENY_PREFIX[i]) === 0) return true;
+  }
+  return false;
+}
+
+// Static hosts 301 extension-less pages to their trailing-slash form,
+// so history/bookmark URLs may carry a slash the precache key lacks
+// (or vice versa). Try the exact pathname, then the toggled form.
+function matchPage(pathname) {
+  return caches.match(pathname, { cacheName: CACHE_NAME }).then(function (hit) {
+    if (hit) return hit;
+    var alt = pathname.length > 1 && pathname.charAt(pathname.length - 1) === "/"
+      ? pathname.slice(0, -1)
+      : pathname + "/";
+    return caches.match(alt, { cacheName: CACHE_NAME });
+  });
+}
+
+self.addEventListener("fetch", function (event) {
+  var req = event.request;
+  if (req.method !== "GET") return;
+  var url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (denied(url.pathname)) return;
+  if (req.mode === "navigate") {
+    // Navigations are cache-first: the exported page set is immutable,
+    // every page was precached at install, and a new deployment ships a
+    // byte-different worker whose install repopulates a fresh cache.
+    // Network is the fallback for anything outside the precache; the
+    // offline screen is the last resort.
+    event.respondWith(matchPage(url.pathname).then(function (hit) {
+      if (hit) return hit;
+      return fetch(req).catch(function () {
+        return caches.match(OFFLINE_URL, { cacheName: CACHE_NAME });
+      });
+    }));
+    return;
+  }
+  // Assets: cache-first with network fallback. URLs are matched
+  // exactly, query string included; content-addressed ?v= URLs from a
+  // new deployment miss the old cache and reach the network.
+  event.respondWith(caches.match(req, { cacheName: CACHE_NAME }).then(function (hit) {
+    return hit || fetch(req);
   }));
 });
 `

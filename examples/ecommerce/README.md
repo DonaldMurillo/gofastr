@@ -5,7 +5,7 @@ thesis: a complete storefront described **once** in
 [`gofastr.yml`](gofastr.yml) — 5 related entities (categories, products,
 orders, order_items, reviews), a themed 8-screen UI, custom endpoints,
 seed data, middleware, and a plugin — emitted as runnable Go by a single
-command. Nothing under `gen/` is hand-written.
+command. Nothing under `app/` is hand-written.
 
 ## What it proves
 
@@ -13,7 +13,7 @@ One blueprint fans out into every surface: auto-migrated SQL schema,
 REST CRUD with validation and cursor pagination, OpenAPI, 25 MCP tools
 for agents, and a server-rendered themed storefront. All of it is
 asserted live by [`flagship_test.go`](flagship_test.go), which
-regenerates `gen/` from the blueprint, builds the binary, boots it, and
+regenerates `app/` from the blueprint, builds the binary, boots it, and
 hits each surface — so the proof never depends on a stale checkout.
 
 ## Secure by default
@@ -31,11 +31,12 @@ shipped insecure and how it was fixed is in
 
 ```sh
 cd examples/ecommerce
-gofastr generate --from=gofastr.yml   # re-emits gen/ from the blueprint
-go run ./gen                          # serves on localhost:8080
+gofastr generate --from=gofastr.yml --force   # re-emits app/ from the blueprint (output_dir: app)
+gofastr dev --dir app                         # hot-reload dev server on localhost:8080
 ```
 
-`gen/` is gitignored — generated code is regenerated, not committed.
+`app/` is committed, owned Go — `output_dir: app` in the blueprint puts the
+app in a subpackage so the example also hosts its own test files.
 
 ## Read next
 

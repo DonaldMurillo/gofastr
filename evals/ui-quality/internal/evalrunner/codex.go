@@ -156,9 +156,10 @@ Rules for evaluation integrity:
 - Keep the generated PORT environment-variable startup contract working.
 - Do not require external services, API keys, or a network connection at runtime.
 - Finish the implementation, run gofmt and go test ./..., and fix failures.
-- Follow the generated project's UI verification workflow. You may launch the
-  app temporarily for local visual review, but stop it before finishing; the
-  harness owns the final runtime health checks and evidence captures.
+- Follow the generated project's UI verification workflow and its documented
+  development loop. You may run the app for local visual review, but stop
+  every server before finishing; the harness owns the final runtime health
+  checks and evidence captures.
 - Work to a 25-minute implementation budget. After the app builds and tests,
   make at most two bounded visual-review passes. Inspect each required route at
   one desktop and one mobile size and fix the most material visible issues.

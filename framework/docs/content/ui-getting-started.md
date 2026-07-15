@@ -13,8 +13,12 @@ gofastr init myapp
 cd myapp
 
 go mod tidy   # resolves github.com/DonaldMurillo/gofastr from the module proxy
-go run .
+gofastr dev   # dev server with hot reload — edit a screen, the browser refreshes
 ```
+
+`gofastr dev` is the development loop: it watches `.go/.js/.css/.html`,
+rebuilds, and auto-refreshes the browser. Plain `go run .` also works but
+never reloads — use it for one-shot checks, not iteration.
 
 Only add a `replace` directive pointing at a local checkout if you are
 hacking on the framework itself and want your app to pick up unreleased
@@ -95,7 +99,7 @@ Keep the generated `DarkColors` complete when changing brand colors; rendering
 Booting with a half-populated typed theme panics at startup with a field path
 naming the missing piece.
 
-`go run .` — visit <http://localhost:8080/__gofastr/app.css> to confirm your tokens are emitted as `:root` custom properties.
+With `gofastr dev` running, visit <http://localhost:8080/__gofastr/app.css> to confirm your tokens are emitted as `:root` custom properties — token edits hot-reload like any other change.
 
 ---
 

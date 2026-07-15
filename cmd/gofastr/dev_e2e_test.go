@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -51,7 +52,7 @@ type devHarness struct {
 	port       string
 	cmd        *exec.Cmd
 	cancelFunc context.CancelFunc
-	output     strings.Builder
+	output     syncBuffer
 }
 
 func newDevHarness(t *testing.T) *devHarness {
@@ -424,4 +425,24 @@ func TestE2E_HotReload_BrowserAutoRefreshes(t *testing.T) {
 	_ = chromedp.Run(ctx, chromedp.Text("h1", &finalTitle, chromedp.ByQuery))
 	t.Fatalf("browser never saw 'RELOADED_TITLE' after 45s. Final h1 = %q.\nDev output:\n%s",
 		finalTitle, h.output.String())
+}
+
+// syncBuffer is a mutex-guarded writer for capturing live child-process
+// output: os/exec's copy goroutine writes while the test goroutine reads on
+// failure paths, which races on a bare strings.Builder under -race.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }

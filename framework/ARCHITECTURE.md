@@ -25,7 +25,7 @@ subpackage needs to back-import the framework root.
 
 ## The blueprint is a generator, not a source of truth
 
-> Read this before changing `cmd/gofastr` (`generate`, `migrate`, future
+> Read this before changing `cmd/gofastr` (`generate`, `migrate`,
 > `pack`), the generated-output layout, or how the project is positioned.
 > This is what the code now does. Anything that still contradicts it —
 > `gen/` output, `clean`-rewrite — is legacy to remove, not progress
@@ -56,7 +56,7 @@ treated as canonical for a running app.
 | move | direction | standing |
 |---|---|---|
 | `generate` | YAML → owned Go | one-way on-ramp; scaffold then leave behind |
-| `pack` *(future)* | owned Go → YAML | one-way, lossy off-ramp; snapshot of *shape* |
+| `pack` | owned Go → YAML | one-way, lossy off-ramp; snapshot of *shape* |
 | `migrate generate` | a schema → reviewable versioned SQL | a **separate action**; takes its schema from an opt-in source (blueprint `--from`, owned Go, or a live DB). Emits a migration file you review and commit — it does not treat any source as authoritative-over-the-world. |
 | `migrate diff --from=<blueprint>` | — | **deleted** — it *applied* the blueprint onto a live DB, making the blueprint authoritative over the running database. |
 

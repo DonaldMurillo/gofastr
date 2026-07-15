@@ -133,7 +133,10 @@ func TestReadmeQuickstartShapeIsStable(t *testing.T) {
 			t.Fatalf("README blueprint block lost %q — the quickstart yaml must stay a real relation-bearing blueprint:\n%s", want, yamlBlock)
 		}
 	}
-	for _, want := range []string{"go mod init", "gofastr generate --from=gofastr.yml", "go mod tidy", "go run ."} {
+	// `gofastr dev`, not `go run .`: only the dev server hot-reloads, and the
+	// quickstart is the development on-ramp. TestReadmeQuickstartBlueprintRuns
+	// keeps the sequence executable by building and booting the same app.
+	for _, want := range []string{"go mod init", "gofastr generate --from=gofastr.yml", "go mod tidy", "gofastr dev"} {
 		if !strings.Contains(bashBlock, want) {
 			t.Fatalf("README quickstart command sequence lost %q — the documented path must stay the executable path:\n%s", want, bashBlock)
 		}

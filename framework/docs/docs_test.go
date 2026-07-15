@@ -187,3 +187,30 @@ func TestSearchWithLimit(t *testing.T) {
 		t.Errorf("SearchWithLimit returned %d hits, want <= 5", len(hits))
 	}
 }
+
+// The development loop must funnel to `gofastr dev` (hot reload): livereload
+// only activates under GOFASTR_DEV=1, which only `gofastr dev` sets, so a doc
+// that leads with `go run .` silently costs the reader the entire HMR
+// experience. Every dev-loop-critical topic must mention gofastr dev BEFORE
+// its first `go run`.
+func TestDevLoopDocsLeadWithGofastrDev(t *testing.T) {
+	for _, topic := range []string{
+		"ui-getting-started",
+		"tutorial-blueprint-app",
+		"project-structure",
+	} {
+		body, err := Get(topic)
+		if err != nil {
+			t.Fatalf("Get(%q): %v", topic, err)
+		}
+		dev := strings.Index(string(body), "gofastr dev")
+		run := strings.Index(string(body), "go run ")
+		if dev < 0 {
+			t.Errorf("%s: never mentions `gofastr dev` — the doc funnels readers into a no-reload loop", topic)
+			continue
+		}
+		if run >= 0 && run < dev {
+			t.Errorf("%s: `go run` (byte %d) appears before `gofastr dev` (byte %d) — the hot-reload path must lead", topic, run, dev)
+		}
+	}
+}

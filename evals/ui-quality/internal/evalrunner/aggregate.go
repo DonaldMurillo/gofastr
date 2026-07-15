@@ -241,6 +241,8 @@ func leaderboardMarkdown(summary Summary) string {
 		fmt.Fprintf(&b, "Holistic %.2f (minimum %.2f); mobile %.2f (minimum %.2f); holistic/mobile shadcn consensus `%t`/`%t`; technical pass `%t`; quality pass `%t`.\n\n",
 			c.Overall, c.MinimumDimension, c.MobileOverall, c.MobileMinimumDimension,
 			c.HolisticShadcnConsensus, c.MobileShadcnConsensus, c.TechnicalPassed, c.QualityPassed)
+		fmt.Fprintf(&b, "Dev-loop funnel (non-deterministic): builder invoked `gofastr dev` `%t`; %d gofastr CLI call(s) total.\n\n",
+			c.BuilderUsedDevServer, c.BuilderCLICalls)
 		if len(c.Weakest) > 0 {
 			b.WriteString("Weakest visible decisions:\n\n")
 			for _, item := range c.Weakest {

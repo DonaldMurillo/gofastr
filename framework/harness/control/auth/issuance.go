@@ -147,7 +147,8 @@ func generateCode() (string, error) {
 
 // Errors surfaced as user-facing strings per § User-facing errors.
 var (
-	ErrNoChannel    = errors.New("auth: token issuance requires an interactive confirmation channel; see --auth-token-file for headless setups")
+	// No --auth-token-file flag exists (yet) — do not point users at it.
+	ErrNoChannel    = errors.New("auth: token issuance requires an interactive confirmation channel; mint the token from an interactive harness session and reuse it for headless setups")
 	ErrUnknownMint  = errors.New("auth: unknown mint ID")
 	ErrCodeMismatch = errors.New("auth: confirmation code mismatch")
 	ErrCodeExpired  = errors.New("auth: confirmation code expired (60s window)")
