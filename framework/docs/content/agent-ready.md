@@ -128,10 +128,38 @@ available. Requests without the `Accept` header are unaffected.
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
 JSON-RPC + GET Server-Sent Events), replacing the manual
 `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`. Combined with
-`WithMCPIntrospection()`, the server's tools (routes, plugins, batteries,
-config, readiness, framework docs) are reachable at the canonical endpoint the
+`WithMCPIntrospection()`, the server's nine introspection tools —
+`app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
+`app_readiness`, `framework_docs_list`, `framework_docs_get`,
+`framework_docs_search` — are reachable at the canonical endpoint the
 agent card advertises. Calling `WithMCP` **and** manually mounting `/mcp`
-panics with a route conflict — pick one.
+panics with a route conflict — pick one. Blueprint-generated apps ship with
+both options wired.
+
+`framework.WithMCPControl()` adds the mutating counterpart —
+`app_module_enable` / `app_module_disable` toggle registered modules on the
+running app (persisted through the module store, dependency-checked). Keep
+it off any `/mcp` reachable by untrusted callers.
+
+Auth on the tool surface splits by kind: entity CRUD tools re-dispatch
+through the router, so session/JWT auth, owner scoping, and RBAC apply
+exactly as over HTTP (the caller's Cookie/Authorization from the `/mcp`
+request carries through). Directly registered tools — custom
+`app.MCP.RegisterTool` handlers and `Endpoint.MCPHandler` twins — run
+without route middleware; gate them per-caller with `mcp.Gated` +
+battery/auth's `auth.MCPUser()` / `auth.MCPRole(...)` (see
+[plugins](plugins.md)).
+
+**The dev loop implies all of it.** Under `gofastr dev` (`GOFASTR_DEV`),
+`framework.NewApp` auto-enables the mount, introspection, and control;
+battery/log auto-registers its `log_recent` / `log_filter` /
+`log_metrics` / `log_set_level` debug tools; and every CRUD-enabled
+entity serves its `{entity}_list/get/create/update/delete` data tools
+without per-entity `mcp: true` — with zero options: the local dev loop
+is livereload for agents. Opt out with `GOFASTR_DEV_MCP=0` (mirrors
+`GOFASTR_DEV_LIVERELOAD=0`); a production `GOFASTR_ENV` always wins.
+A dev-implied mount yields to a hand-wired `/mcp` route instead of
+panicking, so older scaffolds keep working under `gofastr dev`.
 
 ### OAuth Protected Resource  (RFC 9728)
 

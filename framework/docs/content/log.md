@@ -83,6 +83,13 @@ Opt-in because the surface reveals a lot about the running app —
 weigh the disclosure before enabling on a production MCP server
 exposed to untrusted callers.
 
+**In the dev loop the tools auto-enable.** Under `gofastr dev`
+(`GOFASTR_DEV`; opt-out `GOFASTR_DEV_MCP=0`) the plugin turns on
+`EnableMCP` and `AllowMCPMutation` regardless of Config — the local
+dev `/mcp` is trusted, and an agent driving the dev loop needs the
+debug tools without wiring. The explicit fields below remain the only
+path for production processes:
+
 ```go
 app.RegisterPlugin(log.New(log.Config{
     EnableMCP:   true,

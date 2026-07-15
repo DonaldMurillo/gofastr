@@ -90,6 +90,12 @@ enabled := app.Modules().Enabled("feature")
 list := app.Modules().List() // []ModuleInfo
 ```
 
+Agents get the same controls over MCP: `framework.WithMCPControl()`
+registers `app_module_enable` / `app_module_disable` (and the dev loop
+implies the option — see [agent-ready](agent-ready.md)). The tools call
+the exact methods above, so persistence and the fail-closed dependency
+rules apply identically.
+
 - **Disabled → 404, not 403.** A disabled module's routes return a plain
   `http.NotFound`. The middleware chain does not run — auth, logging,
   and recovery never see the request. The module's existence does not

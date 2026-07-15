@@ -10,8 +10,11 @@ running GoFastr app via MCP. For deep recipes, jump to:
 
 - `.claude/skills/log-debug/SKILL.md` — the four `log_*` tools (recent
   entries, structured filter, metrics, level mutation).
-- `.claude/skills/app-introspect/SKILL.md` — the five `app_*` tools
-  (routes, plugins, batteries, config, readiness).
+- `.claude/skills/app-introspect/SKILL.md` — the nine introspection
+  tools: `app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
+  `app_config`, `app_readiness`, plus `framework_docs_list` /
+  `framework_docs_get` / `framework_docs_search` for the embedded
+  framework docs.
 
 ## When to use which
 
@@ -22,35 +25,48 @@ running GoFastr app via MCP. For deep recipes, jump to:
 | "Is the app ready?"                         | `app_readiness` (app-introspect)                         |
 | "What endpoints exist?"                     | `app_routes` (app-introspect)                            |
 | "What plugins / batteries are loaded?"      | `app_plugins`, `app_batteries` (app-introspect)          |
+| "What modules are enabled?"                 | `app_modules` (app-introspect)                           |
+| "Turn module X off / back on"               | `app_module_disable`, `app_module_enable` (mutating)     |
+| "How does framework feature X work?"        | `framework_docs_search` → `framework_docs_get`           |
 | "Are the logs even working?"                | `log_metrics` — non-zero counters = lost entries          |
 | "Crank up DEBUG for 30 seconds, then back"  | `log_set_level DEBUG` → reproduce → `log_set_level INFO` |
 
 ## Getting started
 
-The user's app must be running with these flags wired:
+**Under `gofastr dev`, everything below is automatic** — the framework
+auto-mounts `/mcp` and enables introspection + control, every
+CRUD-enabled entity serves its `{entity}_*` data tools (no `mcp: true`
+needed), and battery/log (if registered) auto-enables its `log_*`
+tools. Opt-out: `GOFASTR_DEV_MCP=0`. So for a dev-loop app there is
+nothing to wire — just connect.
+
+Outside the dev loop, the app opts in explicitly:
 
 ```go
 fwApp := framework.NewApp(
-    framework.WithMCPIntrospection(),       // app_* tools
+    framework.WithMCP(),                    // mounts /mcp (POST + GET SSE) + discovery well-knowns
+    framework.WithMCPIntrospection(),       // app_* + framework_docs_* tools (read-only)
+    framework.WithMCPControl(),             // app_module_enable/disable (mutating — trusted /mcp only)
 )
 fwApp.RegisterPlugin(log.New(log.Config{
     EnableMCP:   true,                       // log_* tools
     MCPRingSize: 2000,
 }))
-fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
 ```
 
-`examples/site` already has this wired. Spin it up with the
-repo's normal dev workflow:
+(`WithMCP()` replaces hand-mounting `/mcp` — doing both panics with a
+route conflict.) `examples/site` and blueprint-generated apps already
+have `WithMCP` + `WithMCPIntrospection` + the log battery wired. Spin
+the site up with the repo's normal dev workflow:
 
 ```bash
 ./scripts/dev-watch.sh         # examples/site on :8082, auto-rebuild
 # or
-go run ./examples/site
+go run ./examples/site         # :8083 — plain go-run has no PORT set
 ```
 
-Then point curl at `http://localhost:8082/mcp` and use the log-debug
-+ app-introspect skills' recipes.
+Then point curl at `http://localhost:8082/mcp` (or `:8083` for
+go-run) and use the log-debug + app-introspect skills' recipes.
 
 ## The JSON-RPC envelope
 

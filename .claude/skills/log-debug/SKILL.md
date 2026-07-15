@@ -5,25 +5,26 @@ description: Investigate a running GoFastr app by querying its log MCP tools. Us
 
 # Debug a live GoFastr app via the log MCP tools
 
-The `battery/log` plugin (with `Config.EnableMCP: true`) registers
-four JSON-RPC tools on the App's MCP server. Use these to investigate
-a running app — agent live-debugging, not log greps from the user.
+The `battery/log` plugin registers four JSON-RPC tools on the App's
+MCP server. Use these to investigate a running app — agent
+live-debugging, not log greps from the user.
 
 ## Prerequisites
 
 The user's app must be:
-1. Running.
-2. Built with `log.Config{EnableMCP: true}` (or wired to mount the
-   plugin's MCP tools manually).
-3. Exposing `POST /mcp` (the canonical mount; the website example
-   does this — `examples/site/main.go`).
+1. Running with the `battery/log` plugin registered (blueprint-generated
+   apps and `examples/site` both do).
+2. In the dev loop (`gofastr dev` sets `GOFASTR_DEV`, which
+   auto-enables the tools + the `/mcp` mount; opt-out
+   `GOFASTR_DEV_MCP=0`) — OR built with `log.Config{EnableMCP: true}`
+   and an `/mcp` mount (`framework.WithMCP()`) for non-dev processes.
 
 Quickest way to spin up a known-good target in this repo:
 
 ```bash
-./scripts/dev-watch.sh   # examples/site on :8082, auto-rebuilds
+./scripts/dev-watch.sh   # examples/site on :8082, auto-rebuilds — tools auto-enable
 # or
-go run ./examples/site
+GOFASTR_DEV=1 go run ./examples/site   # :8083; plain go-run without the env has NO log tools
 ```
 
 Then curl `http://localhost:8082/mcp` (or whatever port your app uses).

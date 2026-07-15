@@ -1,6 +1,7 @@
 # battery/storage
 
-File / object storage abstraction matching `framework/upload.Storage`.
+File / object storage abstraction matching `core/upload.Storage` (the
+interface `framework.WithFileStorage` accepts).
 Three built-in backends: `LocalStorage`, `MemoryStorage` (tests),
 `S3Storage` (works with S3, MinIO, R2, anything S3-compatible).
 

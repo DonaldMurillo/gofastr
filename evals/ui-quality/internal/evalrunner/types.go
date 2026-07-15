@@ -92,30 +92,41 @@ type CandidateResult struct {
 	// invocation log — a non-deterministic funnel signal: the harness
 	// prompt names no command, so a `gofastr dev` here means the builder
 	// discovered the hot-reload loop from the generated guidance alone.
-	BuilderCLICalls         int                `json:"builder_cli_calls"`
-	BuilderUsedDevServer    bool               `json:"builder_used_dev_server"`
-	BuildSucceeded          bool               `json:"build_succeeded"`
-	TestsSucceeded          bool               `json:"tests_succeeded"`
-	ServerSucceeded         bool               `json:"server_succeeded"`
-	TechnicalPassed         bool               `json:"technical_passed"`
-	TechnicalIssues         []string           `json:"technical_issues,omitempty"`
-	Screenshots             []ScreenshotResult `json:"screenshots,omitempty"`
-	Judgments               []Judgment         `json:"judgments,omitempty"`
-	MobileJudgments         []Judgment         `json:"mobile_judgments,omitempty"`
-	Dimensions              Dimensions         `json:"dimensions"`
-	Overall                 float64            `json:"overall"`
-	MinimumDimension        float64            `json:"minimum_dimension"`
-	MobileDimensions        Dimensions         `json:"mobile_dimensions"`
-	MobileOverall           float64            `json:"mobile_overall"`
-	MobileMinimumDimension  float64            `json:"mobile_minimum_dimension"`
-	HolisticShadcnConsensus bool               `json:"holistic_shadcn_consensus"`
-	MobileShadcnConsensus   bool               `json:"mobile_shadcn_consensus"`
-	QualityPassed           bool               `json:"quality_passed"`
-	ReusedWorkspace         bool               `json:"reused_workspace,omitempty"`
-	Strongest               []string           `json:"strongest,omitempty"`
-	Weakest                 []string           `json:"weakest,omitempty"`
-	NextIterations          []string           `json:"next_iterations,omitempty"`
-	HistoricalOnlyReason    string             `json:"historical_only_reason,omitempty"`
+	BuilderCLICalls      int  `json:"builder_cli_calls"`
+	BuilderUsedDevServer bool `json:"builder_used_dev_server"`
+	// BuilderUsedMCP greps the builder's transcript for /mcp traffic — a
+	// soft behavioral signal that the builder discovered the app's MCP
+	// debug loop (introspection/log tools) from guidance alone.
+	BuilderUsedMCP bool `json:"builder_used_mcp"`
+	// CandidateMCP* probe the BUILT app's served /mcp during the capture
+	// boot (prod-style env): tool count, whether the introspection set
+	// survived the builder's edits, and whether the dev-only log tools
+	// leaked into a prod boot (a fail-closed regression if true).
+	CandidateMCPTools         int                `json:"candidate_mcp_tools"`
+	CandidateMCPIntrospection bool               `json:"candidate_mcp_introspection"`
+	CandidateMCPLogToolsProd  bool               `json:"candidate_mcp_log_tools_prod"`
+	BuildSucceeded            bool               `json:"build_succeeded"`
+	TestsSucceeded            bool               `json:"tests_succeeded"`
+	ServerSucceeded           bool               `json:"server_succeeded"`
+	TechnicalPassed           bool               `json:"technical_passed"`
+	TechnicalIssues           []string           `json:"technical_issues,omitempty"`
+	Screenshots               []ScreenshotResult `json:"screenshots,omitempty"`
+	Judgments                 []Judgment         `json:"judgments,omitempty"`
+	MobileJudgments           []Judgment         `json:"mobile_judgments,omitempty"`
+	Dimensions                Dimensions         `json:"dimensions"`
+	Overall                   float64            `json:"overall"`
+	MinimumDimension          float64            `json:"minimum_dimension"`
+	MobileDimensions          Dimensions         `json:"mobile_dimensions"`
+	MobileOverall             float64            `json:"mobile_overall"`
+	MobileMinimumDimension    float64            `json:"mobile_minimum_dimension"`
+	HolisticShadcnConsensus   bool               `json:"holistic_shadcn_consensus"`
+	MobileShadcnConsensus     bool               `json:"mobile_shadcn_consensus"`
+	QualityPassed             bool               `json:"quality_passed"`
+	ReusedWorkspace           bool               `json:"reused_workspace,omitempty"`
+	Strongest                 []string           `json:"strongest,omitempty"`
+	Weakest                   []string           `json:"weakest,omitempty"`
+	NextIterations            []string           `json:"next_iterations,omitempty"`
+	HistoricalOnlyReason      string             `json:"historical_only_reason,omitempty"`
 }
 
 type ScreenshotResult struct {

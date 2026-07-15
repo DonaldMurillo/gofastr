@@ -37,6 +37,21 @@ late-bound per request, so middleware added from `Init` wraps routes
 registered earlier (e.g. by `Mount`). There is no ordering footgun to
 dodge.
 
+Directly registered MCP tools do NOT pass through route middleware —
+the handler runs as-is for any caller who can reach `/mcp`. To
+auth-gate one, wrap it with `mcp.Gated` and a precondition; battery/auth
+ships ready-made gates that read the identity the app's global
+session/JWT middleware resolved onto the request context:
+
+```go
+app.MCP.RegisterTool("reports_rebuild", "Rebuild the reports cache", schema,
+    mcp.Gated(auth.MCPRole("admin"), rebuildHandler))
+// auth.MCPUser() = any signed-in caller; auth.MCPRole("a", "b") = any of the roles.
+```
+
+(Entity CRUD tools don't need this — they re-dispatch through the
+router and inherit HTTP auth, owner scoping, and RBAC wholesale.)
+
 ## Init lifecycle
 
 - `RegisterPlugin` queues the plugin; it does NOT init.

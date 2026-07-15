@@ -646,6 +646,14 @@ When an entity sets `"mcp": true`, GoFastr registers CRUD tools:
 
 The tools use the same validation and CRUD handler behavior as HTTP routes.
 
+In the dev loop (`gofastr dev`; opt-out `GOFASTR_DEV_MCP=0`) these tools
+register for **every CRUD-enabled entity** — no per-entity `mcp: true`
+needed — so the local agent can read and write app data. Production
+keeps the explicit flag as the only path. Entities with `crud: false`
+(e.g. the auth battery's users/sessions configs) are never implied:
+MCP tools dispatch through the CRUD routes, so no routes means no
+tools, in dev or out.
+
 ## Custom Endpoints
 
 Custom endpoint handlers are Go behavior and should be registered from Go code:
@@ -667,6 +675,13 @@ app.Entity("posts", framework.EntityConfig{
 Endpoint paths can be absolute (`/posts/{id}/publish`) or relative to the
 entity table path (`{id}/publish`). Both `{id}` and `:id` parameter syntax are
 accepted.
+
+Note the auth asymmetry: the HTTP `Handler` runs behind the route
+middleware chain, but the `MCPHandler` twin is invoked directly — no
+route middleware, so no per-caller auth of its own. If the HTTP side is
+protected, gate the MCP side to match by wrapping it:
+`MCPHandler: mcp.Gated(auth.MCPRole("admin"), publishTool)` — see
+[plugins](plugins.md) → MCP tool gating.
 
 ### Typed input/output schemas
 

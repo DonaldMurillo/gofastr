@@ -243,6 +243,8 @@ func leaderboardMarkdown(summary Summary) string {
 			c.HolisticShadcnConsensus, c.MobileShadcnConsensus, c.TechnicalPassed, c.QualityPassed)
 		fmt.Fprintf(&b, "Dev-loop funnel (non-deterministic): builder invoked `gofastr dev` `%t`; %d gofastr CLI call(s) total.\n\n",
 			c.BuilderUsedDevServer, c.BuilderCLICalls)
+		fmt.Fprintf(&b, "MCP funnel (non-deterministic): builder touched `/mcp` `%t`; served candidate exposes %d MCP tool(s), introspection `%t`, dev-only log tools leaked into prod boot `%t`.\n\n",
+			c.BuilderUsedMCP, c.CandidateMCPTools, c.CandidateMCPIntrospection, c.CandidateMCPLogToolsProd)
 		if len(c.Weakest) > 0 {
 			b.WriteString("Weakest visible decisions:\n\n")
 			for _, item := range c.Weakest {

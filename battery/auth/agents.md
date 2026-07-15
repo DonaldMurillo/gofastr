@@ -29,6 +29,7 @@ app.Router().Use(auth.SessionMiddleware(mgr))
 | Add `<input>` for CSRF token in a form | `render.HTML(auth.CSRFInputFromCtx(ctx))` |
 | Send `X-CSRF-Token` from JS fetch | Read cookie `auth_csrf` / `__Host-auth_csrf`, send as header |
 | Declare a User entity that satisfies auth | `auth.UserEntityFields()` returns the canonical schema fields |
+| Auth-gate a custom MCP tool | `mcp.Gated(auth.MCPUser(), handler)` or `mcp.Gated(auth.MCPRole("admin"), handler)` — needs global `SessionMiddleware` so the /mcp request resolves the caller |
 
 ## Hard rules
 

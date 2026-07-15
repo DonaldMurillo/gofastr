@@ -29,7 +29,7 @@ app.RegisterBattery(admin.New(admin.Config{
     // Entities: []string{"products"} → only these
     Authorize: func(ctx context.Context) bool { // optional; default = any non-nil user
         u := auth.GetCurrentUser(ctx)
-        return u != nil && u.HasRole("admin")
+        return u != nil && slices.Contains(u.GetRoles(), "admin")
     },
     Queue: myQueue, // optional ops dashboard
     DB:    db,      // optional ops dashboard (audit)

@@ -16,8 +16,9 @@ c := cache.NewMemoryCache(
     cache.WithPrefix("user:"),
     cache.WithMaxEntries(10_000), // bound memory; LRU-evict past the cap
 )
-_ = c.Set(ctx, "42", userJSON)
-val, err := c.Get(ctx, "42")
+_ = c.Set(ctx, "42", user, 0) // ttl 0 = the cache's WithTTL default
+var got User
+err := c.Get(ctx, "42", &got) // deserializes into dest; returns only error
 
 // HTTP middleware caches successful GETs by URL:
 r.Use(cache.CacheMiddleware(c, 30*time.Second))

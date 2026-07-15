@@ -16,19 +16,16 @@ user", onboarding a fresh deploy, setup token.
 
 **Shape:**
 ```go
+// AdminStep returns the step AND the matching Complete predicate
+// ("does an admin user exist?") — use both.
+adminStep, adminDone := setup.AdminStep(authManager, db, "auth_users")
 runner := setup.New(setup.Config{
     Title: "My App Setup",
     Steps: []setup.Step{
-        setup.AdminStep(authManager, db, "auth_users"), // initial admin
-        setup.HealthStep(app),                          // readiness checks
+        adminStep,             // initial admin
+        setup.HealthStep(app), // readiness checks
     },
-    Complete: func(ctx context.Context) (bool, error) {
-        // Derived state — e.g. "does an admin user exist?".
-        var n int
-        err := db.QueryRowContext(ctx,
-            `SELECT COUNT(*) FROM auth_users`).Scan(&n)
-        return n > 0, err
-    },
+    Complete: adminDone,
 })
 app := framework.NewApp(framework.WithSetup(runner), …)
 ```

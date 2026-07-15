@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -37,11 +38,33 @@ func main() {
 		defer db.Close()
 	}
 
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix})}
+	options := []framework.AppOption{
+		framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}),
+		// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +
+		// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);
+		// WithMCPIntrospection adds read-only orientation tools
+		// (app_routes, app_readiness, framework_docs_search, …). The
+		// introspection tools reveal the app's shape — remove the option
+		// if /mcp is reachable by untrusted callers in production.
+		// Under `gofastr dev` the framework additionally auto-enables the
+		// mutating control tools + log debug tools (opt-out:
+		// GOFASTR_DEV_MCP=0); add framework.WithMCPControl() here to opt a
+		// trusted production /mcp into runtime control.
+		framework.WithMCP(),
+		framework.WithMCPIntrospection(),
+	}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}
 	fwApp := framework.NewApp(options...)
+	// Structured logging (battery/log zero-value canon): per-app file
+	// sink, access log, panic recovery, colorized dev console. Under
+	// `gofastr dev` its MCP debug tools (log_recent, log_filter,
+	// log_metrics, log_set_level) auto-register so a connected agent
+	// can read recent requests and errors; they stay OFF outside dev —
+	// access logs carry client IPs. Set EnableMCP: true here only when
+	// a production /mcp is reachable solely by trusted callers.
+	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
 	entities.RegisterAll(fwApp)
 	fwApp.WithSeed(func(ctx context.Context) error {
 		for _, s := range seedData() {
@@ -61,7 +84,6 @@ func main() {
 		}
 		return nil
 	})
-	fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
 	site := uiapp.NewApp(appName)
 	RegisterGenerated(fwApp, site, db)
 	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS())))

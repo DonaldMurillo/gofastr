@@ -7,6 +7,108 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-15
+
+The MCP surface gets the funnel treatment (#61): the dev loop implies the
+full agent toolkit ("livereload for agents"), generated apps ship the
+complete MCP contract, mutating control and log debug tools stay
+fail-closed outside dev, custom tools gain first-class auth gating, and
+the guidance — skills, agents.md, embedded docs — is pinned to the code
+by tripwire tests.
+
+### Added
+
+- **`gofastr dev` is livereload for agents: the MCP surface auto-enables
+  in the dev loop.** Under `GOFASTR_DEV` (set by `gofastr dev`),
+  `framework.NewApp` auto-mounts `/mcp` and enables the read-only
+  introspection tools AND the new mutating control tools with zero
+  options; battery/log auto-enables its `log_recent` / `log_filter` /
+  `log_metrics` / `log_set_level` debug tools the same way; and every
+  CRUD-enabled entity serves its MCP data tools without per-entity
+  `mcp: true` (entities with `crud: false`, like the auth battery's
+  user/session configs, are never implied — no routes, no tools). Opt
+  out with `GOFASTR_DEV_MCP=0` (mirrors `GOFASTR_DEV_LIVERELOAD=0`); a
+  production `GOFASTR_ENV` always wins, and production processes never
+  see `GOFASTR_DEV`. A dev-implied mount yields (warn, not panic) to a
+  hand-wired `/mcp` route and dev-implied tool registration tolerates
+  name collisions, so existing apps can't be broken by running under
+  `gofastr dev`.
+- **`framework.WithMCPControl()` — runtime control over MCP.** The
+  mutating counterpart to `WithMCPIntrospection`: `app_module_enable` /
+  `app_module_disable` toggle registered modules on the running app
+  through the module store (dependency-checked, fail-closed), for
+  `/mcp` endpoints reachable only by trusted callers. Code-level change
+  stays the `gofastr dev` rebuild loop's job; MCP control mutates
+  runtime state the app already models.
+- **Blueprint-generated apps ship the debug loop.** The generated
+  `main.go` registers battery/log (canonical zero config: per-app file
+  sink, access log, panic recovery, dev console) — so under `gofastr
+  dev` a generated app answers "recent requests / current errors /
+  trace this request_id" and accepts module toggles over `/mcp` out of
+  the box, while a production boot exposes none of it. The MCP e2e gate
+  now pins both halves (dev boot has entity + introspection + log +
+  control tools; prod boot refuses the mutating/debug set).
+- **Auth gating for custom MCP tools.** `mcp.Gated(gate, handler)`
+  wraps any directly registered tool handler with a per-caller
+  precondition, and battery/auth ships the gates: `auth.MCPUser()`
+  (any signed-in caller) and `auth.MCPRole("admin", …)`. The `/mcp`
+  route runs under the app's global middleware chain, so the session /
+  JWT middleware resolves the caller before the tool executes — the
+  gate reads the same identity `RequireRole` does. Entity CRUD tools
+  never needed this (they re-dispatch through the router and inherit
+  HTTP auth + owner scoping + RBAC); `Gated` covers the direct
+  registrations that bypass route middleware: `app.MCP.RegisterTool`
+  handlers and `Endpoint.MCPHandler` twins.
+- **UI-quality eval: MCP funnel signals.** Each candidate now records
+  whether the builder touched `/mcp` during the build
+  (`builder_used_mcp`), and the served candidate is probed for its MCP
+  surface (`candidate_mcp_tools`, `candidate_mcp_introspection`) plus a
+  fail-closed check that dev-only log tools did not leak into the prod
+  boot (`candidate_mcp_log_tools_prod`).
+
+- **Blueprint-generated apps are MCP-complete out of the box.** The
+  generated `main.go` now wires `framework.WithMCP()` +
+  `framework.WithMCPIntrospection()` instead of hand-mounting a
+  POST-only `/mcp`: generated apps gain the GET SSE half of the
+  Streamable HTTP transport, the MCP discovery endpoints
+  (`/mcp/server-card`, `/.well-known/mcp/server-card.json`,
+  `/.well-known/mcp/catalog.json`), and the nine read-only
+  introspection tools (`app_routes`, `app_readiness`,
+  `framework_docs_search`, …) alongside the per-entity CRUD tools. A
+  new e2e gate (`TestE2E_MCP_BlueprintApp`) generates, builds, boots,
+  and drives the whole contract over real JSON-RPC.
+- **Introspection guidance is pinned to the live tool set.**
+  `TestIntrospectionGuidanceNamesEveryTool` fails whenever a tool
+  registered by `WithMCPIntrospection` is missing from
+  `framework/agents.md`, the `agent-ready` doc, or the app-introspect /
+  mcp-debug skills — the "five tools" drift (four tools had shipped
+  undocumented) is fixed and can't silently recur.
+
+### Fixed
+
+- MCP guidance accuracy sweep: the app-introspect skill no longer
+  claims `app_readiness` returns per-check `error` text under
+  `WithVerboseReadiness()` (the tool always redacts it — `/readyz` and
+  `/mcp` can sit on different trust boundaries), documents the
+  zero-checks `reason` field, and the skills' `go run ./examples/site`
+  instructions now point at the right port (:8083; :8082 is
+  dev-watch). The mcp-debug skill's wiring snippet uses `WithMCP()`
+  (matching `examples/site`) instead of a manual mount that would panic
+  alongside it.
+- `examples/site` registers a real readiness check (`docs-embed`), so
+  `app_readiness` on the flagship reports `ready:true` instead of the
+  unconfirmed `"no readiness checks registered"` state.
+- Shipped-guidance relevance sweep: five battery `agents.md` snippets
+  had drifted into wouldn't-compile territory —
+  `email.SMTPConfig{TLS:…}` (field is `UseTLS`), `cache.Set/Get`
+  missing the `ttl`/`dest` arguments, `webhook.Manager.Stop()` without
+  its context, `setup.AdminStep` used as a one-return value, and
+  `admin` guidance calling a nonexistent `User.HasRole` — plus the
+  host skill's two-arg `testkit.NewIsolatedDB` and stale file paths in
+  the gofastr-docs skill. The agents.md snippet gate now also
+  validates struct-literal field names against the real structs, so
+  the `TLS:`-class drift fails CI.
+
 ## [0.24.0] - 2026-07-15
 
 Dev-experience overhaul + static site as an app (#59): hot reload reaches

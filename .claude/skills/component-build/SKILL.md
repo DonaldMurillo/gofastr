@@ -6,8 +6,9 @@ description: Auto-loads when building, adding, or extending a UI component, widg
 # Building a component — the contract every primitive follows
 
 This is the framework's pattern for any UI surface that needs server-rendered
-HTML, client-side hydration, and an optional dismiss/lifecycle. Modal, Drawer,
-Toast, Menu, Sidebar all follow it. New surfaces must follow it.
+HTML, client-side hydration, and an optional dismiss/lifecycle. The shipped
+presets (Modal, Drawer, ToastStack, Popover) all follow it. New surfaces must
+follow it.
 
 **Do not build a component that downloads its HTML through a JSON catalog,
 constructs DOM at runtime when SSR would have done it, or fires per-mount
