@@ -3645,6 +3645,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	if bp.App.Admin.Enabled {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/battery/admin\"\n")
 	}
+	sb.WriteString("\tgflog \"github.com/DonaldMurillo/gofastr/battery/log\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/dotenv\"\n")
 	if ownerSeed {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
@@ -3674,9 +3675,31 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\tdb, err := openDB(runtimeIsolation)\n")
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("\tif db != nil {\n\t\tdefer db.Close()\n\t}\n\n")
-	sb.WriteString("\toptions := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix})}\n")
+	sb.WriteString("\toptions := []framework.AppOption{\n")
+	sb.WriteString("\t\tframework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}),\n")
+	sb.WriteString("\t\t// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +\n")
+	sb.WriteString("\t\t// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);\n")
+	sb.WriteString("\t\t// WithMCPIntrospection adds read-only orientation tools\n")
+	sb.WriteString("\t\t// (app_routes, app_readiness, framework_docs_search, …). The\n")
+	sb.WriteString("\t\t// introspection tools reveal the app's shape — remove the option\n")
+	sb.WriteString("\t\t// if /mcp is reachable by untrusted callers in production.\n")
+	sb.WriteString("\t\t// Under `gofastr dev` the framework additionally auto-enables the\n")
+	sb.WriteString("\t\t// mutating control tools + log debug tools (opt-out:\n")
+	sb.WriteString("\t\t// GOFASTR_DEV_MCP=0); add framework.WithMCPControl() here to opt a\n")
+	sb.WriteString("\t\t// trusted production /mcp into runtime control.\n")
+	sb.WriteString("\t\tframework.WithMCP(),\n")
+	sb.WriteString("\t\tframework.WithMCPIntrospection(),\n")
+	sb.WriteString("\t}\n")
 	sb.WriteString("\tif db != nil {\n\t\toptions = append(options, framework.WithDB(db))\n\t}\n")
 	sb.WriteString("\tfwApp := framework.NewApp(options...)\n")
+	sb.WriteString("\t// Structured logging (battery/log zero-value canon): per-app file\n")
+	sb.WriteString("\t// sink, access log, panic recovery, colorized dev console. Under\n")
+	sb.WriteString("\t// `gofastr dev` its MCP debug tools (log_recent, log_filter,\n")
+	sb.WriteString("\t// log_metrics, log_set_level) auto-register so a connected agent\n")
+	sb.WriteString("\t// can read recent requests and errors; they stay OFF outside dev —\n")
+	sb.WriteString("\t// access logs carry client IPs. Set EnableMCP: true here only when\n")
+	sb.WriteString("\t// a production /mcp is reachable solely by trusted callers.\n")
+	sb.WriteString("\tfwApp.RegisterPlugin(gflog.New(gflog.Config{}))\n")
 	if fams := blueprintConfiguredFontFamilies(bp.App.Theme); len(fams) > 0 {
 		// Boot-time guard: a self-hosted webfont whose file is missing from
 		// the static dir would 404 and silently fall back to system fonts.
@@ -3724,7 +3747,6 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t\treturn nil\n")
 		sb.WriteString("\t})\n")
 	}
-	sb.WriteString("\tfwApp.Router().Handle(\"POST\", \"/mcp\", fwApp.MCP)\n")
 	sb.WriteString("\tsite := uiapp.NewApp(appName)\n")
 	sb.WriteString("\tRegisterGenerated(fwApp, site, db)\n")
 	// appBaseCSS ships first so the user's static/app.css (loaded
