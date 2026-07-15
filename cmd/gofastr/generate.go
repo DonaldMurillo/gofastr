@@ -764,6 +764,16 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		return
 	}
 	success("Generated %d file(s) in %s", len(files), displayDir)
+	devCmd := "gofastr dev"
+	if outDir != "" && outDir != "." {
+		// output_dir blueprints put the app in a subpackage — plain
+		// `gofastr dev` would watch/build a root with no main package.
+		devCmd = "gofastr dev --dir " + outDir
+	}
+	fmt.Println()
+	fmt.Println("  Next steps:")
+	fmt.Println("    go mod tidy          — the generated code pulls new imports")
+	fmt.Printf("    %-20s — dev server with hot-reload\n", devCmd)
 }
 
 type generatedFile struct {

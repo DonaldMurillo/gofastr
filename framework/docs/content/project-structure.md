@@ -48,9 +48,10 @@ small apps never need more than this.
 a subpackage** instead of the module root — useful when the repo is a monorepo or
 an example that also hosts its own Go test package and you want the app to live
 under, say, `app/`. The flagship [`examples/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/ecommerce)
-uses `output_dir: app` for exactly this reason; you build and run it with
-`go run ./app`. The subpackage is still owned Go — `--out` only changes *where*
-the scaffold lands, not whether you own it.
+uses `output_dir: app` for exactly this reason; develop it with
+`gofastr dev --dir app` (hot reload) or run it once with `go run ./app`. The
+subpackage is still owned Go — `--out` only changes *where* the scaffold
+lands, not whether you own it.
 
 **2. Domain packages (`internal/<domain>/`), when real per-feature logic
 appears.** When a feature grows hooks, custom endpoints, background work, or

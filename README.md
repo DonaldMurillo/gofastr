@@ -247,7 +247,7 @@ commit. From an empty directory containing that `gofastr.yml`:
 go mod init example.com/blog
 gofastr generate --from=gofastr.yml    # scaffolds main.go + app.go + screens.go + entities/ — owned Go you commit
 go mod tidy                            # pulls gofastr from the module proxy
-go run .                               # users + posts CRUD under /api, OpenAPI, MCP — live on :8080
+gofastr dev                            # hot-reload dev server — users + posts CRUD under /api, OpenAPI, MCP on :8080
 ```
 
 The blueprint mounts its REST API under `/api` by default (`GET /api/posts`),
@@ -371,9 +371,9 @@ shared across the whole `go test` invocation so cold-start is amortised.
 
 ## Surfaces
 
-### `core/` — eighteen stdlib-first primitives
+### `core/` — nineteen stdlib-first primitives
 
-`config`, `dotenv`, `featureflag`, `handler`, `i18n`, `markdown`, `mcp`, `middleware`, `migrate`, `openapi`, `query`, `render`, `router`, `schema`, `static`, `stream`, `upload`, `yaml`. Each is independently usable; the framework just composes them. All are stdlib-only except `core/middleware/tracing.go` (OpenTelemetry).
+`config`, `dotenv`, `fanout`, `featureflag`, `handler`, `i18n`, `markdown`, `mcp`, `middleware`, `migrate`, `openapi`, `query`, `render`, `router`, `schema`, `static`, `stream`, `upload`, `yaml`. Each is independently usable; the framework just composes them. All are stdlib-only except `core/middleware/tracing.go` (OpenTelemetry).
 
 ### `framework/` — opinionated entity layer
 
