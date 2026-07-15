@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -13,6 +14,19 @@ type HomeScreen struct{}
 func (s *HomeScreen) ScreenTitle() string        { return "Meridian — billing that runs itself" }
 func (s *HomeScreen) ScreenDescription() string  { return "The revenue console for modern SaaS." }
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+// ScreenSchema emits Organization + WebSite JSON-LD on the homepage —
+// the structured-data anchor crawlers use to connect the brand's name,
+// logo, and canonical URL.
+func (s *HomeScreen) ScreenSchema() []seo.Thing {
+	org := seo.NewOrganization()
+	org.Name = "Meridian"
+	org.URL = "https://meridian.gofastr.dev"
+	site := seo.NewWebSite()
+	site.Name = "Meridian"
+	site.URL = "https://meridian.gofastr.dev"
+	return []seo.Thing{org, site}
+}
 
 func (s *HomeScreen) Render() render.HTML {
 	return render.Tag("div", nil,

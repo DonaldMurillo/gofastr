@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
+	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -103,6 +104,22 @@ func marketingFooter() render.HTML {
 			{Title: "Legal", Links: []ui.SiteFooterLink{{Label: "Terms", Href: "/terms"}, {Label: "Privacy", Href: "/privacy"}}},
 		},
 	})
+}
+
+// appIconPNG generates Meridian's app-icon source at startup — a diagonal
+// indigo→teal gradient in the brand's primary/secondary hues.
+// uihost.WithAppIcon derives /favicon.ico, the sized PNGs, and the head
+// links from this one image, so no binary icon assets live in the repo.
+func appIconPNG() []byte {
+	img, err := fwimage.NewGradient(512, 512, "#4338CA", "#0E7C86")
+	if err != nil {
+		return nil // WithAppIcon warns and skips on undecodable input
+	}
+	b, err := img.PNG().Bytes()
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 func appTheme() style.Theme {

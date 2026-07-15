@@ -74,7 +74,22 @@ func main() {
 	fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
 	site := uiapp.NewApp(appName)
 	RegisterGenerated(fwApp, site, db)
-	fwApp.Mount(uihost.New(site, uihost.WithStaticDir("static"), uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile("static/app.css"))))
+	// SEO surface: sitewide description/OG defaults (per-screen values
+	// override — see screen_home.go / screen_pricing.go), a sitemap of the
+	// marketing pages only, and a robots.txt that keeps the authed app,
+	// admin, and framework internals out of the index.
+	fwApp.Mount(uihost.New(site,
+		uihost.WithStaticDir("static"),
+		uihost.WithAppIcon(appIconPNG()),
+		uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile("static/app.css")),
+		uihost.WithDescription("Meridian is the revenue console for modern SaaS — customers, subscriptions, invoices, and live MRR in one calm place."),
+		uihost.WithOpenGraph(uihost.OG{Title: "Meridian — billing that runs itself", URL: "https://meridian.gofastr.dev", Type: "website"}),
+		uihost.WithSitemap(uihost.SitemapConfig{
+			BaseURL:      "https://meridian.gofastr.dev",
+			ExcludePaths: []string{"/app", "/admin", "/login", "/signup"},
+		}),
+		uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/app", "/admin", "/__gofastr/"}}),
+	))
 	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", DB: db, AuditTable: "audit_log", AllEntities: true, Theme: appTheme(), FontFaceCSS: fontFaceCSS}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {

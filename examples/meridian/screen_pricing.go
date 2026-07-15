@@ -3,9 +3,11 @@ package main
 import (
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 type PricingScreen struct{}
@@ -13,6 +15,30 @@ type PricingScreen struct{}
 func (s *PricingScreen) ScreenTitle() string        { return "Pricing" }
 func (s *PricingScreen) ScreenDescription() string  { return "Plans for teams of every size." }
 func (s *PricingScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+// ScreenSEO bundles this page's whole SEO declaration: canonical (the
+// page is reachable with tracking params), a page-specific OG override
+// of the sitewide default, and Product JSON-LD for the Pro plan.
+func (s *PricingScreen) ScreenSEO() uihost.SEO {
+	pro := seo.NewProduct()
+	pro.Name = "Meridian Pro"
+	pro.Description = "For growing teams that live in their revenue."
+	offer := seo.NewOffer()
+	offer.Price = "99"
+	offer.PriceCurrency = "USD"
+	offer.URL = "https://meridian.gofastr.dev/pricing"
+	pro.Offers = &offer
+	return uihost.SEO{
+		Canonical: "https://meridian.gofastr.dev/pricing",
+		OG: &uihost.OG{
+			Title:       "Meridian pricing — start free",
+			Description: "Plans for teams of every size. Upgrade when revenue does.",
+			URL:         "https://meridian.gofastr.dev/pricing",
+			Type:        "website",
+		},
+		Schema: []seo.Thing{pro},
+	}
+}
 
 func (s *PricingScreen) Render() render.HTML {
 	return render.Tag("div", nil,
