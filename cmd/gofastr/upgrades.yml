@@ -1,0 +1,114 @@
+# Migration registry for `gofastr upgrade`.
+#
+# One entry per release that carries migration-relevant changes (usually
+# BREAKING entries from CHANGELOG.md — keep the prose here actionable, the
+# full story lives in the changelog/release notes). The CLI shows every
+# entry in (current, target] when a project upgrades, and runs each note's
+# optional `detect` regex over the project's .go files to point at the
+# exact lines that need attention.
+#
+# Fields per release: version (vX.Y.Z), title.
+# Fields per note: change (one line), breaking (bool), guidance (one
+# line — this parser has no block scalars), detect (optional Go regex
+# applied per-line to non-test .go files).
+#
+# Maintenance rule: EVERY release PR bumps `through` below; a release
+# that lands BREAKING changes also adds its entry under `releases`
+# (same policy as CHANGELOG.md).
+
+# The registry is complete through this release: releases ≤ through
+# with no entry below genuinely had no migration-relevant changes.
+# Targets beyond it make the CLI warn that it may be out of date.
+through: v0.25.0
+
+releases:
+  - version: v0.3.0
+    title: Secure-by-default sweep
+    notes:
+      - change: Tenant scoping and multi-tenant CRUD are fail-closed
+        breaking: true
+        guidance: "Typed-repo queries and HTTP CRUD now refuse to run without a tenant in context when an entity is tenant-scoped. If reads started returning empty/403 after upgrading, install the tenant middleware or mark the entity non-tenant."
+      - change: Admin battery is default-deny for non-admins
+        breaking: true
+        guidance: "battery/admin now requires the admin role by default. Set AdminRole (and grant it) or provide a custom policy."
+      - change: Escape-hatch field Attrs renamed to ExtraAttrs
+        breaking: true
+        guidance: "Every core-ui/html, core-ui/patterns, and framework/ui Config that exposed a raw attribute bag renamed Attrs to ExtraAttrs. Compile errors point at each use; rename the field."
+      - change: Form intercept is opt-in
+        breaking: true
+        guidance: "runtime.js no longer intercepts plain-enctype forms; browsers submit them natively. Forms posting to JSON endpoints need enctype=\"application/json\" (or data-fui-spa)."
+      - change: Legacy /__gofastr compat endpoints removed
+        breaking: true
+        guidance: "theme.css / styles.css / routes.js / catalog.js now 404. Use /__gofastr/app.css; routes + catalog ship inline in the SSR page."
+        detect: '/__gofastr/(theme|styles)\.css|/__gofastr/(routes|catalog)\.js'
+  - version: v0.4.0
+    title: Declaration-driven entities
+    notes:
+      - change: Legacy entities/*.json declaration format removed
+        breaking: true
+        guidance: "Declare entities in Go (framework/entity.EntityDeclaration) or a blueprint. `gofastr generate` emits the Go form; JSON files are no longer read."
+  - version: v0.5.0
+    title: Auth hardening
+    notes:
+      - change: battery/auth fails closed on an empty JWTSecret in production
+        breaking: true
+        guidance: "Set JWT_SECRET (or auth.Config.JWTSecret) in production — startup now refuses a blank secret instead of minting unverifiable tokens."
+  - version: v0.6.0
+    title: Generator ownership model
+    notes:
+      - change: gofastr generate scaffolds into the module root, not gen/
+        breaking: true
+        guidance: "Generated files land next to your code and are add-only afterwards. Move any custom code out of gen/ and re-run generate once."
+      - change: gofastr migrate diff removed
+        breaking: true
+        guidance: "Use `gofastr migrate generate` for versioned migrations; dev-mode auto-migrate covers the inner loop."
+  - version: v0.11.0
+    title: Multi-replica + security remediation
+    notes:
+      - change: battery/admin exposure is opt-in
+        breaking: true
+        guidance: "An app that registered the admin battery implicitly no longer serves it; register it explicitly with a Config."
+  - version: v0.12.0
+    title: Blueprint output layout
+    notes:
+      - change: gofastr generate emits a flat package main
+        breaking: true
+        guidance: "Regenerated blueprint apps are one flat package. Existing multi-package generated apps keep working; regeneration adopts the flat layout."
+  - version: v0.13.0
+    title: Component correctness
+    notes:
+      - change: Unknown component variants panic at build time
+        breaking: true
+        guidance: "ui.Card / ui.ToggleAction (like ui.Button) now reject unregistered variant names at screen construction. Fix the typo or register the custom variant before first use."
+      - change: html.Button requires a label
+        breaking: true
+        guidance: "An empty Label with no aria-label now panics at build time. Icon-only buttons pass ExtraAttrs aria-label — `gofastr audit a11y` finds these statically."
+      - change: Plain modals paint a real panel
+        breaking: true
+        guidance: "preset.Modal slots now render inside .fui-panel (surface, border, padding). Bodies that own their chrome opt out with .fui-slot-bare; selectors targeting .fui-pos-center > .fui-slot move to .fui-panel."
+        detect: 'fui-pos-center'
+  - version: v0.16.0
+    title: Multi-replica outbox
+    notes:
+      - change: Transactional outbox delivers per-consumer
+        breaking: true
+        guidance: "Outbox rows are tracked per consumer instead of globally; existing single-consumer apps are unaffected, multi-consumer handlers each get their own cursor. Review handlers that assumed at-most-once fan-out."
+  - version: v0.21.0
+    title: Multi-replica auth durability
+    notes:
+      - change: Production mode refuses the in-memory 2FA store
+        breaking: true
+        guidance: "Two-factor state must be durable in production — configure the DB-backed store (the default when auth has a DB) or an explicit store; startup fails closed otherwise."
+  - version: v0.23.0
+    title: AI-native UI composition
+    notes:
+      - change: theme.Default() is now adaptive
+        breaking: true
+        guidance: "The canonical theme now adapts light/dark from one palette. Apps that overrode dozens of tokens to fake dark mode can delete those overrides; apps that relied on the old static values re-pin them via theme.Overrides."
+        detect: 'theme\.Default\('
+      - change: SiteHeader wraps its Brand slot
+        breaking: true
+        guidance: "Brand renders inside a framework-owned wrapper; CSS targeting the raw brand element needs the new wrapper class (or better, drop the CSS — the wrapper is styled)."
+      - change: ui.Cluster zero value now wraps
+        breaking: true
+        guidance: "Clusters wrap whole items by default. Layouts that depended on single-line overflow set NoWrap: true."

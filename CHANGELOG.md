@@ -15,6 +15,23 @@ guided `gofastr audit a11y` command with an enforced (escape-hatched)
 
 ### Added
 
+- `gofastr upgrade` — guided release upgrades (#62). The CLI embeds a
+  migration registry (`cmd/gofastr/upgrades.yml`, one entry per release
+  with migration-relevant changes, complete through a `through` marker
+  a tripwire test pins to the CHANGELOG's latest release). The command
+  reads the project's `go.mod`, resolves the target (`--to vX.Y.Z` or
+  the newest tag via the module proxy), prints every note the project
+  crosses — with per-note regex detectors pointing at the affected
+  `file:line` in the app — and `--apply` runs the mechanical
+  `go get` / `go mod tidy` / build / test steps, stopping at the first
+  failure. Warns when the target is newer than the binary's registry.
+- Upgrade documentation (#62): a version-independent **Updating
+  GoFastr** section in the README and a full `upgrading` docs topic
+  (`gofastr docs upgrading`) covering the module + CLI split, release
+  notes first, MVS version confirmation, and go.mod/go.sum review.
+- `gofastr <cmd> --help` now reaches subcommands that implement their
+  own help (`audit`, `upgrade`, `docs`); other commands keep the global
+  interception so a side-effectful `dev --help` can't start a server.
 - `uihost.WithAppIcon(source)` — derives the entire icon surface from one
   image: 32/180/192/512px PNGs under `/__gofastr/icons/`, `/favicon.ico`,
   the `rel="icon"` + `apple-touch-icon` head links, the PWA manifest

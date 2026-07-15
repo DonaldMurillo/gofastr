@@ -128,6 +128,10 @@ func printHelp() {
                         lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
                         a11y  guided accessibility lint; --url <base> runs the full
                               axe-core scan against a running app (both color schemes)
+  upgrade               Guide the app to a newer GoFastr release: shows every
+                        migration note between go.mod's version and the target,
+                        points at affected lines; --apply runs the go get/tidy/
+                        build/test steps. See "gofastr docs upgrading"
   version               Print version info
 
 %s:
@@ -158,6 +162,18 @@ func main() {
 	dispatch(os.Args[1:])
 }
 
+// ownsHelp lists the subcommands that implement their own --help/-h
+// output; dispatch routes help flags through to them instead of
+// printing the global overview. A command may only join this set once
+// it actually handles the flags (otherwise `<cmd> --help` would run
+// the command).
+var ownsHelp = map[string]bool{
+	"audit":   true,
+	"upgrade": true,
+	"docs":    true,
+	"doc":     true,
+}
+
 // dispatch routes a parsed argument vector (os.Args[1:]) to the matching
 // subcommand. main() is a thin wrapper so this dispatch logic is testable
 // in-process; behavior is identical to inlining it in main().
@@ -168,15 +184,21 @@ func dispatch(args []string) {
 		return
 	}
 
-	// Check for global flags anywhere in args
-	for _, a := range args {
-		switch a {
-		case "--help", "-h":
-			printHelp()
-			return
-		case "--version", "-v":
-			fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
-			return
+	// Global flags. Subcommands in ownsHelp implement their own
+	// --help/-h, so `gofastr <cmd> --help` is routed to them; for every
+	// other command the flags are intercepted anywhere in args (a
+	// side-effectful command like `dev --help` must never start a
+	// server because it lacks its own help path).
+	if !ownsHelp[args[0]] {
+		for _, a := range args {
+			switch a {
+			case "--help", "-h":
+				printHelp()
+				return
+			case "--version", "-v":
+				fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
+				return
+			}
 		}
 	}
 
@@ -214,12 +236,14 @@ func dispatch(args []string) {
 		runAgents(cmdArgs)
 	case "audit":
 		runAudit(cmdArgs)
+	case "upgrade":
+		runUpgrade(cmdArgs)
 	case "version":
 		fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "generate", "pack", "validate", "build", "dev", "migrate", "test", "embed", "harness", "docs", "agents", "audit", "version"}
+		suggestions := []string{"init", "generate", "pack", "validate", "build", "dev", "migrate", "test", "embed", "harness", "docs", "agents", "audit", "upgrade", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))

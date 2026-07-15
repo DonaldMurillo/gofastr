@@ -220,6 +220,16 @@ func formatAuditReport(findings []AuditFinding) string {
 
 // runAudit is the CLI entry point. Subcommand: `gofastr audit deps`.
 func runAudit(args []string) {
+	// `audit --help` (or a help flag on deps/lint) prints the usage
+	// below; a11y owns its flags and prints its own richer help.
+	if len(args) > 0 && args[0] != "a11y" {
+		for _, a := range args {
+			if a == "--help" || a == "-h" {
+				args = nil
+				break
+			}
+		}
+	}
 	if len(args) == 0 {
 		fmt.Println("Usage: gofastr audit <subcommand>")
 		fmt.Println()
