@@ -6,6 +6,8 @@ package framework
 //
 //   - /.well-known/api-catalog                 (RFC 9727 linkset+json) — when the app has an API (entities)
 //   - /.well-known/mcp/server-card.json        — when WithMCP exposes /mcp
+//     (plus the /mcp/server-card alias and /.well-known/mcp/catalog.json,
+//     both also gated on WithMCP)
 //   - /.well-known/agent-skills/index.json     — opt-in (host declares skills)
 //   - /.well-known/oauth-authorization-server  (RFC 8414) — opt-in (host is an OAuth issuer)
 //

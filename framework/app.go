@@ -230,6 +230,16 @@ type App struct {
 	// the app's routes, plugins, batteries, config, and readiness state
 	// for agent debugging. Set via WithMCPIntrospection().
 	mcpIntrospection bool
+	// mcpControl enables the MUTATING MCP tools (module enable/disable)
+	// for trusted /mcp endpoints. Set via WithMCPControl().
+	mcpControl bool
+	// mcp*DevImplied mark surfaces the dev loop turned on (GOFASTR_DEV,
+	// see NewApp) rather than an explicit option. Dev-implied surfaces
+	// tolerate collisions (hand-mounted /mcp, same-named tools) with a
+	// warning; explicit ones keep their documented panic/error.
+	mcpMountDevImplied         bool
+	mcpIntrospectionDevImplied bool
+	mcpControlDevImplied       bool
 	// mcpAutoMount exposes the MCP server at /mcp (Streamable HTTP:
 	// POST JSON-RPC + GET SSE) without the host hand-wiring the route.
 	// Set via WithMCP(). Makes the server's tools reachable at the
@@ -832,8 +842,10 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		crud.RegisterCrudRoutes(g.Router(), crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 	}
 
-	// MCP tools — namespaced if the group has a namespace.
-	if config.MCP && a.DB != nil {
+	// MCP tools — namespaced if the group has a namespace. Explicit
+	// MCP=true, or dev-implied for CRUD-enabled entities (the dev loop
+	// gives the local agent the data tools without per-entity opt-in).
+	if (config.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, g.Router()); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q in group %q: %v", name, g.Prefix(), err))
 		}
@@ -1069,6 +1081,25 @@ func NewApp(opts ...AppOption) *App {
 	// See framework/dev/livereload.go for the env-gate rules.
 	dev.MaybeRegisterLiveReload(a.router)
 
+	// Auto-enable the agent-facing MCP surface in the dev loop: /mcp
+	// mount, read-only introspection, and runtime control — the dev
+	// analogue of livereload, for agents instead of browsers. Same env
+	// gate (GOFASTR_DEV, production GOFASTR_ENV wins), opt-out via
+	// GOFASTR_DEV_MCP=0. Dev-implied flags are remembered so a host that
+	// hand-mounted /mcp or registered same-named tools degrades to a
+	// warning instead of the panic reserved for explicit double opt-in.
+	if dev.DevMCPEnabled() {
+		if !a.mcpAutoMount {
+			a.mcpAutoMount, a.mcpMountDevImplied = true, true
+		}
+		if !a.mcpIntrospection {
+			a.mcpIntrospection, a.mcpIntrospectionDevImplied = true, true
+		}
+		if !a.mcpControl {
+			a.mcpControl, a.mcpControlDevImplied = true, true
+		}
+	}
+
 	return a
 }
 
@@ -1168,7 +1199,11 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		crud.RegisterCrudRoutes(a.router, crudHandler, mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 	}
 
-	if config.MCP && a.DB != nil {
+	// Explicit MCP=true, or dev-implied: in the dev loop every
+	// CRUD-enabled entity serves its MCP data tools so the local agent
+	// can read AND write app data without per-entity opt-in. Production
+	// keeps the explicit flag as the only path.
+	if (config.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
 			return fmt.Errorf("failed to register MCP tools for entity %q: %w", name, err)
 		}
@@ -1454,10 +1489,25 @@ func (a *App) InitPlugins() error {
 	a.probeReadinessRegistrars()
 
 	// Register introspection MCP tools if opted in. After plugin/battery
-	// init so app_plugins / app_batteries reflect everything.
+	// init so app_plugins / app_batteries reflect everything. Dev-implied
+	// registration (see NewApp) downgrades collisions with host-registered
+	// tool names to a warning — dev must never fail an app that boots fine
+	// in production.
 	if a.mcpIntrospection {
 		if err := a.registerIntrospectionTools(); err != nil {
-			return err
+			if !a.mcpIntrospectionDevImplied {
+				return err
+			}
+			a.Logger().Warn("dev MCP introspection tools partially skipped", "error", err)
+		}
+	}
+	// Mutating control tools, separately opted in (trusted /mcp only).
+	if a.mcpControl {
+		if err := a.registerControlTools(); err != nil {
+			if !a.mcpControlDevImplied {
+				return err
+			}
+			a.Logger().Warn("dev MCP control tools partially skipped", "error", err)
 		}
 	}
 
@@ -1878,9 +1928,17 @@ func (a *App) Start(addr string) error {
 		a.MCP.SetServerName(a.Config.Name)
 	}
 	if a.mcpAutoMount {
-		h := a.MCP.ServeSSE("/mcp")
-		a.router.Post("/mcp", h)
-		a.router.Get("/mcp", h)
+		// A dev-implied mount yields to a hand-wired /mcp route (older
+		// scaffolds mount POST /mcp themselves) — dev must not turn a
+		// previously working app into a route-conflict panic. Explicit
+		// WithMCP() keeps the documented panic: pick one.
+		if a.mcpMountDevImplied && a.routerHasMCPRoute() {
+			a.Logger().Warn("dev MCP auto-mount skipped: /mcp is already mounted by the host")
+		} else {
+			h := a.MCP.ServeSSE("/mcp")
+			a.router.Post("/mcp", h)
+			a.router.Get("/mcp", h)
+		}
 	}
 	if a.mcpAutoMount {
 		a.router.Get("/mcp/server-card", http.HandlerFunc(a.handleMCPServerCard))
