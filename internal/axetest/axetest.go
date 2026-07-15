@@ -72,16 +72,19 @@ type ViolatedNode struct {
 // a timeout child would kill the browser when it expired and cancel later pages.
 func NewBrowser(t *testing.T) context.Context {
 	t.Helper()
-	browserCtx, cancel := NewBrowserContext(context.Background())
+	browserCtx, cancel, err := NewBrowserContext(context.Background())
+	if err != nil {
+		t.Fatalf("axetest: start browser: %v", err)
+	}
 	t.Cleanup(cancel)
 	return browserCtx
 }
 
 // NewBrowserContext is the non-test variant of [NewBrowser] — the same
 // tuned headless browser for callers without a *testing.T (the
-// `gofastr audit a11y --url` command). The caller MUST call the
-// returned cancel to tear the browser down.
-func NewBrowserContext(parent context.Context) (context.Context, context.CancelFunc) {
+// `gofastr audit a11y --url` command). The browser is started eagerly;
+// the caller MUST call the returned cancel to tear it down.
+func NewBrowserContext(parent context.Context) (context.Context, context.CancelFunc, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
@@ -98,7 +101,20 @@ func NewBrowserContext(parent context.Context) (context.Context, context.CancelF
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(parent, opts...)
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithErrorf(filteredErrorf))
-	return browserCtx, func() { browserCancel(); allocCancel() }
+	// Allocate the browser NOW, on this context. WithErrorf is a
+	// browser-allocation option: it must bind to the context that
+	// actually starts Chrome. Left lazy, the first tab would allocate
+	// the browser instead — and tabs must not carry browser options
+	// (chromedp panics: "WithBrowserOption can only be used when
+	// allocating a new browser"; this took down the axe gates once).
+	// Eager allocation here means every derived tab inherits the
+	// browser's filtered logger.
+	cancel := func() { browserCancel(); allocCancel() }
+	if err := chromedp.Run(browserCtx); err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("start headless browser: %w", err)
+	}
+	return browserCtx, cancel, nil
 }
 
 // NewTab opens a FRESH tab derived from browser (so the previous page's SSE
@@ -114,9 +130,11 @@ func NewTab(t *testing.T, browser context.Context) (context.Context, context.Can
 // call the returned cancel — it tears down both the timeout and the tab
 // target so sockets don't leak across pages.
 func NewTabContext(browser context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	// WithErrorf applies per-context: tabs don't inherit the browser
-	// context's logger, so the filter must be repeated here.
-	tabCtx, tabCancel := chromedp.NewContext(browser, chromedp.WithErrorf(filteredErrorf))
+	// No options here: WithErrorf is a browser-allocation option and
+	// PANICS on a context whose browser already exists. Tabs inherit
+	// the filtered logger from the browser [NewBrowserContext]
+	// allocated eagerly.
+	tabCtx, tabCancel := chromedp.NewContext(browser)
 	ctx, cancel := context.WithTimeout(tabCtx, timeout)
 	return ctx, func() { cancel(); tabCancel() }
 }

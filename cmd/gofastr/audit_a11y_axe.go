@@ -73,7 +73,10 @@ func auditA11yURL(base string, pages []string) ([]AxePageResult, error) {
 		pages = []string{"/"}
 	}
 	base = strings.TrimRight(base, "/")
-	browser, cancel := axetest.NewBrowserContext(context.Background())
+	browser, cancel, err := axetest.NewBrowserContext(context.Background())
+	if err != nil {
+		return nil, err
+	}
 	defer cancel()
 
 	var results []AxePageResult
