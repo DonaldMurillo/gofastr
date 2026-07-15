@@ -7,11 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-15
+
 Technical SEO and ADA compliance become first-class: static export now
 ships the full crawler contract, one image becomes the whole favicon/app
 icon surface, and accessibility moves from "tests some examples run" to a
 guided `gofastr audit a11y` command with an enforced (escape-hatched)
-`gofastr build` gate.
+`gofastr build` gate. Upgrades get the same funnel treatment (#62): a
+documented workflow plus `gofastr upgrade`, which reads a migration
+registry embedded in the CLI and points at the exact lines in your app a
+breaking release touches. The whole batch was hardened by a dual external
+review (nine findings, all fixed pre-release — headline: the a11y lint
+honors the ARIA escape hatch, so documented icon-only buttons pass).
 
 ### Added
 
@@ -57,6 +64,10 @@ guided `gofastr audit a11y` command with an enforced (escape-hatched)
   pages discovered from `/sitemap.xml` (or `--pages`).
 - `gofastr build` now enforces the static accessibility lint between
   `go vet` and compilation (guided failure output; `--no-a11y` skips).
+  The lint honors the ARIA escape hatch — an `ExtraAttrs` literal with
+  `aria-label`/`aria-labelledby`/`role` satisfies the matching typed
+  field, and non-literal `ExtraAttrs` fails open (runtime validation
+  still backstops it) — so the documented icon-only button form passes.
 - `check.LintA11yFile` — a11y-only linter entry point that works on any
   .go file (import-alias aware, no false positives on non-core-ui/html
   calls), backing both the audit command and the build gate.

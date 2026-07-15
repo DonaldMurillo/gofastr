@@ -15,16 +15,11 @@
 # Maintenance rule: EVERY release PR bumps `through` below; a release
 # that lands BREAKING changes also adds its entry under `releases`
 # (same policy as CHANGELOG.md).
-#
-# Queued for the v0.26.0 release entry: `gofastr build` now enforces the
-# static accessibility lint by default (fails builds with guided
-# findings; --no-a11y skips) — behavior change worth a note even though
-# no API broke.
 
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.25.0
+through: v0.26.0
 
 releases:
   - version: v0.3.0
@@ -131,3 +126,9 @@ releases:
       - change: ui.Cluster zero value now wraps
         breaking: true
         guidance: "Clusters wrap whole items by default. Layouts that depended on single-line overflow set NoWrap: true."
+  - version: v0.26.0
+    title: Technical SEO + enforced accessibility
+    notes:
+      - change: gofastr build enforces the static accessibility lint
+        breaking: false
+        guidance: "Builds now fail on missing required a11y fields in core-ui/html element configs (Alt on images, Label on buttons/landmarks, Legend, For, …) with a guided fix hint per finding. Icon-only buttons with ExtraAttrs aria-label pass. Fix the findings (see gofastr docs accessibility) or skip once with --no-a11y."
