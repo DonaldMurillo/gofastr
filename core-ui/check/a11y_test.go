@@ -161,3 +161,80 @@ func view() any {
 		t.Fatalf("qualified config literal must still be flagged, got %d: %s", len(res.Violations), res.Error())
 	}
 }
+
+func TestLintA11yAcceptsIconOnlyButtonAriaLabel(t *testing.T) {
+	path := writeA11yFixture(t, `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
+
+func view() any {
+	// The supported icon-only form — html.Button's runtime contract
+	// accepts aria-label in place of a visible Label.
+	return html.Button(html.ButtonConfig{ExtraAttrs: html.Attrs{"aria-label": "Close"}})
+}
+`)
+	res, err := LintA11yFile(path)
+	if err != nil {
+		t.Fatalf("LintA11yFile: %v", err)
+	}
+	if len(res.Violations) != 0 {
+		t.Errorf("icon-only button with aria-label must pass, got: %s", res.Error())
+	}
+}
+
+func TestLintA11yOpaqueExtraAttrsFailsOpen(t *testing.T) {
+	path := writeA11yFixture(t, `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
+
+func view(attrs html.Attrs) any {
+	// ExtraAttrs from a variable can't be inspected statically; the
+	// runtime panic backstops a missing aria-label, so the lint must
+	// not block the build on it.
+	return html.Button(html.ButtonConfig{ExtraAttrs: attrs})
+}
+`)
+	res, err := LintA11yFile(path)
+	if err != nil {
+		t.Fatalf("LintA11yFile: %v", err)
+	}
+	if len(res.Violations) != 0 {
+		t.Errorf("opaque ExtraAttrs must fail open, got: %s", res.Error())
+	}
+}
+
+func TestLintA11yExtraAttrsWithoutAriaLabelStillFlags(t *testing.T) {
+	path := writeA11yFixture(t, `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
+
+func view() any {
+	return html.Button(html.ButtonConfig{ExtraAttrs: html.Attrs{"data-x": "1"}})
+}
+`)
+	res, err := LintA11yFile(path)
+	if err != nil {
+		t.Fatalf("LintA11yFile: %v", err)
+	}
+	if len(res.Violations) != 1 {
+		t.Errorf("ExtraAttrs literal without aria-label must still flag, got %d: %s", len(res.Violations), res.Error())
+	}
+}
+
+func TestLintA11yNavAriaLabelViaExtraAttrs(t *testing.T) {
+	path := writeA11yFixture(t, `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
+
+func view() any {
+	return html.Nav(html.NavConfig{ExtraAttrs: html.Attrs{"aria-label": "Footer"}})
+}
+`)
+	res, err := LintA11yFile(path)
+	if err != nil {
+		t.Fatalf("LintA11yFile: %v", err)
+	}
+	if len(res.Violations) != 0 {
+		t.Errorf("Nav with aria-label via ExtraAttrs must pass, got: %s", res.Error())
+	}
+}

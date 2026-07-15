@@ -39,6 +39,15 @@ finding explains the rule — the goal is that the fix teaches WCAG
 name/role/value basics, not just flags a line. Exit code 1 on findings,
 so it can gate CI directly.
 
+The lint understands the ARIA escape hatch: an `ExtraAttrs` literal
+carrying `aria-label` / `aria-labelledby` / `role` satisfies the
+matching typed field (icon-only buttons are the canonical case). Two
+deliberate scope limits: a config built in a variable
+(`cfg := html.ImageConfig{…}; html.Image(cfg)`) and a non-literal
+`ExtraAttrs` value can't be inspected statically, so they pass the lint
+— the elements' own runtime validation (`html.Button` panics without an
+accessible name) and the axe runtime scan cover those paths.
+
 Checked elements: `Image` (Alt), `Button` (Label), `Link`/`LinkHTML`
 (Href + text), `Nav`/`Section`/`Aside` (Label or LabelledBy), `Group`
 (Role), `Label` (For + Text), `Input`/`Select`/`TextArea` (Name),

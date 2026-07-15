@@ -286,8 +286,19 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 		return
 	}
 
-	// Collect which fields are explicitly set in the struct literal
+	// Collect which fields are explicitly set in the struct literal,
+	// plus what the ExtraAttrs escape hatch carries: some elements
+	// accept an ARIA attribute in place of the typed field (icon-only
+	// buttons pass ExtraAttrs["aria-label"] instead of a visible
+	// Label — that is the documented runtime contract, not a
+	// violation). A literal ExtraAttrs map is inspected for those
+	// keys; a non-literal one (variable, call) can't be seen
+	// statically, so it satisfies the check — fail OPEN, because the
+	// element's own runtime validation still panics on a genuinely
+	// missing name, while a false lint failure blocks `gofastr build`.
 	setFields := map[string]bool{}
+	extraAttrKeys := map[string]bool{}
+	extraAttrsOpaque := false
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
 		if !ok {
@@ -298,13 +309,42 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 			continue
 		}
 		setFields[key.Name] = true
+		if key.Name == "ExtraAttrs" {
+			attrsLit, ok := kv.Value.(*ast.CompositeLit)
+			if !ok {
+				extraAttrsOpaque = true
+				continue
+			}
+			for _, attr := range attrsLit.Elts {
+				akv, ok := attr.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				if s, ok := akv.Key.(*ast.BasicLit); ok && s.Kind == token.STRING {
+					extraAttrKeys[strings.Trim(s.Value, `"`)] = true
+				}
+			}
+		}
+	}
+
+	// fieldSatisfied reports whether a rule field is met either by the
+	// typed field itself or by its ARIA equivalent in ExtraAttrs.
+	fieldSatisfied := func(field string) bool {
+		if setFields[field] {
+			return true
+		}
+		aria, ok := ariaEquivalent[field]
+		if !ok {
+			return false
+		}
+		return extraAttrKeys[aria] || extraAttrsOpaque
 	}
 
 	line := fset.Position(call.Lparen).Line
 
 	// Check required fields (all must be set)
 	for _, field := range rule.required {
-		if !setFields[field] {
+		if !fieldSatisfied(field) {
 			result.add(filename, line,
 				fmt.Sprintf("html.%s: missing required field %q in %sConfig", funcName, field, funcName))
 		}
@@ -314,7 +354,7 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 	if len(rule.orFields) > 0 {
 		found := false
 		for _, field := range rule.orFields {
-			if setFields[field] {
+			if fieldSatisfied(field) {
 				found = true
 				break
 			}
@@ -324,4 +364,14 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 				fmt.Sprintf("html.%s: missing required field — must set one of %v in %sConfig", funcName, rule.orFields, funcName))
 		}
 	}
+}
+
+// ariaEquivalent maps a typed config field to the raw ARIA attribute
+// that satisfies the same accessibility requirement when supplied via
+// ExtraAttrs. Fields with no raw equivalent (Alt, Legend, For, …) are
+// deliberately absent — the typed field is the only way to set them.
+var ariaEquivalent = map[string]string{
+	"Label":      "aria-label",
+	"LabelledBy": "aria-labelledby",
+	"Role":       "role",
 }
