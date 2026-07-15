@@ -45,6 +45,18 @@ func TestAgentsMDSnippetsReferenceRealSymbols(t *testing.T) {
 		}
 		api := loadPackageAPI(t, filepath.Join(batteryRoot, bat))
 		for blockNum, block := range extractGoBlocks(md) {
+			// Struct-literal keys: `email.SMTPConfig{TLS: true}` must name
+			// real fields (the class of drift symbol checks can't see).
+			for _, ref := range extractStructLiteralFields(block, bat) {
+				fields, known := api.TypeFields[ref.TypeName]
+				if !known {
+					continue // not a struct declared in this battery
+				}
+				if !fields[ref.Field] {
+					t.Errorf("%s block #%d sets %s.%s{%s: …} but %s has no field %s (fields: %v)",
+						mdPath, blockNum, bat, ref.TypeName, ref.Field, ref.TypeName, ref.Field, sortedKeys(fields))
+				}
+			}
 			refs := extractSnippetRefs(block, bat)
 			for _, r := range refs {
 				if r.ReceiverType == "" {
@@ -168,6 +180,7 @@ type packageAPI struct {
 	Exports     map[string]bool            // pkg-level identifiers
 	TypeMethods map[string]map[string]bool // typeName → method-set (typeName has no `*`)
 	CtorReturn  map[string]string          // `NewX` → return typeName (no `*`)
+	TypeFields  map[string]map[string]bool // struct typeName → exported field set
 }
 
 // loadPackageAPI scans every .go (non-test) file in dir and extracts
@@ -178,6 +191,7 @@ func loadPackageAPI(t *testing.T, dir string) packageAPI {
 		Exports:     map[string]bool{},
 		TypeMethods: map[string]map[string]bool{},
 		CtorReturn:  map[string]string{},
+		TypeFields:  map[string]map[string]bool{},
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -222,6 +236,19 @@ func loadPackageAPI(t *testing.T, dir string) packageAPI {
 				api.TypeMethods[recv] = map[string]bool{}
 			}
 			api.TypeMethods[recv][method] = true
+		}
+		// Struct fields: `type X struct { ... }` — exported field names,
+		// including comma-grouped declarations (`Host, Port string`).
+		for _, m := range reStructDecl.FindAllStringSubmatch(text, -1) {
+			name, body := m[1], m[2]
+			if api.TypeFields[name] == nil {
+				api.TypeFields[name] = map[string]bool{}
+			}
+			for _, fm := range reStructField.FindAllStringSubmatch(body, -1) {
+				for _, f := range strings.Split(fm[1], ",") {
+					api.TypeFields[name][strings.TrimSpace(f)] = true
+				}
+			}
 		}
 		// Interface methods: `type X interface { Method(...); ... }`. The
 		// receiver regex above misses these (no func receiver), so a
@@ -287,4 +314,54 @@ var (
 	reInterfaceDecl = regexp.MustCompile(`(?sm)^type\s+([A-Z][A-Za-z0-9_]*)\s+interface\s*\{(.*?)\n\}`)
 	// A method line inside an interface body: `Method(...)`.
 	reInterfaceMethod = regexp.MustCompile(`(?m)^\s*([A-Z][A-Za-z0-9_]*)\s*\(`)
+	// `type X struct { ... }` — name + body up to the closing brace at
+	// column 0, mirroring reInterfaceDecl.
+	reStructDecl = regexp.MustCompile(`(?sm)^type\s+([A-Z][A-Za-z0-9_]*)\s+struct\s*\{(.*?)\n\}`)
+	// A field line inside a struct body: exported name(s), optionally
+	// comma-grouped, followed by a type. Skips embedded fields (no space
+	// before the newline) and comments by requiring the trailing type token.
+	reStructField = regexp.MustCompile(`(?m)^\t([A-Z][A-Za-z0-9_]*(?:\s*,\s*[A-Z][A-Za-z0-9_]*)*)\s+\S`)
 )
+
+// structFieldRef is one `pkg.Type{Field: …}` key found in a snippet.
+type structFieldRef struct {
+	TypeName string
+	Field    string
+}
+
+// extractStructLiteralFields finds `<battery>.<Type>{ ... }` composite
+// literals in block and returns their DEPTH-1 keys (nested literals'
+// keys belong to other types and are skipped).
+func extractStructLiteralFields(block, batteryName string) []structFieldRef {
+	var out []structFieldRef
+	litRe := regexp.MustCompile(`\b` + regexp.QuoteMeta(batteryName) + `\.([A-Z][A-Za-z0-9_]*)\s*\{`)
+	keyRe := regexp.MustCompile(`(?m)^\s*([A-Z][A-Za-z0-9_]*)\s*:`)
+	for _, loc := range litRe.FindAllStringSubmatchIndex(block, -1) {
+		typeName := block[loc[2]:loc[3]]
+		// Walk from the opening brace to its match, recording depth-1 text.
+		depth := 0
+		var top strings.Builder
+		for i := loc[1] - 1; i < len(block); i++ {
+			c := block[i]
+			if c == '{' {
+				depth++
+				if depth == 1 {
+					continue
+				}
+			}
+			if c == '}' {
+				depth--
+				if depth == 0 {
+					break
+				}
+			}
+			if depth == 1 {
+				top.WriteByte(c)
+			}
+		}
+		for _, km := range keyRe.FindAllStringSubmatch(top.String(), -1) {
+			out = append(out, structFieldRef{TypeName: typeName, Field: km[1]})
+		}
+	}
+	return out
+}

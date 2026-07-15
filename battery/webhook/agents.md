@@ -20,7 +20,7 @@ mgr := webhook.New(store, webhook.Options{
     // AllowPrivateNetworks left false on purpose — SSRF guard.
 })
 mgr.Start()
-defer mgr.Stop()
+defer mgr.Stop(context.Background()) // bounds the drain; returns error
 
 n, err := mgr.Publish(ctx, "order.shipped", payload)
 _, _ = n, err // n = number of subscribers the event fanned out to
