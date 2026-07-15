@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
@@ -30,6 +31,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -197,10 +199,33 @@ func setupServer() *framework.App {
 		framework.WithConfig(framework.AppConfig{Name: "site"}),
 		// Expose the framework's own docs + app introspection as MCP tools
 		// (the site is gofastr.dev), and auto-mount /mcp so the agent card
-		// above advertises a live endpoint.
+		// above advertises a live endpoint. Under `gofastr dev` /
+		// dev-watch the framework auto-adds the mutating control tools;
+		// the deployed site never sets GOFASTR_DEV, so its public /mcp
+		// stays read-only.
 		framework.WithMCPIntrospection(),
 		framework.WithMCP(),
 	)
+
+	// Structured logging (battery/log). Its MCP debug tools (log_recent,
+	// log_filter, …) auto-register in the dev loop only — access logs
+	// carry client IPs and the deployed site's /mcp is public by design.
+	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
+
+	// The site's own readiness: the embedded docs corpus it serves (both as
+	// pages and as framework_docs_* MCP tools) must load. Zero registered
+	// checks would make app_readiness report ready=false ("unconfirmed"),
+	// which reads as an outage to a connecting agent.
+	fwApp.RegisterReadiness("docs-embed", func(ctx context.Context) error {
+		topics, err := docs.List()
+		if err != nil {
+			return err
+		}
+		if len(topics) == 0 {
+			return fmt.Errorf("embedded docs corpus is empty")
+		}
+		return nil
+	})
 
 	// Mount the palette widget AFTER the host so its routes land on the
 	// same router instance. The palette's RPC handler runs an in-memory
