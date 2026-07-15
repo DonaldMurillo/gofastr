@@ -15,6 +15,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
 
 // Config configures the log plugin.
@@ -68,6 +69,10 @@ type Config struct {
 	// running app via the plugin's logger surface. Off by default.
 	// Production apps that expose MCP to untrusted callers should weigh
 	// the disclosure surface before enabling.
+	//
+	// In the dev loop (GOFASTR_DEV set by `gofastr dev`; opt-out via
+	// GOFASTR_DEV_MCP=0) the tools auto-enable regardless of this
+	// field — see Init.
 	EnableMCP bool
 
 	// MCPRingSize is the ring buffer capacity used when EnableMCP is
@@ -165,6 +170,17 @@ func (p *Plugin) Metrics() Metrics {
 // not just routes added later — there is no ordering footgun.
 func (p *Plugin) Init(app *framework.App) error {
 	cfg := p.cfg
+
+	// In the dev loop (GOFASTR_DEV, opt-out GOFASTR_DEV_MCP=0) the MCP
+	// debug tools auto-enable, mutation included — the same reasoning
+	// as the framework's dev-implied introspection/control: `gofastr
+	// dev` is a local trusted loop whose primary consumer is the
+	// developer's own agent. Production never sets GOFASTR_DEV, so the
+	// explicit Config fields stay the only path there.
+	if dev.DevMCPEnabled() {
+		cfg.EnableMCP = true
+		cfg.AllowMCPMutation = true
+	}
 
 	// Resolve sinks.
 	sinks := cfg.Sinks
