@@ -7,6 +7,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-15
+
+Dev-experience overhaul + static site as an app (#59): hot reload reaches
+every HTML surface and the guidance funnels to `gofastr dev`; HMR-readiness
+is gated deterministically and measured non-deterministically in the
+UI-quality eval; a 77-surface documentation-accuracy sweep (including
+`gofastr migrate` honoring an exported `DATABASE_URL`); and static exports
+with `WithPWA` become fully offline-capable installable apps.
+
 ### Added
 
 - **Hot reload now reaches every HTML surface.** `framework.NewApp` mounts
