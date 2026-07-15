@@ -111,7 +111,8 @@ func printHelp() {
   pack [app-dir]        Snapshot a generated app into a best-effort gofastr.yml (lossy; not an inverse of generate)
   validate <yml>        Validate a blueprint without generating (exit 0 = valid)
   theme init            Scaffold theme/theme.go for a UI project
-  build                 Run codegen + go build
+  build                 Run codegen + go vet + accessibility lint + go build
+                        --no-a11y skips the accessibility gate
   dev                   Start dev server with auto-restart
   migrate [up|down|status|generate|force]  Run database migrations
   test                  Run project tests
@@ -122,9 +123,11 @@ func printHelp() {
   agents [init|sync|skill]  Generate/refresh AGENTS.md and per-battery detail files
   docs [topic]          Browse framework docs (auto-versioned with this binary)
                         --list  list every topic; --grep <term> search across docs
-  audit <sub>           Inspect the project for security-relevant patterns
+  audit <sub>           Inspect the project for security- and accessibility-relevant patterns
                         deps  list packages that perform init-time global registrations
                         lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
+                        a11y  guided accessibility lint; --url <base> runs the full
+                              axe-core scan against a running app (both color schemes)
   version               Print version info
 
 %s:

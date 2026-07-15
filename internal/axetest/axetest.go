@@ -19,6 +19,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -71,6 +72,16 @@ type ViolatedNode struct {
 // a timeout child would kill the browser when it expired and cancel later pages.
 func NewBrowser(t *testing.T) context.Context {
 	t.Helper()
+	browserCtx, cancel := NewBrowserContext(context.Background())
+	t.Cleanup(cancel)
+	return browserCtx
+}
+
+// NewBrowserContext is the non-test variant of [NewBrowser] — the same
+// tuned headless browser for callers without a *testing.T (the
+// `gofastr audit a11y --url` command). The caller MUST call the
+// returned cancel to tear the browser down.
+func NewBrowserContext(parent context.Context) (context.Context, context.CancelFunc) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
@@ -85,11 +96,9 @@ func NewBrowser(t *testing.T) context.Context {
 		chromedp.WSURLReadTimeout(90*time.Second),
 		chromedp.WindowSize(1280, 800),
 	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-	return browserCtx
+	allocCtx, allocCancel := chromedp.NewExecAllocator(parent, opts...)
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithErrorf(filteredErrorf))
+	return browserCtx, func() { browserCancel(); allocCancel() }
 }
 
 // NewTab opens a FRESH tab derived from browser (so the previous page's SSE
@@ -98,9 +107,29 @@ func NewBrowser(t *testing.T) context.Context {
 // timeout and the tab target so sockets don't leak across pages.
 func NewTab(t *testing.T, browser context.Context) (context.Context, context.CancelFunc) {
 	t.Helper()
-	tabCtx, tabCancel := chromedp.NewContext(browser)
-	ctx, cancel := context.WithTimeout(tabCtx, 30*time.Second)
+	return NewTabContext(browser, 30*time.Second)
+}
+
+// NewTabContext is the non-test variant of [NewTab]. The caller MUST
+// call the returned cancel — it tears down both the timeout and the tab
+// target so sockets don't leak across pages.
+func NewTabContext(browser context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	// WithErrorf applies per-context: tabs don't inherit the browser
+	// context's logger, so the filter must be repeated here.
+	tabCtx, tabCancel := chromedp.NewContext(browser, chromedp.WithErrorf(filteredErrorf))
+	ctx, cancel := context.WithTimeout(tabCtx, timeout)
 	return ctx, func() { cancel(); tabCancel() }
+}
+
+// filteredErrorf is chromedp's default error logger minus the
+// known-benign "unhandled node event *dom.EventAdoptedStyleSheetsModified"
+// noise [Prepare]'s constructed-stylesheet freeze triggers on every page —
+// it would otherwise interleave with audit/test output on stderr.
+func filteredErrorf(format string, args ...interface{}) {
+	if strings.Contains(fmt.Sprintf(format, args...), "unhandled node event") {
+		return
+	}
+	log.Printf("ERROR: "+format, args...)
 }
 
 // Prepare is a chromedp action that freezes CSS transitions/animations and

@@ -226,6 +226,8 @@ func runAudit(args []string) {
 		fmt.Println("Subcommands:")
 		fmt.Println("  deps    List packages that perform init-time global registrations")
 		fmt.Println("  lint    Scan for AI-typical mistakes (ignored Exec, missing CSRF, render.HTML concat, t.Skip, …)")
+		fmt.Println("  a11y    Accessibility audit: static lint of core-ui/html usage, or a full")
+		fmt.Println("          axe-core scan of a running app with --url (see `gofastr audit a11y --help`)")
 		osExit(2)
 	}
 	switch args[0] {
@@ -254,6 +256,8 @@ func runAudit(args []string) {
 		if len(findings) > 0 {
 			osExit(1)
 		}
+	case "a11y":
+		runAuditA11y(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown audit subcommand: %s\n", args[0])
 		osExit(2)

@@ -1,0 +1,112 @@
+# Accessibility — built-in guarantees, the audit command, the build gate
+
+GoFastr treats accessibility in three layers: the component library
+ships correct semantics by default, `gofastr build` enforces the static
+floor the type system can see, and `gofastr audit a11y --url` runs the
+full axe-core engine against the running app for everything only a real
+render can catch.
+
+## What the framework already does
+
+`framework/ui` and `core-ui` components carry their ARIA contract
+internally — labelled landmarks, `aria-expanded` on disclosures,
+`aria-selected` mirroring on tabs, focus traps on modal surfaces,
+`aria-live` announcement regions, keyboard navigation on menus, trees,
+carousels, and sortable lists. Composing the design system instead of
+hand-rolling markup is the single highest-leverage accessibility
+decision an app makes (see the UI architecture doc's hard rules).
+
+The typed HTML layer makes the remaining requirements *visible in the
+config struct*: `html.Image` has an `Alt` field, `html.Button` a
+`Label`, `html.Nav` a `Label`/`LabelledBy` pair, `html.FieldSet` a
+`Legend`. The audit below checks that you actually set them.
+
+## `gofastr audit a11y` — the guided static lint
+
+```
+$ gofastr audit a11y
+Accessibility lint — 2 issue(s) in 1 file(s)
+
+app/screens/home.go:42: html.Image: missing required field "Alt" in ImageConfig
+    fix: every image needs Alt. Informative image → describe what it shows
+    ("Team photo at launch"). Decorative image → explicit empty Alt: "" so
+    screen readers skip it. Never omit the field.
+```
+
+It scans every non-test, non-generated `.go` file for core-ui/html
+element configs missing their required accessibility fields, and each
+finding explains the rule — the goal is that the fix teaches WCAG
+name/role/value basics, not just flags a line. Exit code 1 on findings,
+so it can gate CI directly.
+
+Checked elements: `Image` (Alt), `Button` (Label), `Link`/`LinkHTML`
+(Href + text), `Nav`/`Section`/`Aside` (Label or LabelledBy), `Group`
+(Role), `Label` (For + Text), `Input`/`Select`/`TextArea` (Name),
+`FieldSet` (Legend), `Heading` (Level), `Form` (Method), `Abbr`
+(Title), `Time` (Datetime), `Source` (Src + Type).
+
+## The build gate
+
+`gofastr build` runs the same lint between `go vet` and compilation and
+**fails the build** on findings, printing the guided report. The rules
+are cheap (pure static analysis, no browser) and every finding has a
+concrete fix, so the default is enforcement. `--no-a11y` skips the gate
+when you genuinely need a build anyway — treat it like `//nolint`, not
+like a setting.
+
+## `gofastr audit a11y --url` — the full runtime audit
+
+```
+$ gofastr audit a11y --url http://localhost:8080
+Auditing 14 page(s) at http://localhost:8080 under 2 color scheme(s)…
+
+/pricing (dark scheme)
+  [serious] color-contrast: Elements must meet minimum color contrast ratio thresholds
+      guide: https://dequeuniversity.com/rules/axe/4.10/color-contrast
+      at: .pricing-card__footnote
+```
+
+This drives headless Chrome with the vendored axe-core engine (the same
+harness the framework's own example gates use — hermetic, no CDN fetch)
+and audits **both color schemes**: contrast, focus order, landmark
+structure, ARIA validity — the classes of failure only a rendered page
+exposes. Pages are discovered from the app's `/sitemap.xml`
+(`uihost.WithSitemap`), so a sitemap-configured app gets full-site
+coverage with zero flags; use `--pages /a,/b` to scope. Exit code 1 on
+violations.
+
+Requires a Chrome/Chromium install (headless). Run it against `gofastr
+dev`'s server during development, or against a staging deploy in CI.
+
+## Recommended loop
+
+1. Compose `framework/ui` components; reach for `core-ui/html` only for
+   genuinely bespoke fragments.
+2. Let `gofastr build` keep the static floor green (it's on by default).
+3. Before shipping UI changes: `gofastr audit a11y --url
+   http://localhost:8082` and fix what axe reports in both schemes.
+4. For apps with their own test suites, pin the runtime gate as a test —
+   see `examples/site/axe_test.go` for the reference pattern (per-page
+   allowlists with justifications, mobile target-size pass).
+
+## Common mistakes
+
+- **`Alt: ""` versus no `Alt` at all.** The empty string is a deliberate
+  "decorative, skip me" signal; omitting the field entirely is the bug
+  the lint flags. Decide which one the image is — don't silence the
+  finding with filler text like "image".
+- **Silencing the build gate permanently.** `--no-a11y` is an escape
+  hatch for a blocked build, not a project setting. If a rule seems
+  wrong for a real case, the element probably isn't the right primitive
+  (a `Section` that needs no label may just be a `Div`).
+- **Auditing only one color scheme.** Contrast regressions hide in the
+  scheme your machine doesn't use — the runtime audit forces dark AND
+  light on every page for exactly this reason. Don't scope it back down.
+- **Running the runtime audit without a sitemap.** Without
+  `uihost.WithSitemap` the scan covers only `/`; the "clean" result is
+  vacuous. Configure the sitemap (you want it for SEO anyway) or pass
+  `--pages` explicitly.
+- **Fixing the symptom in CSS.** An axe `color-contrast` finding on a
+  component means the *token* is wrong (`--color-text-subtle` on
+  `--color-surface`), not that one selector needs an override — fix the
+  theme so every surface inherits the correction.
