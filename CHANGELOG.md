@@ -36,6 +36,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   normal SPA navigation pipeline for the current URL. The old `SSEReload` name
   remains as a source-compatible alias but no longer performs a hard reload.
 
+### Fixed
+
+- **Freeze fails loudly on YAML-unrepresentable worlds.** The blueprint
+  emitter quotes commas, quotes, and brackets wherever they appear (a seed
+  value like `"a, b"` no longer re-parses as two items), leads list-item maps
+  with an inline scalar list when no scalar key exists, and
+  `BlueprintYAML` now errors — naming the offending key — on seed rows or
+  props that `core/yaml` cannot round-trip (map-only rows, keys containing
+  colons) instead of writing a silently corrupt `gofastr.yml`.
+- **Typed kinds render at any depth.** A design-system kind (`card`,
+  `stack`, `stat_card`, …) nested inside a semantic leaf container (`div`,
+  `form`, table cells) now dispatches through its component instead of
+  falling through to core noderender's unknown-kind comment; the `class`
+  strip for legacy journals now applies at every depth.
+  (`core-ui/noderender` exports the shallow `RenderKind` seam this uses.)
+- **Deleting the page being viewed shows the Kiln fallback.** The host
+  fallback carries a `<main>`, so the SSE-triggered SPA refresh swaps in its
+  content instead of emptying (and caching) a blank content area.
+- **`gofastr dev` removes its temp server binary on shutdown**, instead of
+  accumulating one pid-suffixed binary per run in the temp dir.
+- The kiln skill's `add_page` example is valid JSON again (gated by a test),
+  and the hooks/routes/seeds tools, action kinds, and expression language it
+  references are documented in the skill once more.
+
 ### Changed
 
 - **Kiln defaults its live REST surface to `/api`.** Entity CRUD and HTML
