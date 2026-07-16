@@ -374,3 +374,70 @@ func waitForSSE(t *testing.T, ctx context.Context) {
 	}
 	t.Fatal("SSE did not open within 8s")
 }
+
+// Deleting a page the user is viewing must degrade to the Kiln host fallback,
+// not a blank document: the SSE-triggered SPA refresh extracts <main> from the
+// fallback response, so host.html must carry one.
+func TestVisual_DeletePageShowsFallback(t *testing.T) {
+	urlBase, tools := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	add := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
+		Path:  "/doomed",
+		Title: "Doomed",
+		Tree: world.Node{Kind: "div", Children: []world.Node{
+			{Kind: "heading", Props: map[string]any{"level": float64(1), "text": "Short lived"}},
+		}},
+	}})
+	if !add.OK {
+		t.Fatal(add)
+	}
+
+	var body string
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(1280, 800),
+		chromedp.Navigate(urlBase+"/doomed"),
+		chromedp.WaitVisible(`h1`, chromedp.ByQuery),
+		chromedp.Text(`body`, &body, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	if !strings.Contains(body, "Short lived") {
+		t.Fatalf("page body wrong before delete: %q", body)
+	}
+	waitForSSE(t, ctx)
+
+	if r := tools.ProposePlan(t.Context(), protocol.ProposePlanArgs{
+		PlanID:  "kill-doomed",
+		Steps:   []string{"remove /doomed"},
+		Targets: []journal.PlanTarget{{Op: "delete_page", Name: "/doomed"}},
+	}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.ApprovePlan(t.Context(), protocol.ApprovePlanArgs{PlanID: "kill-doomed"}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.DeletePage(t.Context(), protocol.DeletePageArgs{Path: "/doomed", PlanID: "kill-doomed"}); !r.OK {
+		t.Fatal(r)
+	}
+
+	// The SSE edit forces an SPA refresh of /doomed, which now serves the
+	// host fallback. The swapped-in content must not be blank.
+	deadline := time.Now().Add(8 * time.Second)
+	var after string
+	for time.Now().Before(deadline) {
+		if err := chromedp.Run(ctx,
+			chromedp.Text(`body`, &after, chromedp.ByQuery),
+		); err == nil && !strings.Contains(after, "Short lived") {
+			break
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	if strings.Contains(after, "Short lived") {
+		t.Fatalf("refresh never happened; still showing deleted page: %q", after)
+	}
+	if !strings.Contains(after, "Talk to it") {
+		t.Fatalf("EMPTY MAIN: host fallback content did not arrive after delete_page (host.html needs a <main> for the SPA swap): %q", after)
+	}
+}

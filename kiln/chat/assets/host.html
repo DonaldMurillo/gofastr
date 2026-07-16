@@ -52,6 +52,10 @@
 </style>
 </head>
 <body>
+<!-- <main> is load-bearing: the GoFastr SPA runtime swaps pages by extracting
+     the response's <main>, and this fallback is what a deleted or unknown
+     path serves. Without it the swap empties the content area. -->
+<main>
 <div class="kiln-host">
   <div class="kiln-mark">✶</div>
   <h1>Kiln</h1>
@@ -78,6 +82,7 @@
 
   <p class="hint">Open <code>/kiln/world</code> to see the current IR · agent shortcut <code>kiln agent -p "build me X"</code></p>
 </div>
+</main>
 <script src="/__gofastr/runtime.js"></script>
 </body>
 </html>
