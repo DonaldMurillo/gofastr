@@ -98,7 +98,7 @@ Example:
             {"kind": "card", "props": {"heading": "REST + OpenAPI"}},
             {"kind": "card", "props": {"heading": "SSR + hydration"}}
           ]}
-        }
+        ]}
       ]
     }
   }
@@ -124,6 +124,39 @@ Use `set_scaffold` to replace navigation and owned-Go stubs:
 
 Navigation renders live. Endpoint/middleware/plugin/helper declarations become
 editable Go stubs in the generated scaffold.
+
+## Behavior: hooks, routes, seeds
+
+Declarative behavior uses these tools (same dispatcher as everything else):
+
+- `add_hook(hook)` / `delete_hook(id)` — entity lifecycle hooks. `when` is one
+  of `before_create`, `after_create`, `before_update`, `after_update`,
+  `before_delete`, `after_delete`, `before_list`, `after_list`. A hook has an
+  `id`, an `entity`, a `when`, an optional `condition` (expression), and an
+  `action`.
+- `add_route(route)` / `delete_route(method, path)` — declarative HTTP routes.
+- `add_seed(seed)` — insert seed rows: `{"entity":"posts","rows":[{...}]}`.
+- `undo` — revert the most recent journal entry.
+
+Action kinds (params are action-specific): `noop`; `validate`
+`{ expression, message }` — errors with the message when false; `set_field`
+`{ field, value }` (expression) or `{ field, value_literal }`; `audit`
+`{ channel, message }`; `emit_event` `{ topic, data }`; `respond_json`
+(routes only) `{ status, body }`.
+
+The expression language covers `condition`, `value`, `message`, and
+string-typed `body`: literals (numbers, strings, `true`/`false`/`null`,
+lists), operators `+ - * / %`, `== != < > <= >=`, `&& || !`, member access
+(`entity.title`, `ctx.user.role`, `result.id`), and built-ins `len`, `lower`,
+`upper`, `contains`, `starts_with`, `ends_with`, `abs`, `min`, `max`, `now()`.
+Hook scope: `entity` (the row), `ctx` (request), `result` (`after_*` only).
+
+```bash
+curl -sS -X POST "$KILN_URL/kiln/tool/add_hook" \
+  -H 'Content-Type: application/json' \
+  -d '{"hook":{"id":"posts-slug","entity":"posts","when":"before_create",
+    "action":{"kind":"set_field","params":{"field":"slug","value":"lower(entity.title)"}}}}'
+```
 
 ## Theme
 
