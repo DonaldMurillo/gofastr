@@ -55,13 +55,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   fallback carries a `<main>`, so the SSE-triggered SPA refresh swaps in its
   content instead of emptying (and caching) a blank content area.
 - **`gofastr dev` removes its temp server binary on shutdown**, instead of
-  accumulating one pid-suffixed binary per run in the temp dir.
+  accumulating one pid-suffixed binary per run in the temp dir; the e2e
+  harnesses remove it for the processes they SIGKILL.
+- **The Kiln landing follows the theme.** The host fallback page now styles
+  itself entirely from the `/__gofastr/app.css` tokens (`--color-*`,
+  `--font-*`, `--radius-*`) instead of a hardcoded always-dark palette, so it
+  honors `set_theme` overrides and the light/dark scheme like every other
+  surface; its styles ride inside `<main>` so an SPA-swapped fallback keeps
+  its layout. The landing visual gate now captures both schemes.
 - The kiln skill's `add_page` example is valid JSON again (gated by a test),
   and the hooks/routes/seeds tools, action kinds, and expression language it
   references are documented in the skill once more.
 
 ### Changed
 
+- **`gofastr dev` runs the server in the project directory.** The rebuilt
+  binary's working directory is now `--dir` — the same cwd it gets when run
+  by hand — so relative paths (sqlite `db_url`, static dir) resolve against
+  the project, and the app's worktree-isolation lookup keys off the
+  project's location instead of wherever `gofastr dev` was launched. If you
+  relied on launch-cwd-relative paths, your sqlite file now lives in the
+  project dir.
 - **Kiln defaults its live REST surface to `/api`.** Entity CRUD and HTML
   screens can share a name (`/api/posts` and `/posts`), matching current
   blueprints. Agent-authored page trees reject `class`, `style`, and `on*`
