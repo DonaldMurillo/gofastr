@@ -97,7 +97,10 @@ func (h *devHarness) start() {
 	h.cancelFunc = cancel
 
 	cmd := exec.CommandContext(ctx, h.bin, "dev", "-p", h.port, "--dir", h.dir)
-	cmd.Env = append(os.Environ(), "PORT=localhost:"+h.port)
+	// GOFASTR_ISOLATION=off: the child app resolves worktree isolation from
+	// its cwd, so running this suite from a linked git worktree would
+	// silently remap the port the test polls.
+	cmd.Env = append(os.Environ(), "PORT=localhost:"+h.port, "GOFASTR_ISOLATION=off")
 	cmd.Stdout = &h.output
 	cmd.Stderr = &h.output
 	// Set process group so we can kill the entire tree (gofastr dev + child server).

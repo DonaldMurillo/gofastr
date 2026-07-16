@@ -61,6 +61,9 @@ func TestE2E_DevLoop_BlueprintApp(t *testing.T) {
 	dev.Env = append(os.Environ(),
 		"PORT=localhost:"+port,
 		"DATABASE_URL=file:"+filepath.Join(dir, "devloop.db"),
+		// The child app resolves worktree isolation from its cwd; a linked
+		// git worktree would silently remap the polled port.
+		"GOFASTR_ISOLATION=off",
 	)
 	var devOut syncBuffer
 	dev.Stdout = &devOut

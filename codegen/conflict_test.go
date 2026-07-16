@@ -85,7 +85,14 @@ func TestWriteFiles_RootRejectedWhenCleaning(t *testing.T) {
 }
 
 func TestEnsureNoSymlinkPathAcceptsAbsoluteTempPath(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "output")
+	// Resolve the temp root first: on macOS t.TempDir() lives under
+	// /var/folders and /var is itself a symlink, which the check
+	// correctly refuses to traverse.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "nested", "output")
 	if err := EnsureNoSymlinkPath(path); err != nil {
 		t.Fatalf("absolute path %q: %v", path, err)
 	}
