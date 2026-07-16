@@ -17,6 +17,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`ui.LinkButton` Icon slot.** `LinkButtonConfig.Icon` names a registered
+  icon (`ui.RegisterIcon`) to render before the label — external-link
+  buttons can carry a recognizable mark (GitHub, docs) without bespoke
+  anchors. Unknown names fall back to the plain label.
 - **`seo.WebApplication`.** Typed JSON-LD for in-browser tools (schema.org
   SoftwareApplication subtype) — the right @type for SaaS products and
   online generators, previously missing from core-ui/seo's catalog.
