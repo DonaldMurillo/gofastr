@@ -25,6 +25,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`ui.Gallery` grids are responsive by default.** `Columns` was a hard
+  `repeat(N, 1fr)` — four columns stayed four columns on a phone, crushing
+  every tile, and each consumer had to hand-write media queries. `Columns`
+  is now a MAXIMUM: tracks are sized for exactly that many columns but
+  never shrink below `--ui-gallery-min` (default `9.5rem`, override via a
+  class), so `auto-fill` collapses to fewer columns as the container
+  narrows. Masonry gets the same contract via `column-width` +
+  `column-count`.
 - **Session reads try every cookie candidate.** `SessionMiddleware`, the
   `/auth/me` handler, and logout read only the FIRST cookie with the session
   name (`r.Cookie`). A jar can hold several — a stale cookie from an old

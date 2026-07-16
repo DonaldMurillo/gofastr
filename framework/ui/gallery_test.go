@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestGalleryRequiresItems(t *testing.T) {
@@ -146,4 +148,25 @@ func TestGalleryRejectsUnknownVariant(t *testing.T) {
 		Variant: GalleryVariant("bogus"),
 		Items:   []GalleryItem{{Src: "/a.jpg", Alt: "A"}},
 	})
+}
+
+// The grid and masonry variants must be responsive WITHOUT consumer media
+// queries: Columns is a maximum, and tracks collapse once they'd shrink
+// below --ui-gallery-min. A plain repeat(N, 1fr) regression would crush
+// tiles on narrow viewports for every consumer at once.
+func TestGalleryColumnsAreResponsiveMaximum(t *testing.T) {
+	css := galleryCSS(style.DefaultTheme())
+	if strings.Contains(css, "repeat(var(--ui-gallery-cols), 1fr)") {
+		t.Fatal("grid uses a fixed column count — Columns must be a responsive maximum (auto-fill + minmax)")
+	}
+	for _, want := range []string{
+		"--ui-gallery-min",
+		"repeat(auto-fill",
+		"var(--ui-gallery-cols) - 1) * var(--ui-gallery-gap)",
+		"column-width: var(--ui-gallery-min)",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("gallery CSS missing responsive piece %q", want)
+		}
+	}
 }

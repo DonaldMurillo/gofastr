@@ -74,8 +74,11 @@ type GalleryConfig struct {
 	// Label is the accessible label for the gallery list. Defaults
 	// to "Image gallery".
 	Label string
-	// Columns (Grid mode) — the number of columns. Default 3.
-	// Masonry mode: uses this as the column count too.
+	// Columns (Grid mode) — the MAXIMUM number of columns. Default 3.
+	// The grid is responsive: tracks never shrink below --ui-gallery-min
+	// (default 9.5rem, overridable per instance via a Class), so narrow
+	// viewports automatically get fewer columns without media queries.
+	// Masonry mode: uses this as the maximum column count too.
 	Columns int
 	// Gap between thumbs. Default GapMD.
 	Gap Gap
@@ -267,6 +270,7 @@ func galleryCSS(_ style.Theme) string {
   margin: 0;
   padding: 0;
   --ui-gallery-cols: 3;
+  --ui-gallery-min: 9.5rem;
   --ui-gallery-gap: var(--spacing-md, 12px);
 }
 [data-fui-comp="ui-gallery"] .ui-gallery__row {
@@ -329,10 +333,14 @@ func galleryCSS(_ style.Theme) string {
 [data-fui-comp="ui-gallery"].ui-gallery--cols-11 { --ui-gallery-cols: 11; }
 [data-fui-comp="ui-gallery"].ui-gallery--cols-12 { --ui-gallery-cols: 12; }
 
-/* ── Grid variant (default) ── */
+/* ── Grid variant (default) ──
+   --ui-gallery-cols is a MAXIMUM: the calc() term sizes tracks for exactly
+   that many columns, and the max() floor (--ui-gallery-min) makes auto-fill
+   wrap to fewer columns when tracks would get narrower — responsive with no
+   media queries. */
 [data-fui-comp="ui-gallery"]:not(.ui-gallery--strip):not(.ui-gallery--masonry) {
   display: grid;
-  grid-template-columns: repeat(var(--ui-gallery-cols), 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--ui-gallery-min), calc((100% - (var(--ui-gallery-cols) - 1) * var(--ui-gallery-gap)) / var(--ui-gallery-cols)))), 1fr));
   gap: var(--ui-gallery-gap);
 }
 
@@ -351,8 +359,12 @@ func galleryCSS(_ style.Theme) string {
   scroll-snap-align: start;
 }
 
-/* ── Masonry: CSS columns flow ── */
+/* ── Masonry: CSS columns flow ──
+   With both column-width and column-count set, count is a maximum and the
+   browser drops columns as the container narrows — same responsive contract
+   as the grid variant. */
 .ui-gallery--masonry {
+  column-width: var(--ui-gallery-min);
   column-count: var(--ui-gallery-cols);
   column-gap: var(--ui-gallery-gap);
   display: block;
