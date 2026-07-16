@@ -212,15 +212,23 @@ func copyButtonCSS(_ style.Theme) string {
   cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease;
 }
+/* Hover keeps the theme's own surface pair: surface-soft is defined by every
+   theme in both schemes, so text set to --color-text stays readable. (The old
+   rule referenced --color-muted — a token that does not exist — so the light
+   #f3f3f5 fallback always applied and dark themes got near-white on white.) */
 [data-fui-comp="ui-copy-btn"] .ui-copy-btn:hover {
-  background: var(--color-muted, #f3f3f5);
+  background: var(--color-surface-soft, #f3f3f5);
+  border-color: var(--color-border-strong, var(--color-border, #d0d0d8));
 }
 [data-fui-comp="ui-copy-btn"] .ui-copy-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-primary, #4F46E5);
 }
 [data-fui-comp="ui-copy-btn"] .ui-copy-btn .ui-copy-btn__copied { display: none; }
-[data-fui-comp="ui-copy-btn"] .ui-copy-btn.fui-copied { background: var(--color-success-bg, #e7f8ee); border-color: var(--color-success, #16a34a); }
+/* Success tint mixes the theme's own success color over the surface, so it
+   adapts to light and dark schemes alike (--color-success-bg was never a real
+   token; its light fallback always applied). */
+[data-fui-comp="ui-copy-btn"] .ui-copy-btn.fui-copied { background: color-mix(in srgb, var(--color-success, #16a34a) 14%, transparent); border-color: var(--color-success, #16a34a); }
 [data-fui-comp="ui-copy-btn"] .ui-copy-btn.fui-copied .ui-copy-btn__label { display: none; }
 [data-fui-comp="ui-copy-btn"] .ui-copy-btn.fui-copied .ui-copy-btn__copied { display: inline; color: var(--color-success, #16a34a); }
 [data-fui-comp="ui-copy-btn"] .ui-copy-btn--icon { padding: 6px 10px; }

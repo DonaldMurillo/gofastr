@@ -91,11 +91,35 @@ func (t Theme) ResolveRadius(name string) string {
 // fields, callers can use CSSCustomPropertiesOf(any) on the outer
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
-	css := CSSCustomPropertiesOf(t)
+	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
 	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
 		css += "\n" + dark
 	}
 	return css
+}
+
+// aliasTokenCSS emits derived aliases for token names that framework/ui
+// components reference but ColorSet never declared (--color-muted,
+// --color-warn, --color-surface-hover, …). Before this block existed those
+// references silently used their hardcoded fallbacks — constants tuned for
+// light themes — so dark themes got light-on-light hover states and similar
+// contrast failures. Each alias resolves through var(), so it tracks the
+// dark-scheme re-declarations automatically; emit once in :root and both
+// schemes are covered. New components should use the canonical ColorSet
+// names; this block exists so every theme keeps the legacy names live.
+func aliasTokenCSS() string {
+	return `:root {
+  --color-muted: var(--color-surface-soft);
+  --color-surface-hover: var(--color-surface-soft);
+  --color-border-subtle: var(--color-border);
+  --color-border-hover: var(--color-border-strong);
+  --color-primary-hover: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
+  --color-primary-foreground: var(--color-primary-fg);
+  --color-ring: var(--color-primary);
+  --color-warn: var(--color-warning);
+  --color-warn-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  --color-warn-strong: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));
+}`
 }
 
 // DarkSchemeCSS emits the dark-scheme token overrides for a theme's DarkColors

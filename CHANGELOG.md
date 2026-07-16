@@ -7,6 +7,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-07-16
+
+### Fixed
+
+- **Phantom color tokens resolved theme-side.** framework/ui components
+  referenced ten `--color-*` custom properties that no theme ever emitted
+  (`--color-muted`, `--color-warn`, `--color-surface-hover`,
+  `--color-primary-hover`, `--color-ring`, …). CSS custom properties fail
+  soft: each reference silently rendered its hardcoded fallback — constants
+  tuned for light themes — so dark themes hit contrast failures like
+  `ui-copy-btn:hover` turning near-white under light-gray text. Themes now
+  emit a derived-alias block mapping every legacy name onto canonical
+  ColorSet tokens (via `var()`/`color-mix()`, so dark-scheme re-declarations
+  flow through), CopyButton's hover/copied states use real tokens directly,
+  and a framework/ui test fails the build if any component references a
+  token that no theme defines.
+
 ## [0.27.0] - 2026-07-16
 
 ### Added
