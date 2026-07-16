@@ -7,6 +7,57 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-07-15
+
+Repo-hygiene patch: process ledgers become enforced gates, and the docs
+that remain are current. No framework API changes.
+
+### Added
+
+- **`repolint` bans the process-artifact genre.** Two new rules:
+  `root-markdown` (root-level `.md` must be one of the GitHub
+  community-health files + `ROADMAP.md` + `CLAUDE.md`/`AGENTS.md`) and
+  `process-artifact-markdown` (SCREAMING_SNAKE ledger names — AUDIT,
+  FINDINGS, NOTES, JOURNAL, HANDOFF, LEDGER — rejected anywhere in the
+  tree). Rationale for judgment calls lives in commit messages and
+  comments beside the tests that enforce them, not in ledger files.
+- **The scaffolded host skill covers the v0.26 surface** —
+  `uihost.WithAppIcon`, the SEO options + `ScreenSEO`/`ScreenSchema`,
+  `gofastr audit a11y` + the enforced build lint, and the
+  `gofastr upgrade` flow, with matching trigger phrases.
+- The `gofastr-docs` skill's change→doc checklist gained a
+  release/BREAKING section (CHANGELOG + `upgrades.yml` `through` bump +
+  SECURITY.md supported-versions + host-skill sync).
+
+### Changed
+
+- **`ROADMAP.md` trimmed 57KB → 11KB** — shipped sections deleted per
+  the file's own rule; only genuinely-unbuilt work remains. Inbound
+  section references across the architecture docs and tests were
+  rewired.
+- **`perf-results.md` re-measured against v0.26.0** — all 12 hot-path
+  benchmarks re-run (Postgres via testcontainers); rewritten as a
+  self-contained results doc with a "reading these numbers" section.
+- The embedded kiln skill no longer triggers on "GoFastr" alone — it
+  requires explicit Kiln signals, so framework-direct users aren't
+  mis-routed into HTTP IR mutations.
+
+### Removed
+
+- **~600KB of point-in-time process markdown**, all preserved in git
+  history: `references/` research dumps, `docs/` (audit handoff +
+  website brief), `SECURITY_FINDINGS.md` + its ledger gate test (every
+  row was re-verified fixed 2026-06-10; `SECURITY.md` now points at git
+  history), `COVERAGE_NOTES.md` (floors + rationale live in
+  `scripts/coverage-floors.sh`), `AI_TEST_AUDIT.md` (the pinning
+  `*_security_test.go` files are the record), the embedded
+  `agent-notes.md` dev diary and `project-architecture-review.md` risk
+  register (its enforceable content already exists as CI gates), and
+  `examples/ecommerce/BUILD_JOURNAL.md`.
+- Two permanently-skipped contradiction tests in `battery/embed` —
+  replaced by a comment beside the tests that actually carry the auth
+  contract.
+
 ## [0.26.0] - 2026-07-15
 
 Technical SEO and ADA compliance become first-class: static export now
