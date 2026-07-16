@@ -179,6 +179,12 @@ current blueprint requires a Go function, freeze emits an owned-Go handler
 stub with a description naming the declarative action; implement that behavior
 after generation. The removed pre-v0.1 `entities/*.json` format is not emitted.
 
+Freeze fails loudly, naming the offending key, when world data cannot
+round-trip through the blueprint's YAML subset — a seed row whose every value
+is a nested object, or a props/row key containing a colon, comment marker, or
+brackets. Reshape the data (or drop the row) and re-run; a freeze that
+succeeded is guaranteed to re-parse into the same values.
+
 `FreezeAndGenerate` performs the freeze and invokes
 `gofastr generate --from=gofastr.yml` when `gofastr` is on `PATH`.
 

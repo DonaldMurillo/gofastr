@@ -22,6 +22,9 @@ func BlueprintYAML(w *world.World) ([]byte, error) {
 		return nil, err
 	}
 	doc := normalizeYAMLValue(blueprintMap(w)).(map[string]any)
+	if err := validateYAMLRepresentable(doc, ""); err != nil {
+		return nil, err
+	}
 	var out strings.Builder
 	writeYAMLMap(&out, doc, 0, topLevelOrder)
 	return []byte(out.String()), nil
@@ -557,34 +560,56 @@ func writeYAMLEntry(sb *strings.Builder, key string, value any, indent int) {
 }
 
 func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string) {
-	if m, ok := item.(map[string]any); ok && len(m) > 0 {
+	if m, ok := item.(map[string]any); ok {
+		if len(m) == 0 {
+			sb.WriteString(strings.Repeat(" ", indent) + "-\n")
+			return
+		}
 		keys := orderedKeys(m, order)
-		// core/yaml expects the first list-map key to have a scalar value.
-		// Prefer one even for arbitrary seed-row maps.
-		for i, key := range keys {
-			if isScalar(m[key]) {
-				keys[0], keys[i] = keys[i], keys[0]
-				break
-			}
+		// core/yaml expects the first list-map key to carry an inline value:
+		// a scalar, or a flow list of scalars. validateYAMLRepresentable
+		// guarantees one exists.
+		if i := inlineLeadKey(keys, m); i > 0 {
+			keys[0], keys[i] = keys[i], keys[0]
 		}
 		first := keys[0]
-		sb.WriteString(strings.Repeat(" ", indent) + "- " + first + ":")
-		if isScalar(m[first]) {
-			sb.WriteByte(' ')
-			writeScalarInline(sb, m[first])
-			sb.WriteByte('\n')
+		sb.WriteString(strings.Repeat(" ", indent) + "- " + first + ": ")
+		if lst, ok := m[first].([]any); ok {
+			writeFlowList(sb, lst)
 		} else {
-			sb.WriteByte('\n')
-			writeNestedValue(sb, m[first], indent+4, orderFor(first))
+			writeScalarInline(sb, m[first])
 		}
+		sb.WriteByte('\n')
 		for _, key := range keys[1:] {
 			writeYAMLEntry(sb, key, m[key], indent+2)
 		}
 		return
 	}
+	if lst, ok := item.([]any); ok && allScalars(lst) {
+		sb.WriteString(strings.Repeat(" ", indent) + "- ")
+		writeFlowList(sb, lst)
+		sb.WriteByte('\n')
+		return
+	}
 	sb.WriteString(strings.Repeat(" ", indent) + "- ")
 	writeScalarInline(sb, item)
 	sb.WriteByte('\n')
+}
+
+// inlineLeadKey returns the index of the first key whose value can head a
+// list item inline: a scalar, or a list of scalars. Returns -1 if none.
+func inlineLeadKey(keys []string, m map[string]any) int {
+	for i, key := range keys {
+		if isScalar(m[key]) {
+			return i
+		}
+	}
+	for i, key := range keys {
+		if lst, ok := m[key].([]any); ok && allScalars(lst) {
+			return i
+		}
+	}
+	return -1
 }
 
 func writeNestedValue(sb *strings.Builder, value any, indent int, order []string) {
@@ -679,11 +704,83 @@ func needsQuote(value string) bool {
 	}
 	if strings.ContainsAny(value[:1], "[]{}&*!|>'\"%@`#,?: -") ||
 		strings.Contains(value, ": ") || strings.Contains(value, " #") ||
+		// Commas split core/yaml flow lists; quotes and brackets anywhere
+		// confuse its quote/flow scanning; a colon in a block list item
+		// re-parses as `- key: value`. Quote them wherever they appear —
+		// over-quoting is harmless, under-quoting corrupts silently.
+		strings.ContainsAny(value, `,'"[]{}:`) ||
 		strings.ContainsAny(value, "\n\t") || value != strings.TrimSpace(value) ||
 		strings.HasSuffix(value, ":") {
 		return true
 	}
 	return false
+}
+
+// validateYAMLRepresentable rejects values the core/yaml emitter cannot
+// round-trip, so freeze fails loudly instead of writing a gofastr.yml that
+// silently re-parses into different data. Kiln worlds carry arbitrary JSON
+// (seed rows, props), so this is reachable, not theoretical.
+func validateYAMLRepresentable(value any, path string) error {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, child := range v {
+			if err := validateYAMLKey(key, path); err != nil {
+				return err
+			}
+			if err := validateYAMLRepresentable(child, joinPath(path, key)); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for i, item := range v {
+			itemPath := fmt.Sprintf("%s[%d]", path, i)
+			switch entry := item.(type) {
+			case map[string]any:
+				if len(entry) > 0 && inlineLeadKey(orderedKeys(entry, nil), entry) == -1 {
+					return fmt.Errorf("freeze: %s: core/yaml cannot represent a list item whose every value is nested (keys: %s); flatten one value to a scalar or scalar list", itemPath, strings.Join(sortedKeys(entry), ", "))
+				}
+			case []any:
+				if !allScalars(entry) {
+					return fmt.Errorf("freeze: %s: core/yaml cannot represent a list nested inside a list unless all its values are scalars", itemPath)
+				}
+			}
+			if err := validateYAMLRepresentable(item, itemPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// validateYAMLKey rejects map keys core/yaml cannot parse back: it cuts each
+// line at the first colon and has no quoted-key syntax, comments start at
+// "#", and "[]{}" is rejected key syntax.
+func validateYAMLKey(key, path string) error {
+	if key == "" {
+		return fmt.Errorf("freeze: %s: empty map key cannot be represented in gofastr.yml", joinPath(path, key))
+	}
+	if strings.ContainsAny(key, ":#[]{}\n\t") ||
+		key != strings.TrimSpace(key) ||
+		strings.ContainsAny(key[:1], "-'\"") {
+		return fmt.Errorf("freeze: %s: map key %q cannot be represented in gofastr.yml (no colons, comments, brackets, quotes, or surrounding whitespace)", joinPath(path, key), key)
+	}
+	return nil
+}
+
+func joinPath(path, key string) string {
+	if path == "" {
+		return key
+	}
+	return path + "." + key
+}
+
+func sortedKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for key := range m {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func orderedKeys(m map[string]any, order []string) []string {
