@@ -14,7 +14,7 @@ import (
 //	POST /kiln/agent          → switch the active adapter at runtime
 //
 // Used by the panel's config modal so the user can pick a harness
-// (claude-code, pi, codex, custom) without restarting kiln serve. The
+// (omp, claude-code, pi, codex, custom) without restarting kiln serve. The
 // adapter watcher reads the store at turn-spawn time, so any switch
 // takes effect on the next chat_user event. An in-flight turn is
 // cancelled when its adapter is replaced.
@@ -27,7 +27,7 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 	}))
 	r.Post("/kiln/agent", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var args struct {
-			Name   string `json:"name"`             // "claude-code" | "pi" | "codex" | "auto" | "none" | "custom"
+			Name   string `json:"name"`             // "omp" | "claude-code" | "pi" | "codex" | "auto" | "none" | "custom"
 			Custom string `json:"custom,omitempty"` // freeform command if name == "custom"
 		}
 		if err := json.NewDecoder(req.Body).Decode(&args); err != nil {

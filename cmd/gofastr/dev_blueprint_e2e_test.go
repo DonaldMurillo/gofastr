@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -56,9 +55,8 @@ func TestE2E_DevLoop_BlueprintApp(t *testing.T) {
 	// Boot the generated app under `gofastr dev` — the path the guidance
 	// funnels users to, and the only one that enables livereload.
 	bin := buildGofastrBinary(t)
-	port := nextE2EPort()
+	port := nextE2EPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	dev := exec.CommandContext(ctx, bin, "dev", "-p", port, "--dir", dir)
 	dev.Env = append(os.Environ(),
 		"PORT=localhost:"+port,
@@ -67,14 +65,13 @@ func TestE2E_DevLoop_BlueprintApp(t *testing.T) {
 	var devOut syncBuffer
 	dev.Stdout = &devOut
 	dev.Stderr = &devOut
-	dev.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureTestProcessGroup(dev)
 	if err := dev.Start(); err != nil {
 		t.Fatalf("start gofastr dev: %v", err)
 	}
-	pid := dev.Process.Pid
 	t.Cleanup(func() {
+		_ = killTestProcessTree(dev)
 		cancel()
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
 		_ = dev.Wait()
 	})
 

@@ -86,7 +86,7 @@ func TestAllFieldTypesFunctional(t *testing.T) {
 	body := bytes.NewBufferString(`{
 		"s":"hello","t":"world","i":42,"f":3.14,"b":true,"e":"b","j":"{\"k\":1}"
 	}`)
-	req := httptest.NewRequest(http.MethodPost, "/kitchen_sink", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/kitchen_sink", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.live.ServeHTTP(rec, req)
@@ -96,7 +96,7 @@ func TestAllFieldTypesFunctional(t *testing.T) {
 
 	// GET back and verify s/i/e survived round-trip.
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/kitchen_sink", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/kitchen_sink", nil)
 	h.live.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("GET status=%d", rec.Code)
@@ -161,7 +161,7 @@ func TestBeforeCreateHookRejectsRow(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"name":"spam"}`)
-	req := httptest.NewRequest("POST", "/items", body)
+	req := httptest.NewRequest("POST", "/api/items", body)
 	req.Header.Set("Content-Type", "application/json")
 	h.live.ServeHTTP(rec, req)
 	if rec.Code < 400 {
@@ -297,26 +297,20 @@ func TestFreezeRoundTripWithRichWorld(t *testing.T) {
 		t.Fatalf("freeze: %v", err)
 	}
 
-	// Frozen JSON should drop into a vanilla project cleanly: each
-	// entities/<name>.json is a valid declaration carrying its name
-	// and fields.
-	for _, n := range []string{"posts", "users"} {
-		buf, err := os.ReadFile(filepath.Join(dir, "entities", n+".json"))
-		if err != nil {
-			t.Errorf("%s missing after freeze: %v", n, err)
-			continue
+	// Current graduation emits a generator-ready gofastr.yml plus the
+	// lossless world.json snapshot; the pre-v0.1 entities/*.json path is gone.
+	blueprint, err := os.ReadFile(filepath.Join(dir, "gofastr.yml"))
+	if err != nil {
+		t.Fatalf("gofastr.yml missing after freeze: %v", err)
+	}
+	text := string(blueprint)
+	for _, want := range []string{"name: posts", "name: users", "name: title", "name: email"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("blueprint missing %q:\n%s", want, text)
 		}
-		var decl map[string]any
-		if err := json.Unmarshal(buf, &decl); err != nil {
-			t.Errorf("%s invalid JSON: %v", n, err)
-			continue
-		}
-		if decl["name"] != n {
-			t.Errorf("%s frozen name = %v", n, decl["name"])
-		}
-		if fields, ok := decl["fields"].([]any); !ok || len(fields) == 0 {
-			t.Errorf("%s frozen fields = %#v", n, decl["fields"])
-		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "world.json")); err != nil {
+		t.Fatalf("world.json missing after freeze: %v", err)
 	}
 }
 
@@ -591,14 +585,14 @@ func TestFullBlogScenario(t *testing.T) {
 	// CRUD endpoint exists and posts derive slug via hook.
 	rec = httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"title":"Hello World","body":"first post","status":"published"}`)
-	req := httptest.NewRequest("POST", "/posts", body)
+	req := httptest.NewRequest("POST", "/api/posts", body)
 	req.Header.Set("Content-Type", "application/json")
 	h.live.ServeHTTP(rec, req)
 	if rec.Code >= 400 {
-		t.Fatalf("POST /posts: %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("POST /api/posts: %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = httptest.NewRecorder()
-	h.live.ServeHTTP(rec, httptest.NewRequest("GET", "/posts", nil))
+	h.live.ServeHTTP(rec, httptest.NewRequest("GET", "/api/posts", nil))
 	out := rec.Body.String()
 	if !strings.Contains(out, "hello world") {
 		t.Errorf("slug not derived to lowercase: %s", out)

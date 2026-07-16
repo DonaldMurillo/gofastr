@@ -1001,7 +1001,7 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 		t.Fatalf("generated app entrypoint missing: %v", err)
 	}
 
-	appBin := filepath.Join(dir, "generated-blueprint-app")
+	appBin := testExecutablePath(filepath.Join(dir, "generated-blueprint-app"))
 	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
 	buildCmd.Dir = dir
 	buildCmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
@@ -1412,17 +1412,20 @@ func assertContains(t *testing.T, haystack, needle string) {
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	old := os.Stdout
-	r, w, err := os.Pipe()
+	f, err := os.CreateTemp(t.TempDir(), "stdout-*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = w
+	os.Stdout = f
+	defer func() {
+		os.Stdout = old
+		_ = f.Close()
+	}()
 	fn()
-	if err := w.Close(); err != nil {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = old
-	out, err := io.ReadAll(r)
+	out, err := io.ReadAll(f)
 	if err != nil {
 		t.Fatal(err)
 	}

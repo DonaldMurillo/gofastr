@@ -84,11 +84,11 @@ func TestApplyAddEntityPersistsAndRebuilds(t *testing.T) {
 		t.Errorf("journal len = %d, want 1", n)
 	}
 	// New app handles the route.
-	req := httptest.NewRequest(http.MethodGet, "/posts", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/posts", nil)
 	rec := httptest.NewRecorder()
 	l.ServeHTTP(rec, req)
 	if rec.Code == http.StatusNotFound {
-		t.Errorf("/posts should be registered after Apply, got 404")
+		t.Errorf("/api/posts should be registered after Apply, got 404")
 	}
 }
 

@@ -3,13 +3,11 @@ package render
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"sort"
+	"strings"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/effect"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
@@ -44,9 +42,6 @@ func ApplyDetailed(app *framework.App, w *world.World) (Deferred, error) {
 	if err := applyEntities(app, w); err != nil {
 		return Deferred{}, fmt.Errorf("kiln/render: entities: %w", err)
 	}
-	if err := applyPages(app, w); err != nil {
-		return Deferred{}, fmt.Errorf("kiln/render: pages: %w", err)
-	}
 	if err := applyMiddleware(app, w); err != nil {
 		return Deferred{}, fmt.Errorf("kiln/render: middleware: %w", err)
 	}
@@ -55,6 +50,9 @@ func ApplyDetailed(app *framework.App, w *world.World) (Deferred, error) {
 	}
 	if err := applyRoutes(app, w); err != nil {
 		return Deferred{}, fmt.Errorf("kiln/render: routes: %w", err)
+	}
+	if err := applyUIHostPages(app, w); err != nil {
+		return Deferred{}, fmt.Errorf("kiln/render: pages: %w", err)
 	}
 	return Deferred{}, nil
 }
@@ -130,6 +128,8 @@ func applyRoutes(app *framework.App, w *world.World) error {
 func applyAppConfig(app *framework.App, c world.AppConfig) error {
 	app.Config.Name = c.Name
 	app.Config.DebugEndpoints = c.DebugEndpoints
+	app.Config.APIPrefix = strings.Trim(c.APIPrefix, "/")
+	app.Config.NoLLMMD = !c.LLMMD
 	switch c.JSONCase {
 	case "", "camel", "camelCase":
 		app.Config.JSONCase = framework.CaseCamel
@@ -168,126 +168,77 @@ func applyEntities(app *framework.App, w *world.World) error {
 	return nil
 }
 
-// entityConfig converts a world.Entity to a framework.EntityConfig by
-// round-tripping through framework.EntityDeclaration. The two declarative
-// shapes share the same JSON tags by design, so this is lossless for
-// every field declared in v1.
+// entityConfig converts the JSON-only world shape into the framework's
+// current declaration contract. It is intentionally explicit: relation
+// types are strings in the authoring IR and enums in framework code, so a
+// JSON round-trip silently drifted as the framework surface evolved.
 func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
-	buf, err := json.Marshal(e)
-	if err != nil {
-		return framework.EntityConfig{}, fmt.Errorf("marshal: %w", err)
+	decl := framework.EntityDeclaration{
+		Name:           e.Name,
+		Table:          e.Table,
+		SoftDelete:     e.SoftDelete,
+		MultiTenant:    e.MultiTenant,
+		OwnerField:     e.OwnerField,
+		CrossOwnerRead: e.CrossOwnerRead,
+		SearchFields:   append([]string(nil), e.SearchFields...),
+		Timestamps:     e.Timestamps,
+		CRUD:           e.CRUD,
+		MCP:            e.MCP,
+		CursorField:    e.CursorField,
+		CursorFields:   append([]string(nil), e.CursorFields...),
+		Properties:     e.Properties,
 	}
-	var decl framework.EntityDeclaration
-	if err := json.Unmarshal(buf, &decl); err != nil {
-		return framework.EntityConfig{}, fmt.Errorf("unmarshal as declaration: %w", err)
+	for _, f := range e.Fields {
+		decl.Fields = append(decl.Fields, framework.FieldDeclaration{
+			Name: f.Name, Type: f.Type, Required: f.Required, Unique: f.Unique,
+			Default: f.Default, AutoGenerate: f.AutoGenerate, ReadOnly: f.ReadOnly,
+			Hidden: f.Hidden, Max: f.Max, Min: f.Min, Pattern: f.Pattern,
+			Values: append([]string(nil), f.Values...), To: f.To, Many: f.Many,
+		})
+	}
+	for _, r := range e.Relations {
+		relationType, err := relationType(r.Type)
+		if err != nil {
+			return framework.EntityConfig{}, err
+		}
+		target := r.Entity
+		if target == "" {
+			target = r.To // pre-parity journal compatibility
+		}
+		decl.Relations = append(decl.Relations, framework.Relation{
+			Type: relationType, Name: r.Name, Entity: target,
+			ForeignKey: r.ForeignKey, Through: r.Through, LocalKey: r.LocalKey,
+			ForeignKeyTarget: r.ForeignKeyTarget,
+		})
+	}
+	for _, ix := range e.Indices {
+		decl.Indices = append(decl.Indices, framework.Index{
+			Name: ix.Name, Columns: append([]string(nil), ix.Columns...),
+			Unique: ix.Unique,
+		})
+	}
+	if e.Access != nil {
+		decl.Access = &framework.AccessDeclaration{
+			Read: e.Access.Read, Create: e.Access.Create,
+			Update: e.Access.Update, Delete: e.Access.Delete,
+		}
 	}
 	return decl.Config()
 }
 
-// widgetTag returns the script tag auto-injected into every Kiln-rendered
-// page. Delegates to widget.RuntimeTag for content-hash cache-busting
-// so a fresh build invalidates any stale runtime in the browser.
-func widgetTag() string { return widget.RuntimeTag() }
-
-func applyPages(app *framework.App, w *world.World) error {
-	// Build a set of paths the entity CRUD layer has already registered
-	// so we can skip a page that would collide. The framework's
-	// auto-CRUD assumes it owns "/<table>" — if the agent declares a
-	// page at the same URL, ServeMux panics. Pages take precedence
-	// for HTML; the entity's CRUD remains reachable as JSON via its
-	// other verbs (POST/PUT/DELETE) and via the framework's auto-MCP
-	// surface.
-	entityRoots := map[string]bool{}
-	for _, ent := range app.Registry.All() {
-		entityRoots["/"+ent.GetTable()] = true
+func relationType(value string) (framework.RelationType, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "has_one":
+		return framework.RelHasOne, nil
+	case "has_many":
+		return framework.RelHasMany, nil
+	case "", "belongs_to", "many_to_one":
+		return framework.RelManyToOne, nil
+	case "many_to_many":
+		return framework.RelManyToMany, nil
+	default:
+		return 0, fmt.Errorf("unknown relation type %q", value)
 	}
-
-	paths := make([]string, 0, len(w.Pages))
-	for p := range w.Pages {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		page := w.Pages[path]
-		if page == nil {
-			continue
-		}
-		// Conflict guard: if the path was already claimed by a CRUD list
-		// route, register the page on a content-negotiated wrapper that
-		// only renders HTML for browser GETs and falls through to the
-		// CRUD handler for JSON requests. We replace the existing route
-		// since router.Handle would panic otherwise — but Router has no
-		// "replace" API, so the practical fix is: SKIP when there's a
-		// CRUD entity at the same root, and emit a warning. Agents
-		// should namespace pages (e.g., /posts/list) — the skill flags
-		// this collision so they self-correct.
-		if entityRoots[path] {
-			fmt.Fprintf(os.Stderr, "[kiln/render] page %q skipped: collides with entity CRUD list endpoint. "+
-				"Use a different page path (e.g. %q) or remove the entity.\n", path, path+"/list")
-			continue
-		}
-		p := page
-		// Recover from any other ServeMux registration panic (e.g. two
-		// pages claim the same path, or a custom route does). Live's
-		// rebuild logs and continues — a partial app is better than a
-		// dead one for build-mode iteration.
-		func() {
-			defer func() {
-				if rec := recover(); rec != nil {
-					fmt.Fprintf(os.Stderr, "[kiln/render] page %q registration panic: %v\n", path, rec)
-				}
-			}()
-			app.Router().Get(path, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
-				rw.Header().Set("Content-Type", "text/html; charset=utf-8")
-				fmt.Fprint(rw, renderFullPage(p))
-			}))
-		}()
-	}
-	return nil
-}
-
-// renderFullPage wraps the page tree in a full HTML document and injects
-// the floating chat widget so every Kiln-served page surfaces the
-// agent in its corner.
-func renderFullPage(p *world.Page) string {
-	title := p.Title
-	if title == "" {
-		title = p.Path
-	}
-	return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>` + escapeText(title) + `</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/kiln/theme.css">
-</head>
-<body class="kiln-app">
-<main class="kiln-page">
-` + string(RenderNode(p.Tree)) + `
-</main>
-` + widgetTag() + `
-</body>
-</html>`
-}
-
-func escapeText(s string) string {
-	out := make([]byte, 0, len(s))
-	for _, r := range s {
-		switch r {
-		case '<':
-			out = append(out, []byte("&lt;")...)
-		case '>':
-			out = append(out, []byte("&gt;")...)
-		case '&':
-			out = append(out, []byte("&amp;")...)
-		case '"':
-			out = append(out, []byte("&quot;")...)
-		default:
-			out = append(out, []byte(string(r))...)
-		}
-	}
-	return string(out)
 }
 
 // ApplySeeds inserts the world's seed rows into db. It's a separate call

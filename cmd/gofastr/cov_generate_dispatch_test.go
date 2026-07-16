@@ -90,7 +90,8 @@ func TestProjectRelativePath(t *testing.T) {
 	if projectRelativePath(".", "x.json") != "x.json" {
 		t.Fatal("dot project dir passthrough")
 	}
-	if projectRelativePath("/abs", "/other") != "/other" {
+	abs := filepath.Join(t.TempDir(), "other")
+	if projectRelativePath(filepath.Join(t.TempDir(), "project"), abs) != abs {
 		t.Fatal("absolute path passthrough")
 	}
 	if projectRelativePath("proj", "x.json") != filepath.Join("proj", "x.json") {

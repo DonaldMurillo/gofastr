@@ -94,6 +94,28 @@ type Adapter struct {
 // adapters is the built-in registry. Adding a new agent is a one-entry
 // change here.
 var adapters = map[string]Adapter{
+	"omp": {
+		Name:    "omp",
+		Display: "omp -p --model glm-5.2 --tools bash  (Oh My Pi with GLM-5.2; kiln contract + skill, isolated cwd)",
+		Dir:     filepath.Join(os.TempDir(), "kiln-omp"),
+		Detect:  func() bool { _, err := exec.LookPath("omp"); return err == nil },
+		BuildArgs: func(text string) []string {
+			// OMP is Kiln's primary live-build driver. --no-session keeps
+			// each panel turn bounded to the journal/world context Kiln
+			// injects, instead of letting OMP's own session state become a
+			// second source of truth. Bash is the only tool it needs: every
+			// mutation crosses the audited $KILN_URL HTTP boundary.
+			return []string{
+				"omp", "-p",
+				"--model", "glm-5.2",
+				"--tools", "bash",
+				"--append-system-prompt", kilnSystemPrompt(),
+				"--auto-approve",
+				"--no-session",
+				text,
+			}
+		},
+	},
 	"claude-code": {
 		Name:    "claude-code",
 		Display: "claude --print --allowedTools Bash --append-system-prompt <kiln contract>  (Claude Code, reads ~/.claude/.credentials.json)",
@@ -163,9 +185,9 @@ var adapters = map[string]Adapter{
 }
 
 // adapterAutoOrder is the priority list for `--agent auto` detection.
-// Claude Code first because its credentials path is the most stable;
-// pi second; codex last (less common locally).
-var adapterAutoOrder = []string{"claude-code", "pi", "codex"}
+// OMP/GLM-5.2 is the canonical Kiln driver; the others remain available
+// for users who already have those CLIs authenticated.
+var adapterAutoOrder = []string{"omp", "claude-code", "pi", "codex"}
 
 // resolveAdapter maps a --agent flag value to a concrete Adapter.
 //

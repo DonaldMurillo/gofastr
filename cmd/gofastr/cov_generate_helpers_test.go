@@ -229,7 +229,7 @@ func TestRenderEntityModelRelations(t *testing.T) {
 }
 
 func TestValidateOutputDir(t *testing.T) {
-	bad := []string{"", " ", "/abs", ".", "..", "../b"}
+	bad := []string{"", " ", t.TempDir(), ".", "..", "../b"}
 	for _, d := range bad {
 		if err := validateOutputDir(d); err == nil {
 			t.Errorf("validateOutputDir(%q) = nil, want error", d)

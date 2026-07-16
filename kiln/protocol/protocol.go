@@ -65,6 +65,17 @@ type SetAppConfigArgs struct {
 	Config world.AppConfig `json:"config"`
 }
 
+// SetScaffoldArgs replaces the current blueprint-owned navigation and Go-stub
+// declarations. These surfaces are preserved into gofastr.yml at freeze time;
+// only navigation has a live visual representation.
+type SetScaffoldArgs struct {
+	Nav        []world.NavItem       `json:"nav,omitempty"`
+	Endpoints  []*world.EndpointStub `json:"endpoints,omitempty"`
+	Middleware []world.NamedStub     `json:"middleware,omitempty"`
+	Plugins    []world.NamedStub     `json:"plugins,omitempty"`
+	Helpers    []world.NamedStub     `json:"helpers,omitempty"`
+}
+
 type AddEntityArgs struct {
 	Entity *world.Entity `json:"entity"`
 }
@@ -179,10 +190,9 @@ type UndoArgs struct{}
 
 type ResetSessionArgs struct{}
 
-// SetThemeArgs replaces world.App.Theme. Keys are token names from
-// core-ui/widget/theme (e.g. "page-bg", "page-primary", "page-accent");
-// values are CSS color literals. Empty Theme map clears overrides
-// (revert to framework defaults).
+// SetThemeArgs replaces world.App.Theme. Keys are current semantic app-theme
+// names such as "background", "primary", and "accent"; values are CSS color
+// literals. An empty Theme map clears overrides and restores defaults.
 type SetThemeArgs struct {
 	Theme map[string]string `json:"theme"`
 }
@@ -225,23 +235,82 @@ func (t *Tools) WorldGet(_ context.Context, args WorldGetArgs) Result {
 }
 
 func (t *Tools) SetAppConfig(_ context.Context, args SetAppConfigArgs) Result {
+	if strings.TrimSpace(args.Config.Name) == "" {
+		return invalid("app config requires a non-empty name").
+			withHint(`wrap the app fields under config, for example {"config":{"name":"my-app","module":"example.com/my-app","api_prefix":"api"}}`)
+	}
+	args.Config.APIPrefix = strings.Trim(args.Config.APIPrefix, "/")
+	if args.Config.APIPrefix == "" {
+		args.Config.APIPrefix = "api"
+	}
 	prev := t.live.Session().World.App
 	return t.applyEdit(journal.OpSetAppConfig, journal.SetAppConfigPayload{Config: args.Config, Prev: &prev})
+}
+
+func (t *Tools) SetScaffold(_ context.Context, args SetScaffoldArgs) Result {
+	if err := validateNavItems(args.Nav); err != nil {
+		return invalid("navigation: %v", err)
+	}
+	for _, endpoint := range args.Endpoints {
+		if endpoint == nil || endpoint.Method == "" || endpoint.Path == "" {
+			return invalid("every endpoint requires method and path")
+		}
+	}
+	for _, middleware := range args.Middleware {
+		if middleware.Name == "" {
+			return invalid("every middleware stub requires name")
+		}
+	}
+	for _, group := range [][]world.NamedStub{args.Plugins, args.Helpers} {
+		for _, stub := range group {
+			if stub.Name == "" {
+				return invalid("every plugin and helper stub requires name")
+			}
+		}
+	}
+	w := t.live.Session().World
+	prev := &journal.ScaffoldSnapshot{
+		Nav: w.Nav, Endpoints: w.Endpoints, Middleware: w.MiddlewareStubs,
+		Plugins: w.Plugins, Helpers: w.Helpers,
+	}
+	return t.applyEdit(journal.OpSetScaffold, journal.SetScaffoldPayload{
+		Nav: args.Nav, Endpoints: args.Endpoints, Middleware: args.Middleware,
+		Plugins: args.Plugins, Helpers: args.Helpers, Prev: prev,
+	})
+}
+
+func validateNavItems(items []world.NavItem) error {
+	for _, item := range items {
+		if item.Label == "" || item.Href == "" {
+			return fmt.Errorf("every item requires label and href")
+		}
+		if err := validateNavItems(item.Items); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (t *Tools) AddEntity(_ context.Context, args AddEntityArgs) Result {
 	if args.Entity == nil || args.Entity.Name == "" {
 		return invalid("missing entity or entity.name")
 	}
+	if args.Entity.MultiTenant {
+		return invalid("entity %q sets multi_tenant, but Kiln cannot choose the app-specific tenant resolver", args.Entity.Name).
+			withHint("use owner_field for per-user scoping, or add tenant middleware in owned Go after freeze")
+	}
 	if _, exists := t.live.Session().World.Entities[args.Entity.Name]; exists {
 		return conflict("entity %q already exists", args.Entity.Name).withHint("use update_entity to modify")
 	}
-	// Reject if a page already lives at /<entity>; both would register
-	// GET /<entity> on the router.
-	if _, hasPage := t.live.Session().World.Pages["/"+args.Entity.Name]; hasPage {
-		return conflict("entity %q would collide with existing page at /%s",
-			args.Entity.Name, args.Entity.Name).
-			withHint("rename the entity (e.g. add a suffix) or delete the page first")
+	// Bare CRUD routes can collide with a page. The current default API
+	// prefix is /api, so this guard is only needed when the app explicitly
+	// opts out of namespacing.
+	if t.live.Session().World.App.APIPrefix == "" {
+		if _, hasPage := t.live.Session().World.Pages["/"+args.Entity.Name]; hasPage {
+			return conflict("entity %q would collide with existing page at /%s",
+				args.Entity.Name, args.Entity.Name).
+				withHint("rename the entity (e.g. add a suffix) or delete the page first")
+		}
 	}
 	return t.applyEdit(journal.OpAddEntity, journal.AddEntityPayload{Entity: args.Entity})
 }
@@ -249,6 +318,10 @@ func (t *Tools) AddEntity(_ context.Context, args AddEntityArgs) Result {
 func (t *Tools) UpdateEntity(_ context.Context, args UpdateEntityArgs) Result {
 	if args.Entity == nil || args.Entity.Name == "" {
 		return invalid("missing entity or entity.name")
+	}
+	if args.Entity.MultiTenant {
+		return invalid("entity %q sets multi_tenant, but Kiln cannot choose the app-specific tenant resolver", args.Entity.Name).
+			withHint("use owner_field for per-user scoping, or add tenant middleware in owned Go after freeze")
 	}
 	prev, exists := t.live.Session().World.Entities[args.Entity.Name]
 	if !exists {
@@ -324,17 +397,21 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 		return invalid("page.tree.kind must be set (e.g. \"div\") — the tree is the root element and nothing renders without a kind").
 			withHint(`minimal page: {"path":"/x","tree":{"kind":"div","children":[{"kind":"heading","props":{"level":1,"text":"Hello"}}]}}`)
 	}
+	if err := validatePageTree(args.Page.Tree); err != nil {
+		return invalid("page tree: %v", err).withHint("compose layout with page_header, section, card, stack, cluster, grid, and other design-system kinds; do not supply class or style props")
+	}
 	if _, exists := t.live.Session().World.Pages[args.Page.Path]; exists {
 		return conflict("page %q already exists", args.Page.Path)
 	}
-	// Reject paths that already belong to an entity's CRUD list endpoint.
-	// Both register `GET /<path>` so the underlying router would panic.
-	for _, ent := range t.live.Session().World.Entities {
-		if "/"+ent.Name == args.Page.Path {
-			return conflict("page path %q collides with entity %q's CRUD list endpoint at GET %q",
-				args.Page.Path, ent.Name, args.Page.Path).
-				withHint(fmt.Sprintf("pick a different path like %q, %q, or %q",
-					args.Page.Path+"/list", "/view"+args.Page.Path, args.Page.Path+"-page"))
+	// Bare CRUD is an explicit compatibility mode. With the current /api
+	// default, a page and an entity may intentionally share the same name.
+	if t.live.Session().World.App.APIPrefix == "" {
+		for _, ent := range t.live.Session().World.Entities {
+			if "/"+ent.Name == args.Page.Path {
+				return conflict("page path %q collides with entity %q's bare CRUD list endpoint at GET %q",
+					args.Page.Path, ent.Name, args.Page.Path).
+					withHint("set app.api_prefix to api (recommended), or choose a different page path")
+			}
 		}
 	}
 	// Assign a stable _id to every node lacking one, so update_page_element
@@ -383,6 +460,9 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 	if r := applyPageElementPatch(target, parent, idx, args.Patch); !r.OK {
 		return r
 	}
+	if err := validatePageTree(next.Tree); err != nil {
+		return invalid("page tree: %v", err).withHint("use a typed design-system node kind instead of app-local class/style props")
+	}
 	// Re-assign IDs in case the patch introduced fresh subtrees that
 	// lacked _id. Existing IDs are preserved by AssignNodeIDs.
 	world.AssignNodeIDs(&next.Tree, world.NewElementID)
@@ -392,6 +472,21 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 		New:  next,
 		Prev: current,
 	})
+}
+
+func validatePageTree(n world.Node) error {
+	for key := range n.Props {
+		normalized := strings.ToLower(strings.TrimSpace(key))
+		if normalized == "class" || normalized == "style" || strings.HasPrefix(normalized, "on") {
+			return fmt.Errorf("node kind %q uses forbidden styling or handler prop %q", n.Kind, key)
+		}
+	}
+	for _, child := range n.Children {
+		if err := validatePageTree(child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // applyPageElementPatch mutates target/parent in-place per the op.
@@ -631,10 +726,9 @@ func (t *Tools) RejectPlan(_ context.Context, args RejectPlanArgs) Result {
 	})
 }
 
-// SetTheme writes world.App.Theme via a SetAppConfig journal entry.
-// Theme tokens flow into core-ui/widget/theme.PageCSS at render time;
-// the next /kiln/theme.css fetch reflects the new palette and every
-// page re-skins on the client's next stylesheet load.
+// SetTheme writes world.App.Theme via a SetAppConfig journal entry. Current
+// pages consume it through UIHost's /__gofastr/app.css; the compatibility
+// /kiln/theme.css endpoint consumes the same palette for legacy embeds.
 func (t *Tools) SetTheme(_ context.Context, args SetThemeArgs) Result {
 	prev := t.live.Session().World.App
 	next := prev

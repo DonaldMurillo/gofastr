@@ -1,7 +1,7 @@
-// Live agent tests: spawn a real `kiln serve --agent "pi -p ..."`
+// Live agent tests: spawn a real `kiln serve --agent omp`
 // subprocess and drive build prompts end-to-end. These tests verify
 // "the agent can actually build X" — not "the IR shape works in
-// isolation". They burn pi API credits (~$0.001-0.01 per scenario)
+// isolation". They use OMP with GLM-5.2 and consume provider credits,
 // and are SLOW (30-180s per prompt), so they're gated by KILN_LIVE=1
 // and skip otherwise.
 //
@@ -26,16 +26,18 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chromedp/chromedp"
 )
 
-// liveCheck skips the test if KILN_LIVE != 1 or pi isn't in PATH.
+// liveCheck skips the test if KILN_LIVE != 1 or OMP isn't in PATH.
 func liveCheck(t *testing.T) {
 	t.Helper()
 	if os.Getenv("KILN_LIVE") != "1" {
-		t.Skip("set KILN_LIVE=1 to run live agent tests (uses real pi + API credits)")
+		t.Skip("set KILN_LIVE=1 to run live agent tests (uses real OMP/GLM-5.2 + provider credits)")
 	}
-	if _, err := exec.LookPath("pi"); err != nil {
-		t.Skipf("pi not in PATH: %v", err)
+	if _, err := exec.LookPath("omp"); err != nil {
+		t.Skipf("omp not in PATH: %v", err)
 	}
 	if _, err := exec.LookPath("kiln"); err != nil {
 		// fall back to ~/go/bin/kiln
@@ -75,7 +77,7 @@ type liveServer struct {
 	t   *testing.T
 }
 
-// startLiveKiln spawns `kiln serve --agent "pi -p ..."` in a temp dir
+// startLiveKiln spawns `kiln serve --agent omp` in a temp dir
 // and waits for it to be ready. Returns a wrapper with cleanup.
 func startLiveKiln(t *testing.T) *liveServer {
 	t.Helper()
@@ -83,18 +85,9 @@ func startLiveKiln(t *testing.T) *liveServer {
 	port := freePort(t)
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 
-	model := os.Getenv("KILN_LIVE_MODEL")
-	if model == "" {
-		model = "glm-5.1"
-	}
-	provider := os.Getenv("KILN_LIVE_PROVIDER")
-	if provider == "" {
-		provider = "zai"
-	}
-
 	cmd := exec.Command(kilnBin(t), "serve",
 		"--addr", fmt.Sprintf(":%d", port),
-		"--agent", fmt.Sprintf("pi -p --provider %s --model %s", provider, model),
+		"--agent", "omp",
 	)
 	cmd.Dir = dir
 	cmd.Stdout = newLogPipe(t, "kiln")
@@ -135,9 +128,9 @@ func (s *liveServer) Stop() {
 }
 
 // chatRetry runs a chat prompt and retries with a correction when the
-// supplied check fails. Pi is non-deterministic — sometimes it
+// supplied check fails. A live model is non-deterministic — sometimes it
 // describes the change in prose without actually making the tool
-// call. The corrective second prompt feeds the failure back so pi
+// call. The corrective second prompt feeds the failure back so the agent
 // can self-fix rather than blindly retrying.
 func (s *liveServer) chatRetry(prompt string, timeout time.Duration, attempts int, check func() bool) {
 	s.t.Helper()
@@ -351,22 +344,22 @@ func TestLive_BuildEntityWithFieldTypes(t *testing.T) {
 	)
 
 	// Hit the auto-generated CRUD endpoint.
-	body, err := httpGet(t, srv.URL+"/tasks")
+	body, err := httpGet(t, srv.URL+"/api/tasks")
 	if err != nil {
-		t.Fatalf("GET /tasks: %v", err)
+		t.Fatalf("GET /api/tasks: %v", err)
 	}
 	if !strings.Contains(body, "data") {
-		t.Errorf("/tasks doesn't look like a CRUD list: %.500s", body)
+		t.Errorf("/api/tasks doesn't look like a CRUD list: %.500s", body)
 	}
 
 	// Insert a row and re-fetch.
 	row, _ := json.Marshal(map[string]any{
 		"title": "first task", "done": false, "priority": 1, "notes": "live",
 	})
-	if _, err := httpPost(t, srv.URL+"/tasks", row); err != nil {
-		t.Fatalf("POST /tasks: %v", err)
+	if _, err := httpPost(t, srv.URL+"/api/tasks", row); err != nil {
+		t.Fatalf("POST /api/tasks: %v", err)
 	}
-	body, _ = httpGet(t, srv.URL+"/tasks")
+	body, _ = httpGet(t, srv.URL+"/api/tasks")
 	if !strings.Contains(body, "first task") {
 		t.Errorf("inserted row not visible after GET: %.500s", body)
 	}
@@ -401,12 +394,12 @@ func TestLive_BuildHookFires(t *testing.T) {
 
 	// Allowed insert.
 	good, _ := json.Marshal(map[string]any{"title": "hello", "body": ""})
-	if _, err := httpPost(t, srv.URL+"/posts", good); err != nil {
+	if _, err := httpPost(t, srv.URL+"/api/posts", good); err != nil {
 		t.Fatalf("good post: %v", err)
 	}
 	// Spam should be rejected by the hook.
 	bad, _ := json.Marshal(map[string]any{"title": "spam", "body": ""})
-	resp, _ := httpPost(t, srv.URL+"/posts", bad)
+	resp, _ := httpPost(t, srv.URL+"/api/posts", bad)
 	if !strings.Contains(resp, "no spam allowed") {
 		t.Errorf("hook didn't fire / didn't include the message: %.500s", resp)
 	}
@@ -449,7 +442,7 @@ func TestLive_PageWithForm(t *testing.T) {
 
 	srv.chatRetry(
 		`Step 1: add an entity "notes" with field text (string, required). `+
-			`Step 2: add a page at "/new" containing a form with method POST action /notes, `+
+			`Step 2: add a page at "/new" containing a form with method POST action /api/notes, `+
 			`a label "Note" with for="t", an input id="t" name="text" type="text", and a submit button labeled "Save". `+
 			`Use add_entity then add_page.`,
 		liveTimeout(),
@@ -469,7 +462,7 @@ func TestLive_PageWithForm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /new: %v", err)
 	}
-	if !strings.Contains(body, `action="/notes"`) {
+	if !strings.Contains(body, `action="/api/notes"`) {
 		t.Errorf("form action missing: %.800s", body)
 	}
 	if !strings.Contains(body, `name="text"`) {
@@ -584,10 +577,10 @@ func TestLive_AllFieldTypes(t *testing.T) {
 		"i": 42, "f": 3.14, "d": "10.50",
 		"b": true, "e": "b", "j": `{"k":1}`,
 	})
-	if _, err := httpPost(t, srv.URL+"/kitchen_sink", row); err != nil {
-		t.Fatalf("POST /kitchen_sink: %v", err)
+	if _, err := httpPost(t, srv.URL+"/api/kitchen_sink", row); err != nil {
+		t.Fatalf("POST /api/kitchen_sink: %v", err)
 	}
-	got, _ := httpGet(t, srv.URL+"/kitchen_sink")
+	got, _ := httpGet(t, srv.URL+"/api/kitchen_sink")
 	for _, want := range []string{`"s":"hello"`, `"i":42`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("response missing %s: %.500s", want, got)
@@ -628,14 +621,14 @@ Do exactly these three calls and stop.`,
 
 	// Validate hook should reject empty title.
 	bad, _ := json.Marshal(map[string]any{"title": ""})
-	resp, _ := httpPost(t, srv.URL+"/posts", bad)
+	resp, _ := httpPost(t, srv.URL+"/api/posts", bad)
 	if !strings.Contains(resp, "title required") {
 		t.Errorf("validate hook didn't fire; got: %.300s", resp)
 	}
 
 	// set_field hook should derive slug from title.
 	good, _ := json.Marshal(map[string]any{"title": "Hello World"})
-	resp, err := httpPost(t, srv.URL+"/posts", good)
+	resp, err := httpPost(t, srv.URL+"/api/posts", good)
 	if err != nil {
 		t.Fatalf("good post: %v", err)
 	}
@@ -645,7 +638,7 @@ Do exactly these three calls and stop.`,
 }
 
 // TestLive_OpenAPIFromAgent: agent registers entities; openapi.json
-// auto-served by Live includes them. Distinguishes "pi didn't follow"
+// auto-served by Live includes them. Distinguishes "the agent didn't follow"
 // from "openapi mount broken" so failures point at the right thing.
 func TestLive_OpenAPIFromAgent(t *testing.T) {
 	liveCheck(t)
@@ -657,7 +650,7 @@ func TestLive_OpenAPIFromAgent(t *testing.T) {
 2) add_entity for "authors" with fields name (string, required) and bio (text)
 Make EXACTLY these two add_entity calls. Stop after the second.`,
 		liveTimeout(),
-		3, // pi is non-deterministic; allow one retry
+		3, // a live model is non-deterministic; allow retries
 		func() bool {
 			w := srv.world()
 			_, hasBooks := w.Entities["books"]
@@ -668,10 +661,10 @@ Make EXACTLY these two add_entity calls. Stop after the second.`,
 
 	world := srv.world()
 	if _, ok := world.Entities["books"]; !ok {
-		t.Fatalf("pi didn't add books entity even after retry; world=%+v", world.Entities)
+		t.Fatalf("agent didn't add books entity even after retry; world=%+v", world.Entities)
 	}
 	if _, ok := world.Entities["authors"]; !ok {
-		t.Fatalf("pi didn't add authors entity even after retry; world=%+v", world.Entities)
+		t.Fatalf("agent didn't add authors entity even after retry; world=%+v", world.Entities)
 	}
 
 	spec, err := httpGet(t, srv.URL+"/openapi.json")
@@ -712,10 +705,10 @@ Use add_entity exactly once with mcp:true set. Stop after.`,
 	world := srv.world()
 	ent, ok := world.Entities["products"]
 	if !ok {
-		t.Fatalf("pi didn't add products entity even after retry")
+		t.Fatalf("agent didn't add products entity even after retry")
 	}
 	if ent["mcp"] != true {
-		t.Fatalf("pi added products but without mcp:true; got %v", ent["mcp"])
+		t.Fatalf("agent added products but without mcp:true; got %v", ent["mcp"])
 	}
 
 	body, _ := json.Marshal(map[string]any{
@@ -856,7 +849,7 @@ func TestLive_MultiTurnConversation(t *testing.T) {
 	)
 	w := srv.world()
 	if _, ok := w.Entities["posts"]; !ok {
-		t.Fatalf("turn 1 — pi never added posts entity. world=%+v", w.Entities)
+		t.Fatalf("turn 1 — agent never added posts entity. world=%+v", w.Entities)
 	}
 	t.Logf("turn 1 ok: posts entity present")
 
@@ -878,15 +871,14 @@ func TestLive_MultiTurnConversation(t *testing.T) {
 		t.Fatalf("turn 2 — comments missing. world=%+v", w.Entities)
 	}
 	if _, ok := w.Entities["posts"]; !ok {
-		t.Fatalf("turn 2 — pi destroyed the posts entity. world=%+v", w.Entities)
+		t.Fatalf("turn 2 — agent destroyed the posts entity. world=%+v", w.Entities)
 	}
 	t.Logf("turn 2 ok: posts + comments coexist")
 
 	// --- Turn 3: add a page; entities stay intact -------------------
-	// Avoid colliding with the posts entity's CRUD list endpoint at
-	// GET /posts. Use /blog as the page path.
+	// CRUD lives under /api, so /blog is an ordinary UI route.
 	srv.chatRetry(
-		`Add a page at path "/blog" (NOT "/posts" — that path is taken by the posts entity's auto-CRUD). `+
+		`Add a page at path "/blog". `+
 			`The page should have a heading level 1 with text "Blog" and a paragraph saying "All recent posts." `+
 			`Make EXACTLY one add_page call. Don't touch entities.`,
 		liveTimeout(),
@@ -925,13 +917,13 @@ func TestLive_MultiTurnConversation(t *testing.T) {
 	)
 	// Try to insert a row with empty title — hook should reject.
 	bad, _ := json.Marshal(map[string]any{"title": "", "body": "x"})
-	resp, _ := httpPost(t, srv.URL+"/posts", bad)
+	resp, _ := httpPost(t, srv.URL+"/api/posts", bad)
 	if !strings.Contains(resp, "title required") {
 		t.Errorf("turn 4 — hook didn't fire on empty title. got: %.300s", resp)
 	}
 	// Good insert should still succeed.
 	good, _ := json.Marshal(map[string]any{"title": "Hi", "body": "first"})
-	if _, err := httpPost(t, srv.URL+"/posts", good); err != nil {
+	if _, err := httpPost(t, srv.URL+"/api/posts", good); err != nil {
 		t.Errorf("turn 4 — good insert failed: %v", err)
 	}
 	t.Logf("turn 4 ok: hook rejects empty, allows valid")
@@ -962,7 +954,7 @@ func TestLive_MultiTurnConversation(t *testing.T) {
 		t.Errorf("turn 5 — /blog page got dropped")
 	}
 	// Hook still fires.
-	resp, _ = httpPost(t, srv.URL+"/posts", bad)
+	resp, _ = httpPost(t, srv.URL+"/api/posts", bad)
 	if !strings.Contains(resp, "title required") {
 		t.Errorf("turn 5 — hook stopped firing after route add. got: %.300s", resp)
 	}
@@ -1002,15 +994,15 @@ func TestLive_SeedRowsVisible(t *testing.T) {
 		liveTimeout(),
 		3,
 		func() bool {
-			body, _ := httpGet(t, srv.URL+"/tasks")
+			body, _ := httpGet(t, srv.URL+"/api/tasks")
 			return strings.Contains(body, "buy milk") && strings.Contains(body, "ship feature")
 		},
 	)
 
-	body, _ := httpGet(t, srv.URL+"/tasks")
+	body, _ := httpGet(t, srv.URL+"/api/tasks")
 	for _, want := range []string{"buy milk", "ship feature"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("seed row %q not visible at GET /tasks: %.500s", want, body)
+			t.Errorf("seed row %q not visible at GET /api/tasks: %.500s", want, body)
 		}
 	}
 }
@@ -1039,7 +1031,7 @@ func TestLive_AfterCreateAuditFires(t *testing.T) {
 	)
 
 	row, _ := json.Marshal(map[string]any{"name": "first", "detail": "trigger the hook"})
-	resp, err := httpPost(t, srv.URL+"/events", row)
+	resp, err := httpPost(t, srv.URL+"/api/events", row)
 	if err != nil {
 		t.Fatalf("POST /events: %v", err)
 	}
@@ -1074,7 +1066,7 @@ func TestLive_RelationField(t *testing.T) {
 
 	// Insert an author then a book referencing them.
 	a, _ := json.Marshal(map[string]any{"name": "Octavia Butler"})
-	respA, err := httpPost(t, srv.URL+"/authors", a)
+	respA, err := httpPost(t, srv.URL+"/api/authors", a)
 	if err != nil {
 		t.Fatalf("post author: %v", err)
 	}
@@ -1094,10 +1086,10 @@ func TestLive_RelationField(t *testing.T) {
 	}
 
 	b, _ := json.Marshal(map[string]any{"title": "Kindred", "author_id": id})
-	if _, err := httpPost(t, srv.URL+"/books", b); err != nil {
+	if _, err := httpPost(t, srv.URL+"/api/books", b); err != nil {
 		t.Fatalf("post book: %v", err)
 	}
-	books, _ := httpGet(t, srv.URL+"/books")
+	books, _ := httpGet(t, srv.URL+"/api/books")
 	if !strings.Contains(books, "Kindred") {
 		t.Errorf("book with relation not visible: %.500s", books)
 	}
@@ -1140,7 +1132,7 @@ func TestLive_PageElementsVariety(t *testing.T) {
 	}
 	for snippet, label := range checks {
 		if !strings.Contains(body, snippet) {
-			t.Errorf("%s missing (looking for %q) — pi may have used wrong IR shape: %.800s", label, snippet, body)
+			t.Errorf("%s missing (looking for %q) — agent may have used wrong IR shape: %.800s", label, snippet, body)
 		}
 	}
 }
@@ -1184,167 +1176,169 @@ func TestLive_ButtonToolDispatch(t *testing.T) {
 	}
 }
 
-// TestLive_FreezeAndGenerateGo: the actual ship-it pipeline.
-//
-//  1. Live kiln, agent builds an app (entities, hook, route, page).
-//  2. kiln freeze --dir build/ reads the journal and writes
-//     entities/*.json + world.json.
-//  3. cmd/gofastr generate reads build/entities/*.json and writes
-//     gen/entities/{models.go, register.go} alongside it.
-//  4. We check that the produced Go files compile (via `go build`
-//     against a tiny synthetic main.go that imports them).
-//
-// If any step blows up, "the agent can build a real app you can
-// commit" is a lie. This test is the contract.
+// TestLive_FreezeAndGenerateGo is the ship-it contract:
+// OMP/GLM-5.2 edits a live world, `kiln freeze` emits the current blueprint,
+// the current CLI validates and generates it, and the complete owned-Go app
+// compiles against this worktree.
 func TestLive_FreezeAndGenerateGo(t *testing.T) {
-	// The generate step (cmd/gofastr generate over build/entities/*.json) was
-	// removed with the legacy entities/*.json codegen path. Graduating a frozen
-	// Kiln world to Go now goes through a gofastr.yml blueprint — a tracked
-	// follow-up (ROADMAP.md, "kiln freeze → blueprint").
-	t.Skip("freeze→generate ship-it pipeline pending blueprint support")
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	// 1) Agent scaffolds something with multiple field types and a hook.
 	srv.chatRetry(
-		`Make these calls in order:
-1) add_entity "posts" with fields title (string, required, unique), body (text), status (enum, values [draft, published], default draft).
-2) add_entity "users" with fields email (string, required, unique), name (string).
-Stop after the two add_entity calls.`,
+		`Use the Kiln tools now; do not merely describe the calls.
+1) Call set_app_config with this exact nested argument shape: {"config":{"name":"Live Forge","module":"example.com/kiln-live","db_driver":"sqlite","db_url":"live.db","api_prefix":"api","llm_md":true}}.
+2) add_entity "posts" with title (string, required, unique), body (text), and status (enum values draft and published, default draft).
+3) add_entity "categories" with slug (string, required, unique) and description (text).
+4) Call add_page with this exact current design-system page: {"page":{"path":"/","name":"home","title":"Live Forge","layout":{"name":"marketing"},"tree":{"kind":"stack","props":{"gap":"xl"},"children":[{"kind":"hero","props":{"eyebrow":"Kiln + OMP","title":"Live Forge","subtitle":"A live world that graduates to owned Go."}},{"kind":"section","props":{"heading":"What was built","description":"Current GoFastr surfaces, driven live."},"children":[{"kind":"grid","props":{"min":"16rem","gap":"lg"},"children":[{"kind":"card","props":{"heading":"Posts API"}},{"kind":"card","props":{"heading":"Owned-Go freeze"}}]}]}]}}}.
+5) Call set_scaffold with {"nav":[{"label":"Home","href":"/"}],"endpoints":[{"name":"health","method":"GET","path":"/healthz","handler":"HealthHandler","description":"Health check"}],"middleware":[{"name":"request_logger","description":"Request logging"}],"plugins":[{"name":"metrics","description":"Metrics integration"}],"helpers":[{"name":"slug","description":"Slug helper"}]}.
+Stop after world_get confirms the app config, both entities, the home page, and navigation.`,
 		liveTimeout(),
 		3,
 		func() bool {
 			w := srv.world()
 			_, hasPosts := w.Entities["posts"]
-			_, hasUsers := w.Entities["users"]
-			return hasPosts && hasUsers
+			_, hasCategories := w.Entities["categories"]
+			_, hasHome := w.Pages["/"]
+			return hasPosts && hasCategories && hasHome && len(w.Nav) == 1 && w.App["name"] == "Live Forge"
 		},
 	)
 	w := srv.world()
 	if _, ok := w.Entities["posts"]; !ok {
 		t.Fatalf("agent never built posts; world=%+v", w.Entities)
 	}
-	if _, ok := w.Entities["users"]; !ok {
-		t.Fatalf("agent never built users; world=%+v", w.Entities)
+	if _, ok := w.Entities["categories"]; !ok {
+		t.Fatalf("agent never built categories; world=%+v", w.Entities)
+	}
+	if w.App["name"] != "Live Forge" {
+		t.Fatalf("agent never configured the app; app=%+v", w.App)
+	}
+	if _, ok := w.Pages["/"]; !ok || len(w.Nav) != 1 {
+		t.Fatalf("agent never built the live home/navigation surface; pages=%+v nav=%+v", w.Pages, w.Nav)
 	}
 
-	// 2) kiln freeze: invoke the CLI directly so the test exercises the
-	//    user-visible command, not just the library.
-	freezeDir := filepath.Join(srv.Dir, "build")
+	// Read pixels from the actual OMP-built world before graduation. The
+	// screenshot is intentionally retained under testdata for human review.
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	var shot []byte
+	var renderedBody string
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(1280, 900),
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`h1`, chromedp.ByQuery),
+		// Widget chrome is SSR-inlined from the server's initial empty world;
+		// hydration must replace it with the current journal/snapshot state.
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('.kiln-panel-snapshot')?.textContent.includes('2 entities')`, nil,
+			chromedp.WithPollingInterval(100*time.Millisecond)),
+		chromedp.Text(`body`, &renderedBody, chromedp.ByQuery),
+		chromedp.Evaluate(`window.scrollTo(0, 0)`, nil),
+		chromedp.FullScreenshot(&shot, 90),
+	); err != nil {
+		t.Fatalf("render OMP-built page: %v", err)
+	}
+	if !strings.Contains(renderedBody, "Live Forge") || !strings.Contains(renderedBody, "Owned-Go freeze") {
+		t.Fatalf("hydrated OMP-built page lost its screen content: %.800s", renderedBody)
+	}
+	saveShot(t, "09_live_omp_forge_desktop", shot)
+
+	// Freeze into the future app root. A go.mod beside the blueprint lets both
+	// validate and generation prove module-path consistency.
+	appDir := filepath.Join(srv.Dir, "app")
 	freezeCmd := exec.Command(kilnBin(t), "freeze",
 		"--journal", filepath.Join(srv.Dir, ".kiln.session.jsonl"),
-		"--dir", freezeDir)
+		"--dir", appDir)
 	freezeCmd.Stdout = newLogPipe(t, "freeze")
 	freezeCmd.Stderr = newLogPipe(t, "freeze")
 	if err := freezeCmd.Run(); err != nil {
 		t.Fatalf("kiln freeze failed: %v", err)
 	}
-	for _, ent := range []string{"posts", "users"} {
-		path := filepath.Join(freezeDir, "entities", ent+".json")
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("freeze missing %s: %v", path, err)
+	for _, name := range []string{"gofastr.yml", "world.json"} {
+		if _, err := os.Stat(filepath.Join(appDir, name)); err != nil {
+			t.Fatalf("freeze missing %s: %v", name, err)
 		}
 	}
-	t.Logf("freeze ok: %s/entities/{posts,users}.json", freezeDir)
 
-	// 3) cmd/gofastr generate: emits Go from the JSON declarations.
-	gofastrPath, err := exec.LookPath("gofastr")
-	if err != nil {
-		// fall back to ~/go/bin/gofastr if not in PATH
-		home, _ := os.UserHomeDir()
-		alt := filepath.Join(home, "go/bin/gofastr")
-		if _, e := os.Stat(alt); e == nil {
-			gofastrPath = alt
-		} else {
-			// Build it in-place into the test's temp space.
-			gofastrPath = filepath.Join(srv.Dir, "gofastr")
-			build := exec.Command("go", "build", "-o", gofastrPath,
-				"github.com/DonaldMurillo/gofastr/cmd/gofastr")
-			build.Stdout = newLogPipe(t, "go-build")
-			build.Stderr = newLogPipe(t, "go-build")
-			if err := build.Run(); err != nil {
-				t.Fatalf("build gofastr: %v", err)
-			}
-		}
-	}
-	genCmd := exec.Command(gofastrPath, "generate")
-	genCmd.Dir = freezeDir
-	genCmd.Stdout = newLogPipe(t, "generate")
-	genCmd.Stderr = newLogPipe(t, "generate")
-	if err := genCmd.Run(); err != nil {
-		t.Fatalf("gofastr generate failed: %v", err)
-	}
-
-	for _, want := range []string{
-		filepath.Join(freezeDir, "gen/entities/models.go"),
-		filepath.Join(freezeDir, "gen/entities/register.go"),
-	} {
-		if _, err := os.Stat(want); err != nil {
-			t.Errorf("expected generated file missing: %s (%v)", want, err)
-		}
-	}
-	t.Logf("gofastr generate ok: produced gen/entities/*.go")
-
-	// 4) Inspect a generated file for entity-specific markers — proves
-	//    the IR actually drove codegen, not a static stub.
-	body, err := os.ReadFile(filepath.Join(freezeDir, "gen/entities/models.go"))
-	if err != nil {
-		t.Fatalf("read generated models.go: %v", err)
-	}
-	src := string(body)
-	for _, want := range []string{"posts", "users", "Title", "Email"} {
-		// Some fields may end up Title-cased in struct names, hence
-		// the mixed list. Either form indicates the entity-specific
-		// content rendered.
-		if !strings.Contains(strings.ToLower(src), strings.ToLower(want)) {
-			t.Errorf("models.go missing %q (entity-specific content didn't generate): %.500s",
-				want, src)
-		}
-	}
-	t.Logf("generated Go references entity-specific content (posts, users, Title, Email)")
-
-	// 5) Real commit-flow check: the generated code must actually COMPILE.
-	//    Inspecting strings is not enough — a typo in the generator could
-	//    produce text that "looks right" but won't build. Wire up a
-	//    throwaway go module that depends on the local worktree, then
-	//    `go build ./...`.
 	repoRoot, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		t.Fatalf("git rev-parse: %v", err)
 	}
 	repoRootStr := strings.TrimSpace(string(repoRoot))
-
-	goMod := "module compile-check\n\n" +
-		"go 1.26\n\n" +
+	goMod := "module example.com/kiln-live\n\ngo 1.26\n\n" +
 		"require github.com/DonaldMurillo/gofastr v0.0.0-00010101000000-000000000000\n\n" +
-		"replace github.com/DonaldMurillo/gofastr => " + repoRootStr + "\n"
-	if err := os.WriteFile(filepath.Join(freezeDir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		t.Fatalf("write go.mod: %v", err)
-	}
-	// Mirror the worktree's go.sum so transitive deps are already pinned
-	// and we don't need network during the test.
-	if existing, err := os.ReadFile(filepath.Join(repoRootStr, "go.sum")); err == nil {
-		_ = os.WriteFile(filepath.Join(freezeDir, "go.sum"), existing, 0o644)
+		"replace github.com/DonaldMurillo/gofastr => " + filepath.ToSlash(repoRootStr) + "\n"
+	if err := os.WriteFile(filepath.Join(appDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write generated-app go.mod: %v", err)
 	}
 
-	// Generated package lives at gen/entities — Go's `./...` skips
-	// dot-prefixed directories, so target it explicitly.
-	build := exec.Command("go", "build", "./gen/entities")
-	build.Dir = freezeDir
-	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
-	build.Stdout = newLogPipe(t, "go-build-gen")
-	build.Stderr = newLogPipe(t, "go-build-gen")
-	if err := build.Run(); err != nil {
-		t.Fatalf("generated code did not compile: %v", err)
+	// Always build the CLI from this worktree; an installed older gofastr must
+	// never make a parity test pass or fail for the wrong version.
+	gofastrPath := filepath.Join(srv.Dir, "gofastr")
+	if os.PathSeparator == '\\' {
+		gofastrPath += ".exe"
 	}
-	t.Logf("generated code compiles cleanly — commit-flow round-trip is real")
+	cliBuild := exec.Command("go", "build", "-o", gofastrPath,
+		"github.com/DonaldMurillo/gofastr/cmd/gofastr")
+	cliBuild.Stdout = newLogPipe(t, "go-build-gofastr")
+	cliBuild.Stderr = newLogPipe(t, "go-build-gofastr")
+	if err := cliBuild.Run(); err != nil {
+		t.Fatalf("build current gofastr: %v", err)
+	}
+
+	blueprint := filepath.Join(appDir, "gofastr.yml")
+	validateCmd := exec.Command(gofastrPath, "validate", blueprint)
+	validateCmd.Dir = appDir
+	validateCmd.Stdout = newLogPipe(t, "validate")
+	validateCmd.Stderr = newLogPipe(t, "validate")
+	if err := validateCmd.Run(); err != nil {
+		t.Fatalf("frozen blueprint did not validate: %v", err)
+	}
+
+	genCmd := exec.Command(gofastrPath, "generate", "--from=gofastr.yml")
+	genCmd.Dir = appDir
+	genCmd.Stdout = newLogPipe(t, "generate")
+	genCmd.Stderr = newLogPipe(t, "generate")
+	if err := genCmd.Run(); err != nil {
+		t.Fatalf("gofastr generate failed: %v", err)
+	}
+	for _, want := range []string{
+		"main.go", "app.go", "stubs.go", filepath.Join("entities", "posts.go"),
+		filepath.Join("entities", "categories.go"), filepath.Join("entities", "register.go"),
+		"screen_home.go",
+	} {
+		if _, err := os.Stat(filepath.Join(appDir, want)); err != nil {
+			t.Errorf("expected generated file missing: %s (%v)", want, err)
+		}
+	}
+
+	postsBody, err := os.ReadFile(filepath.Join(appDir, "entities", "posts.go"))
+	if err != nil {
+		t.Fatalf("read generated posts.go: %v", err)
+	}
+	for _, want := range []string{"Title", "Body", "Status", "published"} {
+		if !strings.Contains(string(postsBody), want) {
+			t.Errorf("posts.go missing %q: %.800s", want, postsBody)
+		}
+	}
+
+	build := exec.Command("go", "build", "./...")
+	build.Dir = appDir
+	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
+	build.Stdout = newLogPipe(t, "go-build-generated")
+	build.Stderr = newLogPipe(t, "go-build-generated")
+	if err := build.Run(); err != nil {
+		t.Fatalf("generated app did not compile: %v", err)
+	}
+	t.Logf("OMP/GLM-5.2 world froze, validated, generated, and compiled at %s", appDir)
 }
 
 // --- world dump helper ----------------------------------------------
 
 type worldDump struct {
+	App      map[string]any
 	Entities map[string]map[string]any
 	Pages    map[string]map[string]any
+	Nav      []map[string]any
 	Routes   []map[string]any
 	Hooks    []map[string]any
 }
@@ -1357,8 +1351,10 @@ func (s *liveServer) world() worldDump {
 	}
 	var resp struct {
 		World struct {
+			App      map[string]any            `json:"app"`
 			Entities map[string]map[string]any `json:"entities"`
 			Pages    map[string]map[string]any `json:"pages"`
+			Nav      []map[string]any          `json:"nav"`
 			Routes   []map[string]any          `json:"routes"`
 			Hooks    []map[string]any          `json:"hooks"`
 		} `json:"world"`
@@ -1367,8 +1363,10 @@ func (s *liveServer) world() worldDump {
 		s.t.Fatalf("decode world: %v body=%.300s", err, body)
 	}
 	return worldDump{
+		App:      resp.World.App,
 		Entities: resp.World.Entities,
 		Pages:    resp.World.Pages,
+		Nav:      resp.World.Nav,
 		Routes:   resp.World.Routes,
 		Hooks:    resp.World.Hooks,
 	}

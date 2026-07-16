@@ -3,341 +3,147 @@ name: kiln
 description: Build a GoFastr web app live by calling Kiln over HTTP. Use ONLY on explicit Kiln signals — $KILN_URL env var set, the user names Kiln ("kiln serve", "the kiln world", "kiln freeze"), or IR-mutation phrasing against a running Kiln. Do NOT trigger on "GoFastr" alone or on generic "build me an app" requests: a user building with the framework directly writes Go against `framework/` and this skill would mis-route them into HTTP IR mutations.
 ---
 
-# Kiln
+You are driving a live GoFastr Kiln server. Mutate the application only through
+Kiln tools at `$KILN_URL`; do not edit the repository or start another server.
 
-Kiln is the in-app build-mode runtime for GoFastr. You compose web apps by calling tools that mutate a single in-memory IR ("the world"). The runtime journals every edit, auto-migrates SQLite, re-renders the live preview, and broadcasts SSE so the panel updates in real time.
+## Workflow
 
-**You never write Go, JS, or SQL inside Kiln.** All behavior is expressed declaratively through the tool surface. Custom logic uses a tiny built-in expression language; the engine evaluates it.
+1. Call `world_get` before changing anything.
+2. Make the smallest coherent tool calls that satisfy the user's request.
+3. Read the returned structured result. On a conflict or validation error,
+   follow its hint and retry; never claim success after a failed call.
+4. Read `world_get` again and verify the exact entity/page/config state.
+5. For a destructive delete, propose a plan with the exact target and wait for
+   approval before calling the delete tool with that `plan_id`.
 
-The user is watching the app live at the page URL itself — typically `$KILN_URL/` for the home page, `$KILN_URL/about` for an about page, etc. The floating chat widget rides along on every page; there is **no separate `/kiln/chat` URL to point users at**. When you finish, just confirm what landed and they'll see it on the page they're already on.
-
-## How to call tools
-
-Kiln exposes its full tool surface as **HTTP REST** at `$KILN_URL/kiln/tool/{name}`. Use bash + curl. This is the canonical transport — preferred over MCP because it has no startup race and works in every harness.
-
-Every call follows the same shape:
+The HTTP form is:
 
 ```bash
-curl -s -X POST "$KILN_URL/kiln/tool/<tool_name>" \
+curl -sS -X POST "$KILN_URL/kiln/tool/add_entity" \
   -H 'Content-Type: application/json' \
-  -d '<json args>'
+  -d '{"entity":{"name":"notes","fields":[
+    {"name":"text","type":"string","required":true}
+  ]}}'
 ```
 
-Response is always:
+Prefer native tool calling when available; HTTP and MCP reach the same typed
+dispatcher.
+
+## Current routing contract
+
+Entity CRUD defaults to `/api/<entity>`; HTML screens use bare paths. An entity
+`posts` and a screen `/posts` intentionally coexist. Forms targeting the entity
+must post to `/api/posts`, not `/posts`.
+
+`set_app_config` replaces app config. Its HTTP payload must wrap every field
+under `config`; a flat payload is invalid:
+
+```bash
+curl -sS -X POST "$KILN_URL/kiln/tool/set_app_config" \
+  -H 'Content-Type: application/json' \
+  -d '{"config":{"name":"my-app","module":"example.com/my-app","db_driver":"sqlite","db_url":"app.db","api_prefix":"api"}}'
+```
+
+Include a name and module before freeze. An omitted or empty `api_prefix`
+inside `config` resolves to `api`.
+
+## Entities
+
+Use the current declaration fields: `fields`, `relations`, `endpoints`,
+`soft_delete`, `owner_field`, `cross_owner_read`, `search_fields`, `access`,
+`timestamps`, `crud`, `mcp`, `cursor_field`/`cursor_fields`, `indices`, and
+`properties`.
+
+For per-user data, set `owner_field` to the user foreign-key column. Do not set
+`multi_tenant: true`: Kiln cannot choose a tenant resolver and will reject it.
+That integration belongs in owned Go after freeze.
+
+## Screens
+
+Send a complete, non-empty tree in `add_page`. Use design-system kinds for
+layout and styling:
+
+- `page_header`, `hero`, `section`, `card`
+- `stack`, `cluster`, `grid`, `stat_row`, `stat_grid`, `stat_card`
+- `link_button`, `callout`, `divider`
+
+Use semantic leaf kinds only for their HTML meaning: `heading`, `paragraph`,
+`text`, `link`, `form`, `label`, `input`, `button`, list and table elements.
+Never send `class`, `style`, or `on*` props. They are rejected because styling
+and interaction belong to GoFastr's shared component/runtime surfaces.
+
+Example:
 
 ```json
-{ "ok": true,  "result": { ... } }
-{ "ok": false, "error": "...", "kind": "validation|conflict|not_found|needs_plan", "hint": "..." }
-```
-
-If `$KILN_URL` isn't set, default to `http://localhost:8765`. The first `kiln serve` started in cwd is what you're talking to.
-
-## Operating rules
-
-### YOUR FIRST ACTION, EVERY TURN
-
-```bash
-curl -s "$KILN_URL/kiln/world"
-```
-
-Do this **before** writing any text. The response is the ONLY truth about what exists. Whatever you "remember" about a dashboard, blog, entities, or pages — discard it. Read the response, then act based on what's actually there.
-
-If the world is empty (`"entities":{}` or absent), there is **no app**. Do not describe a dashboard, do not list entities, do not say "this is already implemented". The correct response in that case is: act on the user's intent (build it now) or ask a clarifying question via the `chat` tool.
-
-### Other rules
-
-- For small additive asks ("add a `priority` field"), call the right tool directly. Don't narrate.
-- For any destructive op (`delete_entity`, `delete_field`, `delete_page`, `delete_hook`, `delete_route`), you MUST:
-  1. Call `propose_plan` with `targets` listing every destructive op you intend to perform. Example: `targets: [{op:"delete_entity", name:"posts"}]`.
-  2. Wait for the user to click Approve in the panel (which calls `approve_plan`).
-  3. Call the destructive tool with `plan_id` set to your plan's id. The protocol enforces this — calling without an approved plan returns `{"ok":false,"kind":"needs_plan",...}`. Each (plan, target) is single-use; reuse requires a new plan.
-- For large additive asks (>3 tool calls), `propose_plan` is recommended for visibility but not required.
-- When `ok=false`, read `kind` and `hint` and self-correct. Don't repeat the same call.
-- When unsure of state, GET `$KILN_URL/kiln/world` (or call the `world_get` tool with a path) before acting.
-- **MANDATORY FIRST STEP: GET `$KILN_URL/kiln/world` before doing anything else.** This is the source of truth for what's live. Do NOT make ANY statement about existing entities, pages, hooks, routes, or "what's already implemented" without first calling `world_get` (or `curl $KILN_URL/kiln/world`). Saying "the dashboard is already implemented" or "this is already wired up" without verifying is hallucination — the user is watching the live world, and they will catch you. There is no codebase to inspect; the world IR is the only state.
-- **DO NOT read files in the working directory.** Any Go / JS / SQL / Markdown sitting in `./` (including `examples/`, `entities/`, `screen_*.go`) is unrelated to the live kiln world. It is leftover source from prior sessions or unrelated apps. Reading it and reporting on it as if it were the kiln state is the most common failure mode. The world is **only** what `$KILN_URL/kiln/world` returns. Stick to bash + curl.
-- **When the request is ambiguous or you'd be guessing — STOP and ask.** Call `chat(role:"assistant", text:"<one focused question>")` with the specific clarification you need, then exit. The user will reply and a new turn will run with the answer. Examples:
-  - "list all entities" against an empty world → ask: "The world has no entities yet — should I scaffold a starter set (notes, users) or wait for you to add them first?"
-  - "add a hook" with no entity context → ask: "Which entity should the hook fire on, and at which lifecycle stage (before_create, after_update, …)?"
-  - "build a blog" → ask: "Quick check before I start: posts + authors with a one-to-many relation, or richer (tags, comments)?"
-  Asking is **always** preferred over guessing or claiming work is already done.
-
-## Tool surface
-
-### World inspection
-- `world_get(path?)` — read the world IR. Path examples: `""` (full world), `entities.posts`, `pages./dashboard`, `_chat`, `_plans`.
-  - Or just: `curl -s $KILN_URL/kiln/world` for everything.
-
-### Entities (CRUD, OpenAPI, MCP all auto-generate from these)
-- `add_entity(entity)` — declare a new entity with fields/relations/CRUD/MCP/soft-delete/multi-tenant flags.
-- `update_entity(entity)` — replace an entity in full (prefer `add_field` for additive changes).
-- `delete_entity(name, plan_id)` — drop an entity. Destructive: requires approved plan with target `{op:"delete_entity",name}`.
-- `add_field(entity, field)` — append a field. Auto-runs ALTER TABLE ADD COLUMN.
-- `delete_field(entity, field, plan_id)` — remove a field. Destructive: target `{op:"delete_field",name:"<entity>.<field>"}`.
-
-### UI pages
-- `add_page(page)` — register a page. Pages are element trees (`{kind, props, children, bindings, actions}`). Every node is auto-assigned a stable `_id` and the page gets a `version` (starts at 1).
-- `update_page_element(path, element_id, patch, if_match?)` — **surgical edit; prefer this over delete-and-readd for any change to an existing page.** Address one node by its `_id` (read from `/kiln/world/pages.<path>`) and apply ONE atomic patch. Non-destructive, no plan needed. `patch.op` is one of:
-  - `set_props` — merge `set_props` into the element's props (most common — change href, text, class)
-  - `replace_props` — replace props entirely
-  - `replace_subtree` — replace this element + children with `element` (preserves the `_id`)
-  - `remove` — drop this element from its parent (root not allowed)
-  - `insert_before` / `insert_after` — add `element` as a sibling
-  - `append_child` — add `element` as the last child
-  - Pass `if_match: <page.version>` to detect drift; mismatch returns `kind:"conflict"`, refetch and retry.
-- `delete_page(path)` — remove an entire page. Destructive (URL stops responding). Use only when the user really wants the page gone; for any *edit*, use `update_page_element`.
-
-### Behavior
-- `add_hook(hook)` / `delete_hook(id)` — declarative entity lifecycle hooks.
-- `add_route(route)` / `delete_route(method, path)` — declarative HTTP routes (e.g. `respond_json`).
-- `add_seed(seed)` — insert seed rows.
-
-### Plans, history, app config
-- `propose_plan(plan_id, steps[], reason?, targets?)` — submit a plan for user approval. List destructive ops in `targets` (e.g. `[{op:"delete_entity",name:"posts"}]`) to authorize them.
-- `approve_plan(plan_id)` — usually invoked by the panel when the user clicks Approve.
-- `reject_plan(plan_id, reason?)` — invoked by the panel when the user clicks Reject. Rejected plans cannot later be approved.
-- `undo()` — truncate the journal by one entry, reverting the most recent change.
-- `set_app_config(config)` — name, json case (`camel`/`snake`), debug endpoints.
-- `chat(role, text)` — record a message in the session journal.
-
-## Field types
-
-`string`, `text`, `int`, `float`, `decimal`, `bool`, `enum` (with `values: [...]`), `uuid`, `timestamp`, `date`, `json`, `relation` (with `to: "<entity_name>"`), `image`, `file`.
-
-Each field also takes optional `required`, `unique`, `default`, `auto_generate` (`uuid`/`timestamp`/`increment`), `min`, `max`, `pattern`, `read_only`, `hidden`.
-
-## Hook events
-
-`before_create`, `after_create`, `before_update`, `after_update`, `before_delete`, `after_delete`, `before_list`, `after_list`.
-
-A hook has an `id`, an `entity`, a `when`, an optional `condition` (expression), and an `action`.
-
-## Action kinds
-
-Actions describe what a hook or route does. Params are action-specific.
-
-- `noop` — no params.
-- `validate` — `{ expression: "<expr>", message: "<text>" }`. If the expression is false, the hook errors with the message.
-- `set_field` — `{ field: "<name>", value: "<expr>" }` or `{ field, value_literal: <any> }`. Sets `entity[field]`.
-- `audit` — `{ channel: "<name>", message: "<expr or text>" }`. Emits an audit record.
-- `emit_event` — `{ topic: "<name>", data: "<expr>" }`. Emits a session event.
-- `respond_json` — for routes only. `{ status: 200, body: <any> }` or `{ status, body: "<expr>" }`.
-
-## Expression language
-
-Used in hook conditions and action params (`expression`, `value`, `message`, `body` when string-typed).
-
-- Literals: numbers, strings (`"x"` or `'x'`), `true`, `false`, `null`, lists.
-- Operators: `+ - * / %`, `== != < > <= >=`, `&& || !`.
-- Member access: `entity.title`, `ctx.user.role`, `result.id`.
-- Built-in functions: `len(x)`, `lower(s)`, `upper(s)`, `contains(s, sub)`, `starts_with(s, p)`, `ends_with(s, p)`, `abs(n)`, `min(a, b)`, `max(a, b)`, `now()`.
-- Scope at hook time: `entity` (the row), `ctx` (request — user, tenant), `result` (after_* hooks).
-
-## Worked example: a blog
-
-```bash
-# 1. Add the posts entity (string title, text body, enum status)
-curl -s -X POST "$KILN_URL/kiln/tool/add_entity" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "entity": {
-      "name": "posts",
-      "soft_delete": true,
-      "fields": [
-        { "name": "title",  "type": "string", "required": true, "max": 200 },
-        { "name": "body",   "type": "text" },
-        { "name": "status", "type": "enum",   "values": ["draft", "published"], "default": "draft" }
-      ],
-      "mcp": true
-    }
-  }'
-
-# 2. Auto-derive a slug from the title before insert
-curl -s -X POST "$KILN_URL/kiln/tool/add_field" \
-  -d '{"entity":"posts","field":{"name":"slug","type":"string","unique":true}}' \
-  -H 'Content-Type: application/json'
-
-curl -s -X POST "$KILN_URL/kiln/tool/add_hook" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "hook": {
-      "id": "posts_slug",
-      "entity": "posts",
-      "when": "before_create",
-      "action": { "kind": "set_field", "params": { "field": "slug", "value": "lower(entity.title)" } }
-    }
-  }'
-
-# 3. Add a custom health route
-curl -s -X POST "$KILN_URL/kiln/tool/add_route" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "route": {
-      "method": "GET",
-      "path": "/health",
-      "action": { "kind": "respond_json", "params": { "status": 200, "body": { "ok": true } } }
-    }
-  }'
-
-# 4. Verify
-curl -s "$KILN_URL/posts" | head
-curl -s "$KILN_URL/health"
-```
-
-## Styling — use Kiln theme classes, NEVER inline styles
-
-Kiln serves a strict CSP. Any element with a `style="…"` attribute is
-**dropped by the renderer** and the browser rejects inline styles
-anyway. Don't put `style` in `props`. Use `class` with the utility
-classes below — they reference theme tokens (`var(--kiln-…)`) so a
-single theme change re-skins the whole app.
-
-**Layout containers** — `kiln-container` (1200px), `kiln-container-md`
-(960px), `kiln-container-sm` (720px), `kiln-section` (vertical padding),
-`kiln-section-soft` (muted bg), `kiln-section-inverse` (dark bg + light fg).
-
-**Stacks & rows** — `kiln-stack` / `kiln-stack-sm` / `kiln-stack-lg`
-(vertical), `kiln-row` / `kiln-row-end` / `kiln-row-between` /
-`kiln-row-wrap` (horizontal).
-
-**Grids** — `kiln-grid-2`, `kiln-grid-3`, `kiln-grid-4`, `kiln-grid-auto`
-(responsive auto-fit columns).
-
-**Hero / typography** — `kiln-hero` (centered hero block; wrap with this
-on the section, then a single h1 + p inside), `kiln-display`,
-`kiln-title`, `kiln-h2`, `kiln-eyebrow` (uppercase label), `kiln-muted`,
-`kiln-subtle`, `kiln-center`.
-
-**Surfaces** — `kiln-card` (elevated), `kiln-card-soft` (muted bg).
-
-**Buttons / CTAs** — `kiln-button` (primary CTA), `kiln-button-secondary`
-(outlined), `kiln-button-ghost` (tertiary). Use on `<a>` or `<button>`.
-
-**Nav / footer** — `kiln-nav`, `kiln-nav-links`, `kiln-footer`.
-
-**Pills / badges** — `kiln-pill`, `kiln-badge-success`, `kiln-badge-warning`,
-`kiln-badge-danger`.
-
-**Quote** — `kiln-quote` (centered pullquote).
-
-Forms and tables already get default styling on `body.kiln-app` — you
-don't need to add classes to `<input>`, `<table>`, etc. Just use the
-right element kinds.
-
-Theme tokens (read-only in this version): `--kiln-bg`, `--kiln-surface`,
-`--kiln-surface-soft`, `--kiln-border`, `--kiln-fg`, `--kiln-fg-soft`,
-`--kiln-fg-muted`, `--kiln-fg-subtle`, `--kiln-primary`, `--kiln-primary-fg`,
-`--kiln-accent`, `--kiln-success`, `--kiln-warning`, `--kiln-danger`,
-plus `--kiln-r-{sm,md,lg}` (radii) and `--kiln-pad-{xs,sm,md,lg,xl}`
-(spacing). The theme is consistent across every page.
-
-## Element kinds (for pages)
-
-`text`, `raw`, `div`, `section`, `header`, `footer`, `main`, `nav`, `aside`, `article`, `heading` (with `level: 1-6`), `paragraph`, `span`, `strong`, `em`, `code`, `pre`, `button`, `link`, `image`, `input`, `label`, `form`, `list` (use `ordered: true` for `<ol>`), `table`, `thead`, `tbody`, `tr`, `th`, `td`.
-
-### Complete page-tree example (copy-paste shape)
-
-When the user asks for a multi-section page, send ONE `add_page` call with the full nested tree. Don't send `add_page` with a placeholder tree and then describe what you "would" build — the page only renders what's in the IR. Below is a working three-section landing page with a nav bar — adapt the strings, keep the structure:
-
-```bash
-curl -s -X POST "$KILN_URL/kiln/tool/add_page" \
-  -H 'Content-Type: application/json' \
-  -d '{
+{
   "page": {
     "path": "/",
+    "name": "home",
     "title": "Home",
+    "layout": {"name": "marketing"},
     "tree": {
-      "kind": "div",
-      "props": { "class": "landing" },
+      "kind": "stack",
+      "props": {"gap": "xl"},
       "children": [
-        {
-          "kind": "nav",
-          "props": { "class": "navbar", "aria-label": "Main" },
-          "children": [
-            { "kind": "heading", "props": { "level": 2, "text": "MyApp" } },
-            { "kind": "div", "props": { "class": "nav-links" }, "children": [
-              { "kind": "link", "props": { "href": "#about",   "text": "About" } },
-              { "kind": "link", "props": { "href": "#contact", "text": "Contact" } }
-            ]}
-          ]
-        },
-        {
-          "kind": "section",
-          "props": { "id": "hero" },
-          "children": [
-            { "kind": "heading",   "props": { "level": 1, "text": "Build apps by talking to agents" } },
-            { "kind": "paragraph", "children": [ { "kind": "text", "props": { "value": "Kiln journals every change live." } } ] },
-            { "kind": "button",    "props": { "label": "Get Started" } }
-          ]
-        },
-        {
-          "kind": "section",
-          "props": { "id": "about" },
-          "children": [
-            { "kind": "heading",   "props": { "level": 2, "text": "About" } },
-            { "kind": "paragraph", "children": [ { "kind": "text", "props": { "value": "Three quick wins." } } ] }
-          ]
-        },
-        {
-          "kind": "section",
-          "props": { "id": "contact" },
-          "children": [
-            { "kind": "heading",   "props": { "level": 2, "text": "Contact" } },
-            { "kind": "form",      "props": { "method": "POST", "action": "/messages" }, "children": [
-              { "kind": "label",   "props": { "for": "name", "text": "Name" } },
-              { "kind": "input",   "props": { "id": "name", "name": "name", "type": "text", "required": true } },
-              { "kind": "label",   "props": { "for": "msg",  "text": "Message" } },
-              { "kind": "input",   "props": { "id": "msg",  "name": "message", "type": "text", "required": true } },
-              { "kind": "button",  "props": { "type": "submit", "label": "Send" } }
-            ]}
-          ]
+        {"kind": "hero", "props": {
+          "eyebrow": "GoFastr",
+          "title": "Build the app you can own",
+          "subtitle": "Live first, plain Go when you freeze."
+        }},
+        {"kind": "section", "props": {
+          "heading": "What ships", "description": "One current blueprint"
+        }, "children": [
+          {"kind": "grid", "props": {"min": "16rem", "gap": "lg"},
+           "children": [
+            {"kind": "card", "props": {"heading": "REST + OpenAPI"}},
+            {"kind": "card", "props": {"heading": "SSR + hydration"}}
+          ]}
         }
       ]
     }
   }
-}'
+}
 ```
 
-**Critical rules learned the hard way:**
-- The `tree` value MUST have a non-empty `kind`. `{"kind": ""}` is rejected by the server.
-- Don't send `add_page` and then describe what you "would" build — the page only renders what's literally in the IR.
-- After every `add_page`, verify with `curl $KILN_URL/kiln/world` that your tree landed intact, then summarize for the user honestly. If the world doesn't match what you intended, fix it before saying "Done".
-- **Page paths must not collide with entity CRUD paths.** Each entity claims `GET /<entity_name>` automatically. If you add an entity called `posts`, do NOT add a page at `/posts` — pick `/posts/index`, `/blog`, or `/posts-page` instead. The server returns a `conflict` error if you try; read the hint and rename. Same the other way: if a page exists at `/foo`, don't add an entity called `foo`.
+Kiln assigns `_id` values and a page `version`. Use `update_page_element` for
+later surgical edits; pass the current version as `if_match` when possible.
 
-### How to put text content
+## Scaffold surfaces
 
-**Always include the actual text** — empty `{"kind":"text"}` nodes render nothing. Two equivalent shapes (use whichever feels cleaner):
-
-A) Inline `text` / `label` prop on the element itself (preferred for short labels):
+Use `set_scaffold` to replace navigation and owned-Go stubs:
 
 ```json
-{"kind":"heading","props":{"level":1,"text":"Welcome to Kiln"}}
-{"kind":"link","props":{"href":"#contact","text":"Contact"}}
-{"kind":"button","props":{"label":"Get Started","data-kiln-tool":"add_seed"}}
+{
+  "nav": [{"label":"Dashboard","href":"/dashboard"}],
+  "endpoints": [{"name":"health","method":"GET","path":"/healthz"}],
+  "middleware": [{"name":"request_logger"}],
+  "plugins": [{"name":"metrics"}],
+  "helpers": [{"name":"slug"}]
+}
 ```
 
-B) `text` child node with `props.value` set (for richer paragraph content):
+Navigation renders live. Endpoint/middleware/plugin/helper declarations become
+editable Go stubs in the generated scaffold.
 
-```json
-{"kind":"paragraph","children":[
-  {"kind":"text","props":{"value":"Build a working app by talking to the agent."}}
-]}
+## Theme
+
+`set_theme` accepts semantic light color tokens such as `primary`,
+`primary-fg`, `background`, `surface`, `surface-soft`, `text`, `text-muted`,
+`border`, `accent`, `success`, `warning`, `danger`, and `info`. Prefer the
+default adaptive theme unless the user requested a brand palette. Dark tokens
+are part of `set_app_config.config.theme_dark`.
+
+## Freeze boundary
+
+When the user wants source, tell them to run:
+
+```bash
+kiln freeze --diff
+kiln freeze --dir build
+gofastr validate build/gofastr.yml
+gofastr generate --from=build/gofastr.yml --out=app
 ```
 
-**WRONG** — `text` node without `value`, or any element with empty children:
-
-```json
-// produces <h1></h1>
-{"kind":"heading","props":{"level":1},"children":[{"kind":"text"}]}
-
-// produces <a href="#about"></a>
-{"kind":"link","props":{"href":"#about"},"children":[{"kind":"text"}]}
-```
-
-When in doubt, use the inline `props.text` form. It's harder to leave empty by accident.
-
-Every page rendered by Kiln automatically embeds the floating chat widget in the corner, so the user can talk to you from any page they're looking at. The widget posts the current page path back as `ctx.page` on each `chat` call — use that for in-page-context replies.
-
-## When to freeze
-
-If the user says "ship it" or wants real source files, suggest they run `kiln freeze` (out-of-band CLI) to emit `entities/*.json`. Kiln's HTTP API also exposes a snapshot at `GET $KILN_URL/kiln/world`.
+Freeze emits `gofastr.yml` and the lossless `world.json`; it does not emit the
+removed `entities/*.json` format. Declarative behaviors that need a Go function
+graduate as named owned-Go stubs, with the exact IR retained in `world.json`.

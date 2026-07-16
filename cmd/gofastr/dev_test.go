@@ -62,7 +62,7 @@ func TestInitDropsAIAgentFiles(t *testing.T) {
 	// then invoke it from the tempdir — `go run` from outside any
 	// module fails to resolve cmd/gofastr's imports.
 	binDir := t.TempDir()
-	binPath := filepath.Join(binDir, "gofastr")
+	binPath := testExecutablePath(filepath.Join(binDir, "gofastr"))
 	build := exec.Command("go", "build", "-o", binPath, "./cmd/gofastr")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {

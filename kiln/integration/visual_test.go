@@ -38,10 +38,9 @@ func saveShot(t *testing.T, name string, buf []byte) string {
 	return path
 }
 
-// (1) Empty state on host renders the welcome cards + the floating
-// expanded panel with empty message.
+// (1) Empty state on host renders the current framework floating panel and
+// its server-rendered quick-start tray.
 func TestVisual_HostEmptyState(t *testing.T) {
-	t.Skip("host empty-state DOM (.kiln-empty) was a legacy widget.js construct; new panel mounts immediately — needs visual test rewrite")
 	urlBase, _ := startKiln(t)
 	ctx, cancel := newChrome(t)
 	defer cancel()
@@ -50,7 +49,8 @@ func TestVisual_HostEmptyState(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1280, 800),
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-empty`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-panel.kiln-open`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-quickstart`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
 		chromedp.FullScreenshot(&shot, 90),
 	); err != nil {
@@ -60,55 +60,50 @@ func TestVisual_HostEmptyState(t *testing.T) {
 	t.Logf("saved: %s", path)
 }
 
-// (2) Status text is visible mid-flight. We slow the network so the
-// pending state stays on screen long enough to capture.
-func TestVisual_StatusFeedbackOnSend(t *testing.T) {
-	t.Skip(".kiln-status was a legacy widget.js DOM node; status feedback in the new panel surfaces via signals — needs visual test rewrite")
-	urlBase, _ := startKiln(t)
+// (2) Agent-turn state is visibly delivered by the current SSE signal path.
+func TestVisual_StatusFeedbackDuringTurn(t *testing.T) {
+	urlBase, l, _ := startKilnExt(t)
 	ctx, cancel := newChrome(t)
 	defer cancel()
 
-	var statusVisibleText string
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1280, 800),
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
-		// Stub fetch with a 400ms delay so the "sending…" / "sent" text
-		// is observable to a human eye AND to chromedp.
-		chromedp.Evaluate(`(function(){
-			const orig = window.fetch;
-			window.fetch = (u, o) => new Promise((res) => {
-				setTimeout(() => res(orig(u, o)), 400);
-			});
-		})()`, nil),
-		chromedp.SendKeys(`.kiln-input`, "watch the status"),
-		chromedp.Click(`.kiln-send`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-panel-head`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
+	waitForSSE(t, ctx)
+	testInFlight.Store(true)
+	l.Notify("agent_turn_started", "omp")
 
-	// Capture the pending status while the request is in-flight.
+	var statusVisibleText string
 	var shotPending []byte
 	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(`.kiln-status`, chromedp.ByQuery),
-		chromedp.Text(`.kiln-status`, &statusVisibleText, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-msg-thinking`, chromedp.ByQuery),
+		chromedp.Text(`.kiln-msg-thinking`, &statusVisibleText, chromedp.ByQuery),
 		chromedp.FullScreenshot(&shotPending, 90),
 	); err != nil {
 		t.Fatalf("pending: %v", err)
 	}
 	saveShot(t, "02_status_pending", shotPending)
-
-	if !strings.Contains(statusVisibleText, "sending") &&
-		!strings.Contains(statusVisibleText, "ok") &&
-		!strings.Contains(statusVisibleText, "sent") {
-		t.Errorf("expected sending/ok/sent in status, got %q", statusVisibleText)
+	if !strings.Contains(statusVisibleText, "thinking") {
+		t.Errorf("expected thinking status, got %q", statusVisibleText)
 	}
 
-	// Capture the success status before it auto-clears.
-	if err := chromedp.Run(ctx,
-		chromedp.Sleep(600*time.Millisecond), // let the post resolve
-	); err != nil {
-		t.Fatal(err)
+	testInFlight.Store(false)
+	l.Notify("agent_turn_ended", "omp")
+	deadline := time.Now().Add(3 * time.Second)
+	present := true
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`!!document.querySelector('.kiln-msg-thinking')`, &present))
+		if !present {
+			break
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	if present {
+		t.Error("thinking status remained after agent_turn_ended")
 	}
 	var shotOK []byte
 	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&shotOK, 90)); err != nil {
@@ -227,7 +222,8 @@ func TestVisual_RapidEditsAccumulate(t *testing.T) {
 }
 
 // (5) THE CRITICAL ONE: user is sitting on a page, the agent updates
-// it, browser reloads automatically and the new content is visible.
+// it, a cache-bypass SPA navigation swaps in the new content without a
+// document reload.
 // This is the "live build" claim.
 func TestVisual_LivePageHotReload(t *testing.T) {
 	urlBase, tools := startKiln(t)
@@ -266,6 +262,11 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 		t.Fatalf("v1 body wrong: %q", bodyV1)
 	}
 	waitForSSE(t, ctx)
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__kilnDocumentSentinel = "same-document"`, nil),
+	); err != nil {
+		t.Fatalf("install document sentinel: %v", err)
+	}
 
 	// Agent rewrites the page in place: propose+approve a plan, delete, then add.
 	if r := tools.ProposePlan(t.Context(), protocol.ProposePlanArgs{
@@ -294,7 +295,7 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 		t.Fatal(r)
 	}
 
-	// Browser should auto-reload via SSE → location.reload().
+	// Browser should refresh through the GoFastr SPA runtime after the SSE edit.
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		var body string
@@ -308,12 +309,14 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 
 	var bodyV2 string
 	var shotV2 []byte
+	var sentinel string
 	if err := chromedp.Run(ctx,
 		chromedp.WaitVisible(`h1`, chromedp.ByQuery),
 		chromedp.Text(`body`, &bodyV2, chromedp.ByQuery),
+		chromedp.Evaluate(`window.__kilnDocumentSentinel || ""`, &sentinel),
 		chromedp.FullScreenshot(&shotV2, 90),
 	); err != nil {
-		t.Fatalf("post-reload: %v", err)
+		t.Fatalf("post-refresh: %v", err)
 	}
 	saveShot(t, "07_live_v2_after_hot_reload", shotV2)
 
@@ -322,6 +325,9 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 	}
 	if !strings.Contains(bodyV2, "agent rewrote me hot") {
 		t.Errorf("body missing new paragraph: %q", bodyV2)
+	}
+	if sentinel != "same-document" {
+		t.Errorf("hot refresh replaced the browser document; want SPA navigation sentinel, got %q", sentinel)
 	}
 }
 

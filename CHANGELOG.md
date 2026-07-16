@@ -7,6 +7,44 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Kiln is current again.** OMP with GLM-5.2 is the turnkey and first-choice
+  live driver; the world/tool schemas now cover the current app, entity,
+  screen, navigation, and owned-Go scaffold surfaces; pages render through the
+  framework UI host and component registry; and `kiln freeze` deterministically
+  emits generator-ready `gofastr.yml` plus lossless `world.json`. The removed
+  `entities/*.json` graduation path is gone end to end.
+- **Blueprint layout blocks.** Screens now preserve and generate the current
+  `framework/ui` `stack`, `cluster`, `grid`, and `stat_grid` primitives, with
+  semantic spacing/alignment validation and generate→pack recovery. This keeps
+  Kiln's typed live composition intact across the owned-Go freeze boundary.
+- **Windows embed WAL snapshots.** Snapshot completion now resets the
+  append-mode WAL by closing and reopening it with truncation, avoiding the
+  Windows `Access is denied` failure from truncating the live append handle.
+- **Windows generator and dev-loop parity.** `gofastr dev` now builds a
+  per-process `.exe` on Windows, its end-to-end harness kills the watcher tree
+  before canceling the parent, codegen's symlink guard handles drive-qualified
+  paths, additive generation normalizes platform separators, and generated
+  app/extension tests execute platform-native binaries. Fresh-port allocation
+  prevents stale dev servers from contaminating later browser tests.
+- **Deterministic Meridian scheme captures.** The flagship visual gate now
+  waits for Chromium to commit the scheme repaint before taking a from-surface
+  screenshot and asserts that the dark marketing band keeps visible heading
+  and paragraph contrast in both schemes.
+- **`widget.Builder.SSERefresh`.** SSE-triggered screen changes now force the
+  normal SPA navigation pipeline for the current URL. The old `SSEReload` name
+  remains as a source-compatible alias but no longer performs a hard reload.
+
+### Changed
+
+- **Kiln defaults its live REST surface to `/api`.** Entity CRUD and HTML
+  screens can share a name (`/api/posts` and `/posts`), matching current
+  blueprints. Agent-authored page trees reject `class`, `style`, and `on*`
+  props and compose the shared design system instead. Previously advertised
+  native-agent meta tools (`set_theme`, reject, reset) are now actually
+  dispatchable, and the new `set_scaffold` tool authors nav/stubs.
+
 ## [0.26.1] - 2026-07-15
 
 Repo-hygiene patch: process ledgers become enforced gates, and the docs

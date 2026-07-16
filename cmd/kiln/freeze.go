@@ -14,18 +14,18 @@ import (
 // runFreeze: kiln freeze --journal .kiln.session.jsonl --dir build/
 //
 // Reads the on-disk journal, replays it into a session, and either:
-//   - --dir <path>   (default): writes entities/*.json + world.json to disk
+//   - --dir <path>   (default): writes gofastr.yml + world.json to disk
 //   - --diff         : prints a human-readable summary of what the
 //     agent built (entities, pages, hooks, routes,
 //     seeds). No files written. Use this to review
 //     agent-driven changes before graduating to source.
 //
 // This is the "graduate from build mode" step. Once frozen, the
-// JSON files can be checked into a regular GoFastr project.
+// blueprint can be reviewed, validated, and generated into owned Go.
 func runFreeze(args []string) int {
 	fs := flag.NewFlagSet("kiln freeze", flag.ExitOnError)
 	journalPath := fs.String("journal", ".kiln.session.jsonl", "JSONL journal to read")
-	dir := fs.String("dir", "build", "target directory for entities/*.json + world.json")
+	dir := fs.String("dir", "build", "target directory for gofastr.yml + world.json")
 	diff := fs.Bool("diff", false, "Print a human-readable summary of cumulative world changes; do not write files")
 	_ = fs.Parse(args)
 
@@ -63,7 +63,7 @@ func runFreeze(args []string) int {
 	fmt.Fprintf(os.Stderr, "[kiln freeze] wrote to %s/\n", *dir)
 	fmt.Fprintf(os.Stderr, "  entities: %d  pages: %d  hooks: %d  routes: %d\n",
 		entCount, pageCount, hookCount, routeCount)
-	fmt.Fprintf(os.Stderr, "  next: review %s/entities/, then declare these entities in a gofastr.yml blueprint (or in Go) and run `gofastr generate`\n", *dir)
+	fmt.Fprintf(os.Stderr, "  next: `gofastr validate %s/gofastr.yml`, then `gofastr generate --from=%s/gofastr.yml --out=<app-dir>`\n", *dir, *dir)
 	return 0
 }
 

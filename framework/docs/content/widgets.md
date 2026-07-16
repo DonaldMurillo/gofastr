@@ -185,6 +185,18 @@ On every `world_edit` event from `/.kiln/events`, the bootstrap pushes
 the event's `data` (JSON-decoded if possible) into `world_summary`,
 and any `[data-fui-signal="world_summary"]` node re-renders.
 
+For a derived server-side signal, use `SSERefetch`: the event is only a
+trigger and the widget's state endpoint provides the fresh value. For an event
+that changes the screen rendered at the current URL, use `SSERefresh`. It runs
+the normal cache-bypassing SPA navigation pipeline, so the screen and layout
+update without a hard browser reload. `SSEReload` remains as a deprecated
+source-compatible alias with the same soft-refresh behavior.
+
+```go
+.SSERefetch("/.events", "count_changed", "count")
+.SSERefresh("/.events", "world_edit", "op", "add_page")
+```
+
 ### RPCs
 
 A button or form click can invoke a server handler:
@@ -330,9 +342,10 @@ default theme out of the box. Token overrides flow through:
 2. Or rely on the default — `widget.Mount` builds a stylesheet with
    `:root` CSS variables for every token.
 
-Kiln's `set_theme` tool (see `kiln/protocol`) is the canonical example:
-the agent (or a host) updates `world.App.Theme` and the next
-`/kiln/theme.css` request reflects the new palette.
+Kiln's `set_theme` tool (see `kiln/protocol`) is an example: the agent updates
+semantic theme tokens such as `primary`, `surface`, and `text`; its live pages
+use the same `framework/uihost` app stylesheet and component registry as a
+generated app.
 
 ## Strict CSP
 
@@ -345,11 +358,9 @@ The framework runtime is **strict-CSP safe**. The bootstrap never:
 `kiln/render` additionally drops dangerous attrs server-side
 (`style`, `srcdoc`, `on*=`) so a bad agent turn can't poison the page.
 
-Use class names that map to theme tokens. The page theme exposes
-ready-made utility classes (`kiln-section`, `kiln-card`, `kiln-grid-3`,
-`kiln-button`, `kiln-hero`, etc.) — `docs/widgets.md` is the canonical
-reference for what's available; `core-ui/widget/theme/page.go` is the
-source of truth.
+Compose typed `framework/ui` components, `core-ui/patterns`, or semantic
+`core-ui/html` primitives. App-local utility-class palettes are a second
+styling surface and are not part of the current contract.
 
 ## Testing
 

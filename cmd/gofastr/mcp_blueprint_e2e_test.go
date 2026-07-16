@@ -18,7 +18,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -53,16 +52,17 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 	if output, err := tidy.CombinedOutput(); err != nil {
 		t.Fatalf("go mod tidy: %v\n%s", err, output)
 	}
-	build := exec.Command("go", "build", "-o", "app", ".")
+	appBin := testExecutablePath(filepath.Join(dir, "app"))
+	build := exec.Command("go", "build", "-o", appBin, ".")
 	build.Dir = dir
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, output)
 	}
 
-	port := nextE2EPort()
+	port := nextE2EPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	app := exec.CommandContext(ctx, filepath.Join(dir, "app"))
+	app := exec.CommandContext(ctx, appBin)
 	app.Dir = dir
 	app.Env = append(os.Environ(),
 		"PORT=localhost:"+port,
@@ -74,14 +74,13 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 	var appOut syncBuffer
 	app.Stdout = &appOut
 	app.Stderr = &appOut
-	app.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureTestProcessGroup(app)
 	if err := app.Start(); err != nil {
 		t.Fatalf("start generated app: %v", err)
 	}
-	pid := app.Process.Pid
 	t.Cleanup(func() {
 		cancel()
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = killTestProcessTree(app)
 		_ = app.Wait()
 	})
 
@@ -171,12 +170,12 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 	// register — access logs carry client IPs and paths, so an untrusted
 	// production /mcp never exposes them by default.
 	cancel()
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	_ = killTestProcessTree(app)
 	_ = app.Wait()
-	prodPort := nextE2EPort()
+	prodPort := nextE2EPort(t)
 	prodCtx, prodCancel := context.WithCancel(context.Background())
 	defer prodCancel()
-	prod := exec.CommandContext(prodCtx, filepath.Join(dir, "app"))
+	prod := exec.CommandContext(prodCtx, appBin)
 	prod.Dir = dir
 	prod.Env = append(os.Environ(),
 		"PORT=localhost:"+prodPort,
@@ -185,14 +184,13 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 	var prodOut syncBuffer
 	prod.Stdout = &prodOut
 	prod.Stderr = &prodOut
-	prod.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureTestProcessGroup(prod)
 	if err := prod.Start(); err != nil {
 		t.Fatalf("start generated app (prod mode): %v", err)
 	}
-	prodPid := prod.Process.Pid
 	t.Cleanup(func() {
 		prodCancel()
-		_ = syscall.Kill(-prodPid, syscall.SIGKILL)
+		_ = killTestProcessTree(prod)
 		_ = prod.Wait()
 	})
 	prodBase := "http://localhost:" + prodPort

@@ -5,9 +5,49 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func extensionTestSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".cmd"
+	}
+	return ".sh"
+}
+
+func extensionTestCommand(path string) []string {
+	if runtime.GOOS == "windows" {
+		return []string{"cmd.exe", "/d", "/c", path}
+	}
+	return []string{path}
+}
+
+func writeExtensionTestScript(t *testing.T, path, response, requestPath string) {
+	t.Helper()
+	var body string
+	if runtime.GOOS == "windows" {
+		body = "@echo off\r\n"
+		if requestPath == "" {
+			body += "more >nul\r\n"
+		} else {
+			body += "more > \"" + requestPath + "\"\r\n"
+		}
+		body += "echo " + response + "\r\n"
+	} else {
+		body = "#!/bin/sh\n"
+		if requestPath == "" {
+			body += "cat >/dev/null\n"
+		} else {
+			body += "cat >\"" + requestPath + "\"\n"
+		}
+		body += "printf '%s' '" + response + "'\n"
+	}
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestDecodeConfig(t *testing.T) {
 	dir := t.TempDir()
@@ -563,13 +603,9 @@ func TestRegistryRejectsExtensionDeleteOfOtherOwner(t *testing.T) {
 
 func TestRegistryRunsExternalExtension(t *testing.T) {
 	dir := t.TempDir()
-	extPath := filepath.Join(dir, "ext.sh")
-	if err := os.WriteFile(extPath, []byte(`#!/bin/sh
-cat >/tmp/gofastr-codegen-request.json
-printf '%s' '{"files":[{"path":"report.go","content":"package reports\\n"}]}'
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	requestPath := filepath.Join(dir, "gofastr-codegen-request.json")
+	extPath := filepath.Join(dir, "ext"+extensionTestSuffix())
+	writeExtensionTestScript(t, extPath, `{"files":[{"path":"report.go","content":"package reports\\n"}]}`, requestPath)
 	if err := os.WriteFile(filepath.Join(dir, "reports.codegen.json"), []byte(`{"name":"reports"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -581,7 +617,7 @@ printf '%s' '{"files":[{"path":"report.go","content":"package reports\\n"}]}'
 			Source:    SourceConfig{Type: "json_file", Path: "reports.codegen.json"},
 			Output:    "reports",
 		}},
-		Extensions: []ExtensionConfig{{Name: "report-generator", Command: []string{extPath}}},
+		Extensions: []ExtensionConfig{{Name: "report-generator", Command: extensionTestCommand(extPath)}},
 	}}
 	reg := NewRegistry()
 	if err := reg.RegisterCommandExtensions(cfg.Codegen, nil); err != nil {
@@ -595,7 +631,7 @@ printf '%s' '{"files":[{"path":"report.go","content":"package reports\\n"}]}'
 	if len(files) != 1 || files[0].Path != "reports/report.go" {
 		t.Fatalf("files = %#v", files)
 	}
-	data, err := os.ReadFile("/tmp/gofastr-codegen-request.json")
+	data, err := os.ReadFile(requestPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,13 +657,8 @@ printf '%s' '{"files":[{"path":"report.go","content":"package reports\\n"}]}'
 
 func TestRegistryRejectsUnknownExtensionResponseFields(t *testing.T) {
 	dir := t.TempDir()
-	extPath := filepath.Join(dir, "ext.sh")
-	if err := os.WriteFile(extPath, []byte(`#!/bin/sh
-cat >/dev/null
-printf '%s' '{"surprise":true}'
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	extPath := filepath.Join(dir, "ext"+extensionTestSuffix())
+	writeExtensionTestScript(t, extPath, `{"surprise":true}`, "")
 	if err := os.WriteFile(filepath.Join(dir, "input.json"), []byte(`{"ok":true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +669,7 @@ printf '%s' '{"surprise":true}'
 			Extension: "bad-extension",
 			Source:    SourceConfig{Type: "json_file", Path: "input.json"},
 		}},
-		Extensions: []ExtensionConfig{{Name: "bad-extension", Command: []string{extPath}}},
+		Extensions: []ExtensionConfig{{Name: "bad-extension", Command: extensionTestCommand(extPath)}},
 	}}
 	reg := NewRegistry()
 	if err := reg.RegisterCommandExtensions(cfg.Codegen, nil); err != nil {
@@ -656,13 +687,9 @@ func TestRegistryRunsRelativeExtensionCommandFromProjectDir(t *testing.T) {
 	if err := os.Mkdir(tools, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	extPath := filepath.Join(tools, "ext.sh")
-	if err := os.WriteFile(extPath, []byte(`#!/bin/sh
-cat >/dev/null
-printf '%s' '{"files":[{"path":"relative.go","content":"package relative\\n"}]}'
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	extRel := filepath.Join("tools", "ext"+extensionTestSuffix())
+	extPath := filepath.Join(tools, "ext"+extensionTestSuffix())
+	writeExtensionTestScript(t, extPath, `{"files":[{"path":"relative.go","content":"package relative\\n"}]}`, "")
 	if err := os.WriteFile(filepath.Join(dir, "input.json"), []byte(`{"ok":true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -673,7 +700,7 @@ printf '%s' '{"files":[{"path":"relative.go","content":"package relative\\n"}]}'
 			Extension: "relative-extension",
 			Source:    SourceConfig{Type: "json_file", Path: "input.json"},
 		}},
-		Extensions: []ExtensionConfig{{Name: "relative-extension", Command: []string{"./tools/ext.sh"}}},
+		Extensions: []ExtensionConfig{{Name: "relative-extension", Command: extensionTestCommand(extRel)}},
 	}}
 	reg := NewRegistry()
 	if err := reg.RegisterCommandExtensions(cfg.Codegen, nil); err != nil {
@@ -695,13 +722,9 @@ func TestRegistryRunsRelativeExtensionCommandWithRelativeProjectDir(t *testing.T
 	if err := os.MkdirAll(tools, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	extPath := filepath.Join(tools, "ext.sh")
-	if err := os.WriteFile(extPath, []byte(`#!/bin/sh
-cat >/dev/null
-printf '%s' '{"files":[{"path":"relative.go","content":"package relative\\n"}]}'
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	extRel := filepath.Join("tools", "ext"+extensionTestSuffix())
+	extPath := filepath.Join(tools, "ext"+extensionTestSuffix())
+	writeExtensionTestScript(t, extPath, `{"files":[{"path":"relative.go","content":"package relative\\n"}]}`, "")
 	if err := os.WriteFile(filepath.Join(project, "input.json"), []byte(`{"ok":true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -720,7 +743,7 @@ printf '%s' '{"files":[{"path":"relative.go","content":"package relative\\n"}]}'
 			Extension: "relative-extension",
 			Source:    SourceConfig{Type: "json_file", Path: "input.json"},
 		}},
-		Extensions: []ExtensionConfig{{Name: "relative-extension", Command: []string{"./tools/ext.sh"}}},
+		Extensions: []ExtensionConfig{{Name: "relative-extension", Command: extensionTestCommand(extRel)}},
 	}}
 	reg := NewRegistry()
 	if err := reg.RegisterCommandExtensions(cfg.Codegen, nil); err != nil {

@@ -43,6 +43,7 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
+	defer idx2.Close()
 	stats := idx2.Stats()
 	if stats.Docs != 3 {
 		t.Fatalf("after reopen Docs = %d, want 3", stats.Docs)
@@ -85,6 +86,7 @@ func TestWALReplayRecoversUnsnapshottedWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
+	defer idx2.Close()
 	if got := idx2.Stats().Docs; got != 2 {
 		t.Fatalf("after reopen Docs = %d, want 2 (WAL replay)", got)
 	}
@@ -106,6 +108,7 @@ func TestAutoSnapshotTruncatesWAL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
+	defer idx.Close()
 	for _, id := range []string{"a", "b", "c", "d"} {
 		if err := idx.Add(ctx, Document{ID: id, Text: id}); err != nil {
 			t.Fatalf("Add %s: %v", id, err)

@@ -135,9 +135,6 @@ of `gofastr.yml` was deliberately rejected in favor of explicit
 - **`public_openapi` blueprint key.** The raw `/openapi.json` is
   auth-gated by secure-by-default; `AppConfig.PublicOpenAPI` exists but
   the blueprint can't opt into it. Add the key.
-- **`kiln freeze` → blueprint.** Freeze writes `entities/*.json`
-  snapshots that no longer have a framework loader; emit a `gofastr.yml`
-  blueprint so the graduate-to-Go path is one `gofastr generate`.
 
 ---
 

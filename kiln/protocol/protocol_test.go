@@ -42,6 +42,34 @@ func TestAddEntityHappyPath(t *testing.T) {
 	}
 }
 
+func TestSetScaffoldPreservesCurrentBlueprintSurfaces(t *testing.T) {
+	tools := newTools(t)
+	res := tools.SetScaffold(context.Background(), protocol.SetScaffoldArgs{
+		Nav:        []world.NavItem{{Label: "Home", Href: "/"}},
+		Endpoints:  []*world.EndpointStub{{Name: "health", Method: "GET", Path: "/healthz"}},
+		Middleware: []world.NamedStub{{Name: "request_logger"}},
+		Plugins:    []world.NamedStub{{Name: "metrics"}},
+		Helpers:    []world.NamedStub{{Name: "slug"}},
+	})
+	if !res.OK {
+		t.Fatalf("SetScaffold: %+v", res)
+	}
+	w := tools.Live().Session().World
+	if len(w.Nav) != 1 || len(w.Endpoints) != 1 || len(w.MiddlewareStubs) != 1 || len(w.Plugins) != 1 || len(w.Helpers) != 1 {
+		t.Fatalf("scaffold surface lost: %+v", w)
+	}
+}
+
+func TestAddPageRejectsSecondStylingSurface(t *testing.T) {
+	tools := newTools(t)
+	res := tools.AddPage(context.Background(), protocol.AddPageArgs{Page: &world.Page{
+		Path: "/bad", Tree: world.Node{Kind: "div", Props: map[string]any{"class": "app-local"}},
+	}})
+	if res.OK || res.Kind != "validation" {
+		t.Fatalf("app-local class should be rejected, got %+v", res)
+	}
+}
+
 func TestAddEntityDuplicate(t *testing.T) {
 	tools := newTools(t)
 	posts := &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}}

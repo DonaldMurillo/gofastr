@@ -372,12 +372,12 @@ func (b *Builder) SSERefetch(path, event, signal string) *Builder {
 	return b
 }
 
-// SSEReload triggers a full page reload on the SSE event. Use for events
-// that change what's rendered at the current URL (e.g. kiln's add_page /
-// delete_page / add_route — the page itself is now different). Pass
-// matchPairs as alternating key/value strings to filter on payload
-// fields (e.g. SSEReload(path, "world_edit", "op", "add_page")).
-func (b *Builder) SSEReload(path, event string, matchPairs ...string) *Builder {
+// SSERefresh triggers a cache-bypassing client navigation to the current URL
+// on the SSE event. The runtime swaps the rendered screen through the normal
+// SPA pipeline; it never performs a hard browser reload. Use for events that
+// change what is rendered at the current URL. Pass matchPairs as alternating
+// key/value strings to filter on payload fields.
+func (b *Builder) SSERefresh(path, event string, matchPairs ...string) *Builder {
 	binding := SSEBinding{Path: path, Event: event, Reload: true}
 	if len(matchPairs) >= 2 {
 		binding.Match = map[string]string{}
@@ -387,6 +387,13 @@ func (b *Builder) SSEReload(path, event string, matchPairs ...string) *Builder {
 	}
 	b.def.SSE = append(b.def.SSE, binding)
 	return b
+}
+
+// SSEReload is retained for source compatibility. It now performs the same
+// soft, cache-bypassing SPA refresh as SSERefresh; callers should migrate to
+// SSERefresh so the behavior is named accurately.
+func (b *Builder) SSEReload(path, event string, matchPairs ...string) *Builder {
+	return b.SSERefresh(path, event, matchPairs...)
 }
 
 // RPC registers a server-side handler the widget can invoke from

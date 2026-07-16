@@ -665,14 +665,15 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		if !options.json {
 			hasNewEntities := false
 			for _, f := range written {
-				if strings.HasPrefix(f.name, "entities/") && f.name != "entities/register.go" && !strings.HasPrefix(f.name, "entities/client/") {
+				name := filepath.ToSlash(f.name)
+				if strings.HasPrefix(name, "entities/") && name != "entities/register.go" && !strings.HasPrefix(name, "entities/client/") {
 					hasNewEntities = true
 					break
 				}
 			}
 			if hasNewEntities {
 				for _, f := range skipped {
-					if f.name == "entities/client/client.go" {
+					if filepath.ToSlash(f.name) == "entities/client/client.go" {
 						warn("entities/client/client.go already exists and was not updated — it does not include the new entities. Regenerate it from a full blueprint with --force, or extend it by hand.")
 						break
 					}
@@ -685,7 +686,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			// the new files compile and then silently never register/mount.
 			hasNewScreens := false
 			for _, f := range written {
-				if strings.HasPrefix(f.name, "screen_") {
+				if strings.HasPrefix(filepath.ToSlash(f.name), "screen_") {
 					hasNewScreens = true
 					break
 				}

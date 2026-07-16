@@ -436,8 +436,9 @@ gofastr embed query "<text>"        Top-K semantic hits as JSON
 
 ### `kiln/` — agent-driven build mode (experimental)
 
-Kiln lets you build a GoFastr app live by chatting with a coding agent
-(Claude Code, pi, Codex, …): the agent mutates an in-memory world over
+Kiln lets you build a GoFastr app live by chatting with a coding agent.
+OMP with GLM-5.2 is the turnkey/default driver; Claude Code, Pi, Codex, and
+custom commands remain adapters. The agent mutates an in-memory world over
 HTTP, the running app re-renders, and the schema migrates in-process.
 Freeze the journal when done and graduate to a `gofastr.yml` blueprint
 you commit. It's an experiment and not part of the supported framework

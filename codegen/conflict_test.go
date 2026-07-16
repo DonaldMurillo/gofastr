@@ -83,3 +83,10 @@ func TestWriteFiles_RootRejectedWhenCleaning(t *testing.T) {
 		t.Fatal("expected root + clean to be rejected")
 	}
 }
+
+func TestEnsureNoSymlinkPathAcceptsAbsoluteTempPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "output")
+	if err := EnsureNoSymlinkPath(path); err != nil {
+		t.Fatalf("absolute path %q: %v", path, err)
+	}
+}

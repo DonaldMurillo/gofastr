@@ -7,11 +7,44 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework"
 )
+
+func writeReportExtension(t *testing.T, dir, marker string) string {
+	t.Helper()
+	var command []string
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "report-extension.cmd")
+		body := "@echo off\r\nmore >nul\r\n"
+		if marker != "" {
+			body += "type nul > \"" + marker + "\"\r\n"
+		}
+		body += "echo {\"files\":[{\"path\":\"report.go\",\"content\":\"package reports\\n\"}]}\r\n"
+		writeTestFile(t, path, body)
+		command = []string{"cmd.exe", "/d", "/c", path}
+	} else {
+		path := filepath.Join(dir, "report-extension.sh")
+		body := "#!/bin/sh\ncat >/dev/null\n"
+		if marker != "" {
+			body += "touch \"" + marker + "\"\n"
+		}
+		body += "printf '%s' '{\"files\":[{\"path\":\"report.go\",\"content\":\"package reports\\n\"}]}'\n"
+		writeTestFile(t, path, body)
+		if err := os.Chmod(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		command = []string{path}
+	}
+	encoded, err := json.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
 
 func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 	crud := true
@@ -107,14 +140,7 @@ func TestGenerateTypeScriptCommandShowsMigrationError(t *testing.T) {
 
 func TestGenerateProjectWithExternalCodegenExtension(t *testing.T) {
 	dir := t.TempDir()
-	extPath := filepath.Join(dir, "report-extension.sh")
-	writeTestFile(t, extPath, `#!/bin/sh
-cat >/dev/null
-printf '%s' '{"files":[{"path":"report.go","content":"package reports\n"}]}'
-`)
-	if err := os.Chmod(extPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	extCommand := writeReportExtension(t, dir, "")
 	writeTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
 	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
 version: 1
@@ -129,7 +155,7 @@ codegen:
       output: reports
   extensions:
     - name: report-generator
-      command: [`+extPath+`]
+      command: `+extCommand+`
 `)
 
 	oldWD, err := os.Getwd()
@@ -219,14 +245,7 @@ func TestGenerateProjectDryRunJSONValidatesOutputBeforeExtensions(t *testing.T) 
 	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "extension-ran")
-	extPath := filepath.Join(dir, "report-extension.sh")
-	writeTestFile(t, extPath, `#!/bin/sh
-touch `+marker+`
-printf '%s' '{"files":[{"path":"report.go","content":"package reports\n"}]}'
-`)
-	if err := os.Chmod(extPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	extCommand := writeReportExtension(t, dir, marker)
 	writeTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
 	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
 version: 1
@@ -240,7 +259,7 @@ codegen:
         path: reports.codegen.json
   extensions:
     - name: report-generator
-      command: [`+extPath+`]
+      command: `+extCommand+`
 `)
 	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--config="+filepath.Join(dir, "gofastr.codegen.yml"), "--out=..", "--dry-run", "--json")
 	cmd.Dir = repoRoot

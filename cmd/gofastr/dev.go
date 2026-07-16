@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -142,9 +143,12 @@ func resolveDevIsolation(dir, addr string) (*isolation.Runtime, string, error) {
 // buildAndServe builds and starts the server process.
 func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
 	// Build binary to temp file
-	tmpName := "gofastr-dev-server"
+	tmpName := fmt.Sprintf("gofastr-dev-server-%d", os.Getpid())
 	if runtimeIsolation.Active() {
 		tmpName += "-" + runtimeIsolation.ID()
+	}
+	if runtime.GOOS == "windows" {
+		tmpName += ".exe"
 	}
 	tmpBin := filepath.Join(os.TempDir(), tmpName)
 	buildCmd := exec.Command("go", "build", "-o", tmpBin, ".")

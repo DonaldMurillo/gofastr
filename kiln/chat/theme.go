@@ -6,16 +6,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
-// pageCSS resolves the kiln page stylesheet through core-ui/widget/theme.
-// World.App.Theme overrides (e.g. set by a future set_theme tool) merge
-// on top of the framework default.
+// pageCSS resolves the compatibility host stylesheet through
+// core-ui/widget/theme. Current world pages are rendered by UIHost and use
+// /__gofastr/app.css; this remains for direct legacy widget embeds.
 func pageCSS() string {
 	return pageCSSFor(nil)
 }
 
 // pageCSSFor resolves the page CSS with optional world-level overrides.
-// Used by /kiln/theme.css when the kiln server has access to the live
-// session and can pull the current world.App.Theme.
+// Used by the compatibility /kiln/theme.css endpoint when the kiln server has
+// access to the live session and can pull the current world.App.Theme.
 func pageCSSFor(app *world.AppConfig) string {
 	t := theme.PageTheme()
 	applyAppOverrides(&t, app)

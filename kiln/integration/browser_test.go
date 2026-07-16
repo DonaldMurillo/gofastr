@@ -299,6 +299,68 @@ func TestBrowser_AgentAddedPageRenders(t *testing.T) {
 	}
 }
 
+// A browser that opens after an agent turn receives an empty-world widget
+// skeleton inline, then hydrates the current chat/world signals. That panel
+// hydration must not erase or replace the already-rendered application screen.
+func TestBrowser_PrepopulatedWorldHydratesWithoutErasingScreen(t *testing.T) {
+	urlBase, tools := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if res := tools.SetAppConfig(t.Context(), protocol.SetAppConfigArgs{Config: world.AppConfig{
+		Name: "Live Forge", Module: "example.com/live-forge", APIPrefix: "api",
+	}}); !res.OK {
+		t.Fatal(res)
+	}
+	for _, entity := range []*world.Entity{
+		{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}},
+		{Name: "categories", Fields: []world.Field{{Name: "slug", Type: "string"}}},
+	} {
+		if res := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: entity}); !res.OK {
+			t.Fatal(res)
+		}
+	}
+	if res := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
+		Path: "/", Name: "home", Title: "Live Forge", Layout: &world.Layout{Name: "marketing"},
+		Tree: world.Node{Kind: "stack", Props: map[string]any{"gap": "xl"}, Children: []world.Node{
+			{Kind: "hero", Props: map[string]any{"eyebrow": "Kiln + OMP", "title": "Live Forge", "subtitle": "Owned Go."}},
+			{Kind: "section", Props: map[string]any{"heading": "What was built"}, Children: []world.Node{
+				{Kind: "grid", Props: map[string]any{"min": "16rem"}, Children: []world.Node{
+					{Kind: "card", Props: map[string]any{"heading": "Posts API"}},
+					{Kind: "card", Props: map[string]any{"heading": "Owned-Go freeze"}},
+				}},
+			}},
+		}},
+	}}); !res.OK {
+		t.Fatal(res)
+	}
+	if res := tools.Chat(t.Context(), protocol.ChatArgs{Role: "user", Text: "build the forge"}); !res.OK {
+		t.Fatal(res)
+	}
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`h1`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('.kiln-panel-snapshot')?.textContent.includes('2 entities')`, nil,
+			chromedp.WithPollingInterval(100*time.Millisecond)),
+	); err != nil {
+		t.Fatalf("hydrate populated world: %v", err)
+	}
+	var heading, body string
+	var scrollY float64
+	if err := chromedp.Run(ctx,
+		chromedp.Text(`h1`, &heading, chromedp.ByQuery),
+		chromedp.Text(`body`, &body, chromedp.ByQuery),
+		chromedp.Evaluate(`window.scrollY`, &scrollY),
+	); err != nil {
+		t.Fatalf("read hydrated screen: %v", err)
+	}
+	if heading != "Live Forge" || !strings.Contains(body, "Posts API") {
+		t.Fatalf("panel hydration erased the screen: h1=%q scrollY=%v body=%.500q", heading, scrollY, body)
+	}
+}
+
 // --- (5) data-kiln-tool button fires the tool ----------------------
 
 func TestBrowser_ButtonToolCallFires(t *testing.T) {
@@ -368,7 +430,7 @@ func TestBrowser_FormSubmitCreatesRow(t *testing.T) {
 		Path: "/new-note",
 		Tree: world.Node{Kind: "div", Children: []world.Node{
 			{Kind: "heading", Props: map[string]any{"level": float64(1), "text": "New Note"}},
-			{Kind: "form", Props: map[string]any{"id": "f", "method": "POST", "action": "/notes"}, Children: []world.Node{
+			{Kind: "form", Props: map[string]any{"id": "f", "method": "POST", "action": "/api/notes"}, Children: []world.Node{
 				{Kind: "input", Props: map[string]any{"id": "txt", "name": "text", "type": "text"}},
 				{Kind: "button", Props: map[string]any{"id": "submit", "type": "submit", "label": "Save"}},
 			}},
@@ -386,18 +448,18 @@ func TestBrowser_FormSubmitCreatesRow(t *testing.T) {
 		t.Fatalf("submit: %v", err)
 	}
 
-	// The widget's submit handler posts JSON to /notes then reloads.
+	// The runtime's submit handler posts JSON to /api/notes.
 	// Verify the row landed by polling the CRUD listing directly with
 	// the test's HTTP client — no need to fight the reload race.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		body, err := httpGet(t, urlBase+"/notes")
+		body, err := httpGet(t, urlBase+"/api/notes")
 		if err == nil && strings.Contains(body, "a brand new note") {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("note never landed in /notes")
+	t.Fatalf("note never landed in /api/notes")
 }
 
 // httpGet is a tiny helper for tests that want to bypass chromedp.
@@ -478,10 +540,10 @@ func TestBrowser_SeedRowsVisibleAfterAddSeed(t *testing.T) {
 
 	var listing string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(urlBase+"/tasks"),
+		chromedp.Navigate(urlBase+"/api/tasks"),
 		chromedp.Text(`body`, &listing, chromedp.ByQuery),
 	); err != nil {
-		t.Fatalf("navigate /tasks: %v", err)
+		t.Fatalf("navigate /api/tasks: %v", err)
 	}
 	for _, want := range []string{"buy milk", "write more tests"} {
 		if !strings.Contains(listing, want) {

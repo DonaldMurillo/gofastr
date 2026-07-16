@@ -154,7 +154,7 @@ func chatTextByEntryID(l *live.Live, id string) string {
 }
 
 // destructiveIntent runs a quick keyword scan on the user message
-// before pi sees it. If the user asked for something destructive
+// before the selected agent sees it. If the user asked for something destructive
 // (delete, drop, wipe, rebuild, reset) we prepend a directive forcing
 // the agent through propose_plan + user approval first. This is a
 // pre-flight classifier — cheap, deterministic, no extra LLM call.

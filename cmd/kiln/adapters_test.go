@@ -60,6 +60,32 @@ func TestResolveAdapterCustomBuildArgs(t *testing.T) {
 	}
 }
 
+func TestOMPAdapterPinsGLM52AndKilnBoundary(t *testing.T) {
+	a := adapters["omp"]
+	argv := a.BuildArgs("build the app")
+	joined := strings.Join(argv, " ")
+	for _, want := range []string{"omp", "--model glm-5.2", "--tools bash", "--append-system-prompt", "--auto-approve", "--no-session"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("OMP argv missing %q: %v", want, argv)
+		}
+	}
+	if argv[len(argv)-1] != "build the app" {
+		t.Errorf("last argv = %q, want user prompt", argv[len(argv)-1])
+	}
+	if !strings.Contains(joined, "$KILN_URL") {
+		t.Errorf("OMP system prompt does not enforce the Kiln HTTP boundary: %v", argv)
+	}
+	if a.Dir == "" {
+		t.Error("OMP adapter should isolate the spawned agent from Kiln's cwd")
+	}
+}
+
+func TestAdapterAutoOrderPrefersOMP(t *testing.T) {
+	if len(adapterAutoOrder) == 0 || adapterAutoOrder[0] != "omp" {
+		t.Fatalf("adapterAutoOrder = %v, want omp first", adapterAutoOrder)
+	}
+}
+
 // pi has no auto-discovery for ~/.claude/skills/ — its adapter must
 // inject --skill <path> when the kiln skill file exists. Without it
 // pi has no idea about the kiln tool API and just hallucinates Go

@@ -59,19 +59,22 @@ func New(l *live.Live, t *protocol.Tools) *Server {
 //     since wrapping them in a journal entry would be incoherent —
 //     the wrapping entry races with the truncate they perform.
 var journaledTools = map[string]bool{
-	"set_app_config": true,
-	"add_entity":     true,
-	"update_entity":  true,
-	"delete_entity":  true,
-	"add_field":      true,
-	"delete_field":   true,
-	"add_page":       true,
-	"delete_page":    true,
-	"add_hook":       true,
-	"delete_hook":    true,
-	"add_route":      true,
-	"delete_route":   true,
-	"add_seed":       true,
+	"set_app_config":      true,
+	"set_scaffold":        true,
+	"add_entity":          true,
+	"update_entity":       true,
+	"delete_entity":       true,
+	"add_field":           true,
+	"delete_field":        true,
+	"add_page":            true,
+	"delete_page":         true,
+	"update_page_element": true,
+	"add_hook":            true,
+	"delete_hook":         true,
+	"add_route":           true,
+	"delete_route":        true,
+	"add_seed":            true,
+	"set_theme":           true,
 }
 
 // Mount registers the panel routes onto r. The host fallback page is
@@ -484,6 +487,12 @@ func (s *Server) dispatch(ctx context.Context, name string, body interface {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetAppConfig(ctx, args), nil
+	case "set_scaffold":
+		var args protocol.SetScaffoldArgs
+		if err := dec.Decode(&args); err != nil {
+			return protocol.Result{}, err
+		}
+		return s.tools.SetScaffold(ctx, args), nil
 	case "add_entity":
 		var args protocol.AddEntityArgs
 		if err := dec.Decode(&args); err != nil {

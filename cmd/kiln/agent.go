@@ -16,11 +16,11 @@ import (
 //go:embed skill.md
 var kilnSkillContent string
 
-// runAgent is the turnkey "build with pi" subcommand. It starts a long-
+// runAgent is the turnkey "build with OMP/GLM-5.2" subcommand. It starts a long-
 // running `kiln serve` in the cwd, waits for the HTTP server to come
 // online, exports KILN_URL so the agent's skill can reach it, ensures
 // the Kiln skill is installed under ~/.claude/skills/kiln/, then execs
-// pi with whatever args followed. On pi exit we send the serve
+// OMP with whatever args followed. On OMP exit we send the serve
 // subprocess SIGTERM and wait briefly for cleanup.
 func runAgent(args []string) int {
 	cwd, err := os.Getwd()
@@ -32,12 +32,12 @@ func runAgent(args []string) int {
 	skillPath, err := installSkill()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[kiln] install skill: %v\n", err)
-		// non-fatal — pi still runs, just without the framework skill
+		// non-fatal — OMP still runs, just without the framework skill
 	}
 
-	piBin, err := exec.LookPath("pi")
+	ompBin, err := exec.LookPath("omp")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[kiln] pi not found in PATH. Install pi first: https://pi.dev\n")
+		fmt.Fprintf(os.Stderr, "[kiln] omp not found in PATH. Install Oh My Pi first, then run `omp models` to verify glm-5.2 is available.\n")
 		return 1
 	}
 
@@ -89,9 +89,16 @@ func runAgent(args []string) int {
 	if skillPath != "" {
 		fmt.Fprintf(os.Stderr, "[kiln] skill:      %s\n", skillPath)
 	}
-	fmt.Fprintf(os.Stderr, "[kiln] launching pi…\n\n")
+	fmt.Fprintf(os.Stderr, "[kiln] launching OMP with GLM-5.2…\n\n")
 
-	cmd := exec.Command(piBin, args...)
+	ompArgs := []string{
+		"--model", "glm-5.2",
+		"--tools", "bash",
+		"--append-system-prompt", kilnSystemPrompt(),
+		"--auto-approve",
+	}
+	ompArgs = append(ompArgs, args...)
+	cmd := exec.Command(ompBin, ompArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -101,7 +108,7 @@ func runAgent(args []string) int {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return exitErr.ExitCode()
 		}
-		fmt.Fprintf(os.Stderr, "[kiln] pi: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[kiln] omp: %v\n", err)
 		return 1
 	}
 	return 0
@@ -148,7 +155,7 @@ func waitReady(url string, timeout time.Duration) error {
 }
 
 // installSkill writes the Kiln skill into ~/.claude/skills/kiln/SKILL.md
-// so pi (and Claude Code) auto-loads framework knowledge on every run.
+// so every adapter can inject the same framework knowledge on every run.
 // Idempotent: overwrites only if the embedded version differs from disk.
 func installSkill() (string, error) {
 	home, err := os.UserHomeDir()

@@ -18,6 +18,19 @@
   // override per-embed; transient close stays per-page-load only.
   const START_OPEN = !(script && script.dataset.open === "false");
 
+  // Current GoFastr pages navigate through the shared SPA runtime. A forced
+  // navigation bypasses the page cache so freshly journaled world edits become
+  // visible without destroying in-page state or hard-reloading the document.
+  async function refreshPage(path) {
+    const runtime = window.__gofastr;
+    if (!runtime || typeof runtime.navigate !== "function") {
+      setStatus("page changed; SPA runtime is not available", "warn");
+      return false;
+    }
+    await runtime.navigate(path || (window.location.pathname + window.location.search), { force: true });
+    return true;
+  }
+
   // ---- Stylesheet -----------------------------------------------------
   function loadStyles() {
     if (document.getElementById("kiln-widget-style")) return;
@@ -423,7 +436,7 @@
     const customInput = el("input", {
       type: "text",
       class: "kiln-adapter-custom-input",
-      placeholder: `e.g. "pi -p --provider zai --model glm-5.1"`,
+      placeholder: `e.g. "omp -p --model glm-5.2"`,
       "aria-label": "Custom agent command",
     });
     customInputWrap.appendChild(customInput);
@@ -599,8 +612,9 @@
           if (!r.ok) {
             setStatus("reset failed: " + ((r && (r.error || r.kind)) || "unknown"), "error");
           } else {
-            // Force a full reload — the page itself may not exist anymore.
-            location.reload();
+            // The page itself may no longer exist, so force a cache-bypass SPA
+            // navigation and let the server select the current fallback.
+            await refreshPage();
           }
         } catch (err) {
           setStatus("network error: " + err.message, "error");
@@ -611,7 +625,7 @@
     }
 
     // Config gear: opens the agent-settings modal. The modal lists
-    // available adapters (claude-code, pi, codex), shows which are
+    // available adapters (omp, claude-code, pi, codex), shows which are
     // installed, lets the user switch + supply a custom command. The
     // current selection is highlighted; switching warns the user that
     // any in-flight agent turn will be cancelled.
@@ -727,8 +741,8 @@
         const r = await postJSON("/kiln/tool/" + tool, args);
         if (r && r.ok) {
           setStatus("ok: " + tool, "ok");
-          if (onSuccess === "reload") location.reload();
-          else if (onSuccess && onSuccess.startsWith("navigate:")) location.assign(onSuccess.slice("navigate:".length));
+          if (onSuccess === "reload") await refreshPage();
+          else if (onSuccess && onSuccess.startsWith("navigate:")) await refreshPage(onSuccess.slice("navigate:".length));
           else setTimeout(() => setStatus(""), 1500);
         } else {
           setStatus(tool + " failed: " + ((r && (r.error || r.kind)) || "unknown"), "error");
@@ -763,8 +777,8 @@
         const onSuccess = form.getAttribute("data-kiln-on-success") || "reload";
         if (r.ok) {
           setStatus("ok", "ok");
-          if (onSuccess === "reload") location.reload();
-          else if (onSuccess.startsWith("navigate:")) location.assign(onSuccess.slice("navigate:".length));
+          if (onSuccess === "reload") await refreshPage();
+          else if (onSuccess.startsWith("navigate:")) await refreshPage(onSuccess.slice("navigate:".length));
         } else {
           let txt = "";
           try { txt = await r.text(); } catch (_) {}
@@ -838,7 +852,7 @@
         flashBuildBanner(opName);
 
         // Page-affecting ops change what the current URL renders.
-        // Always reload on these regardless of whether we're currently
+        // Always refresh on these regardless of whether we're currently
         // on the host fallback — the host might be about to be
         // superseded by a real page, or the real page rewritten.
         const pageAffecting = (
@@ -851,8 +865,8 @@
         );
         if (pageAffecting) {
           // Tiny delay so the system row is visible briefly before the
-          // reload kicks in.
-          setTimeout(() => location.reload(), 350);
+          // cache-bypass SPA navigation kicks in.
+          setTimeout(() => { void refreshPage(); }, 350);
         }
       });
       es.addEventListener("open", () => {

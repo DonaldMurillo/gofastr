@@ -4,107 +4,82 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
-func TestFreezeWritesEntities(t *testing.T) {
+func TestFreezeWritesBlueprintAndWorldSnapshot(t *testing.T) {
 	w := world.New()
 	w.App.Name = "blog"
+	w.App.Module = "example.com/blog"
 	w.Entities["posts"] = &world.Entity{
-		Name: "posts",
+		Name: "posts", OwnerField: "user_id", SearchFields: []string{"title", "body"},
 		Fields: []world.Field{
 			{Name: "title", Type: "string", Required: true},
 			{Name: "body", Type: "text"},
 		},
 	}
-	w.Entities["users"] = &world.Entity{
-		Name: "users",
-		Fields: []world.Field{
-			{Name: "email", Type: "string", Required: true, Unique: true},
-		},
+	w.Pages["/posts"] = &world.Page{
+		Path: "/posts", Name: "posts", Title: "Posts",
+		Tree: world.Node{Kind: "page_header", Props: map[string]any{"title": "Posts"}},
 	}
+	w.Nav = []world.NavItem{{Label: "Posts", Href: "/posts"}}
 
 	dir := t.TempDir()
 	if err := freeze.Freeze(w, dir); err != nil {
 		t.Fatalf("Freeze: %v", err)
 	}
 
-	// entities/<name>.json files should exist and be valid JSON
-	// declarations with the expected name and fields.
-	for _, name := range []string{"posts", "users"} {
-		path := filepath.Join(dir, "entities", name+".json")
-		buf, err := os.ReadFile(path)
-		if err != nil {
-			t.Errorf("read %s: %v", name, err)
-			continue
-		}
-		var decl map[string]any
-		if err := json.Unmarshal(buf, &decl); err != nil {
-			t.Errorf("unmarshal %s: %v", name, err)
-			continue
-		}
-		if decl["name"] != name {
-			t.Errorf("frozen entity name = %v, want %q", decl["name"], name)
-		}
-		if fields, ok := decl["fields"].([]any); !ok || len(fields) == 0 {
-			t.Errorf("frozen entity %s missing fields: %#v", name, decl["fields"])
+	buf, err := os.ReadFile(filepath.Join(dir, "gofastr.yml"))
+	if err != nil {
+		t.Fatalf("read gofastr.yml: %v", err)
+	}
+	yml := string(buf)
+	for _, want := range []string{
+		"name: blog", "module: example.com/blog", "api_prefix: api",
+		"owner_field: user_id", "search_fields:", "route: /posts", "nav:",
+	} {
+		if !strings.Contains(yml, want) {
+			t.Errorf("gofastr.yml missing %q:\n%s", want, yml)
 		}
 	}
-}
-
-func TestFreezeWorldSnapshot(t *testing.T) {
-	w := world.New()
-	w.App.Name = "demo"
-	w.Pages["/dashboard"] = &world.Page{
-		Path: "/dashboard",
-		Tree: world.Node{Kind: "div", Children: []world.Node{{Kind: "heading", Props: map[string]any{"level": float64(1), "text": "Hi"}}}},
-	}
-	w.Hooks = append(w.Hooks, &world.Hook{ID: "h1", Entity: "posts", When: "before_create", Action: world.Action{Kind: world.ActionNoop}})
-
-	dir := t.TempDir()
-	if err := freeze.Freeze(w, dir); err != nil {
-		t.Fatalf("Freeze: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "entities")); !os.IsNotExist(err) {
+		t.Errorf("legacy entities/ output should be gone; stat err=%v", err)
 	}
 
-	buf, err := os.ReadFile(filepath.Join(dir, "world.json"))
+	snapshot, err := os.ReadFile(filepath.Join(dir, "world.json"))
 	if err != nil {
 		t.Fatalf("read world.json: %v", err)
 	}
 	var got world.World
-	if err := json.Unmarshal(buf, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	if err := json.Unmarshal(snapshot, &got); err != nil {
+		t.Fatalf("unmarshal world snapshot: %v", err)
 	}
-	if got.App.Name != "demo" {
-		t.Errorf("App.Name = %q", got.App.Name)
-	}
-	if _, ok := got.Pages["/dashboard"]; !ok {
-		t.Error("page lost in snapshot")
-	}
-	if len(got.Hooks) != 1 {
-		t.Errorf("hooks = %d", len(got.Hooks))
+	if got.App.Name != "blog" || got.Entities["posts"].OwnerField != "user_id" {
+		t.Fatalf("snapshot lost current world fields: %+v", got)
 	}
 }
 
 func TestFreezeIdempotent(t *testing.T) {
 	w := world.New()
-	w.Entities["posts"] = &world.Entity{
-		Name:   "posts",
-		Fields: []world.Field{{Name: "title", Type: "string"}},
-	}
+	w.Entities["posts"] = &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}}
 	dir := t.TempDir()
 	if err := freeze.Freeze(w, dir); err != nil {
 		t.Fatalf("first: %v", err)
 	}
+	first, err := os.ReadFile(filepath.Join(dir, "gofastr.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := freeze.Freeze(w, dir); err != nil {
 		t.Fatalf("second: %v", err)
 	}
-	// Same content both times.
-	first, _ := os.ReadFile(filepath.Join(dir, "entities", "posts.json"))
-	if len(first) == 0 {
-		t.Fatal("entity file empty")
+	second, _ := os.ReadFile(filepath.Join(dir, "gofastr.yml"))
+	if string(first) != string(second) {
+		t.Fatalf("freeze output changed across identical runs:\n--- first ---\n%s\n--- second ---\n%s", first, second)
 	}
 }
 
@@ -114,39 +89,26 @@ func TestFreezeRejectsNilWorld(t *testing.T) {
 	}
 }
 
-func TestFrozenEntitiesLoadIntoFreshApp(t *testing.T) {
+func TestFreezeRejectsBlueprintThatCannotGraduate(t *testing.T) {
+	w := world.New()
+	w.Entities["records"] = &world.Entity{Name: "records", MultiTenant: true}
+	if err := freeze.Freeze(w, t.TempDir()); err == nil || !strings.Contains(err.Error(), "tenant resolver") {
+		t.Fatalf("expected actionable multi-tenant graduation error, got %v", err)
+	}
+}
+
+func TestBlueprintKeepsLegacyRelationTarget(t *testing.T) {
 	w := world.New()
 	w.Entities["posts"] = &world.Entity{
-		Name: "posts",
-		Fields: []world.Field{
-			{Name: "title", Type: "string", Required: true},
-			{Name: "body", Type: "text"},
-		},
-		MCP: true,
+		Name:      "posts",
+		Relations: []world.Relation{{Name: "author", To: "users", Type: "belongs_to", ForeignKey: "user_id"}},
 	}
-	dir := t.TempDir()
-	if err := freeze.Freeze(w, dir); err != nil {
-		t.Fatalf("Freeze: %v", err)
-	}
-
-	// The frozen entities/ drops straight into a regular GoFastr
-	// project. Validate the emitted declaration round-trips as JSON
-	// carrying the entity's name, fields, and config flags.
-	buf, err := os.ReadFile(filepath.Join(dir, "entities", "posts.json"))
+	buf, err := freeze.BlueprintYAML(w)
 	if err != nil {
-		t.Fatalf("read posts.json: %v", err)
+		t.Fatal(err)
 	}
-	var decl map[string]any
-	if err := json.Unmarshal(buf, &decl); err != nil {
-		t.Fatalf("unmarshal posts.json: %v", err)
-	}
-	if decl["name"] != "posts" {
-		t.Errorf("frozen entity name = %v", decl["name"])
-	}
-	if fields, ok := decl["fields"].([]any); !ok || len(fields) != 2 {
-		t.Errorf("frozen fields = %#v", decl["fields"])
-	}
-	if decl["mcp"] != true {
-		t.Errorf("frozen mcp flag = %#v", decl["mcp"])
+	yml := string(buf)
+	if !strings.Contains(yml, "entity: users") || strings.Contains(yml, "to: users") {
+		t.Fatalf("legacy relation target did not normalize to current blueprint shape:\n%s", yml)
 	}
 }

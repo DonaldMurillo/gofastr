@@ -35,7 +35,7 @@ type AgentStateFn func() any
 //
 // agentState is read by the gear modal's agent_list_html signal at
 // mount time so the user sees the actual adapter list (claude-code,
-// pi, codex, ...) instead of a Loading… placeholder. nil → no list.
+// omp, claude-code, pi, codex, ...) instead of a Loading… placeholder. nil → no list.
 //
 // All bespoke kiln widget plumbing (vanilla JS DOM, hand-rolled CSS,
 // per-route HTTP handlers) is replaced by this single declaration.
@@ -84,13 +84,13 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		// Refresh on any world_edit so the pill keeps pace with the agent.
 		SSERefetch("/.kiln/events", "world_edit", "world_snapshot").
 		SSERefetch("/.kiln/events", "session_reset", "world_snapshot").
-		// Page-affecting world edits: full reload so the now-rendered
+		// Page-affecting world edits: forced SPA refresh so the now-rendered
 		// page reflects the new world. Filtered by op so add_entity
 		// (which doesn't change page rendering) doesn't trigger reloads.
-		SSEReload("/.kiln/events", "world_edit", "op", "add_page").
-		SSEReload("/.kiln/events", "world_edit", "op", "delete_page").
-		SSEReload("/.kiln/events", "world_edit", "op", "add_route").
-		SSEReload("/.kiln/events", "world_edit", "op", "delete_route").
+		SSERefresh("/.kiln/events", "world_edit", "op", "add_page").
+		SSERefresh("/.kiln/events", "world_edit", "op", "delete_page").
+		SSERefresh("/.kiln/events", "world_edit", "op", "add_route").
+		SSERefresh("/.kiln/events", "world_edit", "op", "delete_route").
 		// RPC: chat send, reset, approve/reject, undo.
 		// SSE refetch owns log updates; the synchronous RPC response is
 		// just an ack. Binding chat_html to the response was a footgun:
@@ -238,7 +238,7 @@ func (pe *panelEnv) agentListHTML() string {
 	}
 	if !anyInstalled && len(available) > 0 {
 		b.WriteString(`<p class="kiln-modal-tip">No agent CLIs detected on PATH. Install one to enable chat-driven builds — e.g. ` +
-			`<code>brew install pi</code>, ` +
+			`install <code>omp</code> (recommended for GLM-5.2), ` +
 			`<code>npm i -g @anthropic-ai/claude-code</code>, ` +
 			`or <code>npm i -g @openai/codex</code>.</p>`)
 	}
@@ -869,7 +869,7 @@ func toolIcon(name string) string {
 		return "❘" // plan-shape
 	case "world_get":
 		return "◈" // read-only
-	case "set_app_config", "set_theme":
+	case "set_app_config", "set_scaffold", "set_theme":
 		return "✦" // app-meta
 	case "undo", "reset_session":
 		return "↶" // history meta

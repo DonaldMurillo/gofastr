@@ -318,7 +318,10 @@
               if (String(payload[k]) !== String(b.match[k])) return;
             }
           }
-          setTimeout(() => location.reload(), 200);
+          setTimeout(() => {
+            const path = location.pathname + location.search + location.hash;
+            if (NS.navigate) NS.navigate(path, { force: true });
+          }, 200);
         });
         continue;
       }

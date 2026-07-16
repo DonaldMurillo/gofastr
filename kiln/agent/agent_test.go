@@ -205,3 +205,15 @@ func TestDispatchExposesShared(t *testing.T) {
 		t.Fatalf("expected OK, got %+v", res)
 	}
 }
+
+func TestDispatchCoversNativeMetaAndScaffoldTools(t *testing.T) {
+	tools, _ := setupAgent(t)
+	for _, tc := range []agent.ToolCall{
+		{Name: "set_scaffold", Args: map[string]any{"nav": []any{map[string]any{"label": "Home", "href": "/"}}}},
+		{Name: "set_theme", Args: map[string]any{"theme": map[string]any{"primary": "#3366ff"}}},
+	} {
+		if res := agent.Dispatch(context.Background(), tools, tc); !res.OK {
+			t.Errorf("dispatch %s: %+v", tc.Name, res)
+		}
+	}
+}

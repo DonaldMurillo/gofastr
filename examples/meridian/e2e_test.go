@@ -8,8 +8,6 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -34,24 +32,7 @@ func TestE2E(t *testing.T) {
 		adminPass = "e2e-seed-admin-pw"
 		t.Setenv("ADMIN_SEED_PASSWORD", adminPass)
 	}
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "app")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	build.Stderr = os.Stderr
-	if err := build.Run(); err != nil {
-		t.Fatalf("build: %v", err)
-	}
-	addr := e2eFreeAddr(t)
-	srv := exec.Command(bin)
-	srv.Dir = dir
-	srv.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(dir, "e2e.db"))
-	srv.Stdout, srv.Stderr = io.Discard, io.Discard
-	if err := srv.Start(); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	t.Cleanup(func() { _ = srv.Process.Kill(); _, _ = srv.Process.Wait() })
-	base := "http://" + addr
-	e2eWaitReady(t, base)
+	base := e2eBootApp(t)
 
 	if code, body := e2eDo(t, http.DefaultClient, "GET", base+"/", ""); code != http.StatusOK || !strings.Contains(body, "Meridian") {
 		t.Errorf("home page = %d, missing brand? %v", code, !strings.Contains(body, "Meridian"))
