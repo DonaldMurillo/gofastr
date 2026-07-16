@@ -227,11 +227,27 @@ func tokenDisplayPrefix(plaintext string) string {
 // ─── Scope context helpers ─────────────────────────────────────────────────
 
 type tokenScopesKey struct{}
+type tokenIDKey struct{}
 
 // WithTokenScopes stashes a token's scopes in ctx. TokenMiddleware calls
 // this on success; request handlers read it via TokenScopes / HasScope.
 func WithTokenScopes(ctx context.Context, scopes []string) context.Context {
 	return context.WithValue(ctx, tokenScopesKey{}, scopes)
+}
+
+// WithTokenID stashes the authenticating token's ID in ctx. TokenMiddleware
+// calls this on success so hosts can attribute a request to the SPECIFIC
+// token — per-token metering, quotas, and audit trails need the token
+// identity, not just the owner (one owner can hold many tokens).
+func WithTokenID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, tokenIDKey{}, id)
+}
+
+// TokenID returns (id, true) only for token-authenticated requests;
+// ("", false) for sessions/JWT.
+func TokenID(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(tokenIDKey{}).(string)
+	return id, ok
 }
 
 // TokenScopes returns (scopes, true) only for token-authenticated requests;

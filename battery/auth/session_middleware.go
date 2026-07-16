@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -74,86 +75,107 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 			ctx := r.Context()
 			cfg := mgr.Config()
 
-			cookie, err := r.Cookie(cfg.SessionCookie)
-			if err != nil || cookie.Value == "" {
-				anon(w, r, next)
-				return
-			}
-			sess, err := mgr.SessionStore().Get(ctx, cookie.Value)
-			if err != nil {
-				// Distinguish "session expired / not in store" (debug —
-				// normal anonymous transition) from "store outage" (warn
-				// — operator needs to see). The framework's ErrSessionNotFound
-				// is the legit not-found sentinel; anything else is suspicious.
-				if log != nil {
-					if errors.Is(err, ErrSessionNotFound) {
-						log.Debug("session: not found in store",
-							"err", err.Error())
-					} else {
-						log.Warn("session: store lookup failed — request degraded to anonymous",
-							"err", err.Error())
-					}
+			// Try EVERY cookie carrying the session name, not just the first.
+			// A jar can hold several: a stale cookie from an old deployment at
+			// a more specific Path, or another localhost port's cookie
+			// (localhost cookies ignore ports). Browsers send the most
+			// path-specific first and r.Cookie returns only that one — so a
+			// dead cookie would shadow a live session and login would
+			// silently fail while a valid cookie sits one position later.
+			for _, token := range sessionCookieCandidates(r, cfg.SessionCookie) {
+				user, ok := resolveSessionUser(ctx, mgr, token, log)
+				if ok {
+					ctx = handler.SetUser(ctx, user)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
 				}
-				anon(w, r, next)
-				return
 			}
-			if sess == nil {
-				if log != nil {
-					log.Debug("session: store returned nil session for cookie")
-				}
-				anon(w, r, next)
-				return
-			}
-			// Pending-2FA sessions are NOT loaded into context — they're
-			// only usable for /auth/2fa/challenge.
-			if sess.PendingTwoFactor {
-				if log != nil {
-					log.Debug("session: pending 2FA, request degraded to anonymous",
-						"user_id", sess.UserID)
-				}
-				anon(w, r, next)
-				return
-			}
-			store := mgr.UserStore()
-			if store == nil {
-				// This is a host misconfiguration — battery/auth was wired
-				// without a UserStore. WARN every time so operators see
-				// the line; we don't panic because that would take the
-				// app down for a recoverable mistake.
-				if log != nil {
-					log.Warn("session: UserStore not configured on AuthManager — session cookie can't be resolved",
-						"recommendation", "set AuthConfig.UserStore at init")
-				}
-				anon(w, r, next)
-				return
-			}
-			user, err := store.FindByID(ctx, sess.UserID)
-			if err != nil {
-				if log != nil {
-					if errors.Is(err, ErrUserNotFound) {
-						log.Debug("session: user not found for session",
-							"user_id", sess.UserID)
-					} else {
-						log.Warn("session: user-store lookup failed — request degraded to anonymous",
-							"user_id", sess.UserID, "err", err.Error())
-					}
-				}
-				anon(w, r, next)
-				return
-			}
-			if user == nil {
-				if log != nil {
-					log.Debug("session: user-store returned nil for session",
-						"user_id", sess.UserID)
-				}
-				anon(w, r, next)
-				return
-			}
-
-			ctx = handler.SetUser(ctx, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			anon(w, r, next)
 		})
 	}
+}
+
+// sessionCookieCandidates returns the values of every cookie named name, in
+// the order the client sent them.
+func sessionCookieCandidates(r *http.Request, name string) []string {
+	var out []string
+	for _, c := range r.Cookies() {
+		if c.Name == name && c.Value != "" {
+			out = append(out, c.Value)
+		}
+	}
+	return out
+}
+
+// resolveSessionUser resolves one session token to its user: session lookup,
+// pending-2FA refusal, user lookup. Logging matches the middleware's original
+// per-step diagnostics.
+func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log *slog.Logger) (User, bool) {
+	sess, err := mgr.SessionStore().Get(ctx, token)
+	if err != nil {
+		// Distinguish "session expired / not in store" (debug — normal
+		// anonymous transition) from "store outage" (warn — operator needs
+		// to see). The framework's ErrSessionNotFound is the legit not-found
+		// sentinel; anything else is suspicious.
+		if log != nil {
+			if errors.Is(err, ErrSessionNotFound) {
+				log.Debug("session: not found in store",
+					"err", err.Error())
+			} else {
+				log.Warn("session: store lookup failed — request degraded to anonymous",
+					"err", err.Error())
+			}
+		}
+		return nil, false
+	}
+	if sess == nil {
+		if log != nil {
+			log.Debug("session: store returned nil session for cookie")
+		}
+		return nil, false
+	}
+	// Pending-2FA sessions are NOT loaded into context — they're
+	// only usable for /auth/2fa/challenge.
+	if sess.PendingTwoFactor {
+		if log != nil {
+			log.Debug("session: pending 2FA, request degraded to anonymous",
+				"user_id", sess.UserID)
+		}
+		return nil, false
+	}
+	store := mgr.UserStore()
+	if store == nil {
+		// This is a host misconfiguration — battery/auth was wired
+		// without a UserStore. WARN every time so operators see
+		// the line; we don't panic because that would take the
+		// app down for a recoverable mistake.
+		if log != nil {
+			log.Warn("session: UserStore not configured on AuthManager — session cookie can't be resolved",
+				"recommendation", "set AuthConfig.UserStore at init")
+		}
+		return nil, false
+	}
+	user, err := store.FindByID(ctx, sess.UserID)
+	if err != nil {
+		if log != nil {
+			if errors.Is(err, ErrUserNotFound) {
+				log.Debug("session: user not found for session",
+					"user_id", sess.UserID)
+			} else {
+				log.Warn("session: user-store lookup failed — request degraded to anonymous",
+					"user_id", sess.UserID, "err", err.Error())
+			}
+		}
+		return nil, false
+	}
+	if user == nil {
+		if log != nil {
+			log.Debug("session: user-store returned nil for session",
+				"user_id", sess.UserID)
+		}
+		return nil, false
+	}
+	return user, true
 }
 
 // RequireSession returns middleware that rejects requests without a

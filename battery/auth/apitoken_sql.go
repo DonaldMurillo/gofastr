@@ -175,6 +175,50 @@ func (s *SQLAPITokenStore) TouchLastUsed(ctx context.Context, id string, at time
 	return err
 }
 
+// ListAll returns every token across all owners, newest first — the admin
+// view. Deliberately NOT part of APITokenStore: the plugin's self-service
+// routes must never reach it; hosts wire it into their own admin-gated
+// surface from the concrete store.
+func (s *SQLAPITokenStore) ListAll(ctx context.Context) ([]APIToken, error) {
+	q := s.q(`SELECT id, name, owner_kind, owner_id, prefix, scopes, expires_at, last_used_at, revoked_at, created_at FROM %s ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []APIToken
+	for rows.Next() {
+		t, err := scanAPIToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *t)
+	}
+	return out, rows.Err()
+}
+
+// RevokeAny stamps RevokedAt regardless of owner — the admin action. Same
+// idempotency contract as Revoke; ErrTokenNotFound for unknown ids. Like
+// ListAll, it is host-wired only, never exposed via the plugin routes.
+func (s *SQLAPITokenStore) RevokeAny(ctx context.Context, id string) error {
+	var revokedRaw any
+	err := s.db.QueryRowContext(ctx,
+		s.q(`SELECT revoked_at FROM %s WHERE id = $1`), id,
+	).Scan(&revokedRaw)
+	if err == sql.ErrNoRows {
+		return ErrTokenNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !coerceTime(revokedRaw).IsZero() {
+		return nil // idempotent: already revoked
+	}
+	_, err = s.db.ExecContext(ctx,
+		s.q(`UPDATE %s SET revoked_at = $1 WHERE id = $2`), time.Now().UTC(), id)
+	return err
+}
+
 // ─── SQLServiceAccountStore ─────────────────────────────────────────────────
 
 // SQLServiceAccountStore is the database-backed ServiceAccountStore.

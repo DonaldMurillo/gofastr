@@ -317,11 +317,14 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 			return
 		}
 		cfg := c.mgr.Config()
-		if cookie, err := r.Cookie(cfg.SessionCookie); err == nil {
+		// Revoke EVERY session-name cookie the client sent, not just the
+		// first — a jar can hold duplicates at different scopes, and logout
+		// must not leave a shadowed-but-valid session alive.
+		for _, token := range sessionCookieCandidates(r, cfg.SessionCookie) {
 			// Capture the principal before deleting so the audit row
 			// names who logged out. A Get failure (expired/invalid
 			// cookie) yields no event — nothing to revoke of record.
-			if sess, gerr := c.mgr.SessionStore().Get(r.Context(), cookie.Value); gerr == nil {
+			if sess, gerr := c.mgr.SessionStore().Get(r.Context(), token); gerr == nil {
 				c.mgr.emitSecurity(r.Context(), SecurityEvent{
 					Kind:   "session.revoked",
 					UserID: sess.UserID,
@@ -329,7 +332,7 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 					Meta:   map[string]string{"reason": "logout"},
 				})
 			}
-			_ = c.mgr.SessionStore().Delete(r.Context(), cookie.Value)
+			_ = c.mgr.SessionStore().Delete(r.Context(), token)
 		}
 		http.SetCookie(w, &http.Cookie{
 			Name:     cfg.SessionCookie,
@@ -394,20 +397,36 @@ func (c *CorePlugin) markPendingIfTwoFactorEnabled(r *http.Request, sessionToken
 func (c *CorePlugin) meHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := c.mgr.Config()
-		cookie, err := r.Cookie(cfg.SessionCookie)
-		if err != nil {
+		// Try every session-name cookie the client sent (duplicates at
+		// different scopes shadow each other; the first valid one wins).
+		candidates := sessionCookieCandidates(r, cfg.SessionCookie)
+		if len(candidates) == 0 {
 			writeAuthError(w, http.StatusUnauthorized, "no session")
 			return
 		}
-		sess, err := c.mgr.SessionStore().Get(r.Context(), cookie.Value)
-		if err != nil {
-			writeAuthError(w, http.StatusUnauthorized, "invalid session")
-			return
+		var sess *Session
+		pending := false
+		for _, token := range candidates {
+			s, err := c.mgr.SessionStore().Get(r.Context(), token)
+			if err != nil || s == nil {
+				continue
+			}
+			// Pending-2FA sessions are usable ONLY for /auth/2fa/challenge.
+			// Anything else — meHandler included — refuses them; remember we
+			// saw one so the error names the real state.
+			if s.PendingTwoFactor {
+				pending = true
+				continue
+			}
+			sess = s
+			break
 		}
-		// Pending-2FA sessions are usable ONLY for /auth/2fa/challenge.
-		// Anything else — meHandler included — refuses them.
-		if sess.PendingTwoFactor {
-			writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		if sess == nil {
+			if pending {
+				writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+				return
+			}
+			writeAuthError(w, http.StatusUnauthorized, "invalid session")
 			return
 		}
 

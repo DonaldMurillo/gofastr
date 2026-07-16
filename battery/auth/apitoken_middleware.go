@@ -122,9 +122,12 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 				return
 			}
 
-			// (5) Success.
+			// (5) Success. Alongside the owner and scopes, expose the token's
+			// own ID — per-token metering/quotas/audit need to attribute the
+			// request to the SPECIFIC credential, not just its owner.
 			newCtx := handler.SetUser(ctx, principal)
 			newCtx = WithTokenScopes(newCtx, t.Scopes)
+			newCtx = WithTokenID(newCtx, t.ID)
 			if shouldTouchLastUsed(t.LastUsedAt) {
 				// Synchronous + best-effort: the write is fast (indexed PK
 				// UPDATE) and happens at most once per token per 60s. Doing
