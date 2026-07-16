@@ -81,6 +81,9 @@ func TestBuildAndServeBuildsAndStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("isolation.Resolve: %v", err)
 	}
+	// In-process call: dev's shutdown path never runs, so remove the
+	// compiled temp binary ourselves.
+	t.Cleanup(func() { _ = os.Remove(devServerBinaryPath(rt)) })
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	ok := covT_capStdout(t, func() {

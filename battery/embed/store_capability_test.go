@@ -67,11 +67,13 @@ func TestOpen_FailsClosedOnKeywordWithoutChunkLister(t *testing.T) {
 
 // TestOpen_FlatStoreSatisfiesAll confirms the default store works with both.
 func TestOpen_FlatStoreSatisfiesAll(t *testing.T) {
-	if _, err := Open(Options{
+	idx, err := Open(Options{
 		Embedder: NewStubEmbedder(8),
 		Path:     t.TempDir(),
 		Keyword:  fakeKeyword{},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Open with default FlatStore + Path + Keyword: %v", err)
 	}
+	defer idx.Close()
 }

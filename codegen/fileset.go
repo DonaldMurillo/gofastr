@@ -273,9 +273,17 @@ func cleanManifestFiles(root string) error {
 func EnsureNoSymlinkPath(path string) error {
 	clean := filepath.Clean(path)
 	current := ""
-	if filepath.IsAbs(clean) {
+	volume := filepath.VolumeName(clean)
+	if volume != "" {
+		current = volume
+		clean = strings.TrimPrefix(clean, volume)
+		if strings.HasPrefix(clean, string(filepath.Separator)) {
+			current += string(filepath.Separator)
+			clean = strings.TrimLeft(clean, `\/`)
+		}
+	} else if filepath.IsAbs(clean) {
 		current = string(filepath.Separator)
-		clean = strings.TrimPrefix(clean, current)
+		clean = strings.TrimLeft(clean, `\/`)
 	}
 	parts := strings.Split(filepath.ToSlash(clean), "/")
 	for _, part := range parts {

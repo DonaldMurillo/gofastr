@@ -2109,21 +2109,32 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool
 	case "ui.LinkButton":
 		c := cfgOf(call, 0)
 		return block("link_button", props2("label", astString(c["Label"]), "href", astString(c["Href"]), "variant", buttonVariant(c["Variant"]))), true
+	case "ui.Stack":
+		return reverseLayoutBlock("stack", call, helpers), true
+	case "ui.Cluster":
+		return reverseLayoutBlock("cluster", call, helpers), true
 	case "ui.Grid":
 		// A grid of pricing cards is a `pricing` block; a grid of stat cards
-		// is a stat_row.
+		// is a stat_row. Every other grid preserves the explicit layout block.
 		if len(call.Args) > 1 {
 			if first, ok := call.Args[1].(*ast.CallExpr); ok && callSel(first) == "ui.PricingCard" {
 				return reversePricing(call), true
 			}
 		}
-		b := BlueprintBlock{Kind: "stat_row"}
+		allStats := len(call.Args) > 1
 		for _, arg := range call.Args[1:] {
-			if cb, ok := reverseBlock(arg, helpers); ok {
-				b.Children = append(b.Children, cb)
+			child, ok := arg.(*ast.CallExpr)
+			if !ok || callSel(child) != "ui.StatCard" {
+				allStats = false
+				break
 			}
 		}
-		return b, true
+		if allStats {
+			b := reverseLayoutBlock("stat_row", call, helpers)
+			b.Props = nil
+			return b, true
+		}
+		return reverseLayoutBlock("grid", call, helpers), true
 	case "ui.StatCard":
 		return reverseStatCard(call), true
 	case "ui.Markdown":
@@ -2141,6 +2152,58 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool
 		return reverseRenderTag(call)
 	}
 	return BlueprintBlock{}, false
+}
+
+func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.Expr) BlueprintBlock {
+	b := BlueprintBlock{Kind: kind, Props: map[string]any{}}
+	cfg := cfgOf(call, 0)
+	if kind == "grid" {
+		putStr(b.Props, "min", astString(cfg["Min"]))
+	}
+	if gap := reverseGap(astSelName(cfg["Gap"])); gap != "" && gap != "md" {
+		b.Props["gap"] = gap
+	}
+	if kind == "stack" || kind == "cluster" {
+		if align := reverseAlign(astSelName(cfg["Align"])); align != "" && align != "start" {
+			b.Props["align"] = align
+		}
+		if justify := reverseJustify(astSelName(cfg["Justify"])); justify != "" && justify != "start" {
+			b.Props["justify"] = justify
+		}
+	}
+	if kind == "cluster" && astBool(cfg["NoWrap"]) {
+		b.Props["no_wrap"] = true
+	}
+	for _, arg := range call.Args[1:] {
+		if child, ok := reverseBlock(arg, helpers); ok {
+			b.Children = append(b.Children, child)
+		}
+	}
+	if len(b.Props) == 0 {
+		b.Props = nil
+	}
+	return b
+}
+
+func reverseGap(name string) string {
+	return map[string]string{
+		"GapNone": "none", "GapXS": "xs", "GapSM": "sm", "GapMD": "md",
+		"GapLG": "lg", "GapXL": "xl", "Gap2XL": "2xl",
+	}[name]
+}
+
+func reverseAlign(name string) string {
+	return map[string]string{
+		"AlignStart": "start", "AlignCenter": "center", "AlignEnd": "end",
+		"AlignBaseline": "baseline", "AlignStretch": "stretch",
+	}[name]
+}
+
+func reverseJustify(name string) string {
+	return map[string]string{
+		"JustifyStart": "start", "JustifyCenter": "center", "JustifyEnd": "end",
+		"JustifyBetween": "between", "JustifyAround": "around",
+	}[name]
 }
 
 func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (BlueprintBlock, bool) {

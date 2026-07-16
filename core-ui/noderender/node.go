@@ -24,6 +24,15 @@ func RenderNode(n node.Node) render.HTML {
 	return renderKind(n.Kind, n.Props, children)
 }
 
+// RenderKind renders a single node's own element from pre-rendered children,
+// without walking the subtree. Callers with a wider vocabulary (kiln/render's
+// typed design-system kinds) dispatch each child themselves and use this for
+// the one-to-one semantic HTML shell, so a typed kind nested inside a leaf
+// container still renders through its component.
+func RenderKind(kind string, props map[string]any, children []render.HTML) render.HTML {
+	return renderKind(kind, props, children)
+}
+
 // renderKind dispatches each known IR kind to the matching
 // core-ui/html builder. All ID/Class plumbing and the agent's
 // arbitrary attrs (data-kiln-tool, etc.) flow through Attrs.

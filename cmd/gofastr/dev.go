@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -111,6 +112,7 @@ func runDev(args []string) {
 			fmt.Println()
 			info("Shutting down...")
 			killServer(&mu, &server)
+			_ = os.Remove(devServerBinaryPath(runtimeIsolation))
 			close(stop)
 			return
 
@@ -139,14 +141,25 @@ func resolveDevIsolation(dir, addr string) (*isolation.Runtime, string, error) {
 	return runtimeIsolation, resolvedAddr, nil
 }
 
-// buildAndServe builds and starts the server process.
-func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
-	// Build binary to temp file
-	tmpName := "gofastr-dev-server"
+// devServerBinaryPath is the per-process temp path the rebuilt server is
+// compiled to. The pid suffix lets concurrent dev instances coexist; the
+// shutdown path removes the file so restarts don't accumulate binaries in
+// the temp dir.
+func devServerBinaryPath(runtimeIsolation *isolation.Runtime) string {
+	tmpName := fmt.Sprintf("gofastr-dev-server-%d", os.Getpid())
 	if runtimeIsolation.Active() {
 		tmpName += "-" + runtimeIsolation.ID()
 	}
-	tmpBin := filepath.Join(os.TempDir(), tmpName)
+	if runtime.GOOS == "windows" {
+		tmpName += ".exe"
+	}
+	return filepath.Join(os.TempDir(), tmpName)
+}
+
+// buildAndServe builds and starts the server process.
+func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
+	// Build binary to temp file
+	tmpBin := devServerBinaryPath(runtimeIsolation)
 	buildCmd := exec.Command("go", "build", "-o", tmpBin, ".")
 	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
 	buildCmd.Stdout = os.Stdout
@@ -168,6 +181,11 @@ func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sy
 	// GOFASTR_ENV=production is checked as a kill switch.
 	childEnv := buildDevChildEnv(runtimeIsolation.Env(os.Environ()))
 	runCmd := exec.Command(tmpBin, "--addr", addr)
+	// Run the server in the project dir — the same cwd it gets when run by
+	// hand — so relative paths (sqlite db_url, static dir) resolve against
+	// the project, and the app's own worktree-isolation lookup sees the
+	// project's location rather than wherever `gofastr dev` was launched.
+	runCmd.Dir = dir
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
 	runCmd.Env = childEnv

@@ -125,6 +125,12 @@ func dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Re
 			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
 		}
 		return t.SetAppConfig(ctx, a)
+	case "set_scaffold":
+		var a protocol.SetScaffoldArgs
+		if err := dec(&a); err != nil {
+			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
+		}
+		return t.SetScaffold(ctx, a)
 	case "add_entity":
 		var a protocol.AddEntityArgs
 		if err := dec(&a); err != nil {
@@ -215,8 +221,22 @@ func dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Re
 			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
 		}
 		return t.ApprovePlan(ctx, a)
+	case "reject_plan":
+		var a protocol.RejectPlanArgs
+		if err := dec(&a); err != nil {
+			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
+		}
+		return t.RejectPlan(ctx, a)
 	case "undo":
 		return t.Undo(ctx, protocol.UndoArgs{})
+	case "reset_session":
+		return t.ResetSession(ctx, protocol.ResetSessionArgs{})
+	case "set_theme":
+		var a protocol.SetThemeArgs
+		if err := dec(&a); err != nil {
+			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
+		}
+		return t.SetTheme(ctx, a)
 	case "chat":
 		var a protocol.ChatArgs
 		if err := dec(&a); err != nil {

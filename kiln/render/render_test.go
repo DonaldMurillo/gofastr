@@ -81,9 +81,9 @@ func TestApplyEntityRegistersCRUDRoutes(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	res, body := get(t, app.Router(), "/posts")
+	res, body := get(t, app.Router(), "/api/posts")
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("GET /posts status = %d, body = %q", res.StatusCode, body)
+		t.Fatalf("GET /api/posts status = %d, body = %q", res.StatusCode, body)
 	}
 	if !strings.Contains(body, "data") && !strings.HasPrefix(strings.TrimSpace(body), "[") {
 		t.Errorf("GET /posts body unexpected: %q", body)
@@ -113,9 +113,9 @@ func TestApplyEntityWithSeed(t *testing.T) {
 		t.Fatalf("ApplySeeds: %v", err)
 	}
 
-	res, body := get(t, app.Router(), "/posts")
+	res, body := get(t, app.Router(), "/api/posts")
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("GET /posts status = %d, body = %q", res.StatusCode, body)
+		t.Fatalf("GET /api/posts status = %d, body = %q", res.StatusCode, body)
 	}
 	if !strings.Contains(body, "hello") || !strings.Contains(body, "world") {
 		t.Errorf("seeded rows missing: %q", body)
@@ -158,8 +158,34 @@ func TestApplyPageRendersHTML(t *testing.T) {
 	if !strings.Contains(body, "/__gofastr/runtime.js") {
 		t.Errorf("page should auto-inject the widget bootstrap script: %q", body)
 	}
+	if !strings.Contains(body, "/__gofastr/app.css") {
+		t.Errorf("page should use the current UI host stylesheet: %q", body)
+	}
+	if strings.Contains(body, "/kiln/theme.css") || strings.Contains(body, "kiln-page") {
+		t.Errorf("page should not use the removed bespoke Kiln page surface: %q", body)
+	}
 	if !strings.Contains(body, "Dashboard") {
 		t.Errorf("page <title> should reflect page.Title: %q", body)
+	}
+}
+
+func TestApplyPageAndEntityMayShareNameUnderAPIPrefix(t *testing.T) {
+	app, _ := newTestApp(t)
+	w := world.New()
+	w.Entities["posts"] = &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}}
+	w.Pages["/posts"] = &world.Page{Path: "/posts", Title: "Posts", Tree: world.Node{
+		Kind: "page_header", Props: map[string]any{"title": "Posts"},
+	}}
+	if err := render.Apply(app, w); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	res, body := get(t, app.Router(), "/posts")
+	if res.StatusCode != http.StatusOK || !strings.Contains(body, "Posts") {
+		t.Fatalf("GET /posts status=%d body=%q", res.StatusCode, body)
+	}
+	res, _ = get(t, app.Router(), "/api/posts")
+	if res.StatusCode == http.StatusNotFound {
+		t.Fatal("entity CRUD route was not registered under /api")
 	}
 }
 

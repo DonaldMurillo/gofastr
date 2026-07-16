@@ -7,6 +7,82 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Kiln is current again.** OMP with GLM-5.2 is the turnkey and first-choice
+  live driver; the world/tool schemas now cover the current app, entity,
+  screen, navigation, and owned-Go scaffold surfaces; pages render through the
+  framework UI host and component registry; and `kiln freeze` deterministically
+  emits generator-ready `gofastr.yml` plus lossless `world.json`. The removed
+  `entities/*.json` graduation path is gone end to end.
+- **Blueprint layout blocks.** Screens now preserve and generate the current
+  `framework/ui` `stack`, `cluster`, `grid`, and `stat_grid` primitives, with
+  semantic spacing/alignment validation and generate→pack recovery. This keeps
+  Kiln's typed live composition intact across the owned-Go freeze boundary.
+- **Windows embed WAL snapshots.** Snapshot completion now resets the
+  append-mode WAL by closing and reopening it with truncation, avoiding the
+  Windows `Access is denied` failure from truncating the live append handle.
+- **Windows generator and dev-loop parity.** `gofastr dev` now builds a
+  per-process `.exe` on Windows, its end-to-end harness kills the watcher tree
+  before canceling the parent, codegen's symlink guard handles drive-qualified
+  paths, additive generation normalizes platform separators, and generated
+  app/extension tests execute platform-native binaries. Fresh-port allocation
+  prevents stale dev servers from contaminating later browser tests.
+- **Deterministic Meridian scheme captures.** The flagship visual gate now
+  waits for Chromium to commit the scheme repaint before taking a from-surface
+  screenshot and asserts that the dark marketing band keeps visible heading
+  and paragraph contrast in both schemes.
+- **`widget.Builder.SSERefresh`.** SSE-triggered screen changes now force the
+  normal SPA navigation pipeline for the current URL. The old `SSEReload` name
+  remains as a source-compatible alias but no longer performs a hard reload.
+
+### Fixed
+
+- **Freeze fails loudly on YAML-unrepresentable worlds.** The blueprint
+  emitter quotes commas, quotes, and brackets wherever they appear (a seed
+  value like `"a, b"` no longer re-parses as two items), leads list-item maps
+  with an inline scalar list when no scalar key exists, and
+  `BlueprintYAML` now errors — naming the offending key — on seed rows or
+  props that `core/yaml` cannot round-trip (map-only rows, keys containing
+  colons) instead of writing a silently corrupt `gofastr.yml`.
+- **Typed kinds render at any depth.** A design-system kind (`card`,
+  `stack`, `stat_card`, …) nested inside a semantic leaf container (`div`,
+  `form`, table cells) now dispatches through its component instead of
+  falling through to core noderender's unknown-kind comment; the `class`
+  strip for legacy journals now applies at every depth.
+  (`core-ui/noderender` exports the shallow `RenderKind` seam this uses.)
+- **Deleting the page being viewed shows the Kiln fallback.** The host
+  fallback carries a `<main>`, so the SSE-triggered SPA refresh swaps in its
+  content instead of emptying (and caching) a blank content area.
+- **`gofastr dev` removes its temp server binary on shutdown**, instead of
+  accumulating one pid-suffixed binary per run in the temp dir; the e2e
+  harnesses remove it for the processes they SIGKILL.
+- **The Kiln landing follows the theme.** The host fallback page now styles
+  itself entirely from the `/__gofastr/app.css` tokens (`--color-*`,
+  `--font-*`, `--radius-*`) instead of a hardcoded always-dark palette, so it
+  honors `set_theme` overrides and the light/dark scheme like every other
+  surface; its styles ride inside `<main>` so an SPA-swapped fallback keeps
+  its layout. The landing visual gate now captures both schemes.
+- The kiln skill's `add_page` example is valid JSON again (gated by a test),
+  and the hooks/routes/seeds tools, action kinds, and expression language it
+  references are documented in the skill once more.
+
+### Changed
+
+- **`gofastr dev` runs the server in the project directory.** The rebuilt
+  binary's working directory is now `--dir` — the same cwd it gets when run
+  by hand — so relative paths (sqlite `db_url`, static dir) resolve against
+  the project, and the app's worktree-isolation lookup keys off the
+  project's location instead of wherever `gofastr dev` was launched. If you
+  relied on launch-cwd-relative paths, your sqlite file now lives in the
+  project dir.
+- **Kiln defaults its live REST surface to `/api`.** Entity CRUD and HTML
+  screens can share a name (`/api/posts` and `/posts`), matching current
+  blueprints. Agent-authored page trees reject `class`, `style`, and `on*`
+  props and compose the shared design system instead. Previously advertised
+  native-agent meta tools (`set_theme`, reject, reset) are now actually
+  dispatchable, and the new `set_scaffold` tool authors nav/stubs.
+
 ## [0.26.1] - 2026-07-15
 
 Repo-hygiene patch: process ledgers become enforced gates, and the docs

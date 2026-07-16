@@ -201,6 +201,9 @@ func openWAL(path string) (*wal, error) {
 func (w *wal) append(e walEntry) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.f == nil {
+		return errors.New("embed: WAL is closed")
+	}
 	if err := w.enc.Encode(e); err != nil {
 		return fmt.Errorf("embed: wal append: %w", err)
 	}
@@ -210,6 +213,9 @@ func (w *wal) append(e walEntry) error {
 func (w *wal) replay(apply func(walEntry) error) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.f == nil {
+		return errors.New("embed: WAL is closed")
+	}
 	if _, err := w.f.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("embed: wal seek: %w", err)
 	}
@@ -240,14 +246,32 @@ func (w *wal) replay(apply func(walEntry) error) error {
 func (w *wal) truncate() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if err := w.f.Truncate(0); err != nil {
-		return fmt.Errorf("embed: wal truncate: %w", err)
+	if w.f == nil {
+		return errors.New("embed: WAL is closed")
 	}
-	if _, err := w.f.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("embed: wal seek after truncate: %w", err)
+	// Windows refuses SetEndOfFile on a handle opened with append semantics.
+	// Close and reopen with O_TRUNC while holding the WAL lock; this is also a
+	// cleaner reset boundary for the gob encoder on every platform.
+	if err := w.f.Sync(); err != nil {
+		return fmt.Errorf("embed: wal sync before truncate: %w", err)
 	}
-	w.enc = gob.NewEncoder(w.f)
-	return w.f.Sync()
+	if err := w.f.Close(); err != nil {
+		return fmt.Errorf("embed: wal close before truncate: %w", err)
+	}
+	w.f = nil
+	f, err := os.OpenFile(w.path, os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND, 0o644)
+	if err != nil {
+		// Best-effort recovery keeps the WAL object usable even though the
+		// snapshot caller still receives the reset failure.
+		w.f, _ = os.OpenFile(w.path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o644)
+		if w.f != nil {
+			w.enc = gob.NewEncoder(w.f)
+		}
+		return fmt.Errorf("embed: wal reopen after truncate: %w", err)
+	}
+	w.f = f
+	w.enc = gob.NewEncoder(f)
+	return f.Sync()
 }
 
 func (w *wal) close() error {

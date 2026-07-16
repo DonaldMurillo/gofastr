@@ -131,6 +131,18 @@ func applyWorldEdit(w *world.World, e Entry) error {
 		w.App = p.Config
 		return nil
 
+	case OpSetScaffold:
+		var p SetScaffoldPayload
+		if err := e.Decode(&p); err != nil {
+			return err
+		}
+		w.Nav = p.Nav
+		w.Endpoints = p.Endpoints
+		w.MiddlewareStubs = p.Middleware
+		w.Plugins = p.Plugins
+		w.Helpers = p.Helpers
+		return nil
+
 	case OpAddEntity:
 		var p AddEntityPayload
 		if err := e.Decode(&p); err != nil {

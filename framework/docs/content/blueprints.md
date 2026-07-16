@@ -529,9 +529,16 @@ per-role `Grant`s in `RegisterGenerated` as you define more roles.
 Any screen body can compose the framework's UI components directly via block
 `kind`s — the generator emits the matching `ui.X(...)` call:
 
-`page_header` · `hero` · `section` (with child blocks) · `card` · `stat_row` ·
-`stat_card` · `bar_chart` · `pie_chart` · `line_chart` · `link_button` ·
-`callout` · `divider` · `markdown` · `pricing`.
+`page_header` · `hero` · `section` (with child blocks) · `card` · `stack` ·
+`cluster` · `grid` · `stat_row` · `stat_grid` · `stat_card` · `bar_chart` ·
+`pie_chart` · `line_chart` · `link_button` · `callout` · `divider` ·
+`markdown` · `pricing`.
+
+The layout blocks map directly to `framework/ui`: `stack` and `cluster` accept
+semantic `gap`, `align`, and `justify` props (`cluster` also accepts
+`no_wrap`); `grid` accepts `min` and `gap`; `stat_grid` is the dashboard grid
+variant with a `12rem` default minimum. Spacing must use the shared
+`none|xs|sm|md|lg|xl|2xl` tokens—blueprints do not create a second CSS surface.
 
 **Long-form content** — `markdown` renders rich prose (`ui.Markdown`) from a
 `text:` string (headings, **bold**, lists, etc.) at a readable measure; the plain

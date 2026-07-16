@@ -17,6 +17,7 @@ func covT_unwritableHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", f)
+	t.Setenv("USERPROFILE", f)
 	t.Setenv("GOFASTR_URL", "")
 	t.Setenv("EMBED_BACKEND", "")
 }

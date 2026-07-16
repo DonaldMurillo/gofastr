@@ -1,227 +1,234 @@
 # Kiln — agent-driven build mode
 
+> **Experimental.** Kiln is a separate binary for shaping a GoFastr app live.
+> Its durable graduation artifact is the same `gofastr.yml` blueprint consumed
+> by the current generator; generated Go remains the source of truth.
 
-> **Experimental.** Kiln is the framework's most provisional surface.
-> The in-memory IR, journal-freeze format, and blueprint graduation
-> flow may still change between releases. Build with it; don't pin a
-> production path on it yet.
+Kiln gives an agent a small, journaled application IR. Each accepted edit is
+replayed into a fresh framework app, SQLite is migrated, and the browser sees
+the result through GoFastr's normal SSR + hydration host. REST CRUD defaults to
+`/api/<entity>` so an HTML screen may safely use `/<entity>`.
 
-Kiln is a separate binary that lets an AI agent (Claude Code, pi,
-Codex, any CLI with `KILN_URL`) build a GoFastr app live by mutating
-an in-memory IR over HTTP. The world re-renders, the schema migrates,
-and a chat panel streams the conversation — all in-process. Freeze
-the journal when done to emit a canonical snapshot of the built world,
-then graduate to a `gofastr.yml` blueprint (or hand-written Go) that you
-commit and generate from.
-
-This page is an overview. Source of truth: read the package docs in
-`kiln/` and the CLI help (`kiln serve -h`).
-
-## Install
+## Start it
 
 ```bash
-go install ./cmd/kiln
+# Turnkey path: starts the server, installs the Kiln skill, and runs OMP/GLM-5.2.
+kiln agent -p "build a small issue tracker"
+
+# Panel-driven mode with the same built-in adapter.
+kiln serve --agent omp
+
+# Other installed adapters or a custom command remain available.
+kiln serve --agent claude-code
+kiln serve --agent pi
+kiln serve --agent codex
+kiln serve --agent auto
+kiln serve --agent "omp -p --model glm-5.2"
 ```
 
-The binary builds independently of the main `gofastr` CLI; install
-both if you use both.
+The `omp` adapter runs OMP in an isolated temporary working directory with
+`--model glm-5.2`, the Bash tool, auto-approval, no session persistence, and
+Kiln's system prompt. Authentication stays with the installed CLI; Kiln does
+not store provider credentials.
 
-## Subcommands
+The server binds to `127.0.0.1:8765` by default. Open any current screen or the
+empty-state host and use the floating panel. Important endpoints are:
 
-| Subcommand    | Effect                                                          |
-|---------------|-----------------------------------------------------------------|
-| `kiln serve`  | HTTP server only: panel + SSE + REST tool dispatch + MCP at `/mcp`. |
-| `kiln mcp`    | HTTP + MCP on stdio (for subprocess harnesses).                 |
-| `kiln acp`    | HTTP + ACP on stdio (for ACP-attached harnesses).               |
-| `kiln agent`  | Run an embedded agent loop against a remote Kiln instance.      |
-| `kiln freeze` | Read the journal and emit canonical `entities/*.json` + `world.json`. |
+| Endpoint | Purpose |
+|---|---|
+| `GET /kiln/world` | Current lossless world IR. |
+| `GET /kiln/status` | Runtime status. |
+| `POST /kiln/tool/<name>` | JSON tool dispatch. |
+| `POST/GET /mcp` | Kiln authoring tools over Streamable HTTP MCP. |
+| `POST/GET /mcp/app` | Rebuilt app's entity MCP tools. |
+| `GET /.kiln/events` | Journal/build SSE stream. |
 
-In stdio modes the HTTP panel keeps running so you can watch the world
-build live. Logging goes to stderr; stdout is reserved for JSON-RPC.
+`kiln mcp` and `kiln acp` expose the same tool surface over stdio. Pass
+`--no-http` when a parent process owns the UI.
 
-## Picking an agent
+## Agent adapters
 
-```bash
-kiln serve --agent claude-code   # uses ~/.claude/.credentials.json
-kiln serve --agent pi            # uses pi's installed config
-kiln serve --agent auto          # picks the first installed CLI on PATH
-kiln serve --agent "<freeform>"  # any command; the prompt is appended
-```
+Built-ins are `omp`, `claude-code`, `pi`, and `codex`. `auto` chooses the first
+installed adapter in that order. `none` keeps chat journaled without spawning
+an agent. A free-form command is parsed as an executable plus arguments and
+receives the prompt as its final argument.
 
-Kiln subscribes to its own SSE bus: every `chat_user` event spawns the
-configured CLI as a subprocess with `KILN_URL` injected. The CLI reads
-the `~/.claude/skills/kiln/SKILL.md` file (auto-installed) and drives
-the build with `curl` against HTTP. Stdout is journaled back as
-`chat_assistant` so the panel renders the reply.
-
-## Bring-your-own auth
-
-Kiln does **not** manage credentials. Each adapter spawns its CLI
-which manages its own login (`claude` reads `~/.claude/.credentials.json`,
-`pi` reads its own config, etc.). Adding a new agent is a one-entry
-change in `cmd/kiln/adapters.go`.
-
-## Mutation surface & loopback binding
-
-The tool API (`POST /kiln/tool/{name}`, `/kiln/agent`, `/mcp`) mutates the
-in-memory world **without authentication** — Kiln is local build-mode
-tooling. The primary control is the **loopback bind** (`--addr` defaults to
-`127.0.0.1:8765`); pass `--addr 0.0.0.0:8765` only when you deliberately
-want it reachable off-box, and put your own auth in front of it.
-
-As defense-in-depth, an **same-origin guard** rejects cross-origin
-browser-driven state changes (a malicious web page or DNS-rebinding POSTing
-to `localhost:8765`). Non-browser clients (the agent, `curl`, MCP/ACP) send
-no `Origin` and are unaffected.
-
-## Plan-gated destructive ops
-
-Destructive tools (`delete_entity`, `delete_field`, `delete_page`,
-`delete_hook`, `delete_route`) are enforced at the protocol layer:
-
-1. The agent calls `propose_plan` listing each destructive op in
-   `targets`:
-
-   ```json
-   { "plan_id": "p1", "steps": ["drop posts"], "targets": [{"op":"delete_entity","name":"posts"}] }
-   ```
-
-2. The panel renders a plan card with **Approve** / **Reject** buttons.
-3. After Approve, the agent retries the destructive call with `plan_id`
-   set.
-
-Without an approved plan whose `targets` list matches, `delete_*`
-returns `{"ok":false,"kind":"needs_plan"}`. Each `(plan, target)` is
-single-use; reuse needs a new plan.
+Kiln injects `KILN_URL`, installs the current embedded skill, and enforces an
+HTTP boundary for built-in adapters: they must mutate the app through the tool
+surface, not by editing the repository.
 
 ## Tool surface
 
-`world_get`, `set_app_config`, `add_entity`, `update_entity`,
-`delete_entity`, `add_field`, `delete_field`, `add_page`, `delete_page`,
-`add_hook`, `delete_hook`, `add_route`, `delete_route`, `add_seed`,
-`propose_plan`, `approve_plan`, `reject_plan`, `undo`, `chat`. See
-`kiln/protocol/descriptors.go` for the full JSON schemas. A tool call over
-HTTP is a plain POST against the loopback server:
+Read and configuration:
 
-```bash
-kiln serve --agent none &   # loopback 127.0.0.1:8765 by default; unauthenticated
-curl -X POST http://localhost:8765/kiln/tool/add_entity \
-  -H 'Content-Type: application/json' \
-  -d '{"entity":{"name":"posts","fields":[{"name":"title","type":"string","required":true}]}}'
-curl http://localhost:8765/posts          # CRUD live
-curl http://localhost:8765/kiln/world     # current IR
-```
+- `world_get`
+- `set_app_config` — current blueprint app config; HTTP calls use
+  `{"config":{...}}`, a non-empty `config.name` is required, and an
+  omitted/empty API prefix resolves to `api`
+- `set_theme` — semantic light theme token overrides
+- `set_scaffold` — navigation plus owned-Go endpoint, middleware, plugin, and
+  helper stubs
 
-## Wire into Claude Code as an MCP server
+Entities and data:
+
+- `add_entity`, `update_entity`, `delete_entity`
+- `add_field`, `delete_field`
+- `add_seed`
+
+Screens and behavior:
+
+- `add_page`, `update_page_element`, `delete_page`
+- `add_hook`, `delete_hook`
+- `add_route`, `delete_route`
+
+Safety and session:
+
+- `propose_plan`, `approve_plan`, `reject_plan`
+- `undo`, `reset_session`, `chat`
+
+Every transport uses the same typed dispatcher. Destructive deletes require an
+approved plan naming the exact operation and target. An approval is
+single-use. `undo` truncates one journal entry and deterministically rebuilds;
+`reset_session` clears the journal and ephemeral schema.
+
+## Current world contract
+
+The world mirrors the current blueprint where a live representation is safe:
+
+- app module/database/static/output/API prefix, auth/admin/PWA, light and dark
+  semantic theme tokens;
+- current entity fields, relations, indices, access, owner scoping, search,
+  cursor fields, properties, hooks, declarative routes, and seeds;
+- screen metadata, layouts, access declarations, node trees, and navigation;
+- owned-Go endpoint/middleware/plugin/helper stubs.
+
+`multi_tenant: true` is rejected by authoring and freeze because neither Kiln
+nor the generator can guess the app-specific tenant resolver. Use
+`owner_field` for per-user CRUD, or wire tenant middleware in owned Go after
+graduation. Auth/admin declarations are preserved into the scaffold; Kiln's
+live preview is not a production auth certification environment.
+
+## UI composition
+
+Kiln pages run through `framework/uihost`: full SSR on first load, hydration of
+the existing DOM, SPA navigation across screens, and component CSS from the
+registry. Live world edits refresh the current screen through a forced SPA
+navigation, never `location.reload()`.
+
+Prefer design-system kinds:
+
+- `page_header`, `hero`, `section`, `card`
+- `stack`, `cluster`, `grid`, `stat_row`, `stat_grid`, `stat_card`
+- `link_button`, `callout`, `divider`
+
+Semantic leaf kinds such as `heading`, `paragraph`, `text`, `link`, `form`,
+`input`, `button`, `list`, and table elements remain available. `class`,
+`style`, and `on*` props are rejected: pages compose the shared design system
+instead of inventing a second styling surface. Form actions that target CRUD
+must use the API prefix, for example `/api/notes`.
+
+Example:
 
 ```json
 {
-  "mcpServers": {
-    "kiln": { "command": "kiln", "args": ["mcp", "--no-http"] }
+  "page": {
+    "path": "/dashboard",
+    "name": "dashboard",
+    "title": "Dashboard",
+    "layout": {"name": "app"},
+    "tree": {
+      "kind": "stack",
+      "props": {"gap": "lg"},
+      "children": [
+        {"kind": "page_header", "props": {
+          "title": "Dashboard", "subtitle": "Current project health"
+        }},
+        {"kind": "stat_row", "children": [
+          {"kind": "stat_card", "props": {"label": "Open", "value": "12"}},
+          {"kind": "stat_card", "props": {"label": "Closed", "value": "48"}}
+        ]}
+      ]
+    }
   }
 }
 ```
 
-## Generated apps don't carry Kiln
+`add_page` assigns stable node `_id` values and version `1`.
+`update_page_element` performs optimistic, surgical tree edits using those IDs
+and an optional `if_match` version.
 
-`gofastr generate --from <blueprint>` emits a plain framework app. Node
-trees render through the leaf package **`kiln/noderender`** (which imports
-only `core-ui/html`, `core/render`, and the zero-dependency `kiln/world`
-IR) — **not** `kiln/render`, which pulls Kiln's authoring engine
-(`kiln/expr`, `kiln/effect`, `framework`). So a shipped, frozen app does
-not link the build-mode evaluator. A codegen build test asserts this:
-the generated screens package compiles and its dependency graph excludes
-`kiln/expr` / `kiln/effect` / `kiln/render`.
-
-## Freezing
-
-When the build is done:
+## Graduate to owned Go
 
 ```bash
-kiln freeze --dir build/
+kiln freeze --diff
+kiln freeze --dir build
+gofastr validate build/gofastr.yml
+gofastr generate --from=build/gofastr.yml --out=app
+cd app
+go test ./...
 ```
 
-This reads the journal and emits:
+Freeze writes exactly:
 
-- `build/entities/*.json` — one declaration per entity, as a readable
-  snapshot of the frozen world's entities.
-- `build/world.json` — the canonical world IR snapshot.
+- `build/gofastr.yml` — deterministic current blueprint, ready for the
+  one-shot generator;
+- `build/world.json` — lossless authoring snapshot.
 
-You commit these files; the running Kiln process is no longer needed.
-To graduate to a running framework app, declare the frozen entities in a
-`gofastr.yml` blueprint (the snapshot makes a faithful starting point — see
-[Blueprints](blueprints.md)) or write them in Go with `app.Entity(...)`, then
-run `gofastr generate --from=gofastr.yml`. There is no file-based runtime
-loader; the generated `entities.RegisterAll(app)` wires them in.
+Declarative Kiln hook/route actions remain exact in `world.json`. Where the
+current blueprint requires a Go function, freeze emits an owned-Go handler
+stub with a description naming the declarative action; implement that behavior
+after generation. The removed pre-v0.1 `entities/*.json` format is not emitted.
 
-## Free-order authoring & durability
+Freeze fails loudly, naming the offending key, when world data cannot
+round-trip through the blueprint's YAML subset — a seed row whose every value
+is a nested object, or a props/row key containing a colon, comment marker, or
+brackets. Reshape the data (or drop the row) and re-run; a freeze that
+succeeded is guaranteed to re-parse into the same values.
 
-Build mode is **free-order**: you can add `posts` (with a `BelongsTo users`
-relation) before `users` exists. The live rebuild defers a `BelongsTo`
-whose target entity isn't registered yet and re-derives it once the target
-is added — the durable world (and `kiln freeze`) always keep the full
-relation. The framework's strict `AutoMigrate` still rejects a dangling
-`BelongsTo` outside build mode; only the kiln live runtime defers.
+`FreezeAndGenerate` performs the freeze and invokes
+`gofastr generate --from=gofastr.yml` when `gofastr` is on `PATH`.
 
-Every mutation is **validated by a trial rebuild before it is journaled**.
-An entry that can't be rebuilt is rejected and never written to the
-durable log — so a poison entry can't survive a restart and brick the
-session. On any failure the in-memory session is restored by replaying the
-journal.
+## Security boundary
 
-## Architecture
+Kiln's mutation surface is intentionally unauthenticated and local-development
+only. The default loopback bind is the primary boundary. Unsafe cross-origin
+browser requests are rejected; non-browser clients without an `Origin` header
+and same-origin requests are allowed. Binding `--addr 0.0.0.0:8765` is an
+explicit decision to expose the tool surface and should only be done behind an
+appropriate network/auth boundary.
 
-Kiln is bigger than a single doc page; the layout under `kiln/`:
+## Verification
 
-- `kiln/world` — in-memory IR for entities, fields, relations, pages.
-- `kiln/journal` — append-only event log; the basis for replay and
-  freeze.
-- `kiln/effect` — typed effects the agent fires; the world applies them.
-- `kiln/expr` — small expression language for hooks/computed fields.
-- `kiln/freeze` — IR → canonical declarations.
-- `kiln/render` — live UI render of the current world.
-- `kiln/live` — SSE bus + state subscription.
-- `kiln/protocol` — wire formats for HTTP + MCP + ACP.
-- `kiln/agent/mcp` — MCP server exposing kiln tools.
-- `kiln/agent/acp` — ACP server exposing kiln tools.
-- `kiln/integration` — end-to-end tests against a real subprocess agent.
+From the framework checkout on Windows, ensure an MSYS2 GCC is on `PATH` so
+`go-sqlite3` can run, then:
 
-## Forms in the kiln world
-
-Kiln-rendered `form` nodes default `enctype="application/json"`
-because they target the world's CRUD endpoints (which decode JSON, not
-urlencoded). This is the **opposite** of the framework default — bare
-`<form>` elements in hand-written HTML submit browser-native, kiln
-forms intercept.
-
-To opt out per-form via the world API, set `enctype` explicitly:
-
-```yaml
-- kind: form
-  props:
-    method: POST
-    action: /notes
-    enctype: application/x-www-form-urlencoded  # browser-native submit
+```bash
+go test ./cmd/kiln ./kiln/...
+go test ./cmd/gofastr -run TestKilnFreezeBlueprintParsesAndValidates
 ```
 
-For RPC-island form submission (no navigation, JSON response signal),
-use `data-fui-rpc` via `attrs`:
-
-```yaml
-- kind: form
-  props:
-    action: /api/notes
-    attrs:
-      data-fui-rpc: "/api/notes"
-      data-fui-rpc-signal: notes-state
-```
+The integration suite covers journal replay, live migrations, CRUD, hooks,
+browser form submission, UI hosting, and freeze artifacts. Live provider tests
+remain opt-in because they consume external model credentials.
 
 ## Common mistakes
 
-- **Treating Kiln as a runtime.** It's a build-time tool. Once you
-  freeze, the running Kiln binary is not part of your app.
-- **Editing `entities/*.json` and then re-running Kiln on top.**
-  Kiln expects to own the world while it's running. Hand-edits should
-  happen post-freeze, after Kiln has exited.
-- **Storing credentials in `cmd/kiln/adapters.go`.** Adapters spawn
-  CLIs; credentials live wherever those CLIs already keep them.
+- **Passing flat app fields.** `set_app_config` requires
+  `{"config":{"name":"My App",...}}`. A flat payload is rejected so it cannot
+  appear to succeed while silently discarding configuration.
+- **Using bare CRUD paths.** Entities mount below `app.api_prefix`, which
+  defaults to `/api`; point forms and clients at `/api/<entity>` unless the
+  world explicitly changes that prefix.
+- **Adding page-local classes or styles.** Kiln page nodes reject `class`,
+  `style`, and `on*` props. Compose an existing typed component, or add a
+  missing component/token to the design system before using it in Kiln.
+- **Treating `world.json` as generated application code.** It is the lossless
+  authoring snapshot. `gofastr.yml` is the generator input, and declarative
+  behaviors that require Go graduate as explicit owned stubs to implement.
+- **Exposing the mutation server.** Keep Kiln on loopback. Binding a public
+  interface without an external authentication/network boundary exposes every
+  world-editing tool.
+- **Calling a provider run verified without using it live.** The deterministic
+  suite validates adapters and protocol behavior; set `KILN_LIVE=1` and run a
+  named `TestLive_*` case to prove the selected external driver actually edits,
+  renders, freezes, and generates the current world.

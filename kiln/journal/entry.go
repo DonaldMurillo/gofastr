@@ -41,6 +41,7 @@ const (
 	OpAddSeed           Op = "add_seed"
 	OpAddMiddleware     Op = "add_middleware"
 	OpSetAppConfig      Op = "set_app_config"
+	OpSetScaffold       Op = "set_scaffold"
 )
 
 // Entry is one record in the append-only log. Payload is held as raw JSON
@@ -163,6 +164,26 @@ type AddMiddlewarePayload struct {
 type SetAppConfigPayload struct {
 	Config world.AppConfig  `json:"config"`
 	Prev   *world.AppConfig `json:"prev,omitempty"`
+}
+
+// SetScaffoldPayload replaces the blueprint-only surfaces as one coherent
+// snapshot. Prev keeps undo/replay audit data even though undo is implemented
+// by journal truncation today.
+type SetScaffoldPayload struct {
+	Nav        []world.NavItem       `json:"nav,omitempty"`
+	Endpoints  []*world.EndpointStub `json:"endpoints,omitempty"`
+	Middleware []world.NamedStub     `json:"middleware,omitempty"`
+	Plugins    []world.NamedStub     `json:"plugins,omitempty"`
+	Helpers    []world.NamedStub     `json:"helpers,omitempty"`
+	Prev       *ScaffoldSnapshot     `json:"prev,omitempty"`
+}
+
+type ScaffoldSnapshot struct {
+	Nav        []world.NavItem       `json:"nav,omitempty"`
+	Endpoints  []*world.EndpointStub `json:"endpoints,omitempty"`
+	Middleware []world.NamedStub     `json:"middleware,omitempty"`
+	Plugins    []world.NamedStub     `json:"plugins,omitempty"`
+	Helpers    []world.NamedStub     `json:"helpers,omitempty"`
 }
 
 // --- Payload types for chat / plan kinds --------------------------------

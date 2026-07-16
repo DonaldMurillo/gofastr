@@ -45,8 +45,8 @@ func TestLiveAutoMigratesOnEntityAdd(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	// Table should exist; GET /posts should return 200 (empty list).
-	req := httptest.NewRequest(http.MethodGet, "/posts", nil)
+	// Table should exist; GET /api/posts should return 200 (empty list).
+	req := httptest.NewRequest(http.MethodGet, "/api/posts", nil)
 	rec := httptest.NewRecorder()
 	l.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

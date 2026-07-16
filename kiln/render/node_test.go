@@ -13,7 +13,7 @@ func TestRenderNodeDiv(t *testing.T) {
 		Kind:  "div",
 		Props: map[string]any{"id": "main", "class": "container"},
 	})
-	want := `<div class="container" id="main"></div>`
+	want := `<div id="main"></div>`
 	if string(got) != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -139,9 +139,8 @@ func TestRenderNodeAttrsEscape(t *testing.T) {
 }
 
 // Strict CSP rejects inline style="…" and on*="…" handlers. The
-// renderer drops those props server-side so a single bad agent turn
-// can't poison the page. The kiln-* utility classes from theme.css
-// are the supported alternative.
+// renderer drops those props server-side so a legacy journal cannot
+// poison the page. Typed design-system kinds own styling.
 func TestRenderNodeDropsDangerousAttrs(t *testing.T) {
 	cases := []struct {
 		name string
@@ -172,14 +171,26 @@ func TestRenderNodeDropsDangerousAttrs(t *testing.T) {
 	}
 }
 
-// Class-based styling is the supported path. Verify class survives.
-func TestRenderNodeKeepsClassProp(t *testing.T) {
+// Agent-authored class names would create a second styling surface. Kiln
+// strips them from legacy worlds; current protocol calls reject them.
+func TestRenderNodeDropsClassProp(t *testing.T) {
 	got := render.RenderNode(world.Node{
 		Kind:  "section",
 		Props: map[string]any{"class": "kiln-section kiln-section-soft"},
 	})
-	if !strings.Contains(string(got), `class="kiln-section kiln-section-soft"`) {
-		t.Errorf("class prop should pass through: %q", got)
+	if strings.Contains(string(got), `kiln-section`) {
+		t.Errorf("class prop should be design-system-owned: %q", got)
+	}
+}
+
+func TestRenderNodeUsesDesignSystemCard(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind: "card", Props: map[string]any{"heading": "Current", "variant": "outlined"},
+		Children: []world.Node{{Kind: "paragraph", Props: map[string]any{"text": "Built from framework/ui"}}},
+	})
+	s := string(got)
+	if !strings.Contains(s, `data-fui-comp="ui-card"`) || !strings.Contains(s, "Built from framework/ui") {
+		t.Fatalf("card did not use current design-system component: %q", s)
 	}
 }
 
@@ -195,5 +206,48 @@ func TestRawNodeDoesNotEmitUnescapedHTML(t *testing.T) {
 	})
 	if strings.Contains(string(got), "<script>alert(1)</script>") {
 		t.Errorf("raw node leaked unescaped HTML: %q", got)
+	}
+}
+
+// Design-system kinds must render wherever they appear, including inside
+// semantic leaf containers — the leaf branch must not hand the whole subtree
+// to core noderender, whose vocabulary has no typed kinds.
+func TestRenderNodeCardInsideDiv(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind: "div",
+		Children: []world.Node{
+			{Kind: "card", Props: map[string]any{"heading": "Revenue"}},
+		},
+	})
+	s := string(got)
+	if !strings.Contains(s, `data-fui-comp="ui-card"`) || !strings.Contains(s, "Revenue") {
+		t.Fatalf("card inside div vanished: %q", s)
+	}
+	if strings.Contains(s, "unknown kind") {
+		t.Fatalf("leaf subtree fell through to core noderender: %q", s)
+	}
+}
+
+func TestRenderNodeLeafChildrenRenderOnce(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind: "div",
+		Children: []world.Node{
+			{Kind: "paragraph", Props: map[string]any{"text": "once"}},
+		},
+	})
+	if n := strings.Count(string(got), "once"); n != 1 {
+		t.Fatalf("leaf children rendered %d times, want 1: %q", n, got)
+	}
+}
+
+func TestRenderNodeDropsNestedClassProp(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind: "div",
+		Children: []world.Node{
+			{Kind: "div", Props: map[string]any{"class": "kiln-rogue"}},
+		},
+	})
+	if strings.Contains(string(got), "kiln-rogue") {
+		t.Errorf("nested leaf kept agent-authored class: %q", got)
 	}
 }

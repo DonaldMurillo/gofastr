@@ -4,54 +4,67 @@
 <meta charset="utf-8">
 <title>Kiln</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/__gofastr/app.css">
+</head>
+<body>
+<!-- <main> is load-bearing: the GoFastr SPA runtime swaps pages by extracting
+     the response's <main>, and this fallback is what a deleted or unknown
+     path serves. Without it the swap empties the content area. The <style>
+     rides inside <main> so a swapped-in fallback keeps its layout; every
+     color/font/radius comes from the app.css theme tokens, so the landing
+     follows the world's theme and the light/dark scheme like any other
+     surface. -->
+<main>
 <style>
-  :root { color-scheme: dark; }
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: radial-gradient(ellipse at top, #1d2230 0%, #0e0f12 60%);
-    color: #e6e8eb;
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
   .kiln-host {
-    min-height: 100%;
+    min-height: 100vh;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 48px 24px 360px; gap: 18px; text-align: center;
+    background: var(--color-background); color: var(--color-text);
+    font-family: var(--font-body);
   }
   .kiln-mark {
-    width: 48px; height: 48px; border-radius: 12px;
-    background: linear-gradient(135deg, #4f8cff 0%, #6f5cff 100%);
+    width: 48px; height: 48px; border-radius: var(--radius-lg);
+    background: var(--color-primary); color: var(--color-primary-fg);
     display: flex; align-items: center; justify-content: center;
-    font-size: 22px; font-weight: 600; color: white;
-    box-shadow: 0 12px 36px rgba(79, 140, 255, 0.35);
+    font-size: 22px; font-weight: 600;
+    box-shadow: var(--shadow-lg);
   }
-  .kiln-host h1 { margin: 0; font-weight: 600; font-size: 22px; letter-spacing: 0.2px; }
-  .kiln-host p.lead { margin: 0; color: #b3b9c4; max-width: 44ch; font-size: 14px; }
+  .kiln-host h1 {
+    margin: 0; font-weight: 600; font-size: 22px; letter-spacing: 0.2px;
+    font-family: var(--font-heading);
+  }
+  .kiln-host p.lead { margin: 0; color: var(--color-text-muted); max-width: 44ch; font-size: 14px; }
   .kiln-cards {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 12px; width: min(720px, 100%); margin-top: 12px;
   }
   .kiln-card {
     text-align: left; padding: 16px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
   }
-  .kiln-card h2 { margin: 0 0 6px 0; font-size: 12px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: #9aa0a6; }
-  .kiln-card p { margin: 0; color: #b3b9c4; font-size: 13px; }
+  .kiln-card h2 {
+    margin: 0 0 6px 0; font-size: 12px; font-weight: 600; letter-spacing: 0.4px;
+    text-transform: uppercase; color: var(--color-text-muted);
+  }
+  .kiln-card p { margin: 0; color: var(--color-text-muted); font-size: 13px; }
   .kiln-card code {
     display: block; margin-top: 8px; padding: 8px 10px;
-    background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 6px; font: 11px/1.45 ui-monospace, monospace;
-    color: #c2cad9; white-space: pre-wrap; word-break: break-word;
+    background: var(--color-surface-soft); border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm); font: 11px/1.45 var(--font-mono);
+    color: var(--color-text); white-space: pre-wrap; word-break: break-word;
   }
-  .kiln-host .hint { color: #6b7280; font-size: 12px; margin-top: 8px; }
+  .kiln-card code.kiln-inline-code {
+    display: inline; padding: 2px 6px; margin-top: 0;
+  }
+  .kiln-host .hint { color: var(--color-text-subtle); font-size: 12px; margin-top: 8px; }
   .kiln-host .hint code {
-    background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;
-    font-family: ui-monospace, monospace;
+    background: var(--color-surface-soft); padding: 2px 6px;
+    border-radius: var(--radius-sm); font-family: var(--font-mono);
   }
 </style>
-</head>
-<body>
 <div class="kiln-host">
   <div class="kiln-mark">✶</div>
   <h1>Kiln</h1>
@@ -72,12 +85,13 @@
     </div>
     <div class="kiln-card">
       <h2>Watch live</h2>
-      <p>Every edit journals to <code style="display:inline">.kiln.session.jsonl</code>, migrates SQLite, and broadcasts SSE so the panel updates in real time.</p>
+      <p>Every edit journals to <code class="kiln-inline-code">.kiln.session.jsonl</code>, migrates SQLite, and broadcasts SSE so the panel updates in real time.</p>
     </div>
   </div>
 
   <p class="hint">Open <code>/kiln/world</code> to see the current IR · agent shortcut <code>kiln agent -p "build me X"</code></p>
 </div>
+</main>
 <script src="/__gofastr/runtime.js"></script>
 </body>
 </html>

@@ -17,6 +17,13 @@ func covT_embedSandbox(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// os.UserHomeDir reads USERPROFILE on Windows; HOME alone only isolates
+	// Unix. Keep both pointed at the test sandbox so snapshot/WAL files never
+	// touch the developer's real index (or collide with another process).
+	t.Setenv("USERPROFILE", home)
+	if got, err := os.UserHomeDir(); err != nil || filepath.Clean(got) != filepath.Clean(home) {
+		t.Fatalf("embed sandbox did not isolate user home: got=%q err=%v want=%q", got, err, home)
+	}
 	t.Setenv("GOFASTR_URL", "")
 	t.Setenv("EMBED_BACKEND", "")
 	work := t.TempDir()
@@ -47,7 +54,13 @@ func TestRunEmbedHelpAndUnknown(t *testing.T) {
 
 func TestEmbedIndexQueryStatsClear(t *testing.T) {
 	covT_embedSandbox(t)
-	covT_capStdout(t, func() { runEmbed([]string{"index", "."}) })
+	var indexOut string
+	code := covT_capExit(t, func() {
+		indexOut = covT_capStdout(t, func() { runEmbed([]string{"index", "."}) })
+	})
+	if code != -1 {
+		t.Fatalf("embed index exited %d: %s", code, indexOut)
+	}
 	out := covT_capStdout(t, func() { runEmbed([]string{"query", "authentication", "-k", "3", "--hybrid"}) })
 	if !strings.HasPrefix(strings.TrimSpace(out), "[") {
 		t.Fatalf("query should print JSON array: %s", out)

@@ -9,25 +9,42 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/chromedp/chromedp"
 )
 
-// Global port counter so tests don't collide on the same port.
-var e2ePortCounter atomic.Int64
+func nextE2EPort(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return strconv.Itoa(port)
+}
 
-func nextE2EPort() string {
-	return fmt.Sprintf("%d", 18083+e2ePortCounter.Add(1)-1)
+// removeDevServerBinary deletes the temp server binary a SIGKILLed
+// `gofastr dev` left behind. Mirrors devServerBinaryPath for the
+// no-isolation case (the harnesses set GOFASTR_ISOLATION=off).
+func removeDevServerBinary(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	name := fmt.Sprintf("gofastr-dev-server-%d", cmd.Process.Pid)
+	_ = os.Remove(testExecutablePath(filepath.Join(os.TempDir(), name)))
 }
 
 func buildGofastrBinary(t *testing.T) string {
@@ -36,7 +53,7 @@ func buildGofastrBinary(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := filepath.Join(t.TempDir(), "gofastr")
+	bin := testExecutablePath(filepath.Join(t.TempDir(), "gofastr"))
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Dir = filepath.Join(repoRoot, "cmd", "gofastr")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -82,7 +99,7 @@ func newDevHarness(t *testing.T) *devHarness {
 		t.Fatalf("go mod tidy: %v\n%s", err, out)
 	}
 
-	return &devHarness{t: t, bin: bin, dir: projDir, port: nextE2EPort()}
+	return &devHarness{t: t, bin: bin, dir: projDir, port: nextE2EPort(t)}
 }
 
 func (h *devHarness) start() {
@@ -91,23 +108,28 @@ func (h *devHarness) start() {
 	h.cancelFunc = cancel
 
 	cmd := exec.CommandContext(ctx, h.bin, "dev", "-p", h.port, "--dir", h.dir)
-	cmd.Env = append(os.Environ(), "PORT=localhost:"+h.port)
+	// GOFASTR_ISOLATION=off: the child app resolves worktree isolation from
+	// its cwd, so running this suite from a linked git worktree would
+	// silently remap the port the test polls.
+	cmd.Env = append(os.Environ(), "PORT=localhost:"+h.port, "GOFASTR_ISOLATION=off")
 	cmd.Stdout = &h.output
 	cmd.Stderr = &h.output
 	// Set process group so we can kill the entire tree (gofastr dev + child server).
 	// Without this, SIGKILL on gofastr dev leaves the child server as an orphan.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureTestProcessGroup(cmd)
 	h.cmd = cmd
 
 	if err := cmd.Start(); err != nil {
 		h.t.Fatalf("start gofastr dev: %v", err)
 	}
-	pid := cmd.Process.Pid
 	h.t.Cleanup(func() {
-		cancel()
 		// Kill the entire process group (gofastr dev + child server).
-		syscall.Kill(-pid, syscall.SIGKILL)
-		cmd.Wait()
+		_ = killTestProcessTree(cmd)
+		cancel()
+		_ = cmd.Wait()
+		// SIGKILL means dev's own shutdown cleanup never ran; remove its
+		// pid-suffixed temp binary from out here instead.
+		removeDevServerBinary(cmd)
 	})
 
 	h.waitForServer(60 * time.Second)

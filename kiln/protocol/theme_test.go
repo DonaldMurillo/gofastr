@@ -12,14 +12,14 @@ import (
 // TestSetThemeUpdatesWorldAppTheme is the protocol-level guarantee:
 // SetTheme writes to world.App.Theme via a SetAppConfig journal entry,
 // so replay reproduces the override exactly. The renderer reads
-// world.App.Theme on each /kiln/theme.css fetch.
+// world.App.Theme while replay reproduces the semantic tokens exactly.
 func TestSetThemeUpdatesWorldAppTheme(t *testing.T) {
 	tools := newTools(t)
 
 	res := tools.SetTheme(context.Background(), protocol.SetThemeArgs{
 		Theme: map[string]string{
-			"page-bg":      "#0F172A",
-			"page-primary": "#22D3EE",
+			"background": "#0F172A",
+			"primary":    "#22D3EE",
 		},
 	})
 	if !res.OK {
@@ -27,11 +27,11 @@ func TestSetThemeUpdatesWorldAppTheme(t *testing.T) {
 	}
 
 	app := tools.Live().Session().World.App
-	if app.Theme["page-bg"] != "#0F172A" {
-		t.Errorf("page-bg = %q, want #0F172A", app.Theme["page-bg"])
+	if app.Theme["background"] != "#0F172A" {
+		t.Errorf("background = %q, want #0F172A", app.Theme["background"])
 	}
-	if app.Theme["page-primary"] != "#22D3EE" {
-		t.Errorf("page-primary = %q, want #22D3EE", app.Theme["page-primary"])
+	if app.Theme["primary"] != "#22D3EE" {
+		t.Errorf("primary = %q, want #22D3EE", app.Theme["primary"])
 	}
 
 	// Empty Theme clears overrides.

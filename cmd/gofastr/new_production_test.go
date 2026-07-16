@@ -95,7 +95,7 @@ func TestNewHandlerOverwrite(t *testing.T) {
 func buildGofastrBin(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	out := filepath.Join(dir, "gofastr")
+	out := testExecutablePath(filepath.Join(dir, "gofastr"))
 	cmd := exec.Command("go", "build", "-o", out, ".")
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

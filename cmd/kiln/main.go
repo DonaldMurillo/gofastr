@@ -64,12 +64,12 @@ func usage() {
 	fmt.Fprint(os.Stderr, `kiln — Kiln runtime
 
 Usage:
-  kiln agent [pi-args…]   Turnkey: start kiln serve, install skill, exec pi
+  kiln agent [omp-args…]  Turnkey: start kiln serve, install skill, exec OMP/GLM-5.2
   kiln serve [flags]      HTTP server with panel + MCP at /mcp
   kiln mcp   [flags]      HTTP + MCP over stdio
   kiln acp   [flags]      HTTP + ACP over stdio
-  kiln freeze [flags]     Read journal, emit entities/*.json + world.json
-                          to a target dir for "graduate to source" commits
+  kiln freeze [flags]     Read journal, emit gofastr.yml + world.json
+                          for one-shot owned-Go generation
                           --diff to print a review summary instead of writing
 
 Flags:
@@ -78,7 +78,7 @@ Flags:
                           pass 0.0.0.0:8765 to expose it deliberately)
   --journal path        Path to JSONL journal (default: .kiln.session.jsonl)
   --agent value         Spawn an agent per chat_user event:
-                          claude-code | pi | codex   built-in adapters (BYO auth)
+                          omp | claude-code | pi | codex  built-in adapters (BYO auth)
                           auto                       first installed of the above
                           none                       explicit no-agent (default)
                           "<freeform cmd>"           custom command, prompt appended
@@ -86,7 +86,8 @@ Flags:
   --keep-db             Don't delete the ephemeral SQLite on exit
 
 Examples:
-  kiln agent "build me a blog"           # turnkey pi launcher
+  kiln agent -p "build me a blog"        # turnkey OMP/GLM-5.2 launcher
+  kiln serve --agent omp                 # panel-driven OMP/GLM-5.2 turns
   kiln serve --agent claude-code         # use Claude Code (~/.claude auth)
   kiln serve --agent auto                # whichever CLI you have installed
   kiln serve --addr :7777
@@ -122,10 +123,10 @@ func parseFlags(args []string) runOptions {
 	noHTTP := fs.Bool("no-http", false, "Skip the HTTP server in stdio modes")
 	keepDB := fs.Bool("keep-db", false, "Don't delete the ephemeral SQLite on exit")
 	agentCmd := fs.String("agent", "", `Agent to spawn on each chat_user event. Accepts:
-  claude-code | pi | codex   — built-in adapter (uses your existing CLI auth)
+  omp | claude-code | pi | codex — built-in adapter (uses your existing CLI auth)
   auto                       — pick the first installed from the list above
   none                       — explicitly run no agent (default if unset)
-  "<freeform cmd>"           — custom: e.g. "pi -p --model glm-5.1"
+  "<freeform cmd>"           — custom: e.g. "omp -p --model glm-5.2"
 KILN_URL is injected into the env so the agent can drive the runtime.`)
 	_ = fs.Parse(args)
 	return runOptions{addr: *addr, journal: *journalPath, noHTTP: *noHTTP, keepDB: *keepDB, agentCmd: *agentCmd}
@@ -252,15 +253,15 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		switch opts.agentCmd {
 		case "":
 			logger.Printf("agent:     (none — pass --agent auto to pick an installed CLI,")
-			logger.Printf("            or --agent claude-code|pi|codex to be explicit)")
+			logger.Printf("            or --agent omp|claude-code|pi|codex to be explicit)")
 		case "auto":
-			logger.Printf("agent:     auto-detect found nothing on PATH (claude-code, pi, codex)")
+			logger.Printf("agent:     auto-detect found nothing on PATH (omp, claude-code, pi, codex)")
 			logger.Printf("           — install one or pass --agent \"<full cmd>\"")
 		case "none":
 			logger.Printf("agent:     (none — explicit)")
 		default:
 			logger.Printf("agent:     %q is not a known adapter and its binary isn't on PATH", opts.agentCmd)
-			logger.Printf("           — pass --agent claude-code|pi|codex|auto|none")
+			logger.Printf("           — pass --agent omp|claude-code|pi|codex|auto|none")
 		}
 	}
 

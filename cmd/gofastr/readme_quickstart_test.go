@@ -229,7 +229,7 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 		writeTestFile(t, full, file.content)
 	}
 
-	appBin := filepath.Join(dir, "readme-quickstart-app")
+	appBin := testExecutablePath(filepath.Join(dir, "readme-quickstart-app"))
 	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
 	buildCmd.Dir = dir
 	if output, err := buildCmd.CombinedOutput(); err != nil {

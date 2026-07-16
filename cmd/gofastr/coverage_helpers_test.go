@@ -46,7 +46,10 @@ func covT_capStdout(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	os.Stdout = f
-	defer func() { os.Stdout = old }()
+	defer func() {
+		os.Stdout = old
+		_ = f.Close()
+	}()
 	fn()
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		t.Fatal(err)
@@ -55,7 +58,6 @@ func covT_capStdout(t *testing.T, fn func()) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = f.Close()
 	return string(b)
 }
 

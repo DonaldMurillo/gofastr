@@ -80,14 +80,14 @@ func TestApplyHookValidatesOnCreate(t *testing.T) {
 
 	// Allowed post passes through.
 	good := bytes.NewBufferString(`{"title":"hello"}`)
-	res := postJSON(t, app.Router(), "/posts", good)
+	res := postJSON(t, app.Router(), "/api/posts", good)
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusCreated {
 		t.Errorf("good post status = %d", res.StatusCode)
 	}
 
 	// Spam post is rejected by the declarative hook.
 	bad := bytes.NewBufferString(`{"title":"spam"}`)
-	res = postJSON(t, app.Router(), "/posts", bad)
+	res = postJSON(t, app.Router(), "/api/posts", bad)
 	if res.StatusCode < 400 {
 		t.Errorf("expected client error for spam, got %d", res.StatusCode)
 	}
@@ -126,14 +126,14 @@ func TestApplyHookConditionGate(t *testing.T) {
 
 	// status != draft → validation skipped.
 	body := bytes.NewBufferString(`{"title":"hi","status":"published"}`)
-	res := postJSON(t, app.Router(), "/posts", body)
+	res := postJSON(t, app.Router(), "/api/posts", body)
 	if res.StatusCode >= 400 {
 		t.Errorf("non-draft should pass, got %d", res.StatusCode)
 	}
 
 	// status == draft + short title → validation runs and fails.
 	body = bytes.NewBufferString(`{"title":"hi","status":"draft"}`)
-	res = postJSON(t, app.Router(), "/posts", body)
+	res = postJSON(t, app.Router(), "/api/posts", body)
 	if res.StatusCode < 400 {
 		t.Errorf("short draft should fail, got %d", res.StatusCode)
 	}
@@ -176,7 +176,7 @@ func TestHookRejectionIncludesMessage(t *testing.T) {
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	res := postJSON(t, app.Router(), "/posts", bytes.NewBufferString(`{"title":"x"}`))
+	res := postJSON(t, app.Router(), "/api/posts", bytes.NewBufferString(`{"title":"x"}`))
 	out, _ := io.ReadAll(res.Body)
 	if !strings.Contains(string(out), "always-block-message") {
 		t.Errorf("response missing message: %q", string(out))

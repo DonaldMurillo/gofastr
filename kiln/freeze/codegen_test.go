@@ -1,7 +1,6 @@
 package freeze
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,48 +9,29 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
-// TestLookForGofastr_AbsentReturnsError confirms the soft-detect helper
-// returns a useful error when the binary isn't on PATH. We can't reliably
-// fake "not on PATH" at process scope; instead, this test just asserts
-// LookForGofastr's error wording when gofastr happens to be missing in the
-// CI sandbox. When it's present, we exercise the success path instead.
-func TestLookForGofastr_Reports(t *testing.T) {
+func TestLookForGofastrReports(t *testing.T) {
 	err := LookForGofastr()
-	if err != nil {
-		// gofastr not installed — verify the message is informative.
-		if !strings.Contains(err.Error(), "gofastr") {
-			t.Fatalf("expected error to mention gofastr binary, got %v", err)
-		}
+	if err != nil && !strings.Contains(err.Error(), "gofastr") {
+		t.Fatalf("expected error to mention gofastr binary, got %v", err)
 	}
-	// When gofastr IS on PATH, err is nil — nothing to assert beyond that.
 }
 
-// TestFreezeAndGenerate_WritesSnapshotDefersCodegen verifies the snapshot is
-// written and that automated codegen is deferred to the blueprint flow. The
-// legacy entities/*.json → gen/ codegen path was removed; FreezeAndGenerate
-// now returns ErrGenerateViaBlueprint after writing the snapshot.
-func TestFreezeAndGenerate_WritesSnapshotDefersCodegen(t *testing.T) {
+func TestFreezeAndGenerateAlwaysWritesBlueprintBeforeCommand(t *testing.T) {
 	w := world.New()
-	w.Entities["posts"] = &world.Entity{
-		Name:  "posts",
-		Table: "posts",
-		Fields: []world.Field{
-			{Name: "title", Type: "string", Required: true},
-			{Name: "body", Type: "text"},
-		},
-	}
+	w.App.Name = "demo"
+	w.Entities["posts"] = &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}}
 	dir := t.TempDir()
-	err := FreezeAndGenerate(w, dir, "gen")
-	if !errors.Is(err, ErrGenerateViaBlueprint) {
-		t.Fatalf("want ErrGenerateViaBlueprint, got %v", err)
+
+	// An empty PATH makes the command phase deterministic while still
+	// proving the new graduation artifact is written first.
+	t.Setenv("PATH", "")
+	err := FreezeAndGenerate(w, dir, "")
+	if err == nil || !strings.Contains(err.Error(), "gofastr") {
+		t.Fatalf("want missing gofastr error, got %v", err)
 	}
-	// The snapshot artifacts are still written.
-	for _, want := range []string{
-		filepath.Join(dir, "entities", "posts.json"),
-		filepath.Join(dir, "world.json"),
-	} {
-		if _, err := os.Stat(want); err != nil {
-			t.Errorf("missing snapshot file %s: %v", want, err)
+	for _, want := range []string{"gofastr.yml", "world.json"} {
+		if _, statErr := os.Stat(filepath.Join(dir, want)); statErr != nil {
+			t.Errorf("missing %s after command lookup failure: %v", want, statErr)
 		}
 	}
 }

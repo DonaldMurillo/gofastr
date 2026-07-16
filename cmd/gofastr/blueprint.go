@@ -1823,6 +1823,10 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 				return fmt.Errorf("blueprint: screen %q stat_card source entity %q must enable crud", screenName, srcEntity)
 			}
 		}
+	case "stack", "cluster", "grid", "stat_grid":
+		if err := validateBlueprintLayoutBlock(screenName, kind, block.Props); err != nil {
+			return err
+		}
 	case "page_header", "hero", "card", "stat_row",
 		"link_button", "callout",
 		"markdown", "pricing", "divider":
@@ -1833,6 +1837,67 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 	}
 	for _, child := range block.Children {
 		if err := validateBlueprintBlock(screenName, entities, child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateBlueprintLayoutBlock(screenName, kind string, props map[string]any) error {
+	allowed := func(value string, values ...string) bool {
+		if value == "" {
+			return true
+		}
+		for _, candidate := range values {
+			if value == candidate {
+				return true
+			}
+		}
+		return false
+	}
+	stringProp := func(name string) (string, error) {
+		value, ok := props[name]
+		if !ok {
+			return "", nil
+		}
+		text, ok := value.(string)
+		if !ok {
+			return "", fmt.Errorf("blueprint: screen %q %s prop %q must be a string", screenName, kind, name)
+		}
+		return strings.ToLower(strings.TrimSpace(text)), nil
+	}
+	gap, err := stringProp("gap")
+	if err != nil {
+		return err
+	}
+	if !allowed(gap, "none", "xs", "sm", "md", "lg", "xl", "2xl") {
+		return fmt.Errorf("blueprint: screen %q %s gap %q is not a design token", screenName, kind, gap)
+	}
+	if kind == "stack" || kind == "cluster" {
+		align, err := stringProp("align")
+		if err != nil {
+			return err
+		}
+		if !allowed(align, "start", "center", "end", "baseline", "stretch") {
+			return fmt.Errorf("blueprint: screen %q %s align %q is unsupported", screenName, kind, align)
+		}
+		justify, err := stringProp("justify")
+		if err != nil {
+			return err
+		}
+		if !allowed(justify, "start", "center", "end", "between", "around") {
+			return fmt.Errorf("blueprint: screen %q %s justify %q is unsupported", screenName, kind, justify)
+		}
+	}
+	if kind == "cluster" {
+		if value, ok := props["no_wrap"]; ok {
+			if _, ok := value.(bool); !ok {
+				return fmt.Errorf("blueprint: screen %q cluster prop %q must be a boolean", screenName, "no_wrap")
+			}
+		}
+	}
+	if kind == "grid" || kind == "stat_grid" {
+		if _, err := stringProp("min"); err != nil {
 			return err
 		}
 	}
@@ -4745,6 +4810,7 @@ type screenImportNeeds struct {
 func blueprintCatalogKind(kind string) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "page_header", "hero", "section", "card", "stat_row", "stat_card",
+		"stack", "cluster", "grid", "stat_grid",
 		"bar_chart", "pie_chart", "line_chart", "link_button", "callout", "divider",
 		"markdown", "pricing":
 		return true
@@ -4950,6 +5016,63 @@ func blueprintProp(b BlueprintBlock, key string) string {
 	return s
 }
 
+func blueprintBoolProp(b BlueprintBlock, key string) bool {
+	if b.Props == nil {
+		return false
+	}
+	value, _ := b.Props[key].(bool)
+	return value
+}
+
+func blueprintGapExpr(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "none":
+		return "ui.GapNone"
+	case "xs":
+		return "ui.GapXS"
+	case "sm":
+		return "ui.GapSM"
+	case "lg":
+		return "ui.GapLG"
+	case "xl":
+		return "ui.GapXL"
+	case "2xl":
+		return "ui.Gap2XL"
+	default:
+		return "ui.GapMD"
+	}
+}
+
+func blueprintAlignExpr(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "center":
+		return "ui.AlignCenter"
+	case "end":
+		return "ui.AlignEnd"
+	case "baseline":
+		return "ui.AlignBaseline"
+	case "stretch":
+		return "ui.AlignStretch"
+	default:
+		return "ui.AlignStart"
+	}
+}
+
+func blueprintJustifyExpr(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "center":
+		return "ui.JustifyCenter"
+	case "end":
+		return "ui.JustifyEnd"
+	case "between":
+		return "ui.JustifyBetween"
+	case "around":
+		return "ui.JustifyAround"
+	default:
+		return "ui.JustifyStart"
+	}
+}
+
 // blueprintSectionChildrenAreCards reports whether every child of a section is
 // a card/stat_card — the only kinds that belong in the responsive card grid.
 // Mixed or non-card children flow in a left-aligned stack instead so a single
@@ -4982,6 +5105,35 @@ func renderBlueprintCatalogBlock(screen BlueprintScreen, block BlueprintBlock, p
 		return strings.Join(parts, ", ")
 	}
 	switch kind {
+	case "stack":
+		cfg := fmt.Sprintf("ui.StackConfig{Gap: %s, Align: %s, Justify: %s}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAlignExpr(blueprintProp(block, "align")), blueprintJustifyExpr(blueprintProp(block, "justify")))
+		children := childExprs()
+		if children == "" {
+			return "ui.Stack(" + cfg + ")", true
+		}
+		return "ui.Stack(" + cfg + ", " + children + ")", true
+	case "cluster":
+		cfg := fmt.Sprintf("ui.ClusterConfig{Gap: %s, Align: %s, Justify: %s, NoWrap: %t}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAlignExpr(blueprintProp(block, "align")), blueprintJustifyExpr(blueprintProp(block, "justify")), blueprintBoolProp(block, "no_wrap"))
+		children := childExprs()
+		if children == "" {
+			return "ui.Cluster(" + cfg + ")", true
+		}
+		return "ui.Cluster(" + cfg + ", " + children + ")", true
+	case "grid", "stat_grid":
+		min := blueprintProp(block, "min")
+		if min == "" {
+			if kind == "stat_grid" {
+				min = "12rem"
+			} else {
+				min = "16rem"
+			}
+		}
+		cfg := fmt.Sprintf("ui.GridConfig{Min: %q, Gap: %s}", min, blueprintGapExpr(blueprintProp(block, "gap")))
+		children := childExprs()
+		if children == "" {
+			return "ui.Grid(" + cfg + ")", true
+		}
+		return "ui.Grid(" + cfg + ", " + children + ")", true
 	case "page_header":
 		cfg := fmt.Sprintf("ui.PageHeaderConfig{Title: %q, Subtitle: %q, Eyebrow: %q}", blueprintProp(block, "title"), blueprintProp(block, "subtitle"), blueprintProp(block, "eyebrow"))
 		return "ui.PageHeader(" + cfg + ")", true

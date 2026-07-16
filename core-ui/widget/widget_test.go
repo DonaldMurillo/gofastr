@@ -83,6 +83,18 @@ func TestSSEBinding(t *testing.T) {
 	}
 }
 
+func TestSSERefreshRegistersFilteredSoftRefresh(t *testing.T) {
+	def := widget.New("demo").
+		SSERefresh("/.events", "world_edit", "op", "add_page").
+		Build()
+	if len(def.SSE) != 1 || !def.SSE[0].Reload {
+		t.Fatalf("SSERefresh binding missing: %+v", def.SSE)
+	}
+	if got := def.SSE[0].Match["op"]; got != "add_page" {
+		t.Fatalf("match op=%q, want add_page", got)
+	}
+}
+
 func TestRPCDefaultMethodIsPOST(t *testing.T) {
 	def := widget.New("demo").
 		RPC("", "/x", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})).

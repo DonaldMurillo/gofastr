@@ -21,6 +21,12 @@ type visualViewportMetrics struct {
 	DocumentWidth float64 `json:"documentWidth"`
 }
 
+type visualInkBandMetrics struct {
+	Background string `json:"background"`
+	Heading    string `json:"heading"`
+	Paragraph  string `json:"paragraph"`
+}
+
 // TestE2EVisualSurfaces is the rendered flagship canary required for
 // framework/design-system changes. It covers one representative marketing,
 // auth, app, and admin surface at desktop and phone widths in both schemes.
@@ -73,6 +79,7 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 		for _, scheme := range axetest.Schemes {
 			t.Run(surface+"/"+viewport.name+"/"+scheme, func(t *testing.T) {
 				var metrics visualViewportMetrics
+				var inkBand visualInkBandMetrics
 				var shot []byte
 				var lastErr error
 				for attempt := 1; attempt <= 6; attempt++ {
@@ -83,9 +90,9 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 					// there burns every attempt and times the package out.
 					ctx, timeoutCancel := context.WithTimeout(tab, 30*time.Second)
 					shot = nil
-					lastErr = chromedp.Run(ctx,
+					actions := []chromedp.Action{
 						chromedp.EmulateViewport(viewport.width, viewport.height),
-						chromedp.Navigate(base+path),
+						chromedp.Navigate(base + path),
 						chromedp.WaitReady("body", chromedp.ByQuery),
 						// New-headless Chrome produces compositor frames only
 						// for the active target. A fresh tab opened while
@@ -97,8 +104,27 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 						chromedp.ActionFunc(func(ctx context.Context) error {
 							return page.BringToFront().Do(ctx)
 						}),
-						chromedp.Sleep(300*time.Millisecond),
 						axetest.Prepare(scheme),
+						// Prepare changes the scheme attribute. Let Chromium commit the
+						// resulting paint before CaptureScreenshot; otherwise a fromSurface
+						// capture can contain a transient black compositor tile even though
+						// the DOM and computed colors are already correct.
+						chromedp.Sleep(300 * time.Millisecond),
+					}
+					if surface == "marketing" {
+						actions = append(actions, chromedp.Evaluate(`(() => {
+							const heading = document.getElementById("ui-card-simple-honest-pricing");
+							const card = heading && heading.closest('[data-fui-comp="ui-card"]');
+							const paragraph = heading && heading.nextElementSibling;
+							if (!heading || !card || !paragraph) return {};
+							return {
+								background: getComputedStyle(card).backgroundColor,
+								heading: getComputedStyle(heading).color,
+								paragraph: getComputedStyle(paragraph).color,
+							};
+						})()`, &inkBand))
+					}
+					actions = append(actions,
 						chromedp.Evaluate(`({viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth})`, &metrics),
 						// Viewport capture is deliberate: full-page capture can wait on
 						// Meridian's long-lived SSE document and never complete.
@@ -111,8 +137,13 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 							return err
 						}),
 					)
+					lastErr = chromedp.Run(ctx, actions...)
 					timeoutCancel()
 					tabCancel()
+					if lastErr == nil && surface == "marketing" &&
+						(inkBand.Background == "" || inkBand.Heading == inkBand.Background || inkBand.Paragraph == inkBand.Background) {
+						lastErr = fmt.Errorf("ink band lacks visible contrast: %#v", inkBand)
+					}
 					if lastErr == nil {
 						lastErr = screenshotHasVariation(shot)
 					}
