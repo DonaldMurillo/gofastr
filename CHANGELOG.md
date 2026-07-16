@@ -7,6 +7,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Added
+
+- **`seo.WebApplication`.** Typed JSON-LD for in-browser tools (schema.org
+  SoftwareApplication subtype) — the right @type for SaaS products and
+  online generators, previously missing from core-ui/seo's catalog.
+  `NewWebApplication()` defaults `operatingSystem` to "Web"; pair with a
+  free Offer for "free online tool" rich results.
+
 ## [0.29.0] - 2026-07-16
 
 ### Added
