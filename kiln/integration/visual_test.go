@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"github.com/DonaldMurillo/gofastr/internal/axetest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,19 +46,28 @@ func TestVisual_HostEmptyState(t *testing.T) {
 	ctx, cancel := newChrome(t)
 	defer cancel()
 
-	var shot []byte
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1280, 800),
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-panel.kiln-open`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-quickstart`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
-		chromedp.FullScreenshot(&shot, 90),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
-	path := saveShot(t, "01_host_empty", shot)
-	t.Logf("saved: %s", path)
+	// The landing is themed by app.css tokens; capture it in both schemes.
+	for _, scheme := range axetest.Schemes {
+		var shot []byte
+		if err := chromedp.Run(ctx,
+			axetest.Prepare(scheme),
+			chromedp.Sleep(300*time.Millisecond),
+			chromedp.FullScreenshot(&shot, 90),
+		); err != nil {
+			t.Fatalf("capture %s: %v", scheme, err)
+		}
+		path := saveShot(t, "01_host_empty_"+scheme, shot)
+		t.Logf("saved: %s", path)
+	}
 }
 
 // (2) Agent-turn state is visibly delivered by the current SSE signal path.
