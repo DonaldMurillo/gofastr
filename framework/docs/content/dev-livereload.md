@@ -5,6 +5,12 @@ livereload pair when the process is running under `gofastr dev`. Edit
 a `.go` file, the binary restarts, and every open browser tab refreshes
 on its own — no host-app code required.
 
+The rebuilt server runs with the project directory (`--dir`) as its
+working directory — the same cwd it gets when run by hand — so relative
+paths like a sqlite `db_url` or a static dir resolve against the
+project, and worktree isolation keys off the project's location rather
+than wherever `gofastr dev` was launched.
+
 ## How it turns on
 
 Three env vars decide. All defaults are dev-friendly; production is

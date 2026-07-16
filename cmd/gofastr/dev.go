@@ -181,6 +181,11 @@ func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sy
 	// GOFASTR_ENV=production is checked as a kill switch.
 	childEnv := buildDevChildEnv(runtimeIsolation.Env(os.Environ()))
 	runCmd := exec.Command(tmpBin, "--addr", addr)
+	// Run the server in the project dir — the same cwd it gets when run by
+	// hand — so relative paths (sqlite db_url, static dir) resolve against
+	// the project, and the app's own worktree-isolation lookup sees the
+	// project's location rather than wherever `gofastr dev` was launched.
+	runCmd.Dir = dir
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
 	runCmd.Env = childEnv
