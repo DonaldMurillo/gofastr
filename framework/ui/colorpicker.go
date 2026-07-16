@@ -65,12 +65,14 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 		inputAttrs["disabled"] = ""
 	}
 
+	// Swatch first, label after — the same reading order as Checkbox
+	// (control on the left, its name on the right).
 	row := []render.HTML{
+		render.Tag("input", inputAttrs),
 		render.Tag("label", map[string]string{
 			"for":   id,
 			"class": "ui-color-picker__label",
 		}, render.Text(cfg.Label)),
-		render.Tag("input", inputAttrs),
 	}
 
 	return colorPickerStyle.WrapHTML(render.Tag("div",

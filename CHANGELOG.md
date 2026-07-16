@@ -9,6 +9,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+
+- **`ui.ColorPicker` renders the swatch before its label** — control on
+  the left, name on the right, matching Checkbox's reading order (it
+  previously rendered label-first).
+
 ### Added
 
 - **`seo.WebApplication`.** Typed JSON-LD for in-browser tools (schema.org
