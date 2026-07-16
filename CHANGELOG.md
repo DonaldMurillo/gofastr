@@ -7,6 +7,33 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable API-token prefix.** Hosts brand their credentials:
+  `TokenSpec.Prefix` at issue time, `TokensPlugin.WithPrefix` for the
+  self-service route, `TokenMiddleware`'s `WithTokenPrefix` for recognition.
+  A leaked token's prefix now identifies WHICH product leaked it. Default
+  stays `gfsk_`; prefixes are validated (lowercase alnum, trailing `_`).
+- **`auth.TokenID(ctx)`.** TokenMiddleware now stashes the authenticating
+  token's own ID in the request context alongside owner and scopes — one
+  owner can hold many tokens, and per-token metering/quotas/audit need to
+  attribute the request to the specific credential.
+- **Admin token operations.** `SQLAPITokenStore.ListAll` (every token across
+  owners) and `RevokeAny` (revoke ignoring owner scoping) for host-built
+  admin surfaces. Deliberately NOT on the `APITokenStore` interface, so the
+  plugin's self-service routes can never reach them.
+
+### Fixed
+
+- **Session reads try every cookie candidate.** `SessionMiddleware`, the
+  `/auth/me` handler, and logout read only the FIRST cookie with the session
+  name (`r.Cookie`). A jar can hold several — a stale cookie from an old
+  deployment at a more specific `Path`, or another localhost port's cookie —
+  and browsers send the most path-specific first, so a dead cookie shadowed a
+  live session: login silently failed while a valid cookie sat one position
+  later. All session reads now try every candidate, and logout revokes ALL
+  of them so a shadowed-but-valid session cannot survive.
+
 ## [0.27.1] - 2026-07-16
 
 ### Fixed
