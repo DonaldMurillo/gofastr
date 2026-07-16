@@ -4,7 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // TokenMiddleware must expose the authenticating token's own ID in ctx via
@@ -98,4 +101,60 @@ func TestSQLAPITokenStore_AdminListAndRevoke(t *testing.T) {
 	if err := ts.RevokeAny(ctx, "no-such-id"); err != ErrTokenNotFound {
 		t.Errorf("RevokeAny unknown id: want ErrTokenNotFound, got %v", err)
 	}
+}
+
+// Hosts brand their token prefix (TokenSpec.Prefix + WithTokenPrefix) so a
+// leaked credential is greppable as THEIR credential. The branded token must
+// authenticate through a middleware configured with the same prefix, and the
+// default-prefix middleware must ignore it (pass-through, not fail-closed).
+func TestTokenPrefixBranding(t *testing.T) {
+	_, ts, _ := newTokenTestDB(t)
+	ctx := context.Background()
+	alice := &BasicUser{ID: "alice", Email: "alice@example.com"}
+	users := &staticUserStore{byID: map[string]User{"alice": alice}}
+
+	pt, rec, err := IssueToken(ctx, ts, TokenSpec{Name: "branded", OwnerKind: "user", OwnerID: "alice", Prefix: "btk_"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(pt, "btk_") {
+		t.Fatalf("plaintext = %q, want btk_ prefix", pt)
+	}
+	if !strings.HasPrefix(rec.Prefix, "btk_") {
+		t.Fatalf("display prefix = %q, want btk_ prefix", rec.Prefix)
+	}
+
+	t.Run("branded middleware authenticates", func(t *testing.T) {
+		var seen User
+		h := TokenMiddleware(users, nil, ts, WithTokenPrefix("btk_"))(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			seen = GetCurrentUser(r.Context())
+		}))
+		h.ServeHTTP(httptest.NewRecorder(), bearerRequest("GET", "/x", pt, ""))
+		if seen == nil || seen.GetID() != "alice" {
+			t.Fatalf("branded token must authenticate through branded middleware, got %+v", seen)
+		}
+	})
+
+	t.Run("default middleware passes branded token through untouched", func(t *testing.T) {
+		outer := &BasicUser{ID: "outer"}
+		var seen User
+		h := TokenMiddleware(users, nil, ts)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			seen = GetCurrentUser(r.Context())
+		}))
+		req := bearerRequest("GET", "/x", pt, "")
+		req = req.WithContext(handler.SetUser(req.Context(), outer))
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		if seen == nil || seen.GetID() != "outer" {
+			t.Fatalf("non-matching prefix must pass through without clearing ctx, got %+v", seen)
+		}
+	})
+
+	t.Run("invalid prefixes rejected", func(t *testing.T) {
+		if _, _, err := IssueToken(ctx, ts, TokenSpec{Name: "bad", OwnerKind: "user", OwnerID: "a", Prefix: "NoCaps_"}); err == nil {
+			t.Error("uppercase prefix must be rejected")
+		}
+		if _, _, err := IssueToken(ctx, ts, TokenSpec{Name: "bad", OwnerKind: "user", OwnerID: "a", Prefix: "nounderscore"}); err == nil {
+			t.Error("prefix without trailing underscore must be rejected")
+		}
+	})
 }

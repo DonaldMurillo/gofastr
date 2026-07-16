@@ -104,7 +104,7 @@ func TestAPIToken_UnknownTokenClearsUser(t *testing.T) {
 	_, ts, _ := newTokenTestDB(t)
 	users := &staticUserStore{byID: map[string]User{"u": &BasicUser{ID: "u"}}}
 	// A valid-format gfsk_ credential that is simply not in the store.
-	cred, _ := generateAPITokenPlaintext()
+	cred, _ := generateAPITokenPlaintext(TokenPrefix)
 	if seen := runMwClearsUser(t, users, nil, ts, cred); seen != nil {
 		t.Errorf("IDENTITY LEAK: unknown gfsk_ token left outer user %+v in ctx", seen)
 	}
@@ -397,7 +397,7 @@ func TestAPIToken_IssueTokenErrorsNoPlaintext(t *testing.T) {
 func TestAPIToken_MalformedGfskTokenAnonymous(t *testing.T) {
 	_, ts, _ := newTokenTestDB(t)
 	users := &staticUserStore{byID: map[string]User{"u": &BasicUser{ID: "u"}}}
-	valid, err := generateAPITokenPlaintext()
+	valid, err := generateAPITokenPlaintext(TokenPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}

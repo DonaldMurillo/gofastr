@@ -17,6 +17,18 @@ type TokenMiddlewareOption func(*tokenMiddlewareOpts)
 type tokenMiddlewareOpts struct {
 	sink   AuditSink
 	logger *slog.Logger
+	prefix string
+}
+
+// WithTokenPrefix sets the plaintext marker this middleware recognizes
+// (default TokenPrefix, "gfsk_"). Pair it with the same TokenSpec.Prefix at
+// issue time — hosts that brand their credentials must brand both sides or
+// every authenticated request passes through unrecognized.
+func WithTokenPrefix(prefix string) TokenMiddlewareOption {
+	if !tokenPrefixPattern.MatchString(prefix) {
+		panic("auth.WithTokenPrefix: invalid prefix " + prefix + " (want lowercase alnum starting with a letter, trailing underscore)")
+	}
+	return func(o *tokenMiddlewareOpts) { o.prefix = prefix }
 }
 
 // WithTokenAudit routes token auth events to sink. TokenMiddleware has no
@@ -59,7 +71,7 @@ const lastUsedTouchInterval = 60 * time.Second
 //  5. Success: handler.SetUser(ctx, principal), WithTokenScopes(ctx, scopes),
 //     throttled best-effort TouchLastUsed.
 func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITokenStore, opts ...TokenMiddlewareOption) middleware.Middleware {
-	o := tokenMiddlewareOpts{logger: slog.Default()}
+	o := tokenMiddlewareOpts{logger: slog.Default(), prefix: TokenPrefix}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -69,9 +81,9 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 			ctx := r.Context()
 			cred := extractBearerToken(r)
 
-			// (1) A credential that is not a gfsk_ token is none of our
-			// business — leave ctx exactly as the outer middleware left it.
-			if !strings.HasPrefix(cred, TokenPrefix) {
+			// (1) A credential that doesn't carry our token prefix is none of
+			// our business — leave ctx exactly as the outer middleware left it.
+			if !strings.HasPrefix(cred, o.prefix) {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -89,7 +89,20 @@ type TokenSpec struct {
 	OwnerID   string
 	Scopes    []string
 	TTL       time.Duration // 0 = no expiry
+
+	// Prefix overrides the plaintext marker for this token (default
+	// TokenPrefix, "gfsk_"). Hosts brand their credentials — a leaked token's
+	// prefix then identifies WHICH product leaked it, and per-product secret
+	// scanners can grep for it. Must match tokenPrefixPattern (lowercase
+	// alnum, 2–16 chars, trailing underscore). Wire the SAME prefix into
+	// TokenMiddleware via WithTokenPrefix or authenticated requests will pass
+	// through unrecognized.
+	Prefix string
 }
+
+// tokenPrefixPattern is the closed vocabulary for a custom token prefix:
+// starts with a letter, lowercase alnum, 1–15 chars, then "_".
+var tokenPrefixPattern = regexp.MustCompile(`^[a-z][a-z0-9]{0,14}_$`)
 
 // scopePattern is the closed vocabulary a scope string must match:
 // "<resource>:<verb>", each half [a-z0-9_*-]+. Both halves admit "*" so
@@ -119,6 +132,9 @@ func validateTokenSpec(spec TokenSpec) error {
 			return fmt.Errorf("auth: invalid scope %q (want resource:verb)", sc)
 		}
 	}
+	if spec.Prefix != "" && !tokenPrefixPattern.MatchString(spec.Prefix) {
+		return fmt.Errorf("auth: invalid token prefix %q (want lowercase alnum starting with a letter, 2-16 chars, trailing underscore, e.g. %q)", spec.Prefix, TokenPrefix)
+	}
 	return nil
 }
 
@@ -135,7 +151,11 @@ func IssueToken(ctx context.Context, store APITokenStore, spec TokenSpec) (strin
 	if err := validateTokenSpec(spec); err != nil {
 		return "", APIToken{}, err
 	}
-	plaintext, err := generateAPITokenPlaintext()
+	prefix := spec.Prefix
+	if prefix == "" {
+		prefix = TokenPrefix
+	}
+	plaintext, err := generateAPITokenPlaintext(prefix)
 	if err != nil {
 		return "", APIToken{}, err
 	}
@@ -188,12 +208,12 @@ func (u *serviceAccountUser) GetRoles() []string { return u.sa.Roles }
 // generateAPITokenPlaintext returns TokenPrefix + 40 lowercase hex chars
 // (20 cryptographically-random bytes). Entropy failure is fatal — the auth
 // system cannot remain sound without crypto/rand.
-func generateAPITokenPlaintext() (string, error) {
+func generateAPITokenPlaintext(prefix string) (string, error) {
 	b := make([]byte, tokenRandBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("auth: generate api token entropy: %w", err)
 	}
-	return TokenPrefix + hex.EncodeToString(b), nil
+	return prefix + hex.EncodeToString(b), nil
 }
 
 // generateAPITokenID returns a 32-char hex record id from crypto/rand.

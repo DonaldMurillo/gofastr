@@ -23,12 +23,24 @@ import (
 type TokensPlugin struct {
 	mgr    *AuthManager
 	tokens APITokenStore
+	prefix string
 }
 
 // NewTokensPlugin constructs the plugin. The token store is supplied here;
 // the manager arrives via Init (so emitSecurity is available after wiring).
 func NewTokensPlugin(tokens APITokenStore) *TokensPlugin {
 	return &TokensPlugin{tokens: tokens}
+}
+
+// WithPrefix brands tokens this plugin mints (default TokenPrefix, "gfsk_")
+// so a host's credentials are greppable as ITS credentials. Pair with
+// TokenMiddleware's WithTokenPrefix so the branded tokens authenticate.
+func (p *TokensPlugin) WithPrefix(prefix string) *TokensPlugin {
+	if !tokenPrefixPattern.MatchString(prefix) {
+		panic("auth: TokensPlugin.WithPrefix: invalid prefix " + prefix)
+	}
+	p.prefix = prefix
+	return p
 }
 
 func (p *TokensPlugin) Name() string { return "api-tokens" }
@@ -94,6 +106,7 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 			OwnerID:   userID,
 			Scopes:    body.Scopes,
 			TTL:       time.Duration(body.TTLSeconds) * time.Second,
+			Prefix:    p.prefix,
 		})
 		if err != nil {
 			writeAuthError(w, http.StatusBadRequest, err.Error())
