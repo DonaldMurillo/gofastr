@@ -171,7 +171,7 @@ func validateDecimal(f Field, value any) error {
 	// (underscore separators, hex floats) and the non-finite literals (Inf/NaN)
 	// that would bypass the Min/Max bounds. The ParseFloat + finiteness checks
 	// below are defense-in-depth: with the current regex they are unreachable
-	// (see COVERAGE_NOTES.md), but they keep the validator fail-closed if the
+	// (kept by policy), but they keep the validator fail-closed if the
 	// regex is ever loosened or a typed caller bypasses it.
 	if !decimalRe.MatchString(s) {
 		return fmt.Errorf("must be a valid decimal number")

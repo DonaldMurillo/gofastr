@@ -9,8 +9,8 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// Behavioral contracts for the runtime security guarantees documented in
-// SECURITY_FINDINGS. Each test renders a live page, drives real DOM events,
+// Behavioral contracts for the runtime security guarantees pinned during
+// the adversarial security-audit campaigns. Each test renders a live page, drives real DOM events,
 // and asserts the runtime's observable contract — not the presence of a
 // substring in the bundle.
 

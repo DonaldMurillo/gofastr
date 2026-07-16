@@ -32,8 +32,10 @@ latest release to stay supported.
 
 ## Audit trail
 
-The repo keeps a public ledger of verified security findings and their fixes
-in [`SECURITY_FINDINGS.md`](SECURITY_FINDINGS.md) — 100+ findings
-from adversarial audit campaigns, each of which survived a refute pass.
-Release gates include `make security-full` (gofmt, vet, secret scan, race
-tests, `govulncheck`, module verification).
+The codebase has been through repeated adversarial audit campaigns (100+
+verified findings, each of which survived a refute pass — all fixed and
+pinned by `*_security_test.go` tests throughout the tree). The full
+finding-by-finding ledger lives in git history (`SECURITY_FINDINGS.md`,
+removed 2026-07-15 after every row was re-verified fixed). Release gates
+include `make security-full` (gofmt, vet, secret scan, race tests,
+`govulncheck`, module verification).

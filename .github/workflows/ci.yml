@@ -107,10 +107,9 @@ jobs:
             $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
 
       - name: Coverage floors (claimed packages)
-        # Re-runs `go test -cover` for only the packages with numeric
-        # coverage claims in COVERAGE_NOTES.md and fails if any drops
-        # below its floor (~2 points under the recorded value). Floor
-        # table + exclusions live in the script.
+        # Re-runs `go test -cover` for only the floor-gated packages and
+        # fails if any drops below its floor (~2 points under the recorded
+        # value). Floor table + exclusions live in the script.
         run: bash scripts/coverage-floors.sh
 
   browser-e2e:
