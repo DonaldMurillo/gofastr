@@ -112,6 +112,7 @@ func runDev(args []string) {
 			fmt.Println()
 			info("Shutting down...")
 			killServer(&mu, &server)
+			_ = os.Remove(devServerBinaryPath(runtimeIsolation))
 			close(stop)
 			return
 
@@ -140,9 +141,11 @@ func resolveDevIsolation(dir, addr string) (*isolation.Runtime, string, error) {
 	return runtimeIsolation, resolvedAddr, nil
 }
 
-// buildAndServe builds and starts the server process.
-func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
-	// Build binary to temp file
+// devServerBinaryPath is the per-process temp path the rebuilt server is
+// compiled to. The pid suffix lets concurrent dev instances coexist; the
+// shutdown path removes the file so restarts don't accumulate binaries in
+// the temp dir.
+func devServerBinaryPath(runtimeIsolation *isolation.Runtime) string {
 	tmpName := fmt.Sprintf("gofastr-dev-server-%d", os.Getpid())
 	if runtimeIsolation.Active() {
 		tmpName += "-" + runtimeIsolation.ID()
@@ -150,7 +153,13 @@ func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sy
 	if runtime.GOOS == "windows" {
 		tmpName += ".exe"
 	}
-	tmpBin := filepath.Join(os.TempDir(), tmpName)
+	return filepath.Join(os.TempDir(), tmpName)
+}
+
+// buildAndServe builds and starts the server process.
+func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
+	// Build binary to temp file
+	tmpBin := devServerBinaryPath(runtimeIsolation)
 	buildCmd := exec.Command("go", "build", "-o", tmpBin, ".")
 	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
 	buildCmd.Stdout = os.Stdout
