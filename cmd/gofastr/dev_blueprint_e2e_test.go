@@ -76,6 +76,7 @@ func TestE2E_DevLoop_BlueprintApp(t *testing.T) {
 		_ = killTestProcessTree(dev)
 		cancel()
 		_ = dev.Wait()
+		removeDevServerBinary(dev)
 	})
 
 	base := "http://localhost:" + port

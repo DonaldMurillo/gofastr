@@ -36,6 +36,17 @@ func nextE2EPort(t *testing.T) string {
 	return strconv.Itoa(port)
 }
 
+// removeDevServerBinary deletes the temp server binary a SIGKILLed
+// `gofastr dev` left behind. Mirrors devServerBinaryPath for the
+// no-isolation case (the harnesses set GOFASTR_ISOLATION=off).
+func removeDevServerBinary(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	name := fmt.Sprintf("gofastr-dev-server-%d", cmd.Process.Pid)
+	_ = os.Remove(testExecutablePath(filepath.Join(os.TempDir(), name)))
+}
+
 func buildGofastrBinary(t *testing.T) string {
 	t.Helper()
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -116,6 +127,9 @@ func (h *devHarness) start() {
 		_ = killTestProcessTree(cmd)
 		cancel()
 		_ = cmd.Wait()
+		// SIGKILL means dev's own shutdown cleanup never ran; remove its
+		// pid-suffixed temp binary from out here instead.
+		removeDevServerBinary(cmd)
 	})
 
 	h.waitForServer(60 * time.Second)
