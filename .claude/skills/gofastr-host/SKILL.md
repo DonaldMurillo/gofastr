@@ -1,6 +1,6 @@
 ---
 name: gofastr-host
-description: Auto-loads when working on a *host application* that imports the GoFastr framework (not the framework itself). Encodes the "don't reinvent — reach for the battery first" rule and the import paths an agent needs. Triggers on edits to Go files in repos that import `github.com/DonaldMurillo/gofastr/...`, on `main.go` files calling `framework.NewApp`, and on phrases like "login", "signup", "session", "user table", "log out", "magic link", "forgot password", "reset password", "add admin page", "back office", "audit log", "audit trail", "compliance log", "send email", "transactional email", "welcome email", "send a notification", "notify the user", "background job", "async task", "schedule", "cron", "run every hour", "retry on failure", "upload", "store images", "store files", "S3", "MinIO", "attachments", "avatar", "full-text search", "find records containing", "outbound webhook", "signed callback", "POST to a customer URL", "cache", "memoize", "remember for N seconds", "CSRF", "RBAC", "require admin", "roles", "rate limit", "throttle", "request log", "access log", "panic recovery", "structured logging", "live debug", "per-test isolated DB", "test fixture".
+description: Auto-loads when working on a *host application* that imports the GoFastr framework (not the framework itself). Encodes the "don't reinvent — reach for the battery first" rule and the import paths an agent needs. Triggers on edits to Go files in repos that import `github.com/DonaldMurillo/gofastr/...`, on `main.go` files calling `framework.NewApp`, and on phrases like "login", "signup", "session", "user table", "log out", "magic link", "forgot password", "reset password", "add admin page", "back office", "audit log", "audit trail", "compliance log", "send email", "transactional email", "welcome email", "send a notification", "notify the user", "background job", "async task", "schedule", "cron", "run every hour", "retry on failure", "upload", "store images", "store files", "S3", "MinIO", "attachments", "avatar", "full-text search", "find records containing", "outbound webhook", "signed callback", "POST to a customer URL", "cache", "memoize", "remember for N seconds", "CSRF", "RBAC", "require admin", "roles", "rate limit", "throttle", "request log", "access log", "panic recovery", "structured logging", "live debug", "per-test isolated DB", "test fixture", "favicon", "app icon", "SEO", "meta tags", "Open Graph", "JSON-LD", "structured data", "sitemap", "robots.txt", "accessibility", "a11y", "WCAG", "aria-label", "upgrade gofastr", "bump the framework version", "migrate to the new version".
 ---
 
 # GoFastr host-app — load this before writing app code
@@ -47,8 +47,14 @@ under `agents/` (e.g. `agents/battery-admin.md`) for the full
 shape / import / don't-reinvent breakdown.
 
 If the project has no `AGENTS.md`, run `gofastr agents init` once to
-generate both the TOC and the `agents/` detail files. Refresh with
-`gofastr agents sync` after a framework upgrade.
+generate both the TOC and the `agents/` detail files.
+
+Upgrading the framework: install the target CLI first (an old binary
+can't know newer migration notes), run `gofastr upgrade [--to vX.Y.Z]`
+to see every migration-relevant change between your version and the
+target (with file:line hits in this app), `--apply` to run
+go get / tidy / build / test, then `gofastr agents sync` to refresh the
+generated guidance.
 
 ## Don't reinvent — reach for these first
 
@@ -70,6 +76,10 @@ generate both the TOC and the `agents/` detail files. Refresh with
 | agent debugging under `gofastr dev` | auto-wired by `framework.NewApp`: /mcp mount + introspection (`app_routes`, `framework_docs_search`, …) + control (`app_module_enable/disable`) + battery/log debug tools — opt out with `GOFASTR_DEV_MCP=0`; production needs explicit `WithMCP`/`WithMCPIntrospection`/`WithMCPControl` |
 | load `.env` files | auto-wired by `framework.NewApp` — do nothing |
 | per-test isolated Postgres DB | `framework/testkit.NewIsolatedDB(t, adminDSN, migrate)` |
+| favicon, app icon, PWA icons | `uihost.WithAppIcon(pngBytes)` — one source image becomes 32/180/192/512 PNGs, `/favicon.ico`, head links, and the PWA manifest icons; generate placeholder art in code with `framework/image.NewGradient` (no committed binaries) |
+| SEO: page title/description, Open Graph, Twitter cards, canonical, JSON-LD, sitemap, robots | uihost `WithDescription`/`WithOpenGraph`/`WithSitemap`/`WithRobots`/`WithRobotsMeta` + per-screen `ScreenSEO`/`ScreenSchema` interfaces — `gofastr docs seo`. Static export writes sitemap.xml/robots.txt from the same config |
+| accessibility, ADA/WCAG compliance, "aria-label", a11y audit | `gofastr audit a11y` (static guided lint) and `gofastr audit a11y --url <base>` (axe-core in headless Chrome, both color schemes, pages from /sitemap.xml). Note `gofastr build` enforces the static lint — fix findings, don't reach for `--no-a11y` — `gofastr docs accessibility` |
+| upgrading the framework version, migration notes between releases | install the target CLI first, then `gofastr upgrade [--to vX.Y.Z] [--apply]` — shows every migration-relevant change in range with file:line hits in your app — `gofastr docs upgrading`; finish with `gofastr agents sync` |
 
 ## Hard rules
 
