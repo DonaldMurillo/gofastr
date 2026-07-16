@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-07-16
+
 ### Added
 
 - **Configurable API-token prefix.** Hosts brand their credentials:
