@@ -208,3 +208,46 @@ func TestRawNodeDoesNotEmitUnescapedHTML(t *testing.T) {
 		t.Errorf("raw node leaked unescaped HTML: %q", got)
 	}
 }
+
+// Design-system kinds must render wherever they appear, including inside
+// semantic leaf containers — the leaf branch must not hand the whole subtree
+// to core noderender, whose vocabulary has no typed kinds.
+func TestRenderNodeCardInsideDiv(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind: "div",
+		Children: []world.Node{
+			{Kind: "card", Props: map[string]any{"heading": "Revenue"}},
+		},
+	})
+	s := string(got)
+	if !strings.Contains(s, `data-fui-comp="ui-card"`) || !strings.Contains(s, "Revenue") {
+		t.Fatalf("card inside div vanished: %q", s)
+	}
+	if strings.Contains(s, "unknown kind") {
+		t.Fatalf("leaf subtree fell through to core noderender: %q", s)
+	}
+}
+
+func TestRenderNodeLeafChildrenRenderOnce(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind: "div",
+		Children: []world.Node{
+			{Kind: "paragraph", Props: map[string]any{"text": "once"}},
+		},
+	})
+	if n := strings.Count(string(got), "once"); n != 1 {
+		t.Fatalf("leaf children rendered %d times, want 1: %q", n, got)
+	}
+}
+
+func TestRenderNodeDropsNestedClassProp(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind: "div",
+		Children: []world.Node{
+			{Kind: "div", Props: map[string]any{"class": "kiln-rogue"}},
+		},
+	})
+	if strings.Contains(string(got), "kiln-rogue") {
+		t.Errorf("nested leaf kept agent-authored class: %q", got)
+	}
+}

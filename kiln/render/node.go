@@ -20,7 +20,7 @@ func RenderNode(n world.Node) render.HTML {
 	case "page_header":
 		title := propString(n.Props, "title", "text")
 		if title == "" {
-			return renderLeaf(n)
+			return renderLeaf(n, children)
 		}
 		return ui.PageHeader(ui.PageHeaderConfig{
 			Title: title, Subtitle: propString(n.Props, "subtitle", "description"),
@@ -51,7 +51,7 @@ func RenderNode(n world.Node) render.HTML {
 	case "link_button":
 		label, href := propString(n.Props, "label", "text"), propString(n.Props, "href")
 		if label == "" || href == "" {
-			return renderLeaf(n)
+			return renderLeaf(n, children)
 		}
 		return ui.LinkButton(ui.LinkButtonConfig{
 			Label: label, Href: href, Variant: buttonVariant(propString(n.Props, "variant")),
@@ -66,7 +66,7 @@ func RenderNode(n world.Node) render.HTML {
 	case "stat_card":
 		label, value := propString(n.Props, "label"), propString(n.Props, "value")
 		if label == "" || value == "" {
-			return renderLeaf(n)
+			return renderLeaf(n, children)
 		}
 		return ui.StatCard(ui.StatCardConfig{
 			Label: label, Value: value, Trend: propString(n.Props, "trend"),
@@ -98,25 +98,29 @@ func RenderNode(n world.Node) render.HTML {
 			Label: propString(n.Props, "label", "text"), Orientation: orientation, ID: propString(n.Props, "id"),
 		})
 	default:
-		return renderLeaf(n)
+		return renderLeaf(n, children)
 	}
 }
 
 // renderLeaf keeps legacy journals renderable without letting them reintroduce
 // app-local styling. Structural classes belong to typed design-system
 // components; one-to-one semantic HTML nodes receive only their safe props.
-func renderLeaf(n world.Node) render.HTML {
-	if len(n.Props) > 0 {
-		props := make(map[string]any, len(n.Props))
+// It renders just this node's element around the already-kiln-rendered
+// children, so typed design-system kinds nested inside a semantic container
+// still dispatch through their components (and the class strip applies at
+// every depth, since every node passes through here).
+func renderLeaf(n world.Node, children []render.HTML) render.HTML {
+	props := n.Props
+	if len(props) > 0 {
+		props = make(map[string]any, len(n.Props))
 		for key, value := range n.Props {
 			if strings.EqualFold(key, "class") {
 				continue
 			}
 			props[key] = value
 		}
-		n.Props = props
 	}
-	return noderender.RenderNode(n)
+	return noderender.RenderKind(n.Kind, props, children)
 }
 
 func renderChildren(nodes []world.Node) []render.HTML {

@@ -12,3 +12,7 @@ import corenoderender "github.com/DonaldMurillo/gofastr/core-ui/noderender"
 // core-ui/noderender.RenderNode. Accepts world.Node because world.Node is
 // a type alias for core-ui/node.Node.
 var RenderNode = corenoderender.RenderNode
+
+// RenderKind renders one node's own element from pre-rendered children. See
+// core-ui/noderender.RenderKind.
+var RenderKind = corenoderender.RenderKind
