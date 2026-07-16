@@ -114,6 +114,13 @@ func printHelp() {
   build                 Run codegen + go vet + accessibility lint + go build
                         --no-a11y skips the accessibility gate
   dev                   Start dev server with auto-restart
+    Flags:
+      --addr=<host:port>  Listen address (default localhost:8080); -p <port> short form
+      --dir=<path>     Project root: watch root and server cwd (default .)
+      --pkg=<path>     Package to build, relative to --dir (default .). Use
+                       --pkg ./cmd/<name> when main lives under cmd/, so the
+                       watcher still sees internal/ and relative paths resolve
+                       against the project root
   migrate [up|down|status|generate|force]  Run database migrations
   test                  Run project tests
   embed <sub>           Local semantic index (index/watch/query/stats/clear)

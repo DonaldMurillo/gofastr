@@ -97,7 +97,7 @@ func TestBuildAndServeBuildsAndStarts(t *testing.T) {
 
 // buildAndServeResult is a tiny wrapper so the bool result is observed.
 func buildAndServeResult(dir, addr string, rt *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
-	return buildAndServe(dir, addr, rt, mu, cmd)
+	return buildAndServe(dir, ".", addr, rt, mu, cmd)
 }
 
 func TestBuildAndServeBuildFails(t *testing.T) {
@@ -117,7 +117,7 @@ func TestBuildAndServeBuildFails(t *testing.T) {
 	var cmd *exec.Cmd
 	var ok bool
 	covT_capStdout(t, func() {
-		ok = buildAndServe(dir, "localhost:0", rt, &mu, &cmd)
+		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd)
 	})
 	if ok {
 		t.Fatal("buildAndServe should return false on build failure")

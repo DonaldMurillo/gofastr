@@ -7,7 +7,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-16
+
 ### Added
+
+- **`gofastr dev --pkg` for `cmd/`-layout apps.** The build target is now
+  independent of the watch root. Previously `dev` ran `go build .` at `--dir`,
+  so an app whose main lives under `cmd/<name>/` had no working invocation:
+  from the project root the build failed with `no Go files in <root>`, while
+  `--dir ./cmd/<name>` moved the watch root and the server's cwd along with it
+  — silently missing edits under `internal/` and resolving relative paths
+  (sqlite `db_url`, static dirs) against the command directory, so the app came
+  up against the wrong database. Use `gofastr dev --dir . --pkg ./cmd/<name>`:
+  the watcher and cwd stay at the project root while only the build target
+  moves. `--pkg` defaults to `.`, so the scaffold layout is unaffected.
 
 - **Kiln is current again.** OMP with GLM-5.2 is the turnkey and first-choice
   live driver; the world/tool schemas now cover the current app, entity,

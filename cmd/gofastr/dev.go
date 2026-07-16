@@ -40,6 +40,13 @@ func buildDevChildEnv(parent []string) []string {
 func runDev(args []string) {
 	addr := "localhost:8080"
 	dir := "."
+	// pkg is the package to build, relative to dir. It defaults to dir itself,
+	// which is right for the scaffold layout (main at the project root). Apps
+	// that keep main under cmd/<name>/ need the two to differ: the build target
+	// is the command, but the watch root and the server's cwd must stay at the
+	// project root — otherwise the watcher misses internal/ and relative paths
+	// (sqlite db_url, static dirs) resolve against the command dir instead.
+	pkg := "."
 	for i, a := range args {
 		if a == "--addr" && i+1 < len(args) {
 			addr = args[i+1]
@@ -49,6 +56,9 @@ func runDev(args []string) {
 		}
 		if a == "--dir" && i+1 < len(args) {
 			dir = args[i+1]
+		}
+		if a == "--pkg" && i+1 < len(args) {
+			pkg = args[i+1]
 		}
 	}
 
@@ -60,6 +70,9 @@ func runDev(args []string) {
 
 	fmt.Printf("\n  %s Dev server with hot reload\n\n", bold("GoFastr"))
 	info("Watching %s for changes (.go, .js, .css, .html)...", dir)
+	if pkg != "." {
+		info("Building %s", pkg)
+	}
 	if runtimeIsolation.Active() && resolvedAddr != addr {
 		info("Isolation %s remapped http://%s -> http://%s", runtimeIsolation.ID(), addr, resolvedAddr)
 	} else {
@@ -78,7 +91,7 @@ func runDev(args []string) {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	// Build and start the server initially
-	if !buildAndServe(dir, resolvedAddr, runtimeIsolation, &mu, &server) {
+	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server) {
 		fail("Initial build failed — fixing and saving will retry")
 	}
 
@@ -120,7 +133,7 @@ func runDev(args []string) {
 			fmt.Println()
 			info("Change detected — rebuilding...")
 			killServer(&mu, &server)
-			if buildAndServe(dir, resolvedAddr, runtimeIsolation, &mu, &server) {
+			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server) {
 				success("Reloaded!")
 			} else {
 				fail("Build failed — fixing and saving will retry")
@@ -157,10 +170,12 @@ func devServerBinaryPath(runtimeIsolation *isolation.Runtime) string {
 }
 
 // buildAndServe builds and starts the server process.
-func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
-	// Build binary to temp file
+func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
+	// Build binary to temp file. pkg is relative to dir ("." unless --pkg moved
+	// the build target to a command under cmd/), so the build resolves against
+	// the project module while the watch root and cwd below stay at dir.
 	tmpBin := devServerBinaryPath(runtimeIsolation)
-	buildCmd := exec.Command("go", "build", "-o", tmpBin, ".")
+	buildCmd := exec.Command("go", "build", "-o", tmpBin, pkg)
 	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
