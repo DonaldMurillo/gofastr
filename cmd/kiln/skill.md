@@ -1,6 +1,6 @@
 ---
 name: kiln
-description: Build a GoFastr web app live by calling Kiln over HTTP. Use when the user wants to scaffold an app, add entities/fields, build UI pages, or compose hooks/routes. Triggers on $KILN_URL env var being set, or the user mentions Kiln, GoFastr, or asks to "build me an app", "add an entity", "wire a CRUD", "make a hook", etc.
+description: Build a GoFastr web app live by calling Kiln over HTTP. Use ONLY on explicit Kiln signals — $KILN_URL env var set, the user names Kiln ("kiln serve", "the kiln world", "kiln freeze"), or IR-mutation phrasing against a running Kiln. Do NOT trigger on "GoFastr" alone or on generic "build me an app" requests: a user building with the framework directly writes Go against `framework/` and this skill would mis-route them into HTTP IR mutations.
 ---
 
 # Kiln

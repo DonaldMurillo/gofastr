@@ -95,6 +95,20 @@ was needed.
 - `git grep '<OldName>' README.md docs/ examples/`
 - Don't leave dangling code samples
 
+**You landed a BREAKING change / you're cutting a release:**
+- CHANGELOG.md entry (BREAKING items called out explicitly)
+- `cmd/gofastr/upgrades.yml` — every release PR bumps `through`; a
+  release with BREAKING or migration-relevant changes also adds its
+  entry (one-line guidance, optional `detect` regex; this parser has
+  no block scalars). `TestUpgradeRegistryThroughMatchesChangelog`
+  gates it against the CHANGELOG's latest heading.
+- SECURITY.md "Supported versions" — the latest-minor line
+- If the release adds host-facing surface (a new battery, uihost
+  option, or CLI capability a host-app agent should reach for):
+  `.claude/skills/gofastr-host/SKILL.md` recipe table + trigger
+  phrases, then copy to `cmd/gofastr/embedded/gofastr-host-skill.md`
+  (`TestEmbeddedHostSkillMatchesRepo` pins the sync)
+
 ## Hard rules
 
 1. **Doc updates ship in the same commit as the code change.** Not a
