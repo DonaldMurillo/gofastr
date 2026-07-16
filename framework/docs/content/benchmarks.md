@@ -368,5 +368,5 @@ geometric mean + p-value so noise doesn't show up as a regression.
 
 The prioritized list of optimizations these benchmarks surfaced —
 together with the specific bench that exposed each one and a verify
-step — lives in [`ROADMAP.md` §7](../ROADMAP.md).
+step — the verification results live in [`perf-results.md`](perf-results.md).
 Update it whenever a new hotspot appears or a fix lands.

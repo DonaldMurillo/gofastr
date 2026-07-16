@@ -12,23 +12,24 @@ import (
 //
 //  1. Catch regressions: if a module grows past its current high-water
 //     mark, fail loudly. Cheaper than waiting for a Lighthouse drop.
-//  2. Surface known debt: ROADMAP §8 targets are tighter than today's
+//  2. Surface known debt: the runtime-size goals (see
+//     runtime-minification.md) are tighter than today's
 //     sizes (core ≤ 12 KB gz, each demand module ≤ 3 KB gz). The
 //     overrides below name each module that's currently above target
 //     so the gap is visible in the test, not buried in a doc.
 //
-// When you shrink a module: tighten its override toward the ROADMAP
+// When you shrink a module: tighten its override toward the
 // target. When you delete an override entirely: the module meets the
 // default budget. Never raise an override to silence a regression —
 // fix the module instead.
 func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	const (
-		coreROADMAPGoalGZ   = 12 * 1024
-		moduleROADMAPGoalGZ = 3 * 1024
+		coreGoalGZ   = 12 * 1024
+		moduleGoalGZ = 3 * 1024
 	)
 
 	// Current high-water marks. Treat each override as a TODO to
-	// shrink toward the ROADMAP goal above. Update DOWN when a module
+	// shrink toward the goal above. Update DOWN when a module
 	// shrinks; never update up.
 	//
 	// Post-minify the bundled runtime meets the 12 KB gz goal on its
@@ -37,7 +38,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	moduleOverrides := map[string]int{
 		"widgets": 5 * 1024, // goal 3 KB. Bulk: focus-trap + modal stack + dismiss machinery.
 	}
-	const coreOverride = 12 * 1024 // ROADMAP goal met after minify (was 28 KB pre-minify).
+	const coreOverride = 12 * 1024 // size goal met after minify (was 28 KB pre-minify).
 
 	core, err := RuntimeJS()
 	if err != nil {
@@ -45,10 +46,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	}
 	coreBudget := coreOverride
 	if coreBudget == 0 {
-		coreBudget = coreROADMAPGoalGZ
+		coreBudget = coreGoalGZ
 	}
 	if got := gzipSize(t, core); got > coreBudget {
-		t.Errorf("core runtime.js gzip = %d bytes — exceeds %d byte budget (ROADMAP goal %d)", got, coreBudget, coreROADMAPGoalGZ)
+		t.Errorf("core runtime.js gzip = %d bytes — exceeds %d byte budget (goal %d)", got, coreBudget, coreGoalGZ)
 	}
 
 	for _, name := range ModuleNames() {
@@ -57,12 +58,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 			t.Errorf("module %q not embedded", name)
 			continue
 		}
-		budget := moduleROADMAPGoalGZ
+		budget := moduleGoalGZ
 		if o, ok := moduleOverrides[name]; ok {
 			budget = o
 		}
 		if got := gzipSize(t, src); got > budget {
-			t.Errorf("module %s gzip = %d bytes — exceeds %d byte budget (ROADMAP goal %d)", name, got, budget, moduleROADMAPGoalGZ)
+			t.Errorf("module %s gzip = %d bytes — exceeds %d byte budget (goal %d)", name, got, budget, moduleGoalGZ)
 		}
 	}
 }

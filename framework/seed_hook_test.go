@@ -11,7 +11,7 @@ import (
 
 // TestWithSeed_RunsAfterMigrate asserts that a func registered via
 // App.WithSeed runs AFTER auto-migration, so it can INSERT into a table
-// that Start() just created — the "no such table" footgun (ROADMAP 9b).
+// that Start() just created — the "no such table" footgun.
 func TestWithSeed_RunsAfterMigrate(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
