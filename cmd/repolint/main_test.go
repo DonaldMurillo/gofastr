@@ -164,3 +164,40 @@ func mustFindRule(t *testing.T, findings []finding, rule string) {
 	}
 	t.Fatalf("rule %q not found in %+v", rule, findings)
 }
+
+func TestLintRepoFlagsStrayRootMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "README.md", "# fine\n")
+	writeTestFile(t, dir, "DEPLOY_PLAN.md", "# process artifact\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	mustFindRule(t, findings, "root-markdown")
+}
+
+func TestLintRepoFlagsProcessArtifactMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, filepath.Join("pkg", "AI_TEST_AUDIT.md"), "# ledger\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	mustFindRule(t, findings, "process-artifact-markdown")
+}
+
+func TestLintRepoAcceptsLowercaseFeatureDocs(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, filepath.Join("docs", "audit-log.md"), "# feature doc\n\nCommon mistakes\n")
+	writeTestFile(t, dir, "ROADMAP.md", "# fine\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("unexpected findings: %+v", findings)
+	}
+}

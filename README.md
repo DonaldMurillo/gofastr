@@ -484,8 +484,6 @@ connected to a running app.
 - [Observability](framework/docs/content/observability.md) — metrics and tracing
 - [PWA](framework/docs/content/pwa.md) — installable app manifest + versioned offline shell via `uihost.WithPWA`
 - [Agent-ready](framework/docs/content/agent-ready.md) — the discovery surface for AI agents (llms.txt, agent card, MCP)
-- [Current risk register](framework/docs/content/project-architecture-review.md) — revalidated architecture risks and maintenance rules
-- [Agent notes](framework/docs/content/agent-notes.md) — running notes for AI contributors
 
 The full, per-topic index lives in the docs site catalogue (`gofastr docs --list`, or `examples/site/docs_catalog.go`), which a parity test keeps in sync with every embedded page. The list above is a curated subset.
 

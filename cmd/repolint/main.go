@@ -54,6 +54,18 @@ func lintRepo(root string) ([]finding, error) {
 			}
 			return nil
 		}
+		if name := d.Name(); isProcessArtifactMarkdown(name) {
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				rel = path
+			}
+			findings = append(findings, finding{
+				File:    filepath.ToSlash(rel),
+				Line:    1,
+				Rule:    "process-artifact-markdown",
+				Message: "process ledgers/journals/handoffs don't live as tracked markdown — the rationale goes in commit messages and pinning tests; the history IS git history",
+			})
+		}
 		if name := d.Name(); hasControlChar(name) {
 			rel, relErr := filepath.Rel(root, path)
 			if relErr != nil {
@@ -94,6 +106,11 @@ func lintRepo(root string) ([]finding, error) {
 		return nil, err
 	}
 	findings = append(findings, truthFindings...)
+	rootMDFindings, err := lintRootMarkdown(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, rootMDFindings...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
 			return findings[i].File < findings[j].File
@@ -250,6 +267,66 @@ func lineContaining(body, needle string) int {
 		}
 	}
 	return 1
+}
+
+// rootMarkdownAllowlist is the complete set of markdown files permitted
+// at the repository root: the GitHub-recognized community-health files
+// plus the roadmap and the agent entry points. Everything else is a
+// process artifact that belongs in git history, a gate, or a skill —
+// not on the repo's front porch.
+var rootMarkdownAllowlist = map[string]bool{
+	"README.md":          true,
+	"CHANGELOG.md":       true,
+	"CONTRIBUTING.md":    true,
+	"SECURITY.md":        true,
+	"CODE_OF_CONDUCT.md": true,
+	"SUPPORT.md":         true,
+	"ROADMAP.md":         true,
+	"CLAUDE.md":          true,
+	"AGENTS.md":          true,
+}
+
+func lintRootMarkdown(root string) ([]finding, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []finding
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".md") || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if !rootMarkdownAllowlist[name] {
+			out = append(out, finding{
+				File:    name,
+				Line:    1,
+				Rule:    "root-markdown",
+				Message: "not in the root markdown allowlist — audits/journals/plans go to git history or an enforceable gate, feature docs go to framework/docs/content/",
+			})
+		}
+	}
+	return out, nil
+}
+
+// isProcessArtifactMarkdown flags ALL-CAPS markdown names built around
+// process-ledger tokens (AUDIT, FINDINGS, NOTES, JOURNAL, HANDOFF,
+// LEDGER) anywhere in the tree. Feature docs are lowercase (audit-log.md
+// is fine); the SCREAMING_SNAKE ledger genre is what accretes.
+func isProcessArtifactMarkdown(name string) bool {
+	if !strings.HasSuffix(name, ".md") {
+		return false
+	}
+	stem := strings.TrimSuffix(name, ".md")
+	if stem == "" || stem != strings.ToUpper(stem) {
+		return false
+	}
+	for _, tok := range []string{"AUDIT", "FINDINGS", "NOTES", "JOURNAL", "HANDOFF", "LEDGER"} {
+		if strings.Contains(stem, tok) {
+			return true
+		}
+	}
+	return false
 }
 
 // hasControlChar reports whether s contains any ASCII control byte

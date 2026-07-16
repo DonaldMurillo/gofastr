@@ -86,8 +86,7 @@ For every adversarial test the agent proposes:
 
 ## Naming + location policy
 
-Already encoded in `AI_TEST_AUDIT.md` at repo root — re-read that
-file before the pass. The short version:
+The policy:
 
 - File suffix: `_security_test.go` (drop the `_red_` infix entirely)
 - Drop the redundant `<pkg>_` prefix when the file lives in a
@@ -98,13 +97,16 @@ file before the pass. The short version:
 - Merge into the closest existing `_security_test.go` sibling unless
   the topic is genuinely new
 
-## Append decisions to `AI_TEST_AUDIT.md`
+## Record decisions where they're enforced, not in a ledger
 
 Every test the pass *deletes* or *weakens* (rather than fixing
-production for) gets a one-paragraph entry in `AI_TEST_AUDIT.md` with
-the *why*. This is the human-auditable record of AI judgment calls
-across passes. Without it, the next reviewer can't tell deliberate
-deletions from drift.
+production for) records its *why* in exactly two places: the commit
+message that deletes/weakens it, and — when a surviving sibling test
+carries the contract — a short comment on that sibling naming what it
+supersedes. No separate ledger file: the pinning `*_security_test.go`
+IS the record, and `git log -p` is the audit trail. A permanently
+`t.Skip`ped test is never acceptable — delete it and leave a comment
+where the contract is actually tested.
 
 ## Ready-to-paste prompt for the next pass
 
@@ -113,9 +115,10 @@ agent's brief (edit the scope line):
 
 ```
 You are running an adversarial security test pass against the
-GoFastr codebase. Read `AI_TEST_AUDIT.md` and
-`.claude/skills/adversarial-tests/SKILL.md` first — they
-encode the policy you must follow.
+GoFastr codebase. Read
+`.claude/skills/adversarial-tests/SKILL.md` first — it
+encodes the policy you must follow. Prior keep/flip/delete decisions
+live in git history and in comments beside the surviving tests.
 
 Scope: <e.g. framework/crud + framework/uihost; or "any package
 touched on this branch">
@@ -139,8 +142,9 @@ Rules:
 - Tests that treat developer-supplied input (OpenAPI path keys,
   server URLs from host app config, etc.) as attacker input are
   wrong-layer — do not author them.
-- For every test that the pass deletes or weakens, append a
-  one-paragraph entry to `AI_TEST_AUDIT.md` with the *why*.
+- For every test that the pass deletes or weakens, put the *why* in
+  the commit message and a short comment beside the surviving sibling
+  test. Never leave a permanently-skipped test.
 
 For each finding, produce:
 - The underlying property (one sentence)
@@ -177,7 +181,8 @@ Two ways:
 
 After the pass: run `./scripts/test-all.sh` and confirm exit 0;
 audit `find . -maxdepth 3 -type f -size +500k …` for stray binaries
-per `CLAUDE.md`; review the new `AI_TEST_AUDIT.md` entries.
+per `CLAUDE.md`; review the pass's commit messages for the
+keep/flip/delete rationale.
 
 ## Dual-model protocol (MANDATORY)
 

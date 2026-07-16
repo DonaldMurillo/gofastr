@@ -10,8 +10,8 @@ import (
 // ErrGenerateViaBlueprint signals that automated codegen from a frozen Kiln
 // world is temporarily unavailable. The legacy entities/*.json → gen/ codegen
 // path was removed in favour of the gofastr.yml blueprint; emitting a blueprint
-// from a Kiln world is a tracked follow-up (see
-// framework/docs/content/agent-notes.md, 2026-06-08).
+// from a Kiln world is a tracked follow-up (ROADMAP.md, "kiln freeze
+// → blueprint").
 var ErrGenerateViaBlueprint = errors.New(
 	"kiln freeze: automated codegen is pending blueprint support — the snapshot " +
 		"under <dir>/ is written; declare the frozen entities in a gofastr.yml " +

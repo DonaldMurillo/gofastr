@@ -858,7 +858,7 @@ func phBody() render.HTML {
 		html.Section(html.SectionConfig{ID: "agents", Label: "Where agents fit"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Where agents fit")),
 			html.Paragraph(html.TextConfig{}, render.Text("Agents drive the framework the same way humans do. The MCP tool surface is just the REST surface in a different shape; the typed Kiln tools are the framework's mutate API exposed for code-generating agents. Destructive operations require an approved plan — the agent cannot drop your tables without you clicking Approve.")),
-			html.Paragraph(html.TextConfig{}, render.Text("The framework also leaves clear breadcrumbs for the agent: doc files embedded in the binary, structured MCP introspection at /mcp, agent-notes for review history. An agent that connects to a running GoFastr app can read its own state and reason about it.")),
+			html.Paragraph(html.TextConfig{}, render.Text("The framework also leaves clear breadcrumbs for the agent: doc files embedded in the binary and structured MCP introspection at /mcp. An agent that connects to a running GoFastr app can read its own state and reason about it.")),
 		),
 		html.Section(html.SectionConfig{ID: "next", Label: "What's next"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("What's next")),

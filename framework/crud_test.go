@@ -181,7 +181,7 @@ func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
 	// The security contract (see softdelete_public_security_test.go)
 	// requires the filter to stay applied when no authenticated user
 	// is present, regardless of the query param. The test was
-	// previously inverted; AI_TEST_AUDIT.md records the flip.
+	// previously inverted; git history records the flip.
 	ent := entity.Define("posts", entity.EntityConfig{SoftDelete: true})
 
 	ch := &crud.CrudHandler{Entity: ent}

@@ -4,8 +4,7 @@ The top-level `README.md` is the entry point. These pages are
 per-feature references, each grounded in the actual code. Every
 guide doc ends with a "common mistakes" callout; the handful of
 data and index artifacts (this index, the overview map, benchmark
-results, the risk register, the agent-notes log, the harness
-contract) are exempt — the exemption list lives in
+results, the harness contract) are exempt — the exemption list lives in
 `framework/docs/docs_test.go` and is enforced by
 `TestGuideDocsEndWithCommonMistakes`.
 
@@ -19,16 +18,12 @@ contract) are exempt — the exemption list lives in
 
 ## Architecture & conventions
 
-- [Current risk register](project-architecture-review.md) —
-  revalidated architecture risks and maintenance rules; stale findings
-  are removed instead of preserved.
 - [Runtime contract](runtime-contract.md) — the UI/runtime contract:
   SSR/hydration/island/SSE model + `data-fui-*` attribute reference.
   **Mandatory reading** before any UI or runtime change. (Embedded
   extract; the repo's source of truth is `core-ui/ARCHITECTURE.md`.)
 - [`ROADMAP.md`](../ROADMAP.md) — forward-looking work (proposals,
   performance opportunities, in-flight plans).
-- [Agent notes](agent-notes.md) — append-only review log.
 
 ## Entity surface
 

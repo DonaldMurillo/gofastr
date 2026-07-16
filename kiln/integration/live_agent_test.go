@@ -1200,7 +1200,7 @@ func TestLive_FreezeAndGenerateGo(t *testing.T) {
 	// The generate step (cmd/gofastr generate over build/entities/*.json) was
 	// removed with the legacy entities/*.json codegen path. Graduating a frozen
 	// Kiln world to Go now goes through a gofastr.yml blueprint — a tracked
-	// follow-up (see framework/docs/content/agent-notes.md, 2026-06-08).
+	// follow-up (ROADMAP.md, "kiln freeze → blueprint").
 	t.Skip("freeze→generate ship-it pipeline pending blueprint support")
 	liveCheck(t)
 	srv := startLiveKiln(t)

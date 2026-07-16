@@ -755,7 +755,7 @@
         // src (the only sink signal-bound `src`/`href` reaches here)
         // renders inertly and does NOT execute its scripts. SVG only runs
         // script when loaded as a *document* (iframe/object/navigation),
-        // which is not a signal-URL sink. See AI_TEST_AUDIT.md (pass 3).
+        // which is not a signal-URL sink. (Verified by the runtime security e2e suite.)
         return !trimmed.startsWith('data:image/');
       }
       return false;

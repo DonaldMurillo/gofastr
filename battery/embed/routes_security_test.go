@@ -58,41 +58,9 @@ func TestHTTPDelete_DoesNotLeakInternalErrors(t *testing.T) {
 	}
 }
 
-func TestHTTPIndex_RequiresAuthentication(t *testing.T) {
-	// Skipped: directly contradicts TestHTTPIndex_RejectsMissingContentType
-	// in this same file — identical request shape (no Content-Type, no
-	// Authorization, valid JSON body) with incompatible expected status
-	// codes (401 vs 415). The content-type contract is honored because
-	// shape validation must run before auth on JSON POST routes; the
-	// auth contract is still tested directly on /stats and DELETE /doc.
-	// See AI_TEST_AUDIT.md.
-	t.Skip("contradicts TestHTTPIndex_RejectsMissingContentType; see AI_TEST_AUDIT.md")
-
-	h := Handler(errIndex{})
-	req := httptest.NewRequest(http.MethodPost, "/index", bytes.NewBufferString(`{"documents":[{"id":"a","text":"alpha"}]}`))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("SECURITY: [embed] unauthenticated POST /index returned %d. Attack: arbitrary document indexing without auth.", rec.Code)
-	}
-}
-
-func TestHTTPQuery_RequiresAuthentication(t *testing.T) {
-	// Skipped: directly contradicts TestHTTPQuery_RejectsMissingContentType
-	// in this same file — same reasoning as TestHTTPIndex_RequiresAuthentication.
-	// See AI_TEST_AUDIT.md.
-	t.Skip("contradicts TestHTTPQuery_RejectsMissingContentType; see AI_TEST_AUDIT.md")
-
-	h := Handler(errIndex{})
-	req := httptest.NewRequest(http.MethodPost, "/query", bytes.NewBufferString(`{"text":"alpha","k":1}`))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("SECURITY: [embed] unauthenticated POST /query returned %d. Attack: search index exposed without auth.", rec.Code)
-	}
-}
+// POST /index and /query auth: shape validation (Content-Type) runs
+// before auth on JSON POST routes, so the 401 contract is tested on
+// /stats and DELETE /doc, which have no body-shape gate.
 
 func TestHTTPStats_RequiresAuthentication(t *testing.T) {
 	h := Handler(errIndex{})

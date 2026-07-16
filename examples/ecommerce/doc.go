@@ -9,8 +9,8 @@
 // above; flagship_test.go regenerates it on every run) and is the proof of the
 // framework's thesis: one blueprint produces a SQL schema,
 // REST CRUD, an OpenAPI spec, a typed MCP tool surface, and a server-rendered
-// UI — none of it hand-written. See BUILD_JOURNAL.md for the full trail and
-// flagship_test.go for the end-to-end surface check.
+// UI — none of it hand-written. See flagship_test.go for the end-to-end
+// surface check.
 //
 // The scaffolded, owned app lives in the app/ subpackage (output_dir: app);
 // run it directly:

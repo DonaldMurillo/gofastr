@@ -1,6 +1,6 @@
 ---
 name: gofastr-docs
-description: Auto-loads when adding, changing, or removing any GoFastr feature or exported API. Encodes the doc topology (README + ARCHITECTURE + framework/docs/content/*.md + agent-notes) and the change→doc mapping. Docs are embedded in the gofastr binary at build time — `gofastr docs` browses them and the MCP `framework_docs_*` tools expose them to agents. Triggers on edits to framework/*.go, core/, battery/, cmd/, kiln/, core-ui/ — and on phrases like "add", "implement", "build", "refactor", "rename", "remove", "deprecate", "new feature", "new endpoint", "new field type", "API change", "expose", "wire up". Goal: docs ship in the same commit as the code, not "later".
+description: Auto-loads when adding, changing, or removing any GoFastr feature or exported API. Encodes the doc topology (README + ARCHITECTURE + framework/docs/content/*.md) and the change→doc mapping. Docs are embedded in the gofastr binary at build time — `gofastr docs` browses them and the MCP `framework_docs_*` tools expose them to agents. Triggers on edits to framework/*.go, core/, battery/, cmd/, kiln/, core-ui/ — and on phrases like "add", "implement", "build", "refactor", "rename", "remove", "deprecate", "new feature", "new endpoint", "new field type", "API change", "expose", "wire up". Goal: docs ship in the same commit as the code, not "later".
 ---
 
 # GoFastr docs — load this before changing the public surface
@@ -21,8 +21,6 @@ skill applies. Docs are part of the change, not a follow-up.
 | `framework/docs/content/search.md` | `battery/search` interface + backends. | New backend, interface change, new query option. |
 | `framework/docs/content/security.md` | Default middleware stack + security headers. | New default middleware, header change, new policy primitive. |
 | `framework/docs/content/widgets.md` | `core-ui/widget` builder API. | New widget, new preset, new theme hook. |
-| `framework/docs/content/agent-notes.md` | Append-only review log. | After any architecture/security review or large refactor. One entry per pass. |
-| `framework/docs/content/project-architecture-review.md` | Living review of risk & gap findings. | Only when you are running a fresh review pass — not casually. |
 | `examples/*/README.md` | Per-example walkthrough. | When the example's behaviour or wiring changes. |
 
 There is no `docs/api-reference/` — the public API is documented via
@@ -84,11 +82,10 @@ was needed.
 - A reference page under `docs/cli-<subcommand>.md` if non-trivial
 
 **You ran an architecture review / security review:**
-- Append exactly ONE entry to `framework/docs/content/agent-notes.md` with date, scope,
-  symptom, evidence, next-time note (follow the existing format)
-- Only update `framework/docs/content/project-architecture-review.md` if you ran a fresh
-  consolidated review — don't append rounds (rule from agent-notes
-  2026-05-08)
+- Findings become fixes with pinning tests in the same pass; the
+  keep/flip/delete rationale goes in the commit message and a comment
+  beside the surviving test. No review-log or ledger files — git
+  history is the record.
 
 **You removed or renamed an exported symbol:**
 - grep the docs for the old name and replace
@@ -141,9 +138,6 @@ was needed.
    "battle-tested" / "fully-featured" — never. State what the code
    does, in present tense, with no marketing.
 
-8. **agent-notes is append-only.** Don't rewrite or compact prior
-   entries. Adding a new dated entry is the only allowed edit pattern.
-
 ## When you are unsure whether a doc needs updating
 
 Run this mental check:
@@ -165,9 +159,6 @@ Run this mental check:
 - **Surfaces drift.** README's "Surfaces" table listed batch endpoints
   and SSE streams that had no reference page anywhere. If the README
   advertises it, `docs/` should cover it.
-- **agent-notes drift.** Stopped getting updates while feature work
-  continued. The note ≠ the feature, but reviews/refactors of any
-  size deserve a one-paragraph entry.
 - **Roadmap drift.** Forward-looking work lives in `ROADMAP.md`.
   Keep it accurate — when an item ships, delete it from the roadmap
   and move per-feature truth into `docs/<feature>.md`.

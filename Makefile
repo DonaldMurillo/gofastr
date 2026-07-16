@@ -25,7 +25,7 @@ build-examples: csp-check $(DIST_DIR)
 	done
 	@# ecommerce is the declaration-driven flagship: its app is scaffolded
 	@# from gofastr.yml into the owned app/ subpackage (output_dir: app — see
-	@# examples/ecommerce/BUILD_JOURNAL.md and framework/ARCHITECTURE.md).
+	@# framework/ARCHITECTURE.md).
 	@# --force refreshes the committed scaffold from the current generator.
 	@echo "  scaffolding ecommerce from blueprint"
 	@(cd examples/ecommerce && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate --from=gofastr.yml --force) || exit 1

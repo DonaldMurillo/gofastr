@@ -23,9 +23,8 @@ customer-PII entities — `orders` and `order_items` — owner-scoped via
 `owner_field: user_id`. The framework stamps the owner on create and
 scopes every list/get/update/delete (REST *and* MCP) to the requesting
 user, failing closed with 401 when no owner can be derived.
-`TestOrdersOwnerScoped` pins this. The full story of how the first cut
-shipped insecure and how it was fixed is in
-[`BUILD_JOURNAL.md`](BUILD_JOURNAL.md).
+`TestOrdersOwnerScoped` pins this. (The first cut shipped insecure;
+git history has the full story of the fix.)
 
 ## Regenerate and run
 
@@ -40,8 +39,5 @@ app in a subpackage so the example also hosts its own test files.
 
 ## Read next
 
-- [`BUILD_JOURNAL.md`](BUILD_JOURNAL.md) — the build narrative: what the
-  declaration contains, every surface it produces, the security fix, and
-  the honest gaps (stubs the generator emits but does not wire).
 - [`flagship_test.go`](flagship_test.go) — the end-to-end proof.
 - [`gofastr.yml`](gofastr.yml) — the entire input.

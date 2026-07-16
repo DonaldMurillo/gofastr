@@ -141,7 +141,6 @@ var docIntents = []docIntent{
 			{"agent-ready", "Agent-readiness", "Discovery surface scanners (isitagentready.com) look for: llms.txt, A2A card, MCP/OAuth well-knowns, markdown negotiation."},
 			{"kiln", "Kiln overview", "Experimental — the agent-driven build-mode binary."},
 			{"embed", "Embed", "Local semantic search via brute-force cosine — no API key."},
-			{"agent-notes", "Agent notes", "Append-only review log for agents working on the framework."},
 			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},
 			{"blueprints", "Blueprints", "Reusable bundles of entities + screens an agent can apply."},
 		},
@@ -173,7 +172,6 @@ var docIntents = []docIntent{
 			{"perf-results", "Performance results", "Latest throughput / latency results across the hot paths."},
 			{"harness-architecture", "Harness architecture", "The AI coding-harness design (contributor/internal reference)."},
 			{"harness-e2e-testing", "Harness E2E testing", "How the harness drives end-to-end browser tests."},
-			{"project-architecture-review", "Architecture review", "The revalidated risk register + maintenance rules."},
 		},
 	},
 }

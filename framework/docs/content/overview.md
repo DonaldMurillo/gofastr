@@ -139,7 +139,7 @@ SQLite and Postgres, dialect-aware.
 - **[Embed](/docs/embed)** — local semantic search via brute-force cosine, no API
   key. **[Audit deps](/docs/audit-deps)** — flag packages an agent shouldn't import.
 - **[Blueprints](/docs/blueprints)** — reusable bundles of entities + screens an
-  agent can apply. **[Agent notes](/docs/agent-notes)** — append-only review log.
+  agent can apply.
 
 ## Operations
 

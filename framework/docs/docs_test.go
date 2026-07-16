@@ -101,12 +101,8 @@ func TestSearchFindsKnownTerm(t *testing.T) {
 var commonMistakesExempt = map[string]string{
 	"README":   "docs index page — meta, not a guide",
 	"overview": "the map of the docs — index, not a guide",
-	"agent-notes": "append-only review log — the doc IS a list of " +
-		"mistakes and lessons",
 	"perf-results": "benchmark data artifact — measurements, not a " +
 		"how-to surface",
-	"project-architecture-review": "current risk register — findings " +
-		"artifact, not a guide",
 	"harness-architecture": "architecture contract — its Hard rules / " +
 		"Non-goals / Threat model sections already enumerate the " +
 		"failure modes",
