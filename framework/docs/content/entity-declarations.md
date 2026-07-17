@@ -698,11 +698,19 @@ empty keeps the bare mounts, so adding it is never a breaking change.
 ### CRUD verbs and response envelopes
 
 Each writable entity mounts `POST /<entity>`, `PUT /<entity>/{id}`, and
-`PATCH /<entity>/{id}`. PATCH is the sparse-update form: validation and SQL
-updates apply only to fields present in the JSON body. It uses the same access,
-owner and tenant scopes, update hooks, audit pre-image, and transaction path as
-PUT. The generated typed client exposes both `Update<Entity>` and
-`Patch<Entity>`; the MCP update tool uses PATCH because its input is sparse.
+`PATCH /<entity>/{id}`. Both PUT and PATCH are sparse: validation and SQL
+updates apply only to the fields present in the JSON body, so neither verb
+nulls an omitted column — they are wired to the same update path and differ
+only in the HTTP method clients use to express intent. Both use the same
+access, owner and tenant scopes, update hooks, audit pre-image, and
+transaction path. The generated typed client exposes both `Update<Entity>`
+(PUT) and `Patch<Entity>` (PATCH); the MCP update tool uses PATCH. Because
+PATCH must distinguish "field absent" from "field set to its zero value"
+(`false`, `0`, `""`), `Patch<Entity>` takes a dedicated `<Entity>Patch`
+struct whose fields are pointers (`*bool`, `*int`, …): a `nil` field is
+omitted from the body (left untouched), while a non-nil pointer sets the
+field even when it points at a zero value. `Update<Entity>` and
+`Create<Entity>` keep the value-typed `<Entity>Input`.
 
 Every successful single-record response has one stable envelope:
 

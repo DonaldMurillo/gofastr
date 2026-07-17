@@ -956,11 +956,14 @@ The generator rejects:
 `gofastr generate` warns on **every** auto-exposed entity (`crud`
 defaults on, or `mcp: true`) that sets none of `owner_field`, `access`
 (with at least one non-blank permission), or `multi_tenant` — regardless
-of what its fields are named. An unscoped entity is anonymous world
-read/create/update/delete on the generated API. Genuinely public
-read-only data is a legitimate shape, but anonymous *write* almost never
-is — gate at least the write operations with `access:`. The PII rule
-below is the stricter subset that also fails `gofastr validate`.
+of what its fields are named. CRUD is secure-by-default, so such an
+entity already requires an authenticated session (anonymous requests get
+`401`); the residual risk the warning names is **cross-user**: every
+*signed-in* caller can read, create, update, and delete every OTHER
+user's row. Genuinely public data is a legitimate shape — declare it
+with `public: true` to opt all the way out of the session gate — but for
+per-user rows set `owner_field`, and gate by role with `access:`. The PII
+rule below is the stricter subset that also fails `gofastr validate`.
 
 ### Unscoped PII (`gofastr validate` error, `gofastr generate` warning)
 
@@ -969,10 +972,12 @@ is auto-exposed (`crud` defaults on, or `mcp: true`), declares PII-shaped
 fields (names containing tokens like `email`, `phone`, `address`, `ssn`,
 `password`, `token`, `secret`, `card`, …), and sets none of `owner_field`,
 `access` (with at least one non-blank permission), or `multi_tenant`,
-every row would be world-readable and -writable on the generated API.
-Enabling `app.auth` alone does **not** suppress the rule — the session
-middleware is pass-through for anonymous requests; only per-entity scoping
-gates the auto-generated surfaces. `gofastr validate` reports this as an error (exit 1),
+every *authenticated* user could read and write every other user's row on
+the generated API (the secure-by-default gate already stops anonymous
+callers — the exposure here is cross-user). Enabling `app.auth` alone does
+**not** suppress the rule: a session is necessary to reach the surface but
+not sufficient to scope it — only per-entity scoping does that.
+`gofastr validate` reports this as an error (exit 1),
 naming the entity, the matched fields, and the remedies; `gofastr generate`
 prints the same finding as a warning and proceeds (suppressed under `--json`
 to keep stdout machine-parseable). `gofastr audit lint` also reports it

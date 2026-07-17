@@ -3840,19 +3840,24 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("\tentities.RegisterAll(fwApp)\n")
+	sb.WriteString("\tsite := uiapp.NewApp(appName)\n")
+	sb.WriteString("\tRegisterGenerated(fwApp, site, db)\n")
 	if hasSeed {
-		// Apply blueprint seed data after auto-migration, in declared order
-		// and idempotently: skip any entity whose table already has rows.
-		// Rows go through CreateOne so validation, id generation, and
-		// timestamps apply. A row that fails validation is logged and
-		// skipped rather than aborting startup — sample seed data shouldn't
-		// take the whole app down.
+		// Seed data runs AFTER RegisterGenerated on purpose. RegisterGenerated
+		// (when auth+admin are configured) registers the bootstrap-admin seed
+		// hook first; App.WithSeed fires hooks in registration order, so by
+		// the time this hook runs the admin already exists and the owner-
+		// scoped rows below can resolve it as their owner. Registering the
+		// data seed before RegisterGenerated would run it before the admin
+		// exists, leaving owner-scoped rows silently unseeded. Rows are
+		// idempotent (skip entities that already have rows) and a row that
+		// fails validation is logged and skipped rather than aborting startup.
 		sb.WriteString("\tfwApp.WithSeed(func(ctx context.Context) error {\n")
 		if ownerSeed {
-			sb.WriteString("\t\t// Seed owner-scoped rows as the bootstrap admin so the demo data\n")
-			sb.WriteString("\t\t// belongs to them; a fresh signup then starts with an empty\n")
-			sb.WriteString("\t\t// workspace and adds its own. CreateOne stamps the owner column\n")
-			sb.WriteString("\t\t// from the user on the context.\n")
+			sb.WriteString("\t\t// Resolve the bootstrap admin (created by the earlier-registered\n")
+			sb.WriteString("\t\t// admin seed hook) so the demo rows are owned by them; a fresh\n")
+			sb.WriteString("\t\t// signup then starts with an empty workspace and adds its own.\n")
+			sb.WriteString("\t\t// CreateOne stamps the owner column from this user.\n")
 			sb.WriteString(fmt.Sprintf("\t\tif u, _, err := auth.NewEntityUserStore(db, \"auth_users\").FindByEmail(ctx, %q); err == nil && u != nil {\n", bp.App.Admin.SeedEmail))
 			sb.WriteString("\t\t\tctx = handler.SetUser(ctx, u)\n")
 			sb.WriteString("\t\t}\n")
@@ -3871,8 +3876,6 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t\treturn nil\n")
 		sb.WriteString("\t})\n")
 	}
-	sb.WriteString("\tsite := uiapp.NewApp(appName)\n")
-	sb.WriteString("\tRegisterGenerated(fwApp, site, db)\n")
 	// appBaseCSS ships first so the user's static/app.css (loaded
 	// after) overrides it; it gives the generated entity blocks modern,
 	// responsive defaults out of the box (scrollable tables, form rhythm).

@@ -56,6 +56,7 @@ entities:
   - name: notes
     crud: true
     mcp: true
+    public: true   # anyone may read/write — see the note after the smoke test
     fields:
       - name: title
         type: string
@@ -129,11 +130,14 @@ curl -s -X POST http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-One file produced all three. Auth is wired — `/auth/register` and
-`/auth/login` exist — but the `notes` API is still **anonymous**: the
-session middleware is pass-through, and nothing yet scopes a note to its
-creator, so anyone can read and write every row. Fix that next — by
-owning the Go.
+One file produced all three. Those `curl`s worked anonymously only
+because the entity declared `public: true` — GoFastr's CRUD is
+secure-by-default, so an entity that declares neither `public: true`, an
+`OwnerField`, nor an `Access` block refuses anonymous requests with
+`401`. `public: true` opted `notes` all the way out of that gate: anyone
+can read and write every row, and nothing scopes a note to its creator.
+That's fine for a throwaway demo and wrong for real notes. Fix it next —
+by dropping the opt-out and owning the Go.
 
 ## 2. Own the Go: per-user scoping + an RBAC gate
 
@@ -143,8 +147,10 @@ generated code. (In a real project you might have declared `owner_field`
 and `access` in the blueprint up front; doing it by hand here is the same
 edit you'd make for *any* change after the one-shot — this is what
 "owning the code" looks like.)
-**Edit `entities/notes.go`** — add the owner column, `OwnerField`, and
-`Access` to the `notes` registration:
+**Edit `entities/notes.go`** — drop the generated `Public: true` opt-out
+and add the owner column, `OwnerField`, and `Access` to the `notes`
+registration. Removing `Public` re-arms the secure-by-default gate;
+`OwnerField` and `Access` then decide who gets through:
 
 ```go
 	app.Entity("notes", framework.EntityConfig{

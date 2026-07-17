@@ -67,6 +67,8 @@ func main() {
 	// a production /mcp is reachable solely by trusted callers.
 	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
 	entities.RegisterAll(fwApp)
+	site := uiapp.NewApp(appName)
+	RegisterGenerated(fwApp, site, db)
 	fwApp.WithSeed(func(ctx context.Context) error {
 		for _, s := range seedData() {
 			ch, err := fwApp.CrudHandler(s.Entity)
@@ -85,8 +87,6 @@ func main() {
 		}
 		return nil
 	})
-	site := uiapp.NewApp(appName)
-	RegisterGenerated(fwApp, site, db)
 	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()), uihost.WithAppIcon(appIconPNG()), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}})))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {

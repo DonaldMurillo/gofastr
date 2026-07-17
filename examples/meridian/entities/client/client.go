@@ -76,14 +76,14 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// doSingleJSON decodes the {"data": {...}} envelope used by single-record
+// CRUD responses into out.
 func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, out any) error {
-	var envelope struct {
-		Data json.RawMessage `json:"data"`
-	}
+	var envelope map[string]json.RawMessage
 	if err := c.doJSON(ctx, method, path, body, &envelope); err != nil {
 		return err
 	}
-	return json.Unmarshal(envelope.Data, out)
+	return json.Unmarshal(envelope["data"], out)
 }
 
 type Plans struct {
@@ -101,6 +101,14 @@ type PlansInput struct {
 	Price    string `json:"price,omitempty"`
 	Interval string `json:"interval,omitempty"`
 	Active   bool   `json:"active,omitempty"`
+}
+
+type PlansPatch struct {
+	Name     *string `json:"name,omitempty"`
+	Slug     *string `json:"slug,omitempty"`
+	Price    *string `json:"price,omitempty"`
+	Interval *string `json:"interval,omitempty"`
+	Active   *bool   `json:"active,omitempty"`
 }
 
 type PlansListResponse struct {
@@ -151,10 +159,16 @@ func (c *Client) UpdatePlans(ctx context.Context, id string, body PlansInput) (P
 	return out, nil
 }
 
-func (c *Client) PatchPlans(ctx context.Context, id string, body PlansInput) (Plans, error) {
+// PatchPlans updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty PlansPatch to no-op.
+func (c *Client) PatchPlans(ctx context.Context, id string, body PlansPatch) (Plans, error) {
 	var out Plans
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/plans/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/plans/"+url.PathEscape(id), body, &out); err != nil {
+		return Plans{}, err
+	}
+	return out, nil
 }
 
 // DeletePlans removes the record at id.
@@ -179,6 +193,15 @@ type CustomersInput struct {
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
 	UserId  string `json:"userId,omitempty"`
+}
+
+type CustomersPatch struct {
+	Name    *string `json:"name,omitempty"`
+	Email   *string `json:"email,omitempty"`
+	Company *string `json:"company,omitempty"`
+	Status  *string `json:"status,omitempty"`
+	Mrr     *string `json:"mrr,omitempty"`
+	UserId  *string `json:"userId,omitempty"`
 }
 
 type CustomersListResponse struct {
@@ -229,10 +252,16 @@ func (c *Client) UpdateCustomers(ctx context.Context, id string, body CustomersI
 	return out, nil
 }
 
-func (c *Client) PatchCustomers(ctx context.Context, id string, body CustomersInput) (Customers, error) {
+// PatchCustomers updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty CustomersPatch to no-op.
+func (c *Client) PatchCustomers(ctx context.Context, id string, body CustomersPatch) (Customers, error) {
 	var out Customers
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/customers/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/customers/"+url.PathEscape(id), body, &out); err != nil {
+		return Customers{}, err
+	}
+	return out, nil
 }
 
 // DeleteCustomers removes the record at id.
@@ -259,6 +288,16 @@ type SubscriptionsInput struct {
 	StartedOn  string `json:"startedOn,omitempty"`
 	RenewsOn   string `json:"renewsOn,omitempty"`
 	UserId     string `json:"userId,omitempty"`
+}
+
+type SubscriptionsPatch struct {
+	CustomerId *string `json:"customerId,omitempty"`
+	PlanId     *string `json:"planId,omitempty"`
+	Status     *string `json:"status,omitempty"`
+	Mrr        *string `json:"mrr,omitempty"`
+	StartedOn  *string `json:"startedOn,omitempty"`
+	RenewsOn   *string `json:"renewsOn,omitempty"`
+	UserId     *string `json:"userId,omitempty"`
 }
 
 type SubscriptionsListResponse struct {
@@ -309,10 +348,16 @@ func (c *Client) UpdateSubscriptions(ctx context.Context, id string, body Subscr
 	return out, nil
 }
 
-func (c *Client) PatchSubscriptions(ctx context.Context, id string, body SubscriptionsInput) (Subscriptions, error) {
+// PatchSubscriptions updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty SubscriptionsPatch to no-op.
+func (c *Client) PatchSubscriptions(ctx context.Context, id string, body SubscriptionsPatch) (Subscriptions, error) {
 	var out Subscriptions
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/subscriptions/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/subscriptions/"+url.PathEscape(id), body, &out); err != nil {
+		return Subscriptions{}, err
+	}
+	return out, nil
 }
 
 // DeleteSubscriptions removes the record at id.
@@ -341,6 +386,17 @@ type InvoicesInput struct {
 	DueOn      string `json:"dueOn,omitempty"`
 	PaidOn     string `json:"paidOn,omitempty"`
 	UserId     string `json:"userId,omitempty"`
+}
+
+type InvoicesPatch struct {
+	CustomerId *string `json:"customerId,omitempty"`
+	Number     *string `json:"number,omitempty"`
+	Amount     *string `json:"amount,omitempty"`
+	Status     *string `json:"status,omitempty"`
+	IssuedOn   *string `json:"issuedOn,omitempty"`
+	DueOn      *string `json:"dueOn,omitempty"`
+	PaidOn     *string `json:"paidOn,omitempty"`
+	UserId     *string `json:"userId,omitempty"`
 }
 
 type InvoicesListResponse struct {
@@ -391,10 +447,16 @@ func (c *Client) UpdateInvoices(ctx context.Context, id string, body InvoicesInp
 	return out, nil
 }
 
-func (c *Client) PatchInvoices(ctx context.Context, id string, body InvoicesInput) (Invoices, error) {
+// PatchInvoices updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty InvoicesPatch to no-op.
+func (c *Client) PatchInvoices(ctx context.Context, id string, body InvoicesPatch) (Invoices, error) {
 	var out Invoices
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/invoices/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/invoices/"+url.PathEscape(id), body, &out); err != nil {
+		return Invoices{}, err
+	}
+	return out, nil
 }
 
 // DeleteInvoices removes the record at id.
@@ -419,6 +481,15 @@ type PaymentsInput struct {
 	Method     string `json:"method,omitempty"`
 	Status     string `json:"status,omitempty"`
 	UserId     string `json:"userId,omitempty"`
+}
+
+type PaymentsPatch struct {
+	InvoiceId  *string `json:"invoiceId,omitempty"`
+	CustomerId *string `json:"customerId,omitempty"`
+	Amount     *string `json:"amount,omitempty"`
+	Method     *string `json:"method,omitempty"`
+	Status     *string `json:"status,omitempty"`
+	UserId     *string `json:"userId,omitempty"`
 }
 
 type PaymentsListResponse struct {
@@ -469,10 +540,16 @@ func (c *Client) UpdatePayments(ctx context.Context, id string, body PaymentsInp
 	return out, nil
 }
 
-func (c *Client) PatchPayments(ctx context.Context, id string, body PaymentsInput) (Payments, error) {
+// PatchPayments updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty PaymentsPatch to no-op.
+func (c *Client) PatchPayments(ctx context.Context, id string, body PaymentsPatch) (Payments, error) {
 	var out Payments
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/payments/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/payments/"+url.PathEscape(id), body, &out); err != nil {
+		return Payments{}, err
+	}
+	return out, nil
 }
 
 // DeletePayments removes the record at id.

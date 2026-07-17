@@ -105,6 +105,15 @@ type CategoriesInput struct {
 	Active      bool   `json:"active,omitempty"`
 }
 
+type CategoriesPatch struct {
+	Name        *string `json:"name,omitempty"`
+	Slug        *string `json:"slug,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Image       *string `json:"image,omitempty"`
+	SortOrder   *int    `json:"sortOrder,omitempty"`
+	Active      *bool   `json:"active,omitempty"`
+}
+
 type CategoriesListResponse struct {
 	Data       []Categories `json:"data"`
 	Total      int          `json:"total"`
@@ -153,8 +162,11 @@ func (c *Client) UpdateCategories(ctx context.Context, id string, body Categorie
 	return out, nil
 }
 
-// PatchCategories sparsely updates fields present in body.
-func (c *Client) PatchCategories(ctx context.Context, id string, body CategoriesInput) (Categories, error) {
+// PatchCategories updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty CategoriesPatch to no-op.
+func (c *Client) PatchCategories(ctx context.Context, id string, body CategoriesPatch) (Categories, error) {
 	var out Categories
 	if err := c.doSingleJSON(ctx, http.MethodPatch, "/categories/"+url.PathEscape(id), body, &out); err != nil {
 		return Categories{}, err
@@ -200,6 +212,23 @@ type ProductsInput struct {
 	Weight         float64        `json:"weight,omitempty"`
 	Image          string         `json:"image,omitempty"`
 	Tags           map[string]any `json:"tags,omitempty"`
+}
+
+type ProductsPatch struct {
+	Name           *string         `json:"name,omitempty"`
+	Slug           *string         `json:"slug,omitempty"`
+	Sku            *string         `json:"sku,omitempty"`
+	Description    *string         `json:"description,omitempty"`
+	Price          *string         `json:"price,omitempty"`
+	CompareAtPrice *string         `json:"compareAtPrice,omitempty"`
+	Cost           *string         `json:"cost,omitempty"`
+	Stock          *int            `json:"stock,omitempty"`
+	CategoryId     *string         `json:"categoryId,omitempty"`
+	Status         *string         `json:"status,omitempty"`
+	Featured       *bool           `json:"featured,omitempty"`
+	Weight         *float64        `json:"weight,omitempty"`
+	Image          *string         `json:"image,omitempty"`
+	Tags           *map[string]any `json:"tags,omitempty"`
 }
 
 type ProductsListResponse struct {
@@ -250,8 +279,11 @@ func (c *Client) UpdateProducts(ctx context.Context, id string, body ProductsInp
 	return out, nil
 }
 
-// PatchProducts sparsely updates fields present in body.
-func (c *Client) PatchProducts(ctx context.Context, id string, body ProductsInput) (Products, error) {
+// PatchProducts updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty ProductsPatch to no-op.
+func (c *Client) PatchProducts(ctx context.Context, id string, body ProductsPatch) (Products, error) {
 	var out Products
 	if err := c.doSingleJSON(ctx, http.MethodPatch, "/products/"+url.PathEscape(id), body, &out); err != nil {
 		return Products{}, err
@@ -299,6 +331,24 @@ type OrdersInput struct {
 	Notes           string         `json:"notes,omitempty"`
 	ShippedAt       string         `json:"shippedAt,omitempty"`
 	DeliveredAt     string         `json:"deliveredAt,omitempty"`
+}
+
+type OrdersPatch struct {
+	UserId          *string         `json:"userId,omitempty"`
+	OrderNumber     *string         `json:"orderNumber,omitempty"`
+	Status          *string         `json:"status,omitempty"`
+	CustomerName    *string         `json:"customerName,omitempty"`
+	CustomerEmail   *string         `json:"customerEmail,omitempty"`
+	CustomerPhone   *string         `json:"customerPhone,omitempty"`
+	ShippingAddress *map[string]any `json:"shippingAddress,omitempty"`
+	BillingAddress  *map[string]any `json:"billingAddress,omitempty"`
+	Subtotal        *string         `json:"subtotal,omitempty"`
+	Tax             *string         `json:"tax,omitempty"`
+	ShippingCost    *string         `json:"shippingCost,omitempty"`
+	Total           *string         `json:"total,omitempty"`
+	Notes           *string         `json:"notes,omitempty"`
+	ShippedAt       *string         `json:"shippedAt,omitempty"`
+	DeliveredAt     *string         `json:"deliveredAt,omitempty"`
 }
 
 type OrdersListResponse struct {
@@ -349,8 +399,11 @@ func (c *Client) UpdateOrders(ctx context.Context, id string, body OrdersInput) 
 	return out, nil
 }
 
-// PatchOrders sparsely updates fields present in body.
-func (c *Client) PatchOrders(ctx context.Context, id string, body OrdersInput) (Orders, error) {
+// PatchOrders updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty OrdersPatch to no-op.
+func (c *Client) PatchOrders(ctx context.Context, id string, body OrdersPatch) (Orders, error) {
 	var out Orders
 	if err := c.doSingleJSON(ctx, http.MethodPatch, "/orders/"+url.PathEscape(id), body, &out); err != nil {
 		return Orders{}, err
@@ -382,6 +435,16 @@ type OrderItemsInput struct {
 	Quantity    int    `json:"quantity,omitempty"`
 	UnitPrice   string `json:"unitPrice,omitempty"`
 	TotalPrice  string `json:"totalPrice,omitempty"`
+}
+
+type OrderItemsPatch struct {
+	UserId      *string `json:"userId,omitempty"`
+	OrderId     *string `json:"orderId,omitempty"`
+	ProductId   *string `json:"productId,omitempty"`
+	ProductName *string `json:"productName,omitempty"`
+	Quantity    *int    `json:"quantity,omitempty"`
+	UnitPrice   *string `json:"unitPrice,omitempty"`
+	TotalPrice  *string `json:"totalPrice,omitempty"`
 }
 
 type OrderItemsListResponse struct {
@@ -432,8 +495,11 @@ func (c *Client) UpdateOrderItems(ctx context.Context, id string, body OrderItem
 	return out, nil
 }
 
-// PatchOrderItems sparsely updates fields present in body.
-func (c *Client) PatchOrderItems(ctx context.Context, id string, body OrderItemsInput) (OrderItems, error) {
+// PatchOrderItems updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty OrderItemsPatch to no-op.
+func (c *Client) PatchOrderItems(ctx context.Context, id string, body OrderItemsPatch) (OrderItems, error) {
 	var out OrderItems
 	if err := c.doSingleJSON(ctx, http.MethodPatch, "/order_items/"+url.PathEscape(id), body, &out); err != nil {
 		return OrderItems{}, err
@@ -463,6 +529,15 @@ type ReviewsInput struct {
 	Title      string `json:"title,omitempty"`
 	Body       string `json:"body,omitempty"`
 	Verified   bool   `json:"verified,omitempty"`
+}
+
+type ReviewsPatch struct {
+	ProductId  *string `json:"productId,omitempty"`
+	AuthorName *string `json:"authorName,omitempty"`
+	Rating     *int    `json:"rating,omitempty"`
+	Title      *string `json:"title,omitempty"`
+	Body       *string `json:"body,omitempty"`
+	Verified   *bool   `json:"verified,omitempty"`
 }
 
 type ReviewsListResponse struct {
@@ -513,8 +588,11 @@ func (c *Client) UpdateReviews(ctx context.Context, id string, body ReviewsInput
 	return out, nil
 }
 
-// PatchReviews sparsely updates fields present in body.
-func (c *Client) PatchReviews(ctx context.Context, id string, body ReviewsInput) (Reviews, error) {
+// PatchReviews updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty ReviewsPatch to no-op.
+func (c *Client) PatchReviews(ctx context.Context, id string, body ReviewsPatch) (Reviews, error) {
 	var out Reviews
 	if err := c.doSingleJSON(ctx, http.MethodPatch, "/reviews/"+url.PathEscape(id), body, &out); err != nil {
 		return Reviews{}, err

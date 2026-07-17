@@ -99,6 +99,13 @@ rows as the JSON CRUD routes. The admin obtains its handler from the app; a
 separately constructed `crud.NewCrudHandler` would not carry the app's hook
 registry.
 
+The proxy preserves the app handler's configured `JSONCase`; it converts
+response rows back to entity field names only at the admin rendering boundary.
+Custom hooks and `AuditConfig.Redact` therefore receive the same key casing for
+admin and JSON API writes. The proxy also forwards the parent request's
+`RemoteAddr` and headers, so audit metadata records the real client IP and
+`User-Agent` rather than an in-process test-request default.
+
 ## Ops dashboards (queue + audit)
 
 ```go
