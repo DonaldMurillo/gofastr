@@ -93,6 +93,12 @@ request context forwarded, validation, `OwnerField`/tenant scoping, hooks,
 and events all apply exactly as on the JSON API — the admin never
 re-implements CRUD, pagination, or filter logic.
 
+That includes `WithAuditLog`: configure it after registering entities, and
+create/update/delete actions from the admin write the same transactional audit
+rows as the JSON CRUD routes. The admin obtains its handler from the app; a
+separately constructed `crud.NewCrudHandler` would not carry the app's hook
+registry.
+
 ## Ops dashboards (queue + audit)
 
 ```go
@@ -116,8 +122,10 @@ replay route mutates state, so it runs behind the same admin gate as every
 other surface and carries a CSRF token — there is no unauthenticated way to
 re-fire jobs.
 
-When neither `Queue` nor `DB` is wired, the sub-pages render a "not wired"
-stub instead of 404'ing. Tune list caps via `QueueListLimit` /
+When `Queue` is nil, the overview section and Queue navigation item are hidden;
+the direct route retains a "not wired" diagnostic. The audit page uses
+`Config.DB` when supplied and otherwise the app's DB; without either, it shows
+its own "not wired" diagnostic. Tune list caps via `QueueListLimit` /
 `AuditListLimit` (defaults 200, max 1000). The audit page shows
 `created_at`, `entity`, `op`, `record_id`, `actor_id`; the default table
 name is `audit_log` (`Config.AuditTable` to override).

@@ -69,6 +69,8 @@ like a setting.
 $ gofastr audit a11y --url http://localhost:8080
 Auditing 14 page(s) at http://localhost:8080 under 2 color scheme(s)…
 
+Audited 14 of 14 discovered pages.
+
 /pricing (dark scheme)
   [serious] color-contrast: Elements must meet minimum color contrast ratio thresholds
       guide: https://dequeuniversity.com/rules/axe/4.10/color-contrast
@@ -83,6 +85,26 @@ exposes. Pages are discovered from the app's `/sitemap.xml`
 (`uihost.WithSitemap`), so a sitemap-configured app gets full-site
 coverage with zero flags; use `--pages /a,/b` to scope. Exit code 1 on
 violations.
+
+For an authenticated app, pass the same credentials a user enters on the
+auth battery's `/login` page:
+
+```
+gofastr audit a11y --url http://localhost:8080 \
+  --email admin@example.com --password "$ADMIN_PASSWORD" \
+  --pages /admin,/admin/e/products
+```
+
+The auditor fills `input[name=email]` and `input[name=password]`, then clicks
+the login form's submit button so the app's own submit event, session cookie,
+and redirect all run normally. With no explicit page list, sitemap discovery
+runs after login in that authenticated browser session.
+
+Every run reports `Audited N of M discovered pages`. Redirected pages are
+listed under `Could not reach` and make the command exit 1 even when axe found
+no violations on the reachable pages. A run whose only page is `/login` also
+exits 1 with a coverage warning; it is not evidence that authenticated pages
+are clean.
 
 Requires a Chrome/Chromium install (headless). Run it against `gofastr
 dev`'s server during development, or against a staging deploy in CI.
@@ -111,10 +133,13 @@ dev`'s server during development, or against a staging deploy in CI.
 - **Auditing only one color scheme.** Contrast regressions hide in the
   scheme your machine doesn't use — the runtime audit forces dark AND
   light on every page for exactly this reason. Don't scope it back down.
-- **Running the runtime audit without a sitemap.** Without
-  `uihost.WithSitemap` the scan covers only `/`; the "clean" result is
-  vacuous. Configure the sitemap (you want it for SEO anyway) or pass
-  `--pages` explicitly.
+- **Running the runtime audit without a sitemap or page list.** Without
+  `uihost.WithSitemap` the scan falls back to `/`. The coverage line makes
+  that narrow run visible, but it still cannot discover routes that were
+  never advertised. Configure the sitemap or pass `--pages` explicitly.
+- **Auditing protected routes without credentials.** A redirect to `/login`
+  is reported as unreachable and fails the run. Pass `--email` and
+  `--password`; both are required together.
 - **Fixing the symptom in CSS.** An axe `color-contrast` finding on a
   component means the *token* is wrong (`--color-text-subtle` on
   `--color-surface`), not that one selector needs an override — fix the

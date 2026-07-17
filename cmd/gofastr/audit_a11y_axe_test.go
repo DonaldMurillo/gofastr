@@ -61,12 +61,12 @@ func TestAuditA11yURLFindsImageAltViolation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	results, err := auditA11yURL(srv.URL, []string{"/"})
+	run, err := auditA11yURL(srv.URL, []string{"/"}, a11yCredentials{})
 	if err != nil {
 		t.Fatalf("auditA11yURL: %v", err)
 	}
 	found := false
-	for _, r := range results {
+	for _, r := range run.Results {
 		for _, v := range r.Violations {
 			if v.ID == "image-alt" {
 				found = true
@@ -74,13 +74,42 @@ func TestAuditA11yURLFindsImageAltViolation(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected an image-alt violation, got %+v", results)
+		t.Errorf("expected an image-alt violation, got %+v", run.Results)
 	}
-	report := formatAxeReport(results)
+	report := formatAxeReport(run)
 	if !strings.Contains(report, "image-alt") {
 		t.Errorf("report should name the rule, got:\n%s", report)
 	}
 	if !strings.Contains(report, "https://") {
 		t.Errorf("report should include the axe help URL, got:\n%s", report)
+	}
+}
+
+func TestAxeReportShowsCoverage(t *testing.T) {
+	run := axeAuditRun{
+		Pages: []string{"/admin", "/settings"},
+		Unreachable: []a11yUnreachable{{
+			Page: "/settings", Reason: "redirected to /login",
+		}},
+	}
+	report := formatAxeReport(run)
+	if !strings.Contains(report, "Audited 1 of 2 discovered pages.") {
+		t.Fatalf("missing coverage: %s", report)
+	}
+	if !strings.Contains(report, "/settings (redirected to /login)") {
+		t.Fatalf("missing unreachable page: %s", report)
+	}
+	if strings.Contains(report, "Both color schemes are clean") {
+		t.Fatalf("incomplete run claimed clean: %s", report)
+	}
+}
+
+func TestAxeReportFlagsLoginOnly(t *testing.T) {
+	report := formatAxeReport(axeAuditRun{Pages: []string{"/login"}})
+	if !strings.Contains(report, "only /login was audited") {
+		t.Fatalf("missing login-only warning: %s", report)
+	}
+	if !strings.Contains(report, "reachable") {
+		t.Fatalf("login-only run claimed clean: %s", report)
 	}
 }

@@ -429,6 +429,7 @@ gofastr migrate generate <name> --from=<bp.yml>   Diff blueprint entities vs the
 gofastr migrate force <version>     Reconcile the tracking table by hand (dirty-state recovery / baseline adoption)
 gofastr migrate force <version>     Reconcile a dirty/baselined migration
 gofastr test                        Run project tests
+gofastr audit a11y --url <base>     Axe audit with honest page coverage (--email/--password for login)
 gofastr embed index <path>          Index a project for semantic search
 gofastr embed watch <path>          Index + poll-watch for changes
 gofastr embed query "<text>"        Top-K semantic hits as JSON

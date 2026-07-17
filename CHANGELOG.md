@@ -73,6 +73,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   after auto-migration; missing-password, lookup, hash, and insert errors
   fail startup instead of being swallowed.
 
+- **Authenticated accessibility audits report real coverage.** `gofastr audit
+  a11y --url` accepts `--email` / `--password`, clicks the app's `/login` form,
+  discovers and scans pages in that browser session, and reports `Audited N of
+  M discovered pages`. Login redirects and a login-only run fail as incomplete
+  instead of producing a misleading clean verdict.
+- **Admin CRUD uses the app's fully wired handler.** Admin create/update/delete
+  now runs the app hook registry, so `WithAuditLog` records transactional rows
+  (including CRUD pre-images) instead of silently seeing `Hooks == nil`. The
+  Queue overview/navigation is hidden when no `queue.Browsable` backend exists;
+  backed queue browsing and replay remain available.
+
 ## [0.28.0] - 2026-07-16
 
 ### Added

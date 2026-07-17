@@ -16,14 +16,15 @@ import (
 //
 //	gofastr audit a11y [root]              static lint (default root ".")
 //	gofastr audit a11y --url <base>        axe-core scan of a running app
+//	    [--email EMAIL --password PASS]    sign in through /login first
 //	    [--pages /a,/b]                    explicit page list (default: the
 //	                                       app's /sitemap.xml, else "/")
 //
 // Both modes exit 1 when issues are found, so either can gate CI.
 func runAuditA11y(args []string) {
-	root, baseURL, pages, help, badFlag := parseA11yArgs(args)
-	if help {
-		fmt.Println("Usage: gofastr audit a11y [root] [--url <base>] [--pages /a,/b]")
+	opts := parseA11yArgs(args)
+	if opts.help {
+		fmt.Println("Usage: gofastr audit a11y [root] [--url <base>] [--email EMAIL --password PASS] [--pages /a,/b]")
 		fmt.Println()
 		fmt.Println("Static mode (default): lints every .go file under root for missing")
 		fmt.Println("required accessibility fields on core-ui/html elements (Alt on")
@@ -33,26 +34,32 @@ func runAuditA11y(args []string) {
 		fmt.Println("Runtime mode (--url): runs the vendored axe-core engine via headless")
 		fmt.Println("Chrome against the running app — contrast, focus, landmarks, ARIA —")
 		fmt.Println("under BOTH color schemes. Pages come from the app's /sitemap.xml")
-		fmt.Println("(uihost.WithSitemap) unless --pages is given.")
+		fmt.Println("(uihost.WithSitemap) unless --pages is given. Pass --email and")
+		fmt.Println("--password to submit the app's /login form before discovery/auditing.")
 		osExit(0)
 	}
-	if badFlag != "" {
-		fmt.Fprintf(os.Stderr, "audit a11y: unknown flag %s\n", badFlag)
+	if opts.badFlag != "" {
+		fmt.Fprintf(os.Stderr, "audit a11y: unknown flag %s\n", opts.badFlag)
+		osExit(2)
+	}
+	if (opts.email == "") != (opts.password == "") {
+		fmt.Fprintln(os.Stderr, "audit a11y: --email and --password must be provided together")
 		osExit(2)
 	}
 
-	if baseURL != "" {
-		if len(pages) == 0 {
-			pages = discoverA11yPages(baseURL)
-		}
-		fmt.Printf("Auditing %d page(s) at %s under %d color scheme(s)…\n\n", len(pages), baseURL, 2)
-		results, err := auditA11yURL(baseURL, pages)
+	if opts.baseURL != "" {
+		run, err := auditA11yURL(opts.baseURL, opts.pages, a11yCredentials{
+			Email: opts.email, Password: opts.password,
+		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "audit a11y: %v\n", err)
 			osExit(1)
 		}
-		fmt.Print(formatAxeReport(results))
-		for _, r := range results {
+		fmt.Print(formatAxeReport(run))
+		if run.Incomplete() {
+			osExit(1)
+		}
+		for _, r := range run.Results {
 			if len(r.Violations) > 0 {
 				osExit(1)
 			}
@@ -60,7 +67,7 @@ func runAuditA11y(args []string) {
 		return
 	}
 
-	findings, err := auditA11y(root)
+	findings, err := auditA11y(opts.root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "audit a11y: %v\n", err)
 		osExit(1)
@@ -76,34 +83,45 @@ func runAuditA11y(args []string) {
 // `--flag value` spellings (the docs use the space form), and
 // --help/-h. badFlag carries the first unrecognized flag, "" when all
 // args parsed.
-func parseA11yArgs(args []string) (root, baseURL string, pages []string, help bool, badFlag string) {
-	root = "."
+type a11yArgs struct {
+	root, baseURL, email, password string
+	pages                          []string
+	help                           bool
+	badFlag                        string
+}
+
+func parseA11yArgs(args []string) a11yArgs {
+	out := a11yArgs{root: "."}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if (arg == "--url" || arg == "--pages") && i+1 < len(args) {
+		if (arg == "--url" || arg == "--pages" || arg == "--email" || arg == "--password") && i+1 < len(args) {
 			arg = arg + "=" + args[i+1]
 			i++
 		}
 		switch {
 		case arg == "--help" || arg == "-h":
-			help = true
+			out.help = true
 		case strings.HasPrefix(arg, "--url="):
-			baseURL = strings.TrimPrefix(arg, "--url=")
+			out.baseURL = strings.TrimPrefix(arg, "--url=")
+		case strings.HasPrefix(arg, "--email="):
+			out.email = strings.TrimPrefix(arg, "--email=")
+		case strings.HasPrefix(arg, "--password="):
+			out.password = strings.TrimPrefix(arg, "--password=")
 		case strings.HasPrefix(arg, "--pages="):
 			for _, p := range strings.Split(strings.TrimPrefix(arg, "--pages="), ",") {
 				if p = strings.TrimSpace(p); p != "" {
-					pages = append(pages, p)
+					out.pages = append(out.pages, p)
 				}
 			}
 		case !strings.HasPrefix(arg, "-"):
-			root = arg
+			out.root = arg
 		default:
-			if badFlag == "" {
-				badFlag = arg
+			if out.badFlag == "" {
+				out.badFlag = arg
 			}
 		}
 	}
-	return root, baseURL, pages, help, badFlag
+	return out
 }
 
 // buildA11yGate runs the static accessibility lint for `gofastr build`

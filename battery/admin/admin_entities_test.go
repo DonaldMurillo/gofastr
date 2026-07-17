@@ -165,6 +165,26 @@ func TestEntity_ListRendersRows(t *testing.T) {
 	}
 }
 
+func TestEntity_WritesAudit(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
+	app.WithAuditLog(framework.AuditConfig{})
+	h := mountEntityAdmin(t, app, Config{Entities: []string{"posts"}, DB: db}, testUser{"u1"})
+
+	postForm(h, "/admin/e/posts/_create", url.Values{"title": {"Audited"}, "status": {"draft"}})
+	id := firstID(t, db, "posts")
+	postForm(h, "/admin/e/posts/_update/"+id, url.Values{"title": {"Updated"}, "status": {"published"}})
+	del(h, "/admin/e/posts/_delete/"+id)
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE entity = 'posts'`).Scan(&count); err != nil {
+		t.Fatalf("count audit rows: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("audit rows = %d, want 3", count)
+	}
+}
+
 func TestEntity_ListEscapesValues(t *testing.T) {
 	db := newDB(t)
 	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})

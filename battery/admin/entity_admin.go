@@ -212,9 +212,13 @@ func crudEnabled(ent *entity.Entity) bool {
 // naming convention. That lets these screens index result rows and build write
 // bodies by f.Name with no casing translation.
 func (b *Battery) crudFor(ent *entity.Entity) *crud.CrudHandler {
-	ch := crud.NewCrudHandler(ent, b.db)
+	// Start from App's canonical handler so audit/lifecycle hooks, events,
+	// storage, outbox, and registry wiring match the public JSON routes. A
+	// fresh crud.NewCrudHandler has Hooks=nil and silently bypasses all of it.
+	ch := b.app.MustCrudHandler(ent.GetName())
+	// Preserve Config.DB's documented override for admin entity operations.
+	ch.DB = b.db
 	ch.JSONCase = crud.CaseSnake
-	ch.Registry = b.registry
 	return ch
 }
 

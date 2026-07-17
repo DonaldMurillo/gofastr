@@ -81,7 +81,9 @@ func mountAdminBare(t *testing.T, cfg Config) http.Handler {
 // ----- index ---------------------------------------------------------------
 
 func TestAdmin_IndexLandingShowsSections(t *testing.T) {
-	h := mountAdmin(t, Config{})
+	db := newDB(t)
+	q := newDBQueue(t, db)
+	h := mountAdmin(t, Config{Queue: q})
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -97,13 +99,13 @@ func TestAdmin_IndexLandingShowsSections(t *testing.T) {
 	}
 }
 
-func TestAdmin_IndexWithoutQueueShowsStub(t *testing.T) {
+func TestAdmin_HidesUnwiredQueue(t *testing.T) {
 	h := mountAdmin(t, Config{})
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if !strings.Contains(rr.Body.String(), "No queue wired") {
-		t.Fatalf("expected queue-stub message")
+	if strings.Contains(rr.Body.String(), `href="/admin/queue"`) {
+		t.Fatalf("unwired queue must not be linked")
 	}
 	if !strings.Contains(rr.Body.String(), "No audit log wired") {
 		t.Fatalf("expected audit-stub message")

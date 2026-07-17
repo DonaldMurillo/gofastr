@@ -778,7 +778,7 @@ app:
 ```
 
 With `enabled: true` the generated app registers the [admin battery](../../../battery/admin/),
-an auto-generated HTML back-office at `path`: an overview, queue/audit pages,
+an auto-generated HTML back-office at `path`: an overview and audit page,
 and an editable CRUD screen for every registered entity at `<path>/e/<table>`
 (View / Edit / Delete / Create), all proxying each entity's own CrudHandler so
 validation, owner/tenant scope, hooks, and events apply. Access is gated by
@@ -787,6 +787,9 @@ validation, owner/tenant scope, hooks, and events apply. Access is gated by
 role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
 that admin account on a fresh database (idempotent — created only when absent),
 so the back-office is reachable on first boot. Requires `app.auth.enabled`.
+The Queue navigation item appears only when the host explicitly supplies a
+`queue.Browsable` backend to the admin battery; generated apps do not imply a
+queue they have not configured.
 
 ### Installable PWA (`app.pwa`)
 
