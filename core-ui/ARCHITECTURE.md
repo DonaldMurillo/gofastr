@@ -489,6 +489,29 @@ The contract points that must not drift:
 - Remote replicas are capped per topic (512) so a forged-replica-id
   flood cannot grow the table unboundedly.
 
+### ui.node.v1 render path (third-party process modules)
+
+A process module (framework #37) never emits HTML/CSS/JS or `data-fui-*`.
+It returns a `ui.node.v1` JSON tree; `core-ui/uinodev1.Validate` produces a
+typed `*Tree` — closed component enum, typed scalar props (no
+`map[string]any`), host-relative URL-guarded, depth/size-capped. Then
+`framework/uihost/uinoderender.Renderer` maps that tree to `framework/ui` +
+`core-ui/html` primitives, assigning **every** id/class/ARIA/variant and
+every `data-fui-rpc` URL itself — the module supplies none. ActionRefs
+resolve host-side through an injected resolver (actionRef → installed route
+id → namespaced URL); an unknown ref fails the whole render closed rather
+than emitting a guessed URL.
+
+This is deliberately NOT `core-ui/noderender` (a *denylist* for first-party
+IR, through which a third party could forge the trusted `data-fui-*`
+attributes `runtime.js` acts on via its `extraAttrs` passthrough). The
+closed wire type makes that forgery **unrepresentable**, not merely denied:
+`Bindings`, `Actions`, and free prop bags have no place to live in the
+typed tree. A validated tree may never panic the renderer — the two named
+hazards (`html.Section` requiring a label, `ui.DataTable` panicking on empty
+columns) are guarded, not `recover`'d, so a real component bug surfaces
+rather than hides.
+
 ### PWA surface (`uihost.WithPWA`)
 
 Opt-in installable-app support lives in `framework/uihost` (see
