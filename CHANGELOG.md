@@ -7,6 +7,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Eager loading / `?include=` no longer fails on nullable foreign keys.**
+  `BelongsTo`/`HasOne` relations over a nullable FK column (e.g.
+  `work_items.milestone_id`, `assignee_id`) returned
+  `sql: Scan error … converting NULL to string is unsupported` and failed
+  the whole eager load (and the request). The BelongsTo loaders in both
+  the `EagerLoad` helper and the live include path now scan the FK into
+  `sql.NullString`, so a `NULL` FK yields the parent row with the relation
+  absent/`null` instead of erroring.
+
 ## [0.28.0] - 2026-07-16
 
 ### Added

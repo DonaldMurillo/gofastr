@@ -91,6 +91,11 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
   child are tenant-scoped, the child query filters on the same tenant.
 - Result key casing matches the entity's `JSONCase` setting
   (`camel` or `snake`); nested rows are deep-converted.
+- Nullable foreign keys (optional relations) are supported: a parent
+  whose FK column is `NULL` comes back with that relation **absent**
+  (`null`), not an error. `BelongsTo`/`HasOne` relations over columns
+  like `milestone_id` or `assignee_id` load normally for rows that
+  reference a target and are simply omitted for rows that don't.
 
 > **Low-level helper:** the HTTP `?include=` path scrubs soft-deleted
 > rows and Hidden columns automatically. The exported `EagerLoad` helper
