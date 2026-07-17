@@ -3,6 +3,7 @@ package access_test
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
@@ -246,4 +247,118 @@ func TestRolePolicy_RolesEmptyWhenNoGrants(t *testing.T) {
 	if len(roles) != 0 {
 		t.Fatalf("expected empty roles, got %v", roles)
 	}
+}
+
+func TestStoreGrantExpandsWildcard(t *testing.T) {
+	db := newGrantDB(t)
+	ctx := context.Background()
+	policy := access.NewRolePolicy()
+	policy.Register("teams:write", "posts:read", "teams:read")
+	store := access.NewGrantStore(db, policy)
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+
+	if err := store.Grant(ctx, "editor", "teams:*"); err != nil {
+		t.Fatalf("Grant: %v", err)
+	}
+
+	if got := strings.Join(grantRows(t, db, "editor"), ","); got != "teams:read,teams:write" {
+		t.Fatalf("persisted grants = %q, want expanded capabilities", got)
+	}
+	if got := policy.PermissionsOf("editor"); len(got) != 2 || got[0] != "teams:read" || got[1] != "teams:write" {
+		t.Fatalf("policy grants = %v, want expanded capabilities", got)
+	}
+}
+
+func TestStoreLoadExpandsWildcard(t *testing.T) {
+	db := newGrantDB(t)
+	ctx := context.Background()
+	seed := access.NewGrantStore(db, access.NewRolePolicy())
+	if err := seed.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO access_grants (role, permission) VALUES ($1, $2)`,
+		"editor", "teams:*"); err != nil {
+		t.Fatalf("seed wildcard: %v", err)
+	}
+
+	policy := access.NewRolePolicy()
+	policy.Register("teams:write", "posts:read", "teams:read")
+	store := access.NewGrantStore(db, policy)
+	if err := store.LoadInto(ctx, policy); err != nil {
+		t.Fatalf("LoadInto: %v", err)
+	}
+
+	if got := policy.PermissionsOf("editor"); len(got) != 2 || got[0] != "teams:read" || got[1] != "teams:write" {
+		t.Fatalf("policy grants = %v, want loaded wildcard expansion", got)
+	}
+}
+
+func TestStoreStrictRejectsUnknown(t *testing.T) {
+	db := newGrantDB(t)
+	ctx := context.Background()
+	policy := access.NewRolePolicy().StrictCapabilities()
+	policy.Register("teams:read")
+	store := access.NewGrantStore(db, policy)
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+
+	if err := store.Grant(ctx, "editor", "temas:read"); err == nil {
+		t.Fatal("Grant returned nil for unknown strict capability")
+	}
+	if got := grantRows(t, db, "editor"); len(got) != 0 {
+		t.Fatalf("strict rejection persisted rows: %v", got)
+	}
+}
+
+func TestStoreLoadRejectsUnknown(t *testing.T) {
+	db := newGrantDB(t)
+	ctx := context.Background()
+	seed := access.NewGrantStore(db, access.NewRolePolicy())
+	if err := seed.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO access_grants (role, permission) VALUES ($1, $2)`,
+		"editor", "temas:read"); err != nil {
+		t.Fatalf("seed unknown grant: %v", err)
+	}
+
+	policy := access.NewRolePolicy().StrictCapabilities()
+	policy.Register("teams:read")
+	store := access.NewGrantStore(db, policy)
+	if err := store.LoadInto(ctx, policy); err == nil {
+		t.Fatal("LoadInto returned nil for unknown strict capability")
+	}
+	if got := policy.PermissionsOf("editor"); len(got) != 0 {
+		t.Fatalf("strict load retained rejected capability: %v", got)
+	}
+}
+
+func grantRows(t *testing.T, db *sql.DB, role string) []string {
+	t.Helper()
+	rows, err := db.Query(
+		`SELECT permission FROM access_grants WHERE role = $1 ORDER BY permission`,
+		role,
+	)
+	if err != nil {
+		t.Fatalf("query grants: %v", err)
+	}
+	defer rows.Close()
+
+	var permissions []string
+	for rows.Next() {
+		var permission string
+		if err := rows.Scan(&permission); err != nil {
+			t.Fatalf("scan grant: %v", err)
+		}
+		permissions = append(permissions, permission)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate grants: %v", err)
+	}
+	return permissions
 }

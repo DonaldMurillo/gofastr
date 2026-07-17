@@ -15,12 +15,14 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
+	html "github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -47,9 +49,8 @@ func adminActorID(ctx context.Context) string {
 
 // handleRBACRoles renders the role→permission matrix screen. Lists every
 // role from Policy.Roles() with its granted permissions, plus forms to
-// grant/revoke. The set of selectable permissions is the union of all
-// currently-granted permissions (there is no capability catalog) plus
-// free-text entry for new permission strings.
+// grant/revoke. A non-empty capability registry feeds the grant inputs'
+// datalist while preserving free-text entry for backward compatibility.
 func (b *Battery) handleRBACRoles(w http.ResponseWriter, r *http.Request) {
 	if b.cfg.Policy == nil {
 		b.writePage(w, b.cfg.Title, "Roles",
@@ -57,21 +58,11 @@ func (b *Battery) handleRBACRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roles := b.cfg.Policy.Roles()
-
-	// Union of all granted permissions — the selectable set shown in the
-	// grant dropdown. There is no capability catalog; this set is
-	// "permissions already in use". Free-text add is also allowed.
-	permSet := make(map[string]bool)
-	for _, role := range roles {
-		for _, p := range b.cfg.Policy.PermissionsOf(role) {
-			permSet[string(p)] = true
-		}
+	capabilities := b.cfg.Policy.Capabilities()
+	capabilitySet := make(map[access.Permission]struct{}, len(capabilities))
+	for _, capability := range capabilities {
+		capabilitySet[capability] = struct{}{}
 	}
-	allPerms := make([]string, 0, len(permSet))
-	for p := range permSet {
-		allPerms = append(allPerms, p)
-	}
-	sort.Strings(allPerms)
 
 	csrf := middleware.TokenFromContext(r.Context())
 
@@ -85,41 +76,52 @@ func (b *Battery) handleRBACRoles(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Strings(permLabels)
 
-		// Permission badges with revoke buttons.
+		// Permission badges with revoke buttons. Once a registry exists, any
+		// non-global grant outside it is dead configuration and is called out.
 		var badges strings.Builder
 		for _, p := range permLabels {
+			flag := ""
+			if _, known := capabilitySet[access.Permission(p)]; len(capabilities) > 0 && !known && access.Permission(p) != access.Wildcard {
+				flag = " " + string(html.Span(html.TextConfig{
+					Class: "err",
+					ExtraAttrs: html.Attrs{
+						"role":       "status",
+						"aria-label": "Unknown capability; this grant will never match",
+					},
+				}, render.Text("unknown/dead")))
+			}
 			if b.cfg.GrantStore != nil {
-				fmt.Fprintf(&badges, `<span class="badge">%s <form method="post" action="%s/rbac/_revoke" class="inline-form">`+
+				fmt.Fprintf(&badges, `<span class="badge">%s%s <form method="post" action="%s/rbac/_revoke" class="inline-form">`+
 					`<input type="hidden" name="_csrf" value="%s">`+
 					`<input type="hidden" name="role" value="%s">`+
 					`<input type="hidden" name="permission" value="%s">`+
 					`<button type="submit" class="badge-remove" aria-label="Revoke %s from %s">✕</button>`+
 					`</form></span> `,
-					render.Escape(p), b.cfg.PathPrefix, render.Escape(csrf),
+					render.Escape(p), flag, b.cfg.PathPrefix, render.Escape(csrf),
 					render.Escape(role), render.Escape(p),
 					render.Escape(p), render.Escape(role))
 			} else {
-				fmt.Fprintf(&badges, `<span class="badge">%s</span> `, render.Escape(p))
+				fmt.Fprintf(&badges, `<span class="badge">%s%s</span> `, render.Escape(p), flag)
 			}
 		}
 		if len(permLabels) == 0 {
 			badges.WriteString(`<span class="muted">—</span>`)
 		}
 
-		// Grant form: dropdown of known perms + free-text input.
+		// Grant form: a free-text input backed by the registry datalist when
+		// capabilities are known.
 		var grantForm strings.Builder
 		if b.cfg.GrantStore != nil {
-			grantForm.WriteString(fmt.Sprintf(`<form method="post" action="%s/rbac/_grant" class="inline-form">`,
-				b.cfg.PathPrefix))
-			fmt.Fprintf(&grantForm, `<input type="hidden" name="_csrf" value="%s">`, render.Escape(csrf))
-			fmt.Fprintf(&grantForm, `<input type="hidden" name="role" value="%s">`, render.Escape(role))
-			grantForm.WriteString(`<select name="permission">`)
-			for _, p := range allPerms {
-				fmt.Fprintf(&grantForm, `<option value="%s">%s</option>`, render.Escape(p), render.Escape(p))
-			}
-			grantForm.WriteString(`</form>`)
-			grantForm.WriteString(`<input type="text" name="permission" placeholder="new:perm" class="perm-input">`)
-			grantForm.WriteString(`<button type="submit">Grant</button>`)
+			grantForm.WriteString(string(html.Form(html.FormConfig{
+				Method: "post",
+				Action: b.cfg.PathPrefix + "/rbac/_grant",
+				Class:  "inline-form",
+			},
+				html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrf}),
+				html.Input(html.InputConfig{Type: "hidden", Name: "role", Value: role}),
+				capabilityInput(capabilities, "new:perm", false),
+				html.Button(html.ButtonConfig{Type: "submit", Label: "Grant"}),
+			)))
 		}
 
 		fmt.Fprintf(&sb, `<tr><td><code>%s</code></td><td>%s</td><td>%s</td></tr>`,
@@ -129,17 +131,55 @@ func (b *Battery) handleRBACRoles(w http.ResponseWriter, r *http.Request) {
 
 	// Add-role form (creates a role with an initial permission).
 	if b.cfg.GrantStore != nil {
-		fmt.Fprintf(&sb, `<h3>Add role</h3>`+
-			`<form method="post" action="%s/rbac/_grant">`+
-			`<input type="hidden" name="_csrf" value="%s">`+
-			`<input type="text" name="role" placeholder="role-name" required> `+
-			`<input type="text" name="permission" placeholder="perm:verb" required> `+
-			`<button type="submit">Grant</button></form>`,
-			b.cfg.PathPrefix, render.Escape(csrf))
+		sb.WriteString(`<h3>Add role</h3>`)
+		sb.WriteString(string(html.Form(html.FormConfig{
+			Method: "post",
+			Action: b.cfg.PathPrefix + "/rbac/_grant",
+		},
+			html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrf}),
+			html.Input(html.InputConfig{
+				Type:        "text",
+				Name:        "role",
+				Placeholder: "role-name",
+				ExtraAttrs:  html.Attrs{"required": "required"},
+			}),
+			render.Text(" "),
+			capabilityInput(capabilities, "perm:verb", true),
+			render.Text(" "),
+			html.Button(html.ButtonConfig{Type: "submit", Label: "Grant"}),
+		)))
+	}
+	if len(capabilities) > 0 {
+		sb.WriteString(string(capabilityDatalist(capabilities)))
 	}
 
 	body := section("Roles & Permissions", render.Raw(sb.String()))
 	b.writePage(w, b.cfg.Title, "Roles", body)
+}
+
+func capabilityInput(capabilities []access.Permission, placeholder string, required bool) render.HTML {
+	attrs := html.Attrs{}
+	if len(capabilities) > 0 {
+		attrs["list"] = "known-capabilities"
+	}
+	if required {
+		attrs["required"] = "required"
+	}
+	return html.Input(html.InputConfig{
+		Type:        "text",
+		Name:        "permission",
+		Placeholder: placeholder,
+		Class:       "perm-input",
+		ExtraAttrs:  attrs,
+	})
+}
+
+func capabilityDatalist(capabilities []access.Permission) render.HTML {
+	options := make([]render.HTML, 0, len(capabilities))
+	for _, capability := range capabilities {
+		options = append(options, html.Option(string(capability), "", false))
+	}
+	return render.Tag("datalist", map[string]string{"id": "known-capabilities"}, options...)
 }
 
 // ----- user → role assignment ---------------------------------------------
@@ -171,10 +211,15 @@ func (b *Battery) handleRBACUsers(w http.ResponseWriter, r *http.Request) {
 	var sb strings.Builder
 	sb.WriteString(`<table><thead><tr><th>Email</th><th>Current roles</th><th>Set roles</th></tr></thead><tbody>`)
 	for _, u := range users {
-		roles := u.GetRoles()
-		rolesStr := strings.Join(roles, ", ")
-		if rolesStr == "" {
-			rolesStr = "—"
+		directRoles := u.GetRoles()
+		directRolesStr := strings.Join(directRoles, ", ")
+		displayRoles := directRolesStr
+		if b.cfg.EffectiveRoles != nil {
+			effective := b.cfg.EffectiveRoles(r.Context(), u.GetID())
+			displayRoles = strings.Join(roleOriginLabels(directRoles, effective), ", ")
+		}
+		if displayRoles == "" {
+			displayRoles = "—"
 		}
 
 		fmt.Fprintf(&sb, `<tr><td>%s</td><td>%s</td><td>`+
@@ -184,10 +229,10 @@ func (b *Battery) handleRBACUsers(w http.ResponseWriter, r *http.Request) {
 			`<input type="text" name="roles" value="%s" placeholder="role1,role2" list="known-roles">`+
 			`<button type="submit">Save</button></form></td></tr>`,
 			render.Escape(u.GetEmail()),
-			render.Escape(rolesStr),
+			render.Escape(displayRoles),
 			b.cfg.PathPrefix, render.Escape(csrf),
 			render.Escape(u.GetID()),
-			render.Escape(rolesStr))
+			render.Escape(directRolesStr))
 	}
 	sb.WriteString(`</tbody></table>`)
 
@@ -206,6 +251,41 @@ func (b *Battery) handleRBACUsers(w http.ResponseWriter, r *http.Request) {
 
 	body := section("User Roles", render.Raw(sb.String()))
 	b.writePage(w, b.cfg.Title, "User roles", body)
+}
+
+func roleOriginLabels(direct []string, effective []access.RoleWithOrigin) []string {
+	roles := make([]access.RoleWithOrigin, 0, len(direct)+len(effective))
+	for _, role := range direct {
+		if role != "" {
+			roles = append(roles, access.RoleWithOrigin{Role: role, Origin: "direct"})
+		}
+	}
+	for _, role := range effective {
+		if role.Role == "" {
+			continue
+		}
+		if role.Origin == "" {
+			role.Origin = "resolved"
+		}
+		roles = append(roles, role)
+	}
+	sort.Slice(roles, func(i, j int) bool {
+		if roles[i].Role == roles[j].Role {
+			return roles[i].Origin < roles[j].Origin
+		}
+		return roles[i].Role < roles[j].Role
+	})
+
+	labels := make([]string, 0, len(roles))
+	seen := make(map[access.RoleWithOrigin]struct{}, len(roles))
+	for _, role := range roles {
+		if _, ok := seen[role]; ok {
+			continue
+		}
+		seen[role] = struct{}{}
+		labels = append(labels, fmt.Sprintf("%s (%s)", role.Role, role.Origin))
+	}
+	return labels
 }
 
 func listUsersOpts(r *http.Request) auth.ListUsersOptions {
@@ -247,6 +327,13 @@ func (b *Battery) handleRBACGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := b.cfg.GrantStore.Grant(r.Context(), role, access.Permission(perm)); err != nil {
+		// A strict-mode unknown capability is the admin's typo, not a
+		// server fault — surface the reason instead of a generic 500.
+		var unknown *access.UnknownCapabilityError
+		if errors.As(err, &unknown) {
+			http.Error(w, unknown.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, "grant failed; check server logs", http.StatusInternalServerError)
 		return
 	}

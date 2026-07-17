@@ -113,15 +113,18 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 		if err := rows.Scan(&role, &perm); err != nil {
 			return fmt.Errorf("access: scan grant row: %w", err)
 		}
-		s.policy.Grant(role, Permission(perm))
+		if err := s.policy.Grant(role, Permission(perm)); err != nil {
+			return fmt.Errorf("access: load grant %q→%q: %w", role, perm, err)
+		}
 	}
 	return rows.Err()
 }
 
-// Grant persists (role, permission) rows to the database (INSERT ... ON
-// CONFLICT DO NOTHING) and then calls policy.Grant on the live policy,
-// keeping the DB and the in-memory policy in sync. Idempotent: granting
-// an already-held permission is a no-op in both layers.
+// Grant validates and expands permissions, persists the resulting
+// (role, permission) rows to the database (INSERT ... ON CONFLICT DO NOTHING),
+// and then updates the live policy. Idempotent: granting an already-held
+// permission is a no-op in both layers. In strict capability mode, validation
+// happens before any database write.
 //
 // Role and permission are bound as $n parameters — never interpolated.
 func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission) error {
@@ -131,37 +134,26 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	if len(perms) == 0 {
 		return nil
 	}
+	prepared, err := s.policy.prepareGrants(perms)
+	if err != nil {
+		return err
+	}
 	// One INSERT per (role, perm) with ON CONFLICT DO NOTHING. A batch
 	// VALUES clause would be marginally faster but complicates the
 	// placeholder math; the grant matrix is small and admin-driven, so
 	// clarity wins.
-	for _, p := range perms {
+	for _, permission := range prepared {
 		q := fmt.Sprintf(
 			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
 			query.QuoteIdent(s.table),
 		)
-		if _, err := s.db.ExecContext(ctx, q, role, string(p)); err != nil {
-			return fmt.Errorf("access: persist grant %q→%q: %w", role, p, err)
+		if _, err := s.db.ExecContext(ctx, q, role, string(permission)); err != nil {
+			return fmt.Errorf("access: persist grant %q→%q: %w", role, permission, err)
 		}
 	}
-	// DB write succeeded — update the live policy. Filter out permissions
-	// the role already holds so the in-memory slice doesn't accumulate
-	// duplicates (the DB layer de-dupes via ON CONFLICT DO NOTHING, but
-	// RolePolicy.Grant is additive).
-	existing := s.policy.PermissionsOf(role)
-	held := make(map[Permission]bool, len(existing))
-	for _, p := range existing {
-		held[p] = true
-	}
-	var newPerms []Permission
-	for _, p := range perms {
-		if !held[p] {
-			newPerms = append(newPerms, p)
-		}
-	}
-	if len(newPerms) > 0 {
-		s.policy.Grant(role, newPerms...)
-	}
+	// The DB write succeeded. The prepared set has already been validated and
+	// expanded, so update memory without warning a second time.
+	s.policy.grantPrepared(role, prepared)
 	return nil
 }
 
