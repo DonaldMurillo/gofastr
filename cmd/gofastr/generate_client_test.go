@@ -33,11 +33,13 @@ func TestRenderClient_StructsAndMethods(t *testing.T) {
 		"func NewClient(baseURL string, httpClient *http.Client)",
 		"type Posts struct",
 		"type PostsInput struct",
+		"func (c *Client) doSingleJSON(",
 		"type PostsListResponse struct",
 		"func (c *Client) ListPosts(",
 		"func (c *Client) GetPosts(",
 		"func (c *Client) CreatePosts(",
 		"func (c *Client) UpdatePosts(",
+		"func (c *Client) PatchPosts(",
 		"func (c *Client) DeletePosts(",
 		`Title string `,
 		`Views int `,
@@ -65,6 +67,43 @@ func TestRenderClient_HonoursCustomTable(t *testing.T) {
 	}
 	if strings.Contains(out, `"/user"`) {
 		t.Fatalf("client should NOT call /user; got:\n%s", out)
+	}
+}
+
+// PATCH must distinguish "field absent" from "field set to its zero value"
+// (false, 0, ""). A value-typed Input with json:",omitempty" cannot: both
+// cases marshal away. The generator must emit a dedicated <Entity>Patch
+// struct whose fields are pointers — nil omits the field, a non-nil pointer
+// sets it even when it points at a zero value — and Patch<Entity> takes it.
+func TestRenderClient_PatchStructUsesPointers(t *testing.T) {
+	crud := true
+	tsOff := false
+	out := renderClient([]framework.EntityDeclaration{{
+		Name:       "posts",
+		Table:      "posts",
+		CRUD:       &crud,
+		Timestamps: &tsOff,
+		Fields: []framework.FieldDeclaration{
+			{Name: "title", Type: "string", Required: true},
+			{Name: "views", Type: "int"},
+			{Name: "published", Type: "bool"},
+		},
+	}})
+	wants := []string{
+		"type PostsPatch struct",
+		"Title *string ",
+		"Views *int ",
+		"Published *bool ",
+		"func (c *Client) PatchPosts(ctx context.Context, id string, body PostsPatch)",
+	}
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Errorf("renderClient missing %q\n--- output:\n%s", w, out)
+		}
+	}
+	// The create/update Input stays value-typed and unchanged.
+	if !strings.Contains(out, "Title string ") || !strings.Contains(out, "Views int ") {
+		t.Errorf("PostsInput should keep value-typed fields:\n%s", out)
 	}
 }
 
@@ -105,10 +144,12 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		framework.WithoutDefaultMiddleware(),
 	)
 	app.Entity("posts", framework.EntityConfig{
-		Table: "posts",
+		Table:  "posts",
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "views", Type: schema.Int},
+			{Name: "published", Type: schema.Bool},
 		},
 	}.WithTimestamps(false))
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
@@ -145,6 +186,23 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		t.Fatalf("update did not persist: %+v", updated)
 	}
 
+	patched, err := c.PatchPosts(ctx, created.ID, gen.PostsPatch{
+		Views:     new(0),   // was 99 → set to zero value
+		Published: new(false), // set bool to its zero value
+	})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	// PATCH must set fields to their zero values (0, false). A value-typed
+	// Input with json:",omitempty" cannot express this — both "absent" and
+	// "set to zero" marshal away, so the server would see an empty body.
+	// The pointer-based Patch keeps non-nil pointers even when they point at
+	// a zero value, so the server applies the update. Title is left nil here
+	// (untouched) and must stay "edited".
+	if patched.Title != "edited" || patched.Views != 0 || patched.Published {
+		t.Fatalf("patch did not set zero values / preserve untouched fields: %+v", patched)
+	}
+
 	list, err := c.ListPosts(ctx, nil)
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -167,6 +225,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		t.Fatalf("expected empty after delete, got %d", after.Total)
 	}
 }
+
 `
 
 // TestGenerateClient_RoundTripAgainstLiveServer runs the full pipeline:
@@ -196,12 +255,15 @@ func TestGenerateClient_RoundTripAgainstLiveServer(t *testing.T) {
 entities:
   - name: posts
     crud: true
+    public: true
     fields:
       - name: title
         type: string
         required: true
       - name: views
         type: int
+      - name: published
+        type: bool
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -258,6 +320,7 @@ func TestGenerateClient_E2EBuildsCleanly(t *testing.T) {
 entities:
   - name: posts
     crud: true
+    public: true
     fields:
       - name: title
         type: string

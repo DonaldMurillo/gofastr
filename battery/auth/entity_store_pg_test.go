@@ -270,3 +270,96 @@ func TestEntitySessionStore_Postgres_ExpiryAndCleanup(t *testing.T) {
 		t.Fatalf("fresh session must remain after cleanup: %v", err)
 	}
 }
+
+// TestUserStorePGFreshSchema reproduces the fresh-Postgres first-boot
+// regression: EnsureSchema must create a boolean-compatible password flag.
+func TestUserStorePGFreshSchema(t *testing.T) {
+	db := openPGForBattery(t)
+	ctx := context.Background()
+	if _, err := db.Exec(`DROP TABLE users`); err != nil {
+		t.Fatalf("drop users: %v", err)
+	}
+	store := NewEntityUserStore(db, "users")
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+	hash, err := HashPassword("secret123")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if _, err := store.CreateUser(ctx, "fresh@pg.test", hash, []string{"admin"}); err != nil {
+		t.Fatalf("CreateUser after fresh schema: %v", err)
+	}
+}
+
+func TestUserStorePGLegacyBool(t *testing.T) {
+	db := openPGForBattery(t)
+	ctx := context.Background()
+	if _, err := db.Exec(`DROP TABLE users`); err != nil {
+		t.Fatalf("drop users: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE users (
+		id TEXT PRIMARY KEY,
+		email TEXT UNIQUE NOT NULL,
+		password_hash TEXT NOT NULL,
+		roles TEXT NOT NULL DEFAULT '["user"]',
+		password_set INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatalf("create legacy users: %v", err)
+	}
+	store := NewEntityUserStore(db, "users")
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema legacy: %v", err)
+	}
+	var typ string
+	if err := db.QueryRow(`SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'password_set'`).Scan(&typ); err != nil {
+		t.Fatalf("password_set type: %v", err)
+	}
+	if typ != "boolean" {
+		t.Fatalf("legacy password_set type = %q, want boolean", typ)
+	}
+	hash, err := HashPassword("secret123")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if _, err := store.CreateUser(ctx, "legacy@pg.test", hash, []string{"user"}); err != nil {
+		t.Fatalf("CreateUser after legacy conversion: %v", err)
+	}
+}
+
+func TestSessionStorePGLegacyBools(t *testing.T) {
+	db := openPGForBattery(t)
+	ctx := context.Background()
+	if _, err := db.Exec(`DROP TABLE sessions`); err != nil {
+		t.Fatalf("drop sessions: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE sessions (
+		id TEXT NOT NULL,
+		token TEXT UNIQUE NOT NULL,
+		user_id TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL,
+		two_factor_verified INTEGER NOT NULL DEFAULT 0,
+		pending_two_factor INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatalf("create legacy sessions: %v", err)
+	}
+	store := NewEntitySessionStore(db, "sessions")
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema legacy: %v", err)
+	}
+	var typ string
+	if err := db.QueryRow(`SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'sessions' AND column_name = 'pending_two_factor'`).Scan(&typ); err != nil {
+		t.Fatalf("pending_two_factor type: %v", err)
+	}
+	if typ != "boolean" {
+		t.Fatalf("legacy pending_two_factor type = %q, want boolean", typ)
+	}
+	sess, err := store.Create(ctx, "legacy-user", time.Hour)
+	if err != nil {
+		t.Fatalf("Create after legacy conversion: %v", err)
+	}
+	if err := store.MarkPendingTwoFactor(ctx, sess.Token); err != nil {
+		t.Fatalf("MarkPendingTwoFactor after conversion: %v", err)
+	}
+}

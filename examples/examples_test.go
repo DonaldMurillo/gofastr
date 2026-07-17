@@ -178,6 +178,8 @@ func TestSPAEntityAPI(t *testing.T) {
 	)
 
 	app.Entity("articles", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "summary", Type: schema.Text},
@@ -187,6 +189,8 @@ func TestSPAEntityAPI(t *testing.T) {
 	})
 
 	app.Entity("projects", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "description", Type: schema.Text},
@@ -239,10 +243,13 @@ func TestSPAEntityAPI(t *testing.T) {
 			t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
 		}
 
-		var article map[string]any
-		if err := json.Unmarshal(w.Body.Bytes(), &article); err != nil {
+		var response struct {
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 			t.Fatal(err)
 		}
+		article := response.Data
 		if article["title"] != "Getting Started with Go" {
 			t.Errorf("got title %v", article["title"])
 		}
@@ -406,6 +413,8 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 	)
 
 	app.Entity("articles", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "summary", Type: schema.Text},
@@ -471,8 +480,11 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 			t.Fatalf("get status: %d", w.Code)
 		}
 
-		var article map[string]any
-		json.Unmarshal(w.Body.Bytes(), &article)
+		var response struct {
+			Data map[string]any `json:"data"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		article := response.Data
 		if article["title"] != "Test Article" {
 			t.Errorf("got title %v", article["title"])
 		}
@@ -546,7 +558,9 @@ func TestSPARouteVsAPISplit(t *testing.T) {
 
 	crudFalse := false
 	app.Entity("articles", framework.EntityConfig{
-		CRUD: &crudFalse,
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
+		CRUD:   &crudFalse,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "summary", Type: schema.Text},
@@ -652,7 +666,9 @@ func TestApiTourSmoke(t *testing.T) {
 		framework.WithConfig(framework.AppConfig{Name: "api-tour-test"}),
 	)
 	app.Entity("users", framework.EntityConfig{
-		Table: "users",
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
+		Table:  "users",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "name", Type: schema.String, Required: true},
@@ -670,6 +686,8 @@ func TestApiTourSmoke(t *testing.T) {
 		},
 	})
 	app.Entity("posts", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public:      true,
 		Table:       "posts",
 		CursorField: "created_at",
 		Fields: []schema.Field{

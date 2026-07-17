@@ -7,6 +7,127 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-07-16
+
+### Added
+
+- **Configurable security headers.** `AppConfig.SecurityHeaders` (and the
+  `framework.WithSecurityHeaders(cfg)` option) configure the defensive
+  headers emitted by the default middleware chain, so an app can relax a
+  single directive (e.g. `style-src 'unsafe-inline'`) without shadowing
+  the whole chain with a hand-rolled `SecurityHeaders` middleware. Unset
+  fields keep their strict built-in defaults; the zero value reproduces
+  the previous behaviour exactly.
+
+- Auto-CRUD now mounts `PATCH /<entity>/{id}` for sparse updates. PATCH shares
+  PUT's access, owner/tenant scoping, hooks, audit, transaction, and validation
+  path while validating and changing only fields present in the request body.
+  OpenAPI, MCP update tools, generated typed clients, and entity `llm.md` expose
+  the verb too.
+
+### Changed
+
+- **BREAKING:** successful single-record CRUD responses (create, get, PUT, and
+  PATCH) now consistently use `{"data": {...}}`, matching list's
+  `{"data": [...]}` envelope. Errors and DELETE responses are unchanged.
+
+- **BREAKING: auto-CRUD requires an authenticated session by default.**
+  An entity declaring none of `OwnerField`, `Access`, or the new
+  `Public` had ZERO enforcement — every operation (List/Get/Create/
+  Update/Delete) was reachable by an anonymous caller; an unauthenticated
+  `POST /api/<entity>` returned 201 and persisted the row (#65). Entity
+  MCP tools inherited the same gap since they dispatch through the same
+  router. `framework/crud`'s `requireScope` chokepoint now requires an
+  authenticated session (`core/handler.GetUser`) for every operation
+  unless an explicit mechanism already governs the entity: `OwnerField`
+  or a declared `Access` block (unchanged, "as today"), or the new
+  `EntityConfig.Public` / blueprint `public: true` — a deliberate, full
+  opt-out for genuinely public entities (a contact form, a blog's
+  comments). No `mcp.Gated` wiring was needed for entity MCP tools: they
+  re-dispatch through the router and inherit the REST fix for free.
+  `gofastr generate` now prints a warning listing every entity left
+  publicly readable/writable (`public: true`), and the existing unscoped-
+  entity lint's message was corrected — it no longer claims anonymous
+  exposure (that gap is now closed); it flags the narrower cross-user
+  ("every authenticated user can read every row") exposure instead.
+  Existing apps with entities that declare neither `OwnerField` nor
+  `Access` will see those entities start 401ing anonymous requests;
+  add `public: true` for entities that are genuinely meant to be open,
+  or a real `access:`/`OwnerField` for the ones that aren't.
+  `framework.TestApp` (the in-memory test harness) gained
+  `AsUser(user any)` to authenticate test requests under the new
+  default. See [entity-declarations](framework/docs/content/entity-declarations.md)
+  → "Default CRUD authentication" and
+  [security](framework/docs/content/security.md) → "Default CRUD
+  authentication".
+
+### Fixed
+
+- **Eager loading / `?include=` no longer fails on nullable foreign keys.**
+  `BelongsTo`/`HasOne` relations over a nullable FK column (e.g.
+  `work_items.milestone_id`, `assignee_id`) returned
+  `sql: Scan error … converting NULL to string is unsupported` and failed
+  the whole eager load (and the request). The BelongsTo loaders in both
+  the `EagerLoad` helper and the live include path now scan the FK into
+  `sql.NullString`, so a `NULL` FK yields the parent row with the relation
+  absent/`null` instead of erroring.
+- **Generated `e2e_test.go` is Windows- and Postgres-portable** (issue #68).
+  The blueprint generator's end-to-end test template had two portability
+  defects. (1) It built the binary to a bare `app` and exec'd it — on Windows
+  that name has no `.exe` suffix, so the child can't start. The template now
+  appends `.exe` when `runtime.GOOS == "windows"`. (2) It always booted the
+  child with `DATABASE_URL=file:e2e.db` (a SQLite DSN), but a
+  `db.driver: postgres` blueprint links only `lib/pq`, which cannot open a
+  SQLite file — the server never became ready and the test timed out with a
+  misleading message. The template now bootstraps from the blueprint's
+  declared driver: SQLite/empty drivers still use a throwaway file DB; a
+  postgres blueprint carves a disposable database from the env-provided
+  `TEST_POSTGRES_DSN` admin DSN and `t.Skip`s when Postgres is unreachable, so
+  driverless CI stays green-by-skip.
+- **Pre-image casing contract documented; typed/snake accessors added
+  (#69).** `crud.AuditPreImageFromContext(ctx)` keys the pre-update row by
+  the handler's `JSONCase` (camelCase by default, e.g. `"statusId"`) — not
+  the snake_case DB column name every other hook-adjacent surface speaks.
+  A hook doing `pre["status_id"]` silently got `nil` back; casing-identical
+  keys (`"version"`, `"key"`) happened to work either way, masking the
+  miss. Added `crud.AuditPreImageAs[T](ctx) (T, bool)`, which decodes
+  through the same casing translation typed hooks already use, and
+  `crud.AuditPreImageSnakeFromContext(ctx) map[string]any` for plain
+  snake_case map access. The casing contract is now documented on
+  `AuditPreImageFromContext`/`WithAuditPreImage` and in
+  `framework/docs/content/hooks-and-transactions.md`.
+
+- **Screen router accepts both `:param` and `{param}`.** A UI screen
+  registered with the `{param}` brace syntax (the form used by the
+  blueprint, REST/entity routers, and the docs) silently never matched —
+  no error, just a 404. The core-ui router now normalizes `{param}` to
+  `:param` at registration, so both syntaxes work identically. The HTTP
+  router's `{param}`-only syntax is unchanged.
+- **DevMode no longer locks local tooling out of `/auth/login`.** The
+  per-IP login limiter tripped after a handful of rapid logins even with
+  `DevMode: true`, blocking screenshot/verification tooling. DevMode now
+  relaxes the per-IP login limiter (`RateLimiterConfig.DevMode`);
+  production is unchanged and fail-closed. The per-account brute-force
+  limiter is deliberately NOT relaxed in dev.
+
+- PostgreSQL auth stores now create native `BOOLEAN` columns for password
+  and 2FA flags, convert legacy auth `INTEGER` booleans during schema
+  initialization, and accept native Go `bool` writes on a fresh database.
+- Generated bootstrap-admin accounts now seed through `App.WithSeed`
+  after auto-migration; missing-password, lookup, hash, and insert errors
+  fail startup instead of being swallowed.
+
+- **Authenticated accessibility audits report real coverage.** `gofastr audit
+  a11y --url` accepts `--email` / `--password`, clicks the app's `/login` form,
+  discovers and scans pages in that browser session, and reports `Audited N of
+  M discovered pages`. Login redirects and a login-only run fail as incomplete
+  instead of producing a misleading clean verdict.
+- **Admin CRUD uses the app's fully wired handler.** Admin create/update/delete
+  now runs the app hook registry, so `WithAuditLog` records transactional rows
+  (including CRUD pre-images) instead of silently seeing `Hooks == nil`. The
+  Queue overview/navigation is hidden when no `queue.Browsable` backend exists;
+  backed queue browsing and replay remain available.
+
 ## [0.28.0] - 2026-07-16
 
 ### Added

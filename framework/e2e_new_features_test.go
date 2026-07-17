@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -71,6 +72,17 @@ func setupNewFeaturesE2E(t *testing.T, db *sql.DB) *newFeaturesEnv {
 	}
 
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+	// Stand in for a real session middleware: none of these entities
+	// declare OwnerField/Access/Public, so the secure-by-default gate
+	// (issue #65) requires a session for every request. This suite tests
+	// cursor paging / nested filters / streaming / audit, not auth, so a
+	// fixed authenticated caller is stamped onto every request instead of
+	// wiring a full auth battery.
+	app.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(handler.SetUser(r.Context(), struct{ ID string }{ID: "u1"})))
+		})
+	})
 	app.Entity("authors", entity.EntityConfig{
 		Table: "authors",
 		Fields: []schema.Field{
@@ -348,7 +360,7 @@ func seedAuthorsAndPosts(t *testing.T, env *newFeaturesEnv) {
 			t.Fatalf("seed author %s: %d %s", name, code, body)
 		}
 		var created map[string]any
-		if err := json.Unmarshal(body, &created); err != nil {
+		if err := json.Unmarshal(body, singleMap(&created)); err != nil {
 			t.Fatalf("decode author: %v", err)
 		}
 		authorIDs[name] = created["id"].(string)
@@ -373,7 +385,7 @@ func seedAuthorsAndPosts(t *testing.T, env *newFeaturesEnv) {
 			t.Fatalf("seed post %s: %d %s", p.title, code, body)
 		}
 		var created map[string]any
-		json.Unmarshal(body, &created)
+		json.Unmarshal(body, singleMap(&created))
 		postIDs = append(postIDs, created["id"].(string))
 	}
 	// Stash the post IDs on the env so the scoped-include subtest can use

@@ -20,9 +20,10 @@ import (
 //   - GetPost(ctx, id) (Post, error)
 //   - CreatePost(ctx, body PostInput) (Post, error)
 //   - UpdatePost(ctx, id, body PostInput) (Post, error)
+//   - PatchPost(ctx, id, body PostInput) (Post, error)
 //   - DeletePost(ctx, id) error
 //
-// PostInput is the create/update payload — same shape minus the ID — so
+// PostInput is the create/update/patch payload — same shape minus the ID — so
 // callers don't construct a zero-id Post.
 func renderClient(decls []framework.EntityDeclaration) string {
 	var sb strings.Builder
@@ -104,12 +105,32 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// doSingleJSON decodes the {"data": {...}} envelope used by single-record
+// CRUD responses into out.
+func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, out any) error {
+	var envelope map[string]json.RawMessage
+	if err := c.doJSON(ctx, method, path, body, &envelope); err != nil {
+		return err
+	}
+	return json.Unmarshal(envelope["data"], out)
+}
+
 `)
 
 	for _, decl := range decls {
 		sb.WriteString(renderClientEntity(decl))
 	}
 	return sb.String()
+}
+
+// goPatchPointerTypeForField returns the PATCH payload field type: a pointer
+// to the base Go type. Pointer + json:",omitempty" is the canonical Go idiom
+// for presence-aware PATCH bodies — a nil pointer is omitted (field untouched),
+// while a non-nil pointer to a zero value (&false, ptr(0), &"") is kept and
+// sets the field. A value-typed field with omitempty cannot express "set to
+// zero", so the PATCH path gets its own pointer-based <Entity>Patch struct.
+func goPatchPointerTypeForField(value string) string {
+	return "*" + goTypeForField(value)
 }
 
 // renderClientEntity emits the struct definitions and the five CRUD methods
@@ -138,7 +159,6 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 			toCamelJSON(field.Name)))
 	}
 	sb.WriteString("}\n\n")
-
 	// Input struct (PostInput) — same shape minus the ID. We intentionally
 	// drop ID even on update: the server uses the URL path parameter for
 	// addressing, and including it in the body invites mismatch bugs.
@@ -150,6 +170,23 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
 			toCamelCase(field.Name),
 			goTypeForField(field.Type),
+			toCamelJSON(field.Name)))
+	}
+	sb.WriteString("}\n\n")
+	// Patch struct (<Entity>Patch) — pointer fields. This is the PATCH
+	// payload, distinct from the value-typed Input: nil omits a field
+	// (leave it untouched), while a non-nil pointer sets it — including to
+	// a zero value (false, 0, ""), which a value-typed field tagged
+	// json:",omitempty" cannot represent. The server's PATCH applies only
+	// to fields present in the JSON body, so this is the faithful mapping.
+	sb.WriteString(fmt.Sprintf("type %sPatch struct {\n", struct_))
+	for _, field := range decl.Fields {
+		if field.Name == "id" {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
+			toCamelCase(field.Name),
+			goPatchPointerTypeForField(field.Type),
 			toCamelJSON(field.Name)))
 	}
 	sb.WriteString("}\n\n")
@@ -183,7 +220,7 @@ func (c *Client) List%s(ctx context.Context, params url.Values) (%sListResponse,
 	sb.WriteString(fmt.Sprintf(`// Get%s fetches a single record by id. Returns *APIError with 404 when missing.
 func (c *Client) Get%s(ctx context.Context, id string) (%s, error) {
 	var out %s
-	if err := c.doJSON(ctx, http.MethodGet, "/%s/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodGet, "/%s/"+url.PathEscape(id), nil, &out); err != nil {
 		return %s{}, err
 	}
 	return out, nil
@@ -195,7 +232,7 @@ func (c *Client) Get%s(ctx context.Context, id string) (%s, error) {
 	sb.WriteString(fmt.Sprintf(`// Create%s posts a new record and returns the server-canonical row.
 func (c *Client) Create%s(ctx context.Context, body %sInput) (%s, error) {
 	var out %s
-	if err := c.doJSON(ctx, http.MethodPost, "/%s", body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPost, "/%s", body, &out); err != nil {
 		return %s{}, err
 	}
 	return out, nil
@@ -207,13 +244,28 @@ func (c *Client) Create%s(ctx context.Context, body %sInput) (%s, error) {
 	sb.WriteString(fmt.Sprintf(`// Update%s updates the record at id with the partial body.
 func (c *Client) Update%s(ctx context.Context, id string, body %sInput) (%s, error) {
 	var out %s
-	if err := c.doJSON(ctx, http.MethodPut, "/%s/"+url.PathEscape(id), body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPut, "/%s/"+url.PathEscape(id), body, &out); err != nil {
 		return %s{}, err
 	}
 	return out, nil
 }
 
 `, struct_, struct_, struct_, struct_, struct_, table, struct_))
+
+	// Patch
+	sb.WriteString(fmt.Sprintf(`// Patch%s updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty %sPatch to no-op.
+func (c *Client) Patch%s(ctx context.Context, id string, body %sPatch) (%s, error) {
+	var out %s
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/%s/"+url.PathEscape(id), body, &out); err != nil {
+		return %s{}, err
+	}
+	return out, nil
+}
+
+`, struct_, struct_, struct_, struct_, struct_, struct_, table, struct_))
 
 	// Delete
 	sb.WriteString(fmt.Sprintf(`// Delete%s removes the record at id.

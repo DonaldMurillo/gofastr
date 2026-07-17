@@ -12,6 +12,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -102,6 +103,7 @@ func TestValidationWireShapeUnchanged(t *testing.T) {
 
 	body := strings.NewReader(`{}`)
 	req := httptest.NewRequest(http.MethodPost, "/widgets", body)
+	req = req.WithContext(handler.SetUser(req.Context(), struct{ ID string }{ID: "u1"}))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	ch.Create()(rr, req)

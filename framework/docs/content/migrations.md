@@ -20,6 +20,30 @@ no-transaction escape hatch. The two paths are kept coherent — the
 entity schema is the single source of DDL type mapping, so a table
 auto-migrate creates diffs clean against the same entity declaration.
 
+## PostgreSQL boolean columns
+
+`schema.Bool` is emitted as `BOOLEAN` on PostgreSQL. The auth durable
+stores additionally upgrade their own legacy `INTEGER` (`0`/`1`) boolean
+columns during `EnsureSchema`, including `auth_users.password_set` and
+the session/2FA flags. Existing auth rows are converted with `0 = FALSE`
+and non-zero = TRUE.
+
+Auto-migrate does **not** retype arbitrary existing entity columns:
+general type changes remain intentionally out of scope because they can
+require data-specific conversions. If an application-managed boolean
+column was created as `INTEGER` by an older deployment, apply and review
+a PostgreSQL migration before booting the new code:
+
+```sql
+ALTER TABLE "items" ALTER COLUMN "enabled" DROP DEFAULT;
+ALTER TABLE "items" ALTER COLUMN "enabled"
+    TYPE BOOLEAN USING ("enabled" <> 0);
+ALTER TABLE "items" ALTER COLUMN "enabled" SET DEFAULT FALSE;
+```
+
+Back up production data and verify any values outside `0`/`1` before
+running this conversion.
+
 ## SQL file format
 
 ```sql

@@ -142,7 +142,8 @@ func TestGatedOpsCarryBothSchemes(t *testing.T) {
 // security, and no global security requirement.
 func TestUngatedEntityHasNoSecurity(t *testing.T) {
 	e := entity.Define("public_posts", entity.EntityConfig{
-		Table: "public_posts",
+		Table:  "public_posts",
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
 		},

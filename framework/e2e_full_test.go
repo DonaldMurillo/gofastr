@@ -371,10 +371,13 @@ func TestE2E_Full(t *testing.T) {
 			if code != http.StatusCreated {
 				t.Fatalf("create: %d %s", code, body)
 			}
-			var created map[string]any
-			if err := json.Unmarshal(body, &created); err != nil {
+			var response struct {
+				Data map[string]any `json:"data"`
+			}
+			if err := json.Unmarshal(body, &response); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
+			created := response.Data
 			postID, _ = created["id"].(string)
 			if postID == "" {
 				t.Fatalf("missing id in: %v", created)
@@ -484,8 +487,11 @@ func TestE2E_Full(t *testing.T) {
 			if code != http.StatusCreated {
 				t.Fatalf("upload: %d %s", code, body)
 			}
-			var got map[string]any
-			json.Unmarshal(body, &got)
+			var response struct {
+				Data map[string]any `json:"data"`
+			}
+			json.Unmarshal(body, &response)
+			got := response.Data
 			avatar, _ := got["avatar"].(string)
 			if !strings.HasPrefix(avatar, "uploads/posts/avatar/") {
 				t.Fatalf("expected uploaded avatar URL, got %q", avatar)

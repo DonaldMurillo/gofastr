@@ -63,12 +63,15 @@ type Config struct {
 	FontFaceCSS string
 
 	// Queue is the optional Browsable queue. When set, /admin/queue is
-	// active. When nil, that page returns a "no queue wired" stub so
-	// the route never 404s ambiguously.
+	// active and appears in overview/navigation. When nil, it is hidden;
+	// the direct page returns a "no queue wired" diagnostic so the route
+	// never 404s ambiguously.
 	Queue queue.Browsable
 
-	// DB is the database connection used to read the audit log table.
-	// When nil, /admin/audit returns a "no audit log wired" stub.
+	// DB is the database connection used to read the audit log table and,
+	// when entity admin is enabled, overrides the app DB for those operations.
+	// When nil, Init uses the app DB; without either, /admin/audit returns a
+	// "no audit log wired" stub.
 	DB *sql.DB
 
 	// AuditTable is the audit log table name. Defaults to "audit_log".
@@ -140,6 +143,7 @@ type Config struct {
 // Battery is the framework Battery implementation.
 type Battery struct {
 	cfg      Config
+	app      *framework.App      // source of fully wired entity CRUD handlers
 	registry *framework.Registry // set at Init; enables the entity CRUD screens
 	db       *sql.DB             // effective DB for entity CRUD (cfg.DB or app.DB)
 	host     *uihost.UIHost      // the app's mounted UI host (entity screens render through it)
@@ -230,6 +234,7 @@ func (b *Battery) Name() string { return "admin" }
 // Init implements framework.Battery. Mounts the three admin pages on
 // the App's router under cfg.PathPrefix.
 func (b *Battery) Init(app *framework.App) error {
+	b.app = app
 	b.registry = app.Registry
 	if b.db == nil {
 		b.db = app.DB
@@ -329,14 +334,17 @@ func (b *Battery) handleIndex(w http.ResponseWriter, r *http.Request) {
 		stats, _ = b.cfg.Queue.Stats(r.Context())
 	}
 	var auditCount int
-	if b.cfg.DB != nil {
-		_ = b.cfg.DB.QueryRowContext(r.Context(),
+	db := b.effectiveDB()
+	if db != nil {
+		_ = db.QueryRowContext(r.Context(),
 			fmt.Sprintf("SELECT COUNT(*) FROM %s", b.cfg.AuditTable),
 		).Scan(&auditCount)
 	}
-	body := render.Raw("") +
-		section("Queue", queueSummary(b.cfg.PathPrefix, stats, b.cfg.Queue != nil)) +
-		section("Audit log", auditSummary(b.cfg.PathPrefix, auditCount, b.cfg.DB != nil))
+	body := render.Raw("")
+	if b.cfg.Queue != nil {
+		body += section("Queue", queueSummary(b.cfg.PathPrefix, stats, true))
+	}
+	body += section("Audit log", auditSummary(b.cfg.PathPrefix, auditCount, db != nil))
 	b.writePage(w, b.cfg.Title, "Overview", body)
 }
 
@@ -391,7 +399,7 @@ func (b *Battery) handleQueueReplay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
-	if b.cfg.DB == nil {
+	if b.effectiveDB() == nil {
 		b.writePage(w, b.cfg.Title, "Audit log",
 			render.Raw(`<p class="muted">No DB / audit table is wired into this admin battery.</p>`))
 		return
@@ -425,7 +433,7 @@ type auditRow struct {
 func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error) {
 	q := fmt.Sprintf(`SELECT id, entity, op, record_id, actor_id, created_at, diff
 		FROM %s ORDER BY created_at DESC LIMIT %d`, b.cfg.AuditTable, limit)
-	rows, err := b.cfg.DB.QueryContext(ctx, q)
+	rows, err := b.effectiveDB().QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -562,16 +570,16 @@ func (b *Battery) handleCSS(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, theme.CSSCustomProperties()+"\n"+b.cfg.FontFaceCSS+"\n"+baseCSS)
 }
 
-// navHTML builds the admin nav. The fixed Overview/Queue/Audit links plus
-// one link per configured entity, all under cfg.PathPrefix. current is the
-// page name; the matching link gets the .current class.
+// navHTML builds the admin nav. Queue is included only with real backing;
+// Overview/Audit and configured entities remain fixed. current is the page
+// name; the matching link gets the .current class.
 func (b *Battery) navHTML(current string) render.HTML {
 	type link struct{ label, href string }
-	links := []link{
-		{"Overview", b.cfg.PathPrefix},
-		{"Queue", b.cfg.PathPrefix + "/queue"},
-		{"Audit log", b.cfg.PathPrefix + "/audit"},
+	links := []link{{"Overview", b.cfg.PathPrefix}}
+	if b.cfg.Queue != nil {
+		links = append(links, link{"Queue", b.cfg.PathPrefix + "/queue"})
 	}
+	links = append(links, link{"Audit log", b.cfg.PathPrefix + "/audit"})
 	if b.registry != nil {
 		for _, name := range b.cfg.Entities {
 			ent, err := b.registry.Get(name)

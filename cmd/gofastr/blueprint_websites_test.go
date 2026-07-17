@@ -213,13 +213,31 @@ func TestBlueprint_LoginScreenAndAdminWiring(t *testing.T) {
 		t.Error("admin battery not configured with role + login redirect")
 	}
 
-	// app.go bootstraps the seeded admin account.
+	// app.go registers the bootstrap admin through the post-migrate seed hook.
 	app := renderBlueprintApp(bp)
-	if !strings.Contains(app, "auth.HashPassword(") || !strings.Contains(app, `CreateUser(context.Background(), "admin@example.com"`) {
-		t.Errorf("admin user not seeded:\n%s", app)
+	if !strings.Contains(app, "fwApp.WithSeed(func(ctx context.Context) error") ||
+		!strings.Contains(app, "auth.HashPassword(") ||
+		!strings.Contains(app, `CreateUser(ctx, "admin@example.com"`) {
+		t.Errorf("admin user not seeded through WithSeed:\n%s", app)
 	}
 	if !strings.Contains(app, `[]string{"admin", "user"}`) {
 		t.Error("seeded admin user missing admin role")
+	}
+}
+
+func TestBlueprint_AdminSeedAfterMigrate(t *testing.T) {
+	bp := websitesBlueprint()
+	bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}
+	bp.App.Admin = BlueprintAdmin{
+		Enabled: true, Role: "admin", LoginPath: "/login",
+		SeedEmail: "admin@example.com", SeedPassword: "secret-123",
+	}
+	app := renderBlueprintApp(bp)
+	if !strings.Contains(app, "fwApp.WithSeed(func(ctx context.Context) error") {
+		t.Fatalf("admin seed must run through the post-migrate seed lifecycle:\n%s", app)
+	}
+	if strings.Contains(app, "FindByEmail(context.Background()") {
+		t.Fatalf("admin seed still runs during RegisterGenerated wiring:\n%s", app)
 	}
 }
 

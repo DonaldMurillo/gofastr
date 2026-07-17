@@ -90,6 +90,9 @@ func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 	cmd.Dir = filepath.Join(repoRoot, strings.TrimPrefix(s.pkg, "./"))
 	cmd.Env = append(os.Environ(),
 		"GOFASTR_DEV=1", // what `gofastr dev` sets on the child
+		// The test owns exact loopback ports and temp databases; linked-worktree
+		// isolation would remap both and make the readiness probe watch the wrong port.
+		"GOFASTR_ISOLATION=off",
 		"PORT="+port,
 		"DATABASE_URL=file:"+filepath.Join(t.TempDir(), s.name+".db"),
 	)

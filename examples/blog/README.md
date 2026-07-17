@@ -24,6 +24,7 @@ The example uses SQLite at `./blog.db` and auto-migrates on startup.
 | GET      | `/users/{id}`    | No   | Get user by ID     |
 | POST     | `/users`         | Yes  | Create user        |
 | PUT      | `/users/{id}`    | Yes  | Update user        |
+| PATCH    | `/users/{id}`    | Yes  | Sparse-update user |
 | DELETE   | `/users/{id}`    | Yes  | Delete user        |
 
 ### Posts
@@ -36,6 +37,7 @@ The example uses SQLite at `./blog.db` and auto-migrates on startup.
 | GET      | `/posts/search?q=...` | No   | Search indexed posts         |
 | POST     | `/posts`              | Yes  | Create post                  |
 | PUT      | `/posts/{id}`         | Yes  | Update post                  |
+| PATCH    | `/posts/{id}`         | Yes  | Sparse-update post           |
 | DELETE   | `/posts/{id}`         | Yes  | Soft-delete post             |
 
 ### Comments
@@ -46,12 +48,16 @@ The example uses SQLite at `./blog.db` and auto-migrates on startup.
 | GET      | `/comments/{id}`    | No   | Get comment by ID    |
 | POST     | `/comments`         | Yes  | Create comment       |
 | PUT      | `/comments/{id}`    | Yes  | Update comment       |
+| PATCH    | `/comments/{id}`    | Yes  | Sparse-update comment |
 | DELETE   | `/comments/{id}`    | Yes  | Delete comment       |
 
 ### Auth
 
 This example does not enforce auth. Production apps should add auth middleware
 or per-entity access control before exposing write endpoints.
+
+Create, get, PUT, and PATCH return `{"data": {...}}`; list responses return
+`{"data": [...]}` with pagination metadata.
 
 ```bash
 curl -H "Content-Type: application/json" \

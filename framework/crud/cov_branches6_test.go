@@ -16,7 +16,7 @@ import (
 )
 
 func batchReqBN(method, body string) *http.Request {
-	r := httptest.NewRequest(method, "/bn/_batch", strings.NewReader(body))
+	r := withTestUser(httptest.NewRequest(method, "/bn/_batch", strings.NewReader(body)), "u1")
 	r.Header.Set("Content-Type", "application/json")
 	return r
 }
@@ -125,8 +125,8 @@ func TestDoUpdate_ValidatesMediaURL(t *testing.T) {
 	ch, _ := covUploadHandler(t)
 	created, _ := ch.CreateOne(context.Background(), map[string]any{"caption": "c", "photo": "https://ok/a.png"})
 	// Update with an unsafe media URL → validation error.
-	req := httptest.NewRequest("PUT", "/media/"+created["id"].(string),
-		strings.NewReader(`{"photo":"javascript:alert(1)"}`))
+	req := withTestUser(httptest.NewRequest("PUT", "/media/"+created["id"].(string),
+		strings.NewReader(`{"photo":"javascript:alert(1)"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", created["id"].(string))
 	rec := httptest.NewRecorder()
@@ -211,7 +211,7 @@ func TestDecodeCursorAny_FieldNotInSet(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq", "id"} }, 4)
 	// Build a forward page to get a real composite cursor, then ask the
 	// decoder to validate it against a DIFFERENT field set.
-	req := httptest.NewRequest("GET", "/items?cursor=&limit=2", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	var page struct {

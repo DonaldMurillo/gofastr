@@ -31,7 +31,7 @@ func TestList_DataQueryErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	// COUNT(*) runs first and must succeed; only the data SELECT fails.
 	covFault.set(func(c *covFaults) { c.queryErrOn = "title" })
-	req := httptest.NewRequest("GET", "/notes", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -44,7 +44,7 @@ func TestList_DataQueryErr(t *testing.T) {
 func TestStream_DataQueryErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.queryErrOn = "title" })
-	req := httptest.NewRequest("GET", "/notes?stream=true", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes?stream=true", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusInternalServerError {

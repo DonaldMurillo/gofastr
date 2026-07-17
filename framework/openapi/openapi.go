@@ -13,7 +13,7 @@ import (
 // EntityOpenAPI generates a full OpenAPI Spec from all registered entities.
 // It produces:
 //   - Schema components for each entity with typed fields
-//   - CRUD paths (GET, POST, PUT, DELETE) with request/response schemas
+//   - CRUD paths (GET, POST, PUT, PATCH, DELETE) with request/response schemas
 //   - List endpoint with pagination parameters
 //   - Proper error response schemas
 //
@@ -124,23 +124,33 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 
 		// Reference to entity schema
 		entityRef := map[string]any{"$ref": "#/components/schemas/" + entityName}
+		singleRef := map[string]any{
+			"type":     "object",
+			"required": []string{"data"},
+			"properties": map[string]any{
+				"data": entityRef,
+			},
+		}
 		listRef := map[string]any{"$ref": "#/components/schemas/ListResponse"}
 		cursorRef := map[string]any{"$ref": "#/components/schemas/CursorPage"}
 		errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
 		path := "/" + tableName
 
-		// An entity is auth-gated when its rows are owner-scoped,
-		// tenant-scoped, or protected by an RBAC AccessControl rule.
-		// All three cases can reject unauthenticated requests (401);
-		// RBAC additionally rejects authenticated-but-unpermitted ones
-		// (403). The spec must advertise both codes so generated SDKs
-		// and agents don't assume these endpoints are public.
+		// Auto-CRUD is secure-by-default (issue #65): an entity requires
+		// an authenticated session for every operation unless it opts
+		// out via Public, or an explicit mechanism already governs it
+		// (owner-scoped, tenant-scoped, or an RBAC AccessControl rule —
+		// which additionally rejects authenticated-but-unpermitted
+		// callers with 403). The spec must advertise 401/403 on every
+		// entity except a Public one, so generated SDKs and agents don't
+		// assume a plain entity (no owner_field/access declared) is
+		// reachable anonymously — it isn't, unless Public: true says so.
 		rbacGated := ent.Config.Access.Read != "" ||
 			ent.Config.Access.Create != "" ||
 			ent.Config.Access.Update != "" ||
 			ent.Config.Access.Delete != ""
-		gated := ent.Config.OwnerField != "" || ent.Config.MultiTenant || rbacGated
+		gated := !ent.Config.Public || ent.Config.OwnerField != "" || ent.Config.MultiTenant || rbacGated
 		if gated {
 			anyGated = true
 		}
@@ -242,7 +252,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// Create request body excludes auto-generated and read-only fields
 		createSchema := excludeFieldsByBehavior(entitySchema, fields)
 		createOp.SetRequestBody("application/json", createSchema, true)
-		createOp.AddResponse(201, "Created "+entityName, entityRef)
+		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
 		if gated {
 			createOp.AddResponse(401, "Authentication required", errorRef)
@@ -259,7 +269,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		getOp.Tags = []string{entityName}
 		getOp.AddParameter("include", "query", includeDesc, false, includeSchema)
 		getOp.AddParameter("fields", "query", fieldsDesc, false, fieldsSchema)
-		getOp.AddResponse(200, "Single "+entityName, entityRef)
+		getOp.AddResponse(200, "Single "+entityName, singleRef)
 		getOp.AddResponse(400, "Unknown include", errorRef)
 		if gated {
 			getOp.AddResponse(401, "Authentication required", errorRef)
@@ -276,7 +286,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		updateOp.OperationID = "update_" + entityName
 		updateOp.Tags = []string{entityName}
 		updateOp.SetRequestBody("application/json", excludeFieldsByBehavior(entitySchema, fields), false)
-		updateOp.AddResponse(200, "Updated "+entityName, entityRef)
+		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
 		if gated {
 			updateOp.AddResponse(401, "Authentication required", errorRef)
@@ -286,6 +296,25 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("PUT", path+"/:id", *updateOp)
+
+		// --- PATCH /{table}/:id — Sparse update ---
+		patchOp := openapi.NewOperation()
+		patchOp.Summary = "Patch " + entityName
+		patchOp.OperationID = "patch_" + entityName
+		patchOp.Tags = []string{entityName}
+		patchSchema := excludeFieldsByBehavior(entitySchema, fields)
+		delete(patchSchema, "required")
+		patchOp.SetRequestBody("application/json", patchSchema, true)
+		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
+		patchOp.AddResponse(400, "Validation error", errorRef)
+		if gated {
+			patchOp.AddResponse(401, "Authentication required", errorRef)
+			patchOp.AddResponse(403, "Forbidden", errorRef)
+			patchOp.AddSecurity("bearerAuth", nil)
+			patchOp.AddSecurity("cookieAuth", nil)
+		}
+		patchOp.AddResponse(404, entityName+" not found", errorRef)
+		s.AddPath("PATCH", path+"/:id", *patchOp)
 
 		// --- DELETE /{table}/:id — Delete ---
 		deleteOp := openapi.NewOperation()

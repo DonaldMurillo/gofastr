@@ -126,7 +126,9 @@ func TestGenerateTypeScriptCommandShowsMigrationError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "ts")
+	// Keep the package path relative to cmd.Dir so symlinked worktree roots
+	// (for example /tmp versus /private/tmp on macOS) cannot split module identity.
+	cmd := exec.Command("go", "run", "./cmd/gofastr", "generate", "ts")
 	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	output, err := cmd.CombinedOutput()
@@ -261,7 +263,7 @@ codegen:
     - name: report-generator
       command: `+extCommand+`
 `)
-	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--config="+filepath.Join(dir, "gofastr.codegen.yml"), "--out=..", "--dry-run", "--json")
+	cmd := exec.Command("go", "run", "./cmd/gofastr", "generate", "--config="+filepath.Join(dir, "gofastr.codegen.yml"), "--out=..", "--dry-run", "--json")
 	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	var stdout, stderr bytes.Buffer

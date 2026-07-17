@@ -174,6 +174,9 @@ func applyEntities(app *framework.App, w *world.World) error {
 // JSON round-trip silently drifted as the framework surface evolved.
 func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
 	decl := framework.EntityDeclaration{
+		// Kiln has no session hook, so preserve its pre-existing open CRUD explicitly.
+		// TODO(kiln): grow an auth/access concept in the IR.
+		Public:         true,
 		Name:           e.Name,
 		Table:          e.Table,
 		SoftDelete:     e.SoftDelete,

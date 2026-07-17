@@ -56,6 +56,26 @@ embed third-party scripts, fonts, or frames you must override
 `ContentSecurityPolicy` explicitly — do not relax it with
 `'unsafe-inline'` globally.
 
+### Configuring the default chain's headers
+
+The example above constructs the middleware by hand. The default chain
+installed by `NewApp` is configurable through `AppConfig.SecurityHeaders`
+(or the `framework.WithSecurityHeaders(cfg)` option), so you can relax a
+single directive — e.g. allow `style-src 'unsafe-inline'` for a
+third-party CSS dependency — without shadowing the whole chain with your
+own `SecurityHeaders` middleware:
+
+```go
+app := framework.NewApp(framework.WithSecurityHeaders(middleware.SecurityHeadersConfig{
+    ContentSecurityPolicy: "default-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:",
+}))
+```
+
+Unset fields keep their built-in defaults (the strict CSP, `Referrer-Policy:
+no-referrer`, `X-Frame-Options: DENY`, …), so a partial override never
+silently drops a defensive header. The zero value reproduces the original
+strict defaults exactly.
+
 ## CORS
 
 ```go
@@ -205,6 +225,48 @@ multi-tenant isolation is preserved — a granted context in tenant A
 never sees tenant B rows. The widening is fail-closed: no access policy
 in context ⇒ no widening. See
 [entity-declarations](entity-declarations.md) → "CrossOwnerRead".
+
+## Default CRUD authentication
+
+Prior to this section's introduction, an entity declaring **neither**
+`OwnerField` **nor** `Access` got zero enforcement from auto-CRUD: List,
+Get, Create, Update, and Delete were all reachable by an anonymous
+caller — an unauthenticated `POST /api/<entity>` returned 201 and
+persisted the row. Generated MCP tools inherited the same gap, since
+`RegisterEntityMCPTools` dispatches entity tools through the same router
++ middleware chain as REST.
+
+Auto-CRUD is now secure-by-default: `framework/crud`'s `requireScope`
+chokepoint requires an authenticated session (`core/handler.GetUser`)
+for every operation on an entity that declares none of `OwnerField`,
+`Access`, or `Public`. The three opt-outs, in the order they're checked:
+
+1. **`OwnerField` set** — the existing `RequireOwner` gate already
+   requires an authenticated owner for every operation; the new
+   session gate is redundant there and steps aside.
+2. **`Access` declared** (any operation, even a partial block) — RBAC
+   governs the entity "as today": a blank permission for an operation
+   leaves it un-gated by RBAC, and the new session gate does not layer
+   an extra requirement on top.
+3. **`Public: true`** — a deliberate, full opt-out. Every operation,
+   reads and writes, is open to anonymous callers — the framework's
+   pre-secure-by-default behaviour for that entity. Meant for content
+   that's genuinely public (a contact form, a blog's comments), not as
+   a workaround for a 401 during development. An entity that wants
+   public reads but gated writes uses `Access` instead (a blank
+   `Read` + a real `Create` permission).
+
+Because entity MCP tools dispatch through the router, this gate governs
+them automatically — no separate `mcp.Gated`/`auth.MCPUser` wiring is
+needed for generated CRUD tools (that machinery remains for *custom*
+tools registered directly via `app.MCP.RegisterTool` or
+`Endpoint.MCPHandler`, which bypass route middleware; see
+[agent-ready](agent-ready.md)).
+
+`gofastr generate` prints a warning listing every entity left publicly
+readable/writable (`public: true`) so a generated app's open surface is
+never silent. See [entity-declarations](entity-declarations.md) →
+"Default CRUD authentication" for the blueprint YAML shape.
 
 ## Common mistakes
 

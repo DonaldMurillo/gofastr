@@ -74,6 +74,7 @@ CREATE TABLE comments (
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
 		Path:   "/posts?include=comments",
+		UserID: "u1",
 	})
 	req = req.WithContext(tenant.SetTenantID(req.Context(), "tenant-A"))
 	rr := httptest.NewRecorder()
@@ -146,6 +147,7 @@ CREATE TABLE comments (
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
 		Path:   "/posts?include=comments",
+		UserID: "u1",
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)

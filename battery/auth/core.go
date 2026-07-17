@@ -39,7 +39,15 @@ func (c *CorePlugin) Init(mgr *AuthManager) error {
 	c.mgr = mgr
 	cfg := mgr.Config()
 	if cfg.LoginRateLimit != nil {
-		c.loginLimit = newScopedRateLimiter(*cfg.LoginRateLimit, "login_ip")
+		// DevMode relaxes the per-IP login limiter so local
+		// screenshot / verification tooling that hammers /auth/login
+		// from localhost is not locked out (issue #71). The per-IP
+		// flood throttle is the one that bites tooling; the per-account
+		// limiter below is deliberately NOT relaxed — it guards brute-
+		// force even in dev (pinned by TestAuthBypass_BruteForceNoLockout).
+		ipCfg := *cfg.LoginRateLimit
+		ipCfg.DevMode = cfg.DevMode
+		c.loginLimit = newScopedRateLimiter(ipCfg, "login_ip")
 	}
 	if cfg.LoginRateLimitPerAccount != nil {
 		c.loginLimitAccount = newScopedRateLimiter(*cfg.LoginRateLimitPerAccount, "login_account")

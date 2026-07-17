@@ -46,7 +46,7 @@ func streamingApp(t *testing.T, db *sql.DB) *App {
 func TestStreamingList_EnvelopeShape(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedStreamableRows(t, db, 5)
-		ta := TestHarness(t, streamingApp(t, db))
+		ta := TestHarness(t, streamingApp(t, db)).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?stream=true&limit=10")
 		resp.AssertStatus(t, http.StatusOK)
@@ -72,7 +72,7 @@ func TestStreamingList_EnvelopeShape(t *testing.T) {
 func TestStreamingList_OptInExplicit(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedStreamableRows(t, db, 150)
-		ta := TestHarness(t, streamingApp(t, db))
+		ta := TestHarness(t, streamingApp(t, db)).AsUser(struct{ ID string }{ID: "u1"})
 
 		// limit=100 is the parser's max; ?stream=true forces the streaming
 		// code path even though perPage doesn't cross the auto-trigger.
@@ -99,7 +99,7 @@ func TestStreamingList_OptInExplicit(t *testing.T) {
 func TestStreamingList_EmptyResult(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedStreamableRows(t, db, 0)
-		ta := TestHarness(t, streamingApp(t, db))
+		ta := TestHarness(t, streamingApp(t, db)).AsUser(struct{ ID string }{ID: "u1"})
 		resp := ta.Get("/posts?stream=true")
 		resp.AssertStatus(t, http.StatusOK)
 

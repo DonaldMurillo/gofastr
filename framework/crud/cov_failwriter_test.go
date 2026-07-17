@@ -42,7 +42,7 @@ func (w *covSSEFailWriter) Flush() {}
 func TestStream_EncodeErrorAborts(t *testing.T) {
 	ch, _ := covItems(t, nil, 5)
 	w := &covFailWriter{failAfter: 1}
-	req := httptest.NewRequest("GET", "/items?stream=true", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true", nil), "u1")
 	ch.List()(w, req)
 	// Handler must return cleanly (no panic) after the encode write fails.
 	if w.calls < 2 {

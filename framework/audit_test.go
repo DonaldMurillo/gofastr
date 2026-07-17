@@ -18,6 +18,11 @@ func auditApp(t *testing.T, db *sql.DB, actor string) *App {
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
+		// Public: these tests exercise the audit trail's anonymous-actor
+		// path (TestAudit_AnonymousActor posts with no session and
+		// expects a NULL actor_id) — the secure-by-default session gate
+		// (issue #65) would otherwise 401 every request in this suite.
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 		},
@@ -116,7 +121,7 @@ func TestAudit_UpdateCapturesNewState(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "v1"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 		id := created["id"].(string)
@@ -156,7 +161,7 @@ func TestAudit_DeleteRecordsID(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "gone soon"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		json.Unmarshal([]byte(create.Body()), &created)
+		json.Unmarshal([]byte(create.Body()), singleMap(&created))
 		id := created["id"].(string)
 
 		del := ta.Delete("/posts/" + id)
@@ -234,7 +239,7 @@ func TestAudit_EntityFilter(t *testing.T) {
 		}
 		app.WithAuditLog(AuditConfig{Entities: []string{"posts"}})
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		ta.Post("/posts", map[string]any{"title": "tracked"}).AssertStatus(t, http.StatusCreated)
 		ta.Post("/notes", map[string]any{"body": "untracked"}).AssertStatus(t, http.StatusCreated)

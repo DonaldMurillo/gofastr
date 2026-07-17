@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // TestApp wraps an App for in-memory testing (no real HTTP listener).
@@ -14,6 +16,23 @@ import (
 type TestApp struct {
 	App    *App
 	router http.Handler
+	user   any // set via AsUser; nil = anonymous
+}
+
+// AsUser returns a copy of the harness whose Get/Post/Put/Delete/Request
+// calls carry an authenticated caller in context (core/handler.SetUser).
+// Needed because auto-CRUD is secure-by-default: an entity declaring
+// neither OwnerField nor Access nor Public requires a session for every
+// operation (see EntityConfig.Public, framework/docs/content/security.md
+// "Default CRUD authentication"). user can be any non-nil value — a bare
+// struct{ ID string }{ID: "u1"} is enough to pass the baseline gate; use
+// a real user type when the test also needs battery/auth's owner
+// extractor or an access.Policy to resolve roles from it.
+//
+//	ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+//	ta.Post("/posts", body).AssertStatus(t, http.StatusCreated)
+func (ta *TestApp) AsUser(user any) *TestApp {
+	return &TestApp{App: ta.App, router: ta.router, user: user}
 }
 
 // TestHarness creates an in-memory test harness around an App.
@@ -58,6 +77,9 @@ func (ta *TestApp) Delete(path string) *TestResponse {
 // Request creates a raw TestRequest for further customisation before Execute.
 func (ta *TestApp) Request(method, path string, body io.Reader) *TestRequest {
 	req := httptest.NewRequest(method, path, body)
+	if ta.user != nil {
+		req = req.WithContext(handler.SetUser(req.Context(), ta.user))
+	}
 	return &TestRequest{
 		testApp: ta,
 		request: req,
@@ -81,6 +103,9 @@ func (ta *TestApp) doRequest(method, path string, body any, headers map[string]s
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
+	}
+	if ta.user != nil {
+		req = req.WithContext(handler.SetUser(req.Context(), ta.user))
 	}
 
 	rec := httptest.NewRecorder()

@@ -491,8 +491,7 @@ func TestUpdate_ConcurrentUpdates(t *testing.T) {
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("setup create failed: %d", rr.Code)
 	}
-	var created map[string]any
-	json.Unmarshal(rr.Body.Bytes(), &created)
+	created := decodeSingleResponse(t, rr.Body.Bytes())
 	id, _ := created["id"].(string)
 	var wg sync.WaitGroup
 	wg.Add(2)

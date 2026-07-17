@@ -55,7 +55,7 @@ func runUploadTest(t *testing.T, body func(t *testing.T, db *sql.DB, ta *TestApp
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedUploadDB(t, db)
 		app, dir := uploadAppOnDB(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		body(t, db, ta, dir)
 	})
 }
@@ -106,7 +106,7 @@ func TestUpload_Create_StoresFileAndPersistsURL(t *testing.T) {
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		avatar, _ := got["avatar"].(string)
@@ -138,7 +138,7 @@ func TestUpload_NoStorage_RejectsMultipart(t *testing.T) {
 				{Name: "avatar", Type: schema.Image},
 			},
 		}.WithTimestamps(false))
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		body, ct := buildMultipartBody(t,
 			map[string][2]string{"avatar": {"hello.png", "fake"}},
@@ -182,7 +182,7 @@ func TestUpload_Update_ReplacesURL(t *testing.T) {
 			t.Fatalf("seed: %v", err)
 		}
 		app, dir := uploadAppOnDB(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		body, ct := buildMultipartBody(t,
 			map[string][2]string{"avatar": {"new.png", "new-bytes"}},
@@ -222,7 +222,7 @@ func TestUpload_JSONStillWorks(t *testing.T) {
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		if got["avatar"] != safe {
@@ -251,7 +251,7 @@ func TestUpload_CoercesFormValues(t *testing.T) {
 				{Name: "published", Type: schema.Bool},
 			},
 		}.WithTimestamps(false))
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		body, ct := buildMultipartBody(t,
 			nil,

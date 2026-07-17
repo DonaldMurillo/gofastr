@@ -31,6 +31,8 @@ func main() {
 	// --- Entities — auto-CRUD is on (DB set); APIPrefix puts the routes under /api. ---
 
 	app.Entity("articles", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "summary", Type: schema.Text},
@@ -40,6 +42,8 @@ func main() {
 	})
 
 	app.Entity("projects", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "description", Type: schema.Text},

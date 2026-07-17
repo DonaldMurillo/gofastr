@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -20,6 +21,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
+
+// authedTestUser stamps an authenticated caller into a raw *http.Request's
+// context for CrudHandler tests that call Create()/Update()/Delete()
+// directly (bypassing TestHarness/AsUser) — the "posts" entities in this
+// file have no OwnerField/Access/Public, so the secure-by-default session
+// gate (issue #65) requires a session for every write.
+func authedTestUser(req *http.Request) *http.Request {
+	return req.WithContext(handler.SetUser(req.Context(), struct{ ID string }{ID: "u1"}))
+}
 
 // ============================================================================
 // Test: Multitenancy scoping in CRUD handlers
@@ -263,7 +273,7 @@ func TestCrudCreate_SkipsReadOnlyFields(t *testing.T) {
 	}
 	bodyBytes, _ := json.Marshal(body)
 
-	req := httptest.NewRequest("POST", "/posts", strings.NewReader(string(bodyBytes)))
+	req := authedTestUser(httptest.NewRequest("POST", "/posts", strings.NewReader(string(bodyBytes))))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "")
 
@@ -307,7 +317,7 @@ func TestCrudCreate_SkipsHiddenFields(t *testing.T) {
 	}
 	bodyBytes, _ := json.Marshal(body)
 
-	req := httptest.NewRequest("POST", "/posts", strings.NewReader(string(bodyBytes)))
+	req := authedTestUser(httptest.NewRequest("POST", "/posts", strings.NewReader(string(bodyBytes))))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "")
 
@@ -365,7 +375,7 @@ func TestCrudCreate_ExecutesHooks(t *testing.T) {
 	body := map[string]any{"title": "Hello"}
 	bodyBytes, _ := json.Marshal(body)
 
-	req := httptest.NewRequest("POST", "/posts", strings.NewReader(string(bodyBytes)))
+	req := authedTestUser(httptest.NewRequest("POST", "/posts", strings.NewReader(string(bodyBytes))))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "")
 
@@ -412,7 +422,7 @@ func TestCrudCreate_BeforeCreateHookRejects(t *testing.T) {
 	body := map[string]any{"title": "Hello"}
 	bodyBytes, _ := json.Marshal(body)
 
-	req := httptest.NewRequest("POST", "/posts", strings.NewReader(string(bodyBytes)))
+	req := authedTestUser(httptest.NewRequest("POST", "/posts", strings.NewReader(string(bodyBytes))))
 	req.Header.Set("Content-Type", "application/json")
 
 	rec := httptest.NewRecorder()
@@ -464,7 +474,7 @@ func TestCrudUpdate_ExecutesHooks(t *testing.T) {
 	body := map[string]any{"title": "Updated"}
 	bodyBytes, _ := json.Marshal(body)
 
-	req := httptest.NewRequest("PUT", "/posts/p1", strings.NewReader(string(bodyBytes)))
+	req := authedTestUser(httptest.NewRequest("PUT", "/posts/p1", strings.NewReader(string(bodyBytes))))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "p1")
 
@@ -514,7 +524,7 @@ func TestCrudDelete_ExecutesHooks(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	req := httptest.NewRequest("DELETE", "/posts/p1", nil)
+	req := authedTestUser(httptest.NewRequest("DELETE", "/posts/p1", nil))
 	req.SetPathValue("id", "p1")
 
 	rec := httptest.NewRecorder()
@@ -615,6 +625,12 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		ent := entity.Define("posts", entity.EntityConfig{
 			Table:      "posts",
 			SoftDelete: true,
+			// Public: this test asserts anonymous ?trashed=true still
+			// hides soft-deleted rows (a public list endpoint) — the
+			// secure-by-default session gate (issue #65) would otherwise
+			// 401 every request here before the soft-delete filter is
+			// even reached.
+			Public: true,
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 				{Name: "body", Type: schema.Text},
@@ -701,7 +717,7 @@ func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
 		ch := crud.NewCrudHandler(ent, db)
 		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Create with slug (ReadOnly) should still succeed but slug should not be in the INSERT
@@ -776,7 +792,7 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 		ch.Hooks = hooks
 		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		resp := ta.Post("/posts", map[string]string{
@@ -863,7 +879,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		ch := crud.NewCrudHandler(ent, db)
 		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// List as tenant-a — should only see tenant-a's posts
@@ -936,7 +952,7 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 		ch := crud.NewCrudHandler(ent, db)
 		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Create a post
@@ -985,7 +1001,7 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 func extractIDFromResponse(t *testing.T, resp *TestResponse) string {
 	t.Helper()
 	var result map[string]any
-	if err := resp.JSON(&result); err != nil {
+	if err := resp.JSON(singleMap(&result)); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	id, ok := result["id"].(string)

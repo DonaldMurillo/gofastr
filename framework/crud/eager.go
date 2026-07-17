@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -182,12 +183,19 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, s
 	sourceToFK := make(map[string]string)
 	var fkValues []string
 	for rows.Next() {
-		var srcID, fkVal string
+		var srcID string
+		var fkVal sql.NullString
 		if err := rows.Scan(&srcID, &fkVal); err != nil {
 			return err
 		}
-		sourceToFK[srcID] = fkVal
-		fkValues = append(fkValues, fkVal)
+		// A nullable FK that is NULL means the optional relation is
+		// absent for this parent; skip it so the parent keeps the
+		// relation unset instead of erroring on NULL→string conversion.
+		if !fkVal.Valid {
+			continue
+		}
+		sourceToFK[srcID] = fkVal.String
+		fkValues = append(fkValues, fkVal.String)
 	}
 	if err := rows.Err(); err != nil {
 		return err

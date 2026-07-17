@@ -76,6 +76,16 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// doSingleJSON decodes the {"data": {...}} envelope used by single-record
+// CRUD responses into out.
+func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, out any) error {
+	var envelope map[string]json.RawMessage
+	if err := c.doJSON(ctx, method, path, body, &envelope); err != nil {
+		return err
+	}
+	return json.Unmarshal(envelope["data"], out)
+}
+
 type Plans struct {
 	ID       string `json:"id"`
 	Name     string `json:"name,omitempty"`
@@ -91,6 +101,14 @@ type PlansInput struct {
 	Price    string `json:"price,omitempty"`
 	Interval string `json:"interval,omitempty"`
 	Active   bool   `json:"active,omitempty"`
+}
+
+type PlansPatch struct {
+	Name     *string `json:"name,omitempty"`
+	Slug     *string `json:"slug,omitempty"`
+	Price    *string `json:"price,omitempty"`
+	Interval *string `json:"interval,omitempty"`
+	Active   *bool   `json:"active,omitempty"`
 }
 
 type PlansListResponse struct {
@@ -117,7 +135,7 @@ func (c *Client) ListPlans(ctx context.Context, params url.Values) (PlansListRes
 // GetPlans fetches a single record by id. Returns *APIError with 404 when missing.
 func (c *Client) GetPlans(ctx context.Context, id string) (Plans, error) {
 	var out Plans
-	if err := c.doJSON(ctx, http.MethodGet, "/plans/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodGet, "/plans/"+url.PathEscape(id), nil, &out); err != nil {
 		return Plans{}, err
 	}
 	return out, nil
@@ -126,7 +144,7 @@ func (c *Client) GetPlans(ctx context.Context, id string) (Plans, error) {
 // CreatePlans posts a new record and returns the server-canonical row.
 func (c *Client) CreatePlans(ctx context.Context, body PlansInput) (Plans, error) {
 	var out Plans
-	if err := c.doJSON(ctx, http.MethodPost, "/plans", body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPost, "/plans", body, &out); err != nil {
 		return Plans{}, err
 	}
 	return out, nil
@@ -135,7 +153,19 @@ func (c *Client) CreatePlans(ctx context.Context, body PlansInput) (Plans, error
 // UpdatePlans updates the record at id with the partial body.
 func (c *Client) UpdatePlans(ctx context.Context, id string, body PlansInput) (Plans, error) {
 	var out Plans
-	if err := c.doJSON(ctx, http.MethodPut, "/plans/"+url.PathEscape(id), body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPut, "/plans/"+url.PathEscape(id), body, &out); err != nil {
+		return Plans{}, err
+	}
+	return out, nil
+}
+
+// PatchPlans updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty PlansPatch to no-op.
+func (c *Client) PatchPlans(ctx context.Context, id string, body PlansPatch) (Plans, error) {
+	var out Plans
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/plans/"+url.PathEscape(id), body, &out); err != nil {
 		return Plans{}, err
 	}
 	return out, nil
@@ -165,6 +195,15 @@ type CustomersInput struct {
 	UserId  string `json:"userId,omitempty"`
 }
 
+type CustomersPatch struct {
+	Name    *string `json:"name,omitempty"`
+	Email   *string `json:"email,omitempty"`
+	Company *string `json:"company,omitempty"`
+	Status  *string `json:"status,omitempty"`
+	Mrr     *string `json:"mrr,omitempty"`
+	UserId  *string `json:"userId,omitempty"`
+}
+
 type CustomersListResponse struct {
 	Data       []Customers `json:"data"`
 	Total      int         `json:"total"`
@@ -189,7 +228,7 @@ func (c *Client) ListCustomers(ctx context.Context, params url.Values) (Customer
 // GetCustomers fetches a single record by id. Returns *APIError with 404 when missing.
 func (c *Client) GetCustomers(ctx context.Context, id string) (Customers, error) {
 	var out Customers
-	if err := c.doJSON(ctx, http.MethodGet, "/customers/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodGet, "/customers/"+url.PathEscape(id), nil, &out); err != nil {
 		return Customers{}, err
 	}
 	return out, nil
@@ -198,7 +237,7 @@ func (c *Client) GetCustomers(ctx context.Context, id string) (Customers, error)
 // CreateCustomers posts a new record and returns the server-canonical row.
 func (c *Client) CreateCustomers(ctx context.Context, body CustomersInput) (Customers, error) {
 	var out Customers
-	if err := c.doJSON(ctx, http.MethodPost, "/customers", body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPost, "/customers", body, &out); err != nil {
 		return Customers{}, err
 	}
 	return out, nil
@@ -207,7 +246,19 @@ func (c *Client) CreateCustomers(ctx context.Context, body CustomersInput) (Cust
 // UpdateCustomers updates the record at id with the partial body.
 func (c *Client) UpdateCustomers(ctx context.Context, id string, body CustomersInput) (Customers, error) {
 	var out Customers
-	if err := c.doJSON(ctx, http.MethodPut, "/customers/"+url.PathEscape(id), body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPut, "/customers/"+url.PathEscape(id), body, &out); err != nil {
+		return Customers{}, err
+	}
+	return out, nil
+}
+
+// PatchCustomers updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty CustomersPatch to no-op.
+func (c *Client) PatchCustomers(ctx context.Context, id string, body CustomersPatch) (Customers, error) {
+	var out Customers
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/customers/"+url.PathEscape(id), body, &out); err != nil {
 		return Customers{}, err
 	}
 	return out, nil
@@ -239,6 +290,16 @@ type SubscriptionsInput struct {
 	UserId     string `json:"userId,omitempty"`
 }
 
+type SubscriptionsPatch struct {
+	CustomerId *string `json:"customerId,omitempty"`
+	PlanId     *string `json:"planId,omitempty"`
+	Status     *string `json:"status,omitempty"`
+	Mrr        *string `json:"mrr,omitempty"`
+	StartedOn  *string `json:"startedOn,omitempty"`
+	RenewsOn   *string `json:"renewsOn,omitempty"`
+	UserId     *string `json:"userId,omitempty"`
+}
+
 type SubscriptionsListResponse struct {
 	Data       []Subscriptions `json:"data"`
 	Total      int             `json:"total"`
@@ -263,7 +324,7 @@ func (c *Client) ListSubscriptions(ctx context.Context, params url.Values) (Subs
 // GetSubscriptions fetches a single record by id. Returns *APIError with 404 when missing.
 func (c *Client) GetSubscriptions(ctx context.Context, id string) (Subscriptions, error) {
 	var out Subscriptions
-	if err := c.doJSON(ctx, http.MethodGet, "/subscriptions/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodGet, "/subscriptions/"+url.PathEscape(id), nil, &out); err != nil {
 		return Subscriptions{}, err
 	}
 	return out, nil
@@ -272,7 +333,7 @@ func (c *Client) GetSubscriptions(ctx context.Context, id string) (Subscriptions
 // CreateSubscriptions posts a new record and returns the server-canonical row.
 func (c *Client) CreateSubscriptions(ctx context.Context, body SubscriptionsInput) (Subscriptions, error) {
 	var out Subscriptions
-	if err := c.doJSON(ctx, http.MethodPost, "/subscriptions", body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPost, "/subscriptions", body, &out); err != nil {
 		return Subscriptions{}, err
 	}
 	return out, nil
@@ -281,7 +342,19 @@ func (c *Client) CreateSubscriptions(ctx context.Context, body SubscriptionsInpu
 // UpdateSubscriptions updates the record at id with the partial body.
 func (c *Client) UpdateSubscriptions(ctx context.Context, id string, body SubscriptionsInput) (Subscriptions, error) {
 	var out Subscriptions
-	if err := c.doJSON(ctx, http.MethodPut, "/subscriptions/"+url.PathEscape(id), body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPut, "/subscriptions/"+url.PathEscape(id), body, &out); err != nil {
+		return Subscriptions{}, err
+	}
+	return out, nil
+}
+
+// PatchSubscriptions updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty SubscriptionsPatch to no-op.
+func (c *Client) PatchSubscriptions(ctx context.Context, id string, body SubscriptionsPatch) (Subscriptions, error) {
+	var out Subscriptions
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/subscriptions/"+url.PathEscape(id), body, &out); err != nil {
 		return Subscriptions{}, err
 	}
 	return out, nil
@@ -315,6 +388,17 @@ type InvoicesInput struct {
 	UserId     string `json:"userId,omitempty"`
 }
 
+type InvoicesPatch struct {
+	CustomerId *string `json:"customerId,omitempty"`
+	Number     *string `json:"number,omitempty"`
+	Amount     *string `json:"amount,omitempty"`
+	Status     *string `json:"status,omitempty"`
+	IssuedOn   *string `json:"issuedOn,omitempty"`
+	DueOn      *string `json:"dueOn,omitempty"`
+	PaidOn     *string `json:"paidOn,omitempty"`
+	UserId     *string `json:"userId,omitempty"`
+}
+
 type InvoicesListResponse struct {
 	Data       []Invoices `json:"data"`
 	Total      int        `json:"total"`
@@ -339,7 +423,7 @@ func (c *Client) ListInvoices(ctx context.Context, params url.Values) (InvoicesL
 // GetInvoices fetches a single record by id. Returns *APIError with 404 when missing.
 func (c *Client) GetInvoices(ctx context.Context, id string) (Invoices, error) {
 	var out Invoices
-	if err := c.doJSON(ctx, http.MethodGet, "/invoices/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodGet, "/invoices/"+url.PathEscape(id), nil, &out); err != nil {
 		return Invoices{}, err
 	}
 	return out, nil
@@ -348,7 +432,7 @@ func (c *Client) GetInvoices(ctx context.Context, id string) (Invoices, error) {
 // CreateInvoices posts a new record and returns the server-canonical row.
 func (c *Client) CreateInvoices(ctx context.Context, body InvoicesInput) (Invoices, error) {
 	var out Invoices
-	if err := c.doJSON(ctx, http.MethodPost, "/invoices", body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPost, "/invoices", body, &out); err != nil {
 		return Invoices{}, err
 	}
 	return out, nil
@@ -357,7 +441,19 @@ func (c *Client) CreateInvoices(ctx context.Context, body InvoicesInput) (Invoic
 // UpdateInvoices updates the record at id with the partial body.
 func (c *Client) UpdateInvoices(ctx context.Context, id string, body InvoicesInput) (Invoices, error) {
 	var out Invoices
-	if err := c.doJSON(ctx, http.MethodPut, "/invoices/"+url.PathEscape(id), body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPut, "/invoices/"+url.PathEscape(id), body, &out); err != nil {
+		return Invoices{}, err
+	}
+	return out, nil
+}
+
+// PatchInvoices updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty InvoicesPatch to no-op.
+func (c *Client) PatchInvoices(ctx context.Context, id string, body InvoicesPatch) (Invoices, error) {
+	var out Invoices
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/invoices/"+url.PathEscape(id), body, &out); err != nil {
 		return Invoices{}, err
 	}
 	return out, nil
@@ -387,6 +483,15 @@ type PaymentsInput struct {
 	UserId     string `json:"userId,omitempty"`
 }
 
+type PaymentsPatch struct {
+	InvoiceId  *string `json:"invoiceId,omitempty"`
+	CustomerId *string `json:"customerId,omitempty"`
+	Amount     *string `json:"amount,omitempty"`
+	Method     *string `json:"method,omitempty"`
+	Status     *string `json:"status,omitempty"`
+	UserId     *string `json:"userId,omitempty"`
+}
+
 type PaymentsListResponse struct {
 	Data       []Payments `json:"data"`
 	Total      int        `json:"total"`
@@ -411,7 +516,7 @@ func (c *Client) ListPayments(ctx context.Context, params url.Values) (PaymentsL
 // GetPayments fetches a single record by id. Returns *APIError with 404 when missing.
 func (c *Client) GetPayments(ctx context.Context, id string) (Payments, error) {
 	var out Payments
-	if err := c.doJSON(ctx, http.MethodGet, "/payments/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodGet, "/payments/"+url.PathEscape(id), nil, &out); err != nil {
 		return Payments{}, err
 	}
 	return out, nil
@@ -420,7 +525,7 @@ func (c *Client) GetPayments(ctx context.Context, id string) (Payments, error) {
 // CreatePayments posts a new record and returns the server-canonical row.
 func (c *Client) CreatePayments(ctx context.Context, body PaymentsInput) (Payments, error) {
 	var out Payments
-	if err := c.doJSON(ctx, http.MethodPost, "/payments", body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPost, "/payments", body, &out); err != nil {
 		return Payments{}, err
 	}
 	return out, nil
@@ -429,7 +534,19 @@ func (c *Client) CreatePayments(ctx context.Context, body PaymentsInput) (Paymen
 // UpdatePayments updates the record at id with the partial body.
 func (c *Client) UpdatePayments(ctx context.Context, id string, body PaymentsInput) (Payments, error) {
 	var out Payments
-	if err := c.doJSON(ctx, http.MethodPut, "/payments/"+url.PathEscape(id), body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPut, "/payments/"+url.PathEscape(id), body, &out); err != nil {
+		return Payments{}, err
+	}
+	return out, nil
+}
+
+// PatchPayments updates exactly the fields whose pointers in body are non-nil.
+// A nil field is omitted (the server leaves it untouched); a non-nil pointer
+// sets the field — including to a zero value (false, 0, ""), which a value
+// payload cannot express. Pass an empty PaymentsPatch to no-op.
+func (c *Client) PatchPayments(ctx context.Context, id string, body PaymentsPatch) (Payments, error) {
+	var out Payments
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/payments/"+url.PathEscape(id), body, &out); err != nil {
 		return Payments{}, err
 	}
 	return out, nil

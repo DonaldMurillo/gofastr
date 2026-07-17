@@ -138,7 +138,8 @@ func TestFiltered_BelongsToNoSourceRows(t *testing.T) {
 	}
 }
 
-// Scanning a NULL foreign key into *string fails inside loadBelongsToFiltered.
+// A NULL foreign key (optional relation) must NOT error inside
+// loadBelongsToFiltered; the parent keeps the relation unset. (issue #66)
 func TestFiltered_BelongsToScanNullFK(t *testing.T) {
 	db := setupDB(t,
 		`CREATE TABLE src (id TEXT PRIMARY KEY, author_id TEXT)`,
@@ -148,8 +149,12 @@ func TestFiltered_BelongsToScanNullFK(t *testing.T) {
 		t.Fatal(err)
 	}
 	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"}}
-	err := loadIncludeNode(context.Background(), db, "src", "id", node, []string{"s1"}, newResult("s1"))
-	if err == nil {
-		t.Fatal("scanning NULL fk into *string should error")
+	result := newResult("s1")
+	err := loadIncludeNode(context.Background(), db, "src", "id", node, []string{"s1"}, result)
+	if err != nil {
+		t.Fatalf("NULL fk should not error, got: %v", err)
+	}
+	if _, present := result["s1"]["author"]; present {
+		t.Errorf("NULL fk should leave author absent; got %v", result["s1"]["author"])
 	}
 }

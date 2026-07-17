@@ -182,6 +182,7 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 	putBool(m, "mcp", e.MCP)
 	putBool(m, "soft_delete", e.SoftDelete)
 	putBool(m, "multi_tenant", e.MultiTenant)
+	putBool(m, "public", e.Public)
 	putStr(m, "owner_field", e.OwnerField)
 	putStr(m, "cross_owner_read", e.CrossOwnerRead)
 	putStrs(m, "search_fields", e.SearchFields)
@@ -1022,6 +1023,9 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 	}
 	if v, ok := cfg["MCP"]; ok {
 		decl.MCP = astBool(v)
+	}
+	if v, ok := cfg["Public"]; ok {
+		decl.Public = astBool(v)
 	}
 	if v, ok := cfg["CursorField"]; ok {
 		decl.CursorField = astString(v)

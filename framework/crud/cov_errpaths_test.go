@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -35,7 +36,7 @@ func covMissingTargetWorld(t *testing.T) (*CrudHandler, stubRegistry) {
 
 func TestInclude_LoaderDBError_HasMany(t *testing.T) {
 	ch, _ := covMissingTargetWorld(t)
-	req := httptest.NewRequest("GET", "/eposts?include=comments", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/eposts?include=comments", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -45,7 +46,7 @@ func TestInclude_LoaderDBError_HasMany(t *testing.T) {
 
 func TestInclude_LoaderDBError_BelongsTo(t *testing.T) {
 	ch, _ := covMissingTargetWorld(t)
-	req := httptest.NewRequest("GET", "/eposts?include=author", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/eposts?include=author", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -55,7 +56,7 @@ func TestInclude_LoaderDBError_BelongsTo(t *testing.T) {
 
 func TestInclude_LoaderDBError_ManyToMany(t *testing.T) {
 	ch, _ := covMissingTargetWorld(t)
-	req := httptest.NewRequest("GET", "/eposts?include=tags", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/eposts?include=tags", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -118,7 +119,7 @@ func TestRunToolRequest_NoContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := runToolRequest(context.Background(), r, http.MethodDelete, "/widgets/"+row["id"].(string), nil)
+	out, err := runToolRequest(handler.SetUser(context.Background(), &testUser{id: "u1"}), r, http.MethodDelete, "/widgets/"+row["id"].(string), nil)
 	if err != nil {
 		t.Fatalf("delete tool: %v", err)
 	}

@@ -440,13 +440,23 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			piiFlagged[f.Entity] = true
 			warn("%s", f.Message())
 		}
-		// Broader net: ANY unscoped auto-exposed entity is anonymous
-		// world read/write — warn even when no field name looks like
-		// PII (the token list can't know "journal_entry" is private).
+		// Broader net: any unscoped auto-exposed entity lets every OTHER
+		// authenticated user read/write its rows — warn even when no
+		// field name looks like PII (the token list can't know
+		// "journal_entry" is private). Auto-CRUD already requires a
+		// session by default (issue #65), so this is cross-user
+		// exposure, not anonymous access.
 		for _, f := range lintUnscopedEntities(bp) {
 			if piiFlagged[f.Entity] {
 				continue // already carried the stronger PII warning
 			}
+			warn("%s", f.Message())
+		}
+		// public: true is a full, deliberate opt-out of the session
+		// requirement — the ACTUAL anonymous-access surface. Always
+		// surfaced (never suppressed by the PII/unscoped warnings above)
+		// so a generated app's open surface is never silent.
+		for _, f := range lintPublicEntities(bp) {
 			warn("%s", f.Message())
 		}
 		// dev_mode defaults to true (plain-HTTP cookies + per-process JWT
@@ -985,6 +995,9 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	}
 	if literal := renderAccessLiteral(decl.Access); literal != "" {
 		sb.WriteString("\t\tAccess: " + literal + ",\n")
+	}
+	if decl.Public {
+		sb.WriteString("\t\tPublic: true,\n")
 	}
 	if decl.CRUD != nil {
 		sb.WriteString(fmt.Sprintf("\t\tCRUD: boolPtr(%t),\n", *decl.CRUD))

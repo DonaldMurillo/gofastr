@@ -54,9 +54,14 @@ func TestContributedCSSAfterCustomCSS(t *testing.T) {
 	ds := newTestUIHost()
 	WithCustomCSS(".order-probe { color: red; }")(ds)
 
+	// Match complete rules: the theme's :root block legitimately references
+	// var(--color-primary) before custom CSS.
+	const customRule = ".order-probe { color: red; }"
+	const contributedRule = ".order-probe {\n  color: var(--color-primary);\n}"
+
 	body := ds.AppCSS()
-	custom := strings.Index(body, "color: red")
-	contributed := strings.Index(body, "var(--color-primary)")
+	custom := strings.Index(body, customRule)
+	contributed := strings.Index(body, contributedRule)
 	if custom == -1 || contributed == -1 {
 		t.Fatalf("app.css missing custom (%d) or contributed (%d) rule:\n%s",
 			custom, contributed, truncate(body, 800))

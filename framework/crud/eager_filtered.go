@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -186,12 +187,19 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 	sourceToFK := map[string]string{}
 	var fks []string
 	for rows.Next() {
-		var srcID, fk string
+		var srcID string
+		var fk sql.NullString
 		if err := rows.Scan(&srcID, &fk); err != nil {
 			return err
 		}
-		sourceToFK[srcID] = fk
-		fks = append(fks, fk)
+		// A nullable FK that is NULL means the optional relation is
+		// absent for this parent; skip it so the parent keeps the
+		// relation unset instead of erroring on NULL→string conversion.
+		if !fk.Valid {
+			continue
+		}
+		sourceToFK[srcID] = fk.String
+		fks = append(fks, fk.String)
 	}
 	if err := rows.Err(); err != nil {
 		return err

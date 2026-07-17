@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
@@ -67,6 +68,10 @@ func outboxTestApp(t *testing.T, db *sql.DB) (*App, chan event.Event, func(metho
 		} else {
 			r = httptest.NewRequest(method, path, nil)
 		}
+		// posts has no OwnerField/Access/Public — the secure-by-default
+		// session gate (issue #65) requires a session for every op; stamp
+		// one so these outbox-wiring tests exercise the relay, not auth.
+		r = r.WithContext(handler.SetUser(r.Context(), struct{ ID string }{ID: "u1"}))
 		app.Router().ServeHTTP(rec, r)
 		return rec
 	}
@@ -163,13 +168,15 @@ func TestOutbox_UpdateAndDeleteDeliver(t *testing.T) {
 			t.Fatalf("create = %d: %s", rec.Code, rec.Body)
 		}
 		var created struct {
-			ID any `json:"id"`
+			Data struct {
+				ID any `json:"id"`
+			} `json:"data"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 			t.Fatalf("decode create response: %v", err)
 		}
-		id := fmt.Sprintf("%v", created.ID)
-		if f, ok := created.ID.(float64); ok {
+		id := fmt.Sprintf("%v", created.Data.ID)
+		if f, ok := created.Data.ID.(float64); ok {
 			id = fmt.Sprintf("%d", int64(f))
 		}
 

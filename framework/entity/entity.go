@@ -61,6 +61,21 @@ type EntityConfig struct {
 	// (or battery/auth). See framework/docs/content/access-control.md.
 	Access AccessControl
 
+	// Public opts an entity OUT of the framework's secure-by-default
+	// session requirement (see the doc comment on requireAuthenticated in
+	// framework/crud/owner.go, and framework/docs/content/security.md
+	// "Default CRUD authentication"): every operation — List/Get and
+	// Create/Update/Delete — is reachable by an anonymous caller, the
+	// pre-#65 behaviour. This is a deliberate declaration ("yes, this is
+	// public": a public contact form, a blog's comments, a newsletter
+	// signup), not a partial relaxation — an entity that should allow
+	// anonymous reads but still gate writes needs a declared Access block
+	// instead (blank Access.Read + a real Access.Create permission).
+	// Has no effect when OwnerField or Access is set; those mechanisms
+	// already govern the entity. Default false: every operation requires
+	// a session, matching the blueprint's default (no `public: true`).
+	Public bool
+
 	// SearchFields names the DB columns that ?q= free-text search operates
 	// on (e.g. []string{"title","body"}). When non-empty, a List request
 	// carrying ?q=<term> tokenizes the term on whitespace (deduped, capped
@@ -120,6 +135,15 @@ type AccessControl struct {
 	Create string
 	Update string
 	Delete string
+}
+
+// Declared reports whether any per-operation permission is set — i.e.
+// whether the entity opted into RBAC gating at all. Used by
+// framework/crud's secure-by-default session gate to tell "this entity
+// declared an (possibly partial) access: block, defer to it as today"
+// apart from "this entity declared nothing".
+func (a AccessControl) Declared() bool {
+	return a.Read != "" || a.Create != "" || a.Update != "" || a.Delete != ""
 }
 
 // Index declares a secondary index on an entity. Both dialects accept the

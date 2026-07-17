@@ -6,16 +6,27 @@ package main
 // field is per-user, so this is a heuristic over field NAMES: when an
 // entity is auto-exposed (crud defaults on, or mcp: true), declares
 // PII-shaped fields, and has no owner_field / multi_tenant / non-blank
-// access, every row is world-readable and world-writable on the generated
-// API. Blueprint auth does NOT suppress the rule: enabling auth only
-// mounts pass-through SessionMiddleware, so anonymous requests still
-// reach auto-CRUD/MCP.
+// access, every row is readable and writable by every OTHER authenticated
+// user on the generated API — cross-user exposure, not anonymous access.
+// (Auto-CRUD itself is secure-by-default: an entity with none of
+// owner_field/access/public already requires a session for every
+// operation — see framework/crud's requireAuthenticated and
+// EntityConfig.Public, issue #65. This lint's remaining concern is the
+// narrower "logged-in user A can read/write user B's row" gap that only
+// owner_field/access/multi_tenant close.) Blueprint auth alone does NOT
+// close that gap: enabling auth only mounts pass-through
+// SessionMiddleware — it authenticates the caller but does not scope rows
+// to them.
 //
 // Severity by surface:
 //   - `gofastr validate`   → error (exit 1)
 //   - `gofastr generate`   → prominent warning, never blocks
 //   - `gofastr audit lint` → finding (rule "unscoped-pii"), exit 1 like
 //     the Go-source rules
+//
+// A SEPARATE lint (lintPublicEntities, same file) flags `public: true`
+// entities — the actual anonymous-access surface post-#65, since Public
+// is a deliberate full opt-out of the session requirement.
 
 import (
 	"fmt"
@@ -90,12 +101,50 @@ type unscopedFinding struct {
 
 // Message spells out the exposure and every remedy. Unlike the PII rule
 // this is informational: genuinely public data (a blog's posts) is a
-// legitimate shape — but anonymous WRITE almost never is, so the warning
-// fires until the entity says how it's governed.
+// legitimate shape — but letting every OTHER authenticated user read and
+// overwrite it almost never is, so the warning fires until the entity
+// says how it's governed. This entity already requires a session for
+// every operation (auto-CRUD's secure-by-default gate) — the exposure
+// here is cross-user, not anonymous: any signed-in caller can read,
+// create, update, and delete any row.
 func (f unscopedFinding) Message() string {
 	return fmt.Sprintf(
-		"entity %q is exposed via auto-CRUD/MCP with no scoping — anonymous callers can read, create, update, and delete every row. Set owner_field: <column> for per-user rows, access: permissions (RBAC) to gate writes, or multi_tenant: true; for genuinely public read-only data, gate at least the write operations with access:",
+		"entity %q is exposed via auto-CRUD/MCP with no per-user scoping — every authenticated user can read, create, update, and delete every OTHER user's row (a session is already required to reach it — this is cross-user exposure). Set owner_field: <column> for per-user rows, access: permissions (RBAC) to gate by role, or multi_tenant: true",
 		f.Entity)
+}
+
+// publicFinding is one entity flagged by lintPublicEntities — a
+// blueprint-declared `public: true` opt-out. Unlike unscopedFinding this
+// IS the anonymous-access surface: Public is a deliberate, full bypass of
+// the session requirement (issue #65), not an oversight, so the message
+// confirms the declaration rather than prescribing a remedy.
+type publicFinding struct {
+	Entity string
+}
+
+// Message names the entity and spells out exactly what "public" grants —
+// anonymous READ and WRITE, not just read — so `gofastr generate`'s
+// warning can't be mistaken for "this entity is merely readable".
+func (f publicFinding) Message() string {
+	return fmt.Sprintf(
+		"entity %q is public: true — anonymous callers can read, create, update, AND delete every row (not just read). Confirm this is intentional; entities that want public reads with gated writes should use access: (a blank read: + a real create: permission) instead",
+		f.Entity)
+}
+
+// lintPublicEntities returns one finding per blueprint entity declaring
+// `public: true` — the full, deliberate opt-out from auto-CRUD's
+// secure-by-default session requirement. Every one of these is genuinely
+// reachable by an anonymous caller, so `gofastr generate` always surfaces
+// the list (never blocks — Public is an intentional declaration, not a
+// mistake to error on).
+func lintPublicEntities(bp Blueprint) []publicFinding {
+	var out []publicFinding
+	for _, decl := range bp.Entities {
+		if decl.Public {
+			out = append(out, publicFinding{Entity: decl.Name})
+		}
+	}
+	return out
 }
 
 // lintUnscopedEntities returns one finding per auto-exposed entity with NO
@@ -108,7 +157,11 @@ func lintUnscopedEntities(bp Blueprint) []unscopedFinding {
 		if !crudOn && !decl.MCP {
 			continue
 		}
-		if decl.OwnerField != "" || decl.MultiTenant || hasAccessGate(decl.Access) {
+		// Public: true already carries its own, more accurate warning
+		// (lintPublicEntities) — this entity requires no session at all,
+		// so unscopedFinding.Message()'s "a session is already required"
+		// claim would be false for it.
+		if decl.OwnerField != "" || decl.MultiTenant || hasAccessGate(decl.Access) || decl.Public {
 			continue
 		}
 		out = append(out, unscopedFinding{Entity: decl.Name})

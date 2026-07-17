@@ -205,23 +205,62 @@ func crudEnabled(ent *entity.Entity) bool {
 
 // ----- CrudHandler proxy ----------------------------------------------------
 
-// crudFor builds a CrudHandler for ent and the registry (for scope + relation
-// resolution). CaseSnake is the framework's *identity* casing — convertKey
-// returns the column verbatim and convertMapKeys is a no-op in both directions
-// — so JSON keys equal the entity's field/column names regardless of the host's
-// naming convention. That lets these screens index result rows and build write
-// bodies by f.Name with no casing translation.
+// crudFor builds the app's canonical CrudHandler for ent, preserving the
+// host's JSON casing so lifecycle hooks and audit redactors receive the same
+// payload shape for admin and public requests.
 func (b *Battery) crudFor(ent *entity.Entity) *crud.CrudHandler {
-	ch := crud.NewCrudHandler(ent, b.db)
-	ch.JSONCase = crud.CaseSnake
-	ch.Registry = b.registry
+	// Start from App's canonical handler so audit/lifecycle hooks, events,
+	// storage, outbox, and registry wiring match the public JSON routes. A
+	// fresh crud.NewCrudHandler has Hooks=nil and silently bypasses all of it.
+	ch := b.app.MustCrudHandler(ent.GetName())
+	// Preserve Config.DB's documented override for admin entity operations.
+	ch.DB = b.db
 	return ch
 }
 
+// adminResponseKeys maps the canonical handler's response keys back to entity
+// field names at the admin boundary. Admin screens index rows by schema field
+// name; hooks and redactors must still observe the host's configured JSONCase.
+func adminResponseKeys(ent *entity.Entity, ch *crud.CrudHandler) map[string]string {
+	if ch.JSONCase == crud.CaseSnake {
+		return nil
+	}
+	fields := ent.GetFields()
+	keys := make(map[string]string, len(fields))
+	for _, field := range fields {
+		keys[adminJSONKey(field.Name)] = field.Name
+	}
+	return keys
+}
+
+func adminJSONKey(field string) string {
+	parts := strings.Split(field, "_")
+	for i := 1; i < len(parts); i++ {
+		if parts[i] != "" {
+			parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+func adminResponseRow(row map[string]any, keys map[string]string) map[string]any {
+	if keys == nil {
+		return row
+	}
+	out := make(map[string]any, len(row))
+	for key, value := range row {
+		if field, ok := keys[key]; ok {
+			key = field
+		}
+		out[key] = value
+	}
+	return out
+}
+
 // callCrud invokes a CrudHandler http.HandlerFunc in-process, forwarding the
-// PARENT request's context so the user/tenant the framework auth chain put on
-// it flows into owner/tenant scoping — the admin sees exactly what the signed-in
-// user is allowed to, never more.
+// parent request's context, connection address, and headers. Context preserves
+// user/tenant scoping; request metadata keeps audit hooks equivalent to public
+// writes instead of recording httptest's synthetic defaults.
 func callCrud(parent *http.Request, h http.HandlerFunc, method, rawQuery, id, body string) (int, []byte) {
 	var rdr io.Reader
 	if body != "" {
@@ -232,6 +271,8 @@ func callCrud(parent *http.Request, h http.HandlerFunc, method, rawQuery, id, bo
 		target += "?" + rawQuery
 	}
 	req := httptest.NewRequest(method, target, rdr).WithContext(parent.Context())
+	req.Header = parent.Header.Clone()
+	req.RemoteAddr = parent.RemoteAddr
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -302,6 +343,10 @@ func (b *Battery) listRows(ctx context.Context, ent *entity.Entity, query string
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return nil, 0, err
 	}
+	keys := adminResponseKeys(ent, ch)
+	for i := range env.Data {
+		env.Data[i] = adminResponseRow(env.Data[i], keys)
+	}
 	return env.Data, env.Total, nil
 }
 
@@ -312,11 +357,13 @@ func (b *Battery) getRow(ctx context.Context, ent *entity.Entity, id string) (ma
 	if code != http.StatusOK {
 		return nil, fmt.Errorf("get returned %d", code)
 	}
-	var row map[string]any
-	if err := json.Unmarshal(raw, &row); err != nil {
+	var response struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
 		return nil, err
 	}
-	return row, nil
+	return adminResponseRow(response.Data, adminResponseKeys(ent, ch)), nil
 }
 
 // ----- write handlers (explicit routes) -------------------------------------

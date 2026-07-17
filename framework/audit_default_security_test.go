@@ -36,7 +36,7 @@ func TestAudit_DefaultUpdateRedactsSensitiveFields(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -111,7 +111,7 @@ func TestAudit_UpdateIncludesClientIPAddress(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -141,7 +141,7 @@ func TestAudit_UpdateIncludesUserAgent(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -170,7 +170,7 @@ func TestAudit_UpdateIncludesPreviousValues(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -191,7 +191,7 @@ func TestAudit_DeleteIncludesDeletedRecordSnapshot(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -214,7 +214,7 @@ func TestAudit_DeleteIncludesClientIPAddress(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -244,7 +244,7 @@ func TestAudit_DeleteIncludesUserAgent(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 

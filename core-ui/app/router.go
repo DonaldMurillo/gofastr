@@ -9,7 +9,11 @@ import (
 )
 
 // Router maps paths to screens and layouts.
-// Supports both exact paths ("/about") and dynamic patterns ("/products/:slug").
+// Supports both exact paths ("/about") and dynamic patterns
+// ("/products/:slug"). The "{slug}" brace syntax — used by the
+// blueprint, the REST/entity routers, and the entity docs — is also
+// accepted and normalized to ":slug" at registration (see
+// normalizeRoutePath). Both forms match identically.
 type Router struct {
 	screens       map[string]*Screen // path → screen (exact matches)
 	dynamic       []dynamicRoute     // pattern-based routes
@@ -32,11 +36,17 @@ func NewRouter() *Router {
 
 // Screen registers a screen with an optional layout.
 // If layout is nil, the screen will use the default layout (if set).
-// Paths with ":param" segments are registered as dynamic routes.
+//
+// Both ":param" (the core-ui historical form) and "{param}" (the
+// blueprint / REST / entity-doc form) are accepted; the path is
+// normalized to ":param" once here so Resolve, Paths, and llm.md
+// generation all see one shape (issue #71).
 func (r *Router) Screen(screen *Screen, layout *Layout) {
 	if layout != nil {
 		screen.Layout = layout
 	}
+
+	screen.Path = normalizeRoutePath(screen.Path)
 
 	if strings.Contains(screen.Path, ":") {
 		// Dynamic route — parse segments
@@ -55,6 +65,24 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 	} else {
 		r.screens[screen.Path] = screen
 	}
+}
+
+// normalizeRoutePath converts the "{param}" brace syntax into the
+// router's canonical ":param" form. Only a path segment that is a
+// complete "{...}" is rewritten, so paths that legitimately contain a
+// literal brace are left untouched. No-op when the path already uses
+// ":param" or has no params.
+func normalizeRoutePath(path string) string {
+	if !strings.Contains(path, "{") {
+		return path
+	}
+	parts := strings.Split(path, "/")
+	for i, p := range parts {
+		if len(p) >= 3 && p[0] == '{' && p[len(p)-1] == '}' {
+			parts[i] = ":" + p[1:len(p)-1]
+		}
+	}
+	return strings.Join(parts, "/")
 }
 
 // DefaultLayout sets the default layout for screens without one.

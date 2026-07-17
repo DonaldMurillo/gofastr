@@ -17,6 +17,10 @@ func auditAppWithRedact(t *testing.T, db *sql.DB, redact func(string, map[string
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
+		// Public: this audit suite posts anonymously throughout — the
+		// secure-by-default session gate (issue #65) would otherwise 401
+		// every request here.
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "secret", Type: schema.String},
@@ -153,7 +157,7 @@ func TestAudit_RedactFiresOnDelete(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "to delete"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 		id := created["id"].(string)
@@ -196,7 +200,7 @@ func TestAudit_RedactMutationDoesNotLeakIntoResponse(t *testing.T) {
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var body map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &body); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&body)); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
 		if body["title"] != "original-title" {

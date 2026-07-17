@@ -93,10 +93,10 @@ func TestAfterHooks_RunOnAllOps(t *testing.T) {
 	_, _ = ch.UpdateOne(ctx, id, map[string]any{"title": "y"})
 
 	// Get + List go through HTTP handlers (they run After hooks).
-	req := httptest.NewRequest("GET", "/notes/"+id, nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes/"+id, nil), "u1")
 	req.SetPathValue("id", id)
 	ch.Get()(httptest.NewRecorder(), req)
-	ch.List()(httptest.NewRecorder(), httptest.NewRequest("GET", "/notes", nil))
+	ch.List()(httptest.NewRecorder(), withTestUser(httptest.NewRequest("GET", "/notes", nil), "u1"))
 
 	_ = ch.DeleteOne(ctx, id)
 
@@ -161,7 +161,7 @@ func TestInclude_SoftDeleteAndHiddenScrub(t *testing.T) {
 	ch := NewCrudHandler(postsEnt, db).WithJSONCase(CaseSnake)
 	ch.Registry = reg
 
-	req := httptest.NewRequest("GET", "/sposts?include=comments", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/sposts?include=comments", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	resp := decodeListResponse(t, rec.Body.String())
@@ -184,7 +184,7 @@ func TestCursor_WithFiltersAndExtraWhere(t *testing.T) {
 		return nil
 	})
 	// filter on name + extraWhere from hook + cursor mode.
-	req := httptest.NewRequest("GET", "/items?cursor=&limit=2&name=n", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2&name=n", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -200,7 +200,7 @@ func TestStream_WithSortAndExtraWhere(t *testing.T) {
 		p.AddWhere("seq >= $1", 0)
 		return nil
 	})
-	req := httptest.NewRequest("GET", "/items?stream=true&sort=-seq", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true&sort=-seq", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -210,7 +210,7 @@ func TestStream_WithSortAndExtraWhere(t *testing.T) {
 
 func TestList_PaginatedTotalPages(t *testing.T) {
 	ch, _ := covItems(t, nil, 5)
-	req := httptest.NewRequest("GET", "/items?page=1&limit=2", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?page=1&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	resp := decodeListResponse(t, rec.Body.String())

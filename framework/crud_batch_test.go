@@ -49,7 +49,7 @@ func runBatchTest(t *testing.T, body func(t *testing.T, db *sql.DB, ta *TestApp)
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBatchDB(t, db)
 		app := batchApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		body(t, db, ta)
 	})
 }
@@ -66,7 +66,7 @@ func runBatchTestWithApp(t *testing.T, configure func(*App), body func(t *testin
 		if configure != nil {
 			configure(app)
 		}
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		body(t, db, ta)
 	})
 }

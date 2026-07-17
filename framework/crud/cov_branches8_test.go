@@ -40,7 +40,7 @@ func TestStream_WriteErrorAborts(t *testing.T) {
 	// failAfter=0 → the very first Write (the `{"data":[` prefix) fails,
 	// hitting the early-return branch.
 	w := &covFailWriter{failAfter: 0}
-	req := httptest.NewRequest("GET", "/items?stream=true", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true", nil), "u1")
 	ch.List()(w, req)
 	// No panic; handler returned after the failed prefix write.
 }
@@ -50,7 +50,7 @@ func TestStream_RowWriteErrorAborts(t *testing.T) {
 	// Allow the prefix + first row, then fail on a subsequent write so the
 	// row-encode / comma-write error branches fire.
 	w := &covFailWriter{failAfter: 2}
-	req := httptest.NewRequest("GET", "/items?stream=true", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true", nil), "u1")
 	ch.List()(w, req)
 }
 
@@ -101,7 +101,7 @@ func TestInclude_NotPresentRelations(t *testing.T) {
 	ch := NewCrudHandler(postsEnt, db).WithJSONCase(CaseSnake)
 	ch.Registry = reg
 
-	req := httptest.NewRequest("GET", "/npposts?include=author,comments,profile", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/npposts?include=author,comments,profile", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {

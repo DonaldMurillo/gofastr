@@ -798,6 +798,33 @@ func TestGenerateWarnsAuthDevMode(t *testing.T) {
 	}
 }
 
+// TestGenerateWarnsPublicEntities pins issue #65's item 2: `gofastr
+// generate` loudly lists every entity left publicly readable/writable
+// (public: true) so the open surface of a generated app is never silent.
+func TestGenerateWarnsPublicEntities(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, `
+app:
+  name: Demo
+  module: example.com/demo
+entities:
+  - name: announcements
+    public: true
+    fields:
+      - name: title
+        type: string
+        required: true
+`)
+	output := captureStdout(t, func() {
+		generateProject([]string{"--from=" + path, "--dry-run"})
+	})
+	if !strings.Contains(output, "announcements") || !strings.Contains(output, "public: true") {
+		t.Errorf("generate did not warn about the public entity; output:\n%s", output)
+	}
+}
+
 func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {
 	dir := t.TempDir()
 	// Run from the blueprint's own directory — generating from the repo cwd
@@ -1084,18 +1111,22 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 
 	// CRUD routes mount under the default api_prefix ("api") so root paths
 	// stay free for the generated HTML screens.
-	created := requestJSON(t, http.MethodPost, baseURL+"/api/posts", map[string]any{"title": "HTTP Post", "status": "draft"}, http.StatusCreated)
+	created := requestCRUDJSON(t, http.MethodPost, baseURL+"/api/posts", map[string]any{"title": "HTTP Post", "status": "draft"}, http.StatusCreated)
 	id, ok := created["id"].(string)
 	if !ok || id == "" {
 		t.Fatalf("created id = %#v", created["id"])
 	}
-	got := requestJSON(t, http.MethodGet, baseURL+"/api/posts/"+id, nil, http.StatusOK)
+	got := requestCRUDJSON(t, http.MethodGet, baseURL+"/api/posts/"+id, nil, http.StatusOK)
 	if got["title"] != "HTTP Post" {
 		t.Fatalf("get title = %#v", got["title"])
 	}
-	updated := requestJSON(t, http.MethodPut, baseURL+"/api/posts/"+id, map[string]any{"title": "HTTP Post Updated", "status": "published"}, http.StatusOK)
+	updated := requestCRUDJSON(t, http.MethodPut, baseURL+"/api/posts/"+id, map[string]any{"title": "HTTP Post Updated", "status": "published"}, http.StatusOK)
 	if updated["status"] != "published" {
 		t.Fatalf("updated status = %#v", updated["status"])
+	}
+	patched := requestCRUDJSON(t, http.MethodPatch, baseURL+"/api/posts/"+id, map[string]any{"title": "HTTP Post Updated"}, http.StatusOK)
+	if patched["status"] != "published" {
+		t.Fatalf("patch lost omitted status = %#v", patched["status"])
 	}
 	list := requestJSON(t, http.MethodGet, baseURL+"/api/posts?limit=10", nil, http.StatusOK)
 	data, ok := list["data"].([]any)
@@ -1325,6 +1356,16 @@ func requestJSON(t *testing.T, method, url string, body any, wantStatus int) map
 	return out
 }
 
+func requestCRUDJSON(t *testing.T, method, url string, body any, wantStatus int) map[string]any {
+	t.Helper()
+	response := requestJSON(t, method, url, body, wantStatus)
+	data, ok := response["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("CRUD response is not wrapped: %#v", response)
+	}
+	return data
+}
+
 func requestMCP(t *testing.T, url, method string, params map[string]any) map[string]any {
 	t.Helper()
 	body := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
@@ -1460,6 +1501,7 @@ entities:
   - name: posts
     crud: true
     mcp: true
+    public: true
     cursor_field: id
     cursor_fields: [created_at, id]
     indices:

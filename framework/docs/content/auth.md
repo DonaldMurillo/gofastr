@@ -481,6 +481,27 @@ mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 exported for hosts that want to assemble their own config — but the
 `*EntityConfig()` helpers are the safe default.
 
+## Durable store schema and PostgreSQL first boot
+
+`EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore` create
+their tables when `AuthManager.Init` runs. On PostgreSQL their boolean
+columns use the native `BOOLEAN` type, matching the Go `bool` values
+bound by the stores. This includes `auth_users.password_set`, the
+session 2FA flags, and the durable 2FA flags.
+
+Generated blueprint apps register a configured bootstrap admin through
+`App.WithSeed`. The hook runs after auto-migration and before the server
+accepts traffic. A missing `ADMIN_SEED_PASSWORD`, a lookup error other
+than `auth.ErrUserNotFound`, password hashing failure, or insert failure
+aborts startup instead of leaving a fresh app with an unusable admin
+login. The seed is idempotent: an existing account is left unchanged.
+
+The auth stores also convert legacy PostgreSQL `INTEGER` boolean columns
+(`0`/`1`) to `BOOLEAN` during `EnsureSchema`, preserving the value and
+setting a boolean `FALSE` default. This self-heals tables created by
+older GoFastr versions. Back up production data before the first boot
+after upgrading.
+
 ## Listing users
 
 Back-offices that need to enumerate accounts (an admin user list, a
@@ -613,6 +634,18 @@ Login (per-IP + per-account) **and** register (per-IP) carry defaults
 even when you set nothing — credential stuffing and account-table
 flooding are network attacks, not config-mode ones. Pass a config with a
 large `MaxAttempts` to loosen, not to leave them off.
+
+**DevMode relaxes the per-IP login limiter.** Local screenshot /
+verification tooling that hammers `/auth/login` from one IP (localhost)
+would otherwise trip the per-IP flood throttle and get locked out. When
+`DevMode: true`, the framework sets `RateLimiterConfig.DevMode` on the
+per-IP login limiter, which short-circuits it (every attempt admitted).
+This is a dev-only affordance — production (`DevMode: false`) is
+unchanged and fail-closed. The **per-account** login limiter is
+deliberately NOT relaxed in dev: it guards brute-force even there, so an
+attacker who pivots IPs is still throttled on the email key. Set
+`RateLimiterConfig.DevMode` explicitly on any other limiter you want
+relaxed in dev.
 
 **X-Forwarded-For is not trusted by default.** Set
 `RateLimiterConfig.TrustForwardedFor = true` only when your service

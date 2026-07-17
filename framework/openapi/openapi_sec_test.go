@@ -197,7 +197,8 @@ func TestMultiTenantOpsDeclare401(t *testing.T) {
 // spurious 401 — the fix must be scoped to gated entities only.
 func TestUnguardedOpsHaveNo401(t *testing.T) {
 	e := entity.Define("public_posts", entity.EntityConfig{
-		Table: "public_posts",
+		Table:  "public_posts",
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
 		},
@@ -326,7 +327,8 @@ func TestSSEOpDeclares401And403WhenGated(t *testing.T) {
 // An unguarded entity must NOT get 401/403 on its batch or SSE ops.
 func TestUnguardedBatchAndSSEHaveNo401(t *testing.T) {
 	e := entity.Define("pub_items", entity.EntityConfig{
-		Table: "pub_items",
+		Table:  "pub_items",
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "val", Type: schema.Int},
 		},

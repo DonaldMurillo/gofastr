@@ -49,7 +49,7 @@ func TestGap_CursorWithIntegerPK(t *testing.T) {
 				{Name: "label", Type: schema.String, Required: true},
 			},
 		}.WithTimestamps(false))
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		// First page
 		first := decodeCursorPage(t, ta.Get("/counters?cursor=&limit=10").Body())
@@ -99,7 +99,7 @@ func TestGap_MultipartLargeFile_RoundTripsExactly(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedUploadDB(t, db)
 		app, dir := uploadAppOnDB(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		// 64 KiB of distinct content so any truncation/corruption is observable.
 		content := make([]byte, 64*1024)
@@ -118,7 +118,7 @@ func TestGap_MultipartLargeFile_RoundTripsExactly(t *testing.T) {
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		avatarURL, _ := got["avatar"].(string)

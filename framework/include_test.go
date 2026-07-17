@@ -151,7 +151,7 @@ func runIncludeTest(t *testing.T, body func(t *testing.T, ta *TestApp)) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := blogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		body(t, ta)
 	})
 }
@@ -166,7 +166,7 @@ func TestInclude_HasMany(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		comments, ok := got["comments"].([]any)
@@ -191,7 +191,7 @@ func TestInclude_HasMany_EmptyDefault(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		comments, ok := got["comments"].([]any)
@@ -215,7 +215,7 @@ func TestInclude_BelongsTo(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		author, ok := got["author"].(map[string]any)
@@ -239,7 +239,7 @@ func TestInclude_HasOne(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		profile, ok := got["profile"].(map[string]any)
@@ -264,7 +264,7 @@ func TestInclude_HasOne_NilDefault(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		if v, present := got["profile"]; !present || v != nil {
@@ -284,7 +284,7 @@ func TestInclude_ManyToMany(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		tags, ok := got["tags"].([]any)
@@ -349,7 +349,7 @@ func TestInclude_AbsentLeavesResponseUnchanged(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		for _, key := range []string{"comments", "author", "tags"} {
@@ -368,13 +368,13 @@ func TestInclude_Nested_AuthorProfile(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts/p1?include=author.profile")
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		author, ok := got["author"].(map[string]any)
@@ -402,13 +402,13 @@ func TestInclude_Nested_Mixed(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts/p1?include=author.profile,comments")
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		author := got["author"].(map[string]any)
@@ -430,7 +430,7 @@ func TestInclude_Nested_UnknownSegment_400(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts/p1?include=author.bogus")
 		resp.AssertStatus(t, http.StatusBadRequest).
@@ -447,7 +447,7 @@ func TestInclude_Nested_OnList(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?include=author.profile")
 		resp.AssertStatus(t, http.StatusOK)
@@ -487,13 +487,13 @@ func TestInclude_Scoped_FilterChildren(t *testing.T) {
 			t.Fatalf("seed: %v", err)
 		}
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts/p1?include=comments(body_like=%25nice%25)")
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		comments, ok := got["comments"].([]any)
@@ -515,13 +515,13 @@ func TestInclude_Scoped_Mixed(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts/p1?include=author,comments(body=nice)")
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		if author, _ := got["author"].(map[string]any); author == nil || author["name"] != "Alice" {
@@ -546,7 +546,7 @@ func TestInclude_Scoped_UnknownField_400(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts/p1?include=comments(does_not_exist=x)")
 		resp.AssertStatus(t, http.StatusBadRequest).

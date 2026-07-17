@@ -778,7 +778,7 @@ app:
 ```
 
 With `enabled: true` the generated app registers the [admin battery](../../../battery/admin/),
-an auto-generated HTML back-office at `path`: an overview, queue/audit pages,
+an auto-generated HTML back-office at `path`: an overview and audit page,
 and an editable CRUD screen for every registered entity at `<path>/e/<table>`
 (View / Edit / Delete / Create), all proxying each entity's own CrudHandler so
 validation, owner/tenant scope, hooks, and events apply. Access is gated by
@@ -787,6 +787,9 @@ validation, owner/tenant scope, hooks, and events apply. Access is gated by
 role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
 that admin account on a fresh database (idempotent — created only when absent),
 so the back-office is reachable on first boot. Requires `app.auth.enabled`.
+The Queue navigation item appears only when the host explicitly supplies a
+`queue.Browsable` backend to the admin battery; generated apps do not imply a
+queue they have not configured.
 
 ### Installable PWA (`app.pwa`)
 
@@ -953,11 +956,14 @@ The generator rejects:
 `gofastr generate` warns on **every** auto-exposed entity (`crud`
 defaults on, or `mcp: true`) that sets none of `owner_field`, `access`
 (with at least one non-blank permission), or `multi_tenant` — regardless
-of what its fields are named. An unscoped entity is anonymous world
-read/create/update/delete on the generated API. Genuinely public
-read-only data is a legitimate shape, but anonymous *write* almost never
-is — gate at least the write operations with `access:`. The PII rule
-below is the stricter subset that also fails `gofastr validate`.
+of what its fields are named. CRUD is secure-by-default, so such an
+entity already requires an authenticated session (anonymous requests get
+`401`); the residual risk the warning names is **cross-user**: every
+*signed-in* caller can read, create, update, and delete every OTHER
+user's row. Genuinely public data is a legitimate shape — declare it
+with `public: true` to opt all the way out of the session gate — but for
+per-user rows set `owner_field`, and gate by role with `access:`. The PII
+rule below is the stricter subset that also fails `gofastr validate`.
 
 ### Unscoped PII (`gofastr validate` error, `gofastr generate` warning)
 
@@ -966,10 +972,12 @@ is auto-exposed (`crud` defaults on, or `mcp: true`), declares PII-shaped
 fields (names containing tokens like `email`, `phone`, `address`, `ssn`,
 `password`, `token`, `secret`, `card`, …), and sets none of `owner_field`,
 `access` (with at least one non-blank permission), or `multi_tenant`,
-every row would be world-readable and -writable on the generated API.
-Enabling `app.auth` alone does **not** suppress the rule — the session
-middleware is pass-through for anonymous requests; only per-entity scoping
-gates the auto-generated surfaces. `gofastr validate` reports this as an error (exit 1),
+every *authenticated* user could read and write every other user's row on
+the generated API (the secure-by-default gate already stops anonymous
+callers — the exposure here is cross-user). Enabling `app.auth` alone does
+**not** suppress the rule: a session is necessary to reach the surface but
+not sufficient to scope it — only per-entity scoping does that.
+`gofastr validate` reports this as an error (exit 1),
 naming the entity, the matched fields, and the remedies; `gofastr generate`
 prints the same finding as a warning and proceeds (suppressed under `--json`
 to keep stdout machine-parseable). `gofastr audit lint` also reports it
@@ -998,6 +1006,26 @@ static assets, and drive generated UI in a real browser so islands, widgets,
 runtime actions, and DOM updates are covered together. Do not satisfy this with
 a test-only hand-written app shell that imports generated packages; that misses
 the app-generator boundary.
+
+### Generated `e2e_test.go` is driver- and OS-portable
+
+Every generated app ships an `e2e_test.go` (gated by `-short`) that builds the
+binary, boots it as a child process, and drives the real HTTP surface. Two
+portability rules are baked into that template:
+
+- **Windows binary name.** The build target gets a `.exe` suffix when
+  `runtime.GOOS == "windows"` so `exec.Command(bin)` resolves on Windows —
+  the bare `"app"` the old template produced cannot be exec'd there.
+- **Database bootstrap follows `db.driver`.** A SQLite/empty-driver
+  blueprint boots against a throwaway `DATABASE_URL=file:<tmp>/e2e.db`. A
+  `postgres` blueprint links only `lib/pq`, which cannot open that file DSN —
+  so the test instead carves a disposable database from the env-provided
+  `TEST_POSTGRES_DSN` admin DSN and points the child at it
+  (`DATABASE_URL` + `DB_DRIVER=postgres`). When `TEST_POSTGRES_DSN` is unset or
+  Postgres is unreachable the test **skips** (`t.Skip`), keeping driverless CI
+  green-by-skip instead of timing out with a misleading "server did not become
+  ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
+  `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
 
 ## Common mistakes
 

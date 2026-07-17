@@ -18,7 +18,7 @@ func TestNestedFilter_BelongsTo(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?author.name=Alice")
 		resp.AssertStatus(t, http.StatusOK)
@@ -43,7 +43,7 @@ func TestNestedFilter_BelongsTo_Like(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?author.name_like=" + url.QueryEscape("A%"))
 		resp.AssertStatus(t, http.StatusOK)
@@ -71,7 +71,7 @@ func TestNestedFilter_HasMany_NoDuplication(t *testing.T) {
 			t.Fatalf("seed extra: %v", err)
 		}
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?comments.body_like=" + url.QueryEscape("%nice%"))
 		resp.AssertStatus(t, http.StatusOK)
@@ -91,7 +91,7 @@ func TestNestedFilter_ManyToMany(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?tags.name=go")
 		resp.AssertStatus(t, http.StatusOK)
@@ -114,7 +114,7 @@ func TestNestedFilter_UnknownRelation_400(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?bogus.name=alice")
 		resp.AssertStatus(t, http.StatusBadRequest).
@@ -130,7 +130,7 @@ func TestNestedFilter_UnknownField_400(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?author.does_not_exist=x")
 		resp.AssertStatus(t, http.StatusBadRequest).
@@ -146,7 +146,7 @@ func TestNestedFilter_MultiLevel_400(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		resp := ta.Get("/posts?author.team.name=x")
 		resp.AssertStatus(t, http.StatusBadRequest).
@@ -162,7 +162,7 @@ func TestNestedFilter_ComposesWithTopLevel(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		// _like is a literal "contains" (caller wildcards are escaped), so
 		// the substring "Fir" matches a title like "First …".

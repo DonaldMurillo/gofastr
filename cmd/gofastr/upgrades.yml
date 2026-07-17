@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.28.0
+through: v0.29.0
 
 releases:
   - version: v0.3.0
@@ -138,3 +138,13 @@ releases:
       - change: gofastr dev runs the server with --dir as its working directory
         breaking: false
         guidance: "Relative paths (sqlite db_url, static dirs) now resolve against the project directory instead of wherever gofastr dev was launched. If your sqlite file seems to have vanished after upgrading, it was being created at the launch cwd — point db_url at the old file or move it into the project."
+  - version: v0.29.0
+    title: Secure-by-default CRUD + unified response envelope
+    notes:
+      - change: Auto-CRUD and entity MCP tools require an authenticated session by default
+        breaking: true
+        guidance: "An entity declaring none of owner_field, access, or the new public: true now refuses anonymous requests with 401 across List/Get/Create/Update/Delete (and its MCP tools). Add public: true (EntityConfig.Public) for genuinely public entities, or owner_field/access for scoped ones. Existing apps relying on anonymous CRUD will start returning 401 until an entity opts out."
+        detect: "app\\.Entity\\(|EntityConfig\\{"
+      - change: Single-record CRUD responses use the {\"data\":{...}} envelope
+        breaking: true
+        guidance: "Create/Get/PUT/PATCH now wrap the record as {\"data\":{...}}, matching list's {\"data\":[...]}; errors and DELETE are unchanged. Update any hand-written client that decoded the bare object — the generated typed clients already unwrap it. New PATCH /<entity>/{id} verb added for sparse updates (generated clients gain a pointer-based <Entity>Patch)."

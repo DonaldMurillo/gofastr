@@ -64,17 +64,22 @@ tenant-scoped query pattern.
 
 ## Row shape
 
-For `create` / `update`, `diff` is the post-write record as JSON:
+For `create`, `diff` contains the post-write record:
 
 ```json
 {"new": {"id": "p1", "title": "First", "status": "published"}}
 ```
 
-For `delete`, `diff` is `NULL` and `record_id` holds the deleted ID.
+For `update`, CRUD snapshots the row before the write and records both images:
 
-There is no automatic old/new diff — `diff.new` is the full record
-after the write, not a delta. If you need the old value, query the
-audit log for the previous row.
+```json
+{"old": {"id": "p1", "status": "draft"}, "new": {"id": "p1", "status": "published"}}
+```
+
+For `delete`, `record_id` holds the deleted ID and `diff.old` contains the
+pre-delete row. These snapshots are captured by the CRUD handler inside the
+write transaction; callers that invoke hooks directly without CRUD may have a
+null old image.
 
 ## Transactional behaviour
 
@@ -92,8 +97,8 @@ transaction, so:
 ## What gets audited
 
 - `AfterCreate` → `op = 'create'`, `diff = {"new": <record>}`
-- `AfterUpdate` → `op = 'update'`, `diff = {"new": <record>}`
-- `AfterDelete` → `op = 'delete'`, `diff = NULL`
+- `AfterUpdate` → `op = 'update'`, `diff = {"old": <record>, "new": <record>}`
+- `AfterDelete` → `op = 'delete'`, `diff = {"old": <record>}`
 
 `Before*` hooks are not audited; the audit only records committed
 changes (modulo transactional behaviour above).

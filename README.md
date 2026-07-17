@@ -246,6 +246,8 @@ entities:
     crud: true
     mcp: true
     soft_delete: true
+    public: true      # blog posts are public content; anonymous read AND write.
+                       # Omit this and auto-CRUD requires a session by default.
     fields:
       - name: title
         type: string
@@ -313,7 +315,7 @@ add `framework.WithAPIPrefix`.
 
 | Surface          | Auto-generated                                                                  |
 |------------------|---------------------------------------------------------------------------------|
-| HTTP             | `GET / POST /posts`, `GET / PUT / DELETE /posts/{id}`                           |
+| HTTP             | `GET / POST /posts`, `GET / PUT / PATCH / DELETE /posts/{id}`                   |
 | Batch endpoints  | `POST / PATCH / DELETE /posts/_batch` — atomic; one tx for all items            |
 | SSE stream       | `GET /posts/_events` — entity.created/updated/deleted, scoped per tenant        |
 | Filtering        | `?status=published&views_gte=10&sort=-created_at&page=2`                        |
@@ -360,7 +362,17 @@ curl -N http://localhost:8080/posts/_events
 # Multipart upload to an Image field:
 curl -X POST http://localhost:8080/users \
   -F 'name=Carol' -F 'avatar=@/path/photo.png'
+
+# Sparse update — omitted fields are preserved:
+curl -X PATCH http://localhost:8080/posts/p1 \
+  -H 'Content-Type: application/json' -d '{"status":"published"}'
+# → {"data":{"id":"p1", …, "status":"published"}}
 ```
+
+Single-record create, get, PUT, and PATCH responses all use
+`{"data": {...}}`; list responses use `{"data": [...]}` plus pagination
+metadata. Errors retain their `{"error": ..., "success": false, "code": ...}`
+shape, and DELETE returns no body.
 
 Hooks now run inside the same transaction as the write:
 
@@ -429,6 +441,7 @@ gofastr migrate generate <name> --from=<bp.yml>   Diff blueprint entities vs the
 gofastr migrate force <version>     Reconcile the tracking table by hand (dirty-state recovery / baseline adoption)
 gofastr migrate force <version>     Reconcile a dirty/baselined migration
 gofastr test                        Run project tests
+gofastr audit a11y --url <base>     Axe audit with honest page coverage (--email/--password for login)
 gofastr embed index <path>          Index a project for semantic search
 gofastr embed watch <path>          Index + poll-watch for changes
 gofastr embed query "<text>"        Top-K semantic hits as JSON

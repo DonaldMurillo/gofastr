@@ -3,7 +3,6 @@ package crud
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -91,7 +90,7 @@ func covRelWorld(t *testing.T) (*CrudHandler, *sql.DB, stubRegistry) {
 
 func TestList_WithAllIncludes(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
-	req := httptest.NewRequest("GET", "/posts?include=author,comments,profile,tags", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?include=author,comments,profile,tags", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -133,17 +132,14 @@ func TestList_WithAllIncludes(t *testing.T) {
 
 func TestGet_WithIncludesAndProjection(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
-	req := httptest.NewRequest("GET", "/posts/p1?include=comments&fields=title", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts/p1?include=comments&fields=title", nil), "u1")
 	req.SetPathValue("id", "p1")
 	rec := httptest.NewRecorder()
 	ch.Get()(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
-	var got map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
+	got := decodeSingleResponse(t, rec.Body.Bytes())
 	if got["title"] != "first" {
 		t.Errorf("title = %v", got["title"])
 	}
@@ -155,7 +151,7 @@ func TestGet_WithIncludesAndProjection(t *testing.T) {
 
 func TestList_ScopedInclude(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
-	req := httptest.NewRequest("GET", "/posts?include=comments(body=nice)", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?include=comments(body=nice)", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -176,7 +172,7 @@ func TestList_NestedInclude(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	// posts → comments (HasMany), and comments has no further relations, so
 	// exercise author.<deeper> using a registered users entity with a relation.
-	req := httptest.NewRequest("GET", "/posts?include=author", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?include=author", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -186,7 +182,7 @@ func TestList_NestedInclude(t *testing.T) {
 
 func TestList_BadInclude(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
-	req := httptest.NewRequest("GET", "/posts?include=ghostrel", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?include=ghostrel", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -196,7 +192,7 @@ func TestList_BadInclude(t *testing.T) {
 
 func TestList_BadProjection(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
-	req := httptest.NewRequest("GET", "/posts?fields=nonexistent", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?fields=nonexistent", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -327,14 +323,14 @@ func TestSplitHelpers(t *testing.T) {
 func TestParseIncludesFlat_NoRegistry(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	ch.Registry = nil
-	req := httptest.NewRequest("GET", "/posts?include=comments", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?include=comments", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("flat include status = %d, body=%s", rec.Code, rec.Body.String())
 	}
 	// Dotted include without registry → 400.
-	req = httptest.NewRequest("GET", "/posts?include=author.profile", nil)
+	req = withTestUser(httptest.NewRequest("GET", "/posts?include=author.profile", nil), "u1")
 	rec = httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusBadRequest {

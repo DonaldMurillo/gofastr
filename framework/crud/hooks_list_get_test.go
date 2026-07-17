@@ -68,7 +68,7 @@ func TestBeforeListHookCanFilter(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/notes", nil)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/notes", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 
@@ -110,7 +110,7 @@ func TestBeforeGetHookCanFilter(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/notes/n1", nil)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/notes/n1", nil), "u1")
 	req.SetPathValue("id", "n1")
 	rec := httptest.NewRecorder()
 	ch.Get()(rec, req)
@@ -133,8 +133,8 @@ func TestUpdate_RejectsPresentEmptyRequired(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/notes/n1",
-		strings.NewReader(`{"owner":""}`))
+	req := withTestUser(httptest.NewRequest(http.MethodPut, "/notes/n1",
+		strings.NewReader(`{"owner":""}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "n1")
 	rec := httptest.NewRecorder()
@@ -166,8 +166,8 @@ func TestUpdate_AbsentFieldNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/notes/n1",
-		strings.NewReader(`{"body":"updated"}`))
+	req := withTestUser(httptest.NewRequest(http.MethodPut, "/notes/n1",
+		strings.NewReader(`{"body":"updated"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "n1")
 	rec := httptest.NewRecorder()
@@ -213,7 +213,7 @@ func TestAfterListHookCanMutateResults(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/notes", nil)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/notes", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 

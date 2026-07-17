@@ -3,7 +3,6 @@ package crud
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -279,7 +278,7 @@ func TestCrossOwnerReadWildcardOptInOnly(t *testing.T) {
 }
 
 // TestCrossOwnerReadWritesStayScoped: granted ctx can read across owners
-// but PUT/DELETE on another owner's row ⇒ 404; Create still stamps caller.
+// but PUT/PATCH/DELETE on another owner's row ⇒ 404; Create still stamps caller.
 func TestCrossOwnerReadWritesStayScoped(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupCrossOwnerReadHandler(t)
@@ -317,10 +316,7 @@ func TestCrossOwnerReadWritesStayScoped(t *testing.T) {
 	if recCreate.Code != http.StatusCreated && recCreate.Code != http.StatusOK {
 		t.Fatalf("Create status=%d body=%s", recCreate.Code, recCreate.Body.String())
 	}
-	var created map[string]any
-	if err := json.Unmarshal(recCreate.Body.Bytes(), &created); err != nil {
-		t.Fatalf("decode create: %v", err)
-	}
+	created := decodeSingleResponse(t, recCreate.Body.Bytes())
 	if created["user_id"] != "alice" {
 		t.Fatalf("Create stamped user_id=%v, want alice", created["user_id"])
 	}

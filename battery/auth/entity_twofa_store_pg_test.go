@@ -129,6 +129,34 @@ func TestEntityTwoFA_Postgres_SelfHealIgnoresOtherSchema(t *testing.T) {
 	}
 }
 
+func TestTwoFAPGLegacyBools(t *testing.T) {
+	db := openPGMultiConn(t)
+	ctx := context.Background()
+	if _, err := db.Exec(`CREATE TABLE auth_twofa (
+		user_id TEXT PRIMARY KEY,
+		enabled INTEGER NOT NULL DEFAULT 0,
+		secret TEXT NOT NULL DEFAULT '',
+		backup_codes TEXT NOT NULL DEFAULT '[]',
+		verified INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatalf("create legacy 2FA table: %v", err)
+	}
+	store := NewEntityTwoFAStore(db, "auth_twofa")
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema legacy: %v", err)
+	}
+	var typ string
+	if err := db.QueryRow(`SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'auth_twofa' AND column_name = 'enabled'`).Scan(&typ); err != nil {
+		t.Fatalf("enabled type: %v", err)
+	}
+	if typ != "boolean" {
+		t.Fatalf("legacy enabled type = %q, want boolean", typ)
+	}
+	if err := store.SetTwoFA(ctx, "u1", &TwoFAState{Enabled: true}); err != nil {
+		t.Fatalf("SetTwoFA after legacy conversion: %v", err)
+	}
+}
+
 // EnsureSchema must be idempotent / race-safe on Postgres: calling it twice
 // (as concurrent replica boots effectively do) must not error on a
 // duplicate ALTER.

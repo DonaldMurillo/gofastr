@@ -76,6 +76,8 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 
 	base := startShopfront(t)
 
+	client := authedClient(t, base, "flagship@shop.example", "str0ng-passphrase")
+
 	// 1) The OpenAPI surface is wired from the blueprint. The raw spec is
 	// auth-gated by secure-by-default (PublicOpenAPI is off), so an
 	// unauthenticated request gets 401; a 404 would mean it was never
@@ -88,12 +90,17 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 	// JSON APIs mount under /api (the blueprint default), leaving the bare
 	// /products path for the HTML screen. price is a decimal field, sent as
 	// a string per the framework contract.
-	created := httpPost(t, base+"/api/products",
+	code, created := request(t, client, http.MethodPost, base+"/api/products",
 		`{"name":"Test Widget","slug":"test-widget","price":"9.99","stock":5,"status":"active"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST /api/products = %d, want 201; body=%s", code, created)
+	}
 	if !strings.Contains(created, "test-widget") {
 		t.Fatalf("POST /api/products did not echo the created product; got:\n%s", created)
 	}
-	if list := httpGet(t, base+"/api/products?limit=50"); !strings.Contains(list, "test-widget") {
+	if code, list := request(t, client, http.MethodGet, base+"/api/products?limit=50", ""); code != http.StatusOK {
+		t.Errorf("GET /api/products = %d, want 200; body=%.400s", code, list)
+	} else if !strings.Contains(list, "test-widget") {
 		t.Errorf("GET /api/products missing the created product; got:\n%.400s", list)
 	}
 
@@ -212,7 +219,8 @@ func jsonField(t *testing.T, body, field string) string {
 	if err := json.Unmarshal([]byte(body), &obj); err != nil {
 		t.Fatalf("decode JSON body: %v\nbody=%.300s", err, body)
 	}
-	val, _ := obj[field].(string)
+	data, _ := obj["data"].(map[string]any)
+	val, _ := data[field].(string)
 	if val == "" {
 		t.Fatalf("JSON body has no string field %q; body=%.300s", field, body)
 	}

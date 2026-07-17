@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
@@ -198,17 +199,51 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 	return id, true
 }
 
+// requireAuthenticated is the secure-by-default gate that closes the
+// anonymous-CRUD hole tracked in issue #65: RequireOwner only fires for
+// OwnerField entities and requirePermission only fires when the entity
+// opts into an Access block — an entity declaring NEITHER got zero
+// enforcement, so a plain blueprint entity's List/Get/Create/Update/Delete
+// were all reachable by an anonymous caller (POST returning 201 and
+// persisting the row). Unless an explicit mechanism already governs the
+// entity (OwnerField or a declared Access block — either "takes over as
+// today") or the entity opts all the way out (Config.Public — a
+// deliberate "yes, this is a public form/feed" declaration, e.g. a public
+// contact form or a blog's comments), an authenticated session is
+// required for every operation.
+//
+// Mirrors the "baseline auth check" EventStream has carried since the SSE
+// fix (see EventStream in crud_events.go) — same core/handler.GetUser
+// signal, generalized to every CRUD entrypoint instead of just the SSE
+// feed.
+func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Request, op crudOp) bool {
+	cfg := ch.Entity.Config
+	if cfg.OwnerField != "" || cfg.Access.Declared() || cfg.Public {
+		return true // an explicit mechanism already governs this entity
+	}
+	if _, ok := handler.GetUser(r.Context()); !ok {
+		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		return false
+	}
+	return true
+}
+
 // requireScope runs every secure-by-default access gate for an HTTP request in
-// one place: owner (OwnerField entities) and tenant (MultiTenant entities). It
-// returns false after writing the appropriate 401 when any gate fails, so
-// handlers can guard with `if !ch.requireScope(w, r) { return }`. Keeping both
-// gates behind a single chokepoint guarantees a new handler can't accidentally
-// enforce one scope but forget the other.
+// one place: owner (OwnerField entities), tenant (MultiTenant entities), the
+// baseline session requirement (requireAuthenticated), and RBAC
+// (requirePermission). It returns false after writing the appropriate
+// 401/403 when any gate fails, so handlers can guard with
+// `if !ch.requireScope(w, r, op) { return }`. Keeping every gate behind a
+// single chokepoint guarantees a new handler can't accidentally enforce one
+// scope but forget another.
 func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op crudOp) bool {
 	if _, ok := ch.RequireOwner(w, r); !ok {
 		return false
 	}
 	if !ch.RequireTenant(w, r) {
+		return false
+	}
+	if !ch.requireAuthenticated(w, r, op) {
 		return false
 	}
 	return ch.requirePermission(w, r, op)

@@ -193,7 +193,7 @@ func TestView_ORMReadOnly(t *testing.T) {
 		}
 
 		// Read routes mounted, write routes NOT.
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 		ta.Get("/active_users").AssertStatus(t, http.StatusOK)
 		resp := ta.Post("/active_users", map[string]any{"name": "x"})

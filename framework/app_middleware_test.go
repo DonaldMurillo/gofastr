@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -212,5 +213,41 @@ func TestShutdownIsSafeBeforeStart(t *testing.T) {
 	app := NewApp()
 	if err := app.Shutdown(context.Background()); err != nil {
 		t.Errorf("Shutdown before Start should be a no-op, got %v", err)
+	}
+}
+
+// TestSecurityHeadersConfigHonored pins that an app can configure the
+// security-header set (e.g. a looser CSP for style-src 'unsafe-inline')
+// through the default middleware chain instead of shadowing it with a
+// hand-rolled middleware (issue #71). DefaultMiddleware hardcodes the
+// zero config today, so this is the reproduction.
+func TestSecurityHeadersConfigHonored(t *testing.T) {
+	app := NewApp(WithSecurityHeaders(middleware.SecurityHeadersConfig{
+		ContentSecurityPolicy: "default-src 'self'; style-src 'unsafe-inline'",
+		FrameOptions:          "SAMEORIGIN",
+	}))
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	srv := httptest.NewServer(app.Router())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got, want := resp.Header.Get("Content-Security-Policy"), "default-src 'self'; style-src 'unsafe-inline'"; got != want {
+		t.Errorf("Content-Security-Policy = %q, want %q (custom config ignored)", got, want)
+	}
+	if got, want := resp.Header.Get("X-Frame-Options"), "SAMEORIGIN"; got != want {
+		t.Errorf("X-Frame-Options = %q, want %q", got, want)
+	}
+	// An unset field must still fall back to its built-in default so a
+	// partial override doesn't silently drop the other defensive headers.
+	if got := resp.Header.Get("Referrer-Policy"); got == "" {
+		t.Error("Referrer-Policy missing — partial SecurityHeadersConfig override dropped an unset default header")
 	}
 }

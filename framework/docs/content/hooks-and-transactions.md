@@ -299,8 +299,69 @@ headers, cookies, or auth context.
 Each typed helper wraps the underlying `HookRegistry` — typed and
 untyped hooks can coexist on the same entity in any registration order.
 
+## Pre-image access (old row before update/delete)
+
+`AfterUpdate` and `AfterDelete` hooks only receive the **new** state (or,
+for delete, just the id). To see what the row looked like *before* the
+change — for diffing, audit logs, or conditional side effects — read the
+pre-image the framework snapshots into `ctx` before the mutating
+statement runs:
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/crud"
+
+app.HookRegistry("tickets").RegisterHook(framework.AfterUpdate,
+    func(ctx context.Context, data any) error {
+        pre := crud.AuditPreImageSnakeFromContext(ctx) // snake_case keys
+        if pre != nil && pre["status_id"] != data.(map[string]any)["statusId"] {
+            return notifyStatusChange(ctx, pre["status_id"])
+        }
+        return nil
+    })
+```
+
+`AuditPreImageFromContext`, `AuditPreImageAs[T]`, and
+`AuditPreImageSnakeFromContext` all return `nil` / zero-value / `false`
+when no pre-image was captured for the current context (e.g. the SELECT
+failed, or the hook fired outside `doUpdate`/`doDelete`) — always check
+before indexing.
+
+### Casing contract — read this before using the raw map
+
+`crud.AuditPreImageFromContext(ctx)` keys its `map[string]any` by the
+**handler's configured `JSONCase`** — camelCase by default (`"statusId"`)
+— because it's built from the same `scanRow`/`convertKey` pipeline as
+every CRUD response. This is **not** the same casing as the
+`BeforeCreate`/`BeforeUpdate` hook body, which the framework already
+converts back to snake_case (`"status_id"`) before hooks run.
+
+A hook that reads `pre["status_id"]` against a default (camelCase)
+handler gets `nil` back — no panic, no error, just a missing key.
+Casing-identical keys (`"version"`, `"key"`, …) happen to work under
+either casing, which is what makes the mismatch easy to miss in review
+and easy to reintroduce later. Two ways to avoid it entirely:
+
+- **`crud.AuditPreImageAs[T](ctx) (T, bool)`** — decodes the pre-image
+  into a struct with ordinary camelCase `json:"..."` tags, using the
+  same casing translation typed hooks (`framework.OnAfterUpdate[T]`
+  etc.) already use to decode their payload. Prefer this when a
+  generated entity struct is available.
+- **`crud.AuditPreImageSnakeFromContext(ctx) map[string]any`** — returns
+  the pre-image re-keyed to snake_case DB column names, for callers
+  that want plain map access without defining a struct.
+
+Only reach for the raw `crud.AuditPreImageFromContext` when you
+specifically need the handler's configured JSONCase (e.g. re-emitting
+the row shape a client would see, as the built-in audit-log battery
+does).
+
 ## Common mistakes
 
+- **Reading `crud.AuditPreImageFromContext(ctx)` with a snake_case key
+  (`pre["status_id"]`).** The raw map is keyed by the handler's
+  `JSONCase` (camelCase by default), not DB column names — see
+  "Casing contract" above. Use `AuditPreImageAs[T]` or
+  `AuditPreImageSnakeFromContext` instead.
 - **Calling `app.DB.ExecContext` from inside a hook.** That bypasses
   the transaction. Use `TxFromContext` to get the active tx.
 - **Returning an error from an `AfterDelete` hook expecting the

@@ -77,7 +77,7 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 	app.Router().Get("/openapi.json", openapi.PublicHandler(spec))
 
 	// Build spec doc via JSON round-trip for consistent types
-	ta := TestHarness(t, app)
+	ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 	resp := ta.Get("/openapi.json")
 	var specDoc map[string]any
@@ -148,7 +148,7 @@ func TestE2E_Conformance_ListPosts_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// 1. Hit the real API
@@ -267,17 +267,18 @@ func TestE2E_Conformance_GetPost_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Hit the real API for a seeded post
 		resp := ta.Get("/posts/p1")
 		resp.AssertStatus(t, http.StatusOK)
 
-		var post map[string]any
-		if err := resp.JSON(&post); err != nil {
+		var response map[string]any
+		if err := resp.JSON(&response); err != nil {
 			t.Fatalf("parse response: %v", err)
 		}
+		post := response["data"].(map[string]any)
 
 		// Spec says GET /posts/{id} returns 200 with entity schema
 		schema := getSpecResponseSchema(t, specDoc, "/posts/{id}", "get", "200")
@@ -289,7 +290,7 @@ func TestE2E_Conformance_GetPost_ResponseMatchesSpec(t *testing.T) {
 
 		// Every field in the spec should exist in the response
 		for fieldName := range specProps {
-			if _, ok := post[fieldName]; !ok {
+			if _, ok := response[fieldName]; !ok {
 				t.Errorf("response missing field %q from spec", fieldName)
 			}
 		}
@@ -308,7 +309,7 @@ func TestE2E_Conformance_GetPost_NotFound(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Hit the API for a non-existent post
@@ -328,7 +329,7 @@ func TestE2E_Conformance_CreatePost_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says POST /posts has 201 response
@@ -343,10 +344,11 @@ func TestE2E_Conformance_CreatePost_ResponseMatchesSpec(t *testing.T) {
 		})
 		resp.AssertStatus(t, http.StatusCreated)
 
-		var created map[string]any
-		if err := resp.JSON(&created); err != nil {
+		var response map[string]any
+		if err := resp.JSON(&response); err != nil {
 			t.Fatalf("parse created response: %v", err)
 		}
+		created := response["data"].(map[string]any)
 
 		// Verify response has all fields the spec defines for the entity
 		schema := getSpecResponseSchema(t, specDoc, "/posts", "post", "201")
@@ -356,7 +358,7 @@ func TestE2E_Conformance_CreatePost_ResponseMatchesSpec(t *testing.T) {
 		specProps := schema["properties"].(map[string]any)
 
 		for fieldName := range specProps {
-			if _, ok := created[fieldName]; !ok {
+			if _, ok := response[fieldName]; !ok {
 				t.Errorf("create response missing field %q from spec", fieldName)
 			}
 		}
@@ -381,7 +383,7 @@ func TestE2E_Conformance_CreatePost_Validation400(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says POST /posts has 400 response for validation errors
@@ -401,7 +403,7 @@ func TestE2E_Conformance_UpdatePost_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says PUT /posts/{id} has 200 response
@@ -415,10 +417,11 @@ func TestE2E_Conformance_UpdatePost_ResponseMatchesSpec(t *testing.T) {
 		})
 		resp.AssertStatus(t, http.StatusOK)
 
-		var updated map[string]any
-		if err := resp.JSON(&updated); err != nil {
+		var response map[string]any
+		if err := resp.JSON(&response); err != nil {
 			t.Fatalf("parse response: %v", err)
 		}
+		updated := response["data"].(map[string]any)
 
 		// Response should have entity fields per spec
 		schema := getSpecResponseSchema(t, specDoc, "/posts/{id}", "put", "200")
@@ -428,7 +431,7 @@ func TestE2E_Conformance_UpdatePost_ResponseMatchesSpec(t *testing.T) {
 		specProps := schema["properties"].(map[string]any)
 
 		for fieldName := range specProps {
-			if _, ok := updated[fieldName]; !ok {
+			if _, ok := response[fieldName]; !ok {
 				t.Errorf("update response missing field %q from spec", fieldName)
 			}
 		}
@@ -442,7 +445,7 @@ func TestE2E_Conformance_DeletePost_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says DELETE /posts/{id} has 204 response
@@ -464,7 +467,7 @@ func TestE2E_Conformance_DeletePost_NotFound404(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says DELETE has 404
@@ -482,7 +485,7 @@ func TestE2E_Conformance_ListUsers_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		resp := ta.Get("/users")
