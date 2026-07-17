@@ -176,6 +176,22 @@ Every mutation (grant, revoke, assign-roles) writes an **audit row** via
 `framework.AppendAuditEvent` with entity `"access"` and op in
 `{"grant","revoke","assign-roles"}`, so changes appear at `/admin/audit`.
 The actor ID is the authenticated admin's user ID.
+
+## Process-module lifecycle
+
+When `Config.ProcessModules` is wired to `app.ProcessModules()` (the
+process-isolated module supervisor — see
+[process-modules](process-modules.md)), the admin exposes an operator
+lifecycle screen at `<PathPrefix>/modules`, behind the same default-deny
+gate. It lists every registered module's live state — surfacing the
+disabled (404) vs crashed-but-enabled (503) distinction, the restart count,
+and the prominent circuit-open / lease-failing flags — and offers guarded
+actions: enable, disable, **bump generation** (the circuit-reset recovery
+lever), and revoke a granted capability. Each action writes an audit row
+(`module_enable` / `module_disable` / `module_bump` / `module_revoke`) and
+never leaks a raw error or JSON. When `Config.ProcessModules` is nil the
+screen is not mounted.
+
 ## Authorization
 
 Every admin surface is gated and **secure by default**: the battery
