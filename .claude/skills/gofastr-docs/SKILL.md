@@ -105,6 +105,15 @@ was needed.
   `.claude/skills/gofastr-host/SKILL.md` recipe table + trigger
   phrases, then copy to `cmd/gofastr/embedded/gofastr-host-skill.md`
   (`TestEmbeddedHostSkillMatchesRepo` pins the sync)
+- **Publish the GitHub Release — a pushed tag is NOT a release.** After
+  the PR merges, tag the merge commit AND run
+  `gh release create vX.Y.Z --title "…" --notes-file <the CHANGELOG
+  section>`. `git push origin vX.Y.Z` only creates a tag object; the
+  repo's Releases page (and anyone watching for releases) shows nothing
+  until the Release object exists. The release is not "done" at the tag
+  — it's done when `gh release view vX.Y.Z` succeeds and it reads
+  `Latest`. (v0.27.0 and v0.28.0 are tag-only for exactly this reason —
+  backfill them if the Releases page needs to be complete.)
 
 ## Hard rules
 
