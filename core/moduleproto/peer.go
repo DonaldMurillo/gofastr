@@ -440,12 +440,24 @@ func (p *Peer) dispatch(f *Frame) {
 		p.mu.Unlock()
 		f := f
 		go func() {
-			defer func() {
-				p.mu.Lock()
-				p.serveInflight--
-				p.mu.Unlock()
-			}()
-			p.serveRequest(f)
+			// The serve slot bounds concurrent HANDLER execution — the thing a
+			// flooder could use to spawn work. It is released the moment the
+			// handler finishes, BEFORE the response is written. This matters
+			// for correctness at the ceiling: the originating peer frees its
+			// own slot when it RECEIVES the response and may immediately send
+			// its next request; if the serve slot were held until this
+			// goroutine's deferred cleanup ran (after the write + a contended
+			// lock acquisition), that next request could be falsely rejected
+			// even though the counterparty stayed within the agreed
+			// concurrency. Freeing at handler completion makes exactly N
+			// concurrent callers succeed with no spurious CodeInflightCap.
+			resp := p.buildResponse(f)
+			p.mu.Lock()
+			p.serveInflight--
+			p.mu.Unlock()
+			if resp != nil {
+				_ = p.writeFrame(resp)
+			}
 		}()
 	case f.Method != "" && f.ID == nil:
 		// Inbound NOTIFICATION. Dispatch in its own goroutine too —
@@ -466,18 +478,20 @@ func (p *Peer) dispatch(f *Frame) {
 	}
 }
 
-func (p *Peer) serveRequest(f *Frame) {
+// buildResponse runs the handler for an inbound request and returns the Frame
+// the caller must write (never nil for a request — a request always gets a
+// paired response so the originating Call unblocks). It does NOT write the
+// frame itself: the caller writes it AFTER releasing the serve-inflight slot,
+// so the write is not counted against the concurrent-handler cap.
+func (p *Peer) buildResponse(f *Frame) *Frame {
 	id := *f.ID
 	p.mu.Lock()
 	h, ok := p.handlers[f.Method]
 	p.mu.Unlock()
 	if !ok {
-		// Method not found: write a paired error response so the caller's
-		// Call unblocks. This is required for correctness — a silent drop
-		// would hang the originating Call forever.
-		_ = p.writeFrame(NewErrorResponse(id, CodeMethodNotFound,
-			"method not found: "+f.Method, nil))
-		return
+		// Method not found: a paired error response so the caller's Call
+		// unblocks. A silent drop would hang the originating Call forever.
+		return NewErrorResponse(id, CodeMethodNotFound, "method not found: "+f.Method, nil)
 	}
 	// Derive a cancellable context for this inbound request so module.cancel
 	// can abort it and so Peer.Close cancels all in-flight handlers.
@@ -503,16 +517,13 @@ func (p *Peer) serveRequest(f *Frame) {
 				Message: err.Error(),
 			}
 		}
-		_ = p.writeFrame(NewErrorResponse(id, we.Code, we.Message, we.Data))
-		return
+		return NewErrorResponse(id, we.Code, we.Message, we.Data)
 	}
 	resultRaw, mErr := marshalParams(result)
 	if mErr != nil {
-		_ = p.writeFrame(NewErrorResponse(id, CodeInternalError,
-			"marshal result: "+mErr.Error(), nil))
-		return
+		return NewErrorResponse(id, CodeInternalError, "marshal result: "+mErr.Error(), nil)
 	}
-	_ = p.writeFrame(NewSuccessResponse(id, resultRaw))
+	return NewSuccessResponse(id, resultRaw)
 }
 
 func (p *Peer) serveNotification(f *Frame) {
