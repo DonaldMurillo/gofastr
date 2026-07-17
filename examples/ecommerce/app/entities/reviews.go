@@ -37,6 +37,7 @@ const (
 )
 
 // ReviewsRepo is the typed repository for reviews rows.
+// Event helpers: OnReviewsCreated/OnReviewsUpdated/OnReviewsDeleted in this package.
 type ReviewsRepo struct {
 	handler *framework.CrudHandler
 }

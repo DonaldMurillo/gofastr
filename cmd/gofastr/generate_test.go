@@ -104,6 +104,7 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 		`type Posts struct {`,
 		`PostsTitle = framework.NewStringColumn("title")`,
 		`PostsPublished = framework.NewBoolColumn("published")`,
+		`Event helpers: OnPostsCreated/OnPostsUpdated/OnPostsDeleted in this package.`,
 		`type PostsRepo struct {`,
 		`func NewPostsRepo(app *framework.App) *PostsRepo`,
 		`func (r *PostsRepo) Create(ctx context.Context, row *Posts) error`,

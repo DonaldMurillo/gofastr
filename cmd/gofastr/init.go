@@ -580,6 +580,20 @@ built in — no internet needed, always matches your installed version.
 
 ` + "`" + `gofastr agents sync` + "`" + ` — refreshes AGENTS.md and agents/ detail files.
 
+## Adding to this project
+
+- **Add an entity or screen**: write a partial ` + "`" + `gofastr.yml` + "`" + ` fragment
+  and run ` + "`" + `gofastr generate --add --from=<fragment.yml>` + "`" + `. Additive
+  generation never overwrites your owned files — it writes the new file(s)
+  and self-registers them via the existing seams. The quick-stub variants
+  ` + "`" + `gofastr generate entity <name>` + "`" + ` and ` + "`" + `gofastr generate screen <name>` + "`" + `
+  do the same with no yml.
+- **UI: prefer the typed ` + "`" + `core-ui/html` + "`" + ` config structs**
+  (` + "`" + `html.Div(html.DivConfig{...})` + "`" + `, ` + "`" + `html.Heading(...)` + "`" + `, …) over raw
+  ` + "`" + `render.Tag(...)` + "`" + ` calls. ` + "`" + `render.Tag` + "`" + ` is the escape hatch for
+  cases the typed vocab doesn't cover, not the default — see
+  ` + "`" + `gofastr docs ui-getting-started` + "`" + `.
+
 ## Quick reference
 
 - ` + "`" + `gofastr dev` + "`" + `          — dev server with hot-reload
@@ -587,6 +601,7 @@ built in — no internet needed, always matches your installed version.
 - ` + "`" + `gofastr docs` + "`" + `          — browse/search framework docs
 - ` + "`" + `gofastr agents sync` + "`" + `  — refresh AI-agent onboarding files
 - ` + "`" + `gofastr theme init` + "`" + `   — scaffold a typed theme.go
+- ` + "`" + `gofastr generate --add --from=<fragment.yml>` + "`" + ` — add entity/screen(s) to this project
 `
 	return []byte(content)
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // websitesBlueprint exercises the "usable website" generator features:
@@ -204,10 +205,14 @@ func TestBlueprint_LoginScreenAndAdminWiring(t *testing.T) {
 		t.Error("login form missing email/password inputs")
 	}
 
-	// main.go registers the admin battery + login redirect.
+	// main.go registers the admin battery + login redirect, routed through
+	// the adminBatteryConfigurators seam so RBAC can be wired additively.
 	main := renderBlueprintMain(bp)
-	if !strings.Contains(main, "battery/admin") || !strings.Contains(main, "admin.New(admin.Config{") {
+	if !strings.Contains(main, "battery/admin") || !strings.Contains(main, "admin.New(") || !strings.Contains(main, "admin.Config{") {
 		t.Error("main.go does not register the admin battery")
+	}
+	if !strings.Contains(main, "applyAdminBatteryConfigurators(&adminCfg)") {
+		t.Error("main.go does not route admin config through the additive seam")
 	}
 	if !strings.Contains(main, `LoginPath: "/login"`) || !strings.Contains(main, `AdminRole: "admin"`) {
 		t.Error("admin battery not configured with role + login redirect")
@@ -238,6 +243,70 @@ func TestBlueprint_AdminSeedAfterMigrate(t *testing.T) {
 	}
 	if strings.Contains(app, "FindByEmail(context.Background()") {
 		t.Fatalf("admin seed still runs during RegisterGenerated wiring:\n%s", app)
+	}
+}
+
+// TestBlueprint_AdminAndRBACAdditiveSeam pins the additive wiring contract:
+// authMgr + rolePolicy are package-level vars (so a new file can reference
+// them), and admin_register.go ships a adminBatteryConfigurators seam +
+// applyAdminBatteryConfigurators helper that main.go calls before admin.New.
+// Together these let a new admin_rbac.go wire admin.Config{Policy, Auth}
+// without editing any generated file — issue #77 item 2.
+func TestBlueprint_AdminAndRBACAdditiveSeam(t *testing.T) {
+	bp := websitesBlueprint()
+	bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}
+	bp.App.Admin = BlueprintAdmin{Enabled: true, Role: "admin", LoginPath: "/login"}
+	// Declare access on an entity so rolePolicy is emitted too.
+	if len(bp.Entities) > 0 {
+		bp.Entities[0].Access = &entity.AccessDeclaration{Read: "items:read"}
+	}
+
+	app := renderBlueprintApp(bp)
+	// Handles are package-level vars (not block-scoped), so a new file in
+	// package main can reference them. Block-scoped `authMgr :=` would not
+	// compile from a sibling file.
+	for _, want := range []string{
+		"var (",
+		"\tauthMgr *auth.AuthManager",
+		"\trolePolicy *access.RolePolicy",
+		"authMgr = auth.New(authCfg)",
+		"rolePolicy = access.NewRolePolicy()",
+		"access.Middleware(rolePolicy,",
+	} {
+		if !strings.Contains(app, want) {
+			t.Errorf("app.go missing %q (additive handle):\n%s", want, app)
+		}
+	}
+	// No block-scoped declarations of the handles — they must be assignments
+	// to the package-level vars.
+	for _, gone := range []string{"authMgr := auth.New", "rbac := access.NewRolePolicy"} {
+		if strings.Contains(app, gone) {
+			t.Errorf("app.go still emits block-scoped %q (must be package-level):%s", gone, app)
+		}
+	}
+
+	// admin_register.go seam file is emitted alongside.
+	files, err := renderBlueprintFiles(bp)
+	if err != nil {
+		t.Fatalf("renderBlueprintFiles: %v", err)
+	}
+	var seam string
+	for _, f := range files {
+		if f.name == "admin_register.go" {
+			seam = f.content
+		}
+	}
+	if seam == "" {
+		t.Fatal("admin_register.go not emitted when admin.Enabled")
+	}
+	for _, want := range []string{
+		"var adminBatteryConfigurators []func(*admin.Config)",
+		"func applyAdminBatteryConfigurators(cfg *admin.Config)",
+		"// admin_rbac.go (your file, additive)",
+	} {
+		if !strings.Contains(seam, want) {
+			t.Errorf("admin_register.go missing %q:\n%s", want, seam)
+		}
 	}
 }
 

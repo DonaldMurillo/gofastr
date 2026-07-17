@@ -146,6 +146,7 @@ func extract%sRecord(ev framework.Event, entityName string) (*%s, bool) {
 func renderEntityRepo(decl framework.EntityDeclaration) string {
 	struct_ := toCamelCase(decl.Name)
 	return fmt.Sprintf(`// %sRepo is the typed repository for %s rows.
+// Event helpers: On%sCreated/On%sUpdated/On%sDeleted in this package.
 type %sRepo struct {
 	handler *framework.CrudHandler
 }
@@ -314,8 +315,8 @@ func (r *%sRepo) BatchDelete(ctx context.Context, ids []string) error {
 }
 
 `,
-		// Repo struct doc + type
-		struct_, decl.Name,
+		// Repo struct doc + event-helpers line + type
+		struct_, decl.Name, struct_, struct_, struct_,
 		struct_,
 		// Constructor
 		struct_, decl.Name, struct_, struct_, decl.Name, decl.Name, decl.Name, struct_,

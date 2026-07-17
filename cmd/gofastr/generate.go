@@ -752,7 +752,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		}
 		if len(conflicts) > 0 {
 			sort.Strings(conflicts)
-			cerr := fmt.Errorf("generate is one-shot and would overwrite existing files: %s — the emitted code is yours to own; re-run with --force to overwrite", strings.Join(conflicts, ", "))
+			cerr := fmt.Errorf("generate is one-shot and would overwrite existing files: %s — the emitted code is yours to own. To ADD to an existing project (new entities/screens) use `gofastr generate --add --from=<blueprint>`; to overwrite everything, re-run with --force", strings.Join(conflicts, ", "))
 			if options.json {
 				printGeneratedErrorsJSON(cerr)
 				osExit(1)

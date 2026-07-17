@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -142,6 +143,43 @@ func TestAddRequiresFrom(t *testing.T) {
 	})
 	if code != 1 {
 		t.Fatalf("want exit 1 for --add without --from, got %d", code)
+	}
+}
+
+// TestOverwriteErrorNamesAddPath pins issue #77 item 5: the refuse-to-
+// overwrite conflict error must name `generate --add` so a user who hits
+// it at the moment of need discovers the additive path without reading docs.
+func TestOverwriteErrorNamesAddPath(t *testing.T) {
+	_, bp := addSetup(t, addTestBlueprint("example.com/addtest"))
+	// First generate succeeds (writes main.go, app.go, …).
+	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp}) })
+	// Second plain generate (no --add, no --force) must refuse and name --add.
+	// Capture stdout panic-safely: covT_capStdout's read-after-fn is skipped
+	// when fn panics via osExit, so redirect to a temp file ourselves and read
+	// it in a recover'd defer.
+	old := os.Stdout
+	f, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = f
+	var out string
+	code := covT_capExit(t, func() {
+		defer func() {
+			_, _ = f.Seek(0, io.SeekStart)
+			b, _ := io.ReadAll(f)
+			out = string(b)
+		}()
+		generateFromBlueprint(generateOptions{from: bp})
+	})
+	os.Stdout = old
+	if code != 1 {
+		t.Fatalf("want exit 1 on conflict, got %d", code)
+	}
+	for _, want := range []string{"one-shot", "generate --add", "--from=<blueprint>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("conflict error missing %q:\n%s", want, out)
+		}
 	}
 }
 

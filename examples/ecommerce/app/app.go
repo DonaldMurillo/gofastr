@@ -67,6 +67,12 @@ var (
 	appLayout *app.Layout
 )
 
+var (
+	// authMgr is the app's auth manager, set by RegisterGenerated when
+	// auth is enabled. Read it from a new file (e.g. to wire admin.Config.Auth).
+	authMgr *auth.AuthManager
+)
+
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
 func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
@@ -91,7 +97,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET")}
 		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
-		authMgr := auth.New(authCfg)
+		authMgr = auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
 		authMgr.Init(fwApp)
 		auth.SetDefaultLoginErrorPath("/login")

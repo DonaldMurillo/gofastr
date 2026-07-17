@@ -203,6 +203,31 @@ line in `RegisterGenerated`:
 		}))
 ```
 
+> **Additive path when the blueprint declares `access:` up front.** The
+> demo omitted `access` from the blueprint to show the hand-edit; if you
+> declare it from the start, the generator emits the `RolePolicy` block
+> for you in `app.go` as the **package-level** `rolePolicy` var (and
+> `authMgr` is package-level too). You can then wire RBAC admin from a
+> *new* file, never editing generated code:
+>
+> ```go
+> // admin_rbac.go (your file, additive)
+> package main
+>
+> import "github.com/DonaldMurillo/gofastr/battery/admin"
+>
+> func init() {
+> 	adminBatteryConfigurators = append(adminBatteryConfigurators, func(c *admin.Config) {
+> 		c.Policy = rolePolicy
+> 		c.Auth = authMgr
+> 	})
+> }
+> ```
+>
+> The seam (`adminBatteryConfigurators` + `applyAdminBatteryConfigurators`)
+> ships in the generated `admin_register.go`; main.go calls it before
+> `admin.New`. See [admin](admin.md) → "RBAC management".
+
 Save — `gofastr dev` rebuilds and restarts the server automatically.
 Auto-migrate converges the schema on the new boot: it adds the new
 `user_id` column to the existing `notes` table (additive only; it never

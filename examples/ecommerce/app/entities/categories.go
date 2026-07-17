@@ -37,6 +37,7 @@ const (
 )
 
 // CategoriesRepo is the typed repository for categories rows.
+// Event helpers: OnCategoriesCreated/OnCategoriesUpdated/OnCategoriesDeleted in this package.
 type CategoriesRepo struct {
 	handler *framework.CrudHandler
 }
