@@ -999,6 +999,26 @@ runtime actions, and DOM updates are covered together. Do not satisfy this with
 a test-only hand-written app shell that imports generated packages; that misses
 the app-generator boundary.
 
+### Generated `e2e_test.go` is driver- and OS-portable
+
+Every generated app ships an `e2e_test.go` (gated by `-short`) that builds the
+binary, boots it as a child process, and drives the real HTTP surface. Two
+portability rules are baked into that template:
+
+- **Windows binary name.** The build target gets a `.exe` suffix when
+  `runtime.GOOS == "windows"` so `exec.Command(bin)` resolves on Windows —
+  the bare `"app"` the old template produced cannot be exec'd there.
+- **Database bootstrap follows `db.driver`.** A SQLite/empty-driver
+  blueprint boots against a throwaway `DATABASE_URL=file:<tmp>/e2e.db`. A
+  `postgres` blueprint links only `lib/pq`, which cannot open that file DSN —
+  so the test instead carves a disposable database from the env-provided
+  `TEST_POSTGRES_DSN` admin DSN and points the child at it
+  (`DATABASE_URL` + `DB_DRIVER=postgres`). When `TEST_POSTGRES_DSN` is unset or
+  Postgres is unreachable the test **skips** (`t.Skip`), keeping driverless CI
+  green-by-skip instead of timing out with a misleading "server did not become
+  ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
+  `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
+
 ## Common mistakes
 
 - **Deploying with `dev_mode` left at its default.** Omitting

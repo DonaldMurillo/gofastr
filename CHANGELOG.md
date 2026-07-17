@@ -17,6 +17,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the `EagerLoad` helper and the live include path now scan the FK into
   `sql.NullString`, so a `NULL` FK yields the parent row with the relation
   absent/`null` instead of erroring.
+- **Generated `e2e_test.go` is Windows- and Postgres-portable** (issue #68).
+  The blueprint generator's end-to-end test template had two portability
+  defects. (1) It built the binary to a bare `app` and exec'd it — on Windows
+  that name has no `.exe` suffix, so the child can't start. The template now
+  appends `.exe` when `runtime.GOOS == "windows"`. (2) It always booted the
+  child with `DATABASE_URL=file:e2e.db` (a SQLite DSN), but a
+  `db.driver: postgres` blueprint links only `lib/pq`, which cannot open a
+  SQLite file — the server never became ready and the test timed out with a
+  misleading message. The template now bootstraps from the blueprint's
+  declared driver: SQLite/empty drivers still use a throwaway file DB; a
+  postgres blueprint carves a disposable database from the env-provided
+  `TEST_POSTGRES_DSN` admin DSN and `t.Skip`s when Postgres is unreachable, so
+  driverless CI stays green-by-skip.
 
 ## [0.28.0] - 2026-07-16
 
