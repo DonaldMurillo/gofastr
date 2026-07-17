@@ -52,6 +52,7 @@ func nullFKWorld(t *testing.T) (*sql.DB, *entity.Entity, *entity.Entity, *stubRe
 		Relations: []entity.Relation{
 			entity.BelongsTo("author", "authors", "author_id"),
 		},
+		Public: true, // fixture tests NULL-FK includes, not the session gate
 	}.WithTimestamps(false))
 	postsEnt.SetDB(db)
 	reg := stubRegistry{byName: map[string]*entity.Entity{"authors": authorsEnt, "posts": postsEnt}}

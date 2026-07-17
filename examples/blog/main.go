@@ -79,6 +79,8 @@ func registerEntities(app *framework.App) {
 		},
 	})
 	app.Entity("posts", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public:     true,
 		SoftDelete: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true, Max: ptr(300.0)},
@@ -93,6 +95,8 @@ func registerEntities(app *framework.App) {
 		},
 	})
 	app.Entity("comments", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.Text, Required: true},
 			{Name: "post_id", Type: schema.String, Required: true},

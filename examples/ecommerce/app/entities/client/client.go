@@ -76,14 +76,14 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// doSingleJSON decodes the {"data": {...}} envelope used by single-record
+// CRUD responses into out.
 func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, out any) error {
-	var envelope struct {
-		Data json.RawMessage `json:"data"`
-	}
+	var envelope map[string]json.RawMessage
 	if err := c.doJSON(ctx, method, path, body, &envelope); err != nil {
 		return err
 	}
-	return json.Unmarshal(envelope.Data, out)
+	return json.Unmarshal(envelope["data"], out)
 }
 
 type Categories struct {
@@ -153,10 +153,13 @@ func (c *Client) UpdateCategories(ctx context.Context, id string, body Categorie
 	return out, nil
 }
 
+// PatchCategories sparsely updates fields present in body.
 func (c *Client) PatchCategories(ctx context.Context, id string, body CategoriesInput) (Categories, error) {
 	var out Categories
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/categories/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/categories/"+url.PathEscape(id), body, &out); err != nil {
+		return Categories{}, err
+	}
+	return out, nil
 }
 
 // DeleteCategories removes the record at id.
@@ -247,10 +250,13 @@ func (c *Client) UpdateProducts(ctx context.Context, id string, body ProductsInp
 	return out, nil
 }
 
+// PatchProducts sparsely updates fields present in body.
 func (c *Client) PatchProducts(ctx context.Context, id string, body ProductsInput) (Products, error) {
 	var out Products
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/products/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/products/"+url.PathEscape(id), body, &out); err != nil {
+		return Products{}, err
+	}
+	return out, nil
 }
 
 // DeleteProducts removes the record at id.
@@ -343,10 +349,13 @@ func (c *Client) UpdateOrders(ctx context.Context, id string, body OrdersInput) 
 	return out, nil
 }
 
+// PatchOrders sparsely updates fields present in body.
 func (c *Client) PatchOrders(ctx context.Context, id string, body OrdersInput) (Orders, error) {
 	var out Orders
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/orders/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/orders/"+url.PathEscape(id), body, &out); err != nil {
+		return Orders{}, err
+	}
+	return out, nil
 }
 
 // DeleteOrders removes the record at id.
@@ -423,10 +432,13 @@ func (c *Client) UpdateOrderItems(ctx context.Context, id string, body OrderItem
 	return out, nil
 }
 
+// PatchOrderItems sparsely updates fields present in body.
 func (c *Client) PatchOrderItems(ctx context.Context, id string, body OrderItemsInput) (OrderItems, error) {
 	var out OrderItems
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/order_items/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/order_items/"+url.PathEscape(id), body, &out); err != nil {
+		return OrderItems{}, err
+	}
+	return out, nil
 }
 
 // DeleteOrderItems removes the record at id.
@@ -501,10 +513,13 @@ func (c *Client) UpdateReviews(ctx context.Context, id string, body ReviewsInput
 	return out, nil
 }
 
+// PatchReviews sparsely updates fields present in body.
 func (c *Client) PatchReviews(ctx context.Context, id string, body ReviewsInput) (Reviews, error) {
 	var out Reviews
-	err := c.doSingleJSON(ctx, http.MethodPatch, "/reviews/"+url.PathEscape(id), body, &out)
-	return out, err
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/reviews/"+url.PathEscape(id), body, &out); err != nil {
+		return Reviews{}, err
+	}
+	return out, nil
 }
 
 // DeleteReviews removes the record at id.

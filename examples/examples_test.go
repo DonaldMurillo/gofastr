@@ -178,6 +178,8 @@ func TestSPAEntityAPI(t *testing.T) {
 	)
 
 	app.Entity("articles", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "summary", Type: schema.Text},
@@ -187,6 +189,8 @@ func TestSPAEntityAPI(t *testing.T) {
 	})
 
 	app.Entity("projects", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "description", Type: schema.Text},
@@ -409,6 +413,8 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 	)
 
 	app.Entity("articles", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "summary", Type: schema.Text},
@@ -552,7 +558,9 @@ func TestSPARouteVsAPISplit(t *testing.T) {
 
 	crudFalse := false
 	app.Entity("articles", framework.EntityConfig{
-		CRUD: &crudFalse,
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
+		CRUD:   &crudFalse,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "summary", Type: schema.Text},
@@ -658,7 +666,9 @@ func TestApiTourSmoke(t *testing.T) {
 		framework.WithConfig(framework.AppConfig{Name: "api-tour-test"}),
 	)
 	app.Entity("users", framework.EntityConfig{
-		Table: "users",
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
+		Table:  "users",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "name", Type: schema.String, Required: true},
@@ -676,6 +686,8 @@ func TestApiTourSmoke(t *testing.T) {
 		},
 	})
 	app.Entity("posts", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public:      true,
 		Table:       "posts",
 		CursorField: "created_at",
 		Fields: []schema.Field{

@@ -60,6 +60,8 @@ entities:
         foreign_key: author_id
 
   - name: posts
+    # public demo content — see "Default CRUD authentication" in the security docs
+    public: true
     crud: true
     mcp: true
     soft_delete: true
@@ -98,6 +100,8 @@ entities:
         foreign_key: post_id
 
   - name: comments
+    # public demo content — see "Default CRUD authentication" in the security docs
+    public: true
     crud: true
     mcp: true
     indices:

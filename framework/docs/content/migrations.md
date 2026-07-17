@@ -20,7 +20,7 @@ no-transaction escape hatch. The two paths are kept coherent — the
 entity schema is the single source of DDL type mapping, so a table
 auto-migrate creates diffs clean against the same entity declaration.
 
-### PostgreSQL boolean columns
+## PostgreSQL boolean columns
 
 `schema.Bool` is emitted as `BOOLEAN` on PostgreSQL. The auth durable
 stores additionally upgrade their own legacy `INTEGER` (`0`/`1`) boolean

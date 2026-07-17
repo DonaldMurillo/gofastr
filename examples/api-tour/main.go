@@ -56,7 +56,9 @@ func main() {
 	)
 
 	app.Entity("users", framework.EntityConfig{
-		Table: "users",
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
+		Table:  "users",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "name", Type: schema.String, Required: true},
@@ -91,6 +93,8 @@ func main() {
 	})
 
 	app.Entity("posts", framework.EntityConfig{
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public:      true,
 		Table:       "posts",
 		CursorField: "created_at", // pagination by recency, not PK
 		Fields: []schema.Field{
@@ -106,7 +110,9 @@ func main() {
 	})
 
 	app.Entity("comments", framework.EntityConfig{
-		Table: "comments",
+		// public demo content — see "Default CRUD authentication" in the security docs
+		Public: true,
+		Table:  "comments",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "body", Type: schema.Text, Required: true},

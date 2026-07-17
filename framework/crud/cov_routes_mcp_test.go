@@ -68,6 +68,7 @@ func TestPatchSparseUpdate(t *testing.T) {
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "note", Type: schema.String},
 		},
+		Public: true, // fixture tests PATCH mechanics, not the session gate
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	r := router.New()
@@ -131,6 +132,9 @@ func TestSingleResponsesWrapped(t *testing.T) {
 			if tt.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
+			// Authenticated: the fixture entity declares no access
+			// mechanism, so the default session gate applies.
+			req = req.WithContext(handler.SetUser(req.Context(), &testUser{id: "u1"}))
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
 			if rec.Code != tt.status {
