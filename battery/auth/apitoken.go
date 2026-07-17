@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/access"
 )
 
 // TokenPrefix marks every plaintext API token. The "gfsk_" prefix makes
@@ -295,42 +297,26 @@ func HasScope(ctx context.Context, scope string) bool {
 	return scopeMatches(held, scope)
 }
 
-// ScopeMatch reports whether any scope in held grants want, using the same
-// resource:verb wildcard grammar as HasScope (exact match, or res/verb "*").
-// Exported so other capability gates (e.g. framework/pluginhost) check grant
-// sets against the SAME matcher rather than reimplementing a weaker one.
+// ScopeMatch reports whether any scope in held grants want, using the
+// resource:verb wildcard grammar owned by access.ScopeMatch (exact match,
+// or a "*" on either half). Exported so other capability gates (e.g.
+// framework/pluginhost) check grant sets against the SAME matcher rather
+// than reimplementing a weaker one. This thin adapter exists for the
+// []string-typed token-scope call site; new callers holding
+// []access.Permission should call access.ScopeMatch directly.
 func ScopeMatch(held []string, want string) bool {
 	return scopeMatches(held, want)
 }
 
-// scopeMatches is the pure wildcard matcher used by HasScope and tested in
-// isolation. It does not consult ctx.
+// scopeMatches delegates to access.ScopeMatch so the resource:verb wildcard
+// algebra has exactly one home in framework/access. It is kept as a private
+// []string-typed adapter so HasScope and the existing scope tests stay
+// unchanged; the conversion to []access.Permission is bounded by the
+// 32-scope token cap (maxTokenScopes).
 func scopeMatches(held []string, want string) bool {
-	wantRes, wantVerb, ok := splitScope(want)
-	if !ok {
-		return false
+	granted := make([]access.Permission, len(held))
+	for i, h := range held {
+		granted[i] = access.Permission(h)
 	}
-	for _, s := range held {
-		if s == want {
-			return true
-		}
-		res, verb, ok := splitScope(s)
-		if !ok {
-			continue
-		}
-		if (res == "*" || res == wantRes) && (verb == "*" || verb == wantVerb) {
-			return true
-		}
-	}
-	return false
-}
-
-// splitScope parses "resource:verb". ok is false when there is no colon or
-// either half is empty.
-func splitScope(s string) (resource, verb string, ok bool) {
-	idx := strings.IndexByte(s, ':')
-	if idx <= 0 || idx == len(s)-1 {
-		return "", "", false
-	}
-	return s[:idx], s[idx+1:], true
+	return access.ScopeMatch(granted, access.Permission(want))
 }
