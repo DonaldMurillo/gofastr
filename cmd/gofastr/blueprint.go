@@ -6429,7 +6429,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	}
 	sb.WriteString("\t\"database/sql\"\n")
 	if adminSeed {
-		sb.WriteString("\t\"log\"\n")
+		sb.WriteString("\t\"fmt\"\n")
 	}
 	if len(bp.Endpoints) > 0 {
 		sb.WriteString("\t\"net/http\"\n")
@@ -6719,25 +6719,28 @@ func renderBlueprintApp(bp Blueprint) string {
 		// form with ?error=… instead of rendering the raw JSON error body.
 		sb.WriteString(fmt.Sprintf("\t\tauth.SetDefaultLoginErrorPath(%q)\n", blueprintLoginRoute(bp)))
 		if bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != "" {
-			sb.WriteString("\t\t// Bootstrap admin account so the back-office is reachable on a\n")
-			sb.WriteString("\t\t// fresh database. Created only when absent (idempotent). The\n")
-			sb.WriteString("\t\t// password comes from ADMIN_SEED_PASSWORD (see the generated\n")
-			sb.WriteString("\t\t// .env — gitignored, so a deploy must export the variable\n")
-			sb.WriteString("\t\t// itself), never from committed source; without it no admin\n")
-			sb.WriteString("\t\t// is seeded and the skip is logged loudly.\n")
-			sb.WriteString("\t\tif seedPw := os.Getenv(\"ADMIN_SEED_PASSWORD\"); seedPw != \"\" {\n")
-			sb.WriteString(fmt.Sprintf("\t\t\tif _, _, err := authCfg.UserStore.FindByEmail(context.Background(), %q); err != nil {\n", bp.App.Admin.SeedEmail))
-			sb.WriteString("\t\t\t\tif h, herr := auth.HashPassword(seedPw); herr == nil {\n")
+			sb.WriteString("\t\t// Bootstrap the admin account after auto-migration. The hook runs\n")
+			sb.WriteString("\t\t// before the server accepts traffic and returns errors to Start,\n")
+			sb.WriteString("\t\t// so a fresh database can never fail silently.\n")
+			sb.WriteString("\t\tfwApp.WithSeed(func(ctx context.Context) error {\n")
+			sb.WriteString(fmt.Sprintf("\t\t\t_, _, err := authCfg.UserStore.FindByEmail(ctx, %q)\n", bp.App.Admin.SeedEmail))
+			sb.WriteString("\t\t\tif err == nil {\n\t\t\t\treturn nil\n\t\t\t}\n")
+			sb.WriteString("\t\t\tif err != auth.ErrUserNotFound {\n\t\t\t\treturn fmt.Errorf(\"find bootstrap admin: %w\", err)\n\t\t\t}\n")
+			sb.WriteString("\t\t\t// Only a genuinely fresh database (admin absent) needs the seed\n")
+			sb.WriteString("\t\t\t// password; an already-seeded deployment boots without it.\n")
+			sb.WriteString("\t\t\tseedPw := os.Getenv(\"ADMIN_SEED_PASSWORD\")\n")
+			sb.WriteString("\t\t\tif seedPw == \"\" {\n\t\t\t\treturn fmt.Errorf(\"ADMIN_SEED_PASSWORD is not set — admin %q cannot be seeded on a fresh database\", " + fmt.Sprintf("%q", bp.App.Admin.SeedEmail) + ")\n\t\t\t}\n")
+			sb.WriteString("\t\t\th, err := auth.HashPassword(seedPw)\n")
+			sb.WriteString("\t\t\tif err != nil {\n\t\t\t\treturn fmt.Errorf(\"hash bootstrap admin password: %w\", err)\n\t\t\t}\n")
 			adminRole := bp.App.Admin.Role
 			if adminRole == "" {
 				adminRole = "admin"
 			}
-			sb.WriteString(fmt.Sprintf("\t\t\t\t\tauthCfg.UserStore.CreateUser(context.Background(), %q, h, []string{%q, \"user\"})\n", bp.App.Admin.SeedEmail, adminRole))
-			sb.WriteString("\t\t\t\t}\n")
+			sb.WriteString(fmt.Sprintf("\t\t\tif _, err := authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, \"user\"}); err != nil && err != auth.ErrEmailTaken {\n", bp.App.Admin.SeedEmail, adminRole))
+			sb.WriteString("\t\t\t\treturn fmt.Errorf(\"create bootstrap admin: %w\", err)\n")
 			sb.WriteString("\t\t\t}\n")
-			sb.WriteString("\t\t} else {\n")
-			sb.WriteString(fmt.Sprintf("\t\t\tlog.Printf(\"WARN: ADMIN_SEED_PASSWORD is not set — admin %%q was NOT seeded; on a fresh database the back-office login will fail\", %q)\n", bp.App.Admin.SeedEmail))
-			sb.WriteString("\t\t}\n")
+			sb.WriteString("\t\t\treturn nil\n")
+			sb.WriteString("\t\t})\n")
 		}
 		sb.WriteString("\t\t// Resolve the session cookie to a user on every request so\n")
 		sb.WriteString("\t\t// owner/access-scoped CRUD sees the logged-in user. Without\n")

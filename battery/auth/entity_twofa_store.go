@@ -60,6 +60,9 @@ func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return err
 	}
+	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, "enabled", "verified"); err != nil {
+		return err
+	}
 	// Self-heal a table created before the version column existed (or by a
 	// host that auto-migrated an older field set): CREATE TABLE IF NOT
 	// EXISTS is a no-op on an existing table, so the column would be missing

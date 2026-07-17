@@ -88,20 +88,72 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 
 // EnsureSchema creates the user table if it does not already exist. The auth
 // battery owns its schema, so hosts never hand-roll the DDL — AuthManager.Init
-// calls this. Idempotent (CREATE TABLE IF NOT EXISTS). The column types here
-// (TEXT, INTEGER) are portable across SQLite and PostgreSQL.
+// calls this. Idempotent. Boolean columns use the native PostgreSQL BOOLEAN
+// type so CreateUser's Go bool bindings work on a fresh Postgres database.
 func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
+	boolType, boolFalse := "INTEGER", "0"
+	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+		boolType, boolFalse = "BOOLEAN", "FALSE"
+	}
 	stmt := fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s (%s TEXT PRIMARY KEY, %s TEXT UNIQUE NOT NULL, %s TEXT NOT NULL DEFAULT '', %s TEXT NOT NULL DEFAULT '[]', %s INTEGER NOT NULL DEFAULT 0)",
+		"CREATE TABLE IF NOT EXISTS %s (%s TEXT PRIMARY KEY, %s TEXT UNIQUE NOT NULL, %s TEXT NOT NULL DEFAULT '', %s TEXT NOT NULL DEFAULT '[]', %s %s NOT NULL DEFAULT %s)",
 		query.QuoteIdent(s.table),
 		query.QuoteIdent(s.fieldMap.ID),
 		query.QuoteIdent(s.fieldMap.Email),
 		query.QuoteIdent(s.fieldMap.PasswordHash),
 		query.QuoteIdent(s.fieldMap.Roles),
 		query.QuoteIdent(s.fieldMap.PasswordSet),
+		boolType,
+		boolFalse,
 	)
 	_, err := s.db.ExecContext(ctx, stmt)
-	return err
+	if err != nil {
+		return err
+	}
+	return ensurePostgresBoolColumns(ctx, s.db, s.table, s.fieldMap.PasswordSet)
+}
+
+// ensurePostgresBoolColumns upgrades legacy INTEGER boolean columns owned by
+// the auth battery. The conversion is lossless for the old 0/1 representation
+// and keeps existing deployments compatible with native Go bool bindings.
+func ensurePostgresBoolColumns(ctx context.Context, db *sql.DB, table string, columns ...string) error {
+	if migrate.DetectDialect(db) != migrate.DialectPostgres {
+		return nil
+	}
+	query.MustIdent(table)
+	for _, column := range columns {
+		query.MustIdent(column)
+		var dataType string
+		err := db.QueryRowContext(ctx, `
+			SELECT data_type
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND lower(table_name) = lower($1)
+			  AND lower(column_name) = lower($2)
+		`, table, column).Scan(&dataType)
+		if err == sql.ErrNoRows || dataType == "boolean" {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		switch dataType {
+		case "smallint", "integer", "bigint":
+		default:
+			continue
+		}
+		qt, qc := query.QuoteIdent(table), query.QuoteIdent(column)
+		for _, ddl := range []string{
+			fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT", qt, qc),
+			fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE BOOLEAN USING (%s <> 0)", qt, qc, qc),
+			fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT FALSE", qt, qc),
+		} {
+			if _, err := db.ExecContext(ctx, ddl); err != nil {
+				return fmt.Errorf("convert %s.%s to BOOLEAN: %w", table, column, err)
+			}
+		}
+	}
+	return nil
 }
 
 // q builds a query using validated identifiers. All table/field names were
@@ -432,7 +484,10 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 		query.QuoteIdent(s.table), tsType, tsType, boolType, boolFalse, boolType, boolFalse,
 	)
 	_, err := s.db.ExecContext(ctx, stmt)
-	return err
+	if err != nil {
+		return err
+	}
+	return ensurePostgresBoolColumns(ctx, s.db, s.table, "two_factor_verified", "pending_two_factor")
 }
 
 // qTable wraps a statement template with the validated table name.

@@ -66,6 +66,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   production is unchanged and fail-closed. The per-account brute-force
   limiter is deliberately NOT relaxed in dev.
 
+- PostgreSQL auth stores now create native `BOOLEAN` columns for password
+  and 2FA flags, convert legacy auth `INTEGER` booleans during schema
+  initialization, and accept native Go `bool` writes on a fresh database.
+- Generated bootstrap-admin accounts now seed through `App.WithSeed`
+  after auto-migration; missing-password, lookup, hash, and insert errors
+  fail startup instead of being swallowed.
+
 ## [0.28.0] - 2026-07-16
 
 ### Added

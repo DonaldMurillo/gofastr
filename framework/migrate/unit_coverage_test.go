@@ -94,6 +94,16 @@ func TestSQLType_RawTypeAndDefault(t *testing.T) {
 	}
 }
 
+func TestSQLType_BoolUsesNativePostgres(t *testing.T) {
+	field := schema.Field{Name: "enabled", Type: schema.Bool}
+	if got := SQLType(field, DialectPostgres); got != "BOOLEAN" {
+		t.Fatalf("Postgres bool type = %q, want BOOLEAN", got)
+	}
+	if got := SQLType(field, DialectSQLite); got != "BOOLEAN" {
+		t.Fatalf("SQLite bool type = %q, want BOOLEAN", got)
+	}
+}
+
 func TestSQLDefault_FloatAndFallback(t *testing.T) {
 	if got := SQLDefault(schema.Field{Default: 3.5}, DialectPostgres); !strings.HasPrefix(got, "3.5") {
 		t.Errorf("float default: %q", got)
