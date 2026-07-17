@@ -15,7 +15,7 @@ import (
 func TestScopedInclude_ManyToManyFilter(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	// Scoped filter on a ManyToMany include exercises filterClauseQualified.
-	req := httptest.NewRequest("GET", "/posts?include=tags(label=go)", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?include=tags(label=go)", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -66,7 +66,7 @@ func TestNestedInclude_HasOneUnderBelongsTo(t *testing.T) {
 	ch := NewCrudHandler(postsEnt, db).WithJSONCase(CaseSnake)
 	ch.Registry = reg
 
-	req := httptest.NewRequest("GET", "/o2posts?include=author.settings", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/o2posts?include=author.settings", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -91,7 +91,7 @@ func TestMultipart_PlainValuesAndStrayFilePart(t *testing.T) {
 	_, _ = fw.Write([]byte("ignored"))
 	mw.Close()
 
-	req := httptest.NewRequest("POST", "/media", &buf)
+	req := withTestUser(httptest.NewRequest("POST", "/media", &buf), "u1")
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)

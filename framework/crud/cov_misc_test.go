@@ -69,7 +69,7 @@ func covCamelHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 func TestCamelCase_CreateAndList(t *testing.T) {
 	ch, _ := covCamelHandler(t)
 	// Create with camelCase JSON key fullName → converted to full_name.
-	req := httptest.NewRequest("POST", "/people", strings.NewReader(`{"fullName":"Jane Doe","age":30}`))
+	req := withTestUser(httptest.NewRequest("POST", "/people", strings.NewReader(`{"fullName":"Jane Doe","age":30}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)
@@ -82,7 +82,7 @@ func TestCamelCase_CreateAndList(t *testing.T) {
 	}
 
 	// List returns camelCased keys + projection mismatch path (jsonKeysFor).
-	req = httptest.NewRequest("GET", "/people?fields=fullName", nil)
+	req = withTestUser(httptest.NewRequest("GET", "/people?fields=fullName", nil), "u1")
 	rec = httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -126,7 +126,7 @@ func TestUniqueViolation_Returns409(t *testing.T) {
 	ch := NewCrudHandler(ent, dbc).WithJSONCase(CaseSnake)
 
 	mk := func() *httptest.ResponseRecorder {
-		req := httptest.NewRequest("POST", "/uq", strings.NewReader(`{"email":"a@b.com"}`))
+		req := withTestUser(httptest.NewRequest("POST", "/uq", strings.NewReader(`{"email":"a@b.com"}`)), "u1")
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		ch.Create()(rec, req)
@@ -171,7 +171,7 @@ func TestUpdate_NoFieldsToUpdate(t *testing.T) {
 	created, _ := ch.CreateOne(context.Background(), map[string]any{"title": "x"})
 	id := created["id"].(string)
 	// Body has only the (skipped) id field → no settable fields → 400.
-	req := httptest.NewRequest("PUT", "/notes/"+id, strings.NewReader(`{"id":"`+id+`"}`))
+	req := withTestUser(httptest.NewRequest("PUT", "/notes/"+id, strings.NewReader(`{"id":"`+id+`"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", id)
 	rec := httptest.NewRecorder()
@@ -186,7 +186,7 @@ func TestUpdate_NoFieldsToUpdate(t *testing.T) {
 
 func TestCreate_ValidationError(t *testing.T) {
 	ch, _ := covNotesHandler(t) // title is Required
-	req := httptest.NewRequest("POST", "/notes", strings.NewReader(`{"body":"no title"}`))
+	req := withTestUser(httptest.NewRequest("POST", "/notes", strings.NewReader(`{"body":"no title"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)
@@ -211,7 +211,7 @@ func TestCreate_MissingContentType(t *testing.T) {
 
 func TestUpdate_MissingID(t *testing.T) {
 	ch, _ := covNotesHandler(t)
-	req := httptest.NewRequest("PUT", "/notes/", strings.NewReader(`{"title":"x"}`))
+	req := withTestUser(httptest.NewRequest("PUT", "/notes/", strings.NewReader(`{"title":"x"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ch.Update()(rec, req)
@@ -222,7 +222,7 @@ func TestUpdate_MissingID(t *testing.T) {
 
 func TestGet_MissingID(t *testing.T) {
 	ch, _ := covNotesHandler(t)
-	req := httptest.NewRequest("GET", "/notes/", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes/", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.Get()(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -232,7 +232,7 @@ func TestGet_MissingID(t *testing.T) {
 
 func TestDelete_MissingID(t *testing.T) {
 	ch, _ := covNotesHandler(t)
-	req := httptest.NewRequest("DELETE", "/notes/", nil)
+	req := withTestUser(httptest.NewRequest("DELETE", "/notes/", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.Delete()(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -242,7 +242,7 @@ func TestDelete_MissingID(t *testing.T) {
 
 func TestDelete_NotFound(t *testing.T) {
 	ch, _ := covNotesHandler(t)
-	req := httptest.NewRequest("DELETE", "/notes/nope", nil)
+	req := withTestUser(httptest.NewRequest("DELETE", "/notes/nope", nil), "u1")
 	req.SetPathValue("id", "nope")
 	rec := httptest.NewRecorder()
 	ch.Delete()(rec, req)
@@ -253,7 +253,7 @@ func TestDelete_NotFound(t *testing.T) {
 
 func TestUpdate_NotFound(t *testing.T) {
 	ch, _ := covNotesHandler(t)
-	req := httptest.NewRequest("PUT", "/notes/nope", strings.NewReader(`{"title":"x"}`))
+	req := withTestUser(httptest.NewRequest("PUT", "/notes/nope", strings.NewReader(`{"title":"x"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "nope")
 	rec := httptest.NewRecorder()

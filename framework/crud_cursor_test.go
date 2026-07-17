@@ -37,7 +37,7 @@ func runCursorTest(t *testing.T, n int, body func(t *testing.T, ta *TestApp)) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedCursorDB(t, db, n)
 		app := cursorApp(t, db)
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		body(t, ta)
 	})
 }
@@ -256,7 +256,7 @@ func TestCursor_PerEntityCursorField(t *testing.T) {
 				{Name: "label", Type: schema.String, Required: true},
 			},
 		}.WithTimestamps(false))
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		// First page — should be ordered by created_at ASC, not by id.
 		first := decodeCursorPage(t, ta.Get("/events?cursor=&limit=3").Body())
@@ -337,7 +337,7 @@ func TestCursor_Composite(t *testing.T) {
 				{Name: "label", Type: schema.String, Required: true},
 			},
 		}.WithTimestamps(false))
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		first := decodeCursorPage(t, ta.Get("/feed?cursor=&limit=2").Body())
 		if len(first.Data) != 2 {

@@ -49,7 +49,7 @@ func TestNestedInclude_HasManyUnderBelongsTo(t *testing.T) {
 	ch := NewCrudHandler(postsEnt, db).WithJSONCase(CaseCamel) // camel to exercise deep convert
 	ch.Registry = reg
 
-	req := httptest.NewRequest("GET", "/hposts?include=author.books", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/hposts?include=author.books", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {

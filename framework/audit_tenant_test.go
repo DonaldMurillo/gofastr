@@ -36,7 +36,7 @@ func TestAudit_StampsTenantID(t *testing.T) {
 			Actor: func(_ context.Context) string { return "alice" },
 		})
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		ta.Post("/posts", map[string]any{"title": "hello"}).AssertStatus(t, http.StatusCreated)
 
 		var tenantID sql.NullString

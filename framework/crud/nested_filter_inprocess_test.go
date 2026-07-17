@@ -16,7 +16,7 @@ func TestListAll_NestedFilterParity(t *testing.T) {
 	ctx := context.Background()
 
 	// HTTP path: ?author.name=alice → both posts (both authored by alice).
-	req := httptest.NewRequest(http.MethodGet, "/posts?author.name=alice", nil)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/posts?author.name=alice", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {

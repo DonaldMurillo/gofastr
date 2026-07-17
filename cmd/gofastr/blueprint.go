@@ -564,7 +564,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		if err != nil {
 			return nil, nil, err
 		}
-		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "cross_owner_read": true, "search_fields": true, "access": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
+		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "cross_owner_read": true, "search_fields": true, "access": true, "public": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("entities[%d]", i)); err != nil {
 			return nil, nil, err
 		}
@@ -576,6 +576,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			OwnerField:     stringValue(m["owner_field"]),
 			CrossOwnerRead: stringValue(m["cross_owner_read"]),
 			SearchFields:   stringListValue(m["search_fields"]),
+			Public:         boolValue(m["public"]),
 			MCP:            boolValue(m["mcp"]),
 			CursorField:    stringValue(m["cursor_field"]),
 			CursorFields:   stringListValue(m["cursor_fields"]),

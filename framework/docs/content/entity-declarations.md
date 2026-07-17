@@ -1,9 +1,13 @@
 # Entity Declarations
 
-> ⚠️ **Per-user data warning.** Auto-generated CRUD does **not** scope
-> rows by user unless you set `OwnerField`. An entity exposed via
-> `app.Entity(...)` (or `app.GroupEntity(...)`) with no `OwnerField`
-> lets every authenticated user read every row. For per-user data:
+> ⚠️ **Auto-CRUD is secure-by-default; per-user data still needs
+> `OwnerField`.** An entity exposed via `app.Entity(...)` (or
+> `app.GroupEntity(...)`) that declares none of `OwnerField`, `Access`,
+> or `Public` requires an authenticated session for **every** operation
+> — List/Get/Create/Update/Delete all 401 an anonymous caller. That
+> closes anonymous read/write, but it does **not** scope rows by user:
+> without `OwnerField`, every authenticated user still reads (and can
+> overwrite) every other user's rows. For per-user data:
 >
 > ```go
 > app.Entity("logs", entity.EntityConfig{
@@ -14,7 +18,10 @@
 >
 > When `battery/auth` is imported, the framework's owner extractor is
 > wired automatically — no extra setup needed. See the **Per-user
-> scoping (`OwnerField`)** section below for details.
+> scoping (`OwnerField`)** section below for details, and **Default CRUD
+> authentication** below for the session-requirement contract (including
+> the `Public` opt-out for genuinely public entities — a contact form, a
+> blog's comments).
 
 An entity is registered in Go with `app.Entity(name, framework.EntityConfig{…})`.
 This is the primary, fully-supported way to declare an entity:
@@ -163,6 +170,7 @@ entities:
       create: posts:write
       update: posts:write
       delete: posts:admin
+    public: false   # default; see "Default CRUD authentication" below
     crud: true
     mcp: true
     fields:
@@ -225,7 +233,60 @@ into it; it does not satisfy the gate by itself — see
 [access-control](access-control.md)). `gofastr generate
 --from=gofastr.yml` emits the map as `Access: framework.AccessControl{...}`
 in the generated `app.Entity(...)` registration, so blueprint-declared
-entities get the same fail-closed enforcement as Go-declared ones:
+entities get the same fail-closed enforcement as Go-declared ones.
+
+### Default CRUD authentication
+
+Auto-CRUD is secure-by-default. An entity that declares **none** of
+`owner_field`, `access`, or `public` requires an authenticated session for
+**every** operation — List/Get/Create/Update/Delete all refuse an
+anonymous caller with **401**. Before this, a plain entity with no
+`owner_field`/`access` had zero enforcement: an anonymous `POST
+/api/<entity>` returned 201 and persisted the row.
+
+`owner_field` and `access` already take over gating for an entity — set
+either one and this default session requirement no longer applies (their
+own contracts, described above and in **Per-user scoping**, govern the
+entity instead — including any operation an `access:` block leaves
+un-gated, "as today").
+
+For an entity that's genuinely meant to be open to anonymous callers — a
+public contact form, a blog's comments, a newsletter signup — declare
+`public: true`. This is a full, deliberate opt-out: every operation,
+reads AND writes, is reachable anonymously, matching the framework's
+pre-secure-by-default behaviour for that entity. It is **not** a partial
+"reads only" relaxation — an entity that wants public reads but gated
+writes uses `access:` instead (a blank `read:` + a real `create:`
+permission leaves List/Get open while Create still requires the
+permission):
+
+```yaml
+entities:
+  - name: announcements
+    public: true    # anonymous read AND write — a public entity
+    fields:
+      - name: title
+        type: string
+        required: true
+
+  - name: posts
+    access:
+      create: posts:write   # blank read: + a real create: → public reads, gated writes
+    fields:
+      - name: title
+        type: string
+        required: true
+```
+
+`gofastr generate` prints a warning at the end of every run listing every
+entity left publicly readable/writable (i.e. every `public: true`
+declaration), so the open surface of a generated app is never silent.
+
+`gofastr dev`'s auto-registered entity MCP tools (and any `mcp: true`
+entity in production) dispatch through the same router + middleware chain
+as REST, so they inherit this session requirement automatically — no
+separate MCP-level auth wiring is needed. An anonymous MCP `posts_create`
+call against a non-public entity is refused exactly like the REST route.
 
 ```yaml
 entities:
@@ -741,6 +802,14 @@ input schema. Both fields are optional: leave them `nil` to keep the historical
   lets every authenticated user read (and write) every row. Set it on
   any entity holding per-user data — List/Get/Update/Delete scope to
   the current user and Create stamps the column automatically.
+- **Reaching for `public: true` to fix a 401 in dev.** The 401 an
+  anonymous entity returns by default (see **Default CRUD
+  authentication** above) is the framework working as intended — the
+  fix is almost always to send a session, not to declare the entity
+  `public`. `public: true` opens BOTH reads and writes to anyone; use it
+  only for content that's genuinely meant to be public (a contact form,
+  a blog's comments), never as a quick way past a login wall during
+  development.
 - **Setting `OwnerField` in an app that never wires an owner
   extractor.** Without a registered extractor the field is inert — no
   scoping, no stamping, no error. Importing `battery/auth` registers

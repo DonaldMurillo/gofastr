@@ -798,6 +798,33 @@ func TestGenerateWarnsAuthDevMode(t *testing.T) {
 	}
 }
 
+// TestGenerateWarnsPublicEntities pins issue #65's item 2: `gofastr
+// generate` loudly lists every entity left publicly readable/writable
+// (public: true) so the open surface of a generated app is never silent.
+func TestGenerateWarnsPublicEntities(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, `
+app:
+  name: Demo
+  module: example.com/demo
+entities:
+  - name: announcements
+    public: true
+    fields:
+      - name: title
+        type: string
+        required: true
+`)
+	output := captureStdout(t, func() {
+		generateProject([]string{"--from=" + path, "--dry-run"})
+	})
+	if !strings.Contains(output, "announcements") || !strings.Contains(output, "public: true") {
+		t.Errorf("generate did not warn about the public entity; output:\n%s", output)
+	}
+}
+
 func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {
 	dir := t.TempDir()
 	// Run from the blueprint's own directory — generating from the repo cwd
@@ -1474,6 +1501,7 @@ entities:
   - name: posts
     crud: true
     mcp: true
+    public: true
     cursor_field: id
     cursor_fields: [created_at, id]
     indices:

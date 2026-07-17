@@ -10,10 +10,18 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
+
+// widgetTestUser stamps an authenticated caller into the request context —
+// widgets has no OwnerField/Access/Public, so the secure-by-default session
+// gate (issue #65) requires a session for every op.
+func widgetTestUser(req *http.Request) *http.Request {
+	return req.WithContext(handler.SetUser(req.Context(), struct{ ID string }{ID: "u1"}))
+}
 
 type widget struct {
 	ID    string `json:"id"`
@@ -67,7 +75,7 @@ func TestOnBeforeList_TypedReceivesPayload(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/widgets", nil)
+	req := widgetTestUser(httptest.NewRequest(http.MethodGet, "/widgets", nil))
 	rec := httptest.NewRecorder()
 	app.Router().ServeHTTP(rec, req)
 
@@ -101,7 +109,7 @@ func TestOnBeforeGet_TypedScopesLookup(t *testing.T) {
 	})
 
 	// w1 (published) → 200
-	pub := httptest.NewRequest(http.MethodGet, "/widgets/w1", nil)
+	pub := widgetTestUser(httptest.NewRequest(http.MethodGet, "/widgets/w1", nil))
 	pubRec := httptest.NewRecorder()
 	app.Router().ServeHTTP(pubRec, pub)
 	if pubRec.Code != http.StatusOK {
@@ -109,7 +117,7 @@ func TestOnBeforeGet_TypedScopesLookup(t *testing.T) {
 	}
 
 	// w2 (draft) → 404
-	draft := httptest.NewRequest(http.MethodGet, "/widgets/w2", nil)
+	draft := widgetTestUser(httptest.NewRequest(http.MethodGet, "/widgets/w2", nil))
 	draftRec := httptest.NewRecorder()
 	app.Router().ServeHTTP(draftRec, draft)
 	if draftRec.Code != http.StatusNotFound {
@@ -128,7 +136,7 @@ func TestOnAfterList_TypedCanMutateResults(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/widgets", nil)
+	req := widgetTestUser(httptest.NewRequest(http.MethodGet, "/widgets", nil))
 	rec := httptest.NewRecorder()
 	app.Router().ServeHTTP(rec, req)
 
@@ -154,7 +162,7 @@ func TestOnAfterGet_TypedCanMutateResult(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/widgets/w1", nil)
+	req := widgetTestUser(httptest.NewRequest(http.MethodGet, "/widgets/w1", nil))
 	rec := httptest.NewRecorder()
 	app.Router().ServeHTTP(rec, req)
 

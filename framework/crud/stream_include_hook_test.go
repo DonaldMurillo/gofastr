@@ -63,7 +63,7 @@ func (r *registryStub) Get(name string) (*entity.Entity, error) {
 // ?include= is refused with 400 rather than silently dropping the include.
 func TestStreamWithIncludeRejected(t *testing.T) {
 	ch, _ := streamPostsHandler(t)
-	req := httptest.NewRequest("GET", "/posts?stream=true&include=author", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?stream=true&include=author", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -84,7 +84,7 @@ func TestStreamWithAfterListRejected(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest("GET", "/posts?stream=true", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?stream=true", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusBadRequest {

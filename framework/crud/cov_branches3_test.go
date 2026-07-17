@@ -116,7 +116,7 @@ func TestScopedInclude_INFilter(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	// _in scoped filter on a HasMany include exercises the IN expansion +
 	// filterClause path.
-	req := httptest.NewRequest("GET", "/posts?include=comments(body_in=nice|ok)", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?include=comments(body_in=nice|ok)", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {

@@ -145,7 +145,7 @@ func TestAudit_ActorStripsNewlines(t *testing.T) {
 		app.WithAuditLog(AuditConfig{
 			Actor: func(_ context.Context) string { return "alice\nadmin" },
 		})
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		ta.Post("/posts", map[string]any{"title": "hello"}).AssertStatus(t, http.StatusCreated)
 
 		rows := readAuditRows(t, db)
@@ -197,7 +197,7 @@ func TestAudit_ActorStripsNUL(t *testing.T) {
 		app.WithAuditLog(AuditConfig{
 			Actor: func(_ context.Context) string { return "alice\x00admin" },
 		})
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		ta.Post("/posts", map[string]any{"title": "hello"}).AssertStatus(t, http.StatusCreated)
 
 		rows := readAuditRows(t, db)
@@ -268,7 +268,7 @@ func TestAudit_ActorPanicOnUpdateDoesNotAbortRequest(t *testing.T) {
 				return ""
 			},
 		})
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		create := ta.Post("/posts", map[string]any{"title": "before"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
@@ -306,7 +306,7 @@ func TestAudit_ActorPanicOnDeleteDoesNotAbortRequest(t *testing.T) {
 				return ""
 			},
 		})
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		create := ta.Post("/posts", map[string]any{"title": "to-delete"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any

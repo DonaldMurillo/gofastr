@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
@@ -67,6 +68,10 @@ func outboxTestApp(t *testing.T, db *sql.DB) (*App, chan event.Event, func(metho
 		} else {
 			r = httptest.NewRequest(method, path, nil)
 		}
+		// posts has no OwnerField/Access/Public — the secure-by-default
+		// session gate (issue #65) requires a session for every op; stamp
+		// one so these outbox-wiring tests exercise the relay, not auth.
+		r = r.WithContext(handler.SetUser(r.Context(), struct{ ID string }{ID: "u1"}))
 		app.Router().ServeHTTP(rec, r)
 		return rec
 	}

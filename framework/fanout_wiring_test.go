@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -47,6 +48,7 @@ func TestWithFanout_CrossAppDelivery(t *testing.T) {
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/posts", strings.NewReader(`{"title":"hello"}`))
 		r.Header.Set("Content-Type", "application/json")
+		r = r.WithContext(handler.SetUser(r.Context(), struct{ ID string }{ID: "u1"}))
 		appA.Router().ServeHTTP(rec, r)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("create = %d: %s", rec.Code, rec.Body)

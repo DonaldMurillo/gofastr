@@ -64,7 +64,7 @@ func TestCursorFields_SingleAndComposite(t *testing.T) {
 func TestCursorList_FirstPageAndNext(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 5)
 	// First page, limit 2.
-	req := httptest.NewRequest("GET", "/items?cursor=&limit=2", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -83,7 +83,7 @@ func TestCursorList_FirstPageAndNext(t *testing.T) {
 	}
 
 	// Next page using the returned cursor.
-	req = httptest.NewRequest("GET", "/items?cursor="+page.Cursor+"&limit=2", nil)
+	req = withTestUser(httptest.NewRequest("GET", "/items?cursor="+page.Cursor+"&limit=2", nil), "u1")
 	rec = httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -93,7 +93,7 @@ func TestCursorList_FirstPageAndNext(t *testing.T) {
 
 func TestCursorList_Composite(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq", "id"} }, 5)
-	req := httptest.NewRequest("GET", "/items?cursor=&limit=2", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -108,7 +108,7 @@ func TestCursorList_Composite(t *testing.T) {
 		t.Fatal("composite cursor empty")
 	}
 	// Walk to next page with the composite cursor.
-	req = httptest.NewRequest("GET", "/items?cursor="+page.Cursor+"&limit=2", nil)
+	req = withTestUser(httptest.NewRequest("GET", "/items?cursor="+page.Cursor+"&limit=2", nil), "u1")
 	rec = httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -118,7 +118,7 @@ func TestCursorList_Composite(t *testing.T) {
 
 func TestCursorList_InvalidCursor(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 3)
-	req := httptest.NewRequest("GET", "/items?cursor=not-a-valid-cursor", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=not-a-valid-cursor", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -129,14 +129,14 @@ func TestCursorList_InvalidCursor(t *testing.T) {
 func TestCursorList_BackwardDirection(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 5)
 	// Establish a forward cursor first, then walk backward.
-	req := httptest.NewRequest("GET", "/items?cursor=&limit=2", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	var page struct {
 		Cursor string `json:"cursor"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &page)
-	req = httptest.NewRequest("GET", "/items?cursor="+page.Cursor+"&direction=backward&limit=2", nil)
+	req = withTestUser(httptest.NewRequest("GET", "/items?cursor="+page.Cursor+"&direction=backward&limit=2", nil), "u1")
 	rec = httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -146,7 +146,7 @@ func TestCursorList_BackwardDirection(t *testing.T) {
 
 func TestStreamingList_Explicit(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.MaxListLimit = 500 }, 4)
-	req := httptest.NewRequest("GET", "/items?stream=true&limit=10", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true&limit=10", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -168,7 +168,7 @@ func TestStreamingList_Explicit(t *testing.T) {
 
 func TestStreamingList_Empty(t *testing.T) {
 	ch, _ := covItems(t, nil, 0)
-	req := httptest.NewRequest("GET", "/items?stream=true", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {

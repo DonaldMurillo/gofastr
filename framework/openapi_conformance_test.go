@@ -77,7 +77,7 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 	app.Router().Get("/openapi.json", openapi.PublicHandler(spec))
 
 	// Build spec doc via JSON round-trip for consistent types
-	ta := TestHarness(t, app)
+	ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 	resp := ta.Get("/openapi.json")
 	var specDoc map[string]any
@@ -148,7 +148,7 @@ func TestE2E_Conformance_ListPosts_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// 1. Hit the real API
@@ -267,7 +267,7 @@ func TestE2E_Conformance_GetPost_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Hit the real API for a seeded post
@@ -309,7 +309,7 @@ func TestE2E_Conformance_GetPost_NotFound(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Hit the API for a non-existent post
@@ -329,7 +329,7 @@ func TestE2E_Conformance_CreatePost_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says POST /posts has 201 response
@@ -383,7 +383,7 @@ func TestE2E_Conformance_CreatePost_Validation400(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says POST /posts has 400 response for validation errors
@@ -403,7 +403,7 @@ func TestE2E_Conformance_UpdatePost_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says PUT /posts/{id} has 200 response
@@ -445,7 +445,7 @@ func TestE2E_Conformance_DeletePost_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says DELETE /posts/{id} has 204 response
@@ -467,7 +467,7 @@ func TestE2E_Conformance_DeletePost_NotFound404(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		// Spec says DELETE has 404
@@ -485,7 +485,7 @@ func TestE2E_Conformance_ListUsers_ResponseMatchesSpec(t *testing.T) {
 		app, specDoc, cleanup := setupOpenAPIServer(t, dialect)
 		defer cleanup()
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
 		resp := ta.Get("/users")

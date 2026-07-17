@@ -77,7 +77,7 @@ func listIDs(t *testing.T, ch *CrudHandler, path string) []string {
 // any non-200.
 func listOK(t *testing.T, ch *CrudHandler, path string) ListResponse {
 	t.Helper()
-	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: path})
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: path, UserID: "u1"})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
 	if rr.Code != http.StatusOK {
@@ -182,7 +182,7 @@ func TestPG_CursorPaging(t *testing.T) {
 
 	fetch := func(path string) pagination.CursorPage {
 		t.Helper()
-		req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: path})
+		req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: path, UserID: "u1"})
 		rr := httptest.NewRecorder()
 		ch.List()(rr, req)
 		if rr.Code != http.StatusOK {
@@ -344,7 +344,7 @@ func TestPG_SoftDelete(t *testing.T) {
 		{"id": "d2", "title": "trash"},
 	})
 
-	req := makeRequest(t, RequestOpts{Method: http.MethodDelete, Path: "/pgd_docs/d2"})
+	req := makeRequest(t, RequestOpts{Method: http.MethodDelete, Path: "/pgd_docs/d2", UserID: "u1"})
 	req.SetPathValue("id", "d2")
 	rr := httptest.NewRecorder()
 	ch.Delete()(rr, req)

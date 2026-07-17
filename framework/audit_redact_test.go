@@ -17,6 +17,10 @@ func auditAppWithRedact(t *testing.T, db *sql.DB, redact func(string, map[string
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
+		// Public: this audit suite posts anonymously throughout — the
+		// secure-by-default session gate (issue #65) would otherwise 401
+		// every request here.
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "secret", Type: schema.String},

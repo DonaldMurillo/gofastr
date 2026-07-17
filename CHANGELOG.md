@@ -29,6 +29,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   PATCH) now consistently use `{"data": {...}}`, matching list's
   `{"data": [...]}` envelope. Errors and DELETE responses are unchanged.
 
+- **BREAKING: auto-CRUD requires an authenticated session by default.**
+  An entity declaring none of `OwnerField`, `Access`, or the new
+  `Public` had ZERO enforcement — every operation (List/Get/Create/
+  Update/Delete) was reachable by an anonymous caller; an unauthenticated
+  `POST /api/<entity>` returned 201 and persisted the row (#65). Entity
+  MCP tools inherited the same gap since they dispatch through the same
+  router. `framework/crud`'s `requireScope` chokepoint now requires an
+  authenticated session (`core/handler.GetUser`) for every operation
+  unless an explicit mechanism already governs the entity: `OwnerField`
+  or a declared `Access` block (unchanged, "as today"), or the new
+  `EntityConfig.Public` / blueprint `public: true` — a deliberate, full
+  opt-out for genuinely public entities (a contact form, a blog's
+  comments). No `mcp.Gated` wiring was needed for entity MCP tools: they
+  re-dispatch through the router and inherit the REST fix for free.
+  `gofastr generate` now prints a warning listing every entity left
+  publicly readable/writable (`public: true`), and the existing unscoped-
+  entity lint's message was corrected — it no longer claims anonymous
+  exposure (that gap is now closed); it flags the narrower cross-user
+  ("every authenticated user can read every row") exposure instead.
+  Existing apps with entities that declare neither `OwnerField` nor
+  `Access` will see those entities start 401ing anonymous requests;
+  add `public: true` for entities that are genuinely meant to be open,
+  or a real `access:`/`OwnerField` for the ones that aren't.
+  `framework.TestApp` (the in-memory test harness) gained
+  `AsUser(user any)` to authenticate test requests under the new
+  default. See [entity-declarations](framework/docs/content/entity-declarations.md)
+  → "Default CRUD authentication" and
+  [security](framework/docs/content/security.md) → "Default CRUD
+  authentication".
+
 ### Fixed
 
 - **Eager loading / `?include=` no longer fails on nullable foreign keys.**

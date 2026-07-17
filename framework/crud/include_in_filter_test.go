@@ -67,6 +67,7 @@ CREATE TABLE comments (
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
 		Path:   "/posts?include=comments(status_in=published|draft)",
+		UserID: "u1",
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)

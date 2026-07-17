@@ -150,7 +150,7 @@ func TestCursor_WithNestedFilter(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	// Set a cursor field so cursor mode kicks in alongside a nested filter.
 	ch.Entity.Config.CursorField = "id"
-	req := httptest.NewRequest("GET", "/posts?cursor=&author.name=alice", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?cursor=&author.name=alice", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -160,7 +160,7 @@ func TestCursor_WithNestedFilter(t *testing.T) {
 
 func TestStream_WithNestedFilter(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
-	req := httptest.NewRequest("GET", "/posts?stream=true&author.name=alice", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?stream=true&author.name=alice", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -171,7 +171,7 @@ func TestStream_WithNestedFilter(t *testing.T) {
 func TestCursor_IncludeDBError(t *testing.T) {
 	ch, _ := covMissingTargetWorld(t)
 	ch.Entity.Config.CursorField = "id"
-	req := httptest.NewRequest("GET", "/eposts?cursor=&include=comments", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/eposts?cursor=&include=comments", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusInternalServerError {

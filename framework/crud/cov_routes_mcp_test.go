@@ -240,7 +240,11 @@ func TestMCPTools_DispatchThroughRouter(t *testing.T) {
 	if err := RegisterEntityMCPTools(srv, ch, r); err != nil {
 		t.Fatalf("register mcp: %v", err)
 	}
-	ctx := context.Background()
+	// widgets has no OwnerField/Access/Public — MCP tools inherit the same
+	// secure-by-default session gate as REST (issue #65), so this dispatch
+	// test needs an authenticated caller. See
+	// TestMCPTools_AnonymousCallsRejected for the negative case.
+	ctx := handler.SetUser(context.Background(), &testUser{id: "u1"})
 
 	// Create
 	created, err := srv.CallTool(ctx, "widgets_create", map[string]any{"name": "gizmo"})
@@ -284,6 +288,48 @@ func TestMCPTools_DispatchThroughRouter(t *testing.T) {
 	}
 	if del.(map[string]any)["deleted"] != true {
 		t.Errorf("delete result: %v", del)
+	}
+}
+
+// TestMCPTools_AnonymousCallsRejected pins issue #65's MCP half: entity MCP
+// tools dispatch through the same router + requireScope chain as REST, so an
+// anonymous caller (no Cookie/Authorization on the inbound MCP request, no
+// user in ctx) must be refused on every generated tool exactly like the
+// REST routes are. No per-tool mcp.Gated wrapping is needed — the shared
+// dispatch path (RegisterEntityMCPTools → runToolRequest → router.ServeHTTP)
+// is the enforcement point, see mcp.Gated's doc comment.
+func TestMCPTools_AnonymousCallsRejected(t *testing.T) {
+	ent, db, r := covSimpleEntity(t)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	RegisterCrudRoutes(r, ch, "/widgets")
+	srv := mcp.NewServer()
+	if err := RegisterEntityMCPTools(srv, ch, r); err != nil {
+		t.Fatalf("register mcp: %v", err)
+	}
+	ctx := context.Background() // no user, no inbound request — anonymous
+
+	for _, call := range []struct {
+		tool   string
+		params map[string]any
+	}{
+		{"widgets_list", map[string]any{}},
+		{"widgets_get", map[string]any{"id": "ghost"}},
+		{"widgets_create", map[string]any{"name": "gizmo"}},
+		{"widgets_update", map[string]any{"id": "ghost", "name": "gizmo2"}},
+		{"widgets_delete", map[string]any{"id": "ghost"}},
+	} {
+		if _, err := srv.CallTool(ctx, call.tool, call.params); err == nil {
+			t.Errorf("anonymous %s should be rejected, got no error", call.tool)
+		} else if !strings.Contains(err.Error(), "401") && !strings.Contains(err.Error(), "authentication required") {
+			t.Errorf("anonymous %s error = %v, want a 401/authentication-required refusal", call.tool, err)
+		}
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM widgets`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("anonymous widgets_create persisted a row: count=%d", n)
 	}
 }
 

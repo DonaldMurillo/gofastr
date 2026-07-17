@@ -297,7 +297,7 @@ func TestTenant_CrossTenantOptInAllowsAccess(t *testing.T) {
 		{"id": "item-b", "tenant_id": "tenant-B", "name": "B data"},
 	})
 
-	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/items"})
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/items", UserID: "u1"})
 	req = req.WithContext(tenant.AllowCrossTenant(req.Context()))
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)

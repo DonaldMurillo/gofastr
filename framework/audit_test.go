@@ -18,6 +18,11 @@ func auditApp(t *testing.T, db *sql.DB, actor string) *App {
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
+		// Public: these tests exercise the audit trail's anonymous-actor
+		// path (TestAudit_AnonymousActor posts with no session and
+		// expects a NULL actor_id) — the secure-by-default session gate
+		// (issue #65) would otherwise 401 every request in this suite.
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 		},
@@ -234,7 +239,7 @@ func TestAudit_EntityFilter(t *testing.T) {
 		}
 		app.WithAuditLog(AuditConfig{Entities: []string{"posts"}})
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		ta.Post("/posts", map[string]any{"title": "tracked"}).AssertStatus(t, http.StatusCreated)
 		ta.Post("/notes", map[string]any{"body": "untracked"}).AssertStatus(t, http.StatusCreated)

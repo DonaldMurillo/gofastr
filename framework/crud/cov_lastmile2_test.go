@@ -40,7 +40,7 @@ func TestEagerBelongsTo_SrcQueryErr(t *testing.T) {
 
 func TestList_NestedFilterClosureRuns(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
-	req := httptest.NewRequest("GET", "/posts?author.name=alice", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?author.name=alice", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -435,7 +435,7 @@ func TestJSONKeysFor_SignatureChangeRefreshes(t *testing.T) {
 func TestUpdate_BodyTooLarge(t *testing.T) {
 	ch, _ := covNotesHandler(t)
 	big := `{"title":"` + strings.Repeat("x", int(MaxJSONBodyBytes)+100) + `"}`
-	req := httptest.NewRequest("PATCH", "/notes/n1", strings.NewReader(big))
+	req := withTestUser(httptest.NewRequest("PATCH", "/notes/n1", strings.NewReader(big)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "n1")
 	rec := httptest.NewRecorder()

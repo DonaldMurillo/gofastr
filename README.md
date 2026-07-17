@@ -246,6 +246,8 @@ entities:
     crud: true
     mcp: true
     soft_delete: true
+    public: true      # blog posts are public content; anonymous read AND write.
+                       # Omit this and auto-CRUD requires a session by default.
     fields:
       - name: title
         type: string

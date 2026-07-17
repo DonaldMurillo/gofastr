@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -87,7 +88,7 @@ func TestCustomEndpointHTTPAndMCPRegistration(t *testing.T) {
 		},
 	})
 
-	resp := TestHarness(t, app).Request(http.MethodPost, "/posts/post-1/publish", nil).Execute()
+	resp := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"}).Request(http.MethodPost, "/posts/post-1/publish", nil).Execute()
 	resp.AssertStatus(t, http.StatusOK).AssertBodyContains(t, "post-1:published")
 
 	result := callMCPTool(t, app.MCP, "posts_publish", map[string]any{"id": "post-1"})
@@ -97,13 +98,20 @@ func TestCustomEndpointHTTPAndMCPRegistration(t *testing.T) {
 	}
 }
 
+// callMCPTool dispatches a tool call with an authenticated caller in
+// context: entity MCP tools inherit the same secure-by-default session
+// gate as REST (issue #65) — RegisterEntityMCPTools re-dispatches through
+// the router, and requireAuthenticated needs core/handler.GetUser to
+// succeed. See TestMCPTools_AnonymousCallsRejected (framework/crud) for
+// the negative case.
 func callMCPTool(t *testing.T, server *mcp.Server, name string, params map[string]any) any {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{"name": name, "arguments": params})
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp := server.HandleRequest(context.Background(), mcp.Request{
+	ctx := handler.SetUser(context.Background(), struct{ ID string }{ID: "u1"})
+	resp := server.HandleRequest(ctx, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  "tools/call",

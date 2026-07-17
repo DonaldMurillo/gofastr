@@ -32,7 +32,7 @@ func TestCreate_RejectsOversizedJSONBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/posts", Body: string(body)})
+	req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/posts", Body: string(body), UserID: "u1"})
 	rr := httptest.NewRecorder()
 	ch.Create()(rr, req)
 	if rr.Code != http.StatusRequestEntityTooLarge {
@@ -48,7 +48,7 @@ func TestBatchCreate_RejectsOversizedJSONBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/posts/_batch", Body: string(body)})
+	req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/posts/_batch", Body: string(body), UserID: "u1"})
 	rr := httptest.NewRecorder()
 	ch.BatchCreate()(rr, req)
 	if rr.Code != http.StatusRequestEntityTooLarge {
@@ -66,7 +66,7 @@ func TestBatchUpdate_RejectsOversizedJSONBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := makeRequest(t, RequestOpts{Method: http.MethodPatch, Path: "/posts/_batch", Body: string(body)})
+	req := makeRequest(t, RequestOpts{Method: http.MethodPatch, Path: "/posts/_batch", Body: string(body), UserID: "u1"})
 	rr := httptest.NewRecorder()
 	ch.BatchUpdate()(rr, req)
 	if rr.Code != http.StatusRequestEntityTooLarge {
@@ -82,7 +82,7 @@ func TestBatchDelete_RejectsOversizedJSONBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := makeRequest(t, RequestOpts{Method: http.MethodDelete, Path: "/posts/_batch", Body: string(body)})
+	req := makeRequest(t, RequestOpts{Method: http.MethodDelete, Path: "/posts/_batch", Body: string(body), UserID: "u1"})
 	rr := httptest.NewRecorder()
 	ch.BatchDelete()(rr, req)
 	if rr.Code != http.StatusRequestEntityTooLarge {

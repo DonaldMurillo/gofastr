@@ -107,7 +107,8 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		framework.WithoutDefaultMiddleware(),
 	)
 	app.Entity("posts", framework.EntityConfig{
-		Table: "posts",
+		Table:  "posts",
+		Public: true,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "views", Type: schema.Int},
@@ -206,6 +207,7 @@ func TestGenerateClient_RoundTripAgainstLiveServer(t *testing.T) {
 entities:
   - name: posts
     crud: true
+    public: true
     fields:
       - name: title
         type: string
@@ -268,6 +270,7 @@ func TestGenerateClient_E2EBuildsCleanly(t *testing.T) {
 entities:
   - name: posts
     crud: true
+    public: true
     fields:
       - name: title
         type: string

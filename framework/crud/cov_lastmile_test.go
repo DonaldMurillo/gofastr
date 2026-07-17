@@ -19,7 +19,7 @@ import (
 func TestList_ScanErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "title" })
-	req := httptest.NewRequest("GET", "/notes", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -32,7 +32,7 @@ func TestList_IgnoresUnknownFilter(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	// An unknown filter param (unrecognised field/suffix) is leniently
 	// ignored, not rejected — the list still succeeds.
-	req := httptest.NewRequest("GET", "/notes?title_zz=x", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes?title_zz=x", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -43,7 +43,7 @@ func TestList_IgnoresUnknownFilter(t *testing.T) {
 // crud.go:517 — Get include parse error → 400.
 func TestGet_BadInclude(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
-	req := httptest.NewRequest("GET", "/posts/p1?include=ghostrel", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts/p1?include=ghostrel", nil), "u1")
 	req.SetPathValue("id", "p1")
 	rec := httptest.NewRecorder()
 	ch.Get()(rec, req)
@@ -55,7 +55,7 @@ func TestGet_BadInclude(t *testing.T) {
 // crud.go:531 — Get projection parse error → 400.
 func TestGet_BadProjection(t *testing.T) {
 	ch, _ := covFaultNotes(t)
-	req := httptest.NewRequest("GET", "/notes/n1?fields=nope", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes/n1?fields=nope", nil), "u1")
 	req.SetPathValue("id", "n1")
 	rec := httptest.NewRecorder()
 	ch.Get()(rec, req)
@@ -69,7 +69,7 @@ func TestGet_BadProjection(t *testing.T) {
 func TestGet_IncludeChildQueryErr(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
 	covFault.set(func(c *covFaults) { c.queryErrOn = `FROM "comments"` }) // only the comments query
-	req := httptest.NewRequest("GET", "/posts/p1?include=comments", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/posts/p1?include=comments", nil), "u1")
 	req.SetPathValue("id", "p1")
 	rec := httptest.NewRecorder()
 	ch.Get()(rec, req)
@@ -124,7 +124,7 @@ func TestListAll_BadInclude(t *testing.T) {
 func TestCursor_ScanErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "title" })
-	req := httptest.NewRequest("GET", "/notes?cursor=", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes?cursor=", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -136,7 +136,7 @@ func TestCursor_ScanErr(t *testing.T) {
 func TestStream_MidScanErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "title" })
-	req := httptest.NewRequest("GET", "/notes?stream=true", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes?stream=true", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	// The count + data queries succeed; the scan fails mid-stream, so the

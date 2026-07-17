@@ -133,7 +133,7 @@ func TestMultipartCreate_SavesFile(t *testing.T) {
 	_, _ = fw.Write(pngBytes())
 	mw.Close()
 
-	req := httptest.NewRequest("POST", "/media", &buf)
+	req := withTestUser(httptest.NewRequest("POST", "/media", &buf), "u1")
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)
@@ -170,7 +170,7 @@ func TestMultipartCreate_NoStorageConfigured(t *testing.T) {
 	_, _ = fw.Write(pngBytes())
 	mw.Close()
 
-	req := httptest.NewRequest("POST", "/media", &buf)
+	req := withTestUser(httptest.NewRequest("POST", "/media", &buf), "u1")
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)
@@ -181,8 +181,8 @@ func TestMultipartCreate_NoStorageConfigured(t *testing.T) {
 
 func TestJSONCreate_RejectsUnsafeMediaURL(t *testing.T) {
 	ch, _ := covUploadHandler(t)
-	req := httptest.NewRequest("POST", "/media",
-		strings.NewReader(`{"caption":"x","photo":"javascript:alert(1)"}`))
+	req := withTestUser(httptest.NewRequest("POST", "/media",
+		strings.NewReader(`{"caption":"x","photo":"javascript:alert(1)"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)
@@ -193,8 +193,8 @@ func TestJSONCreate_RejectsUnsafeMediaURL(t *testing.T) {
 
 func TestJSONCreate_AcceptsSafeMediaURL(t *testing.T) {
 	ch, _ := covUploadHandler(t)
-	req := httptest.NewRequest("POST", "/media",
-		strings.NewReader(`{"caption":"x","photo":"https://cdn.example.com/a.png"}`))
+	req := withTestUser(httptest.NewRequest("POST", "/media",
+		strings.NewReader(`{"caption":"x","photo":"https://cdn.example.com/a.png"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)

@@ -62,7 +62,7 @@ func covBatchHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 }
 
 func batchReq(method, body string) *http.Request {
-	r := httptest.NewRequest(method, "/bn/_batch", strings.NewReader(body))
+	r := withTestUser(httptest.NewRequest(method, "/bn/_batch", strings.NewReader(body)), "u1")
 	r.Header.Set("Content-Type", "application/json")
 	return r
 }
@@ -242,7 +242,7 @@ func covNestedWorld(t *testing.T) (*CrudHandler, stubRegistry) {
 
 func TestNestedInclude_AuthorOrg(t *testing.T) {
 	ch, _ := covNestedWorld(t)
-	req := httptest.NewRequest("GET", "/nposts?include=author.org", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/nposts?include=author.org", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -310,7 +310,7 @@ func TestList_DBError(t *testing.T) {
 	ch, db := covNotesHandler(t)
 	db.Close()
 	rec := httptest.NewRecorder()
-	ch.List()(rec, httptest.NewRequest("GET", "/notes", nil))
+	ch.List()(rec, withTestUser(httptest.NewRequest("GET", "/notes", nil), "u1"))
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("List on closed DB = %d, want 500", rec.Code)
 	}
@@ -319,7 +319,7 @@ func TestList_DBError(t *testing.T) {
 func TestGet_DBError(t *testing.T) {
 	ch, db := covNotesHandler(t)
 	db.Close()
-	req := httptest.NewRequest("GET", "/notes/x", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes/x", nil), "u1")
 	req.SetPathValue("id", "x")
 	rec := httptest.NewRecorder()
 	ch.Get()(rec, req)
@@ -334,7 +334,7 @@ func TestHookErrors_MapTo400(t *testing.T) {
 	ch.Hooks.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		return errors.New("rejected by hook")
 	})
-	req := httptest.NewRequest("POST", "/notes", strings.NewReader(`{"title":"x"}`))
+	req := withTestUser(httptest.NewRequest("POST", "/notes", strings.NewReader(`{"title":"x"}`)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)
@@ -353,7 +353,7 @@ func TestBeforeListHookError_MapTo400(t *testing.T) {
 		return errors.New("list denied")
 	})
 	rec := httptest.NewRecorder()
-	ch.List()(rec, httptest.NewRequest("GET", "/notes", nil))
+	ch.List()(rec, withTestUser(httptest.NewRequest("GET", "/notes", nil), "u1"))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("before-list hook reject = %d, want 400", rec.Code)
 	}
@@ -365,7 +365,7 @@ func TestBeforeGetHookError_MapTo400(t *testing.T) {
 	ch.Hooks.RegisterHook(hook.BeforeGet, func(ctx context.Context, data any) error {
 		return errors.New("get denied")
 	})
-	req := httptest.NewRequest("GET", "/notes/x", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/notes/x", nil), "u1")
 	req.SetPathValue("id", "x")
 	rec := httptest.NewRecorder()
 	ch.Get()(rec, req)
@@ -377,7 +377,7 @@ func TestBeforeGetHookError_MapTo400(t *testing.T) {
 func TestBodyTooLarge(t *testing.T) {
 	ch, _ := covNotesHandler(t)
 	big := `{"title":"` + strings.Repeat("x", int(MaxJSONBodyBytes)+100) + `"}`
-	req := httptest.NewRequest("POST", "/notes", strings.NewReader(big))
+	req := withTestUser(httptest.NewRequest("POST", "/notes", strings.NewReader(big)), "u1")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)

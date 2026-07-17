@@ -56,7 +56,7 @@ CREATE TABLE comments (
 		{"id": "c-dead", "post_id": "p1", "body": "deleted comment", "deleted_at": "2024-01-01T00:00:00Z"},
 	})
 
-	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/posts?include=comments"})
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/posts?include=comments", UserID: "u1"})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
 	if rr.Code != http.StatusOK {

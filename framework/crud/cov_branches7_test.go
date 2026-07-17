@@ -56,7 +56,7 @@ func TestThreeLevelNestedInclude(t *testing.T) {
 	ch := NewCrudHandler(postsEnt, db).WithJSONCase(CaseCamel)
 	ch.Registry = reg
 
-	req := httptest.NewRequest("GET", "/l3posts?include=author.org.divisions", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/l3posts?include=author.org.divisions", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -178,7 +178,7 @@ func TestInclude_ScopedSoftDeleteManyToMany(t *testing.T) {
 	ch := NewCrudHandler(postsEnt, db).WithJSONCase(CaseSnake)
 	ch.Registry = reg
 
-	req := httptest.NewRequest("GET", "/imposts?include=tags", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/imposts?include=tags", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	resp := decodeListResponse(t, rec.Body.String())
@@ -192,14 +192,14 @@ func TestCursor_BackwardComposite(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq", "id"} }, 6)
 	// First forward page to obtain a composite cursor.
 	rec := httptest.NewRecorder()
-	ch.List()(rec, httptest.NewRequest("GET", "/items?cursor=&limit=2", nil))
+	ch.List()(rec, withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1"))
 	var page struct {
 		Cursor string `json:"cursor"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &page)
 	// Walk backward with the composite cursor → backward op branch.
 	rec = httptest.NewRecorder()
-	ch.List()(rec, httptest.NewRequest("GET", "/items?cursor="+page.Cursor+"&direction=backward&limit=2", nil))
+	ch.List()(rec, withTestUser(httptest.NewRequest("GET", "/items?cursor="+page.Cursor+"&direction=backward&limit=2", nil), "u1"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("backward composite cursor = %d, body=%s", rec.Code, rec.Body.String())
 	}

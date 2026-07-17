@@ -142,7 +142,14 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		if !ownerOK {
 			return
 		}
-		if ch.Entity.Config.OwnerField == "" {
+		// The SSE baseline is deliberately STRICTER than the CRUD-wide
+		// requireAuthenticated gate: a declared Access block with a blank
+		// Read permission means "public static reads", but that must not
+		// extend to a live feed of every write (see the comment above).
+		// Only Public — the full, deliberate opt-out — makes the stream
+		// anonymous; OwnerField entities are already authenticated via
+		// RequireOwner.
+		if ch.Entity.Config.OwnerField == "" && !ch.Entity.Config.Public {
 			if _, ok := handler.GetUser(r.Context()); !ok {
 				writeJSONError(w, http.StatusUnauthorized, "authentication required")
 				return

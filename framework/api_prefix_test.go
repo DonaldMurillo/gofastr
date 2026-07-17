@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -33,6 +34,7 @@ func TestAPIPrefix_MountsEntityRoutesUnderPrefix(t *testing.T) {
 			} else {
 				r = httptest.NewRequest(method, path, nil)
 			}
+			r = r.WithContext(handler.SetUser(r.Context(), struct{ ID string }{ID: "u1"}))
 			app.Router().ServeHTTP(rec, r)
 			return rec.Code
 		}
@@ -66,7 +68,9 @@ func TestAPIPrefix_DefaultIsBareMount(t *testing.T) {
 			t.Fatalf("automigrate: %v", err)
 		}
 		rec := httptest.NewRecorder()
-		app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/posts", nil))
+		req := httptest.NewRequest(http.MethodGet, "/posts", nil)
+		req = req.WithContext(handler.SetUser(req.Context(), struct{ ID string }{ID: "u1"}))
+		app.Router().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("GET /posts (no prefix) = %d, want 200", rec.Code)
 		}

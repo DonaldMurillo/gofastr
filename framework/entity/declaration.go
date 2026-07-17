@@ -37,14 +37,19 @@ type EntityDeclaration struct {
 	// Mirrors EntityConfig.Access (AccessControl): each entry is a
 	// permission string (e.g. "posts:write"); a blank/omitted entry
 	// leaves that operation un-gated by RBAC. nil means no RBAC at all.
-	Access       *AccessDeclaration `json:"access,omitempty"`
-	Timestamps   *bool              `json:"timestamps,omitempty"`
-	CRUD         *bool              `json:"crud,omitempty"`
-	MCP          bool               `json:"mcp,omitempty"`
-	CursorField  string             `json:"cursor_field,omitempty"`
-	CursorFields []string           `json:"cursor_fields,omitempty"`
-	Indices      []Index            `json:"indices,omitempty"`
-	Properties   map[string]any     `json:"properties,omitempty"`
+	Access *AccessDeclaration `json:"access,omitempty"`
+	// Public mirrors EntityConfig.Public: a deliberate, full opt-out of
+	// the framework's secure-by-default session requirement (issue #65)
+	// — every operation is reachable by an anonymous caller, matching
+	// pre-#65 behaviour. Has no effect when OwnerField or Access is set.
+	Public       bool           `json:"public,omitempty"`
+	Timestamps   *bool          `json:"timestamps,omitempty"`
+	CRUD         *bool          `json:"crud,omitempty"`
+	MCP          bool           `json:"mcp,omitempty"`
+	CursorField  string         `json:"cursor_field,omitempty"`
+	CursorFields []string       `json:"cursor_fields,omitempty"`
+	Indices      []Index        `json:"indices,omitempty"`
+	Properties   map[string]any `json:"properties,omitempty"`
 }
 
 // AccessDeclaration is the JSON/YAML-friendly mirror of AccessControl —
@@ -101,6 +106,7 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		OwnerField:     d.OwnerField,
 		CrossOwnerRead: d.CrossOwnerRead,
 		SearchFields:   d.SearchFields,
+		Public:         d.Public,
 		CRUD:           d.CRUD,
 		CursorField:    d.CursorField,
 		CursorFields:   d.CursorFields,

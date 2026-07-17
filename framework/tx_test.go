@@ -63,7 +63,7 @@ func TestTx_AfterCreateError_RollsBackInsert(t *testing.T) {
 			return errors.New("boom")
 		})
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		ta.Post("/posts", map[string]any{"title": "Should Be Rolled Back"}).
 			AssertStatus(t, http.StatusInternalServerError)
 
@@ -89,7 +89,7 @@ func TestTx_AfterUpdateError_RollsBackUpdate(t *testing.T) {
 			return errors.New("boom")
 		})
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		ta.Put("/posts/p1", map[string]any{"title": "Changed"}).
 			AssertStatus(t, http.StatusInternalServerError)
 
@@ -119,7 +119,7 @@ func TestTx_AfterDeleteError_RollsBackDelete(t *testing.T) {
 			return errors.New("boom")
 		})
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		ta.Delete("/posts/p1").AssertStatus(t, http.StatusInternalServerError)
 
 		if got := rowCount(t, db); got != 1 {
@@ -154,7 +154,7 @@ func TestTx_FromContext_HookSeesPendingWrite(t *testing.T) {
 			return nil
 		})
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		ta.Post("/posts", map[string]any{"title": "tx-visible"}).
 			AssertStatus(t, http.StatusCreated)
 
@@ -180,7 +180,7 @@ func TestTx_BeforeCreateRejection_NoInsert(t *testing.T) {
 			return errors.New("policy says no")
 		})
 
-		ta := TestHarness(t, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		ta.Post("/posts", map[string]any{"title": "blocked"}).
 			AssertStatus(t, http.StatusBadRequest).
 			AssertBodyContains(t, "policy says no")

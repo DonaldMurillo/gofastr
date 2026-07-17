@@ -137,17 +137,20 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
 		path := "/" + tableName
 
-		// An entity is auth-gated when its rows are owner-scoped,
-		// tenant-scoped, or protected by an RBAC AccessControl rule.
-		// All three cases can reject unauthenticated requests (401);
-		// RBAC additionally rejects authenticated-but-unpermitted ones
-		// (403). The spec must advertise both codes so generated SDKs
-		// and agents don't assume these endpoints are public.
+		// Auto-CRUD is secure-by-default (issue #65): an entity requires
+		// an authenticated session for every operation unless it opts
+		// out via Public, or an explicit mechanism already governs it
+		// (owner-scoped, tenant-scoped, or an RBAC AccessControl rule —
+		// which additionally rejects authenticated-but-unpermitted
+		// callers with 403). The spec must advertise 401/403 on every
+		// entity except a Public one, so generated SDKs and agents don't
+		// assume a plain entity (no owner_field/access declared) is
+		// reachable anonymously — it isn't, unless Public: true says so.
 		rbacGated := ent.Config.Access.Read != "" ||
 			ent.Config.Access.Create != "" ||
 			ent.Config.Access.Update != "" ||
 			ent.Config.Access.Delete != ""
-		gated := ent.Config.OwnerField != "" || ent.Config.MultiTenant || rbacGated
+		gated := !ent.Config.Public || ent.Config.OwnerField != "" || ent.Config.MultiTenant || rbacGated
 		if gated {
 			anyGated = true
 		}

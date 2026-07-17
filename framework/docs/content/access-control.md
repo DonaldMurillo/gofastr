@@ -62,15 +62,18 @@ RBAC-gated entity — including the `_batch` and `_events` endpoints. This means
 generated SDKs and agents see the correct error contract instead of treating
 RBAC-gated routes as public.
 
-The spec also declares **how** callers authenticate. When any entity is
-auth-gated (owner-scoped, multi-tenant, or RBAC), the spec includes
-`components.securitySchemes` with two schemes a gated operation accepts:
-`bearerAuth` (HTTP bearer, JWT) and `cookieAuth` (the auth battery's session
-cookie). Each gated operation then carries a per-operation `security` block
-listing both — meaning either scheme authorises the call. Ungated entities
-are left unmarked, so clients and codegen treat them as publicly reachable.
-Auth is per-operation, not global: the spec never sets a top-level `security`
-requirement.
+The spec also declares **how** callers authenticate. Auto-CRUD is
+secure-by-default (see [security](security.md) → "Default CRUD
+authentication"), so every entity is auth-gated in the spec — owner-scoped,
+multi-tenant, RBAC-gated, or just the plain default session requirement —
+UNLESS it declares `Public: true`. Every gated operation carries
+`components.securitySchemes` with two schemes it accepts: `bearerAuth`
+(HTTP bearer, JWT) and `cookieAuth` (the auth battery's session cookie),
+listed in a per-operation `security` block — either scheme authorises the
+call. Only `Public: true` entities are left unmarked, so clients and
+codegen correctly treat exactly those (and nothing else) as publicly
+reachable. Auth is per-operation, not global: the spec never sets a
+top-level `security` requirement.
 
 The `cookieAuth` name is the auth battery's production default
 (`__Host-session`, set in `battery/auth` `AuthConfig.defaults()`); `DevMode`

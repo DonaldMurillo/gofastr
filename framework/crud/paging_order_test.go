@@ -16,7 +16,7 @@ func TestBackwardPageIsAscending(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 5)
 
 	// Forward to page 2 to obtain a cursor pointing past seq=3.
-	req := httptest.NewRequest("GET", "/items?cursor=&limit=2", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	var p1 struct {
@@ -24,7 +24,7 @@ func TestBackwardPageIsAscending(t *testing.T) {
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &p1)
 
-	req = httptest.NewRequest("GET", "/items?cursor="+p1.Cursor+"&limit=2", nil)
+	req = withTestUser(httptest.NewRequest("GET", "/items?cursor="+p1.Cursor+"&limit=2", nil), "u1")
 	rec = httptest.NewRecorder()
 	ch.List()(rec, req)
 	var p2 struct {
@@ -38,7 +38,7 @@ func TestBackwardPageIsAscending(t *testing.T) {
 	}
 
 	// Walk backward from page 2's cursor (seq=3): rows with seq<3 → 1,2.
-	req = httptest.NewRequest("GET", "/items?cursor="+p2.Cursor+"&direction=backward&limit=2", nil)
+	req = withTestUser(httptest.NewRequest("GET", "/items?cursor="+p2.Cursor+"&direction=backward&limit=2", nil), "u1")
 	rec = httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
@@ -83,7 +83,7 @@ func seqOf(rows []map[string]any) []int {
 // ?page=2 — it must skip the first page rather than re-stream page 1.
 func TestStreamPageTwoSkipsFirstPage(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.MaxListLimit = 500 }, 5)
-	req := httptest.NewRequest("GET", "/items?stream=true&limit=2&page=2", nil)
+	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true&limit=2&page=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
