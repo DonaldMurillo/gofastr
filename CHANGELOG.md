@@ -7,7 +7,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-## [Unreleased]
+### Fixed
+
+- **Flash-free banner dismissal.** A `DismissID` banner was hidden only by
+  the runtime's localStorage pass, so it painted for a moment on every
+  page load after being dismissed. The runtime now mirrors the dismissal
+  into a same-name cookie, and `ui.Banner` skips rendering entirely when
+  its `Ctx` carries a request bearing that cookie.
 
 ### Changed
 
