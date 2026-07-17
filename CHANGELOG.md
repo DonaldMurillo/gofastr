@@ -30,6 +30,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   postgres blueprint carves a disposable database from the env-provided
   `TEST_POSTGRES_DSN` admin DSN and `t.Skip`s when Postgres is unreachable, so
   driverless CI stays green-by-skip.
+- **Pre-image casing contract documented; typed/snake accessors added
+  (#69).** `crud.AuditPreImageFromContext(ctx)` keys the pre-update row by
+  the handler's `JSONCase` (camelCase by default, e.g. `"statusId"`) — not
+  the snake_case DB column name every other hook-adjacent surface speaks.
+  A hook doing `pre["status_id"]` silently got `nil` back; casing-identical
+  keys (`"version"`, `"key"`) happened to work either way, masking the
+  miss. Added `crud.AuditPreImageAs[T](ctx) (T, bool)`, which decodes
+  through the same casing translation typed hooks already use, and
+  `crud.AuditPreImageSnakeFromContext(ctx) map[string]any` for plain
+  snake_case map access. The casing contract is now documented on
+  `AuditPreImageFromContext`/`WithAuditPreImage` and in
+  `framework/docs/content/hooks-and-transactions.md`.
 
 ## [0.28.0] - 2026-07-16
 
