@@ -116,3 +116,12 @@ func TestNeededModules_StableSort(t *testing.T) {
 		}
 	}
 }
+
+func TestComputedDoesNotPreloadCompute(t *testing.T) {
+	got := NeededModules(`<div data-fui-computed="a+b"></div>`)
+	for _, m := range got {
+		if m == "compute" {
+			t.Fatalf("computed-only page preloaded compute: %v", got)
+		}
+	}
+}

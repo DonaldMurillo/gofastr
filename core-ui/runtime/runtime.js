@@ -2030,6 +2030,9 @@
     // subscribes each [data-fui-computed] node to its dependency signals
     // and recomputes via the host-registered reducer on any change.
     { name: 'computed',   selector: '[data-fui-computed]' },
+    // Compute: registered same-origin Web Worker and WebAssembly assets.
+    // The marker only loads the imperative __gofastr.compute API.
+    { name: 'compute',    selector: '[data-fui-compute]' },
     { name: 'fileupload', selector: '[data-fui-fileupload]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     { name: 'menu',       selector: '[data-fui-menu]' },
@@ -2130,17 +2133,18 @@
     const scope = root && root.querySelectorAll ? root : document;
     const idleQueue = [];
     for (const m of _moduleMarkers) {
+      const { name, selector, idle } = m;
       // Skip if the module is already loaded — its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
-      if (window.__gofastr.loadedModules && window.__gofastr.loadedModules[m.name]) continue;
+      if (window.__gofastr.loadedModules && window.__gofastr.loadedModules[name]) continue;
       // Test the scope node ITSELF as well as its descendants: a
       // lazily-mounted widget root appended to <body> carries root
       // markers (data-fui-drag-dismiss) on the node handed to us.
-      if (!(scope.matches?.(m.selector) || scope.querySelector(m.selector))) continue;
-      if (m.idle) {
-        idleQueue.push(m.name);
+      if (!(scope.matches?.(selector) || scope.querySelector(selector))) continue;
+      if (idle) {
+        idleQueue.push(name);
       } else {
-        loadModule(m.name).catch(() => {});
+        loadModule(name).catch(() => {});
       }
     }
     if (idleQueue.length) _scheduleIdleModules(idleQueue);

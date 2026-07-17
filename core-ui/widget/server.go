@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/compute"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -74,19 +75,38 @@ func RuntimeModuleHash(name string) string {
 // URLs and then collide with the immutable cache headers — see
 // TestRuntimeTagEmbedsModuleManifest for the regression that motivated this.
 func RuntimeModuleManifestScript() string {
+	var script string
 	names := runtime.ModuleNames()
-	if len(names) == 0 {
+	if len(names) > 0 {
+		out := make(map[string]string, len(names))
+		for _, n := range names {
+			out[n] = RuntimeModuleHash(n)
+		}
+		buf, err := json.Marshal(out)
+		if err == nil {
+			script = `<script type="application/json" id="gofastr-runtime-modules">` +
+				escapeJSONForScript(buf) +
+				`</script>`
+		}
+	}
+	return script + ComputeManifestScript()
+}
+
+// ComputeManifestScript emits an inert JSON manifest mapping registered
+// compute asset names to their worker and WebAssembly content hashes.
+func ComputeManifestScript() string {
+	return computeManifestScript(compute.Manifest())
+}
+
+func computeManifestScript(manifest map[string]compute.Versions) string {
+	if len(manifest) == 0 {
 		return ""
 	}
-	out := make(map[string]string, len(names))
-	for _, n := range names {
-		out[n] = RuntimeModuleHash(n)
-	}
-	buf, err := json.Marshal(out)
+	buf, err := json.Marshal(manifest)
 	if err != nil {
 		return ""
 	}
-	return `<script type="application/json" id="gofastr-runtime-modules">` +
+	return `<script type="application/json" id="gofastr-compute-assets">` +
 		escapeJSONForScript(buf) +
 		`</script>`
 }
@@ -128,6 +148,49 @@ func serveRuntimeModule(w http.ResponseWriter, r *http.Request) {
 	// Content-addressed URL (?v=<hash>) → safe to cache forever.
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	fmt.Fprint(w, src)
+}
+
+const computeWorkerCSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'"
+
+// ServeComputeAsset serves registered workers and WebAssembly modules from
+// /__gofastr/compute/<name>.js|wasm under immutable cache headers.
+func ServeComputeAsset(w http.ResponseWriter, r *http.Request) {
+	const prefix = "/__gofastr/compute/"
+	path := r.URL.Path
+	if !strings.HasPrefix(path, prefix) {
+		http.NotFound(w, r)
+		return
+	}
+	relative := strings.TrimPrefix(path, prefix)
+
+	var (
+		asset       *compute.Asset
+		contentType string
+		ok          bool
+	)
+	switch {
+	case strings.HasSuffix(relative, ".js"):
+		asset, ok = compute.LookupWorker(strings.TrimSuffix(relative, ".js"))
+		contentType = "application/javascript; charset=utf-8"
+	case strings.HasSuffix(relative, ".wasm"):
+		asset, ok = compute.LookupWASM(strings.TrimSuffix(relative, ".wasm"))
+		contentType = "application/wasm"
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	if strings.HasSuffix(relative, ".js") {
+		// Dedicated workers enforce the CSP delivered with their own script.
+		// Permit WebAssembly compilation without enabling JavaScript eval.
+		w.Header().Set("Content-Security-Policy", computeWorkerCSP)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	_, _ = asset.WriteTo(w)
 }
 
 // server is the per-widget HTTP plumbing: stylesheet + signal state

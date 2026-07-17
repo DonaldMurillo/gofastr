@@ -1862,6 +1862,9 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// await). Delegated to core-ui/widget so back-compat for hosts that
 	// already call widget.MountRuntime keeps a single source of truth.
 	r.Get("/__gofastr/runtime/{name}", http.HandlerFunc(widget.ServeRuntimeModule))
+	// Registered worker + WebAssembly assets — content-addressed and
+	// same-origin so the default CSP can load them without blob: URLs.
+	r.Get("/__gofastr/compute/{name}", http.HandlerFunc(widget.ServeComputeAsset))
 
 	// Page-level LLM documentation endpoints.
 	// - /llm-pages.md — top-level index of all screens

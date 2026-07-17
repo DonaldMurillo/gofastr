@@ -99,6 +99,7 @@ server side and the runtime does the work.
 | `data-fui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. When the wrapper's `data-active` attribute is updated through a signal (`data-fui-signal-mode="attr"`), the core runtime also mirrors the new index into `aria-selected` on every `[role="tab"][data-fui-tab-index]` descendant so assistive tech tracks the selection, not just the CSS highlight. |
 | `data-fui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-fui-signal`. CSP-safe — the reducer is a real function the host registers (no `eval`). |
 | `data-fui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-fui-computed` node recomputes from. |
+| `data-fui-compute` | Loads the `compute` demand module, which exposes `window.__gofastr.compute`. It is a trigger marker only; worker name, function, and payload stay in the imperative `compute.task(...)` call. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
 | `data-fui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-fui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. |
 | `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` before firing the RPC. Cancel aborts. Use for destructive actions (delete, revoke). |
@@ -398,6 +399,48 @@ client-side with no per-consumer round-trip.
   `__gofastr` namespace wholesale on boot.
 
 See `framework/docs/content/signal-store.md` for the full guide.
+
+### Background compute (`core-ui/compute`)
+
+Applications register self-contained worker JavaScript and WebAssembly bytes
+at process startup with `compute.RegisterWorker` and `compute.RegisterWASM`.
+Names use the same URL-safe grammar as runtime modules (1–64 lowercase
+letters, digits, `-`, `_`). Registration copies the bytes and calculates a
+full SHA-256 hash. Identical re-registration is a no-op; conflicting content
+under the same name panics.
+
+The UI host serves registered assets at content-addressed same-origin URLs:
+
+```
+/__gofastr/compute/<name>.js?v=<sha256>
+/__gofastr/compute/<name>.wasm?v=<sha256>
+```
+
+Both responses are immutable for one year. SSR emits the inert
+`#gofastr-compute-assets` JSON manifest beside
+`#gofastr-runtime-modules`; the `compute` demand module uses it to build
+versioned URLs. A page opts in with the single `data-fui-compute` marker.
+That marker only loads the module — it does not declare a task or construct
+DOM. Island/widget code calls `window.__gofastr.compute.task(worker, fn,
+payload)`, `wasmURL(name)`, and `dispose(worker)`.
+
+One classic Worker instance is cached per registered name. Requests use
+`{id, fn, payload}` and responses use `{id, ok, result}` or
+`{id, ok, error}`. Worker errors reject every pending request and discard
+the failed instance. A request that receives no response for 30 seconds
+rejects, terminates that worker, and lets the next call create a fresh one.
+`dispose` applies the same termination/rejection behavior explicitly.
+
+The document CSP still permits only same-origin worker scripts (no `blob:`).
+Dedicated workers enforce the CSP on their own script response, so worker
+assets receive the narrow `script-src 'self' 'wasm-unsafe-eval'` permission
+required by current browsers to compile WebAssembly; JavaScript `eval` stays
+disabled. Shared memory and WebAssembly threads require cross-origin
+isolation (COOP + COEP). GoFastr does not enable COEP, so
+`SharedArrayBuffer`/threads are outside this surface.
+
+See `framework/docs/content/compute.md` for registration, protocol, and
+WebAssembly authoring examples.
 
 ### SSE connection state (`__gofastr.sseStatus`)
 
@@ -974,6 +1017,7 @@ core-ui/
                  accordion, breadcrumbs, combobox, disclosure,
                  infinitescroll, multiselect, pagination, progress,
                  skeleton, sortablelist, tabs, tree
+  compute/     — process-global Web Worker + WebAssembly asset registry
   component/   — Component / InteractiveComponent interfaces (the contract
                  every renderable satisfies)
   widget/      — island/widget builder + registration
@@ -986,7 +1030,7 @@ core-ui/
   runtime/     — runtime.js (client) + Go embed wrapper
   runtime/src/ — code-split runtime modules (loaded on demand):
                  animate, animatedcounter, backtotop, banner, carousel,
-                 combobox, computed, conditionalfield, copy,
+                 combobox, compute, computed, conditionalfield, copy,
                  dragdismiss, dropdown, dropzone, fileupload,
                  formrepeater, infinitescroll, lightbox, menu,
                  multiselect, networkretrybanner, numberinput,

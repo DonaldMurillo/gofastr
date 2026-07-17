@@ -68,6 +68,19 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	}
 }
 
+func TestComputeModuleSizeBudget(t *testing.T) {
+	const budgetGZ = 3 * 1024
+	src, ok := Module("compute")
+	if !ok {
+		t.Fatal("compute module not embedded")
+	}
+	got := gzipSize(t, src)
+	t.Logf("compute module gzip = %d bytes", got)
+	if got > budgetGZ {
+		t.Fatalf("compute module gzip = %d bytes — exceeds %d byte budget", got, budgetGZ)
+	}
+}
+
 // Typical-page payload budget: core + the widgets module.
 //
 // The per-module budgets above keep the core honest, but they have a
