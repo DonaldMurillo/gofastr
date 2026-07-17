@@ -94,6 +94,17 @@ type AppConfig struct {
 	// request lifetime.
 	DisableRequestTimeout bool
 
+	// SecurityHeaders configures the defensive HTTP response headers
+	// (Content-Security-Policy, Referrer-Policy, X-Frame-Options,
+	// Permissions-Policy, CORP, COOP, HSTS) emitted by the SecurityHeaders
+	// middleware in the default chain. The zero value installs the
+	// framework's strict defaults (default-src 'self', no 'unsafe-inline');
+	// set fields to override — e.g. ContentSecurityPolicy to allow
+	// style-src 'unsafe-inline' for a third-party CSS dependency. Unset
+	// fields keep their built-in defaults, so a partial override never
+	// silently drops a defensive header. See [WithSecurityHeaders].
+	SecurityHeaders middleware.SecurityHeadersConfig
+
 	// ShutdownTimeout bounds the graceful drain that the default
 	// SIGINT/SIGTERM handler runs via App.Shutdown. Zero installs the
 	// 15s default. The drain stops accepting connections, waits for
@@ -347,6 +358,10 @@ func WithConfig(config AppConfig) AppOption {
 		if config.DisableRequestTimeout {
 			a.Config.DisableRequestTimeout = true
 		}
+		// SecurityHeaders is a value type; copy it unconditionally. The
+		// zero value is valid (means "use the built-in strict defaults"),
+		// so there is no sentinel to gate on — unlike the scalar fields.
+		a.Config.SecurityHeaders = config.SecurityHeaders
 		if config.ShutdownTimeout != 0 {
 			a.Config.ShutdownTimeout = config.ShutdownTimeout
 		}
@@ -371,6 +386,23 @@ func WithAPIPrefix(prefix string) AppOption {
 func WithPublicOpenAPI() AppOption {
 	return func(a *App) {
 		a.Config.PublicOpenAPI = true
+	}
+}
+
+// WithSecurityHeaders configures the defensive HTTP response headers
+// (Content-Security-Policy, Referrer-Policy, X-Frame-Options, …) emitted
+// by the SecurityHeaders middleware in the default chain. Equivalent to
+// setting AppConfig.SecurityHeaders. The zero value keeps the framework's
+// strict defaults; override individual fields (e.g.
+// ContentSecurityPolicy) to relax a specific directive — unset fields
+// retain their built-in defaults so a partial override never drops a
+// defensive header. See middleware.SecurityHeadersConfig.
+//
+// This removes the need to shadow the default middleware with a
+// hand-rolled SecurityHeaders middleware just to change one directive.
+func WithSecurityHeaders(cfg middleware.SecurityHeadersConfig) AppOption {
+	return func(a *App) {
+		a.Config.SecurityHeaders = cfg
 	}
 }
 
@@ -721,7 +753,11 @@ func DefaultMiddleware(a *App) []router.Middleware {
 			})
 		})
 	}
-	chain = append(chain, middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}))
+	shCfg := middleware.SecurityHeadersConfig{}
+	if a != nil {
+		shCfg = a.Config.SecurityHeaders
+	}
+	chain = append(chain, middleware.SecurityHeaders(shCfg))
 	if a == nil || !a.Config.DisableRequestTimeout {
 		chain = append(chain, middleware.Timeout(timeout))
 	}

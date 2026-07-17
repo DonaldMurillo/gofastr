@@ -614,6 +614,18 @@ even when you set nothing — credential stuffing and account-table
 flooding are network attacks, not config-mode ones. Pass a config with a
 large `MaxAttempts` to loosen, not to leave them off.
 
+**DevMode relaxes the per-IP login limiter.** Local screenshot /
+verification tooling that hammers `/auth/login` from one IP (localhost)
+would otherwise trip the per-IP flood throttle and get locked out. When
+`DevMode: true`, the framework sets `RateLimiterConfig.DevMode` on the
+per-IP login limiter, which short-circuits it (every attempt admitted).
+This is a dev-only affordance — production (`DevMode: false`) is
+unchanged and fail-closed. The **per-account** login limiter is
+deliberately NOT relaxed in dev: it guards brute-force even there, so an
+attacker who pivots IPs is still throttled on the email key. Set
+`RateLimiterConfig.DevMode` explicitly on any other limiter you want
+relaxed in dev.
+
 **X-Forwarded-For is not trusted by default.** Set
 `RateLimiterConfig.TrustForwardedFor = true` only when your service
 runs behind a reverse proxy that strips client-supplied XFF headers

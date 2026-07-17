@@ -42,6 +42,12 @@ func TestWithConfigCoversEveryField(t *testing.T) {
 			f.SetInt(1)
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 			f.SetUint(1)
+		case reflect.Struct:
+			// AppConfig struct fields are middleware/config value types
+			// (e.g. SecurityHeaders). Set the first settable scalar sub-
+			// field non-zero so DeepEqual can tell "copied" from "left
+			// zero". Extend here if a future struct field has no scalar.
+			setFirstScalarNonZero(t, f)
 		default:
 			t.Fatalf("AppConfig field %s has kind %s — extend this test and the WithConfig merge",
 				v.Type().Field(i).Name, f.Kind())
@@ -56,4 +62,34 @@ func TestWithConfigCoversEveryField(t *testing.T) {
 				got.Type().Field(i).Name, got.Field(i).Interface(), v.Field(i).Interface())
 		}
 	}
+}
+
+// setFirstScalarNonZero sets the first exported, settable scalar field of
+// the struct value sv to a non-zero value. TestWithConfigCoversEveryField
+// uses it to make struct-typed AppConfig fields (e.g. SecurityHeaders)
+// detectably non-zero so DeepEqual can tell "copied through WithConfig"
+// from "left zero".
+func setFirstScalarNonZero(t *testing.T, sv reflect.Value) {
+	t.Helper()
+	for j := range sv.NumField() {
+		sf := sv.Field(j)
+		if !sf.CanSet() {
+			continue
+		}
+		switch sf.Kind() {
+		case reflect.String:
+			sf.SetString("x")
+			return
+		case reflect.Bool:
+			sf.SetBool(true)
+			return
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			sf.SetInt(1)
+			return
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			sf.SetUint(1)
+			return
+		}
+	}
+	t.Fatalf("setFirstScalarNonZero: struct %s has no settable scalar field", sv.Type())
 }

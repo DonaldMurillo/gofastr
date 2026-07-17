@@ -280,3 +280,54 @@ func TestRateLimit_TrustForwardedFor_OptIn(t *testing.T) {
 		}
 	}
 }
+
+// TestRateLimit_DevModeRelaxesPerIPLogin pins issue #71: local
+// screenshot / verification tooling that hammers /auth/login from one
+// IP (localhost) must not trip the per-IP login limiter when the app
+// runs in DevMode. Production (DevMode=false) keeps the limiter
+// fail-closed — see TestRateLimit_Login. The per-ACCOUNT limiter is
+// deliberately NOT relaxed in DevMode: it guards brute-force even in
+// dev, pinned by TestAuthBypass_BruteForceNoLockout.
+func TestRateLimit_DevModeRelaxesPerIPLogin(t *testing.T) {
+	mgr := New(AuthConfig{
+		JWTSecret: "dev-secret",
+		DevMode:   true,
+		UserStore: newMemoryUserStore(),
+		// Tight per-IP limit so the defect reproduces in a handful of
+		// requests; DevMode must relax it regardless of MaxAttempts.
+		LoginRateLimit: &RateLimiterConfig{
+			MaxAttempts:   3,
+			Window:        time.Minute,
+			BlockDuration: time.Minute,
+		},
+		// Neutralise the per-account limiter so only per-IP is under
+		// test (per-account is intentionally kept on in dev).
+		LoginRateLimitPerAccount: &RateLimiterConfig{
+			MaxAttempts: 1_000_000,
+			Window:      time.Minute,
+		},
+	})
+	mgr.Use(NewCorePlugin())
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	r := router.New()
+	mgr.RegisterRoutes(r)
+
+	for i := range 10 {
+		// Distinct emails so the per-account key never repeats.
+		body, _ := json.Marshal(map[string]string{
+			"email":    fmt.Sprintf("tool-%d@example.com", i),
+			"password": "wrong",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "127.0.0.1:1234" // same IP — local tooling
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d: DevMode per-IP login limiter throttled local tooling (429) — must be relaxed in dev", i+1)
+		}
+	}
+}

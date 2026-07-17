@@ -427,14 +427,14 @@ once, on selection), so set a small debounce — `data-fui-rpc-debounce-ms="1"`
 keystroke typeahead. This recipe is covered end-to-end by
 `TestInputTrigger_SelectFiresRPC` in `core-ui/runtime`.
 
-### 4. Route-param syntax: `{id}` on the HTTP router, `:id` on the screen router
+### 4. Route-param syntax: `{id}` on the HTTP router, both on the screen router
 
-Two routers, two placeholder syntaxes — crossing them is a **silent 404**:
+Two routers, two placeholder conventions to keep straight:
 
 | Router | Where you use it | Placeholder syntax |
 |---|---|---|
-| Framework HTTP router (`app.Router()`) | RPC endpoints, API routes, anything you `.Get`/`.Post` | Go 1.22 style: `/islands/products/{id}/filter` |
-| UI screen router (`app.Register` / screen groups) | Page routes whose params reach `SetParams` | `:id` style: `/products/:id` |
+| Framework HTTP router (`app.Router()`) | RPC endpoints, API routes, anything you `.Get`/`.Post` | Go 1.22 style only: `/islands/products/{id}/filter` |
+| UI screen router (`app.Register` / screen groups) | Page routes whose params reach `SetParams` | **Either** `/products/:id` **or** `/products/{id}` |
 
 So an RPC handler is registered with braces:
 
@@ -443,16 +443,20 @@ app.Router().Post("/islands/products/{id}/filter", http.HandlerFunc(filterProduc
 // read it with r.PathValue("id")
 ```
 
-…while a page route uses the colon form:
+…while a page route may use either form — they match identically:
 
 ```go
-app.Register("/products/:id", &ProductScreen{}, layout) // param arrives via ParamSetter.SetParams
+app.Register("/products/:id", &ProductScreen{}, layout)     // colon form
+app.Register("/products/{id}", &ProductScreen{}, layout)    // brace form — same route
+// param arrives via ParamSetter.SetParams either way
 ```
 
-Reach for `:id` on an `app.Router().Post(...)` path (or `{id}` on a screen
-route) and the pattern simply never matches the request — no error, just a
-404. When a route "isn't hit", check the placeholder syntax matches the
-router you registered it on.
+The screen router normalizes `{id}` to `:id` at registration so every
+downstream consumer (resolve, the route manifest, `llm.md`) sees one
+shape. The HTTP router is Go 1.22's `ServeMux` and accepts **only**
+`{id}` — a `:id` segment on an `app.Router().Post(...)` path simply
+never matches (no error, just a 404). When an RPC route "isn't hit",
+check that it uses `{id}`, not `:id`.
 
 ---
 

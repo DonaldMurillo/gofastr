@@ -56,6 +56,26 @@ embed third-party scripts, fonts, or frames you must override
 `ContentSecurityPolicy` explicitly — do not relax it with
 `'unsafe-inline'` globally.
 
+### Configuring the default chain's headers
+
+The example above constructs the middleware by hand. The default chain
+installed by `NewApp` is configurable through `AppConfig.SecurityHeaders`
+(or the `framework.WithSecurityHeaders(cfg)` option), so you can relax a
+single directive — e.g. allow `style-src 'unsafe-inline'` for a
+third-party CSS dependency — without shadowing the whole chain with your
+own `SecurityHeaders` middleware:
+
+```go
+app := framework.NewApp(framework.WithSecurityHeaders(middleware.SecurityHeadersConfig{
+    ContentSecurityPolicy: "default-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:",
+}))
+```
+
+Unset fields keep their built-in defaults (the strict CSP, `Referrer-Policy:
+no-referrer`, `X-Frame-Options: DENY`, …), so a partial override never
+silently drops a defensive header. The zero value reproduces the original
+strict defaults exactly.
+
 ## CORS
 
 ```go

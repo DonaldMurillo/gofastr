@@ -7,6 +7,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable security headers.** `AppConfig.SecurityHeaders` (and the
+  `framework.WithSecurityHeaders(cfg)` option) configure the defensive
+  headers emitted by the default middleware chain, so an app can relax a
+  single directive (e.g. `style-src 'unsafe-inline'`) without shadowing
+  the whole chain with a hand-rolled `SecurityHeaders` middleware. Unset
+  fields keep their strict built-in defaults; the zero value reproduces
+  the previous behaviour exactly.
+
 ### Fixed
 
 - **Eager loading / `?include=` no longer fails on nullable foreign keys.**
@@ -42,6 +52,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   snake_case map access. The casing contract is now documented on
   `AuditPreImageFromContext`/`WithAuditPreImage` and in
   `framework/docs/content/hooks-and-transactions.md`.
+
+- **Screen router accepts both `:param` and `{param}`.** A UI screen
+  registered with the `{param}` brace syntax (the form used by the
+  blueprint, REST/entity routers, and the docs) silently never matched —
+  no error, just a 404. The core-ui router now normalizes `{param}` to
+  `:param` at registration, so both syntaxes work identically. The HTTP
+  router's `{param}`-only syntax is unchanged.
+- **DevMode no longer locks local tooling out of `/auth/login`.** The
+  per-IP login limiter tripped after a handful of rapid logins even with
+  `DevMode: true`, blocking screenshot/verification tooling. DevMode now
+  relaxes the per-IP login limiter (`RateLimiterConfig.DevMode`);
+  production is unchanged and fail-closed. The per-account brute-force
+  limiter is deliberately NOT relaxed in dev.
 
 ## [0.28.0] - 2026-07-16
 

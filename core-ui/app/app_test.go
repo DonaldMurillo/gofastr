@@ -630,6 +630,44 @@ func TestRouteParamsNotMutatedOnSecondResolve(t *testing.T) {
 	_ = screen
 }
 
+// --- F14: {param} brace syntax must be accepted alongside :param ---
+// core-ui screen routes historically use ":param"; the blueprint / REST
+// routers and entity docs use "{param}". A screen registered with the
+// brace form must still match (issue #71) — previously it landed in the
+// exact-match map and silently 404'd.
+func TestRouterAcceptsBraceParamSyntax(t *testing.T) {
+	r := NewRouter()
+	r.Screen(NewScreen("/products/{slug}", &stubComponent{html: render.Raw("<p>Product</p>")}), nil)
+
+	screen, params, ok := r.Resolve("/products/widget")
+	if !ok {
+		t.Fatal("expected /products/{slug} to resolve /products/widget — brace-param route silently never matched")
+	}
+	if params["slug"] != "widget" {
+		t.Errorf("expected slug=widget from brace syntax, got %v", params)
+	}
+	if screen == nil {
+		t.Fatal("resolved screen is nil")
+	}
+}
+
+// The colon form must keep working unchanged after the normalization.
+func TestRouterColonParamSyntaxUnchanged(t *testing.T) {
+	r := NewRouter()
+	r.Screen(NewScreen("/users/:id", &stubComponent{html: render.Raw("<p>User</p>")}), nil)
+
+	screen, params, ok := r.Resolve("/users/42")
+	if !ok {
+		t.Fatal("expected /users/:id to resolve /users/42")
+	}
+	if params["id"] != "42" {
+		t.Errorf("expected id=42, got %v", params)
+	}
+	if screen == nil {
+		t.Fatal("resolved screen is nil")
+	}
+}
+
 // loadObs is a shared observation struct that survives per-request
 // instancing (shallow copy preserves the pointer). Tests use it to
 // assert on Load behavior without poking at the registered template.

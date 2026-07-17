@@ -49,6 +49,18 @@ type RateLimiterConfig struct {
 	TrustForwardedFor bool
 	Store             RateLimitStore
 	Scope             string
+
+	// DevMode relaxes the limiter: when true, AllowContext short-circuits
+	// and admits every attempt. Intended ONLY for non-production deploys
+	// so local screenshot / verification tooling that hammers an endpoint
+	// from one IP (localhost) is never locked out. The default (false)
+	// keeps the limiter fail-closed — production must NEVER set this.
+	//
+	// The framework auto-propagates AuthConfig.DevMode to the per-IP
+	// login limiter only; the per-ACCOUNT login limiter stays active in
+	// dev because it guards brute-force even there. Set DevMode
+	// explicitly on any other limiter you want relaxed in dev.
+	DevMode bool
 }
 
 // maxRateLimitKeys caps the number of distinct keys the in-memory limiter
@@ -121,7 +133,15 @@ func (rl *RateLimiter) Allow(key string) (allowed bool, retryAfter time.Duration
 // sliding window otherwise. A store failure DENIES the attempt — the
 // limiter guards brute-force surfaces, so it must fail closed: degrading
 // its backend must never lift the limit.
+//
+// DevMode (see RateLimiterConfig) is an explicit, tested short-circuit:
+// when set, every attempt is admitted without touching either backend.
+// This is the dev-only relaxation that stops local tooling being locked
+// out; production never sets it, so the fail-closed guarantee holds.
 func (rl *RateLimiter) AllowContext(ctx context.Context, key string) (allowed bool, retryAfter time.Duration) {
+	if rl.cfg.DevMode {
+		return true, 0
+	}
 	if rl.cfg.Store != nil {
 		ok, retry, err := rl.cfg.Store.Allow(ctx, rl.cfg.Scope+"|"+key, rl.cfg)
 		if err != nil {
