@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -84,6 +85,16 @@ func AutoMigrateContext(ctx context.Context, db *sql.DB, registry entity.Registr
 // views). Tables are created first, then each routine's Up runs (idempotent
 // CREATE OR REPLACE), all inside the one advisory-locked transaction so the
 // whole schema converges atomically.
+//
+// Routines declare their engine via Routine.Dialect; routines whose Dialect
+// doesn't match the detected dialect are skipped (one slog.Info per boot lists
+// them). Every matching routine's Up STILL runs every boot — boot is
+// idempotent and self-heals against DB-side drift; it does NOT skip based on
+// a stored checksum. The gofastr_routines ledger table records (name, sha256
+// of Up, applied_at) for each routine that ran, inside the SAME tx, so an
+// agent introspecting the running app can see what landed and what drifted.
+// Ledger rows whose name has no registered routine trigger a loud slog.Warn
+// (additive-only: boot never auto-drops).
 func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	if db == nil {
 		return nil
@@ -99,6 +110,24 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		}
 	}
 	dialect := DetectDialect(db)
+	// Partition routines into "applies on this dialect" vs "skipped". The
+	// skip set is logged in ONE line per boot so a misconfigured dialect tag
+	// (e.g. a Postgres stored proc left in the plan against a SQLite dev DB)
+	// is visible without spamming per-routine lines.
+	appliedRoutines, skippedRoutines := partitionRoutinesByDialect(plan.Routines, dialect)
+	if len(skippedRoutines) > 0 {
+		names := make([]string, 0, len(skippedRoutines))
+		for _, r := range skippedRoutines {
+			names = append(names, r.Name)
+		}
+		sort.Strings(names)
+		slog.Info("migrate: skipping routines declared for a different dialect",
+			"declared", dialectString(skippedRoutines[0].Dialect),
+			"running", dialectString(dialect),
+			"routines", strings.Join(names, ","),
+			"count", len(names),
+		)
+	}
 	// Pre-read every managed table's live columns in one pass (existence and
 	// column-drift detection in a single bulk query). This runs BEFORE the
 	// advisory lock — when drift is detected, addMissingColumns re-reads on the
@@ -138,25 +167,145 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 			}
 		}
-		// Views after tables (they SELECT from them), ordered so a view that
-		// depends on another view follows it.
-		for _, v := range topoSortViews(plan.Views) {
-			if _, err := tx.ExecContext(ctx, v.routine(dialect).Up); err != nil {
-				return fmt.Errorf("migrate view %s: %w", v.Name, err)
+		// The routine ledger, dialect skip log, orphan WARN, and summary
+		// line all apply ONLY when the plan carries at least one routine.
+		// Gating here keeps apps that don't use routines from acquiring a
+		// phantom gofastr_routines table and a per-boot summary line, and
+		// keeps the no-routine sqlmock/sequence tests unchanged.
+		if len(plan.Routines) > 0 {
+			// Ledger lives in the same tx as routine application so the
+			// bookkeeping cannot diverge from what landed on the DB. Created
+			// on every boot (IF NOT EXISTS) — cheap and means an older
+			// deployment upgrading picks it up without a dedicated migration.
+			if err := ensureRoutineLedger(ctx, tx, dialect); err != nil {
+				return fmt.Errorf("migrate: ensure routine ledger: %w", err)
+			}
+			// Previous ledger state is needed to compute the first-time vs
+			// changed-vs-unchanged summary. Read inside the tx so we see the
+			// pre-this-boot view.
+			prevLedger, err := readRoutineLedger(ctx, tx)
+			if err != nil {
+				return fmt.Errorf("migrate: read routine ledger: %w", err)
+			}
+
+			// Views after tables (they SELECT from them), ordered so a view
+			// that depends on another view follows it. Views do NOT carry a
+			// Dialect tag — their render() already takes dialect and emits
+			// the right DDL per engine (PG: CREATE OR REPLACE VIEW; SQLite:
+			// DROP IF EXISTS + CREATE; PG MATERIALIZED via the Materialized
+			// bool). Adding a redundant Dialect field to View would be
+			// ambiguous (Materialized already says "PG-only"), so View
+			// stays dialect-untagged.
+			for _, v := range topoSortViews(plan.Views) {
+				if _, err := tx.ExecContext(ctx, v.routine(dialect).Up); err != nil {
+					return fmt.Errorf("migrate view %s: %w", v.Name, err)
+				}
+			}
+			// Routines after views — a trigger/function may reference a
+			// view. CREATE OR REPLACE keeps re-runs idempotent. Every
+			// matching routine runs every boot; the ledger records the
+			// checksum but does not gate.
+			for _, r := range appliedRoutines {
+				if _, err := tx.ExecContext(ctx, r.Up); err != nil {
+					return fmt.Errorf("migrate routine %s: %w", r.Name, err)
+				}
+			}
+
+			// Upsert ledger rows for every applied routine. The checksum
+			// change is how introspection (app_routines) detects "the
+			// registered body drifted since last boot" — but the apply
+			// above is unconditional.
+			var (
+				appliedCount   = len(appliedRoutines)
+				changedCount   int
+				firstTimeCount int
+			)
+			for _, r := range appliedRoutines {
+				newSum := RoutineChecksum(r)
+				if oldSum, ok := prevLedger[r.Name]; ok {
+					if oldSum != newSum {
+						changedCount++
+					}
+				} else {
+					firstTimeCount++
+				}
+				if err := upsertRoutineLedger(ctx, tx, dialect, r.Name, newSum); err != nil {
+					return fmt.Errorf("migrate: record routine %s: %w", r.Name, err)
+				}
+			}
+
+			// Ledger rows whose name has no registered routine: additive-
+			// only means we DO NOT drop them — the operator removed the
+			// Routine from code, but boot doesn't know whether the DB
+			// object is still needed by ad-hoc SQL, a view, or another
+			// service. Surface each one loudly.
+			registeredNames := make(map[string]struct{}, len(appliedRoutines)+len(skippedRoutines))
+			for _, r := range appliedRoutines {
+				registeredNames[r.Name] = struct{}{}
+			}
+			for _, r := range skippedRoutines {
+				// Skipped-by-dialect routines ARE still registered — they
+				// should NOT be reported as orphaned. They keep their ledger
+				// row from whichever dialect last applied them; on a future
+				// dialect switch the matching engine will reconcile.
+				registeredNames[r.Name] = struct{}{}
+			}
+			var orphaned []string
+			for name := range prevLedger {
+				if _, ok := registeredNames[name]; !ok {
+					orphaned = append(orphaned, name)
+				}
+			}
+			sort.Strings(orphaned)
+			for _, name := range orphaned {
+				slog.Warn("migrate: previously applied routine is no longer registered; not dropped (additive-only)",
+					"routine", name,
+					"hint", "drop via Routine.Down in a versioned migration, or remove the ledger row manually",
+				)
+			}
+
+			slog.Info("migrate: routine apply summary",
+				"applied", appliedCount,
+				"changed", changedCount,
+				"first_time", firstTimeCount,
+				"skipped", len(skippedRoutines),
+				"orphaned", len(orphaned),
+			)
+		} else {
+			// No routines in the plan, but views still need to run — keep
+			// the existing view-apply loop here so a plan with views but
+			// no routines doesn't silently skip its views.
+			for _, v := range topoSortViews(plan.Views) {
+				if _, err := tx.ExecContext(ctx, v.routine(dialect).Up); err != nil {
+					return fmt.Errorf("migrate view %s: %w", v.Name, err)
+				}
 			}
 		}
-		// Routines after views — a trigger/function may reference a view.
-		// CREATE OR REPLACE keeps re-runs idempotent.
-		for _, r := range plan.Routines {
-			if _, err := tx.ExecContext(ctx, r.Up); err != nil {
-				return fmt.Errorf("migrate routine %s: %w", r.Name, err)
-			}
-		}
+
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("migrate: commit: %w", err)
 		}
 		return nil
 	})
+}
+
+// partitionRoutinesByDialect splits routines into (appliesHere, skippedHere)
+// based on whether each routine's declared Dialect matches the running
+// dialect. A zero-value Dialect (the empty string) means "runs on every
+// dialect" — today's behavior — so untagged routines always land in the
+// applies set. The order of both outputs preserves plan.Routines order so
+// apply + summary stay deterministic.
+func partitionRoutinesByDialect(routines []Routine, running Dialect) (applies, skipped []Routine) {
+	applies = make([]Routine, 0, len(routines))
+	skipped = make([]Routine, 0)
+	for _, r := range routines {
+		if r.Dialect == "" || r.Dialect == running {
+			applies = append(applies, r)
+			continue
+		}
+		skipped = append(skipped, r)
+	}
+	return applies, skipped
 }
 
 // MigrateEntity creates the table for a single entity if it doesn't exist.

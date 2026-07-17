@@ -309,11 +309,108 @@ Postgres feature; SQLite has triggers and views). On SQLite, which has no
 `CREATE OR REPLACE` for triggers/views, make the `Up` re-runnable with
 `DROP … IF EXISTS;\nCREATE …` so every boot is idempotent.
 
+### Authoring routines as embedded SQL files
+
+Storing routine bodies as Go string literals gets unwieldy past a few lines.
+The primary authoring path is a directory of `.sql` files embedded with
+`//go:embed` and loaded via `App.RoutinesFS`:
+
+```go
+import "embed"
+
+//go:embed db/routines
+var routinesFS embed.FS
+
+app.RoutinesFS(routinesFS, "db/routines")
+```
+
+The filename grammar:
+
+| File                         | Means                                                       |
+|------------------------------|-------------------------------------------------------------|
+| `<name>.sql`                 | Up body; runs on every dialect (the default).              |
+| `<name>.down.sql`            | Down body for `<name>`.                                     |
+| `<name>.pg.sql`              | Up body, Postgres-only (`Dialect: DialectPostgres`).        |
+| `<name>.sqlite.sql`          | Up body, SQLite-only (`Dialect: DialectSQLite`).            |
+| `<name>.pg.down.sql`         | Down body for the Postgres-only routine.                    |
+| `<name>.sqlite.down.sql`     | Down body for the SQLite-only routine.                      |
+
+Routine Name = file base name. A name must not have both a plain Up and a
+dialect-suffixed Up, and must not have two dialect suffixes — both are
+ambiguous authoring errors that fail loudly at registration. Empty
+files, missing directories, and Down-without-Up files are likewise errors
+(the framework screams rather than silently no-op'ing, the same posture as a
+misconfigured entity). Dotfiles, sub-directories, and non-`.sql` files are
+ignored, so a `README.md` next to the routines is fine.
+
+### Dialect scoping
+
+`Routine.Dialect` scopes a routine to a single SQL dialect. The zero value
+(the empty string) means "runs on every detected dialect" — today's behavior.
+Set `DialectPostgres` for a Postgres stored proc that has no SQLite equivalent
+(typical when developing against SQLite locally but deploying to Postgres);
+`DialectSQLite` for a SQLite-only trigger. During auto-migrate, routines whose
+`Dialect` does not match `migrate.DetectDialect(db)` are skipped and listed in
+a single boot-time log line:
+
+```
+INFO migrate: skipping routines declared for a different dialect declared=postgres running=sqlite3 routines=compute_totals,refresh_mv count=2
+```
+
+Skipped routines are NOT removed from the plan — a future dialect switch (or
+running the same binary against Postgres) will pick them up. `View` does not
+take a `Dialect` tag: its `render()` already emits the right DDL per engine
+(`CREATE OR REPLACE VIEW` on Postgres, `DROP IF EXISTS` + `CREATE` on SQLite,
+`MATERIALIZED` via the `Materialized` bool), so a redundant tag would be
+ambiguous.
+
+### The applied-routine ledger
+
+Every boot, auto-migrate creates (if missing) a `gofastr_routines` table and
+writes one row per applied routine inside the SAME transaction as the apply:
+
+| Column       | Purpose                                                          |
+|--------------|------------------------------------------------------------------|
+| `name`       | Routine Name (primary key).                                      |
+| `checksum`   | sha256 of the routine's Up body (`migrate.RoutineChecksum`).     |
+| `applied_at` | Timestamp of the last boot that applied this routine.            |
+
+The ledger is **reporting, not gating**: every matching routine's `Up` STILL
+runs every boot (idempotent, self-healing against DB-side drift). The
+checksum is how the `app_routines` MCP tool (see the Agent-ready doc) tells
+you "the registered body drifted since the last boot that recorded this row"
+— it does not skip application.
+
+When a routine is removed from code, its ledger row is NOT dropped (additive-
+only — boot never auto-drops). Instead, you see a loud `WARN` naming the
+orphaned routine and pointing at the cure:
+
+```
+WARN migrate: previously applied routine is no longer registered; not dropped (additive-only) routine=compute_totals hint="drop via Routine.Down in a versioned migration, or remove the ledger row manually"
+```
+
+Drop the DB object explicitly via `Routine.Down` in a versioned migration, or
+remove the ledger row manually if the object is already gone.
+
+At the end of every boot, a one-line summary captures the apply outcome:
+
+```
+INFO migrate: routine apply summary applied=7 changed=2 first_time=1 skipped=1 orphaned=0
+```
+
+- `applied` — routines whose `Up` ran this boot (every matching routine).
+- `changed` — applied routines whose checksum differs from the previous boot.
+- `first_time` — applied routines seeing their first-ever ledger row.
+- `skipped` — routines skipped for dialect mismatch this boot.
+- `orphaned` — ledger rows whose name is no longer registered (the WARNed set).
+
+### Generating versioned migrations
+
 `App.Start` runs every routine's `Up` on boot (after tables) via the plan it
-builds from `App.Table` / `App.Routine` / `App.View`. To capture routine/view
-changes as **versioned** migrations instead, use the programmatic generator —
-the file-based `migrate generate` CLI does not see Go-registered routines/views
-(see the Scope note above):
+builds from `App.Table` / `App.Routine` / `App.View` / `App.RoutinesFS`. To
+capture routine/view changes as **versioned** migrations instead, use the
+programmatic generator — the file-based `migrate generate` CLI does not see
+Go-registered routines/views (see the Scope note above):
 
 ```go
 plan := migrate.Plan{Registry: reg, Routines: routines, Views: views}
@@ -325,6 +422,81 @@ up, down, next, _ := migrate.GeneratePlan(plan, prevSnapshot, migrate.DialectPos
 previous body on rollback; a removed routine is dropped (and recreated on
 `Down`). Tables, then views, then routines generate into one migration with
 correct rollback ordering.
+
+### Worked Postgres example
+
+Drop these three files in `db/routines/` and call
+`app.RoutinesFS(routinesFS, "db/routines")`:
+
+```sql
+-- db/routines/compute_totals.pg.sql
+CREATE OR REPLACE FUNCTION compute_totals(account_id text)
+RETURNS TABLE (debits int, credits int)
+LANGUAGE plpgsql AS $$
+BEGIN
+  SELECT COALESCE(SUM(amount), 0) INTO debits
+    FROM ledger WHERE account_id = compute_totals.account_id AND amount < 0;
+  SELECT COALESCE(SUM(amount), 0) INTO credits
+    FROM ledger WHERE account_id = compute_totals.account_id AND amount > 0;
+  RETURN NEXT;
+END;
+$$;
+```
+
+```sql
+-- db/routines/stamp_audit.pg.sql      (function half of a trigger pair)
+CREATE OR REPLACE FUNCTION stamp_audit() RETURNS trigger AS $$
+BEGIN
+  NEW.updated_at := NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+```sql
+-- db/routines/stamp_audit_trg.pg.sql (trigger half — depends on stamp_audit())
+CREATE OR REPLACE TRIGGER stamp_audit_trg
+  BEFORE UPDATE ON ledger
+  FOR EACH ROW EXECUTE FUNCTION stamp_audit();
+```
+
+Files are applied in name-sorted order; name them so a function precedes any
+trigger or caller that depends on it (`stamp_audit` before
+`stamp_audit_trg`).
+
+A stored procedure is the same shape — call it from hooks, repos, or handlers
+via `app.DB`:
+
+```sql
+-- db/routines/recompute_balance.pg.sql
+CREATE OR REPLACE PROCEDURE recompute_balance(account_id text)
+LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE accounts SET balance = (
+    SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ledger.account_id = recompute_balance.account_id
+  ) WHERE accounts.id = recompute_balance.account_id;
+END;
+$$;
+```
+
+```go
+// In a hook or repository method:
+if _, err := app.DB.ExecContext(ctx, "CALL recompute_balance($1)", acctID); err != nil {
+    return fmt.Errorf("recompute balance: %w", err)
+}
+
+// A function call returns a row, so it goes through QueryRow:
+var debits, credits int
+if err := app.DB.QueryRowContext(ctx, "SELECT debits, credits FROM compute_totals($1)", acctID).
+    Scan(&debits, &credits); err != nil {
+    return err
+}
+```
+
+In tests, point a fresh Postgres DB at the same `db/routines` directory via
+`App.RoutinesFS` — the routines land in one transaction with the schema, and
+`app_routines` introspection will report each one as `ledger_state=present`
+once boot completes.
 
 ## Views (virtual tables built from entities)
 

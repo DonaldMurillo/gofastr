@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/framework/docs"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // WithMCPIntrospection installs a set of MCP tools that expose the
@@ -77,6 +78,12 @@ func (a *App) registerIntrospectionTools() error {
 			description: "Run every registered readiness check (the same set /readyz consults) and return per-check status. Use to verify the app is ready to serve traffic before issuing real requests.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolReadiness,
+		},
+		{
+			name:        "app_routines",
+			description: "List every registered stored routine (function / procedure / trigger / view-as-routine) with its name, declared dialect (empty = all), sha256 checksum of the Up body, ledger state (present | drifted | missing | unknown), and best-effort liveness (does the object exist in pg_proc / pg_views on Postgres, unknown on SQLite). Read-only. Use to verify a routine body change has propagated, or to spot a routine the code still registers but the boot no longer applies.",
+			schema:      map[string]any{"type": "object"},
+			handler:     a.toolRoutines,
 		},
 		{
 			name:        "framework_docs_list",
@@ -306,4 +313,136 @@ func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) 
 		"ready":  ready,
 		"checks": out,
 	}, nil
+}
+
+// toolRoutines lists every routine the App registered (via App.Routine or
+// App.RoutinesFS) alongside the live ledger/liveness state. The intent is
+// agent self-orientation: "did the routine body change I just deployed
+// actually land?", "is there a routine the code still registers but the boot
+// skipped?", "is there an object missing in pg_proc?".
+//
+// Each entry carries: name, declared Dialect ("" = all engines), the sha256
+// checksum of the current registered Up body, ledger_state ∈
+// {present,drifted,missing,unknown}, and liveness ∈ {present,absent,unknown}.
+// ledger_state is "unknown" when no DB is wired; liveness is "unknown" on
+// SQLite (no pg_proc/pg_views) or when the catalog query errors — the tool
+// never fails, it just degrades gracefully so an agent always gets the
+// static fields.
+func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
+	registered := a.migrationRoutines
+	out := make([]map[string]any, 0, len(registered))
+
+	// No DB → return static fields + unknown ledger/liveness. The tool never
+	// fails; a degraded answer is more useful to an agent than an error.
+	if a.DB == nil {
+		for _, r := range registered {
+			out = append(out, map[string]any{
+				"name":         r.Name,
+				"dialect":      dialectStringForTool(r.Dialect),
+				"checksum":     migrate.RoutineChecksum(r),
+				"ledger_state": "unknown",
+				"liveness":     "unknown",
+			})
+		}
+		return map[string]any{
+			"routines": out,
+			"count":    len(out),
+			"db_wired": false,
+		}, nil
+	}
+
+	ctx := context.Background()
+	dialect := migrate.DetectDialect(a.DB)
+
+	// Read the ledger in one shot. On error, every entry gets ledger_state
+	// "unknown" — we still surface the registered set + checksums.
+	ledger := map[string]string{}
+	if rows, err := a.DB.QueryContext(ctx,
+		`SELECT name, checksum FROM gofastr_routines`); err == nil {
+		for rows.Next() {
+			var name, checksum string
+			if err := rows.Scan(&name, &checksum); err == nil {
+				ledger[name] = checksum
+			}
+		}
+		_ = rows.Close()
+	}
+
+	for _, r := range registered {
+		newSum := migrate.RoutineChecksum(r)
+		entry := map[string]any{
+			"name":     r.Name,
+			"dialect":  dialectStringForTool(r.Dialect),
+			"checksum": newSum,
+		}
+		// Ledger state: only meaningful when the dialect matches. A routine
+		// declared PG-only running against SQLite will never have a ledger row
+		// for this engine — report "skipped_for_dialect" so an agent doesn't
+		// read it as drift.
+		if r.Dialect != "" && r.Dialect != dialect {
+			entry["ledger_state"] = "skipped_for_dialect"
+		} else if oldSum, ok := ledger[r.Name]; ok {
+			if oldSum == newSum {
+				entry["ledger_state"] = "present"
+			} else {
+				entry["ledger_state"] = "drifted"
+			}
+		} else {
+			entry["ledger_state"] = "missing"
+		}
+		entry["liveness"] = a.probeRoutineLiveness(ctx, r.Name, dialect)
+		out = append(out, entry)
+	}
+
+	return map[string]any{
+		"routines": out,
+		"count":    len(out),
+		"db_wired": true,
+	}, nil
+}
+
+// probeRoutineLiveness asks the DB whether a routine object with the given
+// name currently exists. Postgres: pg_proc (functions/procedures) UNIONed
+// with pg_views (views). SQLite: there is no portable catalog query that
+// covers all routine kinds cheaply, so we report "unknown" rather than lie.
+// Any query error returns "unknown" — the introspection tool degrades to the
+// static fields rather than failing.
+func (a *App) probeRoutineLiveness(ctx context.Context, name string, dialect migrate.Dialect) string {
+	switch dialect {
+	case migrate.DialectPostgres:
+		// One round-trip: pg_proc (functions + procedures) and pg_views.
+		const q = `SELECT EXISTS (
+				SELECT 1 FROM pg_proc WHERE proname = $1
+				UNION ALL
+				SELECT 1 FROM pg_views WHERE viewname = $1
+			)`
+		var exists bool
+		err := a.DB.QueryRowContext(ctx, q, name).Scan(&exists)
+		if err != nil {
+			return "unknown"
+		}
+		if exists {
+			return "present"
+		}
+		return "absent"
+	default:
+		// SQLite: sqlite_master covers views, triggers, tables, but a function
+		// or procedure body has no catalog entry (SQLite has no stored
+		// functions). Reporting "present" or "absent" off sqlite_master would
+		// be misleading for the function/procedure case, so we surface
+		// "unknown" and let ledger_state carry the water.
+		return "unknown"
+	}
+}
+
+// dialectStringForTool renders a Dialect for the MCP response. Re-implements
+// the migrate package's dialectString helper because this file lives in
+// package framework and the helper is unexported there. The two must stay in
+// sync — see TestRoutineChecksum_StableAndDifferent's sibling test
+// (framework-level) for the parity assertion.
+func dialectStringForTool(d migrate.Dialect) string {
+	if d == "" {
+		return "all"
+	}
+	return string(d)
 }
