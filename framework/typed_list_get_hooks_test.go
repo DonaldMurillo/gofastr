@@ -159,7 +159,7 @@ func TestOnAfterGet_TypedCanMutateResult(t *testing.T) {
 	app.Router().ServeHTTP(rec, req)
 
 	var got map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &got)
+	json.Unmarshal(rec.Body.Bytes(), singleMap(&got))
 	if got["title"] != "REDACTED" {
 		t.Errorf("AfterGet typed mutation lost: %+v", got)
 	}

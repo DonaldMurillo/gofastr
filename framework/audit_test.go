@@ -116,7 +116,7 @@ func TestAudit_UpdateCapturesNewState(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "v1"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 		id := created["id"].(string)
@@ -156,7 +156,7 @@ func TestAudit_DeleteRecordsID(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "gone soon"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		json.Unmarshal([]byte(create.Body()), &created)
+		json.Unmarshal([]byte(create.Body()), singleMap(&created))
 		id := created["id"].(string)
 
 		del := ta.Delete("/posts/" + id)

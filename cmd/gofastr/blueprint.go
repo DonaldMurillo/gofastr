@@ -1645,6 +1645,7 @@ func blueprintCRUDRoutes(entities []framework.EntityDeclaration) map[string]bool
 			{http.MethodGet, root + "/{id}"},
 			{http.MethodPost, root},
 			{http.MethodPut, root + "/{id}"},
+			{http.MethodPatch, root + "/{id}"},
 			{http.MethodDelete, root + "/{id}"},
 			{http.MethodPost, root + "/_batch"},
 			{http.MethodPatch, root + "/_batch"},
@@ -6170,7 +6171,7 @@ func blueprintEntityDetailClientJS(block BlueprintBlock, apiBase string) string 
     const res = await fetch(apiBase + '/' + entity + '/' + encodeURIComponent(id), { headers: { 'Accept': 'application/json' } });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const payload = await res.json();
-    const row = payload && payload.data ? payload.data : payload;
+    const row = payload && payload.data;
     if (!row) return;
     // API keys are camelCase; field markers are snake_case — try both.
     const cell = (key) => {

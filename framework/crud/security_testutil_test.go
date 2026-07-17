@@ -197,6 +197,15 @@ func decodeListResponse(t *testing.T, body string) ListResponse {
 	return resp
 }
 
+func decodeSingleResponse(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var response singleResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatalf("decode single response: %v", err)
+	}
+	return response.Data
+}
+
 // makeEntityConfig creates an EntityConfig with the given parameters.
 func makeEntityConfig(name, table, ownerField string, fields []schema.Field, mutators ...func(*entity.EntityConfig)) entity.EntityConfig {
 	cfg := entity.EntityConfig{

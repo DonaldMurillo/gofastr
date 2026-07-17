@@ -33,11 +33,13 @@ func TestRenderClient_StructsAndMethods(t *testing.T) {
 		"func NewClient(baseURL string, httpClient *http.Client)",
 		"type Posts struct",
 		"type PostsInput struct",
+		"func (c *Client) doSingleJSON(",
 		"type PostsListResponse struct",
 		"func (c *Client) ListPosts(",
 		"func (c *Client) GetPosts(",
 		"func (c *Client) CreatePosts(",
 		"func (c *Client) UpdatePosts(",
+		"func (c *Client) PatchPosts(",
 		"func (c *Client) DeletePosts(",
 		`Title string `,
 		`Views int `,
@@ -145,6 +147,14 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		t.Fatalf("update did not persist: %+v", updated)
 	}
 
+	patched, err := c.PatchPosts(ctx, created.ID, gen.PostsInput{Title: "patched"})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if patched.Title != "patched" || patched.Views != 99 {
+		t.Fatalf("patch did not preserve sparse fields: %+v", patched)
+	}
+
 	list, err := c.ListPosts(ctx, nil)
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -152,7 +162,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 	if list.Total != 1 {
 		t.Fatalf("expected total=1, got %d", list.Total)
 	}
-	if len(list.Data) != 1 || list.Data[0].Title != "edited" {
+	if len(list.Data) != 1 || list.Data[0].Title != "patched" {
 		t.Fatalf("list payload mismatch: %+v", list)
 	}
 

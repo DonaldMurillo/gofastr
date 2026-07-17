@@ -212,7 +212,8 @@ func jsonField(t *testing.T, body, field string) string {
 	if err := json.Unmarshal([]byte(body), &obj); err != nil {
 		t.Fatalf("decode JSON body: %v\nbody=%.300s", err, body)
 	}
-	val, _ := obj[field].(string)
+	data, _ := obj["data"].(map[string]any)
+	val, _ := data[field].(string)
 	if val == "" {
 		t.Fatalf("JSON body has no string field %q; body=%.300s", field, body)
 	}

@@ -985,7 +985,7 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 func extractIDFromResponse(t *testing.T, resp *TestResponse) string {
 	t.Helper()
 	var result map[string]any
-	if err := resp.JSON(&result); err != nil {
+	if err := resp.JSON(singleMap(&result)); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	id, ok := result["id"].(string)

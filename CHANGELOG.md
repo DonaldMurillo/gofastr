@@ -17,6 +17,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   fields keep their strict built-in defaults; the zero value reproduces
   the previous behaviour exactly.
 
+- Auto-CRUD now mounts `PATCH /<entity>/{id}` for sparse updates. PATCH shares
+  PUT's access, owner/tenant scoping, hooks, audit, transaction, and validation
+  path while validating and changing only fields present in the request body.
+  OpenAPI, MCP update tools, generated typed clients, and entity `llm.md` expose
+  the verb too.
+
+### Changed
+
+- **BREAKING:** successful single-record CRUD responses (create, get, PUT, and
+  PATCH) now consistently use `{"data": {...}}`, matching list's
+  `{"data": [...]}` envelope. Errors and DELETE responses are unchanged.
+
 ### Fixed
 
 - **Eager loading / `?include=` no longer fails on nullable foreign keys.**

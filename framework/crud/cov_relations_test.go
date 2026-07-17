@@ -3,7 +3,6 @@ package crud
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -140,10 +139,7 @@ func TestGet_WithIncludesAndProjection(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
-	var got map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
+	got := decodeSingleResponse(t, rec.Body.Bytes())
 	if got["title"] != "first" {
 		t.Errorf("title = %v", got["title"])
 	}

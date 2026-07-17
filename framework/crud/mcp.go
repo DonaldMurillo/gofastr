@@ -105,13 +105,13 @@ func (ch *CrudHandler) getTool(router http.Handler) mcp.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
-		return runToolRequest(ctx, router, http.MethodGet, ch.mcpBase()+"/"+url.PathEscape(id), nil)
+		return unwrapToolData(runToolRequest(ctx, router, http.MethodGet, ch.mcpBase()+"/"+url.PathEscape(id), nil))
 	}
 }
 
 func (ch *CrudHandler) createTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
-		return runToolRequest(ctx, router, http.MethodPost, ch.mcpBase(), params)
+		return unwrapToolData(runToolRequest(ctx, router, http.MethodPost, ch.mcpBase(), params))
 	}
 }
 
@@ -127,8 +127,23 @@ func (ch *CrudHandler) updateTool(router http.Handler) mcp.ToolHandler {
 				body[k] = v
 			}
 		}
-		return runToolRequest(ctx, router, http.MethodPut, ch.mcpBase()+"/"+url.PathEscape(id), body)
+		return unwrapToolData(runToolRequest(ctx, router, http.MethodPatch, ch.mcpBase()+"/"+url.PathEscape(id), body))
 	}
+}
+
+func unwrapToolData(result any, err error) (any, error) {
+	if err != nil {
+		return nil, err
+	}
+	envelope, ok := result.(map[string]any)
+	if !ok {
+		return result, nil
+	}
+	data, ok := envelope["data"]
+	if !ok {
+		return result, nil
+	}
+	return data, nil
 }
 
 func (ch *CrudHandler) deleteTool(router http.Handler) mcp.ToolHandler {

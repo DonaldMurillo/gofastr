@@ -20,9 +20,10 @@ import (
 //   - GetPost(ctx, id) (Post, error)
 //   - CreatePost(ctx, body PostInput) (Post, error)
 //   - UpdatePost(ctx, id, body PostInput) (Post, error)
+//   - PatchPost(ctx, id, body PostInput) (Post, error)
 //   - DeletePost(ctx, id) error
 //
-// PostInput is the create/update payload — same shape minus the ID — so
+// PostInput is the create/update/patch payload — same shape minus the ID — so
 // callers don't construct a zero-id Post.
 func renderClient(decls []framework.EntityDeclaration) string {
 	var sb strings.Builder
@@ -104,6 +105,16 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// doSingleJSON decodes the {"data": {...}} envelope used by single-record
+// CRUD responses into out.
+func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, out any) error {
+	var envelope map[string]json.RawMessage
+	if err := c.doJSON(ctx, method, path, body, &envelope); err != nil {
+		return err
+	}
+	return json.Unmarshal(envelope["data"], out)
+}
+
 `)
 
 	for _, decl := range decls {
@@ -138,7 +149,6 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 			toCamelJSON(field.Name)))
 	}
 	sb.WriteString("}\n\n")
-
 	// Input struct (PostInput) — same shape minus the ID. We intentionally
 	// drop ID even on update: the server uses the URL path parameter for
 	// addressing, and including it in the body invites mismatch bugs.
@@ -183,7 +193,7 @@ func (c *Client) List%s(ctx context.Context, params url.Values) (%sListResponse,
 	sb.WriteString(fmt.Sprintf(`// Get%s fetches a single record by id. Returns *APIError with 404 when missing.
 func (c *Client) Get%s(ctx context.Context, id string) (%s, error) {
 	var out %s
-	if err := c.doJSON(ctx, http.MethodGet, "/%s/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodGet, "/%s/"+url.PathEscape(id), nil, &out); err != nil {
 		return %s{}, err
 	}
 	return out, nil
@@ -195,7 +205,7 @@ func (c *Client) Get%s(ctx context.Context, id string) (%s, error) {
 	sb.WriteString(fmt.Sprintf(`// Create%s posts a new record and returns the server-canonical row.
 func (c *Client) Create%s(ctx context.Context, body %sInput) (%s, error) {
 	var out %s
-	if err := c.doJSON(ctx, http.MethodPost, "/%s", body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPost, "/%s", body, &out); err != nil {
 		return %s{}, err
 	}
 	return out, nil
@@ -207,7 +217,19 @@ func (c *Client) Create%s(ctx context.Context, body %sInput) (%s, error) {
 	sb.WriteString(fmt.Sprintf(`// Update%s updates the record at id with the partial body.
 func (c *Client) Update%s(ctx context.Context, id string, body %sInput) (%s, error) {
 	var out %s
-	if err := c.doJSON(ctx, http.MethodPut, "/%s/"+url.PathEscape(id), body, &out); err != nil {
+	if err := c.doSingleJSON(ctx, http.MethodPut, "/%s/"+url.PathEscape(id), body, &out); err != nil {
+		return %s{}, err
+	}
+	return out, nil
+}
+
+`, struct_, struct_, struct_, struct_, struct_, table, struct_))
+
+	// Patch
+	sb.WriteString(fmt.Sprintf(`// Patch%s sparsely updates fields present in body.
+func (c *Client) Patch%s(ctx context.Context, id string, body %sInput) (%s, error) {
+	var out %s
+	if err := c.doSingleJSON(ctx, http.MethodPatch, "/%s/"+url.PathEscape(id), body, &out); err != nil {
 		return %s{}, err
 	}
 	return out, nil

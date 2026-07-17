@@ -106,7 +106,7 @@ func TestUpload_Create_StoresFileAndPersistsURL(t *testing.T) {
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		avatar, _ := got["avatar"].(string)
@@ -222,7 +222,7 @@ func TestUpload_JSONStillWorks(t *testing.T) {
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		if got["avatar"] != safe {

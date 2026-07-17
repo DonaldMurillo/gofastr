@@ -49,7 +49,7 @@ func TestProjection_Get(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		if _, ok := got["id"]; !ok {
@@ -129,7 +129,7 @@ func TestProjection_CamelCaseInput(t *testing.T) {
 		resp := ta.Get("/posts/p1?fields=authorId")
 		resp.AssertStatus(t, http.StatusOK)
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		if got["authorId"] != "u1" {
@@ -157,7 +157,7 @@ func TestProjection_WithInclude(t *testing.T) {
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		if got["title"] != "First" {

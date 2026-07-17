@@ -3,7 +3,6 @@ package crud
 import (
 	"bytes"
 	"database/sql"
-	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -141,8 +140,7 @@ func TestMultipartCreate_SavesFile(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("multipart create = %d, body=%s", rec.Code, rec.Body.String())
 	}
-	var got map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	got := decodeSingleResponse(t, rec.Body.Bytes())
 	if got["caption"] != "a pic" {
 		t.Errorf("caption = %v", got["caption"])
 	}

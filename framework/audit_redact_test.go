@@ -153,7 +153,7 @@ func TestAudit_RedactFiresOnDelete(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "to delete"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 		id := created["id"].(string)
@@ -196,7 +196,7 @@ func TestAudit_RedactMutationDoesNotLeakIntoResponse(t *testing.T) {
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var body map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &body); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&body)); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
 		if body["title"] != "original-title" {

@@ -239,10 +239,13 @@ func TestSPAEntityAPI(t *testing.T) {
 			t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
 		}
 
-		var article map[string]any
-		if err := json.Unmarshal(w.Body.Bytes(), &article); err != nil {
+		var response struct {
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 			t.Fatal(err)
 		}
+		article := response.Data
 		if article["title"] != "Getting Started with Go" {
 			t.Errorf("got title %v", article["title"])
 		}
@@ -471,8 +474,11 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 			t.Fatalf("get status: %d", w.Code)
 		}
 
-		var article map[string]any
-		json.Unmarshal(w.Body.Bytes(), &article)
+		var response struct {
+			Data map[string]any `json:"data"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		article := response.Data
 		if article["title"] != "Test Article" {
 			t.Errorf("got title %v", article["title"])
 		}

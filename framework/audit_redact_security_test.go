@@ -48,7 +48,7 @@ func TestAudit_RedactPanicOnUpdateDoesNotAbortRequest(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -82,7 +82,7 @@ func TestAudit_RedactPanicOnDeleteDoesNotAbortRequest(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -115,7 +115,7 @@ func TestAudit_DeleteRedactOmittedIDKeepsOriginalRecordID(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 		id := created["id"].(string)
@@ -168,7 +168,7 @@ func TestAudit_DeleteRedactStripsNewlinesFromRecordID(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -220,7 +220,7 @@ func TestAudit_DeleteRedactStripsNULFromRecordID(t *testing.T) {
 		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 
@@ -272,7 +272,7 @@ func TestAudit_ActorPanicOnUpdateDoesNotAbortRequest(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "before"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 		armed = true
@@ -310,7 +310,7 @@ func TestAudit_ActorPanicOnDeleteDoesNotAbortRequest(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "to-delete"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 		armed = true
@@ -359,7 +359,7 @@ func TestAudit_RedactUnmarshalableUpdateValueDoesNotEraseDiff(t *testing.T) {
 		create := ta.Post("/posts", map[string]any{"title": "before"})
 		create.AssertStatus(t, http.StatusCreated)
 		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
+		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
 			t.Fatalf("decode create: %v", err)
 		}
 		ta.Put("/posts/"+created["id"].(string), map[string]any{"title": "after"}).AssertStatus(t, http.StatusOK)

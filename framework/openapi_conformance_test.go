@@ -274,10 +274,11 @@ func TestE2E_Conformance_GetPost_ResponseMatchesSpec(t *testing.T) {
 		resp := ta.Get("/posts/p1")
 		resp.AssertStatus(t, http.StatusOK)
 
-		var post map[string]any
-		if err := resp.JSON(&post); err != nil {
+		var response map[string]any
+		if err := resp.JSON(&response); err != nil {
 			t.Fatalf("parse response: %v", err)
 		}
+		post := response["data"].(map[string]any)
 
 		// Spec says GET /posts/{id} returns 200 with entity schema
 		schema := getSpecResponseSchema(t, specDoc, "/posts/{id}", "get", "200")
@@ -289,7 +290,7 @@ func TestE2E_Conformance_GetPost_ResponseMatchesSpec(t *testing.T) {
 
 		// Every field in the spec should exist in the response
 		for fieldName := range specProps {
-			if _, ok := post[fieldName]; !ok {
+			if _, ok := response[fieldName]; !ok {
 				t.Errorf("response missing field %q from spec", fieldName)
 			}
 		}
@@ -343,10 +344,11 @@ func TestE2E_Conformance_CreatePost_ResponseMatchesSpec(t *testing.T) {
 		})
 		resp.AssertStatus(t, http.StatusCreated)
 
-		var created map[string]any
-		if err := resp.JSON(&created); err != nil {
+		var response map[string]any
+		if err := resp.JSON(&response); err != nil {
 			t.Fatalf("parse created response: %v", err)
 		}
+		created := response["data"].(map[string]any)
 
 		// Verify response has all fields the spec defines for the entity
 		schema := getSpecResponseSchema(t, specDoc, "/posts", "post", "201")
@@ -356,7 +358,7 @@ func TestE2E_Conformance_CreatePost_ResponseMatchesSpec(t *testing.T) {
 		specProps := schema["properties"].(map[string]any)
 
 		for fieldName := range specProps {
-			if _, ok := created[fieldName]; !ok {
+			if _, ok := response[fieldName]; !ok {
 				t.Errorf("create response missing field %q from spec", fieldName)
 			}
 		}
@@ -415,10 +417,11 @@ func TestE2E_Conformance_UpdatePost_ResponseMatchesSpec(t *testing.T) {
 		})
 		resp.AssertStatus(t, http.StatusOK)
 
-		var updated map[string]any
-		if err := resp.JSON(&updated); err != nil {
+		var response map[string]any
+		if err := resp.JSON(&response); err != nil {
 			t.Fatalf("parse response: %v", err)
 		}
+		updated := response["data"].(map[string]any)
 
 		// Response should have entity fields per spec
 		schema := getSpecResponseSchema(t, specDoc, "/posts/{id}", "put", "200")
@@ -428,7 +431,7 @@ func TestE2E_Conformance_UpdatePost_ResponseMatchesSpec(t *testing.T) {
 		specProps := schema["properties"].(map[string]any)
 
 		for fieldName := range specProps {
-			if _, ok := updated[fieldName]; !ok {
+			if _, ok := response[fieldName]; !ok {
 				t.Errorf("update response missing field %q from spec", fieldName)
 			}
 		}

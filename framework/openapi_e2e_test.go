@@ -312,7 +312,8 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	content := getNestedMap(resp200, "content")
 	jsonContent := getNestedMap(content, "application/json")
 	schemaRef := getNestedMap(jsonContent, "schema")
-	assertEqual(t, "get 200 schema ref", "#/components/schemas/posts", schemaRef["$ref"])
+	dataRef := getNestedMap(getNestedMap(schemaRef, "properties"), "data")
+	assertEqual(t, "get 200 data schema ref", "#/components/schemas/posts", dataRef["$ref"])
 
 	// POST /posts — 201 response should reference posts schema
 	listPath := getNestedMap(paths, "/posts")
@@ -322,7 +323,25 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	createContent := getNestedMap(resp201, "content")
 	createJSON := getNestedMap(createContent, "application/json")
 	createSchemaRef := getNestedMap(createJSON, "schema")
-	assertEqual(t, "create 201 schema ref", "#/components/schemas/posts", createSchemaRef["$ref"])
+	createDataRef := getNestedMap(getNestedMap(createSchemaRef, "properties"), "data")
+	assertEqual(t, "create 201 data schema ref", "#/components/schemas/posts", createDataRef["$ref"])
+
+	// PATCH /posts/{id} — sparse update shares the single-record envelope.
+	patchOp := getNestedMap(detailPath, "patch")
+	patchResponses := getNestedMap(patchOp, "responses")
+	patch200 := getNestedMap(patchResponses, "200")
+	patchContent := getNestedMap(patch200, "content")
+	patchJSON := getNestedMap(patchContent, "application/json")
+	patchSchema := getNestedMap(patchJSON, "schema")
+	patchDataRef := getNestedMap(getNestedMap(patchSchema, "properties"), "data")
+	assertEqual(t, "patch 200 data schema ref", "#/components/schemas/posts", patchDataRef["$ref"])
+	patchBody := getNestedMap(patchOp, "requestBody")
+	patchBodyContent := getNestedMap(patchBody, "content")
+	patchBodyJSON := getNestedMap(patchBodyContent, "application/json")
+	patchBodySchema := getNestedMap(patchBodyJSON, "schema")
+	if _, required := patchBodySchema["required"]; required {
+		t.Fatal("PATCH request schema must not require omitted fields")
+	}
 
 	// List 200 is now oneOf [ListResponse, CursorPage] — verify ListResponse
 	// is one of the variants.

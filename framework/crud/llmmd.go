@@ -166,7 +166,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("| `id` | path | Record primary key |\n")
 	b.WriteString("| `include` | query | Comma-separated relations to eager-load |\n")
 	b.WriteString("\n")
-	b.WriteString("**Response:** `200` with the entity object.\n")
+	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 	b.WriteString("**Error:** `404` if not found.\n\n")
 
 	// POST /{table}
@@ -186,14 +186,21 @@ func EntityLLMMD(ent *entity.Entity) string {
 		fmt.Fprintf(&b, "  \"%s\": \"<value>\"", f.Name)
 	}
 	b.WriteString("\n}\n```\n")
-	b.WriteString("**Response:** `201` with the created entity object.\n")
+	b.WriteString("**Response:** `201` with `{\"data\": { ... }}`.\n")
 	b.WriteString("**Error:** `400` with validation errors.\n\n")
 
 	// PUT /{table}/{id}
 	fmt.Fprintf(&b, "### PUT /%s/{id}\n\n", table)
 	b.WriteString("Update an existing record.\n\n")
 	b.WriteString("**Request body:** JSON object with fields to update.\n")
-	b.WriteString("**Response:** `200` with the updated entity object.\n")
+	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
+	b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
+
+	// PATCH /{table}/{id}
+	fmt.Fprintf(&b, "### PATCH /%s/{id}\n\n", table)
+	b.WriteString("Sparsely update an existing record. Only fields present in the JSON body are validated and changed.\n\n")
+	b.WriteString("**Request body:** JSON object with one or more fields to update.\n")
+	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 	b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
 
 	// DELETE /{table}/{id}

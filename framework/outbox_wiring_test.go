@@ -163,13 +163,15 @@ func TestOutbox_UpdateAndDeleteDeliver(t *testing.T) {
 			t.Fatalf("create = %d: %s", rec.Code, rec.Body)
 		}
 		var created struct {
-			ID any `json:"id"`
+			Data struct {
+				ID any `json:"id"`
+			} `json:"data"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 			t.Fatalf("decode create response: %v", err)
 		}
-		id := fmt.Sprintf("%v", created.ID)
-		if f, ok := created.ID.(float64); ok {
+		id := fmt.Sprintf("%v", created.Data.ID)
+		if f, ok := created.Data.ID.(float64); ok {
 			id = fmt.Sprintf("%d", int64(f))
 		}
 

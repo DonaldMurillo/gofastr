@@ -118,7 +118,7 @@ func TestGap_MultipartLargeFile_RoundTripsExactly(t *testing.T) {
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
 		avatarURL, _ := got["avatar"].(string)

@@ -169,7 +169,7 @@ a convenience for the ctx-aware pattern.
 ### Path space — avoid colliding with entity CRUD
 
 Every entity you register automatically claims its own URL space for
-REST CRUD: an entity named `foods` mounts `GET/POST /foods`, `PUT/DELETE
+REST CRUD: an entity named `foods` mounts `GET/POST /foods`, `GET/PUT/PATCH/DELETE
 /foods/:id`, plus `/foods/llm.md`. If you also register a screen at `/foods`,
 the two routes collide and the app panics at startup (currently the panic
 surfaces as a duplicate `/<entity>/llm.md` registration — friendlier

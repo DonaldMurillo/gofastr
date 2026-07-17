@@ -303,7 +303,7 @@ id, and auto-CRUD becomes per-user automatically:
 | `GET /api/<entity>` (List)   | `WHERE user_id = <ctx user id>` injected into both the data and count queries. |
 | `GET /api/<entity>/{id}` (Get) | `WHERE id = ? AND user_id = <ctx user id>`. Cross-user requests return 404. |
 | `POST /api/<entity>` (Create) | `user_id` is stamped from the current request — clients can omit it (or send it; it's overwritten). |
-| `PUT /api/<entity>/{id}` (Update) | UPDATE is scoped by owner. Cross-user requests return 404. |
+| `PUT /api/<entity>/{id}` / `PATCH /api/<entity>/{id}` (Update) | UPDATE is scoped by owner. Cross-user requests return 404. |
 | `DELETE /api/<entity>/{id}` (Delete) | DELETE is scoped by owner. Cross-user requests return 404. |
 
 The owner id comes from `framework/owner.Get(ctx)`. Any battery that
@@ -381,7 +381,7 @@ policy says yes.
 
 **Read-only.** `CrossOwnerRead` never touches Create/Update/Delete —
 those stay owner-scoped. A staff member can *see* every ticket but
-cannot PUT/DELETE another user's row through the auto-CRUD surface.
+cannot PUT/PATCH/DELETE another user's row through the auto-CRUD surface.
 Cross-user writes still return 404. Multi-tenant isolation is also
 preserved: a granted context in tenant A never sees tenant B rows.
 
@@ -633,6 +633,25 @@ empty keeps the bare mounts, so adding it is never a breaking change.
 > **Common mistake:** registering a screen at `/posts` while a `posts` entity
 > mounts there too. Without `APIPrefix` you'll get a route-conflict panic naming
 > the colliding path; set `APIPrefix` (or mount the page elsewhere) to resolve it.
+
+### CRUD verbs and response envelopes
+
+Each writable entity mounts `POST /<entity>`, `PUT /<entity>/{id}`, and
+`PATCH /<entity>/{id}`. PATCH is the sparse-update form: validation and SQL
+updates apply only to fields present in the JSON body. It uses the same access,
+owner and tenant scopes, update hooks, audit pre-image, and transaction path as
+PUT. The generated typed client exposes both `Update<Entity>` and
+`Patch<Entity>`; the MCP update tool uses PATCH because its input is sparse.
+
+Every successful single-record response has one stable envelope:
+
+```json
+{"data":{"id":"p1","title":"Hello"}}
+```
+
+This applies to create (`201`), get (`200`), PUT (`200`), and PATCH (`200`).
+Lists keep `{"data":[...]}` plus pagination metadata. Error and DELETE
+responses are unchanged.
 
 ## MCP Tools
 

@@ -7,7 +7,7 @@ async function api(url) {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`API ${res.status}`)
   const json = await res.json()
-  return json.data !== undefined ? json.data : json
+  return json.data
 }
 
 // ── Views ───────────────────────────────────────────────

@@ -25,6 +25,7 @@ type CrudRouteOptions struct {
 //	GET    /path/{id}        → Get
 //	POST   /path             → Create
 //	PUT    /path/{id}        → Update
+//	PATCH  /path/{id}        → Update (sparse)
 //	DELETE /path/{id}        → Delete
 //	POST   /path/_batch      → BatchCreate (atomic; all-or-nothing)
 //	PATCH  /path/_batch      → BatchUpdate (atomic; all-or-nothing)
@@ -47,6 +48,7 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opt
 	if !opt.ReadOnly {
 		r.Post(path, handler.Create())
 		r.Put(path+"/{id}", handler.Update())
+		r.Patch(path+"/{id}", handler.Update())
 		r.Delete(path+"/{id}", handler.Delete())
 
 		r.Post(path+"/_batch", handler.BatchCreate())

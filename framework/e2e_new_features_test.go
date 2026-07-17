@@ -348,7 +348,7 @@ func seedAuthorsAndPosts(t *testing.T, env *newFeaturesEnv) {
 			t.Fatalf("seed author %s: %d %s", name, code, body)
 		}
 		var created map[string]any
-		if err := json.Unmarshal(body, &created); err != nil {
+		if err := json.Unmarshal(body, singleMap(&created)); err != nil {
 			t.Fatalf("decode author: %v", err)
 		}
 		authorIDs[name] = created["id"].(string)
@@ -373,7 +373,7 @@ func seedAuthorsAndPosts(t *testing.T, env *newFeaturesEnv) {
 			t.Fatalf("seed post %s: %d %s", p.title, code, body)
 		}
 		var created map[string]any
-		json.Unmarshal(body, &created)
+		json.Unmarshal(body, singleMap(&created))
 		postIDs = append(postIDs, created["id"].(string))
 	}
 	// Stash the post IDs on the env so the scoped-include subtest can use

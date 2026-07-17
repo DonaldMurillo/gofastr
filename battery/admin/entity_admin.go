@@ -316,11 +316,13 @@ func (b *Battery) getRow(ctx context.Context, ent *entity.Entity, id string) (ma
 	if code != http.StatusOK {
 		return nil, fmt.Errorf("get returned %d", code)
 	}
-	var row map[string]any
-	if err := json.Unmarshal(raw, &row); err != nil {
+	var response struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
 		return nil, err
 	}
-	return row, nil
+	return response.Data, nil
 }
 
 // ----- write handlers (explicit routes) -------------------------------------

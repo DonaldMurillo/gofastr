@@ -148,10 +148,7 @@ func TestOwnerScope_CreateAutoStampsOwner(t *testing.T) {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
+	got := decodeSingleResponse(t, rec.Body.Bytes())
 	if got["user_id"] != "carol" {
 		t.Errorf("user_id not auto-stamped: %+v", got)
 	}
@@ -214,10 +211,7 @@ func TestOwnerScope_HiddenOwnerColumnPersistedOnCreate(t *testing.T) {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
+	got := decodeSingleResponse(t, rec.Body.Bytes())
 	// Hidden from the response surface...
 	if _, leaked := got["user_id"]; leaked {
 		t.Errorf("hidden owner column leaked into API response: %+v", got)

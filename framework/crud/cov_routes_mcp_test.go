@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 func TestNormalizePath(t *testing.T) {
@@ -52,6 +54,98 @@ func TestRegisterCrudRoutes_WiresEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "# widgets") {
 		t.Error("llm.md body missing entity header")
+	}
+}
+
+func TestPatchSparseUpdate(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE widgets (id TEXT PRIMARY KEY, name TEXT NOT NULL, note TEXT)`)
+	if _, err := db.Exec(`INSERT INTO widgets (id, name, note) VALUES ('w1', 'Widget', 'old')`); err != nil {
+		t.Fatal(err)
+	}
+	ent := entity.Define("widgets", entity.EntityConfig{
+		Name: "widgets", Table: "widgets",
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+			{Name: "note", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	r := router.New()
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	ch.Hooks = hook.NewHookRegistry()
+	var beforeBody map[string]any
+	afterFired := false
+	ch.Hooks.RegisterHook(hook.BeforeUpdate, func(_ context.Context, data any) error {
+		beforeBody = data.(map[string]any)
+		return nil
+	})
+	ch.Hooks.RegisterHook(hook.AfterUpdate, func(_ context.Context, _ any) error {
+		afterFired = true
+		return nil
+	})
+	RegisterCrudRoutes(r, ch, "/widgets")
+
+	req := httptest.NewRequest(http.MethodPatch, "/widgets/w1", strings.NewReader(`{"note":"new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+
+	var response struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Data["name"] != "Widget" || response.Data["note"] != "new" {
+		t.Fatalf("PATCH data = %#v", response.Data)
+	}
+	if len(beforeBody) != 1 || beforeBody["note"] != "new" || !afterFired {
+		t.Fatalf("PATCH hooks: before=%#v after=%v", beforeBody, afterFired)
+	}
+}
+
+func TestSingleResponsesWrapped(t *testing.T) {
+	ent, db, r := covSimpleEntity(t)
+	if _, err := db.Exec(`INSERT INTO widgets (id, name) VALUES ('w1', 'Widget')`); err != nil {
+		t.Fatal(err)
+	}
+	RegisterCrudRoutes(r, NewCrudHandler(ent, db).WithJSONCase(CaseSnake), "/widgets")
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		status int
+	}{
+		{name: "create", method: http.MethodPost, path: "/widgets", body: `{"name":"Created"}`, status: http.StatusCreated},
+		{name: "get", method: http.MethodGet, path: "/widgets/w1", status: http.StatusOK},
+		{name: "update", method: http.MethodPut, path: "/widgets/w1", body: `{"name":"Updated"}`, status: http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != tt.status {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tt.status, rec.Body.String())
+			}
+			var response struct {
+				Data map[string]any `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Data == nil {
+				t.Fatalf("response is not wrapped: %s", rec.Body.String())
+			}
+		})
 	}
 }
 

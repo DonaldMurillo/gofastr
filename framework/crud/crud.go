@@ -95,6 +95,12 @@ type ListResponse struct {
 	TotalPages int              `json:"totalPages"`
 }
 
+// singleResponse is the standard JSON envelope for single-record CRUD
+// endpoints (create, get, update, and patch).
+type singleResponse struct {
+	Data map[string]any `json:"data"`
+}
+
 // ApplyTenantScope adds a tenant_id filter to the query when the entity
 // is configured for multi-tenancy and a tenant ID is present in the context.
 // Note: uses PostgreSQL-style $1 placeholders.
@@ -696,7 +702,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
+		json.NewEncoder(w).Encode(singleResponse{Data: result})
 	}
 }
 
@@ -746,7 +752,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(result)
+		json.NewEncoder(w).Encode(singleResponse{Data: result})
 	}
 }
 
@@ -796,7 +802,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		ch.EmitEvent(r.Context(), event.EntityUpdated, result)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
+		json.NewEncoder(w).Encode(singleResponse{Data: result})
 	}
 }
 
