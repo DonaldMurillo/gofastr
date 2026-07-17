@@ -463,6 +463,32 @@ prefix matches the existing `gofastr:navigate` convention. The
 NetworkRetryBanner reads `lastEventAt` for its silence trigger and
 listens for the event to re-probe its health endpoint on reconnect.
 
+### Cross-replica presence (`gofastr.presence` fanout lane)
+
+Presence rosters aggregate across `serve` replicas over the existing
+`core/fanout` transport, on a dedicated `gofastr.presence` topic parallel
+to the `gofastr.islands` invalidation lane — same transport, disjoint
+topics, disjoint payload shapes. Invalidations stay event-style and
+lossy; presence is lossy *self-healing state*: each replica broadcasts
+its full local roster per topic on join/leave and on a 15 s heartbeat,
+and receivers keep a TTL'd (45 s) remote table, so a dropped message
+heals on the next beat and a crashed replica's members vanish within
+TTL. `Manager.stop()` publishes an empty roster synchronously first, so
+rolling restarts converge promptly without waiting out the TTL.
+
+The contract points that must not drift:
+
+- `Manager.SetFanout` wires BOTH lanes in one call; the framework's
+  existing duck-typed `SetFanout` plumbing reaches it with no new glue.
+- `PresenceRoster(topic)` returns the merged local ∪ live-remote roster,
+  deduplicated by identity; with no fanout configured it is
+  byte-identical to the single-replica result.
+- Announcements carry ONLY what `PresenceRoster` already exposes
+  (`UserID`, `DisplayName`) — never session ids. There is still no
+  ungated HTTP roster endpoint.
+- Remote replicas are capped per topic (512) so a forged-replica-id
+  flood cannot grow the table unboundedly.
+
 ### PWA surface (`uihost.WithPWA`)
 
 Opt-in installable-app support lives in `framework/uihost` (see

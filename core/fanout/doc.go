@@ -13,6 +13,15 @@
 // (framework/outbox — see "Two delivery lanes"). The two lanes are disjoint:
 // fanout never participates in the durable path.
 //
+// Two real-time consumers ride this transport on separate topics, each lossy:
+// invalidation-style updates (island push, entity events) and presence
+// announcements (cross-replica "who is viewing topic X" rosters). Presence is
+// ephemeral, self-healing STATE, not an invalidation — but because each
+// replica rebroadcasts its full roster on a periodic heartbeat, a dropped
+// announcement simply heals on the next beat, so the lossy contract still
+// holds. The presence lane lives entirely in core-ui/island (presence_fanout.go);
+// this package only provides the transport and the [Wrap]/[Unwrap] envelope.
+//
 // # Loop guard
 //
 // Every node publishes its messages wrapped in an envelope that carries the
