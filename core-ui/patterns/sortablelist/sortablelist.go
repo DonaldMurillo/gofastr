@@ -54,7 +54,9 @@ type Item struct {
 
 // Config configures a SortableList.
 type Config struct {
-	// Items are the entries in initial order (≥1).
+	// Items are the entries in initial order. May be empty — an empty
+	// column renders a valid sortable <ol> wrapper with no <li>
+	// children (Kanban empty containers, issue #82).
 	Items []Item
 	// Label is the accessible label for the list (required, used as
 	// aria-label on the <ol>).
@@ -95,9 +97,6 @@ type Config struct {
 func Render(cfg Config) render.HTML {
 	if cfg.Label == "" {
 		panic("sortablelist: Label required")
-	}
-	if len(cfg.Items) == 0 {
-		panic("sortablelist: ≥1 Item required")
 	}
 	cls := "ui-sortable-list"
 	if cfg.Class != "" {
@@ -179,11 +178,10 @@ func renderRows(cfg Config) []render.HTML {
 
 // RenderItems renders just the <li> items without the <ol> wrapper.
 // Used by conflict-recovery endpoints that need to replace a list's
-// innerHTML with fresh server-rendered rows.
+// innerHTML with fresh server-rendered rows. Returns an empty
+// fragment when cfg has no Items (authoritative reconciliation can
+// replace a column with an empty response — issue #82).
 func RenderItems(cfg Config) render.HTML {
-	if len(cfg.Items) == 0 {
-		panic("sortablelist: ≥1 Item required")
-	}
 	return render.Join(renderRows(cfg)...)
 }
 

@@ -74,9 +74,9 @@ already done.
 
 Adds `framework_docs_list`, `framework_docs_get`,
 `framework_docs_search`, `app_routes`, `app_plugins`, `app_batteries`,
-`app_modules`, `app_config`, `app_readiness` to the app's MCP endpoint
-so a connected agent can answer "what routes exist" / "is the app
-ready" without leaving the session.
+`app_modules`, `app_config`, `app_readiness`, `app_routines` to the app's MCP
+endpoint so a connected agent can answer "what routes exist" / "is the app
+ready" / "did my routine body change land" without leaving the session.
 
 `framework.WithMCPControl()` is the mutating counterpart: adds
 `app_module_enable` / `app_module_disable` for runtime state control

@@ -544,7 +544,11 @@ type LinkButtonConfig struct {
 	// naturally skips http(s):// hrefs (they're not "internal"), so
 	// External does not also need to "suppress SPA nav" — the
 	// underlying SPA router already does the right thing.
-	External   bool
+	External bool
+	// Icon, when set, renders the named registered icon (see
+	// RegisterIcon / Icon) before the label. The button's inline-flex
+	// gap handles spacing. Unknown names render the label alone.
+	Icon       string
 	ID         string
 	Class      string
 	ExtraAttrs html.Attrs
@@ -590,6 +594,13 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	if cfg.External {
 		extra["target"] = "_blank"
 		extra["rel"] = "noopener noreferrer"
+	}
+	if cfg.Icon != "" && IconRegistered(cfg.Icon) {
+		content := Icon(cfg.Icon, IconConfig{Size: "18"}) + render.Text(cfg.Label)
+		return buttonStyle.WrapHTML(html.LinkHTML(html.LinkHTMLConfig{
+			Href: cfg.Href, Content: content, Class: cls, ID: cfg.ID,
+			ExtraAttrs: extra,
+		}))
 	}
 	return buttonStyle.WrapHTML(html.Link(html.LinkConfig{
 		Href: cfg.Href, Text: cfg.Label, Class: cls, ID: cfg.ID,

@@ -81,18 +81,17 @@ flips it to `session_id`. If your deployment overrides
 `AuthConfig.SessionCookie`, overwrite the scheme after building the spec —
 `Spec.SetSecurityScheme("cookieAuth", …)` replaces it by name.
 
-> **Scope: HTTP only.** `EntityConfig.Access` gates the HTTP CRUD surface.
-> The **in-process** APIs — `CrudHandler.CreateOne/UpdateOne/DeleteOne/
-> GetOne/ListAll/UpsertOne` and the generated typed repo (`Repo.Query()…`)
-> — are trusted Go code you call yourself; they enforce **owner and tenant
-> scope** (tenant fail-closed) but **not** per-op permissions. Apply your
-> own authorization before calling them from a handler. (Tenant isolation
-> is a hard boundary and is enforced everywhere; per-op RBAC is an
-> HTTP-request concept.) For a deliberate cross-owner read (an aggregate
-> or admin lookup that spans every owner's rows), wrap the context in
-> `owner.AllowCrossOwner(ctx)` — server-side Go only; the HTTP CRUD
-> endpoints have no path to it. See [entity-declarations](entity-declarations.md)
-> → "Reading across owners".
+> **Important — `EntityConfig.Access` is HTTP-only.** It gates the HTTP
+> CRUD surface, not in-process repository or `CrudHandler` calls. This is
+> intentional: in-process Go code is trusted, while owner and tenant
+> isolation still apply at the data layer. SSR screens do not inherit
+> `EntityConfig.Access` checks automatically. Enforce per-row rules for SSR
+> in lifecycle hooks or explicit screen/handler checks before calling
+> `CrudHandler.CreateOne/UpdateOne/DeleteOne/GetOne/ListAll/UpsertOne` or a
+> generated typed repo. For deliberate cross-owner reads, use
+> `owner.AllowCrossOwner(ctx)` only from trusted server-side Go; HTTP CRUD
+> has no path to it. See [entity-declarations](entity-declarations.md) →
+> "Reading across owners".
 >
 > **Declarative cross-owner read.** `EntityConfig.CrossOwnerRead` names a
 > permission that, when held by the request context, lifts owner scoping
@@ -109,9 +108,9 @@ flips it to `session_id`. If your deployment overrides
 
 ## Concepts
 
-- **Permission** — opaque string. By convention `"<resource>:<verb>"`
-  (`"posts:read"`, `"users:delete"`). The framework does not enforce
-  the format.
+- **Permission** — string capability. By convention `"<resource>:<verb>"`
+  (`"posts:read"`, `"users:delete"`). A capability registry can validate
+  grants, but the registry is optional and the string format remains yours.
 - **Role** — string key that holds a list of permissions.
 - **Policy** — maps role → permissions. `RolePolicy` is the shipped
   implementation; the `Policy` interface lets you swap in your own.
@@ -129,14 +128,54 @@ token-level restriction layered on top, enforced by `auth.HasScope` /
 
 ### Building a policy
 
+Register the capabilities the application checks, then grant them to roles:
+
 ```go
 p := framework.NewRolePolicy()
-p.Grant("admin", "users:read", "users:write")
-p.Revoke("admin", "users:write")
+p.Register("users:read", "users:write", "teams:read", "teams:write")
+
+if err := p.Grant("admin", framework.Wildcard); err != nil {
+    return err
+}
+if err := p.Grant("editor", "users:read", "users:write"); err != nil {
+    return err
+}
+p.Revoke("editor", "users:write")
+
+caps := p.Capabilities() // sorted defensive copy
 ```
 
-`Grant` is additive; `Revoke` removes specific permissions. Roles
-with no grants are valid but match no permission.
+`Register` is idempotent and thread-safe. `Grant` ignores duplicate entries.
+With a non-empty registry, an unknown grant is accepted for backward
+compatibility but emits a `slog` warning naming the grant, its nearest
+registered capability, and that it will never match a registered gate.
+
+Opt into rejection when configuration mistakes must stop startup:
+
+```go
+p := framework.NewRolePolicy().StrictCapabilities()
+p.Register("users:read", "users:write")
+if err := p.Grant("editor", "usres:write"); err != nil {
+    return err // rejected; nothing was granted
+}
+```
+
+Strict rejections are typed: `errors.As(err, &e)` with
+`*access.UnknownCapabilityError` distinguishes a caller's typo (`e.Grant`,
+`e.Nearest`) from a real store failure, so handlers can answer 400 instead of
+500 — the admin grant screen does exactly this.
+
+The global `framework.Wildcard` (`"*"`) remains the superuser grant. A
+resource wildcard such as `"teams:*"` is different: with a non-empty
+registry, `Grant` expands it immediately to every registered capability with
+the `"teams:"` prefix, and `Can` continues to perform exact matching. The
+wildcard itself is not retained. `GrantStore.Grant` persists those expanded
+rows, and `LoadInto` expands old wildcard rows while loading them.
+
+With an empty registry, ordinary grants keep the previous behavior and emit
+no warning. A non-global grant containing `*` cannot expand, so it emits the
+loud warning and remains stored for compatibility; strict mode rejects it.
+Register capabilities before using resource wildcards.
 
 ### Attaching to a request
 
@@ -172,6 +211,35 @@ context or one carrying no roles — never panics, so it is safe to call
 on an un-wired (anonymous) request. Permission checks should still go
 through `GetPermissions` / `Can`; `GetRoles` is for role-shaped
 branching where the permission grant map isn't the right granularity.
+
+### Caching role resolution
+
+`access.NewCachedResolver` wraps the role lookup function passed to
+`access.Middleware`:
+
+```go
+roles := access.NewCachedResolver(
+    func(ctx context.Context) []string {
+        user := auth.GetCurrentUser(ctx)
+        if user == nil {
+            return nil
+        }
+        return loadEffectiveRoles(ctx, user.GetID())
+    },
+    access.WithTTL(30*time.Second),
+)
+
+app.Use(access.Middleware(policy, roles.Resolve))
+```
+
+The default TTL is 30 seconds. Cache keys come from the authenticated value in
+`core/handler` context when it implements `GetID() string`, which is the same
+user seam populated by `battery/auth`. Missing or empty user IDs resolve
+without caching, so anonymous requests never share role state. Concurrent
+misses for one user share one lookup. `Resolve` returns defensive copies;
+call `Invalidate(userID)` after changing one user's role inputs or
+`InvalidateAll()` after a global role-policy change. A zero or negative TTL
+keeps same-key single-flight behavior but does not retain results.
 
 Or via middleware on a specific route:
 
@@ -281,6 +349,13 @@ mutate both the DB and the policy in one call — the policy's RWMutex covers
 concurrent `Can` checks, so a grant/revoke is "atomic enough": a reader sees
 the state before or after, never a torn map.
 
+Capability validation happens before `GrantStore` writes. A strict rejection
+therefore leaves both the database and live policy unchanged. In warning mode,
+unknown concrete grants remain persisted for compatibility. The admin roles
+screen uses `Policy.Capabilities()` as a datalist when the registry is
+non-empty and marks existing non-global grants outside the registry as
+`unknown/dead`.
+
 ### Security
 
 - Role and permission strings are **bound as `$n` parameters** — never
@@ -296,7 +371,160 @@ the state before or after, never a torn map.
 
 ```go
 roles := policy.Roles()                    // sorted []string
-perms := policy.PermissionsOf("editor")   // []Permission (copy)
+perms := policy.PermissionsOf("editor")    // []Permission (copy)
+caps  := policy.Capabilities()             // sorted []Permission (copy)
 ```
 
-Both return defensive copies — callers iterate without holding the lock.
+All three return defensive copies — callers iterate without holding the lock.
+
+### Effective roles in the admin
+
+`admin.Config.EffectiveRoles` can add resolved role origins to the user-role
+screen without changing the direct roles stored by `battery/auth`:
+
+```go
+admin.New(admin.Config{
+    Auth: authManager,
+    EffectiveRoles: func(ctx context.Context, userID string) []access.RoleWithOrigin {
+        return []access.RoleWithOrigin{
+            {Role: organizationRole(ctx, userID), Origin: "resolved"},
+        }
+    },
+})
+```
+
+The screen unions these entries with `auth_users.roles`, labels stored roles
+as `direct`, and preserves only the direct roles in its assignment form.
+Duplicate role/origin pairs are shown once. When the hook is nil, the screen
+keeps its direct-roles-only output.
+
+
+## Resource-scoped decisions
+
+The `Policy.Can` check is coarse-grained by design — "does this context hold
+permission P?", with no resource argument (see [Row-level checks](#row-level-can-user-x-update-post-y-checks)).
+Owner scoping and lifecycle hooks cover most per-row needs. When you need a
+per-resource authority that those don't express — "a team **maintainer** may
+edit **their** team's projects, but not other teams'" — without standing up a
+ReBAC/tuple store, install a **Decider**. The decider is consulted *before* the
+role policy on resource-aware checks, so it can tighten *or* loosen the coarse
+`Can` answer per record.
+
+### The seam
+
+```go
+// access.Ref identifies the resource a check is about.
+type Ref struct {
+    Type string // entity name: "projects"
+    ID   string // record id; "" for collection-level checks (List/Create/batch/feed)
+}
+
+type Decision int
+const (
+    DecisionAbstain Decision = iota // fall through to the role policy (Can)
+    DecisionAllow                   // permit; role policy not consulted
+    DecisionDeny                    // refuse, even when the role policy would allow
+)
+
+type Decider func(ctx context.Context, roles []string, capability Permission, resource Ref) Decision
+```
+
+`access.CanResource(ctx, capability, resource)` is the resource-aware entrypoint:
+
+1. If a `Decider` is in ctx → call it with the caller's roles, the capability,
+   and the `Ref`. `DecisionAllow` → true; `DecisionDeny` → false;
+   `DecisionAbstain` → fall through.
+2. Otherwise (or after Abstain) → exactly `access.Can(ctx, capability)`.
+
+`access.Can` itself is untouched — there is no wildcard or resource-segment
+logic in the hot path. The resource-aware path is a separate entrypoint you opt
+into; with no decider installed, `CanResource` answers byte-identically to `Can`.
+
+### Wiring it: DeciderMiddleware
+
+`access.DeciderMiddleware(d)` installs a decider into request context. Mount it
+alongside `access.Middleware` — the two compose; the policy+roles middleware
+feeds the decider its `roles` argument:
+
+```go
+roles := access.NewCachedResolver(
+    func(ctx context.Context) []string {
+        user := auth.GetCurrentUser(ctx)
+        if user == nil { return nil }
+        return loadEffectiveRoles(ctx, user.GetID())
+    },
+    access.WithTTL(30*time.Second),
+)
+
+app.Use(access.Middleware(policy, roles.Resolve))
+app.Use(access.DeciderMiddleware(decideProjectAccess))
+```
+
+### Worked example: team maintainers edit their projects
+
+A team-maintainer rule that the role policy can't express: any caller holding
+`projects:update` may edit *some* projects, but a maintainer may edit every
+project their team owns even without the global grant. The decider consults a
+memberships table and returns Allow/Deny/Abstain:
+
+```go
+func decideProjectAccess(ctx context.Context, roles []string, cap access.Permission, res access.Ref) access.Decision {
+    // Only opine on project writes for a specific record.
+    if res.Type != "projects" || res.ID == "" {
+        return access.DecisionAbstain
+    }
+    user := auth.GetCurrentUser(ctx)
+    if user == nil {
+        return access.DecisionAbstain // let the role policy fail-closed
+    }
+    // Maintainer of this project's team → allow the update regardless of role.
+    if cap == "projects:update" && isMaintainerOf(ctx, user.GetID(), res.ID) {
+        return access.DecisionAllow
+    }
+    // Otherwise defer to the role policy (which may grant projects:update globally).
+    return access.DecisionAbstain
+}
+```
+
+Auto-CRUD consults this automatically: `EntityConfig.Access` gates route through
+`CanResource`, passing `Ref{Type: <entity name>, ID: <path id>}` for item-scoped
+ops (read-one/update/delete) and `Ref{Type: <entity name>, ID: ""}` for
+collection-level ops (list/create/batch/the `_events` feed). No handler change
+is needed — declaring the `Access` block and mounting `DeciderMiddleware` is the
+whole wiring.
+
+### When to Deny vs Abstain
+
+- **Deny** when the decider has *positive knowledge* the caller must not act on
+  this resource — e.g. "this project belongs to a team the caller is not on".
+  Deny short-circuits to false; the role policy never runs, so even a wildcard
+  grant cannot override it. Use Deny to tighten below the role policy.
+- **Abstain** when the decider has *no opinion* — the resource type isn't one it
+  governs, the caller's relationship is unknown, or you want the role policy to
+  decide. Abstain is the zero value, so a decider that forgets to return is
+  safe (falls through to `Can`). Use Abstain to delegate.
+- **Allow** when the decider grants access the role policy would not — e.g. the
+  team-maintainer case above. Allow short-circuits to true; use it to loosen
+  beyond the role policy for a specific resource.
+
+A decider that always returns Abstain is a no-op: behaviour is exactly the
+role-policy-only world. That is the safe default while you roll the decider out.
+
+### Alternative: the `resource:id:capability` string convention
+
+An app-side pattern (the framework does **not** interpret this) encodes the
+resource into the permission string itself: `"projects:42:update"`. Combined
+with `GrantStore`, each such string becomes a row in `access_grants`, so the
+grant matrix is visible in the admin UI and editable at runtime — every
+per-resource grant is a real, enumerable row.
+
+The tradeoff is **row explosion**: one row per (role, resource, capability),
+which is fine for dozens of resources but does not scale to thousands. The
+framework's `Can` performs exact-string matching, so it never parses the
+`resource:id:capability` segments — that decomposition is a convention your
+code (or a wrapper policy) owns. If you need per-resource authority at scale,
+or with inheritance ("a maintainer of team T may edit all of T's projects"),
+use the **Decider seam** above: one membership check replaces unbounded grant
+rows, and the rule lives in your code where it can consult any table or
+service. The two compose — a Decider can fall back to `Abstain` and let a
+`resource:id:capability` grant row in the policy decide.

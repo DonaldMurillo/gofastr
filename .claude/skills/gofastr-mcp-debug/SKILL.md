@@ -10,9 +10,9 @@ running GoFastr app via MCP. For deep recipes, jump to:
 
 - `.claude/skills/log-debug/SKILL.md` — the four `log_*` tools (recent
   entries, structured filter, metrics, level mutation).
-- `.claude/skills/app-introspect/SKILL.md` — the nine introspection
+- `.claude/skills/app-introspect/SKILL.md` — the ten introspection
   tools: `app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
-  `app_config`, `app_readiness`, plus `framework_docs_list` /
+  `app_config`, `app_readiness`, `app_routines`, plus `framework_docs_list` /
   `framework_docs_get` / `framework_docs_search` for the embedded
   framework docs.
 
@@ -26,6 +26,7 @@ running GoFastr app via MCP. For deep recipes, jump to:
 | "What endpoints exist?"                     | `app_routes` (app-introspect)                            |
 | "What plugins / batteries are loaded?"      | `app_plugins`, `app_batteries` (app-introspect)          |
 | "What modules are enabled?"                 | `app_modules` (app-introspect)                           |
+| "Did my routine body change propagate?"     | `app_routines` (app-introspect) — ledger_state=drifted flags it |
 | "Turn module X off / back on"               | `app_module_disable`, `app_module_enable` (mutating)     |
 | "How does framework feature X work?"        | `framework_docs_search` → `framework_docs_get`           |
 | "Are the logs even working?"                | `log_metrics` — non-zero counters = lost entries          |

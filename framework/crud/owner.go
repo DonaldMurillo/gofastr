@@ -43,12 +43,21 @@ func (ch *CrudHandler) permissionForOp(op crudOp) string {
 // declares a permission for the operation and the request context does not
 // carry it, it writes 403 and returns false. No-op when the operation is not
 // gated.
-func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request, op crudOp) bool {
+//
+// The check goes through access.CanResource so a resource-aware Decider
+// installed in ctx (via access.WithDecider / access.DeciderMiddleware) is
+// consulted before the role policy — the issue #80 seam for per-resource
+// authority ("member may edit project 42"). recordID is the path id for
+// item-scoped ops (read-one/update/delete) and "" for collection-level ops
+// (list/create/batch/the SSE feed); with no decider configured, CanResource
+// answers exactly what access.Can answered, so behaviour is byte-identical.
+func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request, op crudOp, recordID string) bool {
 	perm := ch.permissionForOp(op)
 	if perm == "" {
 		return true
 	}
-	if !access.Can(r.Context(), access.Permission(perm)) {
+	resource := access.Ref{Type: ch.Entity.GetName(), ID: recordID}
+	if !access.CanResource(r.Context(), access.Permission(perm), resource) {
 		writeJSONError(w, http.StatusForbidden, "access denied: missing permission "+perm)
 		return false
 	}
@@ -246,7 +255,7 @@ func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op c
 	if !ch.requireAuthenticated(w, r, op) {
 		return false
 	}
-	return ch.requirePermission(w, r, op)
+	return ch.requirePermission(w, r, op, r.PathValue("id"))
 }
 
 // RequireTenant is the HTTP mirror of RequireOwner for multi-tenant entities.

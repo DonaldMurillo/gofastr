@@ -214,6 +214,34 @@ type WebPage struct {
 // NewWebPage returns a WebPage with the envelope pre-filled.
 func NewWebPage() WebPage { return WebPage{base: newBase("WebPage")} }
 
+// ─── WebApplication ────────────────────────────────────────────────
+
+// WebApplication describes an in-browser application or tool (schema.org
+// SoftwareApplication subtype). The right type for SaaS products, online
+// generators, editors — anything a user runs at a URL. Pair with a free
+// Offer (Price "0") for "free online tool" queries.
+type WebApplication struct {
+	base
+	Name        string `json:"name,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Description string `json:"description,omitempty"`
+	Image       string `json:"image,omitempty"`
+	// ApplicationCategory per schema.org's enumeration, e.g.
+	// "UtilitiesApplication", "DesignApplication", "BusinessApplication".
+	ApplicationCategory string `json:"applicationCategory,omitempty"`
+	// OperatingSystem for web apps is conventionally "Web" or "Any".
+	OperatingSystem string `json:"operatingSystem,omitempty"`
+	// BrowserRequirements, e.g. "Requires JavaScript".
+	BrowserRequirements string `json:"browserRequirements,omitempty"`
+	Offers              *Offer `json:"offers,omitempty"`
+}
+
+// NewWebApplication returns a WebApplication with the envelope pre-filled
+// and OperatingSystem defaulted to "Web".
+func NewWebApplication() WebApplication {
+	return WebApplication{base: newBase("WebApplication"), OperatingSystem: "Web"}
+}
+
 // ─── Product ───────────────────────────────────────────────────────
 
 // Product drives Google's product rich result (price, ratings, etc.).

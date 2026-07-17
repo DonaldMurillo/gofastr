@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -1312,6 +1313,26 @@ func (a *App) Table(t migrate.Table) *App {
 // it for reversible versioned migrations. Returns App for chaining.
 func (a *App) Routine(r migrate.Routine) *App {
 	a.migrationRoutines = append(a.migrationRoutines, r)
+	return a
+}
+
+// RoutinesFS loads routines authored as embedded SQL files via
+// migrate.RoutinesFS and registers each one as if App.Routine had been called
+// on it. This is the primary authoring path for stored procedures: an app
+// writes `db/routines/compute_totals.pg.sql` containing
+// `CREATE OR REPLACE FUNCTION …` and calls
+// `app.RoutinesFS(embeddedFS, "db/routines")`. See migrate.RoutinesFS for the
+// filename grammar (`<name>.sql`, `<name>.down.sql`, `<name>.pg.sql`,
+// `<name>.sqlite.sql`) and the loud-rejection rules (empty file, empty dir,
+// plain+dialect Up collision). A loader error panics at registration time —
+// mirroring App.View's misconfig panic — so the exact embed-path/file error
+// surfaces in the console instead of shipping a half-loaded routine set.
+func (a *App) RoutinesFS(fsys fs.FS, dir string) *App {
+	rs, err := migrate.RoutinesFS(fsys, dir)
+	if err != nil {
+		panic(fmt.Sprintf("framework: App.RoutinesFS(%q): %v", dir, err))
+	}
+	a.migrationRoutines = append(a.migrationRoutines, rs...)
 	return a
 }
 

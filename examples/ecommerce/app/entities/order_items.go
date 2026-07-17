@@ -41,6 +41,7 @@ const (
 )
 
 // OrderItemsRepo is the typed repository for order_items rows.
+// Event helpers: OnOrderItemsCreated/OnOrderItemsUpdated/OnOrderItemsDeleted in this package.
 type OrderItemsRepo struct {
 	handler *framework.CrudHandler
 }

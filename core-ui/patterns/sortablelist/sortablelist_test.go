@@ -14,13 +14,68 @@ func TestRequiresLabel(t *testing.T) {
 	Render(Config{Items: []Item{{Key: "a", Label: "A"}}})
 }
 
-func TestRequiresItems(t *testing.T) {
+// TestRenderEmptyItemsOK: a Kanban column with zero items renders a
+// valid, accessible, sortable <ol> wrapper with no <li> children
+// instead of panicking (issue #82 — empty containers are legal).
+func TestRenderEmptyItemsOK(t *testing.T) {
 	defer func() {
-		if recover() == nil {
-			t.Fatal("SortableList without Items should panic")
+		if r := recover(); r != nil {
+			t.Fatalf("Render with zero items should not panic, got: %v", r)
 		}
 	}()
-	Render(Config{Label: "x"})
+	h := string(Render(Config{Label: "Empty column"}))
+	if !strings.Contains(h, "<ol") || !strings.Contains(h, "</ol>") {
+		t.Errorf("empty list should still render an <ol> wrapper:\n%s", h)
+	}
+	if strings.Contains(h, "<li") {
+		t.Errorf("empty list should have no <li> children:\n%s", h)
+	}
+}
+
+// TestRenderEmptyPreservesKanbanAttrs: an empty column keeps every
+// sortable attribute (group/container/rpc/version/conflict) so the
+// runtime still treats it as a drop target.
+func TestRenderEmptyPreservesKanbanAttrs(t *testing.T) {
+	h := string(Render(Config{
+		Label:       "Done",
+		Group:       "board-1",
+		Container:   "done",
+		RPCPath:     "/api/move",
+		Version:     "v3",
+		ConflictRPC: "/api/conflict?col=done",
+	}))
+	for _, want := range []string{
+		`data-fui-sortable="true"`,
+		`data-fui-sortable-group="board-1"`,
+		`data-fui-sortable-container="done"`,
+		`data-fui-sortable-rpc="/api/move"`,
+		`data-fui-sortable-version="v3"`,
+		`data-fui-sortable-conflict="/api/conflict?col=done"`,
+		`role="listbox"`,
+		`aria-label="Done"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("empty list missing %q:\n%s", want, h)
+		}
+	}
+	if strings.Contains(h, "<li") {
+		t.Errorf("empty list should have no <li> children:\n%s", h)
+	}
+}
+
+// TestRenderItemsEmptyOK: RenderItems returns an empty fragment for
+// zero items (authoritative conflict reconciliation can replace a
+// column with an empty response).
+func TestRenderItemsEmptyOK(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("RenderItems with zero items should not panic, got: %v", r)
+		}
+	}()
+	h := string(RenderItems(Config{Label: "Done"}))
+	if h != "" {
+		t.Errorf("RenderItems with zero items should be empty, got %q", h)
+	}
 }
 
 func TestItemRequiresKey(t *testing.T) {

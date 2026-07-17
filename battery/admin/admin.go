@@ -138,6 +138,12 @@ type Config struct {
 	// The underlying UserStore must implement UserLister (for listing) and
 	// UpdateRoles (for assignment) — EntityUserStore does both.
 	Auth *auth.AuthManager
+
+	// EffectiveRoles optionally resolves additional roles for the user roles
+	// screen. Direct auth_users.roles are always included with origin "direct";
+	// hook results are unioned with them and labeled by their supplied origin.
+	// When nil, the screen keeps its direct-roles-only rendering.
+	EffectiveRoles func(ctx context.Context, userID string) []access.RoleWithOrigin
 }
 
 // Battery is the framework Battery implementation.

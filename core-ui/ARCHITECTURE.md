@@ -99,6 +99,7 @@ server side and the runtime does the work.
 | `data-fui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. When the wrapper's `data-active` attribute is updated through a signal (`data-fui-signal-mode="attr"`), the core runtime also mirrors the new index into `aria-selected` on every `[role="tab"][data-fui-tab-index]` descendant so assistive tech tracks the selection, not just the CSS highlight. |
 | `data-fui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-fui-signal`. CSP-safe — the reducer is a real function the host registers (no `eval`). |
 | `data-fui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-fui-computed` node recomputes from. |
+| `data-fui-compute` | Loads the `compute` demand module, which exposes `window.__gofastr.compute`. It is a trigger marker only; worker name, function, and payload stay in the imperative `compute.task(...)` call. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
 | `data-fui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-fui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. |
 | `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` before firing the RPC. Cancel aborts. Use for destructive actions (delete, revoke). |
@@ -201,13 +202,13 @@ server side and the runtime does the work.
 | `data-fui-toc-levels="<csv>"` | Optional comma-separated list of heading levels to harvest (default `"2,3"`). |
 | `data-fui-toc-for="<heading-id>"` | Internal — set by the TOC runtime on each emitted `<a>` linking it back to its source heading. Used by the active-section tracker. |
 | `data-fui-sortable` | Marks the `<ol>` of a `core-ui/patterns/sortablelist` as reorderable. Pair with `data-fui-sortable-rpc`. |
-| `data-fui-sortable-rpc="<path>"` | POST endpoint that receives `order=<comma-separated-keys>` after every successful reorder; non-2xx response reverts the DOM. |
-| `data-fui-sortable-item` | Marks an `<li>` as a drag-and-drop item inside a `data-fui-sortable` list. Pair with `data-fui-sort-key` and (typically) `draggable="true"` + `tabindex="0"`. Keyboard: Space grabs / drops; Arrow Up/Down moves within a column; Arrow Left/Right moves to an adjacent column (same group); Esc cancels. |
+| `data-fui-sortable-rpc="<path>"` | POST endpoint that receives the commit after every successful reorder; non-2xx response reverts the DOM. Same-container reorders send `order=<comma-separated-keys>` plus `container=<id>` when the source list carries `data-fui-sortable-container` (#84) and `version=<token>` when versioned. Cross-container drops add `moved=<key>` and always carry `container=` (empty if unconfigured). |
+| `data-fui-sortable-item` | Marks an `<li>` as a drag-and-drop item inside a `data-fui-sortable` list. Pair with `data-fui-sort-key` and (typically) `draggable="true"` + `tabindex="0"`. Keyboard: Space grabs / drops; Arrow Up/Down moves within a column; Arrow Left/Right moves to an adjacent column (same group, including an empty one — #82); Esc cancels. A `data-fui-sortable` list may legally hold zero items (empty Kanban column) and remains a valid drop target. |
 | `data-fui-sort-key="<key>"` | Stable identifier the server uses to apply the new order. |
 | `data-fui-sortable-group="<id>"` | Board id shared by linked `data-fui-sortable` columns (kanban). Lists with the same non-empty group id allow cross-container drag and keyboard moves between them; lists with no group (or different groups) stay isolated. Back-compat: existing single lists have no group → unchanged behavior. |
-| `data-fui-sortable-container="<id>"` | Per-column id emitted on each `data-fui-sortable` `<ol>` of a linked board. Sent as the `container` body field in a cross-container move payload so the server knows which column the item landed in. Distinct from `data-fui-sortable-group` (the board id) because a board has one group but N containers — the server needs both to route the write. |
+| `data-fui-sortable-container="<id>"` | Per-column id emitted on each `data-fui-sortable` `<ol>` of a linked board. Sent as the `container` body field in EVERY commit from that list — same-container reorders included (#84) — so the server can route the write without inferring the column from the key set. Distinct from `data-fui-sortable-group` (the board id) because a board has one group but N containers — the server needs both to route the write. Lists without this attr keep the legacy payload (no `container` field on same-container commits; empty `container=` on cross-container commits). |
 | `data-fui-sortable-version="<token>"` | Optional optimistic-concurrency token. When set, appended as a `version` body field to every commit POST. A 409 response then fires the conflict path (refetch `data-fui-sortable-conflict` HTML) instead of a blanket rollback. Without this attr, 409 is treated like any other non-2xx (rollback) — back-compat. |
-| `data-fui-sortable-conflict="<rpc>"` | GET endpoint refetched on a 409 response (only when `data-fui-sortable-version` is set). The response body replaces the destination list's `innerHTML` — server-rendered reconciliation. Without this attr, a 409 falls back to rollback + a `console.warn`. |
+| `data-fui-sortable-conflict="<rpc>"` | GET endpoint refetched on a 409 response (only when `data-fui-sortable-version` is set). The response body replaces the destination list's `innerHTML` — server-rendered reconciliation (an empty body reconciles the column to zero items, #82). Before refetching, the runtime reads the 409 response body under hard safety bounds (#83): Content-Type MUST be `application/json`, at most ~4 KB is read, the body MUST parse as `{"error":{"code","message":<string>}}`, and `error.message` is capped at ~300 chars. When a valid message is present it is surfaced through the polite `aria-live` region (replacing the generic copy) and the framework toast surface (`__gofastr.toast`) when wired; any malformed / oversized / non-JSON / empty body falls back to today's generic copy. Without this attr, a 409 falls back to rollback + a `console.warn`. |
 | `data-fui-shortcut-target="<selector>"` | Optional companion to a page-level `data-fui-shortcut-focus` on a non-focusable wrapper: when the chord fires, the runtime focuses the element matched by this selector instead of the wrapper itself. Used by `framework/ui.GlobalSearch` where the chord lives on the wrapper but the focus target is the inner `<input>`. |
 | `data-fui-lightbox="<name>"` | On the slot wrapper of a `framework/ui.Lightbox`: identifies the open viewer for the runtime. Pair with optional `data-fui-lightbox-nav="true"` to enable Prev/Next + ArrowLeft/Right keyboard nav across siblings sharing `data-fui-lightbox-group`. |
 | `data-fui-lightbox-nav="true"` | On the lightbox slot wrapper: opts into the runtime's arrow-key + Prev/Next button navigation. |
@@ -398,6 +399,48 @@ client-side with no per-consumer round-trip.
   `__gofastr` namespace wholesale on boot.
 
 See `framework/docs/content/signal-store.md` for the full guide.
+
+### Background compute (`core-ui/compute`)
+
+Applications register self-contained worker JavaScript and WebAssembly bytes
+at process startup with `compute.RegisterWorker` and `compute.RegisterWASM`.
+Names use the same URL-safe grammar as runtime modules (1–64 lowercase
+letters, digits, `-`, `_`). Registration copies the bytes and calculates a
+full SHA-256 hash. Identical re-registration is a no-op; conflicting content
+under the same name panics.
+
+The UI host serves registered assets at content-addressed same-origin URLs:
+
+```
+/__gofastr/compute/<name>.js?v=<sha256>
+/__gofastr/compute/<name>.wasm?v=<sha256>
+```
+
+Both responses are immutable for one year. SSR emits the inert
+`#gofastr-compute-assets` JSON manifest beside
+`#gofastr-runtime-modules`; the `compute` demand module uses it to build
+versioned URLs. A page opts in with the single `data-fui-compute` marker.
+That marker only loads the module — it does not declare a task or construct
+DOM. Island/widget code calls `window.__gofastr.compute.task(worker, fn,
+payload)`, `wasmURL(name)`, and `dispose(worker)`.
+
+One classic Worker instance is cached per registered name. Requests use
+`{id, fn, payload}` and responses use `{id, ok, result}` or
+`{id, ok, error}`. Worker errors reject every pending request and discard
+the failed instance. A request that receives no response for 30 seconds
+rejects, terminates that worker, and lets the next call create a fresh one.
+`dispose` applies the same termination/rejection behavior explicitly.
+
+The document CSP still permits only same-origin worker scripts (no `blob:`).
+Dedicated workers enforce the CSP on their own script response, so worker
+assets receive the narrow `script-src 'self' 'wasm-unsafe-eval'` permission
+required by current browsers to compile WebAssembly; JavaScript `eval` stays
+disabled. Shared memory and WebAssembly threads require cross-origin
+isolation (COOP + COEP). GoFastr does not enable COEP, so
+`SharedArrayBuffer`/threads are outside this surface.
+
+See `framework/docs/content/compute.md` for registration, protocol, and
+WebAssembly authoring examples.
 
 ### SSE connection state (`__gofastr.sseStatus`)
 
@@ -974,6 +1017,7 @@ core-ui/
                  accordion, breadcrumbs, combobox, disclosure,
                  infinitescroll, multiselect, pagination, progress,
                  skeleton, sortablelist, tabs, tree
+  compute/     — process-global Web Worker + WebAssembly asset registry
   component/   — Component / InteractiveComponent interfaces (the contract
                  every renderable satisfies)
   widget/      — island/widget builder + registration
@@ -986,7 +1030,7 @@ core-ui/
   runtime/     — runtime.js (client) + Go embed wrapper
   runtime/src/ — code-split runtime modules (loaded on demand):
                  animate, animatedcounter, backtotop, banner, carousel,
-                 combobox, computed, conditionalfield, copy,
+                 combobox, compute, computed, conditionalfield, copy,
                  dragdismiss, dropdown, dropzone, fileupload,
                  formrepeater, infinitescroll, lightbox, menu,
                  multiselect, networkretrybanner, numberinput,

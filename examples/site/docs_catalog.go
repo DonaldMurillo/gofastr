@@ -115,6 +115,7 @@ var docIntents = []docIntent{
 			{"plugin-platform", "Plugin platform", "Host third-party JS plugins in a sandboxed opaque-origin iframe with a capability-gated postMessage protocol."},
 			{"runtime-contract", "Runtime contract", "The SSR/hydration/island/SSE model and the full data-fui-* attribute reference."},
 			{"signal-store", "Signal store", "Typed, namespaced client state that fans out to many consumers from one declaration."},
+			{"compute", "Background compute", "Registered Web Workers + WASM modules, content-addressed and CSP-safe, off the main thread."},
 		},
 	},
 	{

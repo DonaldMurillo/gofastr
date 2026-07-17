@@ -55,6 +55,7 @@ const (
 )
 
 // OrdersRepo is the typed repository for orders rows.
+// Event helpers: OnOrdersCreated/OnOrdersUpdated/OnOrdersDeleted in this package.
 type OrdersRepo struct {
 	handler *framework.CrudHandler
 }

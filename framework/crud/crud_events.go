@@ -165,7 +165,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		// delete. Gate it with the same Access.Read permission as List/Get,
 		// or an authenticated user lacking docs:read could subscribe here for
 		// a real-time read of all writes despite 403 on the static endpoints.
-		if !ch.requirePermission(w, r, opRead) {
+		if !ch.requirePermission(w, r, opRead, "") {
 			return
 		}
 

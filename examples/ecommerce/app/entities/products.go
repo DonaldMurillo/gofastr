@@ -57,6 +57,7 @@ const (
 )
 
 // ProductsRepo is the typed repository for products rows.
+// Event helpers: OnProductsCreated/OnProductsUpdated/OnProductsDeleted in this package.
 type ProductsRepo struct {
 	handler *framework.CrudHandler
 }

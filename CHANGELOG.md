@@ -5,7 +5,117 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.30.0] - 2026-07-17
+
+Closes the Nexus fourth-batch tickets (#76, #77, #79, #80, #82, #83, #84)
+and ships two new capability surfaces: managed stored routines and
+background compute (Web Workers + WebAssembly).
+
+### Added
+
+- **Capability registry + grant validation** (#76). `RolePolicy.Register`
+  declares the capabilities the app actually checks; `Capabilities()`
+  returns them sorted. With a non-empty registry, an unknown grant emits a
+  loud warning naming the grant and its nearest registered capability, and
+  `StrictCapabilities()` upgrades that to a typed rejection
+  (`*access.UnknownCapabilityError` — the admin grant screen answers 400
+  to a typo instead of a generic 500). Resource wildcards (`teams:*`)
+  expand at grant time against the registry, so `Can` stays exact-match.
+  The admin RBAC screen feeds grant inputs from the registry via a
+  datalist and flags persisted grants that match nothing as unknown/dead.
+- **`access.NewCachedResolver`** (#79). Wraps a `func(ctx) []string` roles
+  resolver with per-user TTL caching (default 30s, `WithTTL`),
+  single-flight de-duplication, and `Invalidate`/`InvalidateAll` for
+  event-driven invalidation — the caching layer every team-membership
+  resolver was hand-rolling. `admin.Config.EffectiveRoles` lets the admin
+  users screen show direct ∪ resolved roles labeled by origin.
+- **Resource-scoped access decisions** (#80). The `access.Decider` seam
+  (`Ref`, `Decision`, `WithDecider`, `DeciderMiddleware`, `CanResource`)
+  answers "may this user edit project 42" without a tuple store: the CRUD
+  entity gates consult the decider with the record id and fall back to the
+  role policy on abstain. Fail-closed; apps without a decider are
+  byte-identical. The `resource:id:capability` string convention is
+  documented as an app-side alternative.
+- **Managed stored routines (Postgres functions/procedures/triggers).**
+  `App.RoutinesFS(fs, dir)` loads routines from embedded SQL files —
+  `<name>.sql`, `<name>.down.sql`, dialect-scoped `<name>.pg.sql` /
+  `<name>.sqlite.sql` — with loud rejection of empty files, collisions,
+  and unknown suffixes. `Routine.Dialect` scopes a routine to one engine
+  (mismatches skipped with one per-boot log line), so Postgres-only procs
+  coexist with a SQLite dev database. A `gofastr_routines` ledger records
+  name + checksum + applied_at in the same advisory-locked transaction —
+  reporting-only: every Up still runs each boot (idempotent,
+  self-healing), orphaned rows warn loudly and are never auto-dropped.
+  The `app_routines` MCP introspection tool reports dialect, checksum,
+  ledger state, and live `pg_proc`/`pg_views` presence per routine.
+- **Background compute: registered Web Workers + WASM modules.**
+  `compute.RegisterWorker` / `compute.RegisterWASM` register
+  content-addressed assets served immutable at
+  `/__gofastr/compute/<name>.js|.wasm`. The `compute` demand module
+  (1,020B gzip, `data-fui-compute` trigger) exposes
+  `window.__gofastr.compute`: `task(worker, fn, payload)` with a promise
+  protocol, 30s timeouts, and worker recycling; `wasmURL(name)` for
+  `instantiateStreaming` inside workers; `dispose(worker)`. The page CSP
+  is unchanged — worker-script responses carry their own
+  `script-src 'self' 'wasm-unsafe-eval'`. Docs include Go/TinyGo-to-WASM
+  recipes. SharedArrayBuffer/cross-origin isolation deliberately out of
+  scope.
+- **Sortable 409 problem details** (#83). A 409 with
+  `{"error":{"code","message"}}` is read under hard bounds (JSON
+  content-type, ≤4KB, message capped at 300 chars) and announced through
+  the polite live region + framework toast before the authoritative
+  conflict refresh; malformed, oversized, HTML, or empty bodies keep
+  today's generic copy.
+- **`ui.LinkButton` Icon slot.** `LinkButtonConfig.Icon` names a registered
+  icon (`ui.RegisterIcon`) to render before the label — external-link
+  buttons can carry a recognizable mark (GitHub, docs) without bespoke
+  anchors. Unknown names fall back to the plain label.
+- **`seo.WebApplication`.** Typed JSON-LD for in-browser tools (schema.org
+  SoftwareApplication subtype) — the right @type for SaaS products and
+  online generators, previously missing from core-ui/seo's catalog.
+  `NewWebApplication()` defaults `operatingSystem` to "Web"; pair with a
+  free Offer for "free online tool" rich results.
+
+### Fixed
+
+- **`sortablelist.Render` accepts empty columns** (#82). An empty Kanban
+  column renders the full accessible `<ol>` wrapper, is a valid pointer
+  and keyboard drop target, and conflict refresh can reconcile a column
+  to zero items. `RenderItems` may return an empty fragment.
+- **Same-container sortable commits carry `container=`** (#84) whenever
+  the list configures `data-fui-sortable-container`, so one shared board
+  endpoint can route every write. Container-less lists and the
+  cross-container payload are unchanged.
+- **`RolePolicy.Grant` de-duplicates** (#77), so boot-time code grants +
+  `GrantStore.LoadInto` no longer show duplicate rows in `PermissionsOf`
+  and the admin matrix.
+- **Admin RBAC wiring is purely additive** (#77). The generator emits
+  auth/policy handles at package level plus an
+  `adminBatteryConfigurators` seam — activating the admin battery means
+  adding a file, not editing owned-generated ones. Generated repo structs
+  now point at their package-level event helpers, the
+  refuse-to-overwrite error names `generate --add`, and the generated
+  guidance steers toward `core-ui/html` over raw `render.Tag`.
+- **Runtime preload markers match attribute boundaries**, so the new
+  `data-fui-compute` marker cannot spuriously preload on pages using
+  `data-fui-computed`.
+- **Flash-free banner dismissal.** A `DismissID` banner was hidden only by
+  the runtime's localStorage pass, so it painted for a moment on every
+  page load after being dismissed. The runtime now mirrors the dismissal
+  into a same-name cookie, and `ui.Banner` skips rendering entirely when
+  its `Ctx` carries a request bearing that cookie.
+
+### Changed
+
+- **`RolePolicy.Grant` returns `error`.** Statement-form callers keep
+  compiling; strict-mode and store callers get one consistent rejection
+  contract.
+- **The access docs say loudly that `EntityConfig.Access` is HTTP-only**
+  (#77): in-process repo/CrudHandler calls bypass entity gates by design,
+  so SSR per-row rules belong in hooks or handler checks.
+- **`ui.ColorPicker` renders the swatch before its label** — control on
+  the left, name on the right, matching Checkbox's reading order (it
+  previously rendered label-first).
 
 ## [0.29.0] - 2026-07-16
 

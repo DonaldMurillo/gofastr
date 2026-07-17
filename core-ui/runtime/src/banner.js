@@ -14,9 +14,10 @@
 //      localStorage so the same banner doesn't re-appear on the next
 //      page load.
 //
-// No server round-trip — banner dismissal is client-only. Apps that
-// need server-side persistence wire that themselves via an RPC on
-// the dismiss button (data-fui-rpc + a server handler).
+// Dismissal is recorded in BOTH localStorage (same-tab hide pass) and a
+// cookie (so ui.Banner can skip rendering server-side on the next
+// request — flash-free). Apps needing richer server persistence can
+// still wire an RPC on the dismiss button.
 
 (function () {
   'use strict';
@@ -33,6 +34,14 @@
     if (!id) return;
     try { localStorage.setItem(STORAGE_PREFIX + id, '1'); }
     catch (_) { /* best-effort */ }
+    // Mirror the dismissal into a cookie so the SERVER can skip rendering
+    // the banner on the next request (ui.Banner checks it when its Ctx
+    // carries the request) — without this, the dismissed banner paints
+    // for a moment before this module's hide pass runs. A UI-preference
+    // cookie is strictly-necessary category; one year.
+    try {
+      document.cookie = STORAGE_PREFIX + id + '=1; path=/; max-age=31536000; SameSite=Lax';
+    } catch (_) { /* best-effort */ }
   }
 
   // Hide banners already recorded as dismissed.

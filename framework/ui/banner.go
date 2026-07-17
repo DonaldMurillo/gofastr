@@ -3,12 +3,18 @@ package ui
 import (
 	"context"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
+
+// bannerDismissCookiePrefix matches the runtime's STORAGE_PREFIX in
+// src/banner.js — the dismissal is mirrored into a cookie under the same
+// key so the server can skip rendering a dismissed banner.
+const bannerDismissCookiePrefix = "gofastr.banner-dismiss."
 
 // ─── Banner / InlineAlert ───────────────────────────────────────────
 //
@@ -36,9 +42,12 @@ type BannerConfig struct {
 	// Variant picks color + role. Defaults to BannerInfo.
 	Variant BannerVariant
 	// Dismissible adds an X button. When DismissID is set the runtime
-	// records the dismissal in localStorage so the same banner doesn't
-	// re-appear on the next page load. (Server-side persistence is up
-	// to the app — Banner doesn't ship its own RPC.)
+	// records the dismissal in localStorage AND a same-name cookie; when
+	// Ctx also carries the request (app.WithRequest — layouts and screens
+	// get this automatically), Banner sees the cookie and renders nothing
+	// at all on later requests — no flash of a dismissed banner before
+	// the runtime's hide pass. (Richer server-side persistence is still
+	// up to the app — Banner doesn't ship its own RPC.)
 	Dismissible bool
 	DismissID   string
 	// Action is an optional inline call-to-action (a Link or Button
@@ -72,6 +81,15 @@ func Banner(cfg BannerConfig) render.HTML {
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	// Flash-free dismissal: the runtime mirrors a DismissID dismissal into
+	// a cookie; if this request carries it, skip the banner entirely.
+	if cfg.DismissID != "" {
+		if r := app.RequestFromContext(ctx); r != nil {
+			if c, err := r.Cookie(bannerDismissCookiePrefix + cfg.DismissID); err == nil && c.Value == "1" {
+				return render.HTML("")
+			}
+		}
 	}
 
 	cls := "ui-banner"

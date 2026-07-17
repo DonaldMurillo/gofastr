@@ -15,6 +15,15 @@ type Routine struct {
 	Name string // unique identifier used for change tracking
 	Up   string // CREATE OR REPLACE … (run verbatim, idempotent)
 	Down string // DROP … or CREATE OR REPLACE of the prior body
+
+	// Dialect scopes a routine to a single SQL dialect. The zero value (the
+	// empty string) means "runs on every detected dialect" — today's behavior.
+	// Set DialectPostgres for a Postgres stored proc that has no SQLite
+	// equivalent; set DialectSQLite for a SQLite-only trigger. During
+	// auto-migrate, routines whose Dialect does not match DetectDialect(db)
+	// are skipped — their Up never runs against the wrong engine. The skipped
+	// names are listed in one slog.Info per boot.
+	Dialect Dialect
 }
 
 // Plan is the full migration surface: tables (entities and/or raw Tables, via a
@@ -25,4 +34,16 @@ type Plan struct {
 	Registry entity.Registry
 	Views    []View
 	Routines []Routine
+}
+
+// dialectString renders a Dialect for log output. Empty string ("all
+// dialects") surfaces as "all" so it reads cleanly in slog attributes rather
+// than as an empty quoted value. (Dialect is a type alias for coremig.Dialect,
+// so this is a free function rather than a method — methods can't be added in
+// the aliasing package.)
+func dialectString(d Dialect) string {
+	if d == "" {
+		return "all"
+	}
+	return string(d)
 }

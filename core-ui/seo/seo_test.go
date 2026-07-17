@@ -164,3 +164,23 @@ func TestPayloadIsValidJSON(t *testing.T) {
 		t.Fatalf("payload is not valid JSON: %v\npayload=%s", err, payload)
 	}
 }
+
+func TestWebApplicationShape(t *testing.T) {
+	app := NewWebApplication()
+	app.Name = "Barcode Generator"
+	app.URL = "https://example.com/tool"
+	app.ApplicationCategory = "UtilitiesApplication"
+	app.Offers = &Offer{base: newBase("Offer"), Price: "0", PriceCurrency: "USD"}
+	out := string(Render(app))
+	for _, want := range []string{
+		`"@type":"WebApplication"`,
+		`"operatingSystem":"Web"`, // NewWebApplication default
+		`"applicationCategory":"UtilitiesApplication"`,
+		`"offers":{`,
+		`"price":"0"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("WebApplication JSON-LD missing %s:\n%s", want, out)
+		}
+	}
+}

@@ -2100,6 +2100,12 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 		// unconditionally, so a screen-less app still ships the seam.
 		files = append(files, generatedFile{name: "screens_register.go", content: blueprintScreensRegisterGo})
 	}
+	if bp.App.Admin.Enabled {
+		// Always ship the admin wiring seam when the back-office is on, so a
+		// later `gofastr generate --add` or a hand-added admin_rbac.go can
+		// wire RBAC into admin.Config without editing generated files.
+		files = append(files, generatedFile{name: "admin_register.go", content: blueprintAdminRegisterGo})
+	}
 	if len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 {
 		files = append(files, generatedFile{name: "stubs.go", content: renderBlueprintStubs(bp)})
 	}
@@ -3919,8 +3925,13 @@ func renderBlueprintMain(bp Blueprint) string {
 			// same colors, same fonts — with the rest of the app.
 			themeArg = ", Theme: appTheme(), FontFaceCSS: fontFaceCSS"
 		}
-		sb.WriteString(fmt.Sprintf("\tfwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, DB: db, AuditTable: \"audit_log\", AllEntities: true%s}))\n",
+		// Build the base admin config, then route it through the
+		// adminBatteryConfigurators seam (admin_register.go) so a new file
+		// can wire Policy/GrantStore/Auth additively — no edits here.
+		sb.WriteString(fmt.Sprintf("\tadminCfg := admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, DB: db, AuditTable: \"audit_log\", AllEntities: true%s}\n",
 			adminPath, adminRole, bp.App.Admin.LoginPath, themeArg))
+		sb.WriteString("\tapplyAdminBatteryConfigurators(&adminCfg)\n")
+		sb.WriteString("\tfwApp.RegisterBattery(admin.New(adminCfg))\n")
 	}
 	sb.WriteString("\taddr, err := runtimeIsolation.Addr(getEnv(\"PORT\", \"localhost:8080\"))\n")
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
@@ -4223,6 +4234,46 @@ func mountGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	})
 	for _, r := range screenRegistrars {
 		r.fn(fwApp, site, db)
+	}
+}
+`
+
+// blueprintAdminRegisterGo is the additive seam for admin battery wiring.
+// Emitted as admin_register.go whenever the blueprint enables the admin
+// back-office. main.go builds the base admin.Config (PathPrefix, Title,
+// AdminRole, …) and routes it through applyAdminBatteryConfigurators before
+// admin.New, so a NEW file (e.g. admin_rbac.go) can wire
+// admin.Config{Policy, GrantStore, Auth} from its init() without editing any
+// generated file. The package-level rolePolicy and authMgr handles (declared
+// in app.go, populated by RegisterGenerated) are how a new file reaches them.
+//
+// This mirrors the screens seam (screens_register.go + screenRegistrars):
+// the registration is data, not code in an owned file.
+const blueprintAdminRegisterGo = `package main
+
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+
+// adminBatteryConfigurators mutates the admin battery config in main.go
+// before admin.New is called. Append from a new file's init() to wire
+// RBAC handles additively — no edits to generated files. The package-level
+// rolePolicy and authMgr handles (in app.go) are how a new file reaches them:
+//
+//	// admin_rbac.go (your file, additive)
+//	func init() {
+//	    adminBatteryConfigurators = append(adminBatteryConfigurators, func(c *admin.Config) {
+//	        c.Policy = rolePolicy
+//	        c.Auth = authMgr
+//	        // c.GrantStore = … (build with framework.NewGrantStore(db, rolePolicy))
+//	    })
+//	}
+var adminBatteryConfigurators []func(*admin.Config)
+
+// applyAdminBatteryConfigurators applies every registered mutator to cfg, in
+// registration order. Called by main.go after RegisterGenerated (so the
+// handles exist) and before admin.New (so mutations take effect).
+func applyAdminBatteryConfigurators(cfg *admin.Config) {
+	for _, c := range adminBatteryConfigurators {
+		c(cfg)
 	}
 }
 `
@@ -6649,6 +6700,25 @@ func renderBlueprintApp(bp Blueprint) string {
 		}
 		sb.WriteString(")\n\n")
 	}
+	// Auth + RBAC handles are package-level so a new file (e.g. admin_rbac.go)
+	// can wire admin.Config{Policy: rolePolicy, Auth: authMgr} — or extend the
+	// policy with finer-grained grants — purely additively, never by editing
+	// this generated file. Populated by RegisterGenerated below; nil otherwise.
+	if bp.App.Auth.Enabled || rbac {
+		sb.WriteString("var (\n")
+		if bp.App.Auth.Enabled {
+			sb.WriteString("\t// authMgr is the app's auth manager, set by RegisterGenerated when\n")
+			sb.WriteString("\t// auth is enabled. Read it from a new file (e.g. to wire admin.Config.Auth).\n")
+			sb.WriteString("\tauthMgr *auth.AuthManager\n")
+		}
+		if rbac {
+			sb.WriteString("\t// rolePolicy is the app's RBAC policy, set by RegisterGenerated when an\n")
+			sb.WriteString("\t// entity declares access: permissions. Read it from a new file (e.g. to\n")
+			sb.WriteString("\t// wire admin.Config.Policy or append finer-grained grants).\n")
+			sb.WriteString("\trolePolicy *access.RolePolicy\n")
+		}
+		sb.WriteString(")\n\n")
+	}
 	sb.WriteString("// RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.\n")
 	sb.WriteString("func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {\n")
 	sb.WriteString("\tif site == nil {\n")
@@ -6714,7 +6784,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("}\n")
 		sb.WriteString("\t\tauthCfg.UserStore = auth.NewEntityUserStore(db, \"auth_users\")\n")
 		sb.WriteString("\t\tauthCfg.SessionStore = auth.NewEntitySessionStore(db, \"auth_sessions\")\n")
-		sb.WriteString("\t\tauthMgr := auth.New(authCfg)\n")
+		sb.WriteString("\t\tauthMgr = auth.New(authCfg)\n")
 		sb.WriteString("\t\tauthMgr.Use(auth.NewCorePlugin())\n")
 		// auth_users / auth_sessions are the auth battery's own tables; it
 		// creates them in Init (EnsureSchema). The generated app ships no DDL.
@@ -6773,11 +6843,12 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("\t\t// Entities declare `access:` permissions; install a RolePolicy so the\n")
 			sb.WriteString("\t\t// signed-in user's roles resolve to those permissions on the gated\n")
 			sb.WriteString("\t\t// CRUD API. The admin role holds the wildcard (full access, the same\n")
-			sb.WriteString("\t\t// surface the back-office manages); add finer per-role Grants here as\n")
-			sb.WriteString("\t\t// you define more roles. Without this, every write 403s.\n")
-			sb.WriteString("\t\trbac := access.NewRolePolicy()\n")
-			sb.WriteString(fmt.Sprintf("\t\trbac.Grant(%q, access.Wildcard)\n", adminRole))
-			sb.WriteString("\t\tfwApp.Use(access.Middleware(rbac, func(ctx context.Context) []string {\n")
+			sb.WriteString("\t\t// surface the back-office manages). Add finer per-role Grants here,\n")
+			sb.WriteString("\t\t// OR from a new file that appends to rolePolicy — both are additive\n")
+			sb.WriteString("\t\t// now that rolePolicy is package-level. Without this, every write 403s.\n")
+			sb.WriteString("\t\trolePolicy = access.NewRolePolicy()\n")
+			sb.WriteString(fmt.Sprintf("\t\trolePolicy.Grant(%q, access.Wildcard)\n", adminRole))
+			sb.WriteString("\t\tfwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {\n")
 			sb.WriteString("\t\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
 			sb.WriteString("\t\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
 			sb.WriteString("\t\t\t\t\treturn rh.GetRoles()\n")

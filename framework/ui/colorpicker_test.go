@@ -52,3 +52,18 @@ func TestColorPickerDisabledClassAndAttr(t *testing.T) {
 		t.Errorf("Disabled should add disabled attr on input:\n%s", h)
 	}
 }
+
+// The swatch renders BEFORE the label — control on the left, name on the
+// right, the same reading order as Checkbox. A swap back to label-first
+// changes every consumer's layout silently.
+func TestColorPickerSwatchPrecedesLabel(t *testing.T) {
+	h := string(ColorPicker(ColorPickerConfig{Name: "fg", Label: "Bars"}))
+	input := strings.Index(h, "<input")
+	label := strings.Index(h, "<label")
+	if input == -1 || label == -1 {
+		t.Fatalf("expected both input and label:\n%s", h)
+	}
+	if input > label {
+		t.Errorf("swatch must precede its label (input at %d, label at %d):\n%s", input, label, h)
+	}
+}

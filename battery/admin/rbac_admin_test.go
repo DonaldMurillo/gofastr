@@ -250,3 +250,122 @@ func TestRBAC_AssignEmptyRoles(t *testing.T) {
 		t.Fatalf("after empty assign, roles = %v, want []", updated.GetRoles())
 	}
 }
+
+func TestRBAC_CapabilityDatalist(t *testing.T) {
+	_, h, policy, _, _, _ := rbacTestEnv(t)
+	policy.Register("posts:write", "posts:read")
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/rbac/roles", nil)
+	req = req.WithContext(handler.SetUser(req.Context(), roleUser{roles: []string{"admin"}}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("roles screen got %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{
+		`list="known-capabilities"`,
+		`<datalist id="known-capabilities">`,
+		`<option value="posts:read">`,
+		`<option value="posts:write">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("roles screen missing %q", want)
+		}
+	}
+}
+
+func TestRBAC_FreeTextFallback(t *testing.T) {
+	_, h, _, _, _, _ := rbacTestEnv(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/rbac/roles", nil)
+	req = req.WithContext(handler.SetUser(req.Context(), roleUser{roles: []string{"admin"}}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := rr.Body.String()
+
+	if !strings.Contains(body, `name="permission"`) || !strings.Contains(body, `type="text"`) {
+		t.Fatal("roles screen missing free-text capability input")
+	}
+	if strings.Contains(body, `id="known-capabilities"`) {
+		t.Fatal("empty registry unexpectedly rendered a capability datalist")
+	}
+}
+
+func TestRBAC_FlagsUnknownGrant(t *testing.T) {
+	_, h, policy, store, _, _ := rbacTestEnv(t)
+	policy.Register("posts:read", "posts:write")
+	if err := store.Grant(context.Background(), "editor", "legacy:dead"); err != nil {
+		t.Fatalf("persist unknown grant: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/rbac/roles", nil)
+	req = req.WithContext(handler.SetUser(req.Context(), roleUser{roles: []string{"admin"}}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := rr.Body.String()
+
+	if !strings.Contains(body, "legacy:dead") || !strings.Contains(body, "unknown/dead") {
+		t.Fatalf("unknown persisted grant was not flagged: %s", body)
+	}
+}
+
+func TestRBAC_ShowsEffectiveRoles(t *testing.T) {
+	b, h, _, _, _, _ := rbacTestEnv(t)
+	var resolvedUserID string
+	b.cfg.EffectiveRoles = func(_ context.Context, userID string) []access.RoleWithOrigin {
+		resolvedUserID = userID
+		return []access.RoleWithOrigin{{Role: "org-admin", Origin: "resolved"}}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/rbac/users", nil)
+	req = req.WithContext(handler.SetUser(req.Context(), roleUser{roles: []string{"admin"}}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("users screen got %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if resolvedUserID == "" {
+		t.Fatal("EffectiveRoles hook did not receive a user ID")
+	}
+	for _, want := range []string{"editor (direct)", "org-admin (resolved)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("users screen missing %q", want)
+		}
+	}
+}
+
+func TestRBAC_DefaultRolesUnlabeled(t *testing.T) {
+	_, h, _, _, _, _ := rbacTestEnv(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/rbac/users", nil)
+	req = req.WithContext(handler.SetUser(req.Context(), roleUser{roles: []string{"admin"}}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := rr.Body.String()
+
+	if strings.Contains(body, "(direct)") || strings.Contains(body, "(resolved)") {
+		t.Fatal("default user roles screen changed without EffectiveRoles hook")
+	}
+}
+
+func TestRBAC_StrictTypoIs400(t *testing.T) {
+	_, h, policy, _, _, _ := rbacTestEnv(t)
+	policy.StrictCapabilities()
+	policy.Register("teams:admin")
+
+	form := url.Values{"role": {"editor"}, "permission": {"temas:admin"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/rbac/_grant", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(handler.SetUser(req.Context(), roleUser{roles: []string{"admin"}}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("strict typo got %d, want 400", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "teams:admin") {
+		t.Errorf("400 body should name nearest capability, got %q", rr.Body.String())
+	}
+}

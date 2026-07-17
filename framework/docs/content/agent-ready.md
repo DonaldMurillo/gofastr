@@ -128,9 +128,9 @@ available. Requests without the `Accept` header are unaffected.
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
 JSON-RPC + GET Server-Sent Events), replacing the manual
 `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`. Combined with
-`WithMCPIntrospection()`, the server's nine introspection tools —
+`WithMCPIntrospection()`, the server's ten introspection tools —
 `app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
-`app_readiness`, `framework_docs_list`, `framework_docs_get`,
+`app_readiness`, `app_routines`, `framework_docs_list`, `framework_docs_get`,
 `framework_docs_search` — are reachable at the canonical endpoint the
 agent card advertises. Calling `WithMCP` **and** manually mounting `/mcp`
 panics with a route conflict — pick one. Blueprint-generated apps ship with

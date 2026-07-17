@@ -21,6 +21,7 @@ type demandLoadMarker struct {
 var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-copy-text-from", "copy"},
 	{"data-fui-computed", "computed"},
+	{"data-fui-compute", "compute"},
 	{"data-fui-fileupload", "fileupload"},
 	{"data-fui-popover-anchor", "popover"},
 	{"data-fui-menu", "menu"},
@@ -70,17 +71,18 @@ var demandLoadMarkers = []demandLoadMarker{
 // in <head> per page, kicking off module fetches in parallel with the
 // initial paint.
 //
-// Matches are substring containment — not a real HTML parse. The
-// markers are unambiguous attribute prefixes ("data-fui-*"), so false
-// positives are vanishingly rare and the cost of a false positive is
-// one wasted module fetch (no correctness impact).
+// Matches are substring containment with an attribute-name boundary
+// check — not a real HTML parse. The boundary check keeps one marker
+// from matching inside a longer attribute name (data-fui-compute must
+// not fire on data-fui-computed). The cost of a residual false positive
+// is one wasted module fetch (no correctness impact).
 func NeededModules(pageHTML string) []string {
 	seen := map[string]bool{}
 	for _, m := range demandLoadMarkers {
 		if seen[m.Module] {
 			continue
 		}
-		if strings.Contains(pageHTML, m.Marker) {
+		if markerPresent(pageHTML, m.Marker) {
 			seen[m.Module] = true
 		}
 	}
@@ -90,6 +92,28 @@ func NeededModules(pageHTML string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// markerPresent reports whether marker occurs in pageHTML as a complete
+// attribute name: the byte after the match must end an attribute name
+// ('=', '>', '/', a quote, or whitespace) or be the end of input, so a
+// marker never fires as a prefix of a longer data-fui-* attribute.
+func markerPresent(pageHTML, marker string) bool {
+	for start := 0; ; {
+		i := strings.Index(pageHTML[start:], marker)
+		if i < 0 {
+			return false
+		}
+		end := start + i + len(marker)
+		if end >= len(pageHTML) {
+			return true
+		}
+		switch pageHTML[end] {
+		case '=', '>', '/', '"', '\'', ' ', '\t', '\n', '\r':
+			return true
+		}
+		start = end
+	}
 }
 
 // DemandLoadModuleNames returns the unique sorted list of every module

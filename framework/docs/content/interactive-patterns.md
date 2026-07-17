@@ -285,7 +285,12 @@ Attribute injected: `data-fui-push-state="path"`.
 drag-and-drop plus a keyboard fallback (Space to grab, Arrow keys to
 move, Space to drop, Esc to cancel). After a successful reorder the
 runtime POSTs the new key sequence to `RPCPath` as form-encoded
-`order=<comma-sep-keys>`. A non-2xx response reverts the DOM.
+`order=<comma-sep-keys>`. A non-2xx response reverts the DOM. The
+`Items` slice may be empty — an empty column renders a valid, sortable
+`<ol>` wrapper with no `<li>` children and remains a drop target
+(empty Kanban columns, issue #82). `RenderItems` with no items returns
+an empty fragment, so an authoritative conflict-reconciliation
+endpoint can replace a column with an empty response.
 
 ### Single list (back-compat)
 
@@ -297,8 +302,9 @@ sortablelist.Render(sortablelist.Config{
 })
 ```
 
-The POST body is exactly `order=a,b` — no extra fields. Existing
-single-list callers compile and behave identically.
+The POST body is `order=a,b`. Existing single-list callers compile and
+behave identically; a list without `Container` never sends a
+`container=` field on same-container reorders (back-compat).
 
 ### Kanban (cross-container)
 
@@ -306,6 +312,8 @@ Render one list per column, all sharing the same `Group` (the board id),
 each with a unique `Container` (the column id the server writes to).
 Lists with the same non-empty `Group` allow drag and keyboard moves
 between them; lists with no group (or different groups) stay isolated.
+A column may start empty (`Items: nil`) — it still renders the
+sortable wrapper and accepts drops.
 
 ```go
 for _, col := range board.Columns {
@@ -314,7 +322,7 @@ for _, col := range board.Columns {
         Group:     "board-1",           // same for every column
         Container: col.ID,              // unique per column
         RPCPath:   "/api/board/move",
-        Items:     col.Items,
+        Items:     col.Items,           // may be empty
     })
 }
 ```
@@ -328,11 +336,16 @@ order=<dest-keys>&moved=<key>&container=<col-id>
 The server knows which item moved (`moved`), to which column
 (`container`), and the new destination order (`order`). It removes the
 item from its previous column and inserts it into the destination at
-the right position. A same-container reorder still sends only
-`order=<keys>` (back-compat).
+the right position. A **same-container** reorder on a list that has a
+`Container` configured also sends `container=<col-id>` (issue #84) so
+the server can route the write without inferring the column from the
+key set; a list without `Container` keeps the legacy `order=<keys>`
+payload exactly. Cross-container commits always carry `container=`
+(empty when the list has no configured id).
 
 Keyboard: Arrow Left/Right moves a grabbed item to the adjacent column
-in the same group; Arrow Up/Down reorders within the column.
+in the same group (including an empty one); Arrow Up/Down reorders
+within the column.
 
 ### Version-aware 409 conflict recovery
 
@@ -340,16 +353,33 @@ When `Version` is set, the runtime appends `version=<token>` to every
 commit. A `409 Conflict` response then fires a **distinct conflict
 path** instead of a blanket rollback:
 
-1. If `ConflictRPC` is set, the runtime GET-fetches it and replaces the
-   destination list's `innerHTML` with the response (server-rendered
-   reconciliation). The source list is restored from its snapshot.
-2. If `ConflictRPC` is absent, the runtime falls back to rollback + a
-   `console.warn`.
+1. The 409 response body is read under hard safety bounds (issue #83):
+   the `Content-Type` MUST be `application/json`, at most ~4 KB is
+   read, the body MUST parse as a problem-detail object
+   `{"error":{"code":"…","message":"…"}}`, and `error.message` (which
+   must be a string) is capped at ~300 characters. Anything malformed,
+   oversized, non-JSON, or unreadable — including an empty body —
+   falls back to the generic copy (today's behavior, backward
+   compatible).
+2. When a valid message is present, it is surfaced through the polite
+   `aria-live` region (replacing the generic copy) and the framework
+   toast surface (`__gofastr.toast`, loaded on demand) when one is
+   wired.
+3. If `ConflictRPC` is set, the runtime then GET-fetches it and
+   replaces the destination list's `innerHTML` with the response
+   (server-rendered reconciliation — an empty response reconciles the
+   column to zero items, #82). The source list is restored from its
+   snapshot. If `ConflictRPC` is absent, the runtime falls back to
+   rollback + a `console.warn`.
+
+```json
+{"error": {"code": "transition_blocked", "message": "Cannot move ORB-12 to Done because ORB-9 is incomplete."}}
+```
 
 Without `Version`, `409` is treated like any other non-2xx (rollback) —
 back-compat. A polite `aria-live` region announces grab, move (position
-+ column), drop-commit success, and rollback/conflict for screen-reader
-users.
++ column), drop-commit success, and rollback/conflict (with the
+server's message when available) for screen-reader users.
 ---
 
 ## Writing a hand-written island, end to end

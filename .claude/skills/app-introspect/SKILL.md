@@ -22,7 +22,7 @@ apps wire both. Launch the site with `./scripts/dev-watch.sh` (port
 `PORT` set). The curl examples below use 8082; adjust to how the app
 was launched.
 
-## The nine tools
+## The ten tools
 
 | Tool                    | Use                                                                                  |
 |-------------------------|--------------------------------------------------------------------------------------|
@@ -32,6 +32,7 @@ was launched.
 | `app_modules`           | List modules with manifest metadata (version, deps, migration group), enabled state, and owned surface counts. |
 | `app_config`            | AppConfig snapshot: `name`, `json_case`, `debug_endpoints`, `no_llmmd`, `request_timeout_ms`, `disable_request_timeout`. |
 | `app_readiness`         | Run all registered readiness checks; same set `/readyz` consults, invokable programmatically. |
+| `app_routines`          | Every registered stored routine: name, declared dialect, sha256 checksum of the Up body, ledger state (present/drifted/missing/unknown), and best-effort liveness in `pg_proc`/`pg_views` (Postgres; unknown on SQLite). Use to confirm a routine body change propagated, or spot one the boot skipped. |
 | `framework_docs_list`   | Every framework doc topic embedded in the binary (name, title, summary).              |
 | `framework_docs_get`    | Full markdown of one topic by name (e.g. `entity-declarations`).                      |
 | `framework_docs_search` | Substring search across all topics (min 3 chars, `limit` caps hits).                  |
