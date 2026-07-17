@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-07-16
+
 ### Added
 
 - **Configurable security headers.** `AppConfig.SecurityHeaders` (and the
