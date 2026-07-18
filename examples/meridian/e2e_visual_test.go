@@ -46,6 +46,10 @@ func TestE2EVisualSurfaces(t *testing.T) {
 	}{
 		{name: "marketing", path: "/"},
 		{name: "auth", path: "/login"},
+		// Public SDK docs (sdkdocs.Mount): overview + one entity reference —
+		// the CodeTabs/DataTable-heavy surfaces most likely to overflow.
+		{name: "sdkdocs", path: "/docs/api"},
+		{name: "sdkdocs-entity", path: "/docs/api/entities/customers"},
 	} {
 		captureMeridianSurface(t, browser, base, surface.name, surface.path)
 	}

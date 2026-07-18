@@ -211,6 +211,9 @@ func TestAxeMeridianClean(t *testing.T) {
 	anonPages := []string{
 		"/", "/pricing", "/about", "/terms", "/privacy",
 		"/login", "/signup",
+		// Public SDK docs (sdkdocs.Mount).
+		"/docs/api", "/docs/api/auth", "/docs/api/errors",
+		"/docs/api/entities/customers",
 	}
 	for _, p := range anonPages {
 		for _, scheme := range axetest.Schemes {

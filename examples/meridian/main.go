@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
+	"github.com/DonaldMurillo/gofastr/framework/sdkdocs"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/mattn/go-sqlite3"
 
@@ -90,6 +92,21 @@ func main() {
 		}),
 		uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/app", "/admin", "/__gofastr/"}}),
 	))
+	// Public SDK docs + downloads at /docs/api. The artifacts come from
+	// `gofastr generate sdk` (gen/sdk/dist is build output, not committed);
+	// the reference pages render live from the registry either way.
+	// IncludeGated is deliberate: meridian's entities are owner-scoped, and
+	// documenting their shape for SDK consumers is the point of the site.
+	if err := sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
+		Registry:     fwApp.Registry,
+		Artifacts:    sdkDistFS(),
+		BaseURL:      "https://meridian.gofastr.dev",
+		APIPrefix:    apiPrefix,
+		HasAPITokens: true,
+		IncludeGated: true,
+	}); err != nil {
+		log.Fatal(err)
+	}
 	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", DB: db, AuditTable: "audit_log", AllEntities: true, Theme: appTheme(), FontFaceCSS: fontFaceCSS}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
@@ -124,6 +141,16 @@ func openDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {
 	default:
 		return nil, fmt.Errorf("unsupported db driver %q", driver)
 	}
+}
+
+// sdkDistFS returns the generated SDK dist directory when present. Nil (no
+// downloads yet) is a supported state — the docs site shows how to generate
+// them.
+func sdkDistFS() fs.FS {
+	if _, err := os.Stat("gen/sdk/dist"); err != nil {
+		return nil
+	}
+	return os.DirFS("gen/sdk/dist")
 }
 
 func getEnv(key, fallback string) string {
