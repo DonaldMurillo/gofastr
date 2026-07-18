@@ -238,6 +238,10 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	// One connection = one database: a pooled :memory: DSN hands each new
+	// pool connection an empty schema, and this test runs an SSE watch
+	// concurrently with creates.
+	db.SetMaxOpenConns(1)
 	defer db.Close()
 
 	app := framework.NewApp(

@@ -450,6 +450,13 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A pooled sqlite :memory: DSN gives every NEW connection a fresh,
+	// EMPTY database. Under the concurrency this test creates (a
+	// long-lived SSE watch plus parallel CLI calls) the pool opens a
+	// second connection whose token lookup then hits "no such table:
+	// auth_api_tokens" and the request silently degrades to anonymous —
+	// the CLI 401s or never sees an event. One connection = one database.
+	db.SetMaxOpenConns(1)
 	defer db.Close()
 	app := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware(),
 		framework.WithAPIPrefix("/api"))
@@ -599,11 +606,19 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 		t.Fatalf("rollback envelope missing from stdout: %s", out)
 	}
 
-	// watch: subscribe, create until an event line arrives
-	wctx, wcancel := context.WithTimeout(ctx, 20*time.Second)
+	// watch: subscribe, create until an event line arrives. The
+	// subscription attaches asynchronously, so creates retry until one
+	// lands inside the live window; the budget is generous because CI
+	// runners under load have delivered the first event only after
+	// several seconds. stderr is captured so a watch process that dies
+	// immediately (empty stdout, fast EOF) explains itself instead of
+	// failing as a bare timeout.
+	wctx, wcancel := context.WithTimeout(ctx, 60*time.Second)
 	defer wcancel()
 	watch := exec.CommandContext(wctx, bin, "posts", "watch")
 	watch.Env = env
+	var watchStderr bytes.Buffer
+	watch.Stderr = &watchStderr
 	stdout, err := watch.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -621,23 +636,27 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 	}()
 	var eventLine string
 poll:
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 100; i++ {
 		run("posts", "create", "--title", "sse")
 		select {
 		case l, ok := <-lines:
 			if ok {
 				eventLine = l
+				break poll
 			}
+			// Closed with no line: the watch process ended (EOF) — no
+			// more events can arrive, stop creating and report.
 			break poll
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(500 * time.Millisecond):
 		case <-wctx.Done():
 			break poll
 		}
 	}
 	wcancel()
-	watch.Wait()
+	watchErr := watch.Wait()
 	if !strings.Contains(eventLine, "entity.created") {
-		t.Fatalf("watch produced no created event: %q", eventLine)
+		t.Fatalf("watch produced no created event: %q (watch exit: %v, stderr: %s)",
+			eventLine, watchErr, watchStderr.String())
 	}
 
 	// delete
