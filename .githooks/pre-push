@@ -38,9 +38,11 @@ echo ""
 if [ "${GOFASTR_SKIP_PUSH_TESTS:-}" = "1" ]; then
   warn "test sweep skipped (GOFASTR_SKIP_PUSH_TESTS=1) — CI still gates"
 else
-  echo "  → Deterministic test sweep (several minutes)..."
+  echo "  → Deterministic test sweep..."
+  # No -count=1: cached PASSes on unchanged packages keep repeat pushes
+  # fast (same content-addressed cache CI relies on).
   # shellcheck disable=SC2046  # word splitting of go list output is intended
-  go test -count=1 -timeout=20m -p 2 \
+  go test -timeout=20m -p 2 \
     -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
     $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
   pass "Deterministic tests passed"

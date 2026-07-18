@@ -91,9 +91,16 @@ jobs:
         run: go vet ./...
 
       - name: Test (deterministic packages)
-        # Mirrors scripts/test-all.sh flags (-count=1, -timeout=20m,
-        # -p 2 to keep httptest/chromedp sockets off the ephemeral-port
-        # ceiling). Excluded here and run in browser-e2e instead:
+        # -timeout=20m, -p 2 to keep httptest/chromedp sockets off the
+        # ephemeral-port ceiling. Intentionally NO -count=1: Go's
+        # content-addressed test cache (persisted across runs by
+        # setup-go's GOCACHE) then skips re-executing any package whose
+        # sources + transitive deps + test inputs are byte-identical to a
+        # prior PASS — the free, correct-by-construction analog of Nx's
+        # affected/cache. Do NOT re-add -count=1 here to "force fresh
+        # runs"; the flaky chromedp suites keep it in browser-e2e, which
+        # is where forcing a fresh run per push actually matters.
+        # Excluded here and run in browser-e2e instead:
         #   - examples/site, kiln/integration, core-ui/runtime,
         #     core-ui/widget (whole packages — the latter two host the
         #     hydration chromedp suites and are documented flaky under
@@ -111,7 +118,7 @@ jobs:
         #     times out. They run serialized in browser-e2e instead.
         run: |
           # shellcheck disable=SC2046  # word splitting of go list output is intended
-          go test -count=1 -timeout=20m -p 2 \
+          go test -timeout=20m -p 2 \
             -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
             $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
 

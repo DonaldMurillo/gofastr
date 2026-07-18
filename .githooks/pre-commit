@@ -131,9 +131,11 @@ echo ""
 if [ "${GOFASTR_SKIP_COMMIT_TESTS:-}" = "1" ]; then
   warn "test sweep skipped (GOFASTR_SKIP_COMMIT_TESTS=1) — pre-push and CI still gate"
 else
-  echo "  → Deterministic test sweep (mirrors CI's blocking job; several minutes)..."
+  echo "  → Deterministic test sweep (mirrors CI's blocking job)..."
+  # No -count=1: Go's cached PASSes make repeat commits on unchanged
+  # packages near-instant (same content-addressed cache CI now relies on).
   # shellcheck disable=SC2046  # word splitting of go list output is intended
-  go test -count=1 -timeout=20m -p 2 \
+  go test -timeout=20m -p 2 \
     -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
     $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
   pass "Deterministic tests passed"
