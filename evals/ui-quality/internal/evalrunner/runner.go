@@ -447,6 +447,13 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		result.WorkspaceFingerprint = prior.WorkspaceFingerprint
 		result.BuilderProvenance = prior.BuilderProvenance
 		result.GuidanceFingerprint = prior.GuidanceFingerprint
+		result.BuilderCLICalls = prior.BuilderCLICalls
+		result.BuilderUsedDevServer = prior.BuilderUsedDevServer
+		result.BuilderDocsCalls = prior.BuilderDocsCalls
+		result.BuilderDocsSearches = append([]string(nil), prior.BuilderDocsSearches...)
+		result.BuilderDocsTopics = append([]string(nil), prior.BuilderDocsTopics...)
+		result.BuilderUsedCapabilityMap = prior.BuilderUsedCapabilityMap
+		result.BuilderUsedMCP = prior.BuilderUsedMCP
 	} else {
 		prepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		err := runCommand(prepCtx, filepath.Dir(mapping.Workspace), filepath.Join(mapping.ResultDir, "scaffold.log"), nil,
@@ -510,6 +517,11 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		result.BuilderDuration = time.Since(builderStarted).Seconds()
 		_, result.BuilderTokens = builderMetricsFromArtifacts(mapping.ResultDir)
 		result.BuilderCLICalls, result.BuilderUsedDevServer = cliInvocationStats(cliLog)
+		docsStats := cliDocsInvocationStats(cliLog)
+		result.BuilderDocsCalls = docsStats.Calls
+		result.BuilderDocsSearches = docsStats.Searches
+		result.BuilderDocsTopics = docsStats.Topics
+		result.BuilderUsedCapabilityMap = docsStats.UsedCapabilityMap
 		result.BuilderUsedMCP = builderUsedMCP(inv.LogPath, buildOutput)
 		integrityErr := verifyFrameworkIntegrity(variant.FrameworkRoot, gofastrBin, mapping.FrameworkFingerprint)
 		if integrityErr != nil {

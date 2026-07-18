@@ -94,9 +94,10 @@ var docIntents = []docIntent{
 	},
 	{
 		Num: "03", Slug: "ui", Title: "Building UI",
-		Lede: "Server-rendered with islands. Signals, HTML primitives, composed patterns, the runtime, and theming.",
-		Path: []string{"Getting started (UI)", "New components", "Widget builder"},
+		Lede: "Start from a product job, then choose the state boundary, server-rendered islands, primitives, runtime, and theme.",
+		Path: []string{"UI capability map", "Getting started (UI)", "Composition recipes"},
 		Docs: []docEntry{
+			{"ui-capability-map", "UI capability map", "Live dashboards, optimistic boards, master/detail, reactive state, static export, and SPA integration — mapped to proof and delivery semantics."},
 			{"ui-getting-started", "Getting started (UI)", "The path: scaffold → theme → screen → custom component."},
 			{"ui-composition-recipes", "Composition recipes", "Choose a page shape before composing framework-owned primitives."},
 			{"ui-wiring", "Wiring UI into an app", "framework.App + core-ui app + uihost, end to end in one annotated main.go."},

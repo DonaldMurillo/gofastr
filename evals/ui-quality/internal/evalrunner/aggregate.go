@@ -120,6 +120,10 @@ func summarize(suite *Suite, runID string, candidates []CandidateResult, nonComp
 			if cell.MobileOverall < vs.WorstMobileOverall {
 				vs.WorstMobileOverall = cell.MobileOverall
 			}
+			vs.MeanDocsCalls += float64(cell.BuilderDocsCalls)
+			if cell.BuilderUsedCapabilityMap {
+				vs.CapabilityMapDiscoveryRate++
+			}
 			if cell.BuilderDuration > 0 || cell.BuilderTokens > 0 {
 				vs.MeanBuilderMinutes += cell.BuilderDuration / 60
 				vs.MeanBuilderTokens += cell.BuilderTokens
@@ -132,6 +136,8 @@ func summarize(suite *Suite, runID string, candidates []CandidateResult, nonComp
 		vs.MeanOverall /= n
 		vs.MeanMinimumDimension /= n
 		vs.MeanMobileOverall /= n
+		vs.MeanDocsCalls /= n
+		vs.CapabilityMapDiscoveryRate /= n
 		if metricCells > 0 {
 			vs.MeanBuilderMinutes /= float64(metricCells)
 			vs.MeanBuilderTokens /= metricCells
@@ -209,12 +215,12 @@ func leaderboardMarkdown(summary Summary) string {
 	if !summary.Competitive {
 		fmt.Fprintf(&b, "Noncompetitive run: %s. Scores are diagnostic only.\n\n", strings.Join(summary.NonCompetitiveReasons, "; "))
 	}
-	b.WriteString("| Rank | Variant | Eligible | Rank score | Holistic | Holistic worst | Mobile | Mobile worst | Mean min dimension | Build min | Build tokens | Technical pass | Quality pass |\n")
-	b.WriteString("|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+	b.WriteString("| Rank | Variant | Eligible | Rank score | Holistic | Holistic worst | Mobile | Mobile worst | Mean min dimension | Build min | Build tokens | Capability map | Docs calls | Technical pass | Quality pass |\n")
+	b.WriteString("|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
 	for i, v := range summary.Variants {
-		fmt.Fprintf(&b, "| %d | %s | %t | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %d | %.0f%% | %.0f%% |\n",
+		fmt.Fprintf(&b, "| %d | %s | %t | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %d | %.0f%% | %.1f | %.0f%% | %.0f%% |\n",
 			i+1, v.VariantID, v.PromotionEligible, v.RankScore, v.MeanOverall, v.WorstOverall, v.MeanMobileOverall, v.WorstMobileOverall, v.MeanMinimumDimension,
-			v.MeanBuilderMinutes, v.MeanBuilderTokens, v.TechnicalPassRate*100, v.QualityPassRate*100)
+			v.MeanBuilderMinutes, v.MeanBuilderTokens, v.CapabilityMapDiscoveryRate*100, v.MeanDocsCalls, v.TechnicalPassRate*100, v.QualityPassRate*100)
 	}
 	b.WriteString("\n")
 	if summary.WinnerMeetsBar {
@@ -243,6 +249,8 @@ func leaderboardMarkdown(summary Summary) string {
 			c.HolisticShadcnConsensus, c.MobileShadcnConsensus, c.TechnicalPassed, c.QualityPassed)
 		fmt.Fprintf(&b, "Dev-loop funnel (non-deterministic): builder invoked `gofastr dev` `%t`; %d gofastr CLI call(s) total.\n\n",
 			c.BuilderUsedDevServer, c.BuilderCLICalls)
+		fmt.Fprintf(&b, "Docs funnel (non-deterministic): %d `gofastr docs` call(s); capability map `%t`; topics `%s`; searches `%s`.\n\n",
+			c.BuilderDocsCalls, c.BuilderUsedCapabilityMap, strings.Join(c.BuilderDocsTopics, ", "), strings.Join(c.BuilderDocsSearches, ", "))
 		fmt.Fprintf(&b, "MCP funnel (non-deterministic): builder touched `/mcp` `%t`; served candidate exposes %d MCP tool(s), introspection `%t`, dev-only log tools leaked into prod boot `%t`.\n\n",
 			c.BuilderUsedMCP, c.CandidateMCPTools, c.CandidateMCPIntrospection, c.CandidateMCPLogToolsProd)
 		if len(c.Weakest) > 0 {

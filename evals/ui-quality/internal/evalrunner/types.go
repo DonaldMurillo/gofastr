@@ -94,6 +94,13 @@ type CandidateResult struct {
 	// discovered the hot-reload loop from the generated guidance alone.
 	BuilderCLICalls      int  `json:"builder_cli_calls"`
 	BuilderUsedDevServer bool `json:"builder_used_dev_server"`
+	// BuilderDocs* records actual `gofastr docs` invocations from the CLI
+	// shim. These are discovery signals; they do not affect technical or
+	// quality pass status.
+	BuilderDocsCalls         int      `json:"builder_docs_calls"`
+	BuilderDocsSearches      []string `json:"builder_docs_searches,omitempty"`
+	BuilderDocsTopics        []string `json:"builder_docs_topics,omitempty"`
+	BuilderUsedCapabilityMap bool     `json:"builder_used_capability_map"`
 	// BuilderUsedMCP greps the builder's transcript for /mcp traffic — a
 	// soft behavioral signal that the builder discovered the app's MCP
 	// debug loop (introspection/log tools) from guidance alone.
@@ -189,21 +196,23 @@ type Dimensions struct {
 }
 
 type VariantSummary struct {
-	VariantID            string  `json:"variant_id"`
-	PromotionEligible    bool    `json:"promotion_eligible"`
-	Candidates           int     `json:"candidates"`
-	MeanBuilderMinutes   float64 `json:"mean_builder_minutes,omitempty"`
-	MeanBuilderTokens    int64   `json:"mean_builder_tokens,omitempty"`
-	TechnicalPassRate    float64 `json:"technical_pass_rate"`
-	QualityPassRate      float64 `json:"quality_pass_rate"`
-	AllTechnicalPassed   bool    `json:"all_technical_passed"`
-	AllQualityPassed     bool    `json:"all_quality_passed"`
-	MeanOverall          float64 `json:"mean_overall"`
-	WorstOverall         float64 `json:"worst_overall"`
-	MeanMinimumDimension float64 `json:"mean_minimum_dimension"`
-	MeanMobileOverall    float64 `json:"mean_mobile_overall"`
-	WorstMobileOverall   float64 `json:"worst_mobile_overall"`
-	RankScore            float64 `json:"rank_score"`
+	VariantID                  string  `json:"variant_id"`
+	PromotionEligible          bool    `json:"promotion_eligible"`
+	Candidates                 int     `json:"candidates"`
+	MeanBuilderMinutes         float64 `json:"mean_builder_minutes,omitempty"`
+	MeanBuilderTokens          int64   `json:"mean_builder_tokens,omitempty"`
+	MeanDocsCalls              float64 `json:"mean_docs_calls"`
+	CapabilityMapDiscoveryRate float64 `json:"capability_map_discovery_rate"`
+	TechnicalPassRate          float64 `json:"technical_pass_rate"`
+	QualityPassRate            float64 `json:"quality_pass_rate"`
+	AllTechnicalPassed         bool    `json:"all_technical_passed"`
+	AllQualityPassed           bool    `json:"all_quality_passed"`
+	MeanOverall                float64 `json:"mean_overall"`
+	WorstOverall               float64 `json:"worst_overall"`
+	MeanMinimumDimension       float64 `json:"mean_minimum_dimension"`
+	MeanMobileOverall          float64 `json:"mean_mobile_overall"`
+	WorstMobileOverall         float64 `json:"worst_mobile_overall"`
+	RankScore                  float64 `json:"rank_score"`
 }
 
 type Summary struct {

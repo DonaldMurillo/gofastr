@@ -338,6 +338,12 @@ those are documented by the owning plugin.
 
 ---
 
+## See also
+
+- [UI capability map](ui-capability-map.md) maps product architectures to this runtime boundary and its scaling semantics.
+- [UI composition recipes](ui-composition-recipes.md) turns that architecture into product-shaped page grammar.
+- [Events and SSE](events.md) defines best-effort push and durable alternatives.
+
 ## Common mistakes
 
 These are the misreadings of the model that have already cost rework

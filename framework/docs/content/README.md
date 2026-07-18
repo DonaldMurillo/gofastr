@@ -10,6 +10,10 @@ results, the harness contract) are exempt — the exemption list lives in
 
 ## Start here
 
+- [UI capability map](ui-capability-map.md) — start from a product job
+  such as a live dashboard, optimistic board, master/detail workspace,
+  or server-authoritative reactive SaaS; choose state and delivery
+  boundaries before package names.
 - [Blueprint tutorial](tutorial-blueprint-app.md) — the thesis
   walkthrough: blueprint → generated UI + API → auth + owner scoping
   + RBAC → customize in plain Go → deploy.
@@ -73,6 +77,9 @@ results, the harness contract) are exempt — the exemption list lives in
 
 ## Building UI
 
+- [UI capability map](ui-capability-map.md) — task-oriented architecture
+  map with runnable proofs, state ownership, replica semantics, and
+  explicit non-goals.
 - [UI getting started](ui-getting-started.md) — the 15-minute path:
   scaffold → design direction → theme → framework-native composition.
 - [UI composition recipes](ui-composition-recipes.md) — product-shaped

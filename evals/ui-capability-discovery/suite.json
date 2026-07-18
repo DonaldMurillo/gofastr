@@ -1,0 +1,77 @@
+{
+  "name": "gofastr-ui-capability-discovery-v1",
+  "repo_root": "../..",
+  "artifact_dir": "../../dist/ui-capability-eval",
+  "agents": {
+    "builder": {
+      "backend": "claude",
+      "program": "claude",
+      "model": "opus",
+      "timeout_minutes": 30
+    },
+    "judge": {
+      "backend": "claude",
+      "program": "claude",
+      "model": "opus",
+      "timeout_minutes": 12
+    },
+    "mobile_judge": {
+      "backend": "claude",
+      "program": "claude",
+      "model": "opus",
+      "timeout_minutes": 12
+    }
+  },
+  "variants": [
+    {
+      "id": "working-tree",
+      "framework_root": "../.."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "live-operations-dashboard",
+      "title": "Live operations dashboard",
+      "brief": "Build an operations dashboard for a payments platform. It must show service health, request volume, latency, current incidents, recent changes, and the next operator decision. Background checks can change service status while the page is open. An operator must be able to understand the current state and open one service from a phone.",
+      "pages": [
+        {"name": "overview", "path": "/", "ready_selector": "main"},
+        {"name": "service", "path": "/services/payments-api", "ready_selector": "main"}
+      ]
+    },
+    {
+      "id": "dispatch-board",
+      "title": "Dispatch planning board",
+      "brief": "Build a dispatch board for a regional field-service team. Dispatchers need to review unassigned, scheduled, in-progress, and blocked visits; move a visit between stages; see when a move is rejected because someone else changed the schedule; and open the visit record. The board must remain usable on a phone for an on-call dispatcher.",
+      "pages": [
+        {"name": "board", "path": "/", "ready_selector": "main"},
+        {"name": "visit", "path": "/visits/visit-2048", "ready_selector": "main"}
+      ]
+    },
+    {
+      "id": "customer-workspace",
+      "title": "Customer operations workspace",
+      "brief": "Build a customer-operations workspace for a subscription company. The main view must support finding an account, reading the durable account and billing state, reviewing activity, editing a support note without losing context, and seeing an unread-notification count update when background work completes. On mobile, the account identity and next action must lead.",
+      "pages": [
+        {"name": "workspace", "path": "/", "ready_selector": "main"},
+        {"name": "account", "path": "/accounts/acme-labs", "ready_selector": "main"}
+      ]
+    }
+  ],
+  "viewports": [
+    {"id": "mobile-light", "width": 390, "height": 844, "scheme": "light"},
+    {"id": "mobile-dark", "width": 390, "height": 844, "scheme": "dark"},
+    {"id": "desktop-light", "width": 1440, "height": 1000, "scheme": "light"},
+    {"id": "desktop-dark", "width": 1440, "height": 1000, "scheme": "dark"}
+  ],
+  "judge": {
+    "rubric": "../ui-quality/rubric.md",
+    "schema": "../ui-quality/judge.schema.json",
+    "runs": 3,
+    "mobile_runs": 3,
+    "minimum_overall": 8.5,
+    "minimum_dimension": 7.5,
+    "minimum_mobile_overall": 8.5,
+    "minimum_mobile_dimension": 7.5,
+    "require_shadcn_consensus": true
+  }
+}

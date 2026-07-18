@@ -196,6 +196,12 @@ goroutines, no remote state, and `PresenceRoster` returns the byte-identical
 single-replica result. Sticky-session deployments keep working exactly as
 before; non-sticky deployments now aggregate correctly too.
 
+## See also
+
+- [UI capability map](ui-capability-map.md) places collaborative awareness in the wider state and delivery model.
+- [Events and SSE](events.md) defines the shared best-effort push lane.
+- [Horizontal scaling](scaling.md) covers fanout and affinity implications.
+
 ## Common mistakes
 
 - **Trusting a client-supplied name.** Identity is server-derived from the

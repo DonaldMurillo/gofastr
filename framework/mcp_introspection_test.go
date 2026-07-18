@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -66,6 +67,40 @@ func TestMCPFrameworkDocsListReturnsTopics(t *testing.T) {
 	count := m["count"].(int)
 	if count == 0 {
 		t.Fatal("framework_docs_list returned 0 topics — embed broken?")
+	}
+}
+
+// TestMCPFrameworkDocsCapabilityMapDiscovery pins parity between the embedded
+// docs, task-oriented search, and the live app's MCP discovery surface.
+func TestMCPFrameworkDocsCapabilityMapDiscovery(t *testing.T) {
+	app := NewApp(WithMCPIntrospection())
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	result, err := app.MCP.CallTool(context.Background(), "framework_docs_get",
+		map[string]any{"topic": "ui-capability-map"})
+	if err != nil {
+		t.Fatalf("framework_docs_get ui-capability-map: %v", err)
+	}
+	if markdown, _ := result.(map[string]any)["markdown"].(string); !strings.Contains(markdown, "Live dashboards") {
+		t.Fatalf("MCP capability map is missing live-dashboard guidance")
+	}
+
+	result, err = app.MCP.CallTool(context.Background(), "framework_docs_search",
+		map[string]any{"term": "live dashboard"})
+	if err != nil {
+		t.Fatalf("framework_docs_search: %v", err)
+	}
+	hits := result.(map[string]any)["hits"].([]map[string]any)
+	found := false
+	for _, hit := range hits {
+		if hit["topic"] == "ui-capability-map" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("MCP search did not route live dashboard to ui-capability-map: %+v", hits)
 	}
 }
 
