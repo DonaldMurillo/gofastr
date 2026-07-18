@@ -196,7 +196,7 @@ func codeBlockCSS(_ style.Theme) string {
 [data-fui-comp="ui-code-block"] .tok-fn     { color: #82AAFF; }
 [data-fui-comp="ui-code-block"] .tok-str    { color: #C3E88D; }
 [data-fui-comp="ui-code-block"] .tok-num    { color: #F78C6C; }
-[data-fui-comp="ui-code-block"] .tok-com    { color: #676E95; font-style: italic; }
+[data-fui-comp="ui-code-block"] .tok-com    { color: #8C93B0; font-style: italic; }
 [data-fui-comp="ui-code-block"] .tok-name   { color: #FFCB6B; }
 /* Theme token palette (emitted by the framework highlighter / markdown code
    blocks). The --tk-* vars are theme slots (style.Theme.Code, dark values in
@@ -207,7 +207,9 @@ func codeBlockCSS(_ style.Theme) string {
 [data-fui-comp="ui-code-block"] .tk-fn   { color: var(--tk-fn, #82AAFF); }
 [data-fui-comp="ui-code-block"] .tk-str  { color: var(--tk-str, #C3E88D); }
 [data-fui-comp="ui-code-block"] .tk-num  { color: var(--tk-num, #F78C6C); }
-[data-fui-comp="ui-code-block"] .tk-com  { color: var(--tk-com, #676E95); font-style: italic; }
+/* Comment default must hold ≥4.5:1 on --color-code-surface (#18181B):
+   #676E95 measured 3.6:1 and failed axe on the SDK docs pages. */
+[data-fui-comp="ui-code-block"] .tk-com  { color: var(--tk-com, #8C93B0); font-style: italic; }
 [data-fui-comp="ui-code-block"] .tk-type { color: var(--tk-type, #FFCB6B); }
 [data-fui-comp="ui-code-block"] .tk-pn   { color: var(--tk-pn, inherit); }
 

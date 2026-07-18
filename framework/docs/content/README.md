@@ -150,6 +150,14 @@ results, the harness contract) are exempt — the exemption list lives in
 
 - [Codegen](codegen.md) — YAML-configured generators, external extension
   protocol, safe output paths, and manifest-based cleaning.
+- [Ship your API as a CLI](app-cli.md) — `gofastr generate cli`: a
+  branded, stdlib-only terminal client for your customers, with scoped
+  API-token auth, batch verbs, live `watch`, entity/verb selection, and
+  a never-overwritten `custom.go` extension seam.
+- [Ship your API as SDKs](sdk.md) — `gofastr generate sdk`: a
+  downloadable Go SDK module and a zero-dependency JS/TS client, served
+  by the app itself via `framework/sdkdocs` — live per-entity reference
+  pages, tabbed install guides, and schema-hash drift detection.
 - [Blueprints](blueprints.md) — deterministic YAML-to-code input for
   `gofastr generate --from`, backed by the in-house `core/yaml` parser.
 - [Kiln (agent-driven build mode)](kiln.md) — separate binary; build a

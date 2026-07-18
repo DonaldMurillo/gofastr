@@ -212,9 +212,16 @@ func buildCSS() string {
 }
 .tabs > .tabs-panels {
   /* Forces a flex-wrap break: panels area takes a full row below the
-     summary strip. */
+     summary strip. min-width: 0 lets the row shrink below its content's
+     intrinsic width (flex items default to min-width auto), so wide panel
+     content — a long code line — scrolls inside its own overflow container
+     instead of stretching the whole page. */
   flex: 1 0 100%;
+  min-width: 0;
   padding: var(--spacing-lg, 16px) 0 0;
+}
+.tabs > .tabs-panels > .tabs-panel {
+  max-width: 100%;
 }
 .tabs > .tabs-panels > .tabs-panel { display: none; }
 ` + panelRules.String() + `

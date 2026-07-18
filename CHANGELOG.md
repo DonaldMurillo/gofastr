@@ -5,6 +5,102 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.32.0] - 2026-07-18
+
+Ships the API-distribution pair: the customer-facing CLI (#85) and SDK
+generation + in-app hosting (#86). A GoFastr app's HTTP API becomes a
+branded terminal client its developer distributes to *their* customers,
+and downloadable client SDKs (Go, JS/TS) the app itself serves behind a
+live docs site.
+
+### Added
+
+- **`gofastr generate cli`** (#85). Run from an app root (entities are
+  recovered from project source — no blueprint involved) to emit a
+  standalone, stdlib-only `package main` under `cmd/<binary>/` (go-install-
+  friendly; cross-compiles anywhere Go does) that imports only the
+  app's `entities/client` package. Every selected entity gets
+  list/get/create/update/patch/delete with schema-derived filter, sort,
+  pagination, `--include`/`--fields`, `-q` (with `SearchFields`) and
+  `--trashed` (with `SoftDelete`) flags, atomic `batch-create`/`batch-update`/
+  `batch-delete`, and a live `watch` (SSE, one JSON line per event).
+  Mutations are presence-faithful: only explicitly-set flags enter the body,
+  so `--published=false` really sends `false`. `login`/`logout` store a
+  scoped API token (flag > `<BINARY>_URL`/`_TOKEN` env > 0600 config file);
+  exit codes are 0/1/2/4 (ok/API error/usage/auth). Selection is declarative
+  (`--only`, `--exclude`, `--verbs` global or per-entity) and a typo'd name
+  or reserved-flag/command collision fails generation. Regeneration is
+  one-shot + `--force`, except `custom.go` — the dev-owned seam whose
+  `customCommands()` merge over (and can override) the generated dispatch
+  table — which is only ever created when absent. See
+  [app-cli](framework/docs/content/app-cli.md).
+- **`auth.RequireAPIScopes(prefix)`**. One mount makes minted token scopes
+  real across the whole auto-CRUD tree: the resource is derived from the
+  path, GET/HEAD need `<resource>:read`, everything else `<resource>:write`;
+  sessions/JWTs and off-prefix paths pass untouched. Without it (or
+  per-route `RequireScope`) a token's scope list is advisory only.
+- **Generated typed client: full CRUD surface + auth.** The
+  `entities/client` package gains an opt-in `Token` field (sent as
+  `Authorization: Bearer …`; bearer requests skip both CSRF layers by
+  design), `BatchCreate/BatchUpdate/BatchDelete<Entity>` mapping the atomic
+  `_batch` routes (a 400 rollback returns the `{committed, results[]}`
+  envelope, not an error), `Watch<Entity>` (blocking SSE loop), and a raw
+  `Do` escape hatch for custom endpoints and presence-faithful map bodies.
+- **Meridian dogfoods the whole path**: TokensPlugin + TokenMiddleware +
+  RequireAPIScopes wired in `app.go`, and its generated CLI is committed at
+  `examples/meridian/cmd/meridian` so generator drift breaks CI
+  (`go install github.com/DonaldMurillo/gofastr/examples/meridian/cmd/meridian@latest`).
+- **`gofastr generate sdk`** (#86). Run from an app root (entities are
+  recovered from project source, exactly like `generate cli`) to emit
+  `gen/sdk/`: a standalone stdlib-only **Go SDK module** (the typed
+  client + its own go.mod + README, zipped for download), a
+  **zero-dependency JS/TS client** — one handrolled ESM `client.js` plus
+  `client.d.ts`, deliberately no npm packaging — and a `dist/` directory
+  (sdk-go.zip, client.js, client.d.ts, manifest.json) the app serves.
+  Selection via `--only`/`--exclude`; defaults can live in
+  `gofastr.codegen.yml` as a generator entry named `sdk`, which also runs
+  under `gofastr generate --config` (the first first-party in-process
+  codegen generator). Output is generator-owned and regenerates in place;
+  archives are deterministic. Hidden fields never appear in any generated
+  file. See [sdk](framework/docs/content/sdk.md).
+- **`framework/sdkdocs`** — the SDK docs site. `sdkdocs.Mount(site,
+  router, cfg)` serves a public site at `/docs/api`: tabbed install
+  guides, download routes (ETag revalidation; client.js serves inline so
+  browsers can `import` it straight from the URL), an auth guide
+  (minting `gfsk_` tokens), an errors reference, and a live per-entity
+  API reference rendered from the registry on every request. Fail-closed
+  visibility: `Public` entities only by default; gated entities 404
+  indistinguishably from missing ones; `Entities`/`IncludeGated` opt in;
+  `Policy` gates screens and downloads together. Drift detection
+  compares the manifest's schema hash (`framework/sdk.SchemaHash`)
+  against the live registry — one WARN plus a page banner, downloads
+  keep working.
+- **`framework/sdk`** — the shared generator↔server contract: manifest
+  schema, deterministic zip packer, and the schema hash both halves
+  compute.
+- **`ui.CodeTabs`** — the same snippet in several languages behind a
+  zero-JS tab strip (patterns/tabs + CodeBlock with copy buttons).
+- **`static.Builder.ExtraDirs`** — generic "copy this FS under this URL
+  path" hook for static export (never clobbers files the export or the
+  user static dir already own); the SDK artifacts ride it.
+
+### Fixed
+
+- **Generated clients no longer leak hidden fields.** `renderClient`
+  (the `entities/client` package and therefore the Go SDK) now skips
+  `Hidden` columns in all four generated struct walks — hidden schema
+  never reaches a downloadable artifact.
+- **`--tk-com` syntax-comment color now meets WCAG AA** on the dark code
+  surface (#676E95 → #8C93B0, 3.6:1 → 5.8:1; caught by axe on the SDK
+  docs pages).
+- **`patterns/tabs` panels no longer stretch the page** when panel
+  content is wider than the viewport (flex min-width) — wide code
+  samples scroll inside their own frame on mobile.
+- **Widget registry enumeration is now sorted.** With two or more
+  registered widgets, the catalog JSON, SSR chrome-inline order, and the
+  static export's widget dump followed Go's random map order — flapping
+  export bytes and rotating the PWA cache version on no-op rebuilds.
+
 ## [0.31.0] - 2026-07-17
 
 Ships process-isolated third-party modules (#37) and cross-replica presence

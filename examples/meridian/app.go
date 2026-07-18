@@ -303,6 +303,19 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
 		authMgr := auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
+		// Scoped API tokens (PATs): logged-in users mint them at
+		// POST /auth/tokens (session-only — a leaked token can't mint
+		// siblings) and the generated CLI under cli/ sends them as
+		// Authorization: Bearer gfsk_… on every request.
+		apiTokens, err := auth.NewSQLAPITokenStore(db)
+		if err != nil {
+			log.Fatalf("api token store: %v", err)
+		}
+		serviceAccounts, err := auth.NewSQLServiceAccountStore(db)
+		if err != nil {
+			log.Fatalf("service account store: %v", err)
+		}
+		authMgr.Use(auth.NewTokensPlugin(apiTokens))
 		authMgr.Init(fwApp)
 		auth.SetDefaultLoginErrorPath("/login")
 		// Bootstrap admin account so the back-office is reachable on a
@@ -325,6 +338,13 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// this, authorized requests fail closed (401) just like
 		// anonymous ones.
 		fwApp.Use(auth.SessionMiddleware(authMgr))
+		// TokenMiddleware rides alongside: it only touches
+		// Authorization: Bearer gfsk_… credentials, so session and JWT
+		// requests pass through untouched. RequireAPIScopes then makes
+		// the minted scopes real — a ["customers:*"] token is 403'd off
+		// every other /api resource; sessions stay unscoped.
+		fwApp.Use(auth.TokenMiddleware(authCfg.UserStore, serviceAccounts, apiTokens))
+		fwApp.Use(auth.RequireAPIScopes("/api"))
 		ui.SetRolesExtractor(func(ctx context.Context) []string {
 			if u, ok := handler.GetUser(ctx); ok && u != nil {
 				if rh, ok := u.(interface{ GetRoles() []string }); ok {

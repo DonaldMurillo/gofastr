@@ -1,6 +1,15 @@
 #!/bin/sh
-# GoFastr pre-push hook
-# Runs full test suite with race detector + vulnerability check
+# GoFastr pre-push hook — safety net behind pre-commit.
+#
+# Re-runs the deterministic CI test sweep when a commit skipped it
+# (GOFASTR_SKIP_COMMIT_TESTS=1 or --no-verify), then module integrity and
+# govulncheck. The old `go test -race ./...` is gone: it took half an
+# hour and swept the packages CI deliberately excludes as flaky-by-design
+# (core-ui/runtime, core-ui/widget, examples/site) — use `make test-race`
+# for a deliberate race pass.
+#
+# Enable once per clone: make hooks
+# Skip the sweep once (CI still gates): GOFASTR_SKIP_PUSH_TESTS=1 git push
 
 set -e
 
@@ -10,19 +19,37 @@ YELLOW='\033[33m'
 NC='\033[0m'
 
 pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
+warn() { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
 
+# Git runs hooks with GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (etc.)
+# pointing at THIS repo; they inherit into the test sweep, whose tests
+# shell out to `git init` / `git status` in temp fixtures and would then
+# target this repo and fail. Unset git's own location vars so the sweep
+# runs clean, exactly like CI (which runs tests outside any hook).
+unset $(git rev-parse --local-env-vars 2>/dev/null) 2>/dev/null || true
+
 echo ""
-echo "  Pre-push security gate..."
+echo "  Pre-push gate..."
 echo ""
 
-# ---- 1. Full test suite with race detector ----
-echo "  → Running tests with -race..."
-if go test -race -count=1 ./...; then
-  pass "Race detector clean"
+# ---- 1. Deterministic test sweep (CI-identical; keep in sync with
+#          .github/workflows/ci.yml and .githooks/pre-commit) ----
+if [ "${GOFASTR_SKIP_PUSH_TESTS:-}" = "1" ]; then
+  warn "test sweep skipped (GOFASTR_SKIP_PUSH_TESTS=1) — CI still gates"
 else
-  fail "Race condition detected!"
-  exit 1
+  echo "  → Deterministic test sweep..."
+  # No -count=1: cached PASSes on unchanged packages keep repeat pushes
+  # fast (same content-addressed cache CI relies on).
+  # shellcheck disable=SC2046  # word splitting of go list output is intended
+  go test -timeout=20m -p 2 \
+    -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
+    $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
+  pass "Deterministic tests passed"
+
+  echo ""
+  bash scripts/coverage-floors.sh
+  pass "Coverage floors hold"
 fi
 
 # ---- 2. Vulnerability check ----
@@ -38,11 +65,11 @@ if command -v govulncheck >/dev/null 2>&1; then
     exit 1
   fi
 else
-  echo "  ! govulncheck not installed (optional)"
+  warn "govulncheck not installed (optional)"
   echo "    Install: go install golang.org/x/vuln/cmd/govulncheck@latest"
 fi
 
-# ---- 3. Ensure no dependencies with known issues ----
+# ---- 3. Module integrity ----
 echo ""
 echo "  → Checking go.sum integrity..."
 go mod verify

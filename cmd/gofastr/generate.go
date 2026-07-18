@@ -35,13 +35,17 @@ func runGenerate(args []string) {
 		generateScaffoldEntity(args[1:])
 	case "screen":
 		generateScaffoldScreen(args[1:])
+	case "cli":
+		runGenerateCLI(args[1:])
+	case "sdk":
+		runGenerateSDK(args[1:])
 	case "ts", "typescript":
-		fail("TypeScript codegen has been removed. Use gofastr.codegen.yml with a project extension to generate frontend artifacts.")
-		info("See framework/docs/content/codegen.md for the extension protocol.")
+		fail("TypeScript codegen has been removed. Use `gofastr generate sdk` for the typed JS/TS client, or gofastr.codegen.yml with a project extension for custom frontend artifacts.")
+		info("See framework/docs/content/sdk.md and codegen.md.")
 		osExit(1)
 	default:
 		fail("Unknown resource type: %s", resourceType)
-		info("Supported: all")
+		info("Supported: all, entity, screen, cli, sdk")
 		osExit(1)
 	}
 }
@@ -304,6 +308,12 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 		osExit(1)
 	}
 	reg := codegen.NewRegistry()
+	// First-party in-process generators, so a config entry naming them
+	// works without an external extension command.
+	if err := reg.RegisterGenerator(sdkGenerator{}); err != nil {
+		fail("Code generation setup failed: %v", err)
+		osExit(1)
+	}
 	if err := reg.RegisterCommandExtensions(cfg.Codegen, os.Stderr); err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)

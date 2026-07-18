@@ -229,6 +229,58 @@ func emitTokenEvent(sink AuditSink, ctx context.Context, r *http.Request, kind, 
 	})
 }
 
+// RequireAPIScopes returns middleware that scope-gates a whole auto-CRUD
+// API tree for token-authenticated callers, so a token minted with
+// ["customers:*"] really is limited to customers. The required scope is
+// derived from the route: the first path segment after apiPrefix is the
+// resource (the entity table), and the HTTP method maps to the verb —
+// GET/HEAD need "<resource>:read", everything else "<resource>:write".
+// Subroutes (/{id}, /_batch, /_events, /llm.md) inherit the resource.
+//
+// Session/JWT callers (no token on the request) pass through unscoped, as
+// do paths outside apiPrefix — this only *narrows* what a token may do,
+// mirroring HasScope semantics. Mount once, after TokenMiddleware:
+//
+//	app.Use(auth.TokenMiddleware(users, accounts, tokens))
+//	app.Use(auth.RequireAPIScopes("/api"))
+//
+// Per-route RequireScope remains the tool for custom endpoints and
+// non-CRUD scopes.
+func RequireAPIScopes(apiPrefix string) middleware.Middleware {
+	prefix := "/" + strings.Trim(apiPrefix, "/")
+	if prefix == "/" {
+		prefix = ""
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			held, tokenAuthed := TokenScopes(r.Context())
+			if !tokenAuthed {
+				next.ServeHTTP(w, r)
+				return
+			}
+			rest, ok := strings.CutPrefix(r.URL.Path, prefix+"/")
+			if !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			resource, _, _ := strings.Cut(rest, "/")
+			if resource == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			verb := "write"
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				verb = "read"
+			}
+			if !scopeMatches(held, resource+":"+verb) {
+				http.Error(w, `{"error":{"code":403,"message":"insufficient token scope"}}`, http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RequireScope returns middleware that 403s token-authenticated requests
 // lacking the scope. Non-token requests (sessions/JWT) pass through
 // unscoped — sessions carry full user capability; scopes are an additional

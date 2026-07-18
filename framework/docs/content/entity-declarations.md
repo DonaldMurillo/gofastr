@@ -619,7 +619,16 @@ This scaffolds the owned entity package into `entities/` at the module root:
   constants, typed repository, lifecycle subscriptions, and its own
   `app.Entity(...)` registration that self-registers via `init()`. A new
   entity is a new file; existing files are never rewritten.
-- `client/client.go` with a standalone Go HTTP client
+- `client/client.go` with a standalone Go HTTP client covering the full
+  CRUD surface per entity: list/get/create/update/patch/delete, the
+  atomic `_batch` endpoints (`BatchCreate<Entity>` /
+  `BatchUpdate<Entity>` / `BatchDelete<Entity>`, returning the
+  `{committed, results[]}` envelope even on rollback), and the live
+  `_events` feed (`Watch<Entity>`, a blocking SSE loop). Setting the
+  client's `Token` field sends it as `Authorization: Bearer <token>` on
+  every request — pair with a scoped API token
+  ([auth](auth.md#service-accounts--scoped-api-tokens)); leave empty for
+  public or cookie-authenticated APIs.
 
 A blueprint that declares `app.module` also emits a flat `package main` at the
 root (`main.go` plus `app.go`, `screens_register.go`, one `screen_<name>.go`
@@ -666,6 +675,11 @@ the Blueprints guide for the relationship between stubs and full yml.
 For arbitrary configured generators (not a full app blueprint), use a
 `gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for
 config discovery, the extension protocol, and manifest-based cleaning.
+
+To ship the API as a branded terminal client for your customers —
+token auth, filter/sort/pagination flags, batch verbs, a live `watch`
+feed — run `gofastr generate cli` from the app root. See
+[Ship your API as a CLI](app-cli.md).
 
 ## Mounting under a prefix (`APIPrefix`)
 

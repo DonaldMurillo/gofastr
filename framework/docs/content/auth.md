@@ -295,6 +295,16 @@ app.Use(auth.TokenMiddleware(mgr.UserStore(), svcAccounts, apiTokens,
 `TokenMiddleware` has no `AuthManager`, so audit is wired with
 `WithTokenAudit(sink)`; a nil sink disables auditing and never panics.
 
+On the consumer side, the generated typed client
+([entity declarations](entity-declarations.md#code-generation))
+carries the token for you: set `client.Token` to a plaintext PAT and every
+request sends `Authorization: Bearer gfsk_…`. Bearer requests skip CSRF by
+design, so scripts and CLIs need no cookie or CSRF-token handling — the
+customer flow is: log in to the app's web UI, mint a scoped token via
+`POST /auth/tokens` (TokensPlugin), paste it into the tool once. The
+generated customer CLI ([Ship your API as a CLI](app-cli.md)) packages
+exactly this flow as its `login` command.
+
 ### Scopes
 
 Sessions and JWTs are **unscoped** — a logged-in user carries their full
@@ -318,6 +328,21 @@ if !auth.HasScope(ctx, "posts:read") { /* 403 */ }
 // non-token (session/JWT) requests pass unscoped.
 r.With(auth.RequireScope("posts:write")).Post("/posts", handler)
 ```
+
+For the auto-CRUD tree there is a blanket gate: `RequireAPIScopes(prefix)`
+derives the required scope from the route itself — the first path segment
+after the prefix is the resource, GET/HEAD need `<resource>:read`,
+everything else `<resource>:write` — so one mount makes every minted scope
+real across `/api`:
+
+```go
+app.Use(auth.TokenMiddleware(users, accounts, tokens))
+app.Use(auth.RequireAPIScopes("/api")) // ["customers:*"] token ⇒ 403 off /api/invoices
+```
+
+Without it (or per-route `RequireScope`), a token's scope list is
+**advisory only** — the token still authenticates as its owner everywhere.
+Session/JWT callers and paths outside the prefix are untouched.
 
 `auth.TokenScopes(ctx)` returns `(scopes, true)` only for
 token-authenticated requests; `(nil, false)` for sessions/JWT.

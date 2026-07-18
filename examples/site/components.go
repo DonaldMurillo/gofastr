@@ -925,6 +925,15 @@ func main() {
     println("hello")
 }`})
 	}},
+	{"codetabs", "CodeTabs", "Data", "One snippet in several languages behind a zero-JS tab strip.", func() render.HTML {
+		return ui.CodeTabs(ui.CodeTabsConfig{Name: "demo-codetabs", Label: "Install"},
+			ui.CodeSample{Label: "Go", Language: "go", Code: `c := client.NewClient(baseURL, nil)
+page, err := c.ListPosts(ctx, nil)`},
+			ui.CodeSample{Label: "TypeScript", Language: "ts", Code: `const api = new Client({ baseURL, token });
+const page = await api.posts.list({ limit: 25 });`},
+			ui.CodeSample{Label: "curl", Language: "shell", Code: `curl -H "Authorization: Bearer $TOKEN" "$BASE/posts?limit=25"`},
+		)
+	}},
 	{"markdown", "Markdown", "Data", "Render Markdown source.", func() render.HTML {
 		return ui.Markdown(ui.MarkdownConfig{Source: "# Hello\n\nThis is **bold**, this is *italic*, and this is `code`."})
 	}},

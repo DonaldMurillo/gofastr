@@ -226,6 +226,17 @@ framework/
 │                    gate over battery/auth scopes. Extracted from the
 │                    gofastr-plugins wysiwyg build (#37 client mirror).
 ├── routegroup/      Route groups — prefix, middleware, access, OpenAPI tags
+├── sdk/             Shared contract between `gofastr generate sdk` and the
+│                    serving side (sdkdocs): artifact manifest schema, the
+│                    schema hash both compute for drift detection, and the
+│                    deterministic zip packer. Leaf: entity + core/ only.
+├── sdkdocs/         The SDK docs site — sdkdocs.Mount registers public
+│                    screens (install/auth/errors + a live per-entity API
+│                    reference) on the core-ui app plus artifact download
+│                    routes. Composes framework/ui, which is exactly why it
+│                    is NOT a uihost option: uihost must never import
+│                    framework/ui (always-on styles would leak into every
+│                    host's CSS bundle).
 ├── slowquery/       SlowQueryLogger — wraps any db.Executor
 ├── softdelete/      SoftDelete / Restore / ForceDelete + filter
 ├── tenant/          TenantConfig / Middleware / GetTenantID / etc.
