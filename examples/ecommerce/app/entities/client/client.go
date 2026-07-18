@@ -334,7 +334,6 @@ type Products struct {
 	Description    string         `json:"description,omitempty"`
 	Price          string         `json:"price,omitempty"`
 	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
-	Cost           string         `json:"cost,omitempty"`
 	Stock          int            `json:"stock,omitempty"`
 	CategoryId     string         `json:"categoryId,omitempty"`
 	Status         string         `json:"status,omitempty"`
@@ -351,7 +350,6 @@ type ProductsInput struct {
 	Description    string         `json:"description,omitempty"`
 	Price          string         `json:"price,omitempty"`
 	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
-	Cost           string         `json:"cost,omitempty"`
 	Stock          int            `json:"stock,omitempty"`
 	CategoryId     string         `json:"categoryId,omitempty"`
 	Status         string         `json:"status,omitempty"`
@@ -368,7 +366,6 @@ type ProductsPatch struct {
 	Description    *string         `json:"description,omitempty"`
 	Price          *string         `json:"price,omitempty"`
 	CompareAtPrice *string         `json:"compareAtPrice,omitempty"`
-	Cost           *string         `json:"cost,omitempty"`
 	Stock          *int            `json:"stock,omitempty"`
 	CategoryId     *string         `json:"categoryId,omitempty"`
 	Status         *string         `json:"status,omitempty"`
@@ -451,7 +448,6 @@ type ProductsBatchPatch struct {
 	Description    *string         `json:"description,omitempty"`
 	Price          *string         `json:"price,omitempty"`
 	CompareAtPrice *string         `json:"compareAtPrice,omitempty"`
-	Cost           *string         `json:"cost,omitempty"`
 	Stock          *int            `json:"stock,omitempty"`
 	CategoryId     *string         `json:"categoryId,omitempty"`
 	Status         *string         `json:"status,omitempty"`
