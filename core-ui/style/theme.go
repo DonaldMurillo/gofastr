@@ -528,11 +528,14 @@ func DefaultTheme() Theme {
 		// chains to the code text color, matching the old `inherit`
 		// fallback behavior.
 		Code: CodeSet{
-			KW:   CodeColor{Name: "kw", Value: "#C792EA"},
-			FN:   CodeColor{Name: "fn", Value: "#82AAFF"},
-			Str:  CodeColor{Name: "str", Value: "#C3E88D"},
-			Num:  CodeColor{Name: "num", Value: "#F78C6C"},
-			Com:  CodeColor{Name: "com", Value: "#676E95"},
+			KW:  CodeColor{Name: "kw", Value: "#C792EA"},
+			FN:  CodeColor{Name: "fn", Value: "#82AAFF"},
+			Str: CodeColor{Name: "str", Value: "#C3E88D"},
+			Num: CodeColor{Name: "num", Value: "#F78C6C"},
+			// Comments must hold ≥4.5:1 on the always-dark CodeSurface
+			// (#18181B): the classic #676E95 measures 3.6:1 and fails
+			// WCAG AA / axe; #8C93B0 keeps the muted blue-grey at 5.8:1.
+			Com:  CodeColor{Name: "com", Value: "#8C93B0"},
 			Type: CodeColor{Name: "type", Value: "#FFCB6B"},
 			PN:   CodeColor{Name: "pn", Value: "var(--color-code-text)"},
 		},
