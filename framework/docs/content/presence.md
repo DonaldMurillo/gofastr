@@ -72,6 +72,37 @@ The raw value is also length-capped (`maxPresenceParamLen`) before it
 enters the HTML `<meta>` tag, and `url.QueryEscape`d to prevent
 attribute injection.
 
+### Topic authorization (invariant #3)
+
+Bounding a topic string is not the same as *authorizing* it. A client may
+name **any** topic within the bounds — including one it should not see. Since
+a roster can contain emails (the display name), an ungated private topic
+(`org:42:admins`) is a roster-disclosure vector to anyone who can guess it.
+
+Set `Manager.AuthorizeTopic` to gate joins:
+
+```go
+mgr.AuthorizeTopic = func(ctx context.Context, topic string) bool {
+    // Public topics: always allow.
+    if strings.HasPrefix(topic, "public:") {
+        return true
+    }
+    // Private topics: check the request's authenticated user against the
+    // topic's ACL. ctx is the SSE request context — read the trusted user
+    // with island.PresenceIdentityFromContext(ctx) or handler.GetUser(ctx).
+    return userMayViewTopic(ctx, topic)
+}
+```
+
+The hook runs once per requested topic at SSE-connect time, **before** any
+subscription or roster emission — an unauthorized topic is dropped, so the
+viewer never receives the roster or join/leave events for it. Rejection is
+**silent** (the topic is simply not joined): there is no distinguishable
+error, so the gate is not a private-topic existence oracle. A **nil** hook
+(the default) authorizes every topic — presence stays public unless you opt
+in, so existing apps are unaffected. Keep an ergonomic public path (e.g. a
+`public:` prefix) so only genuinely private topics pay the check.
+
 ---
 
 ## API

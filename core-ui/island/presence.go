@@ -198,6 +198,38 @@ func anonIdentity(sessionID string) PresenceIdentity {
 	}
 }
 
+// filterAuthorizedTopics returns the subset of topics the AuthorizeTopic hook
+// permits for ctx. A nil hook (the default) authorizes everything — presence
+// is public unless an app opts into gating. Rejected topics are dropped
+// silently; no error distinguishes an unauthorized topic from a nonexistent
+// one, so the filter cannot be used as a private-topic existence oracle.
+// Called at SSE-connect time (ServeSSEWithPresence) BEFORE PresenceJoin, so an
+// unauthorized topic never produces a subscription or a roster entry.
+func (m *Manager) filterAuthorizedTopics(ctx context.Context, topics []string) []string {
+	if len(topics) == 0 {
+		return topics
+	}
+	// Read the hook under the lock — matching how PresenceJoin reads
+	// OnPresenceChange — then call it OUTSIDE the lock so an app hook may
+	// safely read the roster (PresenceRoster/PresenceSessions) without
+	// deadlocking. AuthorizeTopic is expected set-once before serving
+	// traffic (see the field doc); the locked read keeps a concurrent
+	// hot-swap from being a torn read.
+	m.mu.RLock()
+	auth := m.AuthorizeTopic
+	m.mu.RUnlock()
+	if auth == nil {
+		return topics
+	}
+	out := make([]string, 0, len(topics))
+	for _, t := range topics {
+		if auth(ctx, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // PresenceJoin registers a connection on one or more topics and returns
 // a handle whose Leave must be called on disconnect (ServeSSEWithPresence
 // defers it). An empty identity (anonymous) is filled with a

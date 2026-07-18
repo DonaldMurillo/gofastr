@@ -7,6 +7,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Presence topic authorization** (#98). `island.Manager.AuthorizeTopic`, when
+  set, gates which `?presence=<topic>` topics a connection may join. The hook
+  runs once per requested topic at SSE-connect time with the request context
+  (carrying the server-derived user), **before** any subscription or roster
+  emission — so an unauthorized viewer never receives the roster (which can
+  contain emails) or join/leave events. Rejection is silent (the topic is
+  simply not joined), so the gate is not a private-topic existence oracle. A
+  nil hook (the default) authorizes every topic — presence stays public unless
+  an app opts in, so existing apps are unaffected. See [presence](presence.md)
+  → "Topic authorization".
+
 ### Changed
 
 - **BREAKING — strict filter parsing on the List endpoint** (#100). An
