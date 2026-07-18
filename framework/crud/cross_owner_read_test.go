@@ -92,11 +92,15 @@ func reqWithRolesOnly(r *http.Request, uid string) *http.Request {
 
 // TestCrossOwnerReadHTTPCannotSpoof proves client-supplied headers/params
 // naming the permission never widen the scope without a server-side grant.
+// Two vectors: a spoof carried in trusted-looking HEADERS still runs but
+// stays owner-scoped; a spoof carried in QUERY PARAMS is rejected outright
+// by strict filter parsing (#100A). Neither can ever surface bob's row.
 func TestCrossOwnerReadHTTPCannotSpoof(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupCrossOwnerReadHandler(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/ctickets?cross_owner_read=tickets:read:all&role=staff", nil)
+	// Vector 1 — header spoof. The request runs; owner scope holds.
+	req := httptest.NewRequest(http.MethodGet, "/api/ctickets", nil)
 	req.Header.Set("X-Cross-Owner-Read", "tickets:read:all")
 	req.Header.Set("X-Role", "staff")
 	req = withTestUser(req, "alice") // no policy/roles in context
@@ -104,7 +108,7 @@ func TestCrossOwnerReadHTTPCannotSpoof(t *testing.T) {
 	ch.List()(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("List status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("header-spoof List status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	if strings.Contains(body, "t-b") || strings.Contains(body, "Beta") {
@@ -112,6 +116,19 @@ func TestCrossOwnerReadHTTPCannotSpoof(t *testing.T) {
 	}
 	if !strings.Contains(body, "t-a") {
 		t.Fatalf("alice's own row missing: %s", body)
+	}
+
+	// Vector 2 — query-param spoof. Strict filter parsing fails closed with
+	// a 400; the response body can never contain bob's row.
+	req2 := httptest.NewRequest(http.MethodGet, "/api/ctickets?cross_owner_read=tickets:read:all&role=staff", nil)
+	req2 = withTestUser(req2, "alice")
+	rec2 := httptest.NewRecorder()
+	ch.List()(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("query-param spoof want 400 (strict), got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+	if b := rec2.Body.String(); strings.Contains(b, "t-b") || strings.Contains(b, "Beta") {
+		t.Fatalf("rejected request leaked bob's row: %s", b)
 	}
 }
 
