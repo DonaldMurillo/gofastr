@@ -27,7 +27,9 @@ type ScheduledJob struct {
 	cron *cron.Schedule
 }
 
-// Scheduler enqueues recurring jobs onto one or more Queue backends.
+// Scheduler is the non-durable, single-process scheduler. Its watermarks live
+// only in memory. Use DurableScheduler with DBQueue when multiple replicas or
+// restart continuity must be safe.
 type Scheduler struct {
 	mu        sync.Mutex
 	queues    []Queue
@@ -40,14 +42,21 @@ type Scheduler struct {
 	wake chan struct{}
 }
 
-// NewScheduler creates a new Scheduler that dispatches to the given queues.
-// Enqueue errors are logged via slog.Default().
+// NewScheduler creates the non-durable, single-process Scheduler that
+// dispatches to the given queues. Enqueue errors are logged via slog.Default().
+// NewInMemoryScheduler is the explicit spelling for new code.
 func NewScheduler(queues ...Queue) *Scheduler {
 	return &Scheduler{
 		queues: queues,
 		logger: slog.Default(),
 		wake:   make(chan struct{}, 1),
 	}
+}
+
+// NewInMemoryScheduler explicitly creates the non-durable, single-process
+// scheduler. It is equivalent to NewScheduler.
+func NewInMemoryScheduler(queues ...Queue) *Scheduler {
+	return NewScheduler(queues...)
 }
 
 // NewSchedulerWithLogger creates a new Scheduler with an explicit logger.

@@ -89,9 +89,18 @@ handler after 30 s by default. Pass `queue.WithHandlerTimeout(d)` to
 q := queue.NewMemoryQueue(4, queue.WithHandlerTimeout(5*time.Minute))
 ```
 
-**Scheduler logging.** `NewScheduler` routes enqueue errors through
-`slog.Default()`. Use `NewSchedulerWithLogger(q, logger)` to inject a
-custom `*slog.Logger`.
+**Choose the scheduler mode deliberately.** `NewInMemoryScheduler` (and its
+compatible alias `NewScheduler`) keeps `NextRun` in process memory. Use it only
+when one process owns evaluation and restart continuity is irrelevant.
+`NewSchedulerWithLogger` routes that mode's enqueue errors to a custom logger.
+
+For multi-replica or restart-safe schedules, use `NewDurableScheduler` with a
+`DBQueue`. Give every schedule a stable ID through `Every(id, interval)` or
+`Cron(id, spec)`. Definitions and next-run watermarks persist; a heartbeat
+lease issues monotonic fence tokens; and each unique `(schedule ID, tick)`
+occurrence, watermark advance, and queue job commit in one transaction. Late
+evaluation records old ticks as skipped and enqueues only the newest due tick.
+The resulting `Job.OccurrenceID` is the stable run-correlation key.
 
 **Don't use `MemoryQueue` for real workloads.** Jobs die with the
 process — fine for tests, dangerous for anything users can observe.

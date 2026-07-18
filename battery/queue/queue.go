@@ -11,15 +11,16 @@ import (
 
 // Job represents a unit of work enqueued for asynchronous processing.
 type Job struct {
-	ID          string          `json:"id"`
-	Type        string          `json:"type"`
-	Payload     json.RawMessage `json:"payload"`
-	Priority    int             `json:"priority"`
-	Lane        string          `json:"lane"`
-	Attempts    int             `json:"attempts"`
-	MaxAttempts int             `json:"max_attempts"`
-	CreatedAt   time.Time       `json:"created_at"`
-	ScheduledAt time.Time       `json:"scheduled_at"`
+	ID           string          `json:"id"`
+	OccurrenceID string          `json:"occurrence_id,omitempty"`
+	Type         string          `json:"type"`
+	Payload      json.RawMessage `json:"payload"`
+	Priority     int             `json:"priority"`
+	Lane         string          `json:"lane"`
+	Attempts     int             `json:"attempts"`
+	MaxAttempts  int             `json:"max_attempts"`
+	CreatedAt    time.Time       `json:"created_at"`
+	ScheduledAt  time.Time       `json:"scheduled_at"`
 }
 
 // Handler processes a job. Return a non-nil error to trigger a retry.
