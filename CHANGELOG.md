@@ -5,6 +5,54 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.31.0] - 2026-07-17
+
+Ships process-isolated third-party modules (#37) and cross-replica presence
+(#47), plus the capability/hygiene groundwork they stand on.
+
+### Added
+
+- **Process-isolated third-party modules** (#37). A third-party module runs
+  as a separate child process, so the host can install, upgrade, crash, and
+  revoke it without touching its own binary. The stdio trust boundary is a
+  purpose-built full-duplex protocol (`core/moduleproto`), not MCP. The
+  supervisor gives each module a fail-closed lifecycle: a state lease, an
+  `Enabled → Ready` two-layer gate (disabled 404 / enabled-but-down
+  503+`Retry-After`), a restart circuit keyed to `(module, generation)`,
+  concurrent drain under the shared lifecycle budget, and fully-buffered
+  responses (a mid-call crash yields a 503, never a truncated 200). The
+  capability broker checks every reverse `host.*` data call as
+  module-grant ∩ caller-authority through the CRUD chokepoint, derives the
+  permission from the trusted method (never a child-supplied string), and
+  makes `CrossOwnerRead` non-grantable and stripped on the reverse path. An
+  optional `SandboxRunner` (P1–P7 conformance probes; `bwrap`/`sandbox-exec`/
+  Job-Object wrapper backends, no new dependencies) is required before an
+  untrusted module runs — with no conforming backend it fails closed rather
+  than downgrade. Postgres migrations run under a per-module restricted
+  schema+role; the module holds zero DB credentials. A module may expose
+  `module.<name>.<tool>` MCP tools and return `ui.node.v1` UI trees the host
+  validates and renders (`core-ui/uinodev1` + `framework/uihost/uinoderender`)
+  — the module never emits markup. See
+  [process-modules](framework/docs/content/process-modules.md); operators get
+  a lifecycle screen at `/admin/modules`.
+- **Cross-replica presence** (#47). Presence rosters aggregate across `serve`
+  replicas over a dedicated `gofastr.presence` fanout lane (15s heartbeat,
+  45s TTL, prompt graceful-leave). `PresenceRoster` returns the merged roster
+  and is byte-identical with no fanout configured; announcements carry only
+  the server-derived identity already exposed, with no new HTTP surface.
+- **`access.ScopeMatch`.** The `resource:verb` wildcard algebra
+  (`teams:*`, `*:read`, `*:*`) gets one home in `framework/access`;
+  `battery/auth`'s token-scope matcher delegates to it. `access.Can` — the
+  exact-match RBAC hot path — is unchanged and never learns wildcards.
+
+### Changed
+
+- **BREAKING (narrow): `mcpclient.Spawn` scrubs the child environment.**
+  Spawned MCP-server children no longer inherit the full host environment
+  (which leaked `JWT_SECRET`, the DB DSN, and `OAUTH_*`); they get a minimal
+  allowlist. Callers that relied on an inherited variable pass it explicitly
+  via the new `SpawnConfig{Env, InheritEnv}`.
+
 ## [0.30.0] - 2026-07-17
 
 Closes the Nexus fourth-batch tickets (#76, #77, #79, #80, #82, #83, #84)

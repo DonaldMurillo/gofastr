@@ -291,6 +291,15 @@ never higher, and intra-layer edges should stay rare and deliberate —
 today only `slowquery → db`, `outbox → event`, `outbox → db`, and
 `openapi → crud` exist.)
 
+One cross-tree edge is deliberate: **`battery/auth` → `framework/access`.**
+The token-scope matcher (`scopeMatches`, backing `auth.HasScope` and the
+exported `auth.ScopeMatch`) delegates to `access.ScopeMatch` so the
+`resource:verb` wildcard algebra has exactly one home. Batteries sit above
+the framework tree, so the edge points downward and introduces no cycle;
+`framework/access` stays a leaf (its only gofastr deps remain
+`core/handler` + `core/query`). `access.Can` — the exact-match RBAC hot
+path — is a different matcher on purpose and never learns wildcards.
+
 **No subpackage may import `framework/`.** If a subpackage needs a type
 defined in framework root (App, Registry, CrudHandler), one of three
 patterns applies — see "Cycle-breaking interfaces" below.
@@ -314,6 +323,50 @@ either require an API redesign or create an unbreakable import cycle.
 | `audit.go` | `(a *App) WithAuditLog(...)` is the public entry; the rest of the file (table creation, hook closures) is intrinsically tied to it. Could be split if the closures move out, but the win is small. |
 | `tx.go` | `(a *App) InTx(...)` is the public entry. The lower-level context helpers already moved to `framework/db`; this file is just App's wrapper. |
 | `testharness.go` | `TestApp.App *App` field is used by tests. Sixteen test files use `TestApp` / `TestHarness` unqualified inside `package framework`. Extracting requires either an interface refactor or qualifying every test. |
+| `processmodule*.go` | Process-isolated third-party modules (#37). The supervisor, store, runner, sandbox, broker, and proxy are bound to `*App` (spawn under the app's lifecycle drainer, re-dispatch reverse calls through the app router, enforce the app's `RolePolicy`). `RegisterProcessModule` is the single `(a *App)` entry. See the process-module section below. |
+
+---
+
+## Process-isolated third-party modules (#37)
+
+A process module is a third-party binary the host **installs, upgrades,
+crashes, and revokes without touching itself** — so it runs out of process.
+The trust boundary is the stdio pipe (`core/moduleproto`, a full-duplex
+JSON-RPC-2.0 codec); the host↔module wire is a purpose-built dialect, NOT
+MCP (MCP is an optional module *surface* only). The load-bearing rules:
+
+- **Crash isolation, not MCP transport.** `core/moduleproto` carries the
+  wire; a child crash yields a buffered 503 on the inbound call, never a
+  truncated 200, and never takes the host down.
+- **The module holds zero DB credentials.** Every data op is a reverse
+  `host.entity.*` call the capability broker checks as
+  **module-grant ∩ caller-authority** and re-dispatches through the CRUD
+  chokepoint (`crud.Redispatch`), so owner/tenant/permission all re-run.
+  The required permission is derived from the trusted method, never a
+  child-supplied string (the confused-deputy control). `CrossOwnerRead` is
+  non-grantable to a module and stripped on the reverse path even for a
+  delegated caller who holds it.
+- **Two-layer gate.** Disabled → 404 (indistinguishable from uninstalled);
+  enabled-but-not-Ready → 503 + `Retry-After`. `Ready` lives in the proxy
+  handler because the router gate can only 404.
+- **Fail-closed everywhere.** An untrusted module with no probe-passing
+  sandbox backend never reaches Ready (no silent downgrade). A replica that
+  cannot refresh desired state past its lease TTL drains its children — the
+  deliberate inversion of the in-process `handleRemoteToggle` fail-open.
+  Revoke = a `desired_generation` bump the restart circuit keys to.
+- **The module never emits markup.** It returns a `ui.node.v1` tree the
+  host validates (`core-ui/uinodev1`) and renders
+  (`framework/uihost/uinoderender`) — see `core-ui/ARCHITECTURE.md`.
+- **Sandbox = observable outcomes, not syscalls.** `processmodule_probe.go`
+  defines the P1–P7 conformance suite; per-OS wrapper backends
+  (`bwrap`/`sandbox-exec`/Job-Object, build-tagged linux-vs-not) each
+  declare which probes they enforce on the host and fail closed on the rest.
+  v1 is honest that P6 (resource caps) and stock macOS/Windows do not fully
+  conform — untrusted modules simply refuse to run there.
+
+The full converged design (transport, capability model, sandbox contract,
+migration/DDL isolation, lifecycle, UI validator, phasing, go/no-go gate)
+is issue #37's design comment and `framework/docs/content/process-modules.md`.
 
 ---
 
@@ -374,6 +427,20 @@ ended up in different packages.
 ---
 
 ## Conventions established along the way
+
+### When the framework can't do what the app intended, it screams
+
+Configuration the framework accepts but cannot act on is a bug in the
+framework's manners, not the app's problem. The Nexus retrospective (#78)
+paid a debugging session each for a seed that swallowed its error, a
+router param syntax that just 404'd, and grants persisted against
+capabilities that never existed. The rule that came out of it: accepting
+input that will silently have no effect requires a loud `slog.Warn`
+naming the exact thing that won't work (with a nearest-match suggestion
+where one exists — see the capability registry's dead-grant warning), or
+an error where the caller can act on one. Silent no-ops, best-effort
+fallbacks that hide their fallback, and errors swallowed into defaults
+all fail review. When in doubt, scream.
 
 ### Pre-rename to avoid package shadowing
 

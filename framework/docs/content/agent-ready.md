@@ -150,6 +150,18 @@ without route middleware; gate them per-caller with `mcp.Gated` +
 battery/auth's `auth.MCPUser()` / `auth.MCPRole(...)` (see
 [plugins](plugins.md)).
 
+Process modules (issue `#37`) add a third tool kind alongside the entity
+CRUD tools and directly-registered handlers. Each tool a process module
+exposes is registered under a reserved `module.` prefix —
+`module.<name>.<tool>` — so two modules cannot collide and every call is
+attributable to its owning module. A disabled module's tools are omitted
+from `tools/list` and refused by `tools/call` (the composite call gate);
+an enabled-but-down module's tools stay listed but return a retryable
+temp-unavailable error while the child is not Ready. A tool call forwards
+to the child through the same capability broker as the module's HTTP
+routes — the agent's authority is delegated identically, and there is no
+separate tool-permission vocabulary. See [process modules](process-modules.md).
+
 **The dev loop implies all of it.** Under `gofastr dev` (`GOFASTR_DEV`),
 `framework.NewApp` auto-enables the mount, introspection, and control;
 battery/log auto-registers its `log_recent` / `log_filter` /

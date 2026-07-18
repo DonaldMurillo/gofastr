@@ -146,6 +146,25 @@ type App struct {
 	// Created in NewApp; nil-safe (NewModuleManager always returns non-nil).
 	modules *ModuleManager
 
+	// processModules supervises out-of-process third-party modules
+	// (issue #37, wave 2a). Lazily constructed by RegisterProcessModule;
+	// nil when the app has no process modules. StartLoops + PrependDrainer
+	// are wired in [App.Start].
+	processModules *ProcessModuleSupervisor
+
+	// moduleTools is the MCP tool registry shared across every process
+	// module (design §5.1). Lazily constructed alongside processModules;
+	// nil when the app has no process modules. The supervisor uses it as
+	// its ToolRegistrar; the composite MCP call gate consults it so a
+	// disabled module's tools are omitted from tools/list.
+	moduleTools *ModuleToolRegistry
+
+	// processDrainRegistered guards the supervisor's PrependDrainer call
+	// so repeated Start paths (canonical + setup-interactive) don't
+	// double-register. Read/written under no lock — runStartHooks is
+	// single-threaded through Start.
+	processDrainRegistered bool
+
 	serverMu   sync.Mutex // guards server + appCtx/appCancel — Start writes, Shutdown reads/nils
 	server     *http.Server
 	events     *event.EventBus
@@ -1697,6 +1716,45 @@ func (a *App) AddCron(s *cron.Scheduler) *App {
 	return a
 }
 
+// runStartHooks fires every OnStart hook with the app's lifecycle context.
+// Battery lifecycle hooks are called first, then app-level start hooks.
+// Returns the first error so Start aborts cleanly before binding the port.
+func (a *App) runStartHooks() error {
+	a.ensureLifecycleContext()
+
+	// Start batteries in dependency order
+	if err := a.Batteries.StartAll(a.appCtx); err != nil {
+		return err
+	}
+
+	// Start the process-module supervisor's per-module loops (issue #37).
+	// Each registered module's supervise goroutine launches here, after
+	// InitPlugins has loaded module state. The supervisor's drain drainer
+	// is registered via PrependDrainer so children drain FIRST, before
+	// the DB/queue batteries they may need for in-flight reverse calls
+	// (design §8). Idempotent via processDrainRegistered.
+	if a.processModules != nil {
+		a.processModules.StartLoops()
+		if !a.processDrainRegistered {
+			a.processDrainRegistered = true
+			if err := a.lc.PrependDrainer(a.processModules); err != nil {
+				a.Logger().Warn("process module drain drainer not registered", "error", err)
+			}
+		}
+	}
+
+	// Then app-level start hooks (cron, queues, custom)
+	for _, fn := range a.startHooks {
+		if err := fn(a.appCtx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Worker-scoped: under RoleServe this is a no-op — neither the start hook
+// nor the Close hook is registered, so a serve-only shutdown never closes
+// a queue it never started.
 // schedulerStartStop is the minimal interface AddQueue needs. We keep it
 // here (not in the queue package) so framework doesn't have to import
 // battery/queue — apps wire their queue manually and just hand the
@@ -1706,13 +1764,6 @@ type schedulerStartStop interface {
 	Close() error
 }
 
-// AddQueue registers any queue/worker that exposes Start(ctx) and Close().
-// The DBQueue from battery/queue satisfies this directly; in-memory and
-// Redis variants can be wrapped.
-//
-// Worker-scoped: under RoleServe this is a no-op — neither the start hook
-// nor the Close hook is registered, so a serve-only shutdown never closes
-// a queue it never started.
 func (a *App) AddQueue(q schedulerStartStop) *App {
 	if !a.runsWorkers() {
 		return a
@@ -1794,32 +1845,7 @@ func (a *App) ensureLifecycleContext() {
 	a.serverMu.Unlock()
 }
 
-// runStartHooks fires every OnStart hook with the app's lifecycle context.
-// Battery lifecycle hooks are called first, then app-level start hooks.
-// Returns the first error so Start aborts cleanly before binding the port.
-func (a *App) runStartHooks() error {
-	a.ensureLifecycleContext()
-
-	// Start batteries in dependency order
-	if err := a.Batteries.StartAll(a.appCtx); err != nil {
-		return err
-	}
-
-	// Then app-level start hooks (cron, queues, custom)
-	for _, fn := range a.startHooks {
-		if err := fn(a.appCtx); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Start starts the HTTP server on the given address.
-// Auto-migrates tables, registers OpenAPI/Swagger, debug stats, applies
-// the default middleware chain (unless disabled), and calls Mount on
-// every attached Mountable.
-//
-// Sets the process title to the app name for visibility in ps/Activity Monitor.
 func (a *App) Start(addr string) error {
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {

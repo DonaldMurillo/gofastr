@@ -445,3 +445,20 @@ func GetRoles(ctx context.Context) []string {
 	roles, _ := ctx.Value(rolesKey{}).([]string)
 	return roles
 }
+
+// PolicyFromContext reads back the *RolePolicy installed via WithPolicy (by
+// access.Middleware or battery/auth). It is the reader half of the
+// policy-context seam — the symmetric pair to GetRoles. The process-module
+// capability broker (framework/processmodule_broker.go, design #37 §5) uses
+// it to snapshot the delegated caller's policy at delegation-mint time so the
+// CrossOwnerRead carve-out can be checked on the reverse path without an
+// app-wide policy reference.
+//
+// Returns nil when ctx is nil or carries no policy — never panics.
+func PolicyFromContext(ctx context.Context) *RolePolicy {
+	if ctx == nil {
+		return nil
+	}
+	policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
+	return policy
+}

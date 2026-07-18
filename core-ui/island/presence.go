@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
@@ -32,9 +33,13 @@ import (
 // one stable viewer) while preserving the invariant that a client can't
 // choose its roster identity.
 //
-// SINGLE-REPLICA: the roster reflects only THIS replica's connections.
-// Cross-replica roster aggregation (fanout of connection state) is
-// future work — see framework/docs/content/presence.md.
+// CROSS-REPLICA: the roster is the MERGED set — THIS replica's connections
+// ∪ every other live replica's announced members (see presence_fanout.go).
+// Each replica broadcasts its full local roster per topic over a dedicated
+// presence lane on the fanout transport; a remote-roster table keyed by
+// (replica, topic) with a TTL merges them. Lossy and self-healing: a
+// dropped announcement reconverges on the next periodic heartbeat, and a
+// crashed replica's members vanish within the TTL.
 
 // PresenceIdentity is the server-derived identity of a connected viewer.
 // A zero value (empty UserID) means anonymous; PresenceJoin synthesizes
@@ -154,7 +159,8 @@ type PresenceHandle struct {
 }
 
 // Leave removes this connection from every topic it joined and fires
-// roster-change notifications. Safe to call on a nil handle.
+// roster-change notifications, then announces the shrunk local roster to
+// other replicas (no-op without a fanout). Safe to call on a nil handle.
 func (h *PresenceHandle) Leave() {
 	if h == nil || h.manager == nil {
 		return
@@ -168,6 +174,10 @@ func (h *PresenceHandle) Leave() {
 		for _, t := range h.topics {
 			cb(t)
 		}
+	}
+	// Announce the updated local roster so peers drop this member promptly.
+	for _, t := range h.topics {
+		m.broadcastLocalTopic(t)
 	}
 }
 
@@ -224,37 +234,29 @@ func (m *Manager) PresenceJoin(sessionID string, identity PresenceIdentity, topi
 			cb(t)
 		}
 	}
+	// Announce the grown local roster so peers add this member promptly.
+	// No-op without a fanout; the periodic heartbeat reconverges any drop.
+	for _, t := range conn.topics {
+		m.broadcastLocalTopic(t)
+	}
 	return &PresenceHandle{manager: m, id: id, topics: conn.topics}
 }
 
 // PresenceRoster returns the connected identities for a topic, deduplicated
-// by UserID and sorted deterministically (by UserID). It reflects THIS
-// replica's connections only.
+// by UserID and sorted deterministically (by UserID). The result is the
+// MERGED roster: THIS replica's connections ∪ every other live replica's
+// announced members, deduped by UserID exactly like the local dedup. With
+// no fanout attached (no SetFanout) remoteRosters is nil and the result is
+// byte-identical to the single-replica roster. Expired remote entries are
+// filtered at read time so a roster read between heartbeats never surfaces
+// stale members. See presence_fanout.go for the cross-replica model.
 func (m *Manager) PresenceRoster(topic string) []PresenceMember {
 	if topic == "" {
 		return nil
 	}
 	m.mu.RLock()
-	seen := make(map[string]string) // userID → displayName
-	for _, c := range m.presenceConns {
-		if c.identity.UserID == "" {
-			continue
-		}
-		if c.hasTopic(topic) {
-			if _, ok := seen[c.identity.UserID]; !ok {
-				seen[c.identity.UserID] = c.identity.DisplayName
-			}
-		}
-	}
+	members := mergedRosterLocked(m, topic, time.Now())
 	m.mu.RUnlock()
-
-	members := make([]PresenceMember, 0, len(seen))
-	for uid, name := range seen {
-		members = append(members, PresenceMember{UserID: uid, DisplayName: name})
-	}
-	sort.Slice(members, func(i, j int) bool {
-		return members[i].UserID < members[j].UserID
-	})
 	return members
 }
 

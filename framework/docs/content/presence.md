@@ -5,11 +5,12 @@ server, so a page can show a live roster of its viewers — the avatar
 stack with green/away dots, the "3 people editing" indicator, the
 who's-online sidebar.
 
-This is the **single-replica foundation**: the roster reflects only the
-SSE connections on *this* server. Cross-replica roster aggregation
-(fanout of connection state across replicas) is tracked separately and
-**not** attempted here — a multi-replica deployment would under-count
-until that lands.
+The roster is **aggregated across replicas**: when a `core/fanout.Fanout`
+is attached (`framework.WithFanout` — the same seam island push and entity
+events use), each replica broadcasts its local roster per topic over a
+dedicated presence lane, and `PresenceRoster` returns the merged union.
+Without a fanout it degrades to exactly the single-replica roster (no
+goroutines, no behavior change). See "Cross-replica aggregation" below.
 
 ---
 
@@ -159,21 +160,41 @@ Two tabs of the *same* browser share one session and show as a single
 viewer — that's correct (same person).
 
 ---
+## Cross-replica aggregation
 
-## What's deferred (multi-replica)
+With a fanout attached, the roster is the **merged union** of every
+replica's connections — no under-counting. You get this automatically from
+`framework.WithFanout` (it wires the UI host's island manager, which owns
+presence); there is no separate presence wiring to do.
 
-The roster reflects **this replica's connections only**. On a
-multi-replica deployment:
+**How it converges** (`core-ui/island/presence_fanout.go`):
 
-- A viewer connected to replica B won't appear in replica A's roster.
-- `PushUpdate` already crosses replicas (via `SetFanout`), so a roster
-  *push* reaches a viewer on another replica — but the *roster itself*
-  is local, so it would under-count.
+- Each replica broadcasts its **full local roster** per active topic on a
+  dedicated presence lane (`gofastr.presence`) — a separate fanout topic
+  from island invalidations, both lossy best-effort.
+- A remote-roster table keyed by `(replicaID, topic)` holds each peer's
+  contribution with a **TTL of ~45s** (3× the 15s heartbeat). `PresenceRoster`
+  returns local ∪ live-remote, deduped by UserID exactly like the local
+  dedup.
+- A **periodic 15s heartbeat** rebroadcasts every topic's full roster, so a
+  dropped announcement heals on the next beat. A **crashed replica** stops
+  heartbeating and its members vanish from peers within the TTL — no
+  explicit goodbye needed. A **graceful stop** (`SetFanout`'s returned
+  `stop`, called by app `Shutdown`) publishes an empty roster first, so a
+  rolling restart converges promptly.
+- A roster change from a remote merge fires the same `OnPresenceChange` →
+  `PushUpdate` path as a local join, so viewers on every replica see the
+  update live (island push already crosses replicas).
 
-Cross-replica roster aggregation (fanout of connection join/leave
-events) is future work. Until then, presence is correct and complete on
-a single replica, and sticky-session deployments where all of a topic's
-viewers land on one replica work fully.
+**Identity safety is unchanged.** Announcements carry only the same
+server-derived `{UserID, DisplayName}` the local roster exposes — never a
+session id, IP, or anything not already visible in `PresenceRoster` output.
+There is still no HTTP roster endpoint.
+
+**No fanout attached** ⇒ the presence lane is a complete no-op: no
+goroutines, no remote state, and `PresenceRoster` returns the byte-identical
+single-replica result. Sticky-session deployments keep working exactly as
+before; non-sticky deployments now aggregate correctly too.
 
 ## Common mistakes
 
@@ -183,9 +204,11 @@ viewers land on one replica work fully.
 - **Exposing the roster on an ungated URL.** There is deliberately no
   framework HTTP roster endpoint — "who is viewing X" leaks identities.
   Build your own roster route behind your app's per-topic authorization.
-- **Assuming cross-replica rosters.** The roster reflects THIS replica's
-  connections only. On a multi-replica deployment without sticky sessions,
-  each replica sees a partial roster (aggregation is future work).
+- **Expecting instant cross-replica convergence.** A remote member can take
+  up to one heartbeat (~15s) to appear after a dropped announcement, and up
+  to the TTL (~45s) to disappear after a replica crash. This is by design
+  (lossy, self-healing); wire `WithFanout` for aggregation — without it the
+  roster stays single-replica.
 - **Re-threading presence on SPA navigation.** The SSE topic is set from
   the page's `?presence=` on initial load; a client-side nav to a presence
   page won't re-join the topic. Full-load the presence page (or re-open the

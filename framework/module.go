@@ -57,6 +57,28 @@ type ModuleInfo struct {
 	EntityCount    int
 	RouteCount     int
 	ToolCount      int
+
+	// --- process-module operator introspection (design §8) ---
+	// These fields are ADDITIVE: zero / empty for in-process modules
+	// (there is no child process and no supervisor state to report). They
+	// are populated by ModuleManager.List when a process-module
+	// supervisor is attached via SetProcessReconciler.
+
+	// ProcessState is the live [ProcessState] for a process module, or
+	// the empty string for an in-process module.
+	ProcessState string
+	// RestartCount is the number of unexpected exits in the current
+	// circuit window (process modules only).
+	RestartCount int
+	// ObservedGeneration is the child's current desired_generation view
+	// compared against the store's; non-zero only for process modules.
+	ObservedGeneration uint64
+	// InstanceID is the live spawn's liveness nonce (process modules only).
+	InstanceID string
+	// LastExit is the diagnostic label of the most recent child exit
+	// (process modules only). One of: "", "drained", "crashed: <err>",
+	// "lease-expired-drain", "failed: <reason>", "exited-cleanly-unexpected".
+	LastExit string
 }
 
 // ModuleStore persists module enable/disable state across restarts.
@@ -209,6 +231,12 @@ type ModuleManager struct {
 	fanout   fanout.Fanout // nil = single-replica
 	nodeID   string        // for fanout self-dedup
 	db       *sql.DB       // nil when no DB
+
+	// processCoordinator, when set, lets a process-module supervisor
+	// (one per replica) hook reconcile signals and introspection into the
+	// in-process module manager. nil when the app has no process modules.
+	// Wired by App.RegisterProcessModule (framework/app.go).
+	processCoordinator processModuleCoordinator
 }
 
 // NewModuleManager creates a manager backed by the appropriate store.
@@ -529,6 +557,15 @@ func (mm *ModuleManager) handleRemoteToggle(raw []byte) {
 		mm.enabled[msg.Name] = v
 	}
 	mm.mu.Unlock()
+	// Process-module reconcile hook (design §8): a remote toggle is one
+	// of the THREE reconcile sources. After the in-process cache has
+	// been re-read, fan the signal into the per-module supervisor so it
+	// spawns / drains its child. The in-process fail-open WARN above is
+	// deliberately NOT inherited by the process supervisor — it enforces
+	// its own fail-closed state lease.
+	if mm.processCoordinator != nil {
+		mm.processCoordinator.Reconcile(msg.Name)
+	}
 }
 
 // subscribeFanout registers the manager's fanout listener. Called once
@@ -579,7 +616,7 @@ func (mm *ModuleManager) List() []ModuleInfo {
 		if _, ok := mm.enabled[name]; !ok {
 			enabled = true
 		}
-		out = append(out, ModuleInfo{
+		info := ModuleInfo{
 			Name:           name,
 			Version:        m.Version,
 			Description:    m.Description,
@@ -589,9 +626,48 @@ func (mm *ModuleManager) List() []ModuleInfo {
 			EntityCount:    entities,
 			RouteCount:     routes,
 			ToolCount:      tools,
-		})
+		}
+		// Process-module introspection (design §8): fill operator-only
+		// fields when a process coordinator is attached. nil/zero for
+		// in-process modules — [ProcessModuleInfo] is additive.
+		if mm.processCoordinator != nil {
+			if pi, ok := mm.processCoordinator.Info(name); ok {
+				info.ProcessState = pi.State.String()
+				info.RestartCount = pi.RestartCount
+				info.ObservedGeneration = pi.ObservedGeneration
+				info.InstanceID = pi.InstanceID
+				info.LastExit = pi.LastExit
+			}
+		}
+		out = append(out, info)
 	}
 	return out
+}
+
+// processModuleCoordinator is the seam between the in-process ModuleManager
+// and a process-module [ProcessModuleSupervisor] (one per replica). The
+// ModuleManager owns the route gate and enable/disable cache; the supervisor
+// owns the per-module-per-replica state machine. When the manager receives a
+// remote-toggle signal it forwards a reconcile nudge; when List() runs it
+// pulls operator introspection. nil when the app has no process modules.
+type processModuleCoordinator interface {
+	// Reconcile nudges the named module's supervise loop. One of three
+	// reconcile sources per design §8 (local enable/disable, remote
+	// toggle, periodic poll).
+	Reconcile(name string)
+
+	// Info returns the operator introspection snapshot for name, or
+	// ok=false if name is not a process module supervised here.
+	Info(name string) (ProcessModuleInfo, bool)
+}
+
+// SetProcessCoordinator installs the process-module coordinator. Called
+// once by App wiring (RegisterProcessModule / a With… option); subsequent
+// calls overwrite the prior coordinator. Passing nil disables the hook.
+func (mm *ModuleManager) SetProcessCoordinator(pc processModuleCoordinator) {
+	mm.mu.Lock()
+	mm.processCoordinator = pc
+	mm.mu.Unlock()
 }
 
 // ---------------------------------------------------------------------------

@@ -19,6 +19,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -47,7 +49,37 @@ type Client struct {
 // Spawn launches the MCP server subprocess and performs the
 // `initialize` handshake. If `expectedSHA256` is non-empty, the
 // binary is checked against the hash and refused on mismatch.
+//
+// The child receives ONLY a minimal allowlisted environment (PATH, HOME,
+// TMPDIR, plus the platform basics needed to exec) — NOT the host's full
+// os.Environ(). This prevents host secrets (JWT_SECRET, DB DSN, OAuth
+// keys, …) from leaking into every spawned MCP server. Callers that need
+// more must use SpawnWithConfig.
 func Spawn(ctx context.Context, cmd string, args []string, expectedSHA256 string) (*Client, error) {
+	return SpawnWithConfig(ctx, cmd, args, expectedSHA256, SpawnConfig{})
+}
+
+// SpawnConfig controls the extras a Spawn caller may pass beyond the default
+// scrubbed allowlist. Both fields are additive on top of the allowlist;
+// neither ever causes the host's full os.Environ() to be inherited.
+//
+//   - Env: explicit "KEY=VALUE" entries. These win over the allowlist when a
+//     name collides, so a caller can pin a tool's config without touching the
+//     host. Use this for values the caller knows.
+//   - InheritEnv: names of host env vars to copy through verbatim (value taken
+//     from os.Getenv at spawn time). Use this when a tool needs a host var by
+//     name (e.g. an API key the operator intentionally exposes to that one
+//     child). Every name is a deliberate allow decision — do not list secrets
+//     here unless the child is meant to see them.
+type SpawnConfig struct {
+	Env        []string // extra "KEY=VALUE" entries; override allowlist on collision
+	InheritEnv []string // host env var names to copy through beyond the allowlist
+}
+
+// SpawnWithConfig is Spawn with an explicit SpawnConfig for callers that need
+// env vars beyond the scrubbed default allowlist. See SpawnConfig for the
+// fields and Spawn for the rest of the behaviour.
+func SpawnWithConfig(ctx context.Context, cmd string, args []string, expectedSHA256 string, cfg SpawnConfig) (*Client, error) {
 	if expectedSHA256 != "" {
 		got, err := sha256OfBinary(cmd)
 		if err != nil {
@@ -58,6 +90,12 @@ func Spawn(ctx context.Context, cmd string, args []string, expectedSHA256 string
 		}
 	}
 	c := exec.CommandContext(ctx, cmd, args...)
+	// Baseline hygiene (design §6): scrub the host environment. A nil Env
+	// would hand the child every host secret via os.Environ(); instead we
+	// build an explicit minimal set. This is NOT a security sandbox — an
+	// unconfined child can still open/connect/dial — but it removes the
+	// handed-to-you secrets.
+	c.Env = buildChildEnv(cfg)
 	stdin, err := c.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -87,6 +125,54 @@ func Spawn(ctx context.Context, cmd string, args []string, expectedSHA256 string
 		return nil, err
 	}
 	return cl, nil
+}
+
+// defaultEnvAllowlist is the minimal set of host env var names a child needs
+// to exec and run ordinary tools, with no secrets. Kept small on purpose;
+// grow it only when a real child genuinely cannot run without a name.
+func defaultEnvAllowlist() []string {
+	// Locale first: some C/Go libraries hard-fail without a usable LANG.
+	base := []string{"LANG", "LC_ALL", "LC_CTYPE", "PATH", "HOME", "TMPDIR", "USER", "LOGNAME"}
+	if runtime.GOOS == "windows" {
+		// SYSTEMROOT is required to locate system DLLs; COMSPEC/PATHEXT for
+		// shell + executable resolution; TEMP/TMP replace TMPDIR on Windows.
+		return []string{"LANG", "LC_ALL", "PATH", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE"}
+	}
+	return base
+}
+
+// buildChildEnv assembles the child's environment from the default allowlist
+// plus cfg.InheritEnv (host values copied by name) plus cfg.Env (explicit
+// KEY=VALUE, which override any same-named allowlisted/inherited value).
+// Names are de-duplicated; explicit Env entries win and are emitted first;
+// host vars that are unset are silently skipped. The result is never nil so
+// the child never inherits the full os.Environ().
+func buildChildEnv(cfg SpawnConfig) []string {
+	want := defaultEnvAllowlist()
+	want = append(want, cfg.InheritEnv...)
+	env := make([]string, 0, len(cfg.Env)+len(want))
+	seen := make(map[string]bool, len(cfg.Env)+len(want))
+	// Explicit extras first so they take precedence over same-named
+	// allowlisted/inherited values. Entries without '=' or with an empty
+	// name are dropped defensively.
+	for _, kv := range cfg.Env {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok || name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		env = append(env, kv)
+	}
+	for _, name := range want {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		if v, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+v)
+		}
+	}
+	return env
 }
 
 func (c *Client) initialize(ctx context.Context) error {

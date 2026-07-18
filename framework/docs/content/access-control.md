@@ -528,3 +528,35 @@ use the **Decider seam** above: one membership check replaces unbounded grant
 rows, and the rule lives in your code where it can consult any table or
 service. The two compose — a Decider can fall back to `Abstain` and let a
 `resource:id:capability` grant row in the policy decide.
+
+## ScopeMatch (module/token scope algebra)
+
+`Can` is the RBAC hot path and stays deliberately blunt: it matches an
+**exact** permission string, or the global `Wildcard` (`"*"`). It does **not**
+understand `posts:*` or `*:read` — widening it would silently change live
+RBAC for every caller, so it is untouched.
+
+`access.ScopeMatch(granted []Permission, required Permission) bool` is the
+separate, pure matcher for the richer `resource:verb` wildcard grammar used
+by **token scopes** and **module capability grants**:
+
+```go
+// exact | resource wildcard | verb wildcard | grant-all
+access.ScopeMatch([]access.Permission{"posts:*"}, "posts:read")  // true
+access.ScopeMatch([]access.Permission{"*:read"}, "users:read")   // true
+access.ScopeMatch([]access.Permission{"*:*"}, "anything:here")   // true
+access.ScopeMatch(nil, "posts:read")                             // false (deny by default)
+```
+
+It is a function of its two arguments only — it **does not consult the
+capability registry and does not expand resource wildcards** the way
+`RolePolicy.Grant` does at grant time (`teams:*` matches literally here; it
+is not fanned out to registered `teams:` capabilities). Matching and
+grant-time expansion are deliberately not entangled.
+
+`battery/auth`'s token-scope matcher (`HasScope` / `auth.ScopeMatch`)
+delegates to this function, so the `resource:verb` algebra has exactly one
+home. Use `access.ValidScope(s)` to reject malformed scope strings at
+mint/install time under the same closed vocabulary. New capability gates
+that hold `[]Permission` should call `access.ScopeMatch` directly rather
+than reimplementing a weaker string matcher.

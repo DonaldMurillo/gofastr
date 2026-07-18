@@ -144,6 +144,15 @@ type Config struct {
 	// hook results are unioned with them and labeled by their supplied origin.
 	// When nil, the screen keeps its direct-roles-only rendering.
 	EffectiveRoles func(ctx context.Context, userID string) []access.RoleWithOrigin
+
+	// ProcessModules is the process-module supervisor the operator lifecycle
+	// screen manages. When set, /admin/modules is active: list every module's
+	// state (404-vs-503 surfaced in copy) plus enable/disable, bump-generation
+	// (the circuit-reset / recovery lever, design §8), and per-grant revoke.
+	// When nil, the screen is not mounted and the route 404s. Wire it with
+	// app.ProcessModules() — the real *framework.ProcessModuleSupervisor
+	// satisfies the processModuleController interface.
+	ProcessModules processModuleController
 }
 
 // Battery is the framework Battery implementation.
@@ -295,6 +304,15 @@ func (b *Battery) RegisterRoutes(r *router.Router) {
 	}
 	if b.cfg.Auth != nil {
 		r.Post(b.cfg.PathPrefix+"/rbac/_assign", guard(b.handleRBACAssign))
+	}
+	// Process-module operator lifecycle screen + POST actions. Same admin
+	// gate as every other surface; wired only when a controller is set.
+	if b.cfg.ProcessModules != nil {
+		r.Get(b.cfg.PathPrefix+"/modules", guard(b.handleProcessModules))
+		r.Post(b.cfg.PathPrefix+"/modules/_enable", guard(b.handleModuleEnable))
+		r.Post(b.cfg.PathPrefix+"/modules/_disable", guard(b.handleModuleDisable))
+		r.Post(b.cfg.PathPrefix+"/modules/_bump", guard(b.handleModuleBump))
+		r.Post(b.cfg.PathPrefix+"/modules/_revoke", guard(b.handleModuleRevoke))
 	}
 }
 
@@ -600,6 +618,9 @@ func (b *Battery) navHTML(current string) render.HTML {
 	}
 	if b.cfg.Auth != nil {
 		links = append(links, link{"User roles", b.cfg.PathPrefix + "/rbac/users"})
+	}
+	if b.cfg.ProcessModules != nil {
+		links = append(links, link{"Modules", b.cfg.PathPrefix + "/modules"})
 	}
 	var sb strings.Builder
 	sb.WriteString(`<nav>`)

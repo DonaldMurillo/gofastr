@@ -63,6 +63,15 @@ jobs:
         with:
           install-dependencies: true
 
+      - name: Install bubblewrap (linux sandbox backend + P1-P7 probes)
+        # The process-module SandboxRunner (framework) shells to `bwrap` for
+        # the linux confinement backend; without it the conformance-probe
+        # tests skip (fail-closed "backend unavailable") and that backend's
+        # code goes uncovered in the coverage-floors gate. Installing it lets
+        # the probes actually run. If unprivileged user namespaces are
+        # restricted on the runner the probes still skip cleanly — never fail.
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
       - name: Install the gofastr binary
         # cmd/gofastr e2e tests (migrate diff/generate, blueprint) skip
         # silently when the binary is absent — install it so they run.
