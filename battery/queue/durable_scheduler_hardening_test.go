@@ -107,23 +107,24 @@ func TestDurableSchedulerRetentionPrunesOnlySafeOldOccurrences(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	insertOccurrence := func(id, status, jobID string, created time.Time) {
+	insertOccurrence := func(id, status, jobID string, scheduledTick, created time.Time) {
 		t.Helper()
 		_, err := db.Exec(fmt.Sprintf(`INSERT INTO %s
 			(occurrence_id, schedule_id, scheduled_tick, status, skip_reason,
 			 claim_owner, claim_fence, created_at, enqueued_job_id)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 			q.schedulerOccurrencesTable()),
-			id, "digest", created, status, "", "replica-a", 1, created, jobID)
+			id, "digest", scheduledTick, status, "", "replica-a", 1, created, jobID)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	old := now.Add(-48 * time.Hour)
-	insertOccurrence("old-skipped", "skipped", "", old)
-	insertOccurrence("old-live", "enqueued", "live-job", old)
-	insertOccurrence("old-done", "enqueued", "done-job", old)
-	insertOccurrence("recent-skipped", "skipped", "", now.Add(-time.Hour))
+	insertOccurrence("old-skipped", "skipped", "", old, old)
+	insertOccurrence("old-live", "enqueued", "live-job", old.Add(time.Minute), old)
+	insertOccurrence("old-done", "enqueued", "done-job", old.Add(2*time.Minute), old)
+	recent := now.Add(-time.Hour)
+	insertOccurrence("recent-skipped", "skipped", "", recent, recent)
 
 	if err := sched.RunOnce(context.Background(), now); err != nil {
 		t.Fatal(err)
