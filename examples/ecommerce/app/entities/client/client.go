@@ -13,9 +13,15 @@ import (
 // Client is a typed HTTP client targeting the gofastr server's CRUD routes.
 // Pass any *http.Client (httptest, retryable wrapper, etc.) — Client never
 // closes it.
+//
+// Token, when set, is sent as "Authorization: Bearer <Token>" on every
+// request. Pair it with the server's API-token middleware
+// (auth.TokenMiddleware) and a scoped token minted via the app's
+// /auth/tokens endpoints; leave empty for cookie/session or public APIs.
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
+	Token   string
 }
 
 // NewClient constructs a Client with the default http.Client when one is
@@ -59,6 +65,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

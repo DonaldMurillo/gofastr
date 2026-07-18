@@ -619,7 +619,11 @@ This scaffolds the owned entity package into `entities/` at the module root:
   constants, typed repository, lifecycle subscriptions, and its own
   `app.Entity(...)` registration that self-registers via `init()`. A new
   entity is a new file; existing files are never rewritten.
-- `client/client.go` with a standalone Go HTTP client
+- `client/client.go` with a standalone Go HTTP client. Setting the
+  client's `Token` field sends it as `Authorization: Bearer <token>` on
+  every request — pair with a scoped API token
+  ([auth](auth.md#service-accounts--scoped-api-tokens)); leave empty for
+  public or cookie-authenticated APIs.
 
 A blueprint that declares `app.module` also emits a flat `package main` at the
 root (`main.go` plus `app.go`, `screens_register.go`, one `screen_<name>.go`

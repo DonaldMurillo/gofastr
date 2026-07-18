@@ -295,6 +295,14 @@ app.Use(auth.TokenMiddleware(mgr.UserStore(), svcAccounts, apiTokens,
 `TokenMiddleware` has no `AuthManager`, so audit is wired with
 `WithTokenAudit(sink)`; a nil sink disables auditing and never panics.
 
+On the consumer side, the generated typed client
+([entity declarations](entity-declarations.md#code-generation))
+carries the token for you: set `client.Token` to a plaintext PAT and every
+request sends `Authorization: Bearer gfsk_…`. Bearer requests skip CSRF by
+design, so scripts and CLIs need no cookie or CSRF-token handling — the
+customer flow is: log in to the app's web UI, mint a scoped token via
+`POST /auth/tokens` (TokensPlugin), paste it into the tool once.
+
 ### Scopes
 
 Sessions and JWTs are **unscoped** — a logged-in user carries their full

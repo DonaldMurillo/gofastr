@@ -107,6 +107,33 @@ func TestRenderClient_PatchStructUsesPointers(t *testing.T) {
 	}
 }
 
+// A CLI or script authenticates with a scoped API token (battery/auth PAT),
+// so the generated client must carry an optional bearer token: a Token field
+// on Client, sent as "Authorization: Bearer <token>" on every request when
+// set. NewClient's signature stays unchanged (struct-literal callers keep
+// compiling; token is opt-in via c.Token = ...).
+func TestRenderClient_TokenBearerHeader(t *testing.T) {
+	tsOff := false
+	out := renderClient([]framework.EntityDeclaration{{
+		Name:       "posts",
+		Table:      "posts",
+		Timestamps: &tsOff,
+		Fields:     []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+	}})
+	wants := []string{
+		"Token   string", // gofmt-aligned struct field
+		`req.Header.Set("Authorization", "Bearer "+c.Token)`,
+	}
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Errorf("renderClient missing %q\n--- output:\n%s", w, out)
+		}
+	}
+	if !strings.Contains(out, "func NewClient(baseURL string, httpClient *http.Client)") {
+		t.Errorf("NewClient signature must stay unchanged:\n%s", out)
+	}
+}
+
 // integrationTestSource is the Go test that gets dropped into the temp module
 // to drive the generated client against a real httptest server. Kept as a
 // raw constant (with %s placeholders intentionally avoided — the file is
