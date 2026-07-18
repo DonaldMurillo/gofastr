@@ -332,6 +332,8 @@ add `framework.WithAPIPrefix`.
 | Multi-tenant     | `tenant_id` column + automatic scope from request context                       |
 | Hooks            | `BeforeCreate`, `AfterUpdate`, etc. for custom behaviour                        |
 | Custom routes    | `EntityConfig.Endpoints` with optional MCP exposure                             |
+| Client SDKs      | `gofastr generate sdk` — downloadable Go module + JS/TS client, hosted by the app with a live docs site (`framework/sdkdocs`) |
+| Customer CLI     | `gofastr generate cli` — a branded terminal client for your customers, scoped API-token auth |
 
 ### Walkthrough: the read/write API
 

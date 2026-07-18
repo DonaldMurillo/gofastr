@@ -80,6 +80,8 @@ generated guidance.
 | SEO: page title/description, Open Graph, Twitter cards, canonical, JSON-LD, sitemap, robots | uihost `WithDescription`/`WithOpenGraph`/`WithSitemap`/`WithRobots`/`WithRobotsMeta` + per-screen `ScreenSEO`/`ScreenSchema` interfaces — `gofastr docs seo`. Static export writes sitemap.xml/robots.txt from the same config |
 | accessibility, ADA/WCAG compliance, "aria-label", a11y audit | `gofastr audit a11y` (static guided lint) and `gofastr audit a11y --url <base>` (axe-core in headless Chrome, both color schemes, pages from /sitemap.xml). Note `gofastr build` enforces the static lint — fix findings, don't reach for `--no-a11y` — `gofastr docs accessibility` |
 | upgrading the framework version, migration notes between releases | install the target CLI first, then `gofastr upgrade [--to vX.Y.Z] [--apply]` — shows every migration-relevant change in range with file:line hits in your app — `gofastr docs upgrading`; finish with `gofastr agents sync` |
+| customer-facing CLI, "ship a terminal client", stripe/gh-style CLI for my API | `gofastr generate cli` — standalone stdlib binary, scoped `gfsk_` token auth, `custom.go` extension seam — `gofastr docs app-cli` |
+| client SDKs, "publish an SDK", downloadable Go/JS/TS client, API docs site for customers | `gofastr generate sdk` (Go module zip + client.js/client.d.ts under `gen/sdk/`) + `sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS("gen/sdk/dist")})` for the hosted docs site + downloads — `gofastr docs sdk` |
 
 ## Hard rules
 

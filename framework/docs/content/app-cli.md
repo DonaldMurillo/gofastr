@@ -174,3 +174,9 @@ field or exclude the entity.
   stdlib `flag` semantics: bare `--published` sets true, and the
   explicit-value form needs `=` — `--published=false`. The space form
   treats `false` as a positional and stops flag parsing.
+
+## Sibling: SDKs
+
+`gofastr generate sdk` is the library twin of this command — a
+downloadable Go module and JS/TS client for the same API, hosted by the
+app itself behind a live docs site. See [sdk](sdk.md).

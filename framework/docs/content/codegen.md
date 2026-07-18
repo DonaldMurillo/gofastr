@@ -50,8 +50,10 @@ codegen:
 is a subdirectory under that root. Generated paths must be relative and cannot
 contain parent traversal.
 
-Each generator names an `extension`; the CLI does not ship built-in
-in-process generators. Use optional `id` when running the same generator more
+Each generator names an `extension`, with one first-party exception: a
+generator entry named `sdk` (no `extension`) runs the built-in SDK
+generator — the same output as `gofastr generate sdk`; see the
+[sdk](sdk.md) doc. Use optional `id` when running the same generator more
 than once:
 
 ```yaml
