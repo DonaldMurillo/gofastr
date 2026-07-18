@@ -40,6 +40,13 @@ type Builder struct {
 	BasePath string
 	// Logger receives one line per produced or copied file. Nil disables it.
 	Logger func(format string, args ...any)
+	// ExtraDirs maps URL mount paths to filesystems whose files are
+	// copied into the export under that path — e.g.
+	// {"/docs/api/sdk": os.DirFS("gen/sdk/dist")} so the SDK artifacts a
+	// live sdkdocs.Mount serves also ship in the static tree. Files the
+	// build (or the user static dir) already produced win: extra files
+	// are written only when absent, matching the SEO/PWA precedence.
+	ExtraDirs map[string]fs.FS
 }
 
 // Result is a summary of a Build run.
@@ -223,6 +230,13 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		if err := copyFS(fsys, b.OutDir, &res, b.log); err != nil {
 			return res, err
 		}
+	}
+
+	// Extra mounted directories (SDK artifacts, other host-declared
+	// downloads). After the user static dir so its files win; before the
+	// PWA surface so the worker fingerprints the complete export.
+	if err := b.dumpExtraDirs(&res); err != nil {
+		return res, err
 	}
 
 	// PWA surface — manifest, service worker, registration script, and
@@ -701,6 +715,52 @@ func pathToLLMFile(p string) string {
 		return "llm.md"
 	}
 	return filepath.Join(clean, "llm.md")
+}
+
+// dumpExtraDirs copies every Builder.ExtraDirs filesystem under its mount
+// path. Deterministic (sorted mounts, sorted walk) and non-clobbering:
+// files already in the export tree win.
+func (b *Builder) dumpExtraDirs(res *Result) error {
+	mounts := make([]string, 0, len(b.ExtraDirs))
+	for m := range b.ExtraDirs {
+		mounts = append(mounts, m)
+	}
+	sort.Strings(mounts)
+	for _, mount := range mounts {
+		fsys := b.ExtraDirs[mount]
+		if fsys == nil {
+			continue
+		}
+		cleanMount := "/" + strings.Trim(mount, "/")
+		err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			urlPath := cleanMount + "/" + filepath.ToSlash(path)
+			dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(urlPath, "/")))
+			if err := b.ensureContained(dst); err != nil {
+				return err
+			}
+			if _, statErr := os.Stat(dst); statErr == nil {
+				b.log("kept existing %s (extra dir %s skipped)", urlPath, mount)
+				return nil
+			}
+			data, err := fs.ReadFile(fsys, path)
+			if err != nil {
+				return err
+			}
+			if err := writeFile(dst, data); err != nil {
+				return err
+			}
+			res.Assets = append(res.Assets, urlPath)
+			b.log("copied extra %s", urlPath)
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("static: extra dir %q: %w", mount, err)
+		}
+	}
+	return nil
 }
 
 func writeFile(dst string, data []byte) error {
