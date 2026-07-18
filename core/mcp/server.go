@@ -20,16 +20,41 @@ type ToolHandler func(ctx context.Context, params map[string]any) (any, error)
 
 // Tool represents a registered MCP tool with its metadata and handler.
 type Tool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
-	Handler     ToolHandler    `json:"-"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description"`
+	InputSchema  map[string]any `json:"inputSchema"`
+	OutputSchema map[string]any `json:"outputSchema,omitempty"`
+	// Meta is serialized verbatim as the tool's `_meta` in tools/list. MCP
+	// Apps use it to link a tool to its UI resource, e.g.
+	// {"ui": {"resourceUri": "ui://app/widget.html"}} (and the ChatGPT
+	// compat alias "openai/outputTemplate").
+	Meta    map[string]any `json:"_meta,omitempty"`
+	Handler ToolHandler    `json:"-"`
+}
+
+// ToolOption customizes a tool at registration time.
+type ToolOption func(*Tool)
+
+// WithOutputSchema declares the JSON Schema for a tool's structuredContent.
+func WithOutputSchema(schema map[string]any) ToolOption {
+	return func(t *Tool) { t.OutputSchema = schema }
+}
+
+// WithMeta attaches a `_meta` object to a tool, serialized verbatim in
+// tools/list. Use it for the MCP Apps UI linkage.
+func WithMeta(meta map[string]any) ToolOption {
+	return func(t *Tool) { t.Meta = meta }
 }
 
 // Server is an MCP server with a tool registry.
 type Server struct {
 	mu    sync.RWMutex
 	tools map[string]Tool
+
+	// resources is the resource registry (resources/list + resources/read).
+	// Nil until the first RegisterResource. A non-empty registry makes
+	// initialize advertise the `resources` capability.
+	resources map[string]Resource
 
 	// name/version are advertised in the MCP `initialize` handshake
 	// (serverInfo). Defaults set in NewServer; override via SetServerInfo.
@@ -105,12 +130,22 @@ func (s *Server) SetCallGate(fn func(toolName string) error) {
 
 // RegisterTool adds a tool to the server's registry.
 // Returns an error if a tool with the same name already exists.
-func (s *Server) RegisterTool(name, description string, inputSchema map[string]any, fn ToolHandler) error {
+func (s *Server) RegisterTool(name, description string, inputSchema map[string]any, fn ToolHandler, opts ...ToolOption) error {
 	if name == "" {
 		return fmt.Errorf("mcp: tool name must not be empty")
 	}
 	if fn == nil {
 		return fmt.Errorf("mcp: tool handler must not be nil")
+	}
+
+	tool := Tool{
+		Name:        name,
+		Description: description,
+		InputSchema: inputSchema,
+		Handler:     fn,
+	}
+	for _, opt := range opts {
+		opt(&tool)
 	}
 
 	s.mu.Lock()
@@ -120,12 +155,7 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 		return fmt.Errorf("mcp: tool %q already registered", name)
 	}
 
-	s.tools[name] = Tool{
-		Name:        name,
-		Description: description,
-		InputSchema: inputSchema,
-		Handler:     fn,
-	}
+	s.tools[name] = tool
 	hook := s.registerHook
 	s.mu.Unlock()
 	if hook != nil {
