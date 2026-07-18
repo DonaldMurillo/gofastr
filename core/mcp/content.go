@@ -7,8 +7,8 @@ import (
 
 // Content is a single MCP content block in a tools/call result. It models the
 // spec's content union (text, image, audio, embedded resource). A tool handler
-// may return a Content, a []Content, or a Result to emit rich blocks instead
-// of the default JSON-marshaled text. Construct blocks with TextContent /
+// may return a Content, a []Content, or a ToolResult to emit rich blocks
+// instead of the default JSON-marshaled text. Construct blocks with TextContent /
 // ImageContent / AudioContent / ResourceContent.
 type Content struct {
 	Type     string            // "text" | "image" | "audio" | "resource"

@@ -106,9 +106,14 @@ func (s *Server) RegisterApp(cfg AppConfig) error {
 	for k, v := range cfg.ToolMeta {
 		meta[k] = v
 	}
-	ui, _ := meta["ui"].(map[string]any)
-	if ui == nil {
-		ui = map[string]any{}
+	// Clone the caller's nested ui map rather than mutating it in place — a
+	// developer may reuse one shared ToolMeta["ui"] across RegisterApp calls,
+	// and writing resourceUri into their map would bleed between tools.
+	ui := map[string]any{}
+	if existing, ok := meta["ui"].(map[string]any); ok {
+		for k, v := range existing {
+			ui[k] = v
+		}
 	}
 	ui["resourceUri"] = cfg.ResourceURI
 	meta["ui"] = ui

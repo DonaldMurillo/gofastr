@@ -131,7 +131,7 @@ func TestOutputSchema_SerializedInList(t *testing.T) {
 
 // ── Part 3: tool _meta passthrough ────────────────────────────────
 
-func TestWithMeta_SerializedInList(t *testing.T) {
+func TestWithToolMeta_SerializedInList(t *testing.T) {
 	s := NewServer()
 	_ = s.RegisterTool("widget", "", nil,
 		func(context.Context, map[string]any) (any, error) { return nil, nil },
@@ -413,6 +413,23 @@ func TestWithResourceGate_BlocksAndAllows(t *testing.T) {
 	}
 }
 
+func TestWithResourceGate_PanicRecovers(t *testing.T) {
+	// A panicking gate must become a well-formed error, not crash the
+	// transport (the gate runs inside the same recover guard as contents).
+	s := NewServer()
+	_ = s.RegisterResource("boom://g", "G", "text/plain", func(context.Context) (ResourceContents, error) {
+		return ResourceContents{Text: "x"}, nil
+	}, WithResourceGate(func(context.Context) error { panic("gate boom") }))
+	p, _ := json.Marshal(map[string]any{"uri": "boom://g"})
+	resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p})
+	if resp.Error == nil || resp.Error.Code != ErrInternalError {
+		t.Fatalf("panicking gate should become internal error, got %v", resp.Error)
+	}
+	if resp.Error.Message == "gate boom" {
+		t.Error("panic value leaked to caller")
+	}
+}
+
 func TestWithResourceGate_NilPanics(t *testing.T) {
 	defer func() {
 		if recover() == nil {
@@ -438,6 +455,21 @@ func TestRegisterApp_ToolMetaPreservesUILinkage(t *testing.T) {
 	}
 	if ui["preferredSize"] != "large" {
 		t.Errorf("caller ui.* extra not preserved: %v", ui)
+	}
+}
+
+func TestRegisterApp_DoesNotMutateCallerMeta(t *testing.T) {
+	// The caller's nested ui map must not be mutated — reusing one shared map
+	// across RegisterApp calls must not bleed resourceUri between tools.
+	s := NewServer()
+	sharedUI := map[string]any{"preferredSize": "large"}
+	cfg := sampleApp()
+	cfg.ToolMeta = map[string]any{"ui": sharedUI}
+	if err := s.RegisterApp(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, leaked := sharedUI["resourceUri"]; leaked {
+		t.Errorf("RegisterApp mutated the caller's ui map: %v", sharedUI)
 	}
 }
 

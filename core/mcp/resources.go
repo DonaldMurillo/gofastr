@@ -167,14 +167,6 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 		return newErrorResponse(req.ID, ErrMethodNotFound, fmt.Sprintf("resource %q not found", params.URI))
 	}
 
-	// Auth gate (WithResourceGate) runs before the contents func — the
-	// resource-side analogue of mcp.Gated. A refusal returns the gate's error.
-	if res.gate != nil {
-		if err := res.gate(ctx); err != nil {
-			return newErrorResponse(req.ID, ErrInternalError, err.Error())
-		}
-	}
-
 	contents, err := s.readResourceContents(ctx, res)
 	if err != nil {
 		var rpcErr *RPCError
@@ -208,5 +200,14 @@ func (s *Server) readResourceContents(ctx context.Context, res Resource) (out Re
 			err = &RPCError{Code: ErrInternalError, Message: "internal resource error"}
 		}
 	}()
+	// Auth gate (WithResourceGate) runs before the contents func — the
+	// resource-side analogue of mcp.Gated. Inside the recover guard so a
+	// panicking gate becomes a well-formed error, not a transport crash. A
+	// refusal propagates the gate's error to the caller.
+	if res.gate != nil {
+		if gErr := res.gate(ctx); gErr != nil {
+			return ResourceContents{}, gErr
+		}
+	}
 	return res.contents(ctx)
 }
