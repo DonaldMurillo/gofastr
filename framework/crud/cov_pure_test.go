@@ -325,6 +325,36 @@ func TestParseNestedFilters_HiddenTargetFieldRejected(t *testing.T) {
 	}
 }
 
+// The in-process typed-repo nested path (resolveNestedFilters) must reject a
+// Hidden target column exactly like the HTTP path — its doc comment claims
+// parity, and a typed caller passing a partially user-influenced field name
+// would otherwise rebuild the value-disclosure oracle one hop away.
+func TestResolveNestedFilters_HiddenTargetFieldRejected(t *testing.T) {
+	ent := covRelEntity()
+	reg := stubRegistry{byName: map[string]*entity.Entity{
+		"users": entity.Define("users", entity.EntityConfig{
+			Name: "users", Table: "users",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String},
+				{Name: "password_hash", Type: schema.String, Hidden: true},
+			},
+		}.WithTimestamps(false)),
+	}}
+
+	_, err := resolveNestedFilters(ent, reg, []NestedFilter{
+		{Relation: "author", Field: "password_hash", Op: filter.OpLike, Value: "x"},
+	})
+	if err == nil {
+		t.Fatal("SECURITY: in-process nested filter accepted a Hidden target column")
+	}
+	// A visible field still resolves.
+	if _, err := resolveNestedFilters(ent, reg, []NestedFilter{
+		{Relation: "author", Field: "name", Op: filter.OpEq, Value: "alice"},
+	}); err != nil {
+		t.Fatalf("visible nested field must resolve, got %v", err)
+	}
+}
+
 func TestAuditCtx_RoundTrip(t *testing.T) {
 	if AuditRequestFromContext(context.Background()) != nil {
 		t.Error("expected nil request when unset")

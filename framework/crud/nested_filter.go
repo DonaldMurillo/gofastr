@@ -176,7 +176,12 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 				known := false
 				for _, f := range target.GetFields() {
 					if f.Name == spec.Field {
-						known = true
+						// A Hidden target column is treated as not-declared —
+						// the same value-disclosure-oracle rejection the HTTP
+						// path applies in parseNestedFilters. Without this, a
+						// typed caller passing a partially user-influenced
+						// field name rebuilds the oracle one relation hop away.
+						known = !f.Hidden
 						break
 					}
 				}

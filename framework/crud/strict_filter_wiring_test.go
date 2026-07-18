@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
@@ -150,5 +151,31 @@ func TestList_OffsetSkipsRows(t *testing.T) {
 	}
 	if !strings.Contains(body, `"n3"`) {
 		t.Fatalf("offset=2 dropped the wrong rows: %s", body)
+	}
+}
+
+// The STREAMING path must honor ?offset= too — otherwise ?offset=N&stream=true
+// silently serves page 1 (the buffered path honors it; divergence caught by
+// the GLM review).
+func TestServeStreamingList_OffsetSkipsRows(t *testing.T) {
+	ch, db := allowedFilterHandler(t, nil)
+	if _, err := db.Exec(`INSERT INTO notes (id, owner, body) VALUES
+		('n1','u1','a'), ('n2','u1','b'), ('n3','u1','c')`); err != nil {
+		t.Fatal(err)
+	}
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/notes?sort=id&stream=true&offset=2", nil), "u1")
+	rec := httptest.NewRecorder()
+	cols := []string{"id", "owner", "body"}
+	sorts := []filter.ParsedSort{{Field: "id"}}
+	ch.ServeStreamingList(req.Context(), rec, req, cols, nil, nil, sorts, 1, 20, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, `"n1"`) || strings.Contains(body, `"n2"`) {
+		t.Fatalf("stream offset=2 did not skip rows: %s", body)
+	}
+	if !strings.Contains(body, `"n3"`) {
+		t.Fatalf("stream offset=2 dropped the wrong rows: %s", body)
 	}
 }

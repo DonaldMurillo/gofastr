@@ -45,15 +45,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **Hidden columns reachable via nested filters** (#100). A `Hidden` column
   on a relation's target entity could be probed through a nested predicate
   (`?author.password_hash_like=…`), resurrecting the same value-disclosure
-  oracle the flat-filter Hidden exclusion blocks. Nested filters now reject
-  a hidden target field with the identical error as a nonexistent field
-  (non-leaky).
+  oracle the flat-filter Hidden exclusion blocks. Both the HTTP nested path
+  and the in-process typed-repo path now reject a hidden target field with
+  the identical error as a nonexistent field (non-leaky).
 - **`?offset=` now honored on the List endpoint** (#100). The raw
   `?offset=` row-skip control was accepted but silently ignored (the paged
   query always derived its offset from `?page`), so a caller paginating by
   offset — notably the process-module broker, which sends `?offset=` without
   `?page` — silently received page 1. An explicit non-negative `?offset=`
-  now overrides the page-derived offset.
+  now overrides the page-derived offset on both the buffered and streaming
+  list paths.
 
 ## [0.34.0] - 2026-07-18
 
