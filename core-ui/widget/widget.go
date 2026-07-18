@@ -2,6 +2,7 @@ package widget
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 
@@ -234,7 +235,12 @@ var (
 	registry   = map[string]*Definition{}
 )
 
-// allWidgets returns the registered widgets (snapshot copy).
+// allWidgets returns the registered widgets (snapshot copy), sorted by
+// name. Sorting matters: every consumer emits bytes derived from the
+// walk — the /__gofastr/widgets catalog JSON, SSR-inlined chrome order,
+// and the static export's widget dump (whose tree hash versions the PWA
+// cache) — and Go's map iteration would make all of them flap once a
+// second widget registers.
 func allWidgets() []*Definition {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -242,6 +248,7 @@ func allWidgets() []*Definition {
 	for _, d := range registry {
 		out = append(out, d)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
