@@ -105,13 +105,22 @@ type OrderItem struct {
 
 // InsertStmt represents an INSERT statement.
 type InsertStmt struct {
-	Table   TableRef
-	Columns []string    // Column names, empty means all columns in order
-	Values  [][]Expr    // Multiple rows of values
-	Select  *SelectStmt // INSERT ... SELECT ...
+	Table     TableRef
+	Columns   []string    // Column names, empty means all columns in order
+	Values    [][]Expr    // Multiple rows of values
+	Select    *SelectStmt // INSERT ... SELECT ...
+	OrIgnore  bool
+	Conflict  *InsertConflict
+	Returning []string
 }
 
 func (s *InsertStmt) statementNode() {}
+
+type InsertConflict struct {
+	Target    []string
+	DoNothing bool
+	Updates   []SetClause
+}
 
 // ============================================================================
 // UPDATE
@@ -119,9 +128,10 @@ func (s *InsertStmt) statementNode() {}
 
 // UpdateStmt represents an UPDATE statement.
 type UpdateStmt struct {
-	Table TableRef
-	Sets  []SetClause
-	Where Expr
+	Table     TableRef
+	Sets      []SetClause
+	Where     Expr
+	Returning []string
 }
 
 func (s *UpdateStmt) statementNode() {}
@@ -150,14 +160,20 @@ func (s *DeleteStmt) statementNode() {}
 
 // CreateTableStmt represents a CREATE TABLE statement.
 type CreateTableStmt struct {
-	IfNotExists bool
-	Name        string
-	Columns     []ColumnDefAST
+	IfNotExists      bool
+	Name             string
+	Columns          []ColumnDefAST
+	TableConstraints []TableConstraint
 }
 
 func (s *CreateTableStmt) statementNode() {}
 
 // ColumnDefAST is the AST version of a column definition (before resolution).
+
+type TableConstraint struct {
+	Type    ConstraintType
+	Columns []string
+}
 type ColumnDefAST struct {
 	Name        string
 	Type        string

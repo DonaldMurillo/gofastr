@@ -114,6 +114,9 @@ func printHelp() {
   theme init            Scaffold theme/theme.go for a UI project
   build                 Run codegen + go vet + accessibility lint + go build
                         --no-a11y skips the accessibility gate
+                        --pkg=<path> selects the main package built after the
+                        project-root vet and accessibility gates (default .);
+                        for example --pkg ./cmd/server
   dev                   Start dev server with auto-restart
     Flags:
       --addr=<host:port>  Listen address (default localhost:8080); -p <port> short form

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -19,10 +20,14 @@ const durableSchedulerLeaseName = "scheduler"
 // DurableSchedulerConfig identifies one scheduler replica and controls how
 // quickly another replica may reclaim its leadership lease after a heartbeat
 // stops. OwnerID defaults to a random process-local ID. LeaseDuration defaults
-// to 30 seconds.
+// to 30 seconds. OccurrenceRetention defaults to 30 days; a negative value
+// disables occurrence pruning. MaxCatchUpOccurrences defaults to 1000 and
+// bounds the history rows materialized after downtime.
 type DurableSchedulerConfig struct {
-	OwnerID       string
-	LeaseDuration time.Duration
+	OwnerID               string
+	LeaseDuration         time.Duration
+	OccurrenceRetention   time.Duration
+	MaxCatchUpOccurrences int
 }
 
 // DurableScheduler persists schedule watermarks and occurrences in the same
@@ -35,6 +40,10 @@ type DurableScheduler struct {
 	leaseDuration time.Duration
 	wake          chan struct{}
 
+	occurrenceRetention   time.Duration
+	maxCatchUpOccurrences int
+	retentionMu           sync.Mutex
+	nextRetentionSweep    time.Time
 	// beforeOccurrenceCommit is a deterministic partition hook for package
 	// tests. Production code leaves it nil.
 	beforeOccurrenceCommit func()
@@ -58,6 +67,7 @@ type durableSchedule struct {
 	cronSpec  string
 	nextRun   time.Time
 	updatedAt time.Time
+	version   int64
 }
 
 // NewDurableScheduler creates a replica-safe scheduler backed by q's SQL
@@ -72,11 +82,19 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 	if cfg.LeaseDuration <= 0 {
 		cfg.LeaseDuration = 30 * time.Second
 	}
+	if cfg.OccurrenceRetention == 0 {
+		cfg.OccurrenceRetention = defaultOccurrenceRetention
+	}
+	if cfg.MaxCatchUpOccurrences <= 0 {
+		cfg.MaxCatchUpOccurrences = defaultMaxCatchUpOccurrences
+	}
 	s := &DurableScheduler{
-		queue:         q,
-		ownerID:       cfg.OwnerID,
-		leaseDuration: cfg.LeaseDuration,
-		wake:          make(chan struct{}, 1),
+		queue:                 q,
+		ownerID:               cfg.OwnerID,
+		leaseDuration:         cfg.LeaseDuration,
+		occurrenceRetention:   cfg.OccurrenceRetention,
+		maxCatchUpOccurrences: cfg.MaxCatchUpOccurrences,
+		wake:                  make(chan struct{}, 1),
 	}
 	if err := s.ensureTables(); err != nil {
 		return nil, fmt.Errorf("queue: ensure durable scheduler tables: %w", err)
@@ -160,7 +178,9 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 				payload=excluded.payload,
 				interval_ns=excluded.interval_ns,
 				cron_spec=excluded.cron_spec,
-				updated_at=excluded.updated_at`,
+				updated_at=excluded.updated_at,
+				version=%s.version+1`,
+			b.scheduler.queue.schedulerSchedulesTable(),
 			b.scheduler.queue.schedulerSchedulesTable()),
 		b.id, b.jobType, payload, int64(b.interval), b.cronSpec,
 		next.UTC(), time.Now().UTC(),
@@ -192,7 +212,7 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 		return true, err
 	}
 	for _, schedule := range due {
-		ticks, nextRun, err := schedule.dueTicks(now)
+		ticks, nextRun, err := schedule.dueTicks(now, s.maxCatchUpOccurrences)
 		if err != nil {
 			return true, err
 		}
@@ -205,6 +225,9 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 		if err := s.commitOccurrences(ctx, schedule, ticks, nextRun, fence, now); err != nil {
 			return true, err
 		}
+	}
+	if err := s.sweepOccurrences(ctx, now); err != nil {
+		return true, err
 	}
 	return true, nil
 }
@@ -233,7 +256,10 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 		}
 		delay := heartbeat
 		if owned {
-			delay = s.nextWakeDelay(ctx, now, heartbeat)
+			delay, err = s.nextWakeDelay(ctx, now, heartbeat)
+			if err != nil {
+				return err
+			}
 		}
 		if !timer.Stop() {
 			select {
@@ -245,22 +271,29 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 	}
 }
 
-func (s *DurableScheduler) nextWakeDelay(ctx context.Context, now time.Time, maximum time.Duration) time.Duration {
-	var next time.Time
+func (s *DurableScheduler) nextWakeDelay(ctx context.Context, now time.Time, maximum time.Duration) (time.Duration, error) {
+	var nextRaw any
 	err := s.queue.db.QueryRowContext(ctx,
 		fmt.Sprintf("SELECT next_run FROM %s ORDER BY next_run LIMIT 1", s.queue.schedulerSchedulesTable()),
-	).Scan(&next)
+	).Scan(&nextRaw)
 	if err != nil {
-		return maximum
+		if errors.Is(err, sql.ErrNoRows) {
+			return maximum, nil
+		}
+		return 0, err
+	}
+	next, err := queueTime(nextRaw)
+	if err != nil {
+		return 0, fmt.Errorf("queue: decode scheduler next_run: %w", err)
 	}
 	delay := next.UTC().Sub(now.UTC())
 	if delay < 10*time.Millisecond {
-		return 10 * time.Millisecond
+		return 10 * time.Millisecond, nil
 	}
 	if delay < maximum {
-		return delay
+		return delay, nil
 	}
-	return maximum
+	return maximum, nil
 }
 
 func (s *DurableScheduler) acquireLease(ctx context.Context, now time.Time) (int64, bool, error) {
@@ -320,7 +353,7 @@ func (s *DurableScheduler) acquireLease(ctx context.Context, now time.Time) (int
 
 func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durableSchedule, error) {
 	rows, err := s.queue.db.QueryContext(ctx,
-		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec, next_run, updated_at
+		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec, next_run, updated_at, version
 			FROM %s WHERE next_run <= $1 ORDER BY next_run, id`,
 			s.queue.schedulerSchedulesTable()),
 		now,
@@ -334,12 +367,21 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 		var row durableSchedule
 		var payload string
 		var intervalNS int64
+		var nextRun, updatedAt any
 		if err := rows.Scan(&row.id, &row.jobType, &payload, &intervalNS,
-			&row.cronSpec, &row.nextRun, &row.updatedAt); err != nil {
+			&row.cronSpec, &nextRun, &updatedAt, &row.version); err != nil {
 			return nil, err
 		}
 		row.payload = json.RawMessage(payload)
 		row.interval = time.Duration(intervalNS)
+		row.nextRun, err = queueTime(nextRun)
+		if err != nil {
+			return nil, fmt.Errorf("queue: decode schedule %q next_run: %w", row.id, err)
+		}
+		row.updatedAt, err = queueTime(updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("queue: decode schedule %q updated_at: %w", row.id, err)
+		}
 		row.nextRun = row.nextRun.UTC()
 		row.updatedAt = row.updatedAt.UTC()
 		out = append(out, row)
@@ -347,29 +389,8 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 	return out, rows.Err()
 }
 
-func (s durableSchedule) dueTicks(now time.Time) ([]time.Time, time.Time, error) {
-	cursor := s.nextRun.UTC()
-	var parsed *cron.Schedule
-	if s.cronSpec != "" {
-		sc, err := cron.Parse(s.cronSpec)
-		if err != nil {
-			return nil, time.Time{}, err
-		}
-		parsed = &sc
-	}
-	var ticks []time.Time
-	for !cursor.After(now) {
-		ticks = append(ticks, cursor)
-		next := cursor.Add(s.interval)
-		if parsed != nil {
-			next = parsed.Next(cursor)
-		}
-		if !next.After(cursor) {
-			return nil, time.Time{}, fmt.Errorf("queue: schedule %q did not advance", s.id)
-		}
-		cursor = next.UTC()
-	}
-	return ticks, cursor, nil
+func (s durableSchedule) dueTicks(now time.Time, limit int) ([]time.Time, time.Time, error) {
+	return boundedDueTicks(s, now, limit)
 }
 
 func (s *DurableScheduler) commitOccurrences(
@@ -402,9 +423,9 @@ func (s *DurableScheduler) commitOccurrences(
 	}
 
 	res, err = tx.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s SET next_run=$1, updated_at=$2
-			WHERE id=$3 AND next_run=$4 AND updated_at=$5`, s.queue.schedulerSchedulesTable()),
-		nextRun.UTC(), now, schedule.id, schedule.nextRun.UTC(), schedule.updatedAt,
+		fmt.Sprintf(`UPDATE %s SET next_run=$1, updated_at=$2, version=version+1
+			WHERE id=$3 AND version=$4`, s.queue.schedulerSchedulesTable()),
+		nextRun.UTC(), now, schedule.id, schedule.version,
 	)
 	if err != nil {
 		return err
@@ -507,7 +528,8 @@ func (s *DurableScheduler) ensureTables() error {
 			interval_ns BIGINT NOT NULL DEFAULT 0,
 			cron_spec TEXT NOT NULL DEFAULT '',
 			next_run %s NOT NULL,
-			updated_at %s NOT NULL
+			updated_at %s NOT NULL,
+			version BIGINT NOT NULL DEFAULT 0
 		)`, s.queue.schedulerSchedulesTable(), tsType, tsType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			occurrence_id TEXT PRIMARY KEY,
@@ -533,6 +555,9 @@ func (s *DurableScheduler) ensureTables() error {
 		if _, err := s.queue.db.Exec(statement); err != nil {
 			return err
 		}
+	}
+	if err := s.ensureHardeningSchema(); err != nil {
+		return err
 	}
 	return nil
 }

@@ -53,6 +53,8 @@ func (e *ExprEval) Eval(expr Expr) (Value, error) {
 		return e.Eval(ex.Expr)
 	case SubqueryExpr:
 		return e.evalSubquery(ex)
+	case ExistsExpr:
+		return e.evalExists(ex)
 	case CaseExpr:
 		return e.evalCase(ex)
 	case CastExpr:

@@ -330,8 +330,10 @@ if err != nil {
 }
 
 durable, err := queue.NewDurableScheduler(q, queue.DurableSchedulerConfig{
-    OwnerID:       hostname + ":" + instanceID,
-    LeaseDuration: 30 * time.Second,
+    OwnerID:               hostname + ":" + instanceID,
+    LeaseDuration:         30 * time.Second,
+    OccurrenceRetention:   30 * 24 * time.Hour, // zero uses this default; negative disables pruning
+    MaxCatchUpOccurrences: 1000,                // default; bounds history materialized after downtime
 })
 if err != nil {
     log.Fatal(err)
@@ -359,19 +361,39 @@ go func() {
 
 One replica holds a heartbeat-expiry lease for efficient evaluation. Every
 lease acquisition after expiry increments a fencing token. Before committing
-an occurrence, the scheduler re-checks and locks that exact owner/token row.
-The occurrence insert, watermark advance, and `queue_jobs` insert then commit
-in one SQL transaction. A paused former owner therefore cannot enqueue after
+an occurrence, the scheduler re-checks that exact owner/token row. The
+occurrence insert, version-guarded watermark advance, and `queue_jobs` insert
+then commit in one SQL transaction. Each schedule has a monotonically
+increasing `version`; advancing its watermark uses `WHERE id = ? AND version =
+?`, so timestamp precision or timezone normalization cannot make a valid
+compare-and-swap miss. A paused former owner therefore cannot enqueue after
 another replica reclaims the lease, and the unique occurrence identity is the
 deduplication authority even if leader evaluation races.
 
 When evaluation wakes after several ticks, only the newest due tick is
-enqueued. Older ticks are stored as `skipped` occurrences instead of causing a
-catch-up burst. The enqueued `Job.OccurrenceID` is stable for that schedule ID
-If the previous occurrence is still pending or claimed, the newest tick is
-also recorded with `skip_reason = 'overlap'` and no second job is enqueued.
-and tick, so handlers and run-history records can correlate retries to the
-same occurrence. `RunOnce(ctx, now)` exposes deterministic/manual evaluation;
+enqueued. Older retained ticks are stored as `skipped` occurrences instead of
+causing a catch-up burst. `MaxCatchUpOccurrences` bounds that materialized
+history window and defaults to 1,000: after a longer outage, the scheduler
+fast-forwards the watermark and retains only the newest bounded window. This
+prevents a stale fixed-interval or cron watermark from allocating unbounded
+memory or creating an unbounded transaction. The enqueued `Job.OccurrenceID`
+is stable for that schedule ID and tick, so handlers and run-history records
+can correlate retries to the same occurrence. If the previous occurrence is
+still pending or claimed, the newest tick is also recorded with
+`skip_reason = 'overlap'` and no second job is enqueued.
+
+Occurrence history is bounded automatically. `OccurrenceRetention` defaults
+to 30 days; zero selects that default and a negative duration disables
+automatic pruning. After evaluating due work, at most once per hour per
+scheduler process, the scheduler deletes old `skipped` rows and old `enqueued`
+rows only after their queue job is no longer pending or claimed; live work is
+never pruned. A newly elected replica may sweep immediately. The occurrence
+table includes
+`(schedule_id, enqueued_job_id)` and `created_at` indexes for overlap checks and
+retention sweeps. Set a longer retention when occurrence IDs feed an external
+audit or reconciliation process.
+
+`RunOnce(ctx, now)` exposes deterministic/manual evaluation;
 `Start(ctx)` heartbeats and evaluates until cancellation.
 
 **Handler timeout.** By default a DBQueue handler runs unbounded — a

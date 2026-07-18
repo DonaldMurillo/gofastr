@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
@@ -15,26 +14,20 @@ func runBuild(args []string) {
 
 	start := time.Now()
 
-	output := "bin/server"
-	noGenerate := false
-	noA11y := false
-	for _, arg := range args {
-		switch {
-		case arg == "--no-generate":
-			noGenerate = true
-		case arg == "--no-a11y":
-			noA11y = true
-		case strings.HasPrefix(arg, "-o="):
-			output = strings.TrimPrefix(arg, "-o=")
-		case strings.HasPrefix(arg, "--output="):
-			output = strings.TrimPrefix(arg, "--output=")
-		}
+	opts, err := parseBuildOptions(args)
+	if err != nil {
+		fail("%v", err)
+		osExit(1)
 	}
 
 	// Step 1: run the codegen extension protocol when a gofastr.codegen.yml
+	if err := validateBuildTarget(opts.pkg); err != nil {
+		fail("Build target %q is invalid: %v", opts.pkg, err)
+		osExit(1)
+	}
 	// is present. Blueprint generation (gofastr generate --from) is an
 	// explicit, separate step — `gofastr build` does not guess a blueprint.
-	if !noGenerate {
+	if !opts.noGenerate {
 		discovery, err := codegen.DiscoverConfig(".")
 		if err != nil {
 			fail("Failed to load codegen config: %v", err)
@@ -62,7 +55,7 @@ func runBuild(args []string) {
 	// Label on buttons/landmarks, …) and every finding ships with a fix
 	// hint, so failing here is cheaper than failing a real user.
 	// --no-a11y skips the gate for genuinely blocked builds.
-	if !noA11y {
+	if !opts.noA11y {
 		info("Checking accessibility...")
 		if !buildA11yGate(".") {
 			fail("Accessibility lint failed — fix the findings above (guided), or skip once with --no-a11y")
@@ -72,16 +65,16 @@ func runBuild(args []string) {
 	}
 
 	// Step 4: go build
-	info("Compiling...")
-	buildCmd := exec.Command("go", "build", "-o", output, ".")
+	info("Compiling %s...", opts.pkg)
+	buildCmd := exec.Command("go", "build", "-o", opts.output, opts.pkg)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 	if err := buildCmd.Run(); err != nil {
-		fail("Build failed")
+		fail("Build target %q failed", opts.pkg)
 		osExit(1)
 	}
 
 	elapsed := time.Since(start)
 	success("Build completed in %s", elapsed.Round(time.Millisecond))
-	fmt.Printf("  Binary: %s\n", bold(output))
+	fmt.Printf("  Binary: %s\n", bold(opts.output))
 }

@@ -5,6 +5,48 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.34.0] - 2026-07-18
+
+Makes framework-owned SQL work with the bundled pure-Go SQLite adapter (#91),
+adds package targeting to `gofastr build` (#92), and hardens durable scheduler
+watermarks and occurrence retention (#96, #97).
+
+### Added
+
+- **`gofastr build --pkg`** (#92). `build` now accepts the same command-package
+  target as `gofastr dev`, including both `--pkg value` and `--pkg=value`.
+  Unknown flags, missing values, option-like package values, and unexpected
+  positional arguments fail before code generation or compilation. Build
+  failures identify the selected package target.
+- **Bounded durable-scheduler catch-up** (#97).
+  `DurableSchedulerConfig.MaxCatchUpOccurrences` limits the occurrence history
+  materialized after downtime and defaults to 1,000. Fixed intervals
+  fast-forward arithmetically, while cron schedules retain only the newest
+  bounded window.
+
+### Changed
+
+- **Bounded scheduler occurrence retention** (#97). Occurrences default to a
+  30-day retention window, pruning runs at most hourly after due work is
+  committed, and a negative `OccurrenceRetention` disables pruning. New
+  `(schedule_id, enqueued_job_id)` and `created_at` indexes keep overlap checks
+  and retention sweeps bounded.
+
+### Fixed
+
+- **Bundled pure-Go SQLite framework compatibility** (#91). The adapter now
+  supports the framework's numbered placeholders, conflict clauses,
+  `RETURNING`, correlated `EXISTS`, and multi-statement parsing. Writes enforce
+  primary-key, `NOT NULL`, and unique constraints consistently; failed
+  statements roll back atomically, and unique indexes reject existing or
+  future duplicate keys.
+- **Durable scheduler watermark stalls** (#96). Watermark compare-and-swap now
+  uses a monotonic schedule version instead of timestamp equality, so database
+  precision or timezone normalization cannot silently stall a schedule.
+  Re-registering a schedule also advances the version to fence stale
+  definitions, and malformed persisted timestamps return errors rather than
+  becoming zero values.
+
 ## [0.33.0] - 2026-07-18
 
 Adds MCP Apps support to `core/mcp` (#90) and a durable, replica-safe

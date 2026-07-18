@@ -135,11 +135,12 @@ func (e *Engine) LoadSchema() error {
 
 	for _, td := range sd.Tables {
 		ti := &TableInfo{
-			Name:       td.Name,
-			RootPage:   td.RootPage,
-			SQL:        td.SQL,
-			AutoInc:    td.AutoInc,
-			PrimaryKey: td.PrimaryKey,
+			Name:              td.Name,
+			RootPage:          td.RootPage,
+			SQL:               td.SQL,
+			AutoInc:           td.AutoInc,
+			PrimaryKey:        td.PrimaryKey,
+			UniqueConstraints: td.UniqueConstraints,
 		}
 		for _, cd := range td.Columns {
 			col := ColumnDef{
@@ -190,6 +191,7 @@ func (e *Engine) SaveSchema() error {
 	sd := schemaData{}
 	for _, ti := range e.schema.tables {
 		d := tableData{Name: ti.Name, RootPage: ti.RootPage, SQL: ti.SQL, AutoInc: ti.AutoInc, PrimaryKey: ti.PrimaryKey}
+		d.UniqueConstraints = ti.UniqueConstraints
 		for _, c := range ti.Columns {
 			cd := colData{Name: c.Name, Type: c.Type, Affinity: int(c.Affinity), NotNull: c.NotNull, IsPK: c.IsPrimaryKey, IsRowID: c.IsRowID}
 			if c.Default != nil {
@@ -326,7 +328,7 @@ func (e *Engine) ExecuteStatement(stmt Statement, params ...Value) (*Result, err
 		return e.executeRollback()
 	default:
 		// All other statements are mutations — ensure COW is active
-		return e.executeMutation(stmt, s, params)
+		return e.executeMutationAtomic(stmt, s, params)
 	}
 }
 
@@ -1277,6 +1279,12 @@ func (e *Engine) executeInsert(s *InsertStmt, params []Value) (*Result, error) {
 	if !ok {
 		return nil, &engineError{"no such table: " + tableName}
 	}
+	if err := validateReturningColumns(tableInfo, s.Returning); err != nil {
+		return nil, err
+	}
+	if s.OrIgnore || s.Conflict != nil || len(s.Returning) > 0 || len(tableInfo.UniqueConstraints) > 0 || s.Select != nil {
+		return e.executeInsertWithConflict(s, params, tableInfo)
+	}
 
 	var lastID int64
 	var totalAffected int64
@@ -1381,6 +1389,9 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 	if !ok {
 		return nil, &engineError{"no such table: " + tableName}
 	}
+	if err := validateReturningColumns(tableInfo, s.Returning); err != nil {
+		return nil, err
+	}
 
 	cursor, err := e.btree.Scan(tableInfo.RootPage)
 	if err != nil {
@@ -1399,9 +1410,11 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 	}
 
 	var totalAffected int64
+	result := &Result{Columns: append([]string(nil), s.Returning...)}
 	var toUpdate []struct {
 		rowid  int64
 		record *Record
+		values []Value
 	}
 
 	for cursor.Next() {
@@ -1413,14 +1426,23 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 		row := recordToValues(record, tableInfo)
 
 		// Build eval context
-		eval := &ExprEval{
-			Row:    append([]Value{IntegerValue(rowid)}, row...),
-			Params: params,
-		}
-		eval.ColumnMap = make(map[string]int)
-		eval.ColumnMap["rowid"] = 0
+		columnMap := make(map[string]int, len(tableInfo.Columns)+1)
+		columnMap["rowid"] = 0
 		for i, col := range tableInfo.Columns {
-			eval.ColumnMap[strings.ToLower(col.Name)] = i + 1
+			columnMap[strings.ToLower(col.Name)] = i + 1
+		}
+		tableMap := map[string]map[string]int{
+			strings.ToLower(tableName): columnMap,
+		}
+		if s.Table.As != "" {
+			tableMap[strings.ToLower(s.Table.As)] = columnMap
+		}
+		eval := &ExprEval{
+			Row:       append([]Value{IntegerValue(rowid)}, row...),
+			ColumnMap: columnMap,
+			TableMap:  tableMap,
+			Params:    params,
+			Engine:    e,
 		}
 
 		// Check WHERE
@@ -1447,6 +1469,14 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 			}
 			newRow[idx] = ApplyAffinity(val, tableInfo.Columns[idx].Affinity)
 		}
+		if err := validateUpdatedRow(tableInfo, row, newRow); err != nil {
+			return nil, err
+		}
+		if _, _, duplicate, err := e.findInsertConflict(tableInfo, newRow, nil, rowid); err != nil {
+			return nil, err
+		} else if duplicate {
+			return nil, &engineError{"UNIQUE constraint failed"}
+		}
 
 		if err := e.checkForeignKeyInsert(tableInfo, newRow); err != nil {
 			return nil, err
@@ -1455,18 +1485,24 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 		toUpdate = append(toUpdate, struct {
 			rowid  int64
 			record *Record
-		}{rowid: rowid, record: valuesToRecord(newRow)})
+			values []Value
+		}{rowid: rowid, record: valuesToRecord(newRow), values: newRow})
 		totalAffected++
+		appendReturningRow(result, tableInfo, newRow)
 	}
 
 	// Apply updates
 	for _, u := range toUpdate {
 		if err := e.btree.Insert(tableInfo.RootPage, u.rowid, u.record); err != nil {
+			if err := e.insertIntoIndexes(tableInfo.Name, u.rowid, u.values); err != nil {
+				return nil, err
+			}
 			return nil, err
 		}
 	}
 
-	return &Result{RowsAffected: totalAffected}, nil
+	result.RowsAffected = totalAffected
+	return result, nil
 }
 
 // ============================================================================
@@ -1518,14 +1554,23 @@ func (e *Engine) executeDelete(s *DeleteStmt, params []Value) (*Result, error) {
 		}
 
 		row := recordToValues(record, tableInfo)
-		eval := &ExprEval{
-			Row:    append([]Value{IntegerValue(rowid)}, row...),
-			Params: params,
-		}
-		eval.ColumnMap = make(map[string]int)
-		eval.ColumnMap["rowid"] = 0
+		columnMap := make(map[string]int, len(tableInfo.Columns)+1)
+		columnMap["rowid"] = 0
 		for i, col := range tableInfo.Columns {
-			eval.ColumnMap[strings.ToLower(col.Name)] = i + 1
+			columnMap[strings.ToLower(col.Name)] = i + 1
+		}
+		tableMap := map[string]map[string]int{
+			strings.ToLower(tableName): columnMap,
+		}
+		if s.Table.As != "" {
+			tableMap[strings.ToLower(s.Table.As)] = columnMap
+		}
+		eval := &ExprEval{
+			Row:       append([]Value{IntegerValue(rowid)}, row...),
+			ColumnMap: columnMap,
+			TableMap:  tableMap,
+			Params:    params,
+			Engine:    e,
 		}
 
 		val, err := eval.Eval(s.Where)
@@ -1592,6 +1637,11 @@ func (e *Engine) executeCreateIndex(s *CreateIndexStmt) (*Result, error) {
 	tableInfo, ok := e.schema.GetTable(s.Table)
 	if !ok {
 		return nil, &engineError{"no such table: " + s.Table}
+	}
+	if s.Unique {
+		if err := e.validateUniqueIndex(tableInfo, indexColumns(s.Columns)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Create the index B-tree
@@ -2827,13 +2877,14 @@ type schemaData struct {
 }
 
 type tableData struct {
-	Name        string      `json:"name"`
-	RootPage    int         `json:"root_page"`
-	SQL         string      `json:"sql"`
-	AutoInc     int64       `json:"auto_inc"`
-	PrimaryKey  int         `json:"primary_key"`
-	Columns     []colData   `json:"columns"`
-	ForeignKeys []fkDataSer `json:"foreign_keys"`
+	Name              string      `json:"name"`
+	RootPage          int         `json:"root_page"`
+	SQL               string      `json:"sql"`
+	AutoInc           int64       `json:"auto_inc"`
+	PrimaryKey        int         `json:"primary_key"`
+	Columns           []colData   `json:"columns"`
+	ForeignKeys       []fkDataSer `json:"foreign_keys"`
+	UniqueConstraints [][]string  `json:"unique_constraints,omitempty"`
 }
 
 type colData struct {

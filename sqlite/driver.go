@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ============================================================================
@@ -343,14 +344,20 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	}
 
 	params := namedValuesToValues(args)
+	parser := NewParser(query)
+	stmt, err := parser.Parse()
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: parse error: %w", err)
+	}
 
 	var result *Result
-	var err error
 	if c.tx != nil {
 		// Already holding write lock from Begin()
-		result, err = c.shared.engine.Execute(query, params...)
+		result, err = c.shared.engine.ExecuteStatement(stmt, params...)
+	} else if isReadStmt(stmt) {
+		result, err = c.shared.executeStmtRead(stmt, params...)
 	} else {
-		result, err = c.shared.executeRead(query, params...)
+		result, err = c.shared.executeStmtWrite(stmt, params...)
 	}
 	if err != nil {
 		return nil, err
@@ -426,7 +433,9 @@ func (s *stmtWrapper) ExecContext(ctx context.Context, args []driver.NamedValue)
 	params := namedValuesToValues(args)
 	var result *Result
 	var err error
-	if isReadStmt(s.astStmt) {
+	if s.conn.tx != nil {
+		result, err = s.conn.shared.engine.ExecuteStatement(s.astStmt, params...)
+	} else if isReadStmt(s.astStmt) {
 		result, err = s.conn.shared.executeStmtRead(s.astStmt, params...)
 	} else {
 		result, err = s.conn.shared.executeStmtWrite(s.astStmt, params...)
@@ -448,7 +457,15 @@ func (s *stmtWrapper) QueryContext(ctx context.Context, args []driver.NamedValue
 	}
 
 	params := namedValuesToValues(args)
-	result, err := s.conn.shared.executeStmtRead(s.astStmt, params...)
+	var result *Result
+	var err error
+	if s.conn.tx != nil {
+		result, err = s.conn.shared.engine.ExecuteStatement(s.astStmt, params...)
+	} else if isReadStmt(s.astStmt) {
+		result, err = s.conn.shared.executeStmtRead(s.astStmt, params...)
+	} else {
+		result, err = s.conn.shared.executeStmtWrite(s.astStmt, params...)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -607,6 +624,13 @@ func interfaceToValue(v interface{}) Value {
 			return IntegerValue(1)
 		}
 		return IntegerValue(0)
+	case time.Time:
+		return TextValue(val.Format(time.RFC3339Nano))
+	case *time.Time:
+		if val == nil {
+			return NullValue
+		}
+		return TextValue(val.Format(time.RFC3339Nano))
 	case *string:
 		if val == nil {
 			return NullValue
@@ -644,10 +668,11 @@ func valueToInterface(v Value) interface{} {
 	}
 }
 
-// countParams counts ? placeholders in a SQL string.
-// Handles ?? (escaped question mark) and ignores ? inside string literals.
+// countParams returns the bind arity for ? and PostgreSQL-style $N
+// placeholders. It ignores placeholders inside string literals.
 func countParams(query string) int {
 	count := 0
+	maxNumbered := 0
 	inString := false
 	i := 0
 	for i < len(query) {
@@ -673,7 +698,23 @@ func countParams(query string) int {
 			}
 			count++
 		}
+		if !inString && ch == '$' && i+1 < len(query) && query[i+1] >= '0' && query[i+1] <= '9' {
+			number := 0
+			j := i + 1
+			for j < len(query) && query[j] >= '0' && query[j] <= '9' {
+				number = number*10 + int(query[j]-'0')
+				j++
+			}
+			if number > maxNumbered {
+				maxNumbered = number
+			}
+			i = j
+			continue
+		}
 		i++
+	}
+	if maxNumbered > count {
+		return maxNumbered
 	}
 	return count
 }
