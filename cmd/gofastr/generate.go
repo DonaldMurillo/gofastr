@@ -35,13 +35,15 @@ func runGenerate(args []string) {
 		generateScaffoldEntity(args[1:])
 	case "screen":
 		generateScaffoldScreen(args[1:])
+	case "cli":
+		runGenerateCLI(args[1:])
 	case "ts", "typescript":
 		fail("TypeScript codegen has been removed. Use gofastr.codegen.yml with a project extension to generate frontend artifacts.")
 		info("See framework/docs/content/codegen.md for the extension protocol.")
 		osExit(1)
 	default:
 		fail("Unknown resource type: %s", resourceType)
-		info("Supported: all")
+		info("Supported: all, entity, screen, cli")
 		osExit(1)
 	}
 }

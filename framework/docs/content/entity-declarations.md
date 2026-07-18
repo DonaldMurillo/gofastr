@@ -676,6 +676,11 @@ For arbitrary configured generators (not a full app blueprint), use a
 `gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for
 config discovery, the extension protocol, and manifest-based cleaning.
 
+To ship the API as a branded terminal client for your customers —
+token auth, filter/sort/pagination flags, batch verbs, a live `watch`
+feed — run `gofastr generate cli` from the app root. See
+[Ship your API as a CLI](app-cli.md).
+
 ## Mounting under a prefix (`APIPrefix`)
 
 By default an entity's CRUD routes mount at its bare name — `GET /posts`,

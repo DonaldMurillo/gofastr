@@ -301,7 +301,9 @@ carries the token for you: set `client.Token` to a plaintext PAT and every
 request sends `Authorization: Bearer gfsk_…`. Bearer requests skip CSRF by
 design, so scripts and CLIs need no cookie or CSRF-token handling — the
 customer flow is: log in to the app's web UI, mint a scoped token via
-`POST /auth/tokens` (TokensPlugin), paste it into the tool once.
+`POST /auth/tokens` (TokensPlugin), paste it into the tool once. The
+generated customer CLI ([Ship your API as a CLI](app-cli.md)) packages
+exactly this flow as its `login` command.
 
 ### Scopes
 
