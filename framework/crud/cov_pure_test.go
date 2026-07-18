@@ -291,6 +291,40 @@ func TestParseNestedFilters_Paths(t *testing.T) {
 	}
 }
 
+// A Hidden column on the TARGET entity must not be reachable as a nested
+// predicate — otherwise ?author.password_hash_like=… resurrects the
+// value-disclosure oracle the flat-filter Hidden exclusion blocks, one
+// relation hop away. The rejection must be non-leaky: identical wording to a
+// nonexistent field, so the error can't distinguish hidden from absent.
+func TestParseNestedFilters_HiddenTargetFieldRejected(t *testing.T) {
+	ent := covRelEntity()
+	reg := stubRegistry{byName: map[string]*entity.Entity{
+		"users": entity.Define("users", entity.EntityConfig{
+			Name: "users", Table: "users",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String},
+				{Name: "password_hash", Type: schema.String, Hidden: true},
+			},
+		}.WithTimestamps(false)),
+	}}
+
+	r := httptest.NewRequest("GET", "/?author.password_hash_like=%242a%2410%24", nil)
+	_, hiddenErr := parseNestedFilters(r, ent, reg)
+	if hiddenErr == nil {
+		t.Fatal("SECURITY: hidden target field reachable as nested predicate")
+	}
+	// Non-leaky: a truly-absent field must produce the same error shape.
+	r2 := httptest.NewRequest("GET", "/?author.nonexistent_like=x", nil)
+	_, absentErr := parseNestedFilters(r2, ent, reg)
+	if absentErr == nil {
+		t.Fatal("nonexistent target field must also error")
+	}
+	norm := func(s, field string) string { return strings.ReplaceAll(s, field, "F") }
+	if norm(hiddenErr.Error(), "password_hash") != norm(absentErr.Error(), "nonexistent") {
+		t.Errorf("SECURITY: hidden vs absent nested errors differ — oracle:\n hidden: %v\n absent: %v", hiddenErr, absentErr)
+	}
+}
+
 func TestAuditCtx_RoundTrip(t *testing.T) {
 	if AuditRequestFromContext(context.Background()) != nil {
 		t.Error("expected nil request when unset")
