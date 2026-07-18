@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -64,7 +65,7 @@ func TestImageResult_EmitsImageBlock(t *testing.T) {
 func TestResult_StructuredContentAndTextMirror(t *testing.T) {
 	s := NewServer()
 	_ = s.RegisterTool("stat", "", nil, func(context.Context, map[string]any) (any, error) {
-		return Result{Structured: map[string]any{"count": 3}}, nil
+		return ToolResult{Structured: map[string]any{"count": 3}}, nil
 	})
 
 	m := wireResult(t, callTool(t, s, "stat", nil))
@@ -82,7 +83,7 @@ func TestResult_StructuredContentAndTextMirror(t *testing.T) {
 func TestResult_ExplicitBlocks(t *testing.T) {
 	s := NewServer()
 	_ = s.RegisterTool("multi", "", nil, func(context.Context, map[string]any) (any, error) {
-		return Result{Content: []Content{TextContent("hi"), ImageContent([]byte{1, 2}, "image/gif")}}, nil
+		return ToolResult{Content: []Content{TextContent("hi"), ImageContent([]byte{1, 2}, "image/gif")}}, nil
 	})
 	m := wireResult(t, callTool(t, s, "multi", nil))
 	content := m["content"].([]any)
@@ -134,7 +135,7 @@ func TestWithMeta_SerializedInList(t *testing.T) {
 	s := NewServer()
 	_ = s.RegisterTool("widget", "", nil,
 		func(context.Context, map[string]any) (any, error) { return nil, nil },
-		WithMeta(map[string]any{"ui": map[string]any{"resourceUri": "ui://app/widget.html"}}))
+		WithToolMeta(map[string]any{"ui": map[string]any{"resourceUri": "ui://app/widget.html"}}))
 
 	resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "tools/list"})
 	m := wireResult(t, resp)
@@ -381,6 +382,62 @@ func TestRegisterApp_Validation(t *testing.T) {
 	bad.HTML = ""
 	if err := s.RegisterApp(bad); err == nil {
 		t.Error("empty HTML should error")
+	}
+}
+
+func TestWithResourceGate_BlocksAndAllows(t *testing.T) {
+	s := NewServer()
+	type ctxKey string
+	const k ctxKey = "ok"
+	gate := func(ctx context.Context) error {
+		if ctx.Value(k) == true {
+			return nil
+		}
+		return fmt.Errorf("forbidden")
+	}
+	_ = s.RegisterResource("sec://x", "X", "text/plain", func(context.Context) (ResourceContents, error) {
+		return ResourceContents{Text: "secret"}, nil
+	}, WithResourceGate(gate))
+
+	p, _ := json.Marshal(map[string]any{"uri": "sec://x"})
+	// Unauthorized: gate refuses, contents never read.
+	deny := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p})
+	if deny.Error == nil {
+		t.Fatal("gated resource read should be refused without auth")
+	}
+	// Authorized: gate passes, contents returned.
+	ctx := context.WithValue(context.Background(), k, true)
+	allow := wireResult(t, s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 2, Method: "resources/read", Params: p}))
+	if allow["contents"].([]any)[0].(map[string]any)["text"] != "secret" {
+		t.Errorf("authorized read did not return contents: %v", allow)
+	}
+}
+
+func TestWithResourceGate_NilPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("WithResourceGate(nil) should panic")
+		}
+	}()
+	_ = WithResourceGate(nil)
+}
+
+func TestRegisterApp_ToolMetaPreservesUILinkage(t *testing.T) {
+	// A caller adding ui.* extras via ToolMeta must NOT clobber the
+	// auto-injected ui.resourceUri linkage the App exists to create.
+	s := NewServer()
+	cfg := sampleApp()
+	cfg.ToolMeta = map[string]any{"ui": map[string]any{"preferredSize": "large"}}
+	if err := s.RegisterApp(cfg); err != nil {
+		t.Fatal(err)
+	}
+	lm := wireResult(t, s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "tools/list"}))
+	ui := lm["tools"].([]any)[0].(map[string]any)["_meta"].(map[string]any)["ui"].(map[string]any)
+	if ui["resourceUri"] != "ui://app/studio.html" {
+		t.Errorf("ToolMeta clobbered ui.resourceUri: %v", ui)
+	}
+	if ui["preferredSize"] != "large" {
+		t.Errorf("caller ui.* extra not preserved: %v", ui)
 	}
 }
 

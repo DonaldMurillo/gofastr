@@ -13,9 +13,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-// ToolHandler is the function signature for MCP tool handlers.
-// It receives a context (carrying auth/tenant info) and a map of
-// parameters, and returns an arbitrary result.
+// ToolHandler is the function signature for MCP tool handlers. It receives a
+// context (carrying auth/tenant info) and a map of parameters.
+//
+// The return value is normalized into the tools/call response by result type:
+//   - mcp.ToolResult — explicit content blocks and/or structuredContent
+//   - mcp.ImageResult — a single base64 image block (renders inline)
+//   - mcp.Content / []mcp.Content — one or more content blocks (build with
+//     TextContent / ImageContent / AudioContent / ResourceContent)
+//   - string — a single text block
+//   - anything else — JSON-marshaled into a text block (the legacy default)
+//
+// A non-nil error is returned as a JSON-RPC error; report an in-band tool
+// failure with mcp.ToolResult{IsError: true} instead.
 type ToolHandler func(ctx context.Context, params map[string]any) (any, error)
 
 // Tool represents a registered MCP tool with its metadata and handler.
@@ -40,9 +50,10 @@ func WithOutputSchema(schema map[string]any) ToolOption {
 	return func(t *Tool) { t.OutputSchema = schema }
 }
 
-// WithMeta attaches a `_meta` object to a tool, serialized verbatim in
-// tools/list. Use it for the MCP Apps UI linkage.
-func WithMeta(meta map[string]any) ToolOption {
+// WithToolMeta attaches a `_meta` object to a tool, serialized verbatim in
+// tools/list. Use it for the MCP Apps UI linkage. Symmetric with
+// WithResourceMeta on the resource side.
+func WithToolMeta(meta map[string]any) ToolOption {
 	return func(t *Tool) { t.Meta = meta }
 }
 

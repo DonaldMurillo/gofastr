@@ -25,7 +25,7 @@ scheduler (#94); fixes ScreenGroup sibling navigation under a default layout
   richer surface MCP Apps and modern clients expect:
   - **Rich tool results.** A `ToolHandler` can return `mcp.ImageResult`
     (an `{type:"image"}` block, base64-encoded — renders inline instead
-    of smuggling base64 through a text field), `mcp.Result{Structured, Content}`
+    of smuggling base64 through a text field), `mcp.ToolResult{Structured, Content}`
     (`structuredContent` + explicit blocks; a structured-only result mirrors
     a text block for plain clients), a `mcp.Content` / `[]mcp.Content`, or a
     plain value (unchanged: JSON-marshaled text). New `TextContent` /
@@ -33,10 +33,11 @@ scheduler (#94); fixes ScreenGroup sibling navigation under a default layout
   - **Resources.** `Server.RegisterResource(uri, name, mimeType, contents)`
     serves `resources/list` + `resources/read` (text or base64 blob);
     registering any resource makes `initialize` advertise the `resources`
-    capability.
+    capability. `mcp.WithResourceGate(gate)` auth-gates a resource's
+    contents (the resource-side analogue of `mcp.Gated`).
   - **Tool / resource `_meta` + `outputSchema`.** `RegisterTool` takes
-    options — `mcp.WithMeta(...)` (serialized verbatim in `tools/list`, the
-    MCP Apps `ui.resourceUri` linkage) and `mcp.WithOutputSchema(...)`;
+    options — `mcp.WithToolMeta(...)` (serialized verbatim in `tools/list`,
+    the MCP Apps `ui.resourceUri` linkage) and `mcp.WithOutputSchema(...)`;
     `mcp.WithResourceMeta(...)` / `WithResourceDescription(...)` for
     resources.
   - **`framework.WithMCPApp(mcp.AppConfig)`** wires an MCP App — a `ui://`

@@ -187,7 +187,7 @@ return mcp.ImageResult{Data: pngBytes, MimeType: "image/png"}, nil
 // Structured output (validated against a declared outputSchema) plus
 // explicit blocks. A structured-only result still mirrors a text block for
 // clients that don't read structuredContent:
-return mcp.Result{
+return mcp.ToolResult{
     Structured: map[string]any{"count": 3},
     Content:    []mcp.Content{mcp.TextContent("3 matches")},
 }, nil
@@ -199,7 +199,7 @@ options:
 ```go
 app.MCP.RegisterTool(name, desc, inputSchema, handler,
     mcp.WithOutputSchema(schema),                    // → tools/list.outputSchema
-    mcp.WithMeta(map[string]any{                     // → tools/list._meta (verbatim)
+    mcp.WithToolMeta(map[string]any{                 // → tools/list._meta (verbatim)
         "ui": map[string]any{"resourceUri": "ui://app/widget.html"},
     }),
 )
@@ -213,8 +213,9 @@ the wire). Attach resource `_meta` with `mcp.WithResourceMeta(...)`. Note
 resources are **not** covered by the tool call gate — `mcp.Gated` /
 `auth.MCPUser` gate tool handlers, not `resources/read`. Public content (an
 MCP App's widget HTML) needs no gating; to serve sensitive or per-caller
-data, self-gate inside the contents func, which receives the auth/tenant
-request context.
+data, add `mcp.WithResourceGate(gate)` (the resource-side analogue of
+`mcp.Gated` — `auth.MCPUser()` / `auth.MCPRole(...)` work as gates), which
+runs before the contents func on every read.
 
 **MCP Apps.** The [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview)
 lets a tool declare an interactive HTML widget the host renders in a

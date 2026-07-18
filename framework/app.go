@@ -2034,6 +2034,12 @@ func (a *App) Start(addr string) error {
 			a.router.Get("/mcp", h)
 		}
 	}
+	// WithMCPApp widgets need /mcp reachable. Warn (don't fail) when an app is
+	// registered but nothing will serve /mcp — a silent prod-only 404 that
+	// works under the dev auto-mount and disappears in production.
+	if len(a.mcpApps) > 0 && !a.mcpAutoMount && !a.routerHasMCPRoute() {
+		a.Logger().Warn("WithMCPApp registered but /mcp is not mounted — the widget and its tool will be unreachable; add framework.WithMCP()")
+	}
 	if a.mcpAutoMount {
 		a.router.Get("/mcp/server-card", http.HandlerFunc(a.handleMCPServerCard))
 		a.router.Get("/.well-known/mcp/catalog.json", http.HandlerFunc(a.handleMCPCatalog))

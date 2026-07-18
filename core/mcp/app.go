@@ -98,15 +98,21 @@ func (s *Server) RegisterApp(cfg AppConfig) error {
 		return err
 	}
 
-	// Tool `_meta`: the standard ui.resourceUri linkage + the ChatGPT
-	// compat alias, then any caller-supplied extras.
-	meta := map[string]any{
-		"ui":                    map[string]any{"resourceUri": cfg.ResourceURI},
-		"openai/outputTemplate": cfg.ResourceURI,
-	}
+	// Tool `_meta`: start from caller-supplied ToolMeta, then stamp the App
+	// linkage so it always wins. The ui.* sub-map is deep-merged, so a caller
+	// can add ui.preferredSize etc. via ToolMeta{"ui": {...}} without
+	// clobbering the ui.resourceUri linkage the App exists to create.
+	meta := map[string]any{}
 	for k, v := range cfg.ToolMeta {
 		meta[k] = v
 	}
+	ui, _ := meta["ui"].(map[string]any)
+	if ui == nil {
+		ui = map[string]any{}
+	}
+	ui["resourceUri"] = cfg.ResourceURI
+	meta["ui"] = ui
+	meta["openai/outputTemplate"] = cfg.ResourceURI
 
-	return s.RegisterTool(cfg.Name, cfg.Description, cfg.InputSchema, cfg.Handler, WithMeta(meta))
+	return s.RegisterTool(cfg.Name, cfg.Description, cfg.InputSchema, cfg.Handler, WithToolMeta(meta))
 }

@@ -32,6 +32,7 @@ type Resource struct {
 	Meta        map[string]any `json:"_meta,omitempty"`
 
 	contents ResourceContentsFunc
+	gate     func(ctx context.Context) error
 }
 
 // ResourceOption customizes a resource at registration time.
@@ -47,6 +48,21 @@ func WithResourceDescription(desc string) ResourceOption {
 // resource's `_meta.ui`.
 func WithResourceMeta(meta map[string]any) ResourceOption {
 	return func(r *Resource) { r.Meta = meta }
+}
+
+// WithResourceGate auth-gates a resource's contents: the gate runs before
+// resources/read invokes the contents func, receiving the read's context
+// (auth/tenant enriched, carrying the inbound request). A non-nil error
+// refuses the read. This is the resource-side analogue of mcp.Gated — use it
+// to serve per-caller or sensitive data via a first-class gate instead of an
+// inline check. Resource metadata (uri/name) still appears in resources/list;
+// the gate protects the contents. battery/auth's auth.MCPUser() /
+// auth.MCPRole(...) work as gates here too.
+func WithResourceGate(gate func(ctx context.Context) error) ResourceOption {
+	if gate == nil {
+		panic("mcp.WithResourceGate: nil gate — a nil precondition would silently allow every caller")
+	}
+	return func(r *Resource) { r.gate = gate }
 }
 
 // RegisterResource adds a resource to the server. Registering at least one
@@ -149,6 +165,14 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 	s.mu.RUnlock()
 	if !ok {
 		return newErrorResponse(req.ID, ErrMethodNotFound, fmt.Sprintf("resource %q not found", params.URI))
+	}
+
+	// Auth gate (WithResourceGate) runs before the contents func — the
+	// resource-side analogue of mcp.Gated. A refusal returns the gate's error.
+	if res.gate != nil {
+		if err := res.gate(ctx); err != nil {
+			return newErrorResponse(req.ID, ErrInternalError, err.Error())
+		}
 	}
 
 	contents, err := s.readResourceContents(ctx, res)

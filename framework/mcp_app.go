@@ -15,9 +15,11 @@ import "github.com/DonaldMurillo/gofastr/core/mcp"
 // duplicate tool name or resource uri is a hard build error.
 //
 // The widget HTML is the app author's job — a single self-contained file with
-// inline JS/CSS works and needs no build step. Attach csp/permissions via the
-// AppConfig's CSP / Permissions fields; they ride on the resource's
-// `_meta.ui`.
+// inline JS/CSS works and needs no build step (a //go:embed string covers
+// most widgets). Attach csp/permissions via the AppConfig's CSP / Permissions
+// fields; they ride on the resource's `_meta.ui`. AppConfig.HTML is a static
+// string; for dynamic or per-caller widget HTML, drop to the primitives
+// (app.MCP.RegisterResource + RegisterTool with mcp.WithToolMeta) directly.
 //
 // Requires the /mcp server to be mounted (WithMCP, or the dev-loop
 // auto-mount).

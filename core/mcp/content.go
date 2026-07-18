@@ -68,13 +68,13 @@ func ResourceContent(uri, mimeType, text string) Content {
 	return Content{Type: "resource", Resource: &EmbeddedResource{URI: uri, MimeType: mimeType, Text: text}}
 }
 
-// Result is a rich tool result a handler can return for full control over the
-// tools/call response: explicit content blocks and/or a structured payload
+// ToolResult is a rich tool result a handler can return for full control over
+// the tools/call response: explicit content blocks and/or a structured payload
 // (structuredContent, machine-readable and validated against the tool's
 // outputSchema). When Content is empty but Structured is set, core/mcp mirrors
 // the structured value into a text block so non-structured clients still see
 // output.
-type Result struct {
+type ToolResult struct {
 	Content    []Content
 	Structured any
 	IsError    bool
@@ -92,9 +92,9 @@ type ImageResult struct {
 // so existing tools are unaffected.
 func normalizeToolResult(result any) toolsCallResult {
 	switch v := result.(type) {
-	case Result:
+	case ToolResult:
 		return richResult(v)
-	case *Result:
+	case *ToolResult:
 		if v == nil {
 			return toolsCallResult{Content: []Content{TextContent("null")}}
 		}
@@ -113,7 +113,7 @@ func normalizeToolResult(result any) toolsCallResult {
 	}
 }
 
-func richResult(r Result) toolsCallResult {
+func richResult(r ToolResult) toolsCallResult {
 	content := r.Content
 	if len(content) == 0 && r.Structured != nil {
 		b, _ := json.Marshal(r.Structured)
