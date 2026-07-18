@@ -5,6 +5,47 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.32.0] - 2026-07-18
+
+Ships the customer-facing CLI (#85): a GoFastr app's HTTP API becomes a
+branded terminal client its developer distributes to *their* customers.
+
+### Added
+
+- **`gofastr generate cli`** (#85). Run from an app root (entities are
+  recovered from project source — no blueprint involved) to emit a
+  standalone, stdlib-only `package main` under `cli/` that imports only the
+  app's `entities/client` package. Every selected entity gets
+  list/get/create/update/patch/delete with schema-derived filter, sort,
+  pagination, `--include`/`--fields`, `-q` (with `SearchFields`) and
+  `--trashed` (with `SoftDelete`) flags, atomic `batch-create`/`batch-update`/
+  `batch-delete`, and a live `watch` (SSE, one JSON line per event).
+  Mutations are presence-faithful: only explicitly-set flags enter the body,
+  so `--published=false` really sends `false`. `login`/`logout` store a
+  scoped API token (flag > `<BINARY>_URL`/`_TOKEN` env > 0600 config file);
+  exit codes are 0/1/2/4 (ok/API error/usage/auth). Selection is declarative
+  (`--only`, `--exclude`, `--verbs` global or per-entity) and a typo'd name
+  or reserved-flag/command collision fails generation. Regeneration is
+  one-shot + `--force`, except `cli/custom.go` — the dev-owned seam whose
+  `customCommands()` merge over (and can override) the generated dispatch
+  table — which is only ever created when absent. See
+  [app-cli](framework/docs/content/app-cli.md).
+- **`auth.RequireAPIScopes(prefix)`**. One mount makes minted token scopes
+  real across the whole auto-CRUD tree: the resource is derived from the
+  path, GET/HEAD need `<resource>:read`, everything else `<resource>:write`;
+  sessions/JWTs and off-prefix paths pass untouched. Without it (or
+  per-route `RequireScope`) a token's scope list is advisory only.
+- **Generated typed client: full CRUD surface + auth.** The
+  `entities/client` package gains an opt-in `Token` field (sent as
+  `Authorization: Bearer …`; bearer requests skip both CSRF layers by
+  design), `BatchCreate/BatchUpdate/BatchDelete<Entity>` mapping the atomic
+  `_batch` routes (a 400 rollback returns the `{committed, results[]}`
+  envelope, not an error), `Watch<Entity>` (blocking SSE loop), and a raw
+  `Do` escape hatch for custom endpoints and presence-faithful map bodies.
+- **Meridian dogfoods the whole path**: TokensPlugin + TokenMiddleware +
+  RequireAPIScopes wired in `app.go`, and its generated CLI is committed at
+  `examples/meridian/cli` so generator drift breaks CI.
+
 ## [0.31.0] - 2026-07-17
 
 Ships process-isolated third-party modules (#37) and cross-replica presence

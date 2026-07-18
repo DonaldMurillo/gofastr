@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.31.0
+through: v0.32.0
 
 releases:
   - version: v0.3.0
@@ -175,3 +175,15 @@ releases:
       - change: Cross-replica presence over fanout (#47)
         breaking: false
         guidance: "Presence rosters now aggregate across serve replicas when WithFanout is configured (dedicated gofastr.presence lane). Additive: single-replica behavior is byte-identical with no fanout."
+  - version: v0.32.0
+    title: Customer-facing CLI generation
+    notes:
+      - change: gofastr generate cli (#85)
+        breaking: false
+        guidance: "New generator: run from an app root to emit a standalone customer CLI under cli/ wrapping the app's entities/client package — CRUD, batch, SSE watch, scoped-token login. Additive; custom.go is the dev-owned extension seam and survives --force regens."
+      - change: auth.RequireAPIScopes blanket scope gate
+        breaking: false
+        guidance: "Minted API-token scopes were advisory unless per-route RequireScope was mounted. Mount auth.RequireAPIScopes(\"/api\") after TokenMiddleware to enforce them across the auto-CRUD tree; sessions and off-prefix paths are untouched. Additive — but hosts that mint scoped tokens should adopt it."
+      - change: Generated typed client grows Token, batch, Watch, and Do
+        breaking: false
+        guidance: "entities/client gains an opt-in Token field (Authorization: Bearer), BatchCreate/BatchUpdate/BatchDelete<Entity>, Watch<Entity> (SSE), and a raw Do escape hatch. Regenerate the client (gofastr generate --force from your blueprint, or re-run pack+generate) to pick them up; existing call sites keep compiling."
