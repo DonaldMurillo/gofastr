@@ -98,6 +98,16 @@ func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, ou
 	return json.Unmarshal(envelope["data"], out)
 }
 
+// Do is the raw escape hatch under the typed methods: it sends method+path
+// with an optional JSON body and decodes the 2xx response into out, applying
+// the same base URL, auth header, and error handling. Reach for it when the
+// typed surface doesn't fit — custom endpoints, or presence-faithful bodies
+// built as map[string]any (a typed Input's json:",omitempty" drops explicit
+// zero values; a map keeps them).
+func (c *Client) Do(ctx context.Context, method, path string, body, out any) error {
+	return c.doJSON(ctx, method, path, body, out)
+}
+
 // BatchResult is one entry in a _batch response, in input order. Exactly one
 // of Data, Error, or Skipped is populated. When a later item failed, earlier
 // successes still carry Data — but Committed=false on the envelope means

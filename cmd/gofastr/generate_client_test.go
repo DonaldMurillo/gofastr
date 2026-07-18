@@ -134,6 +134,22 @@ func TestRenderClient_TokenBearerHeader(t *testing.T) {
 	}
 }
 
+// Do is the exported raw escape hatch: custom endpoints and presence-faithful
+// map bodies (a typed Input's omitempty drops explicit zero values) go
+// through it with the same base URL, token, and error handling.
+func TestRenderClient_ExportedDoEscapeHatch(t *testing.T) {
+	tsOff := false
+	out := renderClient([]framework.EntityDeclaration{{
+		Name:       "posts",
+		Table:      "posts",
+		Timestamps: &tsOff,
+		Fields:     []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+	}})
+	if !strings.Contains(out, "func (c *Client) Do(ctx context.Context, method, path string, body, out any) error") {
+		t.Errorf("renderClient missing exported Do method:\n%s", out)
+	}
+}
+
 // The _batch endpoints are part of the CRUD surface, so the generated client
 // must cover them: BatchCreate (value inputs), BatchUpdate (id + pointer
 // fields, mirroring the PATCH presence semantics), BatchDelete (ids), all
