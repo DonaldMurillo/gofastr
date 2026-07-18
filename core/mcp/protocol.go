@@ -62,11 +62,15 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 		return s.handleToolsList(ctx, req)
 	case "tools/call":
 		return s.handleToolsCall(ctx, req)
+	case "resources/list":
+		return s.handleResourcesList(ctx, req)
+	case "resources/read":
+		return s.handleResourcesRead(ctx, req)
 	case "initialize":
 		// MCP handshake: advertise protocol version + capabilities +
 		// serverInfo so a spec-compliant client (Claude, Cursor, …)
-		// completes the handshake before tools/list. We are a minimal
-		// tool server, so capabilities advertise tools only.
+		// completes the handshake before tools/list. Capabilities
+		// advertise tools always, and resources when any is registered.
 		return s.handleInitialize(req)
 	case "ping":
 		// MCP liveness check — empty result object.
@@ -111,11 +115,15 @@ func (s *Server) handleInitialize(req Request) Response {
 	s.mu.RLock()
 	name, version := s.name, s.version
 	s.mu.RUnlock()
+	capabilities := map[string]any{
+		"tools": map[string]any{"listChanged": false},
+	}
+	if s.hasResources() {
+		capabilities["resources"] = map[string]any{"listChanged": false, "subscribe": false}
+	}
 	return newSuccessResponse(req.ID, map[string]any{
 		"protocolVersion": "2025-06-18",
-		"capabilities": map[string]any{
-			"tools": map[string]any{"listChanged": false},
-		},
-		"serverInfo": map[string]any{"name": name, "version": version},
+		"capabilities":    capabilities,
+		"serverInfo":      map[string]any{"name": name, "version": version},
 	})
 }

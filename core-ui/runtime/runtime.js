@@ -1408,19 +1408,22 @@
       // navigate({force:true})) must show fresh server state, never the
       // cached copy captured before the mutation.
       const cached = bypassCache ? null : getCachedScreen(path);
-      // Skip the cached content-swap when the layout changes — the cache holds
-      // only the <main> fragment, not the new chrome; fall through to a full
-      // fetch + shell swap.
-      if (cached && !layoutWillChange(path)) {
+      // A shared [data-fui-screen-group] between the two paths proves both
+      // render inside the SAME outer shell, so nav is an in-shell content
+      // swap even when the manifest layout name differs (a group screen
+      // reports its INNER layout, which never matches the OUTERMOST
+      // [data-fui-layout] marker — #89). Computed once, gates every branch.
+      const grp = findCommonScreenGroup(prevPath || currentPath, path);
+      // Skip the cached content-swap when the layout changes (and no shared
+      // group) — the cache holds only the <main> fragment, not the new chrome;
+      // fall through to a full fetch + shell swap.
+      if (cached && (grp || !layoutWillChange(path))) {
         // Title first so SR + browser-history see the new title
         // before pushState fires (the click handler does pushState).
         document.title = cached.title;
         announceRoute(cached.title);
-        // Screen group optimization: if both paths share a screen group,
-        // only swap the inner content, preserving the layout shell.
-        const groupEl = findCommonScreenGroup(prevPath || currentPath, path);
-        if (groupEl) {
-          swapScreenGroupContent(groupEl, cached.html);
+        if (grp) {
+          swapScreenGroupContent(grp, cached.html);
         } else {
           swapMainContent(cached.html);
         }
@@ -1433,7 +1436,8 @@
       // Cross-layout nav: fetch the FULL page (no navigate header → server
       // returns the whole shell, not just <main>) and replace the layout
       // shell. Delegated chrome handlers survive the swap — no hard reload.
-      if (layoutWillChange(path)) {
+      // A shared screen group means the shell is shared → never swap it.
+      if (!grp && layoutWillChange(path)) {
         const fr = await fetch(path);
         if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
         const doc = new DOMParser().parseFromString(await fr.text(), 'text/html');
@@ -1496,10 +1500,10 @@
       }
       document.title = title;
       announceRoute(title);
-      // Screen group optimization: preserve layout shell for sibling nav.
-      const groupEl = findCommonScreenGroup(prevPath || currentPath, path);
-      if (groupEl) {
-        swapScreenGroupContent(groupEl, body);
+      // Screen group optimization: preserve layout shell for sibling nav
+      // (grp computed once at the top of loadPage).
+      if (grp) {
+        swapScreenGroupContent(grp, body);
       } else {
         swapMainContent(body);
       }
@@ -1605,15 +1609,15 @@
     // inner group's layout shell is what should survive sibling-nav,
     // not the outer one. We compare by prefix length: longer prefix
     // → more specific → wins.
-    let best = null;
-    let bestLen = -1;
+    // Match with a trailing slash appended so a slashless index path
+    // ("/studio") still counts as inside its group (prefix "/studio/") —
+    // otherwise the group index's first sibling nav misses the swap (#89).
+    let best = null, bestLen = -1;
     for (const g of groups) {
-      const prefix = g.getAttribute('data-fui-screen-group');
-      if (prefix && fromPath.startsWith(prefix) && toPath.startsWith(prefix)) {
-        if (prefix.length > bestLen) {
-          best = g;
-          bestLen = prefix.length;
-        }
+      const pre = g.getAttribute('data-fui-screen-group');
+      if (pre && (fromPath + '/').startsWith(pre) && (toPath + '/').startsWith(pre) && pre.length > bestLen) {
+        best = g;
+        bestLen = pre.length;
       }
     }
     return best;

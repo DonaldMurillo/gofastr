@@ -19,14 +19,9 @@ type toolsCallParams struct {
 
 // toolsCallResult wraps a tool execution result per MCP spec.
 type toolsCallResult struct {
-	Content []toolsCallContent `json:"content"`
-	IsError bool               `json:"isError,omitempty"`
-}
-
-// toolsCallContent is a single content item in a tools/call response.
-type toolsCallContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Content           []Content `json:"content"`
+	StructuredContent any       `json:"structuredContent,omitempty"`
+	IsError           bool      `json:"isError,omitempty"`
 }
 
 // handleToolsList returns all registered tools.
@@ -63,19 +58,8 @@ func (s *Server) handleToolsCall(ctx context.Context, req Request) Response {
 		return newErrorResponse(req.ID, ErrInternalError, err.Error())
 	}
 
-	// Wrap result in MCP content format
-	text := ""
-	switch v := result.(type) {
-	case string:
-		text = v
-	default:
-		b, _ := json.Marshal(v)
-		text = string(b)
-	}
-
-	return newSuccessResponse(req.ID, toolsCallResult{
-		Content: []toolsCallContent{
-			{Type: "text", Text: text},
-		},
-	})
+	// Normalize the handler's return into MCP content. A plain value keeps
+	// the legacy JSON-marshaled text shape; a mcp.ToolResult / mcp.ImageResult /
+	// mcp.Content / []mcp.Content emits rich blocks + structuredContent.
+	return newSuccessResponse(req.ID, normalizeToolResult(result))
 }
