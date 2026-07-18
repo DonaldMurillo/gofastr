@@ -2,11 +2,24 @@ package main
 
 import (
 	"bufio"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 )
+
+// parseOrHelp parses args, mapping --help to exit 0 and bad flags to 2.
+func parseOrHelp(fs *flag.FlagSet, args []string) (ok bool, code int) {
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return false, 0
+		}
+		return false, 2
+	}
+	return true, 0
+}
 
 // runLogin stores the server URL and an API token. Tokens are minted in the
 // app (a logged-in browser session POSTs /auth/tokens); the CLI only stores
@@ -18,8 +31,8 @@ func runLogin(args []string) int {
 	fs := newFlagSet("login")
 	urlF := fs.String("url", "", "server URL to store (e.g. https://app.example.com)")
 	withToken := fs.Bool("with-token", false, "read the API token from stdin")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if ok, code := parseOrHelp(fs, args); !ok {
+		return code
 	}
 	cfg := loadConfig()
 	if *urlF != "" {
@@ -65,8 +78,8 @@ func runLogin(args []string) int {
 // runLogout removes the stored token (the URL is kept for the next login).
 func runLogout(args []string) int {
 	fs := newFlagSet("logout")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if ok, code := parseOrHelp(fs, args); !ok {
+		return code
 	}
 	cfg := loadConfig()
 	if cfg.Token == "" {

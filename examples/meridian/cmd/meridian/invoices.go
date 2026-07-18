@@ -10,6 +10,7 @@ import (
 
 func invoicesCommands() []command {
 	return []command{
+		{name: "invoices", summary: "manage invoices (run for subcommands)", run: func(args []string) int { return groupUsage("invoices", args) }},
 		{name: "invoices list", summary: "list invoices (filters, sort, pagination)", run: runInvoicesList},
 		{name: "invoices get", summary: "fetch one record by id", run: runInvoicesGet},
 		{name: "invoices create", summary: "create a record from field flags or --json", run: runInvoicesCreate},
@@ -59,7 +60,7 @@ func runInvoicesList(args []string) int {
 	fltPaidOnLT := fs.String("paid-on-lt", "", "filter: paid_on lt")
 	fltPaidOnLTE := fs.String("paid-on-lte", "", "filter: paid_on lte")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	q := url.Values{}
@@ -128,7 +129,7 @@ func runInvoicesGet(args []string) int {
 	}
 	fs := newFlagSet("invoices get")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	var out singleResponse
@@ -149,7 +150,7 @@ func runInvoicesCreate(args []string) int {
 	fldDueOn := fs.String("due-on", "", "due_on (date)")
 	fldPaidOn := fs.String("paid-on", "", "paid_on (date)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -197,7 +198,7 @@ func runInvoicesUpdate(args []string) int {
 	fldDueOn := fs.String("due-on", "", "due_on (date)")
 	fldPaidOn := fs.String("paid-on", "", "paid_on (date)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -245,7 +246,7 @@ func runInvoicesPatch(args []string) int {
 	fldDueOn := fs.String("due-on", "", "due_on (date)")
 	fldPaidOn := fs.String("paid-on", "", "paid_on (date)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -284,7 +285,7 @@ func runInvoicesDelete(args []string) int {
 	}
 	fs := newFlagSet("invoices delete")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	if err := g.client.Do(g.ctx, http.MethodDelete, "/invoices/"+url.PathEscape(id), nil, nil); err != nil {
@@ -300,7 +301,7 @@ func runInvoicesBatchCreate(args []string) int {
 	fs := newFlagSet("invoices batch-create")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -320,7 +321,7 @@ func runInvoicesBatchUpdate(args []string) int {
 	fs := newFlagSet("invoices batch-update")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -345,7 +346,7 @@ func runInvoicesBatchDelete(args []string) int {
 	}
 	fs := newFlagSet("invoices batch-delete")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	for _, id := range fs.Args() {
@@ -371,7 +372,7 @@ func runInvoicesBatchDelete(args []string) int {
 func runInvoicesWatch(args []string) int {
 	fs := newFlagSet("invoices watch")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)

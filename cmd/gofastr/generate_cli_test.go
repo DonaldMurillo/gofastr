@@ -91,8 +91,13 @@ func TestRenderCLI_CommandTreePerEntity(t *testing.T) {
 		}
 	}
 
+	if !strings.Contains(files["main.go"], "func groupUsage(") {
+		t.Errorf("main.go missing groupUsage helper")
+	}
+
 	posts := files["posts.go"]
 	for _, w := range []string{
+		`{name: "posts",`, // bare entity command → group help
 		`{name: "posts list"`,
 		`{name: "posts get"`,
 		`{name: "posts create"`,
@@ -360,11 +365,11 @@ func TestGenerateCLI_BuildsCleanly(t *testing.T) {
 	runGenerateCLI([]string{"--binary=myapp"})
 
 	for _, f := range []string{"main.go", "config.go", "auth.go", "output.go", "custom.go", "posts.go", "documents.go"} {
-		if _, err := os.Stat(filepath.Join(dir, "cli", f)); err != nil {
-			t.Fatalf("cli/%s not written: %v", f, err)
+		if _, err := os.Stat(filepath.Join(dir, "cmd", "myapp", f)); err != nil {
+			t.Fatalf("cmd/myapp/%s not written: %v", f, err)
 		}
 	}
-	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "myapp-bin"), "./cli")
+	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "myapp-bin"), "./cmd/myapp")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("generated CLI did not build: %v\n%s", err, out)
@@ -377,7 +382,7 @@ func TestGenerateCLI_CustomSeamSurvives(t *testing.T) {
 	dir := cliTempModule(t)
 	runGenerateCLI([]string{"--binary=myapp"})
 
-	customPath := filepath.Join(dir, "cli", "custom.go")
+	customPath := filepath.Join(dir, "cmd", "myapp", "custom.go")
 	custom := `package main
 
 import (
@@ -413,7 +418,7 @@ func configureClient(c *client.Client) {}
 	}
 
 	bin := filepath.Join(dir, "myapp-cli")
-	cmd := exec.Command("go", "build", "-o", bin, "./cli")
+	cmd := exec.Command("go", "build", "-o", bin, "./cmd/myapp")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("CLI with custom.go did not build: %v\n%s", err, out)
@@ -434,7 +439,7 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 	dir := cliTempModule(t)
 	runGenerateCLI([]string{"--binary=myapp"})
 	bin := filepath.Join(dir, "myapp")
-	build := exec.Command("go", "build", "-o", bin, "./cli")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/myapp")
 	build.Dir = dir
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, out)
@@ -499,8 +504,27 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 		return string(out), code
 	}
 
+	// help surfaces: root usage, bare entity group, verb --help — all exit 0;
+	// an unknown subcommand exits 2 but still shows the group usage
+	out, code := run("--help")
+	if code != 0 || !strings.Contains(out, "posts list") {
+		t.Fatalf("root help exited %d: %s", code, out)
+	}
+	if out, code = run("posts"); code != 0 || !strings.Contains(out, "posts watch") {
+		t.Fatalf("bare entity group help exited %d: %s", code, out)
+	}
+	if out, code = run("posts", "list", "--help"); code != 0 || !strings.Contains(out, "-views-gt") {
+		t.Fatalf("verb --help exited %d: %s", code, out)
+	}
+	if out, code = run("login", "--help"); code != 0 || !strings.Contains(out, "with-token") {
+		t.Fatalf("login --help exited %d: %s", code, out)
+	}
+	if out, code = run("posts", "frobnicate"); code != 2 || !strings.Contains(out, "posts list") {
+		t.Fatalf("unknown subcommand should exit 2 with group usage, got %d: %s", code, out)
+	}
+
 	// create via field flags
-	out, code := run("posts", "create", "--title", "hello", "--views", "3")
+	out, code = run("posts", "create", "--title", "hello", "--views", "3")
 	if code != 0 {
 		t.Fatalf("create exited %d: %s", code, out)
 	}

@@ -13,8 +13,9 @@ import (
 
 // `gofastr generate cli` emits a customer-facing terminal client for the
 // app's HTTP API: a standalone, stdlib-only `package main` under --out
-// (default cli/) that imports only the app's generated entities/client
-// package. It is the terminal twin of the typed client — every selected
+// (default cmd/<binary>/, so `go install <module>/cmd/<binary>@latest`
+// produces a correctly-named binary) that imports only the app's generated
+// entities/client package. It is the terminal twin of the typed client — every selected
 // entity gets list/get/create/update/patch/delete, the _batch verbs, and a
 // live `watch` (SSE), plus login/logout commands that store a scoped API
 // token. Like the blueprint, generation is one-shot owned code: it refuses
@@ -89,7 +90,7 @@ func runGenerateCLI(args []string) {
 	opts, err := parseCLIOptions(args)
 	if err != nil {
 		fail("%v", err)
-		info("Usage: gofastr generate cli [--out=cli] [--binary=<name>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--verbs=list,get | --verbs='posts=list,get;users=*'] [--force] [--dry-run] [--json]")
+		info("Usage: gofastr generate cli [--out=cmd/<binary>] [--binary=<name>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--verbs=list,get | --verbs='posts=list,get;users=*'] [--force] [--dry-run] [--json]")
 		osExit(1)
 		return
 	}
@@ -125,6 +126,12 @@ func runGenerateCLI(args []string) {
 	}
 	if opts.binary == "" {
 		opts.binary = strings.ToLower(filepath.Base(abs))
+	}
+	// Default layout is cmd/<binary>/ — the standard installable-main
+	// convention, so `go install <module>/cmd/<binary>@latest` (public
+	// modules) names the binary correctly.
+	if opts.outDir == "" {
+		opts.outDir = filepath.ToSlash(filepath.Join("cmd", opts.binary))
 	}
 
 	spec, err := buildCLISpec(decls, opts, importBase+"/entities/client")
@@ -232,7 +239,7 @@ func splitCommaList(v string) []string {
 }
 
 func parseCLIOptions(args []string) (cliOptions, error) {
-	opts := cliOptions{outDir: "cli", apiPrefix: "api"}
+	opts := cliOptions{apiPrefix: "api"}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		nextValue := func() (string, bool) {
@@ -543,7 +550,7 @@ func cliSelectionNote(opts cliOptions) string {
 	if opts.verbs != "" {
 		parts = append(parts, "--verbs='"+opts.verbs+"'")
 	}
-	if opts.outDir != "cli" {
+	if opts.outDir != "" && opts.outDir != filepath.ToSlash(filepath.Join("cmd", opts.binary)) {
 		parts = append(parts, "--out="+opts.outDir)
 	}
 	if len(parts) == 0 {
@@ -608,7 +615,9 @@ type command struct {
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-func run(args []string) int {
+// commandMap merges customCommands() over the generated set — a custom
+// entry with a generated name replaces it.
+func commandMap() map[string]command {
 	cmds := map[string]command{}
 	for _, c := range builtinCommands() {
 		cmds[c.name] = c
@@ -616,6 +625,11 @@ func run(args []string) int {
 	for _, c := range customCommands() {
 		cmds[c.name] = c
 	}
+	return cmds
+}
+
+func run(args []string) int {
+	cmds := commandMap()
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		printUsage(cmds)
 		return 0
@@ -663,6 +677,30 @@ func printUsage(cmds map[string]command) {
 		fmt.Printf("  %-28s %s\n", name, cmds[name].summary)
 	}
 	fmt.Printf("\nConnection: --url/--token flags, %s_URL/%s_TOKEN env vars, or ` + "`%s login`" + `.\n", envPrefix, envPrefix, binaryName)
+}
+
+// groupUsage prints one command group's subcommands (the bare entity
+// command lands here). A stray argument means an unknown subcommand:
+// usage still prints, exit is 2.
+func groupUsage(group string, args []string) int {
+	code := 0
+	if len(args) > 0 && args[0] != "--help" && args[0] != "-h" && args[0] != "help" {
+		fmt.Fprintf(os.Stderr, "%s %s: unknown subcommand %q\n\n", binaryName, group, args[0])
+		code = 2
+	}
+	cmds := commandMap()
+	fmt.Printf("Usage: %s %s <subcommand> [flags]\n\nSubcommands:\n", binaryName, group)
+	names := make([]string, 0, len(cmds))
+	for name := range cmds {
+		if strings.HasPrefix(name, group+" ") {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Printf("  %-28s %s\n", name, cmds[name].summary)
+	}
+	return code
 }
 `)
 	return sb.String()
@@ -745,11 +783,24 @@ func renderCLIAuth(spec cliSpec) string {
 
 import (
 	"bufio"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 )
+
+// parseOrHelp parses args, mapping --help to exit 0 and bad flags to 2.
+func parseOrHelp(fs *flag.FlagSet, args []string) (ok bool, code int) {
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return false, 0
+		}
+		return false, 2
+	}
+	return true, 0
+}
 
 // runLogin stores the server URL and an API token. Tokens are minted in the
 // app (a logged-in browser session POSTs /auth/tokens); the CLI only stores
@@ -761,8 +812,8 @@ func runLogin(args []string) int {
 	fs := newFlagSet("login")
 	urlF := fs.String("url", "", "server URL to store (e.g. https://app.example.com)")
 	withToken := fs.Bool("with-token", false, "read the API token from stdin")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if ok, code := parseOrHelp(fs, args); !ok {
+		return code
 	}
 	cfg := loadConfig()
 	if *urlF != "" {
@@ -808,8 +859,8 @@ func runLogin(args []string) int {
 // runLogout removes the stored token (the URL is kept for the next login).
 func runLogout(args []string) int {
 	fs := newFlagSet("logout")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if ok, code := parseOrHelp(fs, args); !ok {
+		return code
 	}
 	cfg := loadConfig()
 	if cfg.Token == "" {
@@ -858,12 +909,15 @@ func newFlagSet(name string) *flag.FlagSet {
 }
 
 // parseGlobals registers the connection flags, parses args, and builds the
-// client. Resolution order: flag > env > stored config. The non-nil exit
-// code is 2 (usage) when parsing or resolution fails.
+// client. Resolution order: flag > env > stored config. A nil *global means
+// don't proceed: exit 0 for --help, 2 for usage/resolution failures.
 func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 	urlF := fs.String("url", "", "server URL (default $"+envPrefix+"_URL, then stored config)")
 	tokenF := fs.String("token", "", "API token (default $"+envPrefix+"_TOKEN, then stored config)")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil, 0
+		}
 		return nil, 2
 	}
 	cfg := loadConfig()
@@ -1153,8 +1207,10 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	}
 	sb.WriteString(")\n\n")
 
-	// Command table.
+	// Command table. The bare entity command prints its subcommand list.
 	fmt.Fprintf(&sb, "func %sCommands() []command {\n\treturn []command{\n", lowerFirst(ent.Struct))
+	fmt.Fprintf(&sb, "\t\t{name: %q, summary: %q, run: func(args []string) int { return groupUsage(%q, args) }},\n",
+		ent.Command, "manage "+ent.Table+" (run for subcommands)", ent.Command)
 	summaries := map[string]string{
 		"list":         "list " + ent.Table + " (filters, sort, pagination)",
 		"get":          "fetch one record by id",
@@ -1187,7 +1243,7 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	}
 	fs := newFlagSet(%q)
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	var out singleResponse
@@ -1216,7 +1272,7 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	}
 	fs := newFlagSet(%q)
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	if err := g.client.Do(g.ctx, http.MethodDelete, "/%s/"+url.PathEscape(id), nil, nil); err != nil {
@@ -1246,7 +1302,7 @@ func run%sBatchDelete(args []string) int {
 	}
 	fs := newFlagSet(%q)
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	for _, id := range fs.Args() {
@@ -1275,7 +1331,7 @@ func run%sBatchDelete(args []string) int {
 func run%sWatch(args []string) int {
 	fs := newFlagSet(%q)
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)
@@ -1346,7 +1402,7 @@ func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
 		}
 	}
 	sb.WriteString(`	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	q := url.Values{}
@@ -1451,7 +1507,7 @@ func renderCLIMutationVerb(sb *strings.Builder, ent cliEntity, verb string) {
 		}
 	}
 	sb.WriteString(`	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -1501,7 +1557,7 @@ func run%s%s(args []string) int {
 	fs := newFlagSet(%q)
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)

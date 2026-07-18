@@ -10,6 +10,7 @@ import (
 
 func customersCommands() []command {
 	return []command{
+		{name: "customers", summary: "manage customers (run for subcommands)", run: func(args []string) int { return groupUsage("customers", args) }},
 		{name: "customers list", summary: "list customers (filters, sort, pagination)", run: runCustomersList},
 		{name: "customers get", summary: "fetch one record by id", run: runCustomersGet},
 		{name: "customers create", summary: "create a record from field flags or --json", run: runCustomersCreate},
@@ -47,7 +48,7 @@ func runCustomersList(args []string) int {
 	fltMrrLT := fs.String("mrr-lt", "", "filter: mrr lt")
 	fltMrrLTE := fs.String("mrr-lte", "", "filter: mrr lte")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	q := url.Values{}
@@ -104,7 +105,7 @@ func runCustomersGet(args []string) int {
 	}
 	fs := newFlagSet("customers get")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	var out singleResponse
@@ -123,7 +124,7 @@ func runCustomersCreate(args []string) int {
 	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
 	fldMrr := fs.String("mrr", "", "mrr (decimal)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -165,7 +166,7 @@ func runCustomersUpdate(args []string) int {
 	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
 	fldMrr := fs.String("mrr", "", "mrr (decimal)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -207,7 +208,7 @@ func runCustomersPatch(args []string) int {
 	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
 	fldMrr := fs.String("mrr", "", "mrr (decimal)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -242,7 +243,7 @@ func runCustomersDelete(args []string) int {
 	}
 	fs := newFlagSet("customers delete")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	if err := g.client.Do(g.ctx, http.MethodDelete, "/customers/"+url.PathEscape(id), nil, nil); err != nil {
@@ -258,7 +259,7 @@ func runCustomersBatchCreate(args []string) int {
 	fs := newFlagSet("customers batch-create")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -278,7 +279,7 @@ func runCustomersBatchUpdate(args []string) int {
 	fs := newFlagSet("customers batch-update")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -303,7 +304,7 @@ func runCustomersBatchDelete(args []string) int {
 	}
 	fs := newFlagSet("customers batch-delete")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	for _, id := range fs.Args() {
@@ -329,7 +330,7 @@ func runCustomersBatchDelete(args []string) int {
 func runCustomersWatch(args []string) int {
 	fs := newFlagSet("customers watch")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)

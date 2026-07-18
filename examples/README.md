@@ -9,7 +9,7 @@ Self-contained Go programs — `go run ./examples/<name>`:
 | Example | What it shows |
 |---|---|
 | `blog` | Entities in Go + custom endpoints + full-text search; the canonical starter. |
-| `meridian` | The flagship SaaS app (blueprint-generated, then owned): auth + owner-scoped CRUD, scoped API tokens, and a generated customer CLI under `meridian/cli` — build it with `go build -o meridian ./examples/meridian/cli`, docs at `gofastr docs app-cli`. |
+| `meridian` | The flagship SaaS app (blueprint-generated, then owned): auth + owner-scoped CRUD, scoped API tokens, and a generated customer CLI under `meridian/cmd/meridian` — `go install ./examples/meridian/cmd/meridian`, docs at `gofastr docs app-cli`. |
 | `api-tour` | The v2 REST API: includes, cursor pagination, batch, SSE. |
 | `backoffice` | The entity admin (`battery/admin`) behind a demo login. |
 | `spa` | Client-side navigation over server-rendered islands. |

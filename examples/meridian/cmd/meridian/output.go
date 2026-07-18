@@ -28,12 +28,15 @@ func newFlagSet(name string) *flag.FlagSet {
 }
 
 // parseGlobals registers the connection flags, parses args, and builds the
-// client. Resolution order: flag > env > stored config. The non-nil exit
-// code is 2 (usage) when parsing or resolution fails.
+// client. Resolution order: flag > env > stored config. A nil *global means
+// don't proceed: exit 0 for --help, 2 for usage/resolution failures.
 func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 	urlF := fs.String("url", "", "server URL (default $"+envPrefix+"_URL, then stored config)")
 	tokenF := fs.String("token", "", "API token (default $"+envPrefix+"_TOKEN, then stored config)")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil, 0
+		}
 		return nil, 2
 	}
 	cfg := loadConfig()

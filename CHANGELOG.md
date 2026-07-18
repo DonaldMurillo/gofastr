@@ -14,7 +14,8 @@ branded terminal client its developer distributes to *their* customers.
 
 - **`gofastr generate cli`** (#85). Run from an app root (entities are
   recovered from project source — no blueprint involved) to emit a
-  standalone, stdlib-only `package main` under `cli/` that imports only the
+  standalone, stdlib-only `package main` under `cmd/<binary>/` (go-install-
+  friendly; cross-compiles anywhere Go does) that imports only the
   app's `entities/client` package. Every selected entity gets
   list/get/create/update/patch/delete with schema-derived filter, sort,
   pagination, `--include`/`--fields`, `-q` (with `SearchFields`) and
@@ -26,7 +27,7 @@ branded terminal client its developer distributes to *their* customers.
   exit codes are 0/1/2/4 (ok/API error/usage/auth). Selection is declarative
   (`--only`, `--exclude`, `--verbs` global or per-entity) and a typo'd name
   or reserved-flag/command collision fails generation. Regeneration is
-  one-shot + `--force`, except `cli/custom.go` — the dev-owned seam whose
+  one-shot + `--force`, except `custom.go` — the dev-owned seam whose
   `customCommands()` merge over (and can override) the generated dispatch
   table — which is only ever created when absent. See
   [app-cli](framework/docs/content/app-cli.md).
@@ -44,7 +45,8 @@ branded terminal client its developer distributes to *their* customers.
   `Do` escape hatch for custom endpoints and presence-faithful map bodies.
 - **Meridian dogfoods the whole path**: TokensPlugin + TokenMiddleware +
   RequireAPIScopes wired in `app.go`, and its generated CLI is committed at
-  `examples/meridian/cli` so generator drift breaks CI.
+  `examples/meridian/cmd/meridian` so generator drift breaks CI
+  (`go install github.com/DonaldMurillo/gofastr/examples/meridian/cmd/meridian@latest`).
 
 ## [0.31.0] - 2026-07-17
 

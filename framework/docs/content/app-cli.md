@@ -11,13 +11,26 @@ plus batch operations and a live event stream.
 ```bash
 cd your-app        # the directory holding entities/
 gofastr generate cli
-go build -o myapp ./cli
+go build ./cmd/myapp
 ```
 
 The generator reads the entity set from your project source
 (`entities/*.go`, the same recovery machinery `gofastr pack` trusts) —
 no blueprint or YAML involved. It needs an enclosing `go.mod` to derive
 the client import path.
+
+The output is pure stdlib Go, so it builds for every platform Go
+targets — cross-compile releases with `GOOS`/`GOARCH`
+(`GOOS=windows GOARCH=amd64 go build ./cmd/myapp`), and the config file
+lands in each OS's native config dir (`os.UserConfigDir`). The default
+output directory is `cmd/<binary>/`, the standard installable-main
+layout: if your module is public, customers can install directly with
+
+```bash
+go install your.module/path/cmd/myapp@latest
+```
+
+For closed-source apps, distribute the cross-compiled binaries.
 
 ## What your customers get
 
@@ -35,6 +48,12 @@ myapp posts batch-delete id1 id2 id3
 myapp posts watch                          # live SSE feed, one JSON line/event
 myapp posts delete 42
 ```
+
+Help is built in at every level, always exiting 0: bare `myapp` (or
+`help`/`--help`) lists every command, a bare entity command
+(`myapp posts`) lists that entity's subcommands, and `--help` on any
+verb prints its full flag reference. An unknown subcommand prints the
+group usage and exits 2. `version` prints the binary name.
 
 Per verb:
 
@@ -103,7 +122,7 @@ batch-delete watch`. Excluded entities and verbs render nothing — there
 is no dead code to strip. The chosen selection is echoed in the
 generated `main.go` header so a later `--force` regen can reproduce it.
 
-Other flags: `--out=cli` (target directory), `--binary=<name>` (command
+Other flags: `--out=cmd/<binary>` (target directory), `--binary=<name>` (command
 name; defaults to the project directory, and drives the env-var
 prefix), `--api-prefix=api` (must match your `AppConfig.APIPrefix` —
 it's baked into the client's base URL so customers pass a bare server
@@ -112,7 +131,7 @@ URL), `--dry-run`, `--json`.
 ## Extending and regenerating
 
 Generation is one-shot owned code: re-running refuses to overwrite and
-`--force` regenerates — **except `cli/custom.go`, which is only ever
+`--force` regenerates — **except `custom.go`, which is only ever
 created when absent**. That file is the extension seam:
 
 - `customCommands()` is merged over the generated command table; an

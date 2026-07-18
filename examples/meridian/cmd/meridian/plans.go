@@ -10,6 +10,7 @@ import (
 
 func plansCommands() []command {
 	return []command{
+		{name: "plans", summary: "manage plans (run for subcommands)", run: func(args []string) int { return groupUsage("plans", args) }},
 		{name: "plans list", summary: "list plans (filters, sort, pagination)", run: runPlansList},
 		{name: "plans get", summary: "fetch one record by id", run: runPlansGet},
 		{name: "plans create", summary: "create a record from field flags or --json", run: runPlansCreate},
@@ -46,7 +47,7 @@ func runPlansList(args []string) int {
 	fltInterval := fs.String("interval", "", "filter: interval equals (comma list = IN) [month|year]")
 	fltActive := fs.String("active", "", "filter: active equals (comma list = IN)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	q := url.Values{}
@@ -102,7 +103,7 @@ func runPlansGet(args []string) int {
 	}
 	fs := newFlagSet("plans get")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	var out singleResponse
@@ -121,7 +122,7 @@ func runPlansCreate(args []string) int {
 	fldInterval := fs.String("interval", "", "interval (enum) [month|year]")
 	fldActive := fs.Bool("active", false, "active (bool)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -163,7 +164,7 @@ func runPlansUpdate(args []string) int {
 	fldInterval := fs.String("interval", "", "interval (enum) [month|year]")
 	fldActive := fs.Bool("active", false, "active (bool)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -205,7 +206,7 @@ func runPlansPatch(args []string) int {
 	fldInterval := fs.String("interval", "", "interval (enum) [month|year]")
 	fldActive := fs.Bool("active", false, "active (bool)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -240,7 +241,7 @@ func runPlansDelete(args []string) int {
 	}
 	fs := newFlagSet("plans delete")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	if err := g.client.Do(g.ctx, http.MethodDelete, "/plans/"+url.PathEscape(id), nil, nil); err != nil {
@@ -256,7 +257,7 @@ func runPlansBatchCreate(args []string) int {
 	fs := newFlagSet("plans batch-create")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -276,7 +277,7 @@ func runPlansBatchUpdate(args []string) int {
 	fs := newFlagSet("plans batch-update")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -301,7 +302,7 @@ func runPlansBatchDelete(args []string) int {
 	}
 	fs := newFlagSet("plans batch-delete")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	for _, id := range fs.Args() {
@@ -327,7 +328,7 @@ func runPlansBatchDelete(args []string) int {
 func runPlansWatch(args []string) int {
 	fs := newFlagSet("plans watch")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)

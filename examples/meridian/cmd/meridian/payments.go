@@ -10,6 +10,7 @@ import (
 
 func paymentsCommands() []command {
 	return []command{
+		{name: "payments", summary: "manage payments (run for subcommands)", run: func(args []string) int { return groupUsage("payments", args) }},
 		{name: "payments list", summary: "list payments (filters, sort, pagination)", run: runPaymentsList},
 		{name: "payments get", summary: "fetch one record by id", run: runPaymentsGet},
 		{name: "payments create", summary: "create a record from field flags or --json", run: runPaymentsCreate},
@@ -44,7 +45,7 @@ func runPaymentsList(args []string) int {
 	fltMethod := fs.String("method", "", "filter: method equals (comma list = IN) [card|ach|wire]")
 	fltStatus := fs.String("status", "", "filter: status equals (comma list = IN) [succeeded|failed|refunded]")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	q := url.Values{}
@@ -98,7 +99,7 @@ func runPaymentsGet(args []string) int {
 	}
 	fs := newFlagSet("payments get")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	var out singleResponse
@@ -117,7 +118,7 @@ func runPaymentsCreate(args []string) int {
 	fldMethod := fs.String("method", "", "method (enum) [card|ach|wire]")
 	fldStatus := fs.String("status", "", "status (enum) [succeeded|failed|refunded]")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -159,7 +160,7 @@ func runPaymentsUpdate(args []string) int {
 	fldMethod := fs.String("method", "", "method (enum) [card|ach|wire]")
 	fldStatus := fs.String("status", "", "status (enum) [succeeded|failed|refunded]")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -201,7 +202,7 @@ func runPaymentsPatch(args []string) int {
 	fldMethod := fs.String("method", "", "method (enum) [card|ach|wire]")
 	fldStatus := fs.String("status", "", "status (enum) [succeeded|failed|refunded]")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -236,7 +237,7 @@ func runPaymentsDelete(args []string) int {
 	}
 	fs := newFlagSet("payments delete")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	if err := g.client.Do(g.ctx, http.MethodDelete, "/payments/"+url.PathEscape(id), nil, nil); err != nil {
@@ -252,7 +253,7 @@ func runPaymentsBatchCreate(args []string) int {
 	fs := newFlagSet("payments batch-create")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -272,7 +273,7 @@ func runPaymentsBatchUpdate(args []string) int {
 	fs := newFlagSet("payments batch-update")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -297,7 +298,7 @@ func runPaymentsBatchDelete(args []string) int {
 	}
 	fs := newFlagSet("payments batch-delete")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	for _, id := range fs.Args() {
@@ -323,7 +324,7 @@ func runPaymentsBatchDelete(args []string) int {
 func runPaymentsWatch(args []string) int {
 	fs := newFlagSet("payments watch")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)

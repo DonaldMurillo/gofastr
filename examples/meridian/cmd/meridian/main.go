@@ -28,7 +28,9 @@ type command struct {
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-func run(args []string) int {
+// commandMap merges customCommands() over the generated set — a custom
+// entry with a generated name replaces it.
+func commandMap() map[string]command {
 	cmds := map[string]command{}
 	for _, c := range builtinCommands() {
 		cmds[c.name] = c
@@ -36,6 +38,11 @@ func run(args []string) int {
 	for _, c := range customCommands() {
 		cmds[c.name] = c
 	}
+	return cmds
+}
+
+func run(args []string) int {
+	cmds := commandMap()
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		printUsage(cmds)
 		return 0
@@ -81,4 +88,28 @@ func printUsage(cmds map[string]command) {
 		fmt.Printf("  %-28s %s\n", name, cmds[name].summary)
 	}
 	fmt.Printf("\nConnection: --url/--token flags, %s_URL/%s_TOKEN env vars, or `%s login`.\n", envPrefix, envPrefix, binaryName)
+}
+
+// groupUsage prints one command group's subcommands (the bare entity
+// command lands here). A stray argument means an unknown subcommand:
+// usage still prints, exit is 2.
+func groupUsage(group string, args []string) int {
+	code := 0
+	if len(args) > 0 && args[0] != "--help" && args[0] != "-h" && args[0] != "help" {
+		fmt.Fprintf(os.Stderr, "%s %s: unknown subcommand %q\n\n", binaryName, group, args[0])
+		code = 2
+	}
+	cmds := commandMap()
+	fmt.Printf("Usage: %s %s <subcommand> [flags]\n\nSubcommands:\n", binaryName, group)
+	names := make([]string, 0, len(cmds))
+	for name := range cmds {
+		if strings.HasPrefix(name, group+" ") {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Printf("  %-28s %s\n", name, cmds[name].summary)
+	}
+	return code
 }

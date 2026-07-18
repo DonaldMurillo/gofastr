@@ -10,6 +10,7 @@ import (
 
 func subscriptionsCommands() []command {
 	return []command{
+		{name: "subscriptions", summary: "manage subscriptions (run for subcommands)", run: func(args []string) int { return groupUsage("subscriptions", args) }},
 		{name: "subscriptions list", summary: "list subscriptions (filters, sort, pagination)", run: runSubscriptionsList},
 		{name: "subscriptions get", summary: "fetch one record by id", run: runSubscriptionsGet},
 		{name: "subscriptions create", summary: "create a record from field flags or --json", run: runSubscriptionsCreate},
@@ -53,7 +54,7 @@ func runSubscriptionsList(args []string) int {
 	fltRenewsOnLT := fs.String("renews-on-lt", "", "filter: renews_on lt")
 	fltRenewsOnLTE := fs.String("renews-on-lte", "", "filter: renews_on lte")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	q := url.Values{}
@@ -116,7 +117,7 @@ func runSubscriptionsGet(args []string) int {
 	}
 	fs := newFlagSet("subscriptions get")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	var out singleResponse
@@ -136,7 +137,7 @@ func runSubscriptionsCreate(args []string) int {
 	fldStartedOn := fs.String("started-on", "", "started_on (date)")
 	fldRenewsOn := fs.String("renews-on", "", "renews_on (date)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -181,7 +182,7 @@ func runSubscriptionsUpdate(args []string) int {
 	fldStartedOn := fs.String("started-on", "", "started_on (date)")
 	fldRenewsOn := fs.String("renews-on", "", "renews_on (date)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -226,7 +227,7 @@ func runSubscriptionsPatch(args []string) int {
 	fldStartedOn := fs.String("started-on", "", "started_on (date)")
 	fldRenewsOn := fs.String("renews-on", "", "renews_on (date)")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
@@ -263,7 +264,7 @@ func runSubscriptionsDelete(args []string) int {
 	}
 	fs := newFlagSet("subscriptions delete")
 	g, code := parseGlobals(fs, rest)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	if err := g.client.Do(g.ctx, http.MethodDelete, "/subscriptions/"+url.PathEscape(id), nil, nil); err != nil {
@@ -279,7 +280,7 @@ func runSubscriptionsBatchCreate(args []string) int {
 	fs := newFlagSet("subscriptions batch-create")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -299,7 +300,7 @@ func runSubscriptionsBatchUpdate(args []string) int {
 	fs := newFlagSet("subscriptions batch-update")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	items, code := readJSONArrayArg(*jsonBody)
@@ -324,7 +325,7 @@ func runSubscriptionsBatchDelete(args []string) int {
 	}
 	fs := newFlagSet("subscriptions batch-delete")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	for _, id := range fs.Args() {
@@ -350,7 +351,7 @@ func runSubscriptionsBatchDelete(args []string) int {
 func runSubscriptionsWatch(args []string) int {
 	fs := newFlagSet("subscriptions watch")
 	g, code := parseGlobals(fs, args)
-	if code != 0 {
+	if g == nil {
 		return code
 	}
 	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)
