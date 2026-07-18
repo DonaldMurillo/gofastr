@@ -384,10 +384,15 @@ func scanOutboxRow(row interface {
 	var r Row
 	var payload sql.NullString
 	var lastError sql.NullString
-	var dispatchedAt sql.NullTime
+	var createdAt, dispatchedAt any
 	if err := row.Scan(&r.ID, &r.Type, &payload, &r.Status, &r.Attempts,
-		&lastError, &r.CreatedAt, &dispatchedAt); err != nil {
+		&lastError, &createdAt, &dispatchedAt); err != nil {
 		return Row{}, err
+	}
+	var err error
+	r.CreatedAt, err = outboxTime(createdAt)
+	if err != nil {
+		return Row{}, fmt.Errorf("outbox: decode row %q created_at: %w", r.ID, err)
 	}
 	if payload.Valid {
 		r.Payload = []byte(payload.String)
@@ -395,9 +400,9 @@ func scanOutboxRow(row interface {
 	if lastError.Valid {
 		r.LastError = lastError.String
 	}
-	if dispatchedAt.Valid {
-		t := dispatchedAt.Time
-		r.DispatchedAt = &t
+	r.DispatchedAt, err = outboxTimePtr(dispatchedAt)
+	if err != nil {
+		return Row{}, fmt.Errorf("outbox: decode row %q dispatched_at: %w", r.ID, err)
 	}
 	return r, nil
 }

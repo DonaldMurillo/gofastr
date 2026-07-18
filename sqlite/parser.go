@@ -184,7 +184,17 @@ func sprintf(format string, args ...interface{}) string {
 
 // Parse parses a single SQL statement.
 func (p *Parser) Parse() (Statement, error) {
-	return p.parseStatement()
+	stmt, err := p.parseStatement()
+	if err != nil {
+		return nil, err
+	}
+	if p.cur.Type == TokenSemicolon {
+		p.advance()
+	}
+	if p.cur.Type != TokenEOF {
+		return nil, p.errorf("unexpected trailing token %s (%q)", tokenTypeName(p.cur.Type), p.cur.Value)
+	}
+	return stmt, nil
 }
 
 // ParseAll parses all SQL statements separated by semicolons.
@@ -718,14 +728,20 @@ func (p *Parser) parseOrderBy() ([]OrderItem, error) {
 // ============================================================================
 
 func (p *Parser) parseInsert() (*InsertStmt, error) {
+	stmt := &InsertStmt{}
 	if _, err := p.expect(TokenINSERT); err != nil {
 		return nil, err
+	}
+	if p.cur.Type == TokenOR {
+		p.advance()
+		if err := p.expectWord("IGNORE"); err != nil {
+			return nil, err
+		}
+		stmt.OrIgnore = true
 	}
 	if _, err := p.expect(TokenINTO); err != nil {
 		return nil, err
 	}
-
-	stmt := &InsertStmt{}
 
 	// Table name
 	table, err := p.parseTableRef()
@@ -777,6 +793,9 @@ func (p *Parser) parseInsert() (*InsertStmt, error) {
 		stmt.Select = sel
 	}
 
+	if err := p.parseInsertTail(stmt); err != nil {
+		return nil, err
+	}
 	return stmt, nil
 }
 
@@ -832,6 +851,14 @@ func (p *Parser) parseUpdate() (*UpdateStmt, error) {
 			return nil, err
 		}
 		stmt.Where = where
+	}
+
+	if p.consumeWord("RETURNING") {
+		columns, err := p.parseColumnList()
+		if err != nil {
+			return nil, err
+		}
+		stmt.Returning = columns
 	}
 
 	return stmt, nil
@@ -930,7 +957,7 @@ func (p *Parser) parseCreateTable() (*CreateTableStmt, error) {
 	if _, err := p.expect(TokenLParen); err != nil {
 		return nil, err
 	}
-	cols, err := p.parseColumnDefs()
+	cols, constraints, err := p.parseTableElements()
 	if err != nil {
 		return nil, err
 	}
@@ -938,6 +965,7 @@ func (p *Parser) parseCreateTable() (*CreateTableStmt, error) {
 	if _, err := p.expect(TokenRParen); err != nil {
 		return nil, err
 	}
+	stmt.TableConstraints = constraints
 
 	return stmt, nil
 }
@@ -1462,6 +1490,28 @@ func (p *Parser) parsePragma() (Statement, error) {
 		}
 		stmt.Value = val
 	}
+	// SQLite also accepts function-call syntax, most notably
+	// PRAGMA table_info(table_name). A bare identifier here is data, not a
+	// column reference, so preserve it as a text literal.
+	if p.cur.Type == TokenLParen {
+		p.advance()
+		if p.cur.Type == TokenString || p.cur.Type == TokenInteger || p.cur.Type == TokenFloat {
+			val, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			stmt.Value = val
+		} else {
+			value, err := p.parseIdentifierOrKeyword()
+			if err != nil {
+				return nil, err
+			}
+			stmt.Value = LiteralExpr{Type: DataTypeText, TextVal: value}
+		}
+		if _, err := p.expect(TokenRParen); err != nil {
+			return nil, err
+		}
+	}
 
 	return stmt, nil
 }
@@ -1867,6 +1917,13 @@ func (p *Parser) parseUnary() (Expr, error) {
 			return nil, err
 		}
 		return UnaryExpr{Op: OpBitNot, Expr: expr}, nil
+	case TokenNOT:
+		p.advance()
+		expr, err := p.parseUnary()
+		if err != nil {
+			return nil, err
+		}
+		return UnaryExpr{Op: OpNot, Expr: expr}, nil
 	}
 	return p.parsePrimary()
 }
@@ -1890,13 +1947,27 @@ func (p *Parser) parsePrimary() (Expr, error) {
 		return LiteralExpr{Type: DataTypeNull}, nil
 
 	case TokenQuestion:
-		p.advance()
-		idx := p.param
-		p.param++
-		return ParamExpr{Index: idx}, nil
+		return p.parseParameter()
 
 	case TokenIdent, TokenQuotedID:
 		return p.parseIdentOrFunction()
+
+	case TokenEXISTS:
+		p.advance()
+		if _, err := p.expect(TokenLParen); err != nil {
+			return nil, err
+		}
+		if p.cur.Type != TokenSELECT {
+			return nil, p.errorf("expected SELECT after EXISTS (")
+		}
+		sel, err := p.parseSelect()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(TokenRParen); err != nil {
+			return nil, err
+		}
+		return ExistsExpr{Select: sel}, nil
 
 	// Keywords that can start a column reference
 	case TokenLParen:
@@ -1949,7 +2020,7 @@ func (p *Parser) parsePrimary() (Expr, error) {
 	case TokenINTEGER_KW, TokenTEXT_KW, TokenREAL_KW, TokenBLOB_KW,
 		TokenKEY, TokenDEFAULT, TokenCHECK,
 		TokenPRIMARY, TokenUNIQUE, TokenFOREIGN, TokenREFERENCES,
-		TokenINDEX, TokenTABLE, TokenIF, TokenNOT, TokenEXISTS,
+		TokenINDEX, TokenTABLE, TokenIF,
 		TokenBEGIN, TokenCOMMIT, TokenROLLBACK, TokenTRANSACTION,
 		TokenCOLLATE, TokenDISTINCT, TokenALL,
 		TokenHAVING, TokenGROUP, TokenUNION, TokenINTERSECT, TokenEXCEPT,

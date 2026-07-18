@@ -15,6 +15,16 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o app ./
 ./app                 # listens on :8080 (or $PORT)
 ```
 
+The CLI runs generation, project-wide vet, and the accessibility gate before
+building. It targets the project root by default; when the executable lives
+under `cmd/`, select only the final main package with `--pkg`. Vet and
+accessibility checks still run from the project root, matching `gofastr dev`:
+
+```bash
+gofastr build
+gofastr build --pkg ./cmd/server
+```
+
 > **Go version.** `go.mod` declares `go 1.26`. The framework core only needs
 > Go 1.24 (generic type aliases); the 1.26 floor comes from the optional
 > `battery/print/chromepdf` PDF dependency (`chromedp/cdproto`). If you don't

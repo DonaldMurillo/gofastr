@@ -19,13 +19,14 @@ type ViewInfo struct {
 
 // TableInfo stores metadata about a table.
 type TableInfo struct {
-	Name        string
-	RootPage    int
-	Columns     []ColumnDef
-	PrimaryKey  int    // Column index of INTEGER PRIMARY KEY, -1 if none
-	SQL         string // Original CREATE TABLE statement
-	AutoInc     int64  // Next autoincrement value, 0 if not autoincrement
-	ForeignKeys []ForeignKeyInfo
+	Name              string
+	RootPage          int
+	Columns           []ColumnDef
+	PrimaryKey        int    // Column index of INTEGER PRIMARY KEY, -1 if none
+	SQL               string // Original CREATE TABLE statement
+	AutoInc           int64  // Next autoincrement value, 0 if not autoincrement
+	ForeignKeys       []ForeignKeyInfo
+	UniqueConstraints [][]string
 }
 
 // ForeignKeyInfo stores metadata about a foreign key relationship.
@@ -164,6 +165,10 @@ func (s *Schema) Copy() *Schema {
 		cp := *v
 		cp.Columns = make([]ColumnDef, len(v.Columns))
 		copy(cp.Columns, v.Columns)
+		cp.UniqueConstraints = make([][]string, len(v.UniqueConstraints))
+		for i := range v.UniqueConstraints {
+			cp.UniqueConstraints[i] = append([]string(nil), v.UniqueConstraints[i]...)
+		}
 		c.tables[k] = &cp
 	}
 	for k, v := range s.indexes {
@@ -354,6 +359,8 @@ func BuildTableInfo(stmt *CreateTableStmt, rootPage int) *TableInfo {
 				// (handled via AST check)
 			case ConstraintNotNull:
 				col.NotNull = true
+			case ConstraintUnique:
+				info.UniqueConstraints = append(info.UniqueConstraints, []string{colAST.Name})
 			case ConstraintDefault:
 				// Evaluate the default expression to a Value
 				if con.Value != nil {
@@ -383,12 +390,20 @@ func BuildTableInfo(stmt *CreateTableStmt, rootPage int) *TableInfo {
 		}
 
 		_ = isAutoInc
+		if isPrimaryKey {
+			info.UniqueConstraints = append(info.UniqueConstraints, []string{colAST.Name})
+		}
 		info.Columns = append(info.Columns, col)
 	}
 
 	// If no INTEGER PRIMARY KEY was found, set PrimaryKey to -1
 	if info.PrimaryKey == 0 && len(info.Columns) > 0 && !info.Columns[0].IsRowID {
 		info.PrimaryKey = -1
+	}
+	for _, constraint := range stmt.TableConstraints {
+		if constraint.Type == ConstraintUnique || constraint.Type == ConstraintPrimaryKey {
+			info.UniqueConstraints = append(info.UniqueConstraints, append([]string(nil), constraint.Columns...))
+		}
 	}
 
 	return info

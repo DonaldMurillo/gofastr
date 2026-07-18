@@ -435,7 +435,8 @@ gofastr agents sync                 Refresh AGENTS.md and agents/ detail files
 gofastr theme init                  Scaffold a typed theme/theme.go you own
 gofastr generate --from=<bp.yml>    Generate Go (SQL + REST + OpenAPI + MCP + UI) from a blueprint
 gofastr pack <app-dir>              Reconstruct the blueprint YAML from a generated app (inverse of generate)
-gofastr build                       Generate then go build
+gofastr build                       Generate, vet, accessibility-check, then build the root package
+gofastr build --pkg ./cmd/server    Run the same pipeline for a main package below the project root
 gofastr dev                         Start dev server with hot-reload
 gofastr migrate up | down | status  Run versioned migrations (advisory-locked, checksum + dirty-state guarded)
 gofastr migrate up --create-db      Create the target database first if it doesn't exist

@@ -613,9 +613,18 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job
 	for rows.Next() {
 		var j Job
 		var payload string
+		var createdAt, scheduledAt any
 		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
-			&j.Lane, &j.Attempts, &j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt); err != nil {
+			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt); err != nil {
 			return nil, err
+		}
+		j.CreatedAt, err = queueTime(createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("queue: decode job %q created_at: %w", j.ID, err)
+		}
+		j.ScheduledAt, err = queueTime(scheduledAt)
+		if err != nil {
+			return nil, fmt.Errorf("queue: decode job %q scheduled_at: %w", j.ID, err)
 		}
 		j.Payload = []byte(payload)
 		out = append(out, j)
@@ -888,15 +897,25 @@ func scanJob(row interface {
 	var job Job
 	var payload sql.NullString
 	var lane sql.NullString
+	var createdAt, scheduledAt any
 	if err := row.Scan(
 		&job.ID, &job.OccurrenceID, &job.Type, &payload,
 		&job.Priority, &lane, &job.Attempts, &job.MaxAttempts,
-		&job.CreatedAt, &job.ScheduledAt,
+		&createdAt, &scheduledAt,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return Job{}, ErrNoJob
 		}
 		return Job{}, err
+	}
+	var err error
+	job.CreatedAt, err = queueTime(createdAt)
+	if err != nil {
+		return Job{}, fmt.Errorf("queue: decode job %q created_at: %w", job.ID, err)
+	}
+	job.ScheduledAt, err = queueTime(scheduledAt)
+	if err != nil {
+		return Job{}, fmt.Errorf("queue: decode job %q scheduled_at: %w", job.ID, err)
 	}
 	if payload.Valid && payload.String != "" {
 		job.Payload = json.RawMessage(payload.String)
