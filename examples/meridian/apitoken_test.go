@@ -83,6 +83,17 @@ func TestMeridianTokenAuth(t *testing.T) {
 		t.Fatalf("bearer list = %d, row visible=%v: %s", code, strings.Contains(body, "token-made"), body)
 	}
 
+	// The minted scopes must be enforced: a customers-only token is 403'd
+	// off every other resource, read and write alike.
+	code, body = bearer("GET", "/api/invoices", "")
+	if code != http.StatusForbidden {
+		t.Fatalf("customers-scoped token on invoices = %d, want 403: %s", code, body)
+	}
+	code, body = bearer("POST", "/api/plans", `{"name":"evil"}`)
+	if code != http.StatusForbidden {
+		t.Fatalf("customers-scoped token writing plans = %d, want 403: %s", code, body)
+	}
+
 	// A token scoped to customers must not satisfy other entity scopes'
 	// baseline auth differently than sessions — but anonymous must 401.
 	req, _ := http.NewRequest("GET", base+"/api/customers", nil)

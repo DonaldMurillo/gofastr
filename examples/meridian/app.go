@@ -340,8 +340,11 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		fwApp.Use(auth.SessionMiddleware(authMgr))
 		// TokenMiddleware rides alongside: it only touches
 		// Authorization: Bearer gfsk_… credentials, so session and JWT
-		// requests pass through untouched.
+		// requests pass through untouched. RequireAPIScopes then makes
+		// the minted scopes real — a ["customers:*"] token is 403'd off
+		// every other /api resource; sessions stay unscoped.
 		fwApp.Use(auth.TokenMiddleware(authCfg.UserStore, serviceAccounts, apiTokens))
+		fwApp.Use(auth.RequireAPIScopes("/api"))
 		ui.SetRolesExtractor(func(ctx context.Context) []string {
 			if u, ok := handler.GetUser(ctx); ok && u != nil {
 				if rh, ok := u.(interface{ GetRoles() []string }); ok {
