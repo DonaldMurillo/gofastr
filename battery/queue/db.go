@@ -203,6 +203,7 @@ func (q *DBQueue) ensureTable() error {
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id            TEXT PRIMARY KEY,
+		occurrence_id TEXT NOT NULL DEFAULT '',
 		type          TEXT NOT NULL,
 		payload       TEXT,
 		priority      INTEGER NOT NULL DEFAULT 0,
@@ -226,6 +227,9 @@ func (q *DBQueue) ensureTable() error {
 	// does not, so we attempt the ALTER and tolerate only the duplicate-column
 	// error (matching on the message for both drivers).
 	if err := q.migrateLaneColumn(); err != nil {
+		return err
+	}
+	if err := q.migrateOccurrenceIDColumn(); err != nil {
 		return err
 	}
 	// Index supports the dequeue ORDER BY and the WHERE filter together. The
@@ -376,35 +380,7 @@ func (q *DBQueue) eligibleTypes() []string {
 // Enqueue inserts a job. Fills in ID/CreatedAt/MaxAttempts/ScheduledAt
 // defaults when zero-valued so callers can pass {Type, Payload} only.
 func (q *DBQueue) Enqueue(ctx context.Context, job Job) error {
-	if job.ID == "" {
-		job.ID = randomID()
-	}
-	now := q.now().UTC()
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = now
-	} else {
-		job.CreatedAt = job.CreatedAt.UTC()
-	}
-	if job.ScheduledAt.IsZero() {
-		job.ScheduledAt = now
-	} else {
-		job.ScheduledAt = job.ScheduledAt.UTC()
-	}
-	if job.MaxAttempts == 0 {
-		job.MaxAttempts = 3
-	}
-	payload := string(job.Payload)
-	if payload == "" {
-		payload = "null"
-	}
-	_, err := q.db.ExecContext(ctx,
-		fmt.Sprintf(`INSERT INTO %s
-			(id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, status)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')`, q.qt()),
-		job.ID, job.Type, payload, job.Priority, job.Lane, job.Attempts, job.MaxAttempts,
-		job.CreatedAt, job.ScheduledAt,
-	)
-	return err
+	return q.enqueueWith(ctx, q.db, job)
 }
 
 // Dequeue claims the highest-priority eligible job in a single atomic step.
@@ -442,7 +418,7 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []stri
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at`,
+		RETURNING id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at`,
 		q.qt(), q.qt(), where)
 	row := q.db.QueryRowContext(ctx, sqlStr, claimArgs...)
 	return scanJob(row)
@@ -458,7 +434,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	defer tx.Rollback()
 
 	where, args := q.eligibleWhere(types, 1, lane)
-	pickSQL := fmt.Sprintf(`SELECT id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at
+	pickSQL := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at
 		FROM %s WHERE %s ORDER BY priority DESC, created_at ASC LIMIT 1`, q.qt(), where)
 	row := tx.QueryRowContext(ctx, pickSQL, args...)
 	job, err := scanJob(row)
@@ -620,8 +596,8 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job
 	if limit <= 0 {
 		limit = 100
 	}
-	base := fmt.Sprintf(`SELECT id, type, payload, priority, lane, attempts, max_attempts,
-		created_at, scheduled_at FROM %s`, q.qt())
+	base := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts,
+		max_attempts, created_at, scheduled_at FROM %s`, q.qt())
 	args := []any{}
 	if status != "" {
 		base += " WHERE status = $1"
@@ -637,8 +613,8 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job
 	for rows.Next() {
 		var j Job
 		var payload string
-		if err := rows.Scan(&j.ID, &j.Type, &payload, &j.Priority, &j.Lane, &j.Attempts,
-			&j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt); err != nil {
+		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
+			&j.Lane, &j.Attempts, &j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt); err != nil {
 			return nil, err
 		}
 		j.Payload = []byte(payload)
@@ -913,8 +889,9 @@ func scanJob(row interface {
 	var payload sql.NullString
 	var lane sql.NullString
 	if err := row.Scan(
-		&job.ID, &job.Type, &payload, &job.Priority, &lane,
-		&job.Attempts, &job.MaxAttempts, &job.CreatedAt, &job.ScheduledAt,
+		&job.ID, &job.OccurrenceID, &job.Type, &payload,
+		&job.Priority, &lane, &job.Attempts, &job.MaxAttempts,
+		&job.CreatedAt, &job.ScheduledAt,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return Job{}, ErrNoJob

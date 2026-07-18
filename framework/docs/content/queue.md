@@ -109,6 +109,7 @@ Dequeue/Ack/Nack yourself, or integrate with a third-party pool. Call
 ```go
 type Job struct {
     ID          string          // auto-filled by Enqueue if empty
+    OccurrenceID string          // stable durable-schedule tick identity; empty for ordinary jobs
     Type        string          // required — selects the handler
     Payload     json.RawMessage // arbitrary JSON for the handler
     Priority    int             // higher = dequeued first (DBQueue + MemoryQueue)
@@ -268,10 +269,12 @@ fmt.Printf("reclaimed %d jobs\n", n)
 
 ## Scheduler
 
-`Scheduler` enqueues recurring jobs onto one or more queue backends:
+### In-memory, single-process mode
+
+`Scheduler` enqueues recurring jobs with watermarks held only in process memory:
 
 ```go
-sched := queue.NewScheduler(q)           // or NewSchedulerWithLogger(q, logger)
+sched := queue.NewInMemoryScheduler(q) // NewScheduler remains a compatible alias
 
 // Fixed interval — fires every 5 minutes.
 sched.Every(5 * time.Minute).
@@ -310,6 +313,67 @@ still fire** — the loop re-reads the schedule set each tick and a
 subsystems, then register jobs" wiring works (it previously snapshotted
 once at `Start` and dropped everything registered later).
 
+This mode is intentionally non-durable. A restart recomputes the first tick,
+and multiple scheduler replicas may enqueue the same tick. It remains useful
+for tests and applications that guarantee one scheduler process.
+
+### Durable, replica-safe mode
+
+`DurableScheduler` requires `DBQueue`. It persists schedule definitions,
+watermarks, lease fences, and one unique occurrence per `(schedule ID,
+scheduled tick)` in the queue database:
+
+```go
+q, err := queue.NewDBQueue(db)
+if err != nil {
+    log.Fatal(err)
+}
+
+durable, err := queue.NewDurableScheduler(q, queue.DurableSchedulerConfig{
+    OwnerID:       hostname + ":" + instanceID,
+    LeaseDuration: 30 * time.Second,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+// The first argument is the stable schedule ID. Re-registering the same ID
+// updates its definition without resetting the persisted next-run watermark.
+if err := durable.Every("customer-digest", 5*time.Minute).
+    Job("send-digest", json.RawMessage(`{}`)).
+    Register(); err != nil {
+    log.Fatal(err)
+}
+if err := durable.Cron("nightly-rollup", "0 2 * * *").
+    Job("nightly-rollup", nil).
+    Register(); err != nil {
+    log.Fatal(err)
+}
+
+go func() {
+    if err := durable.Start(ctx); err != nil {
+        log.Printf("durable scheduler stopped: %v", err)
+    }
+}()
+```
+
+One replica holds a heartbeat-expiry lease for efficient evaluation. Every
+lease acquisition after expiry increments a fencing token. Before committing
+an occurrence, the scheduler re-checks and locks that exact owner/token row.
+The occurrence insert, watermark advance, and `queue_jobs` insert then commit
+in one SQL transaction. A paused former owner therefore cannot enqueue after
+another replica reclaims the lease, and the unique occurrence identity is the
+deduplication authority even if leader evaluation races.
+
+When evaluation wakes after several ticks, only the newest due tick is
+enqueued. Older ticks are stored as `skipped` occurrences instead of causing a
+catch-up burst. The enqueued `Job.OccurrenceID` is stable for that schedule ID
+If the previous occurrence is still pending or claimed, the newest tick is
+also recorded with `skip_reason = 'overlap'` and no second job is enqueued.
+and tick, so handlers and run-history records can correlate retries to the
+same occurrence. `RunOnce(ctx, now)` exposes deterministic/manual evaluation;
+`Start(ctx)` heartbeats and evaluates until cancellation.
+
 **Handler timeout.** By default a DBQueue handler runs unbounded — a
 black-holed dependency (an SMTP host that never answers, a hung HTTP
 call) wedges the worker forever, and with the default single worker
@@ -322,9 +386,9 @@ Multiple queues can be passed to `NewScheduler` — the job is enqueued
 onto all of them. Enqueue errors are logged via `slog.Default()`.
 `NewSchedulerWithLogger` lets you supply a custom `*slog.Logger`.
 
-`Scheduler` fires in-process, not via a distributed lock. On multiple
-replicas, either run the scheduler on one instance only or gate the
-handler behind a lock so the actual work is done once.
+The in-memory `Scheduler` still fires without a distributed lock. Use
+`DurableScheduler` when more than one replica may evaluate schedules or when
+watermarks must survive restart.
 
 ## Handler registration
 
@@ -379,9 +443,9 @@ queue.ErrQueueClosed // Enqueue: queue was already closed
   in-flight handlers to finish — call it after all producers are done.
 - **Replaying a job that is still pending.** `Replay` only touches
   terminal (`failed`) entries — replaying a pending job is a no-op.
-- **Running the Scheduler on every replica.** Multiple replicas fire
-  the same tick. Either pin the scheduler to one instance or use a DB
-  advisory lock to ensure the enqueued work is done once.
+- **Running the in-memory Scheduler on every replica.** Multiple replicas can
+  fire the same tick. Pin that mode to one process, or use `DurableScheduler`
+  with `DBQueue` for fenced, transactionally deduplicated occurrences.
 - **Ignoring `Nack` errors.** A `Nack` failure means the job stays in
   the processing hash (Redis) or claimed state (DB) and will be
   auto-reclaimed later — but log the error so you can spot connection
