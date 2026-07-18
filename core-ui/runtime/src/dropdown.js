@@ -58,6 +58,26 @@
     }
   };
 
+  const closeTopmost = () => {
+    const sel = '[data-fui-dropdown-wrap][' + IS_OPEN + ']';
+    const openWraps = Array.from(document.querySelectorAll(sel));
+    if (openWraps.length === 0) return;
+
+    const active = document.activeElement;
+    const focusedWrap = openWraps.find((w) => {
+      const panel = w.querySelector('[data-fui-dropdown-panel]');
+      return panel && panel.contains(active);
+    });
+    const wrap = focusedWrap || openWraps[openWraps.length - 1];
+    const trigger = wrap.querySelector('[data-fui-dropdown]');
+    const panel = wrap.querySelector('[data-fui-dropdown-panel]');
+    if (!trigger || !panel) return;
+
+    const restoreFocus = panel.contains(active);
+    close(trigger, panel);
+    if (restoreFocus) trigger.focus();
+  };
+
   // Click on trigger → toggle.
   document.addEventListener('click', (e) => {
     const trigger = e.target.closest('[data-fui-dropdown]');
@@ -79,7 +99,7 @@
     // Defer to modal stack if one is active.
     if (NS._modalStack && NS._modalStack.length > 0) return;
     // Defer to native disclosure handler for details-based disclosures.
-    closeAll(null);
+    closeTopmost();
   });
 
   // SPA navigation → close all.
