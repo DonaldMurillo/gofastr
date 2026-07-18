@@ -1,13 +1,16 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // Client is a typed HTTP client targeting the gofastr server's CRUD routes.
@@ -93,6 +96,95 @@ func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, ou
 		return err
 	}
 	return json.Unmarshal(envelope["data"], out)
+}
+
+// BatchResult is one entry in a _batch response, in input order. Exactly one
+// of Data, Error, or Skipped is populated. When a later item failed, earlier
+// successes still carry Data — but Committed=false on the envelope means
+// nothing was persisted (the whole batch runs in one transaction).
+type BatchResult struct {
+	Index   int                 `json:"index"`
+	Data    map[string]any      `json:"data,omitempty"`
+	Error   string              `json:"error,omitempty"`
+	Fields  map[string][]string `json:"fields,omitempty"`
+	Skipped bool                `json:"skipped,omitempty"`
+}
+
+// BatchResponse is the envelope every _batch endpoint returns.
+type BatchResponse struct {
+	Committed bool          `json:"committed"`
+	Results   []BatchResult `json:"results"`
+}
+
+// doBatch sends a _batch request. The server answers 200 (committed) or 400
+// (rolled back) with the same envelope, so a 400 with a decodable body is a
+// result, not an error — callers inspect Committed and per-item Error fields.
+func (c *Client) doBatch(ctx context.Context, method, path string, body any) (BatchResponse, error) {
+	var out BatchResponse
+	err := c.doJSON(ctx, method, path, body, &out)
+	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusBadRequest {
+			if jsonErr := json.Unmarshal(apiErr.Body, &out); jsonErr == nil && len(out.Results) > 0 {
+				return out, nil
+			}
+		}
+		return BatchResponse{}, err
+	}
+	return out, nil
+}
+
+// watchSSE opens a text/event-stream GET and hands each event:/data: frame
+// to fn until ctx cancels, the stream ends (returns nil), or fn errors
+// (returned as-is). Comment lines (leading ':') are ignored.
+//
+// The stream is long-lived: use an *http.Client without a Timeout (the
+// default), or the transport will kill the subscription mid-stream.
+func (c *Client) watchSSE(ctx context.Context, path string, fn func(event string, data []byte) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return &APIError{Status: resp.StatusCode, Body: bodyBytes}
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var event string
+	var data []byte
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case line == "":
+			if len(data) > 0 {
+				if err := fn(event, data); err != nil {
+					return err
+				}
+			}
+			event, data = "", nil
+		case strings.HasPrefix(line, ":"):
+			// comment / heartbeat
+		case strings.HasPrefix(line, "event:"):
+			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		case strings.HasPrefix(line, "data:"):
+			data = append(data, strings.TrimSpace(strings.TrimPrefix(line, "data:"))...)
+		}
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return scanner.Err()
 }
 
 type Categories struct {
@@ -186,6 +278,42 @@ func (c *Client) PatchCategories(ctx context.Context, id string, body Categories
 // DeleteCategories removes the record at id.
 func (c *Client) DeleteCategories(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/categories/"+url.PathEscape(id), nil, nil)
+}
+
+type CategoriesBatchPatch struct {
+	ID          string  `json:"id"`
+	Name        *string `json:"name,omitempty"`
+	Slug        *string `json:"slug,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Image       *string `json:"image,omitempty"`
+	SortOrder   *int    `json:"sortOrder,omitempty"`
+	Active      *bool   `json:"active,omitempty"`
+}
+
+// BatchCreateCategories creates up to 100 records atomically (one transaction).
+// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// a BatchResponse, not an error.
+func (c *Client) BatchCreateCategories(ctx context.Context, items []CategoriesInput) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPost, "/categories/_batch", map[string]any{"items": items})
+}
+
+// BatchUpdateCategories patches up to 100 records atomically. Each item names its
+// target via ID; nil pointer fields are left untouched.
+func (c *Client) BatchUpdateCategories(ctx context.Context, items []CategoriesBatchPatch) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPatch, "/categories/_batch", map[string]any{"items": items})
+}
+
+// BatchDeleteCategories deletes the given ids atomically.
+func (c *Client) BatchDeleteCategories(ctx context.Context, ids []string) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodDelete, "/categories/_batch", map[string]any{"ids": ids})
+}
+
+// WatchCategories subscribes to the entity's live event feed (entity.created /
+// entity.updated / entity.deleted) and blocks, invoking fn per event, until
+// ctx cancels, the stream ends, or fn returns an error. data is the full
+// event JSON. Requires an authenticated client unless the entity is Public.
+func (c *Client) WatchCategories(ctx context.Context, fn func(event string, data []byte) error) error {
+	return c.watchSSE(ctx, "/categories/_events", fn)
 }
 
 type Products struct {
@@ -303,6 +431,50 @@ func (c *Client) PatchProducts(ctx context.Context, id string, body ProductsPatc
 // DeleteProducts removes the record at id.
 func (c *Client) DeleteProducts(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/products/"+url.PathEscape(id), nil, nil)
+}
+
+type ProductsBatchPatch struct {
+	ID             string          `json:"id"`
+	Name           *string         `json:"name,omitempty"`
+	Slug           *string         `json:"slug,omitempty"`
+	Sku            *string         `json:"sku,omitempty"`
+	Description    *string         `json:"description,omitempty"`
+	Price          *string         `json:"price,omitempty"`
+	CompareAtPrice *string         `json:"compareAtPrice,omitempty"`
+	Cost           *string         `json:"cost,omitempty"`
+	Stock          *int            `json:"stock,omitempty"`
+	CategoryId     *string         `json:"categoryId,omitempty"`
+	Status         *string         `json:"status,omitempty"`
+	Featured       *bool           `json:"featured,omitempty"`
+	Weight         *float64        `json:"weight,omitempty"`
+	Image          *string         `json:"image,omitempty"`
+	Tags           *map[string]any `json:"tags,omitempty"`
+}
+
+// BatchCreateProducts creates up to 100 records atomically (one transaction).
+// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// a BatchResponse, not an error.
+func (c *Client) BatchCreateProducts(ctx context.Context, items []ProductsInput) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPost, "/products/_batch", map[string]any{"items": items})
+}
+
+// BatchUpdateProducts patches up to 100 records atomically. Each item names its
+// target via ID; nil pointer fields are left untouched.
+func (c *Client) BatchUpdateProducts(ctx context.Context, items []ProductsBatchPatch) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPatch, "/products/_batch", map[string]any{"items": items})
+}
+
+// BatchDeleteProducts deletes the given ids atomically.
+func (c *Client) BatchDeleteProducts(ctx context.Context, ids []string) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodDelete, "/products/_batch", map[string]any{"ids": ids})
+}
+
+// WatchProducts subscribes to the entity's live event feed (entity.created /
+// entity.updated / entity.deleted) and blocks, invoking fn per event, until
+// ctx cancels, the stream ends, or fn returns an error. data is the full
+// event JSON. Requires an authenticated client unless the entity is Public.
+func (c *Client) WatchProducts(ctx context.Context, fn func(event string, data []byte) error) error {
+	return c.watchSSE(ctx, "/products/_events", fn)
 }
 
 type Orders struct {
@@ -425,6 +597,51 @@ func (c *Client) DeleteOrders(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/orders/"+url.PathEscape(id), nil, nil)
 }
 
+type OrdersBatchPatch struct {
+	ID              string          `json:"id"`
+	UserId          *string         `json:"userId,omitempty"`
+	OrderNumber     *string         `json:"orderNumber,omitempty"`
+	Status          *string         `json:"status,omitempty"`
+	CustomerName    *string         `json:"customerName,omitempty"`
+	CustomerEmail   *string         `json:"customerEmail,omitempty"`
+	CustomerPhone   *string         `json:"customerPhone,omitempty"`
+	ShippingAddress *map[string]any `json:"shippingAddress,omitempty"`
+	BillingAddress  *map[string]any `json:"billingAddress,omitempty"`
+	Subtotal        *string         `json:"subtotal,omitempty"`
+	Tax             *string         `json:"tax,omitempty"`
+	ShippingCost    *string         `json:"shippingCost,omitempty"`
+	Total           *string         `json:"total,omitempty"`
+	Notes           *string         `json:"notes,omitempty"`
+	ShippedAt       *string         `json:"shippedAt,omitempty"`
+	DeliveredAt     *string         `json:"deliveredAt,omitempty"`
+}
+
+// BatchCreateOrders creates up to 100 records atomically (one transaction).
+// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// a BatchResponse, not an error.
+func (c *Client) BatchCreateOrders(ctx context.Context, items []OrdersInput) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPost, "/orders/_batch", map[string]any{"items": items})
+}
+
+// BatchUpdateOrders patches up to 100 records atomically. Each item names its
+// target via ID; nil pointer fields are left untouched.
+func (c *Client) BatchUpdateOrders(ctx context.Context, items []OrdersBatchPatch) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPatch, "/orders/_batch", map[string]any{"items": items})
+}
+
+// BatchDeleteOrders deletes the given ids atomically.
+func (c *Client) BatchDeleteOrders(ctx context.Context, ids []string) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodDelete, "/orders/_batch", map[string]any{"ids": ids})
+}
+
+// WatchOrders subscribes to the entity's live event feed (entity.created /
+// entity.updated / entity.deleted) and blocks, invoking fn per event, until
+// ctx cancels, the stream ends, or fn returns an error. data is the full
+// event JSON. Requires an authenticated client unless the entity is Public.
+func (c *Client) WatchOrders(ctx context.Context, fn func(event string, data []byte) error) error {
+	return c.watchSSE(ctx, "/orders/_events", fn)
+}
+
 type OrderItems struct {
 	ID          string `json:"id"`
 	UserId      string `json:"userId,omitempty"`
@@ -521,6 +738,43 @@ func (c *Client) DeleteOrderItems(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/order_items/"+url.PathEscape(id), nil, nil)
 }
 
+type OrderItemsBatchPatch struct {
+	ID          string  `json:"id"`
+	UserId      *string `json:"userId,omitempty"`
+	OrderId     *string `json:"orderId,omitempty"`
+	ProductId   *string `json:"productId,omitempty"`
+	ProductName *string `json:"productName,omitempty"`
+	Quantity    *int    `json:"quantity,omitempty"`
+	UnitPrice   *string `json:"unitPrice,omitempty"`
+	TotalPrice  *string `json:"totalPrice,omitempty"`
+}
+
+// BatchCreateOrderItems creates up to 100 records atomically (one transaction).
+// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// a BatchResponse, not an error.
+func (c *Client) BatchCreateOrderItems(ctx context.Context, items []OrderItemsInput) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPost, "/order_items/_batch", map[string]any{"items": items})
+}
+
+// BatchUpdateOrderItems patches up to 100 records atomically. Each item names its
+// target via ID; nil pointer fields are left untouched.
+func (c *Client) BatchUpdateOrderItems(ctx context.Context, items []OrderItemsBatchPatch) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPatch, "/order_items/_batch", map[string]any{"items": items})
+}
+
+// BatchDeleteOrderItems deletes the given ids atomically.
+func (c *Client) BatchDeleteOrderItems(ctx context.Context, ids []string) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodDelete, "/order_items/_batch", map[string]any{"ids": ids})
+}
+
+// WatchOrderItems subscribes to the entity's live event feed (entity.created /
+// entity.updated / entity.deleted) and blocks, invoking fn per event, until
+// ctx cancels, the stream ends, or fn returns an error. data is the full
+// event JSON. Requires an authenticated client unless the entity is Public.
+func (c *Client) WatchOrderItems(ctx context.Context, fn func(event string, data []byte) error) error {
+	return c.watchSSE(ctx, "/order_items/_events", fn)
+}
+
 type Reviews struct {
 	ID         string `json:"id"`
 	ProductId  string `json:"productId,omitempty"`
@@ -612,4 +866,40 @@ func (c *Client) PatchReviews(ctx context.Context, id string, body ReviewsPatch)
 // DeleteReviews removes the record at id.
 func (c *Client) DeleteReviews(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/reviews/"+url.PathEscape(id), nil, nil)
+}
+
+type ReviewsBatchPatch struct {
+	ID         string  `json:"id"`
+	ProductId  *string `json:"productId,omitempty"`
+	AuthorName *string `json:"authorName,omitempty"`
+	Rating     *int    `json:"rating,omitempty"`
+	Title      *string `json:"title,omitempty"`
+	Body       *string `json:"body,omitempty"`
+	Verified   *bool   `json:"verified,omitempty"`
+}
+
+// BatchCreateReviews creates up to 100 records atomically (one transaction).
+// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// a BatchResponse, not an error.
+func (c *Client) BatchCreateReviews(ctx context.Context, items []ReviewsInput) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPost, "/reviews/_batch", map[string]any{"items": items})
+}
+
+// BatchUpdateReviews patches up to 100 records atomically. Each item names its
+// target via ID; nil pointer fields are left untouched.
+func (c *Client) BatchUpdateReviews(ctx context.Context, items []ReviewsBatchPatch) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodPatch, "/reviews/_batch", map[string]any{"items": items})
+}
+
+// BatchDeleteReviews deletes the given ids atomically.
+func (c *Client) BatchDeleteReviews(ctx context.Context, ids []string) (BatchResponse, error) {
+	return c.doBatch(ctx, http.MethodDelete, "/reviews/_batch", map[string]any{"ids": ids})
+}
+
+// WatchReviews subscribes to the entity's live event feed (entity.created /
+// entity.updated / entity.deleted) and blocks, invoking fn per event, until
+// ctx cancels, the stream ends, or fn returns an error. data is the full
+// event JSON. Requires an authenticated client unless the entity is Public.
+func (c *Client) WatchReviews(ctx context.Context, fn func(event string, data []byte) error) error {
+	return c.watchSSE(ctx, "/reviews/_events", fn)
 }

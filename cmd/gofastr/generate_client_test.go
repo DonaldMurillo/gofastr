@@ -134,6 +134,63 @@ func TestRenderClient_TokenBearerHeader(t *testing.T) {
 	}
 }
 
+// The _batch endpoints are part of the CRUD surface, so the generated client
+// must cover them: BatchCreate (value inputs), BatchUpdate (id + pointer
+// fields, mirroring the PATCH presence semantics), BatchDelete (ids), all
+// returning the shared {committed, results[]} envelope.
+func TestRenderClient_BatchMethods(t *testing.T) {
+	tsOff := false
+	out := renderClient([]framework.EntityDeclaration{{
+		Name:       "posts",
+		Table:      "posts",
+		Timestamps: &tsOff,
+		Fields: []framework.FieldDeclaration{
+			{Name: "title", Type: "string"},
+			{Name: "published", Type: "bool"},
+		},
+	}})
+	wants := []string{
+		"type BatchResult struct",
+		"type BatchResponse struct",
+		"type PostsBatchPatch struct",
+		"ID string `json:\"id\"`",
+		"func (c *Client) BatchCreatePosts(ctx context.Context, items []PostsInput) (BatchResponse, error)",
+		"func (c *Client) BatchUpdatePosts(ctx context.Context, items []PostsBatchPatch) (BatchResponse, error)",
+		"func (c *Client) BatchDeletePosts(ctx context.Context, ids []string) (BatchResponse, error)",
+		`"/posts/_batch"`,
+	}
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Errorf("renderClient missing %q", w)
+		}
+	}
+}
+
+// Every entity mounts a GET {path}/_events SSE feed; the generated client
+// exposes it as Watch<Entity>: a blocking loop that parses event:/data:
+// frames and hands each to the callback until ctx cancels, the stream ends,
+// or the callback errors.
+func TestRenderClient_WatchSSE(t *testing.T) {
+	tsOff := false
+	out := renderClient([]framework.EntityDeclaration{{
+		Name:       "posts",
+		Table:      "posts",
+		Timestamps: &tsOff,
+		Fields:     []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+	}})
+	wants := []string{
+		"func (c *Client) WatchPosts(ctx context.Context, fn func(event string, data []byte) error) error",
+		`"/posts/_events"`,
+		"func (c *Client) watchSSE(",
+		`"text/event-stream"`,
+	}
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Errorf("renderClient missing %q", w)
+		}
+	}
+}
+
 // integrationTestSource is the Go test that gets dropped into the temp module
 // to drive the generated client against a real httptest server. Kept as a
 // raw constant (with %s placeholders intentionally avoided — the file is
@@ -146,6 +203,7 @@ import (
 	"database/sql"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -250,6 +308,86 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 	}
 	if after.Total != 0 {
 		t.Fatalf("expected empty after delete, got %d", after.Total)
+	}
+
+	// _batch round-trip: create two atomically, patch one, verify a
+	// validation failure rolls back (returned as Committed=false, not an
+	// error), delete both.
+	bc, err := c.BatchCreatePosts(ctx, []gen.PostsInput{{Title: "b1"}, {Title: "b2", Views: 5}})
+	if err != nil {
+		t.Fatalf("batch create: %v", err)
+	}
+	if !bc.Committed || len(bc.Results) != 2 {
+		t.Fatalf("batch create: %+v", bc)
+	}
+	id1, _ := bc.Results[0].Data["id"].(string)
+	id2, _ := bc.Results[1].Data["id"].(string)
+	if id1 == "" || id2 == "" {
+		t.Fatalf("batch create ids missing: %+v", bc.Results)
+	}
+
+	bu, err := c.BatchUpdatePosts(ctx, []gen.PostsBatchPatch{{ID: id1, Views: new(7)}})
+	if err != nil {
+		t.Fatalf("batch update: %v", err)
+	}
+	if !bu.Committed {
+		t.Fatalf("batch update: %+v", bu)
+	}
+
+	rb, err := c.BatchCreatePosts(ctx, []gen.PostsInput{{Title: "ok"}, {}})
+	if err != nil {
+		t.Fatalf("batch rollback: %v", err)
+	}
+	if rb.Committed {
+		t.Fatalf("expected rollback, got committed: %+v", rb)
+	}
+
+	bd, err := c.BatchDeletePosts(ctx, []string{id1, id2})
+	if err != nil {
+		t.Fatalf("batch delete: %v", err)
+	}
+	if !bd.Committed {
+		t.Fatalf("batch delete: %+v", bd)
+	}
+	final, err := c.ListPosts(ctx, nil)
+	if err != nil {
+		t.Fatalf("final list: %v", err)
+	}
+	if final.Total != 0 {
+		t.Fatalf("expected empty after batch delete, got %d", final.Total)
+	}
+
+	// Watch: subscribe to the SSE feed, then create until the event lands.
+	// Creation retries paper over the subscription attach race without a
+	// fixed sleep.
+	wctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	events := make(chan string, 1)
+	go func() {
+		_ = c.WatchPosts(wctx, func(event string, _ []byte) error {
+			select {
+			case events <- event:
+			default:
+			}
+			return context.Canceled // one event is enough
+		})
+	}()
+	var gotEvent string
+poll:
+	for i := 0; i < 50; i++ {
+		if _, err := c.CreatePosts(ctx, gen.PostsInput{Title: "sse"}); err != nil {
+			t.Fatalf("create for sse: %v", err)
+		}
+		select {
+		case gotEvent = <-events:
+			break poll
+		case <-time.After(200 * time.Millisecond):
+		case <-wctx.Done():
+			break poll
+		}
+	}
+	if gotEvent != "entity.created" {
+		t.Fatalf("expected entity.created via watch, got %q", gotEvent)
 	}
 }
 
