@@ -69,6 +69,7 @@ var docIntents = []docIntent{
 			{"migrations", "Migrations", "Versioned, ordered, reversible — versus the auto-migrate dev mode."},
 			{"multi-tenant", "Multi-tenant scope", "tenant_id column + automatic filter from request context."},
 			{"codegen", "Code generation", "What lands on disk under gen/ — and how to read it."},
+			{"app-cli", "Ship your API as a CLI", "gofastr generate cli — a branded terminal client for your customers, with scoped API-token auth."},
 		},
 	},
 	{
