@@ -69,8 +69,10 @@ Connection resolution, in order: `--url`/`--token` flags →
 
 The CLI sends `Authorization: Bearer gfsk_…` on every request — wire
 [`auth.TokenMiddleware`](auth.md#service-accounts--scoped-api-tokens)
-alongside your session middleware and mount `auth.NewTokensPlugin` so
-logged-in users can mint their own scoped tokens in the app. Bearer
+alongside your session middleware, mount `auth.NewTokensPlugin` so
+logged-in users can mint their own scoped tokens in the app, and add
+`auth.RequireAPIScopes("/api")` so those scopes are actually enforced
+(a `customers:*` token gets 403 off every other resource). Bearer
 requests bypass both CSRF layers by design, so the CLI needs no cookie
 or CSRF handling. The customer flow:
 
@@ -140,6 +142,11 @@ field or exclude the entity.
   requests arrive anonymous and secure-by-default CRUD returns 401
   (CLI exit code 4). Mount it alongside `SessionMiddleware` and give
   users `TokensPlugin` to mint tokens.
+- **Minting scopes without enforcing them.** `TokenMiddleware` alone
+  authenticates the token's owner everywhere; the scope list is only
+  enforced where you gate it. Mount `auth.RequireAPIScopes("/api")`
+  (or per-route `RequireScope`) or a `customers:*` token silently
+  carries the user's full capability.
 - **Editing generated files, then regenerating with `--force`.** Only
   `custom.go` survives a forced regen. Put every customization there
   (override, wrap, or add commands); treat the other files as

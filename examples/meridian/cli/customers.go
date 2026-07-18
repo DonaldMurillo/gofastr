@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-
-	client "github.com/DonaldMurillo/gofastr/examples/meridian/entities/client"
 )
 
 func customersCommands() []command {
@@ -110,7 +108,7 @@ func runCustomersGet(args []string) int {
 		return code
 	}
 	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, "/customers/"+id, nil, &out); err != nil {
+	if err := g.client.Do(g.ctx, http.MethodGet, "/customers/"+url.PathEscape(id), nil, &out); err != nil {
 		return apiFail(err)
 	}
 	return printJSON(out.Data)
@@ -189,7 +187,7 @@ func runCustomersUpdate(args []string) int {
 		return code
 	}
 	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPut, "/customers/"+id, body, &out); err != nil {
+	if err := g.client.Do(g.ctx, http.MethodPut, "/customers/"+url.PathEscape(id), body, &out); err != nil {
 		return apiFail(err)
 	}
 	return printJSON(out.Data)
@@ -231,7 +229,7 @@ func runCustomersPatch(args []string) int {
 		return code
 	}
 	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPatch, "/customers/"+id, body, &out); err != nil {
+	if err := g.client.Do(g.ctx, http.MethodPatch, "/customers/"+url.PathEscape(id), body, &out); err != nil {
 		return apiFail(err)
 	}
 	return printJSON(out.Data)
@@ -247,14 +245,15 @@ func runCustomersDelete(args []string) int {
 	if code != 0 {
 		return code
 	}
-	if err := g.client.Do(g.ctx, http.MethodDelete, "/customers/"+id, nil, nil); err != nil {
+	if err := g.client.Do(g.ctx, http.MethodDelete, "/customers/"+url.PathEscape(id), nil, nil); err != nil {
 		return apiFail(err)
 	}
 	fmt.Printf("deleted %s\n", id)
 	return 0
 }
 
-// runCustomersBatchCreate sends a --json array through the atomic _batch route.
+// runCustomersBatchCreate sends a --json array through the atomic _batch route. A rolled-
+// back batch prints its {committed, results[]} envelope and exits 1.
 func runCustomersBatchCreate(args []string) int {
 	fs := newFlagSet("customers batch-create")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
@@ -266,14 +265,15 @@ func runCustomersBatchCreate(args []string) int {
 	if code != 0 {
 		return code
 	}
-	var resp client.BatchResponse
-	if err := g.client.Do(g.ctx, http.MethodPost, "/customers/_batch", map[string]any{"items": items}, &resp); err != nil {
-		return apiFail(err)
+	resp, code := doBatch(g, http.MethodPost, "/customers/_batch", map[string]any{"items": items})
+	if code != 0 {
+		return code
 	}
 	return printBatch(resp)
 }
 
-// runCustomersBatchUpdate sends a --json array through the atomic _batch route.
+// runCustomersBatchUpdate sends a --json array through the atomic _batch route. A rolled-
+// back batch prints its {committed, results[]} envelope and exits 1.
 func runCustomersBatchUpdate(args []string) int {
 	fs := newFlagSet("customers batch-update")
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
@@ -285,14 +285,16 @@ func runCustomersBatchUpdate(args []string) int {
 	if code != 0 {
 		return code
 	}
-	var resp client.BatchResponse
-	if err := g.client.Do(g.ctx, http.MethodPatch, "/customers/_batch", map[string]any{"items": items}, &resp); err != nil {
-		return apiFail(err)
+	resp, code := doBatch(g, http.MethodPatch, "/customers/_batch", map[string]any{"items": items})
+	if code != 0 {
+		return code
 	}
 	return printBatch(resp)
 }
 
-// runCustomersBatchDelete deletes the positional ids in one transaction.
+// runCustomersBatchDelete deletes the positional ids in one transaction. Ids may
+// appear before or after flags — flag.Parse stops at the first positional,
+// so the trailing ones are collected from fs.Args().
 func runCustomersBatchDelete(args []string) int {
 	var ids []string
 	for len(args) > 0 && args[0] != "" && args[0][0] != '-' {
@@ -304,13 +306,20 @@ func runCustomersBatchDelete(args []string) int {
 	if code != 0 {
 		return code
 	}
+	for _, id := range fs.Args() {
+		if id != "" && id[0] == '-' {
+			fmt.Println(binaryName + " customers batch-delete: flags must precede trailing ids (got " + id + " after an id)")
+			return 2
+		}
+		ids = append(ids, id)
+	}
 	if len(ids) == 0 {
 		fmt.Println("usage: " + binaryName + " customers batch-delete <id> [id...]")
 		return 2
 	}
-	var resp client.BatchResponse
-	if err := g.client.Do(g.ctx, http.MethodDelete, "/customers/_batch", map[string]any{"ids": ids}, &resp); err != nil {
-		return apiFail(err)
+	resp, code := doBatch(g, http.MethodDelete, "/customers/_batch", map[string]any{"ids": ids})
+	if code != 0 {
+		return code
 	}
 	return printBatch(resp)
 }

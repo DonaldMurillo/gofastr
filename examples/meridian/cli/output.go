@@ -204,6 +204,24 @@ func readJSONArrayArg(v string) (json.RawMessage, int) {
 	return json.RawMessage(raw), 0
 }
 
+// doBatch sends a _batch request. The server answers a rolled-back batch
+// with 400 and the same {committed, results[]} envelope, so that case is
+// decoded and returned as a response — printBatch then surfaces it on
+// stdout and exit code 1 — rather than treated as a transport error.
+func doBatch(g *global, method, path string, body any) (client.BatchResponse, int) {
+	var resp client.BatchResponse
+	if err := g.client.Do(g.ctx, method, path, body, &resp); err != nil {
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == 400 {
+			if json.Unmarshal(apiErr.Body, &resp) == nil && len(resp.Results) > 0 {
+				return resp, 0
+			}
+		}
+		return resp, apiFail(err)
+	}
+	return resp, 0
+}
+
 // printBatch prints the batch envelope; a rolled-back batch exits 1 so
 // scripts can gate on success.
 func printBatch(resp client.BatchResponse) int {

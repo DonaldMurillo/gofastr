@@ -138,12 +138,7 @@ func runGenerateCLI(args []string) {
 		osExit(1)
 		return
 	}
-	files, err := renderCLIFiles(spec)
-	if err != nil {
-		fail("%v", err)
-		osExit(1)
-		return
-	}
+	files := renderCLIFiles(spec)
 	if err := validateOutputDir(opts.outDir); err != nil {
 		fail("%v", err)
 		osExit(1)
@@ -224,17 +219,20 @@ func runGenerateCLI(args []string) {
 	fmt.Println("    custom.go is yours: add or override commands there; regens never touch it")
 }
 
+// splitCommaList splits a comma-separated flag value, trimming whitespace
+// and dropping empty items.
+func splitCommaList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func parseCLIOptions(args []string) (cliOptions, error) {
 	opts := cliOptions{outDir: "cli", apiPrefix: "api"}
-	splitList := func(v string) []string {
-		var out []string
-		for _, p := range strings.Split(v, ",") {
-			if p = strings.TrimSpace(p); p != "" {
-				out = append(out, p)
-			}
-		}
-		return out
-	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		nextValue := func() (string, bool) {
@@ -268,9 +266,9 @@ func parseCLIOptions(args []string) (cliOptions, error) {
 			} else if v, ok := value("--api-prefix"); ok {
 				opts.apiPrefix = v
 			} else if v, ok := value("--only"); ok {
-				opts.only = splitList(v)
+				opts.only = splitCommaList(v)
 			} else if v, ok := value("--exclude"); ok {
-				opts.exclude = splitList(v)
+				opts.exclude = splitCommaList(v)
 			} else if v, ok := value("--verbs"); ok {
 				opts.verbs = v
 			} else {
@@ -303,17 +301,8 @@ func parseVerbSelection(s string) ([]string, map[string][]string, error) {
 		}
 		return nil
 	}
-	split := func(v string) []string {
-		var out []string
-		for _, p := range strings.Split(v, ",") {
-			if p = strings.TrimSpace(p); p != "" {
-				out = append(out, p)
-			}
-		}
-		return out
-	}
 	if !strings.Contains(s, "=") {
-		verbs := split(s)
+		verbs := splitCommaList(s)
 		if err := valid(verbs); err != nil {
 			return nil, nil, err
 		}
@@ -332,7 +321,7 @@ func parseVerbSelection(s string) ([]string, map[string][]string, error) {
 			per[strings.ToLower(strings.TrimSpace(name))] = append([]string(nil), cliVerbs...)
 			continue
 		}
-		verbs := split(list)
+		verbs := splitCommaList(list)
 		if err := valid(verbs); err != nil {
 			return nil, nil, err
 		}
@@ -354,6 +343,17 @@ func cliEntityMatches(decl framework.EntityDeclaration, name string) bool {
 		n == strings.ToLower(strings.ReplaceAll(table, "_", "-"))
 }
 
+// cliAnyEntityMatches reports whether a selection name resolves to any
+// declared entity.
+func cliAnyEntityMatches(decls []framework.EntityDeclaration, name string) bool {
+	for _, d := range decls {
+		if cliEntityMatches(d, name) {
+			return true
+		}
+	}
+	return false
+}
+
 func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientImport string) (cliSpec, error) {
 	globalVerbs, perEntityVerbs, err := parseVerbSelection(opts.verbs)
 	if err != nil {
@@ -363,27 +363,13 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 	// --only silently generating everything (or nothing) is a trap.
 	for _, sel := range [][]string{opts.only, opts.exclude} {
 		for _, name := range sel {
-			found := false
-			for _, d := range decls {
-				if cliEntityMatches(d, name) {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !cliAnyEntityMatches(decls, name) {
 				return cliSpec{}, fmt.Errorf("--only/--exclude: no entity named %q", name)
 			}
 		}
 	}
 	for name := range perEntityVerbs {
-		found := false
-		for _, d := range decls {
-			if cliEntityMatches(d, name) {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !cliAnyEntityMatches(decls, name) {
 			return cliSpec{}, fmt.Errorf("--verbs: no entity named %q", name)
 		}
 	}
@@ -406,27 +392,19 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 		Selection:    cliSelectionNote(opts),
 	}
 
-	for _, decl := range decls {
-		if len(opts.only) > 0 {
-			keep := false
-			for _, name := range opts.only {
-				if cliEntityMatches(decl, name) {
-					keep = true
-					break
-				}
-			}
-			if !keep {
-				continue
-			}
-		}
-		skip := false
-		for _, name := range opts.exclude {
+	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
+		for _, name := range names {
 			if cliEntityMatches(decl, name) {
-				skip = true
-				break
+				return true
 			}
 		}
-		if skip {
+		return false
+	}
+	for _, decl := range decls {
+		if len(opts.only) > 0 && !matchesAny(decl, opts.only) {
+			continue
+		}
+		if matchesAny(decl, opts.exclude) {
 			continue
 		}
 
@@ -453,14 +431,28 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 	return spec, nil
 }
 
+// cliReservedCommands are command words (and scaffold file basenames) the
+// generated CLI owns: an entity whose command form collides would either
+// shadow a built-in command at dispatch or emit a duplicate filename —
+// including custom.go, whose create-if-absent handling would then silently
+// stop regenerating that entity.
+var cliReservedCommands = map[string]bool{
+	"main": true, "config": true, "auth": true, "output": true, "custom": true,
+	"login": true, "logout": true, "version": true, "help": true,
+}
+
 func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity, error) {
 	table := decl.Table
 	if table == "" {
 		table = decl.Name
 	}
+	command := strings.ReplaceAll(strings.ToLower(table), "_", "-")
+	if cliReservedCommands[command] {
+		return cliEntity{}, fmt.Errorf("entity %q: its command form %q collides with a CLI built-in — exclude it with --exclude=%s, or rename the table", decl.Name, command, decl.Name)
+	}
 	ent := cliEntity{
 		Struct:     toCamelCase(decl.Name),
-		Command:    strings.ReplaceAll(strings.ToLower(table), "_", "-"),
+		Command:    command,
 		Table:      table,
 		Verbs:      verbs,
 		Search:     len(decl.SearchFields) > 0,
@@ -564,7 +556,7 @@ func cliSelectionNote(opts cliOptions) string {
 // Renderers
 // ---------------------------------------------------------------------------
 
-func renderCLIFiles(spec cliSpec) ([]generatedFile, error) {
+func renderCLIFiles(spec cliSpec) []generatedFile {
 	files := []generatedFile{
 		{name: "main.go", content: renderCLIMain(spec)},
 		{name: "config.go", content: renderCLIConfig(spec)},
@@ -581,7 +573,7 @@ func renderCLIFiles(spec cliSpec) ([]generatedFile, error) {
 			content: renderCLIEntityFile(spec, ent),
 		})
 	}
-	return files, nil
+	return files
 }
 
 func renderCLIMain(spec cliSpec) string {
@@ -1042,6 +1034,24 @@ func readJSONArrayArg(v string) (json.RawMessage, int) {
 	return json.RawMessage(raw), 0
 }
 
+// doBatch sends a _batch request. The server answers a rolled-back batch
+// with 400 and the same {committed, results[]} envelope, so that case is
+// decoded and returned as a response — printBatch then surfaces it on
+// stdout and exit code 1 — rather than treated as a transport error.
+func doBatch(g *global, method, path string, body any) (client.BatchResponse, int) {
+	var resp client.BatchResponse
+	if err := g.client.Do(g.ctx, method, path, body, &resp); err != nil {
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == 400 {
+			if json.Unmarshal(apiErr.Body, &resp) == nil && len(resp.Results) > 0 {
+				return resp, 0
+			}
+		}
+		return resp, apiFail(err)
+	}
+	return resp, 0
+}
+
 // printBatch prints the batch envelope; a rolled-back batch exits 1 so
 // scripts can gate on success.
 func printBatch(resp client.BatchResponse) int {
@@ -1116,12 +1126,13 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		}
 	}
 	hasMutation := has("create") || has("update") || has("patch")
-	needsHTTP := has("list") || has("get") || hasMutation ||
+	needsHTTP := has("list") || has("get") || has("delete") || hasMutation ||
 		has("batch-create") || has("batch-update") || has("batch-delete")
 	needsJSONImport := hasJSONField && hasMutation
 	needsFmt := has("list") || has("delete") || has("batch-delete") || has("watch") || needsJSONImport
-	needsURLValues := has("list")
-	needsClientImport := has("batch-create") || has("batch-update") || has("batch-delete")
+	// net/url: list builds query params; every id-addressed verb path-escapes
+	// the positional id.
+	needsURLValues := has("list") || has("get") || has("delete") || has("update") || has("patch")
 	needsSignal := has("watch")
 
 	sb.WriteString("package main\n\nimport (\n")
@@ -1139,9 +1150,6 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	}
 	if needsSignal {
 		sb.WriteString("\t\"os\"\n\t\"os/signal\"\n")
-	}
-	if needsClientImport {
-		sb.WriteString("\n\tclient \"" + spec.ClientImport + "\"\n")
 	}
 	sb.WriteString(")\n\n")
 
@@ -1183,7 +1191,7 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		return code
 	}
 	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, "/%s/"+id, nil, &out); err != nil {
+	if err := g.client.Do(g.ctx, http.MethodGet, "/%s/"+url.PathEscape(id), nil, &out); err != nil {
 		return apiFail(err)
 	}
 	return printJSON(out.Data)
@@ -1211,7 +1219,7 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	if code != 0 {
 		return code
 	}
-	if err := g.client.Do(g.ctx, http.MethodDelete, "/%s/"+id, nil, nil); err != nil {
+	if err := g.client.Do(g.ctx, http.MethodDelete, "/%s/"+url.PathEscape(id), nil, nil); err != nil {
 		return apiFail(err)
 	}
 	fmt.Printf("deleted %%s\n", id)
@@ -1227,7 +1235,9 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		renderCLIBatchJSONVerb(&sb, ent, "batch-update", "BatchUpdate", "items", "PATCH")
 	}
 	if has("batch-delete") {
-		fmt.Fprintf(&sb, `// run%sBatchDelete deletes the positional ids in one transaction.
+		fmt.Fprintf(&sb, `// run%sBatchDelete deletes the positional ids in one transaction. Ids may
+// appear before or after flags — flag.Parse stops at the first positional,
+// so the trailing ones are collected from fs.Args().
 func run%sBatchDelete(args []string) int {
 	var ids []string
 	for len(args) > 0 && args[0] != "" && args[0][0] != '-' {
@@ -1239,18 +1249,25 @@ func run%sBatchDelete(args []string) int {
 	if code != 0 {
 		return code
 	}
+	for _, id := range fs.Args() {
+		if id != "" && id[0] == '-' {
+			fmt.Println(binaryName + " %s: flags must precede trailing ids (got " + id + " after an id)")
+			return 2
+		}
+		ids = append(ids, id)
+	}
 	if len(ids) == 0 {
 		fmt.Println("usage: " + binaryName + " %s <id> [id...]")
 		return 2
 	}
-	var resp client.BatchResponse
-	if err := g.client.Do(g.ctx, http.MethodDelete, "/%s/_batch", map[string]any{"ids": ids}, &resp); err != nil {
-		return apiFail(err)
+	resp, code := doBatch(g, http.MethodDelete, "/%s/_batch", map[string]any{"ids": ids})
+	if code != 0 {
+		return code
 	}
 	return printBatch(resp)
 }
 
-`, ent.Struct, ent.Struct, ent.Command+" batch-delete", ent.Command+" batch-delete", ent.Table)
+`, ent.Struct, ent.Struct, ent.Command+" batch-delete", ent.Command+" batch-delete", ent.Command+" batch-delete", ent.Table)
 	}
 	if has("watch") {
 		fmt.Fprintf(&sb, `// run%sWatch streams the live event feed until interrupted; each event is
@@ -1316,16 +1333,16 @@ func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
-		fmt.Fprintf(sb, "\tflt%s := fs.String(%q, \"\", %q)\n", exportName(f.Flag), f.Flag, help)
+		fmt.Fprintf(sb, "\tflt%s := fs.String(%q, \"\", %q)\n", toCamelCase(f.Flag), f.Flag, help)
 		if f.Comparable {
 			for _, op := range []string{"gt", "gte", "lt", "lte"} {
 				fmt.Fprintf(sb, "\tflt%s%s := fs.String(%q, \"\", %q)\n",
-					exportName(f.Flag), strings.ToUpper(op), f.Flag+"-"+op, "filter: "+f.Snake+" "+op)
+					toCamelCase(f.Flag), strings.ToUpper(op), f.Flag+"-"+op, "filter: "+f.Snake+" "+op)
 			}
 		}
 		if f.Likeable {
 			fmt.Fprintf(sb, "\tflt%sLike := fs.String(%q, \"\", %q)\n",
-				exportName(f.Flag), f.Flag+"-like", "filter: "+f.Snake+" contains")
+				toCamelCase(f.Flag), f.Flag+"-like", "filter: "+f.Snake+" contains")
 		}
 	}
 	sb.WriteString(`	g, code := parseGlobals(fs, args)
@@ -1352,14 +1369,14 @@ func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
 		sb.WriteString("\tif *trashed {\n\t\tq.Set(\"trashed\", \"true\")\n\t}\n")
 	}
 	for _, f := range ent.Fields {
-		fmt.Fprintf(sb, "\tset(%q, *flt%s)\n", f.Snake, exportName(f.Flag))
+		fmt.Fprintf(sb, "\tset(%q, *flt%s)\n", f.Snake, toCamelCase(f.Flag))
 		if f.Comparable {
 			for _, op := range []string{"gt", "gte", "lt", "lte"} {
-				fmt.Fprintf(sb, "\tset(%q, *flt%s%s)\n", f.Snake+"_"+op, exportName(f.Flag), strings.ToUpper(op))
+				fmt.Fprintf(sb, "\tset(%q, *flt%s%s)\n", f.Snake+"_"+op, toCamelCase(f.Flag), strings.ToUpper(op))
 			}
 		}
 		if f.Likeable {
-			fmt.Fprintf(sb, "\tset(%q, *flt%sLike)\n", f.Snake+"_like", exportName(f.Flag))
+			fmt.Fprintf(sb, "\tset(%q, *flt%sLike)\n", f.Snake+"_like", toCamelCase(f.Flag))
 		}
 	}
 	sb.WriteString(`	for _, kv := range params.pairs {
@@ -1424,13 +1441,13 @@ func renderCLIMutationVerb(sb *strings.Builder, ent cliEntity, verb string) {
 		}
 		switch f.GoType {
 		case "int":
-			fmt.Fprintf(sb, "\tfld%s := fs.Int(%q, 0, %q)\n", exportName(f.Flag), f.Flag, help)
+			fmt.Fprintf(sb, "\tfld%s := fs.Int(%q, 0, %q)\n", toCamelCase(f.Flag), f.Flag, help)
 		case "float64":
-			fmt.Fprintf(sb, "\tfld%s := fs.Float64(%q, 0, %q)\n", exportName(f.Flag), f.Flag, help)
+			fmt.Fprintf(sb, "\tfld%s := fs.Float64(%q, 0, %q)\n", toCamelCase(f.Flag), f.Flag, help)
 		case "bool":
-			fmt.Fprintf(sb, "\tfld%s := fs.Bool(%q, false, %q)\n", exportName(f.Flag), f.Flag, help)
+			fmt.Fprintf(sb, "\tfld%s := fs.Bool(%q, false, %q)\n", toCamelCase(f.Flag), f.Flag, help)
 		default: // string and json-typed fields both arrive as strings
-			fmt.Fprintf(sb, "\tfld%s := fs.String(%q, \"\", %q)\n", exportName(f.Flag), f.Flag, help)
+			fmt.Fprintf(sb, "\tfld%s := fs.String(%q, \"\", %q)\n", toCamelCase(f.Flag), f.Flag, help)
 		}
 	}
 	sb.WriteString(`	g, code := parseGlobals(fs, args)
@@ -1448,9 +1465,9 @@ func renderCLIMutationVerb(sb *strings.Builder, ent cliEntity, verb string) {
 				return fmt.Errorf("--%s: %%w", err)
 			}
 			body[%q] = v
-`, exportName(f.Flag), f.Flag, f.Wire)
+`, toCamelCase(f.Flag), f.Flag, f.Wire)
 		} else {
-			fmt.Fprintf(sb, "\t\t\tbody[%q] = *fld%s\n", f.Wire, exportName(f.Flag))
+			fmt.Fprintf(sb, "\t\t\tbody[%q] = *fld%s\n", f.Wire, toCamelCase(f.Flag))
 		}
 	}
 	sb.WriteString(`		}
@@ -1462,7 +1479,7 @@ func renderCLIMutationVerb(sb *strings.Builder, ent cliEntity, verb string) {
 `)
 	path := fmt.Sprintf("%q", "/"+ent.Table)
 	if withID {
-		path = fmt.Sprintf("\"/%s/\"+id", ent.Table)
+		path = fmt.Sprintf("\"/%s/\"+url.PathEscape(id)", ent.Table)
 	}
 	fmt.Fprintf(sb, `	var out singleResponse
 	if err := g.client.Do(g.ctx, %s, %s, body, &out); err != nil {
@@ -1478,7 +1495,8 @@ func renderCLIMutationVerb(sb *strings.Builder, ent cliEntity, verb string) {
 // wrapped into the {items: [...]} envelope, decoded as client.BatchResponse.
 func renderCLIBatchJSONVerb(sb *strings.Builder, ent cliEntity, verb, funcSuffix, key, httpMethod string) {
 	methods := map[string]string{"POST": "http.MethodPost", "PATCH": "http.MethodPatch"}
-	fmt.Fprintf(sb, `// run%s%s sends a --json array through the atomic _batch route.
+	fmt.Fprintf(sb, `// run%s%s sends a --json array through the atomic _batch route. A rolled-
+// back batch prints its {committed, results[]} envelope and exits 1.
 func run%s%s(args []string) int {
 	fs := newFlagSet(%q)
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
@@ -1490,28 +1508,14 @@ func run%s%s(args []string) int {
 	if code != 0 {
 		return code
 	}
-	var resp client.BatchResponse
-	if err := g.client.Do(g.ctx, %s, "/%s/_batch", map[string]any{%q: items}, &resp); err != nil {
-		return apiFail(err)
+	resp, code := doBatch(g, %s, "/%s/_batch", map[string]any{%q: items})
+	if code != 0 {
+		return code
 	}
 	return printBatch(resp)
 }
 
 `, ent.Struct, funcSuffix, ent.Struct, funcSuffix, ent.Command+" "+verb, methods[httpMethod], ent.Table, key)
-}
-
-// exportName turns a kebab flag name into a Go identifier suffix:
-// "sort-order" → "SortOrder".
-func exportName(flagName string) string {
-	parts := strings.Split(flagName, "-")
-	var sb strings.Builder
-	for _, p := range parts {
-		if p == "" {
-			continue
-		}
-		sb.WriteString(strings.ToUpper(p[:1]) + p[1:])
-	}
-	return sb.String()
 }
 
 func lowerFirst(s string) string {

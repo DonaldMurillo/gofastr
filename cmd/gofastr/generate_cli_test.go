@@ -61,10 +61,7 @@ func cliFixtureSpec(t *testing.T, opts cliOptions) cliSpec {
 
 func renderedCLI(t *testing.T, opts cliOptions) map[string]string {
 	t.Helper()
-	files, err := renderCLIFiles(cliFixtureSpec(t, opts))
-	if err != nil {
-		t.Fatalf("renderCLIFiles: %v", err)
-	}
+	files := renderCLIFiles(cliFixtureSpec(t, opts))
 	out := map[string]string{}
 	for _, f := range files {
 		out[f.name] = f.content
@@ -252,6 +249,48 @@ func TestRenderCLI_VerbAllowList(t *testing.T) {
 	opts.verbs = "posts=frobnicate"
 	if _, err := buildCLISpec(cliFixtureDecls(), opts, "x"); err == nil {
 		t.Errorf("unknown verb must error at generate time")
+	}
+}
+
+// A delete-only (or any narrow) verb selection must still emit the imports
+// its code uses — needsHTTP/needsURLValues are per-verb, and format.Source
+// cannot add missing imports.
+func TestRenderCLI_NarrowVerbImports(t *testing.T) {
+	opts := defaultCLIOptions()
+	opts.verbs = "delete"
+	files := renderedCLI(t, opts)
+	posts := files["posts.go"]
+	for _, w := range []string{`"net/http"`, `"net/url"`, "url.PathEscape(id)"} {
+		if !strings.Contains(posts, w) {
+			t.Errorf("delete-only posts.go missing %q\n%s", w, posts)
+		}
+	}
+}
+
+// Positional ids are path-escaped in every id-addressed verb, matching the
+// typed client — a '/' or '?' in an id must not rewrite the route.
+func TestRenderCLI_PathEscapesIDs(t *testing.T) {
+	files := renderedCLI(t, defaultCLIOptions())
+	posts := files["posts.go"]
+	if got := strings.Count(posts, "url.PathEscape(id)"); got != 4 { // get/update/patch/delete
+		t.Errorf("want 4 url.PathEscape(id) uses, got %d", got)
+	}
+}
+
+// An entity whose command form collides with a CLI built-in (config, login,
+// custom, …) must fail generation — it would shadow a command or emit a
+// duplicate filename.
+func TestRenderCLI_ReservedCommandName(t *testing.T) {
+	for _, table := range []string{"config", "login", "custom"} {
+		decls := []framework.EntityDeclaration{{
+			Name:   table,
+			Table:  table,
+			Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}},
+		}}
+		_, err := buildCLISpec(decls, defaultCLIOptions(), "x")
+		if err == nil || !strings.Contains(err.Error(), table) {
+			t.Errorf("entity table %q should fail generation, got %v", table, err)
+		}
 	}
 }
 
@@ -505,7 +544,7 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 	}
 
 	// batch-create + batch-delete
-	if out, code = run("posts", "batch-create", "--json", `[{"title":"b1"},{"title":"b2"}]`); code != 0 {
+	if out, code = run("posts", "batch-create", "--json", `[{"title":"batch-row-1"},{"title":"batch-row-2"}]`); code != 0 {
 		t.Fatalf("batch-create exited %d: %s", code, out)
 	}
 	var batch struct {
@@ -519,8 +558,21 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 	}
 	bid1, _ := batch.Results[0].Data["id"].(string)
 	bid2, _ := batch.Results[1].Data["id"].(string)
-	if out, code = run("posts", "batch-delete", bid1, bid2); code != 0 {
+	// ids straddling a flag: the trailing id must not be silently dropped
+	if out, code = run("posts", "batch-delete", bid1, "--token", plaintext, bid2); code != 0 {
 		t.Fatalf("batch-delete exited %d: %s", code, out)
+	}
+	if out, code = run("posts", "list", "-o", "table"); code != 0 || strings.Contains(out, "batch-row-") {
+		t.Fatalf("batch-delete left rows behind (exit %d): %s", code, out)
+	}
+
+	// a rolled-back batch prints its envelope on stdout and exits 1
+	out, code = run("posts", "batch-create", "--json", `[{"title":"ok"},{"views":1}]`)
+	if code != 1 {
+		t.Fatalf("rolled-back batch should exit 1, got %d: %s", code, out)
+	}
+	if !strings.Contains(out, `"committed": false`) {
+		t.Fatalf("rollback envelope missing from stdout: %s", out)
 	}
 
 	// watch: subscribe, create until an event line arrives
