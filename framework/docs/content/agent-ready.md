@@ -173,6 +173,74 @@ is livereload for agents. Opt out with `GOFASTR_DEV_MCP=0` (mirrors
 A dev-implied mount yields to a hand-wired `/mcp` route instead of
 panicking, so older scaffolds keep working under `gofastr dev`.
 
+### Rich tool results, resources, and MCP Apps
+
+A tool handler returns `any`. By default a plain value is JSON-marshaled
+into a single `{type:"text"}` block (unchanged). To emit richer content,
+return one of `core/mcp`'s result types:
+
+```go
+// An image block — every MCP client renders it inline (no token bomb from
+// a base64 string smuggled through text):
+return mcp.ImageResult{Data: pngBytes, MimeType: "image/png"}, nil
+
+// Structured output (validated against a declared outputSchema) plus
+// explicit blocks. A structured-only result still mirrors a text block for
+// clients that don't read structuredContent:
+return mcp.ToolResult{
+    Structured: map[string]any{"count": 3},
+    Content:    []mcp.Content{mcp.TextContent("3 matches")},
+}, nil
+```
+
+Declare a tool's output shape and attach `_meta` at registration with
+options:
+
+```go
+app.MCP.RegisterTool(name, desc, inputSchema, handler,
+    mcp.WithOutputSchema(schema),                    // → tools/list.outputSchema
+    mcp.WithToolMeta(map[string]any{                 // → tools/list._meta (verbatim)
+        "ui": map[string]any{"resourceUri": "ui://app/widget.html"},
+    }),
+)
+```
+
+**Resources.** `app.MCP.RegisterResource(uri, name, mimeType, contents)`
+serves a resource via `resources/list` + `resources/read`; registering any
+resource makes `initialize` advertise the `resources` capability. The
+contents func runs per read and may return text or a binary blob (base64 on
+the wire). Attach resource `_meta` with `mcp.WithResourceMeta(...)`. Note
+resources are **not** covered by the tool call gate — `mcp.Gated` /
+`auth.MCPUser` gate tool handlers, not `resources/read`. Public content (an
+MCP App's widget HTML) needs no gating; to serve sensitive or per-caller
+data, add `mcp.WithResourceGate(gate)` (the resource-side analogue of
+`mcp.Gated` — `auth.MCPUser()` / `auth.MCPRole(...)` work as gates), which
+runs before the contents func on every read.
+
+**MCP Apps.** The [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview)
+lets a tool declare an interactive HTML widget the host renders in a
+sandboxed iframe. `framework.WithMCPApp` wires both halves — the `ui://`
+resource carrying the HTML and the tool whose `_meta` links to it (with the
+ChatGPT Apps SDK `openai/outputTemplate` compat alias) — in one call:
+
+```go
+framework.WithMCPApp(mcp.AppConfig{
+    Name:        "studio",
+    Description: "Open the studio widget.",
+    InputSchema: schema,
+    Handler:     studioTool,
+    ResourceURI: "ui://myapp/studio.html",
+    HTML:        studioHTML,            // self-contained, inline JS/CSS
+    CSP:         "default-src 'self'",  // rides on the resource's _meta.ui
+})
+```
+
+The widget HTML is the app author's job (a single vanilla-JS file needs no
+build step). `WithMCPApp` is an explicit opt-in registered during
+`InitPlugins`, so a duplicate tool name or resource uri is a hard build
+error. Requires the `/mcp` server to be mounted (`WithMCP`, or the dev
+auto-mount).
+
 ### OAuth Protected Resource  (RFC 9728)
 
 When the app exposes OAuth-token-protected resources (e.g. battery/auth's JWT
@@ -250,6 +318,7 @@ origin and every artifact stays consistent, including behind a proxy that sets
 | `uihost.WithAgentLinkHeaders()` | `Link:` headers on HTML only. |
 | `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` → markdown. |
 | `framework.WithMCP()` | Auto-mount `/mcp` (Streamable HTTP). |
+| `framework.WithMCPApp(cfg)` | Register an MCP App: a `ui://` HTML widget resource + its linking tool. |
 | `framework.WithOAuthProtectedResource(cfg)` | RFC 9728 metadata doc. |
 | `framework.WithAuthMD(cfg)` | `/auth.md` + `agent_auth` block. |
 | `framework.WithWebBotAuth(cfg)` | `/.well-known/http-message-signatures-directory` JWKS. |

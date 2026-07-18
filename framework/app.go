@@ -264,6 +264,9 @@ type App struct {
 	// mcpControl enables the MUTATING MCP tools (module enable/disable)
 	// for trusted /mcp endpoints. Set via WithMCPControl().
 	mcpControl bool
+	// mcpApps queues MCP App registrations (a UI resource + its linking
+	// tool) added via WithMCPApp, registered during InitPlugins.
+	mcpApps []mcp.AppConfig
 	// mcp*DevImplied mark surfaces the dev loop turned on (GOFASTR_DEV,
 	// see NewApp) rather than an explicit option. Dev-implied surfaces
 	// tolerate collisions (hand-mounted /mcp, same-named tools) with a
@@ -1587,6 +1590,14 @@ func (a *App) InitPlugins() error {
 		}
 	}
 
+	// MCP Apps (WithMCPApp): register each queued UI resource + linking
+	// tool. An explicit host opt-in, so a collision is a hard error.
+	for _, appCfg := range a.mcpApps {
+		if err := a.MCP.RegisterApp(appCfg); err != nil {
+			return fmt.Errorf("framework: register MCP app %q: %w", appCfg.Name, err)
+		}
+	}
+
 	return nil
 }
 
@@ -2022,6 +2033,12 @@ func (a *App) Start(addr string) error {
 			a.router.Post("/mcp", h)
 			a.router.Get("/mcp", h)
 		}
+	}
+	// WithMCPApp widgets need /mcp reachable. Warn (don't fail) when an app is
+	// registered but nothing will serve /mcp — a silent prod-only 404 that
+	// works under the dev auto-mount and disappears in production.
+	if len(a.mcpApps) > 0 && !a.mcpAutoMount && !a.routerHasMCPRoute() {
+		a.Logger().Warn("WithMCPApp registered but /mcp is not mounted — the widget and its tool will be unreachable; add framework.WithMCP()")
 	}
 	if a.mcpAutoMount {
 		a.router.Get("/mcp/server-card", http.HandlerFunc(a.handleMCPServerCard))

@@ -5,6 +5,67 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.33.0] - 2026-07-18
+
+Adds MCP Apps support to `core/mcp` (#90) and a durable, replica-safe
+scheduler (#94); fixes ScreenGroup sibling navigation under a default layout
+(#89) and dropdown Escape focus restoration (#93).
+
+### Added
+
+- **Durable replica-safe scheduler** (#94). `battery/queue` gains a
+  `DurableScheduler` that persists schedule watermarks and occurrences in the
+  same SQL database as the `DBQueue`, so schedules survive restarts and never
+  double-fire across replicas: a heartbeat-expiry leadership lease avoids
+  redundant evaluation while unique occurrences + transactionally enqueued
+  jobs are the deduplication authority. `DurableSchedulerConfig` sets the
+  replica `OwnerID` (defaults to a random process-local ID) and `LeaseDuration`
+  (defaults to 30s). See [queue](queue.md).
+- **MCP Apps in `core/mcp`** (#90). The tools-only server now speaks the
+  richer surface MCP Apps and modern clients expect:
+  - **Rich tool results.** A `ToolHandler` can return `mcp.ImageResult`
+    (an `{type:"image"}` block, base64-encoded — renders inline instead
+    of smuggling base64 through a text field), `mcp.ToolResult{Structured, Content}`
+    (`structuredContent` + explicit blocks; a structured-only result mirrors
+    a text block for plain clients), a `mcp.Content` / `[]mcp.Content`, or a
+    plain value (unchanged: JSON-marshaled text). New `TextContent` /
+    `ImageContent` / `AudioContent` / `ResourceContent` constructors.
+  - **Resources.** `Server.RegisterResource(uri, name, mimeType, contents)`
+    serves `resources/list` + `resources/read` (text or base64 blob);
+    registering any resource makes `initialize` advertise the `resources`
+    capability. `mcp.WithResourceGate(gate)` auth-gates a resource's
+    contents (the resource-side analogue of `mcp.Gated`).
+  - **Tool / resource `_meta` + `outputSchema`.** `RegisterTool` takes
+    options — `mcp.WithToolMeta(...)` (serialized verbatim in `tools/list`,
+    the MCP Apps `ui.resourceUri` linkage) and `mcp.WithOutputSchema(...)`;
+    `mcp.WithResourceMeta(...)` / `WithResourceDescription(...)` for
+    resources.
+  - **`framework.WithMCPApp(mcp.AppConfig)`** wires an MCP App — a `ui://`
+    HTML widget resource plus the linking tool (with the ChatGPT Apps SDK
+    `openai/outputTemplate` compat alias) — in one call. Explicit opt-in,
+    registered during `InitPlugins`; a duplicate tool name / resource uri is
+    a hard build error.
+
+### Fixed
+
+- **ScreenGroup sibling nav under a default layout** (#89). A group
+  registered under `SetDefaultLayout` reports its INNER layout name in the
+  route manifest but carries the OUTERMOST default layout name in the
+  `[data-fui-layout]` shell marker, so `layoutWillChange` always misfired a
+  full shell swap — rebuilding the group's persistent chrome (e.g. a tab
+  strip) on every sibling click. The runtime now treats a shared
+  `data-fui-screen-group` between the two paths as proof of a shared shell
+  and does an in-shell content swap. `findCommonScreenGroup` also matches a
+  slashless index path (`/studio` inside prefix `/studio/`).
+- **`llm.md` dual-registration panic** (#89). A group index aliased at both
+  `/studio` and `/studio/` collapsed to one `/studio/llm.md` route and
+  panicked on the duplicate registration; the per-screen loop now dedupes
+  the collapsed route.
+- **Dropdown Escape focus restoration** (#93). Pressing Escape now closes the
+  focused (or topmost) open dropdown and returns focus to its trigger only
+  when focus was inside the panel, instead of mishandling focus across
+  multiple open dropdowns.
+
 ## [0.32.0] - 2026-07-18
 
 Ships the API-distribution pair: the customer-facing CLI (#85) and SDK

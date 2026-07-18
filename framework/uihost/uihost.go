@@ -1943,6 +1943,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 	}))
 
 	// Per-screen documentation
+	seen := make(map[string]bool)
 	for _, routePath := range coreApp.Router.Paths() {
 		screen, _, ok := coreApp.Router.Resolve(routePath)
 		if !ok {
@@ -1968,6 +1969,13 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 		if clean == "" {
 			route = "/llm.md"
 		}
+		// A group index registered at both the slashless and trailing-slash
+		// path (/studio and /studio/) collapses to the same llm.md route —
+		// register it once, else the second r.Get panics on a dup pattern (#89).
+		if seen[route] {
+			continue
+		}
+		seen[route] = true
 		r.Get(route, handler)
 	}
 }
