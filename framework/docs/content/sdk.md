@@ -167,12 +167,20 @@ b := &static.Builder{Host: host, OutDir: out,
 
 Files the export already produced (or the user static dir) always win.
 
-## Common mistake
+## Common mistakes
 
-Baking the API prefix into the docs/download URLs. The docs site and the
-artifact downloads mount on the app host (`/docs/api/...`); only API
-calls live under `APIPrefix` (`/api/posts`). The SDK `baseURL` must
-include the prefix; the download URLs must not.
+- **Baking the API prefix into the docs/download URLs.** The docs site
+  and the artifact downloads mount on the app host (`/docs/api/...`);
+  only API calls live under `APIPrefix` (`/api/posts`). The SDK
+  `baseURL` must include the prefix; the download URLs must not.
+- **Filtering with camelCase names.** `?statusId_gte=` matches nothing —
+  filter/sort query params and validation-error `fields` keys are the
+  snake_case column names. The JS SDK exports `<entity>Fields`
+  constants; the Go README shows the same rule.
+- **Hand-editing `gen/sdk/` output.** Unlike `generate cli`'s
+  `custom.go` seam, SDK output has no owned files — every regeneration
+  overwrites in place. Wrap the generated client from your own package
+  instead.
 
 ## Not covered (v1)
 
