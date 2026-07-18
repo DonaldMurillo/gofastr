@@ -1,6 +1,16 @@
 #!/bin/sh
-# GoFastr pre-commit hook
-# Security gate: formatting, secrets, vet, tests
+# GoFastr pre-commit hook — CI's "build · vet · test" job, locally.
+#
+# Runs the same blocking steps as .github/workflows/ci.yml's first job
+# (build, gofmt on tracked files, vet, the deterministic test sweep,
+# coverage floors) plus a secrets/sensitive-file scan, so a commit that
+# would fail CI fails HERE first. Keep the test command in sync with the
+# workflow when editing either.
+#
+# Enable once per clone: make hooks
+# Emergency bypass:      git commit --no-verify   (CI still gates)
+# Skip only the slow test sweep (e.g. docs-only commit):
+#   GOFASTR_SKIP_COMMIT_TESTS=1 git commit ...    (pre-push re-runs it)
 
 set -e
 
@@ -13,19 +23,24 @@ pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
 warn() { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
 
-# ---- 1. Format check ----
+# ---- 1. Build ----
 echo ""
-gofmt_output=$(gofmt -l .)
+go build ./...
+pass "go build ./..."
+
+# ---- 2. Format check (tracked files only — gen/ and scratch dirs are
+#          not ours to police) ----
+gofmt_output=$(git ls-files '*.go' | xargs gofmt -l)
 if [ -n "$gofmt_output" ]; then
   fail "Files not formatted:"
   echo "$gofmt_output"
   echo ""
-  echo "  Fix: gofmt -w ."
+  echo "  Fix: gofmt -w <files>"
   exit 1
 fi
 pass "Code formatted"
 
-# ---- 2. Secret/credential scanning ----
+# ---- 3. Secret/credential scanning ----
 echo ""
 echo "  Scanning for secrets..."
 
@@ -84,7 +99,7 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
 fi
 pass "No secrets detected"
 
-# ---- 3. Sensitive file check ----
+# ---- 4. Sensitive file check ----
 echo ""
 for file in $staged_files; do
   case "$file" in
@@ -97,20 +112,28 @@ for file in $staged_files; do
 done
 pass "No sensitive files"
 
-# ---- 4. go vet (with shadow checking) ----
+# ---- 5. go vet ----
 echo ""
-if command -v shadow >/dev/null 2>&1; then
-  go vet -vettool=$(which shadow) ./...
-else
-  go vet ./...
-fi
+go vet ./...
 pass "go vet clean"
 
-# ---- 5. Tests ----
+# ---- 6. Deterministic test sweep + coverage floors (CI-identical) ----
 echo ""
-go test -count=1 -short ./...
-pass "Tests passed"
+if [ "${GOFASTR_SKIP_COMMIT_TESTS:-}" = "1" ]; then
+  warn "test sweep skipped (GOFASTR_SKIP_COMMIT_TESTS=1) — pre-push and CI still gate"
+else
+  echo "  → Deterministic test sweep (mirrors CI's blocking job; several minutes)..."
+  # shellcheck disable=SC2046  # word splitting of go list output is intended
+  go test -count=1 -timeout=20m -p 2 \
+    -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
+    $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
+  pass "Deterministic tests passed"
+
+  echo ""
+  bash scripts/coverage-floors.sh
+  pass "Coverage floors hold"
+fi
 
 echo ""
-pass "All security checks passed"
+pass "All pre-commit checks passed"
 echo ""
