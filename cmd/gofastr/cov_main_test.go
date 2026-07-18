@@ -70,22 +70,13 @@ func TestInfoWarnPrint(t *testing.T) {
 	}
 }
 
-func TestLevenshteinAndMin(t *testing.T) {
-	cases := []struct {
-		a, b string
-		want int
-	}{
-		{"", "abc", 3},
-		{"abc", "", 3},
-		{"kitten", "sitting", 3},
-		{"same", "same", 0},
-	}
-	for _, c := range cases {
-		if got := levenshtein(c.a, c.b); got != c.want {
-			t.Errorf("levenshtein(%q,%q)=%d want %d", c.a, c.b, got, c.want)
-		}
-	}
+// Edit distance now lives in core/fuzzy (shared with framework/filter) and is
+// tested there; here we only cover the CLI-local variadic min helper.
+func TestMin(t *testing.T) {
 	if min(3, 1, 2) != 1 {
 		t.Fatalf("min broken")
+	}
+	if min(5) != 5 {
+		t.Fatalf("min single-arg broken")
 	}
 }

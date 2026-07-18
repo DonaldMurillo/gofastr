@@ -74,7 +74,7 @@ func TestSoftDelete_PublicStreamingListDoesNotExposeDeletedRecords(t *testing.T)
 
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
-		Path:   "/announcements?trashed=true&stream=true&per_page=100000",
+		Path:   "/announcements?trashed=true&stream=true&limit=100000",
 	})
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)

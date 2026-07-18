@@ -110,9 +110,10 @@ func TestCrossOwner_HTTPCannotBypass(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupOwnerReadInProcHandler(t)
 
-	// Attacker-controlled inputs: query params and headers that name the
-	// escape. None of them can flip the marker.
-	req := httptest.NewRequest(http.MethodGet, "/api/onotes?all_owners=true&cross_owner=1", nil)
+	// Attacker-controlled HEADERS that name the escape. The request runs;
+	// the marker (set only by an unexported Go context key) never flips, so
+	// the list stays owner-scoped.
+	req := httptest.NewRequest(http.MethodGet, "/api/onotes", nil)
 	req.Header.Set("X-Cross-Owner", "true")
 	req.Header.Set("X-All-Owners", "true")
 	req = withTestUser(req, "alice")
@@ -128,5 +129,19 @@ func TestCrossOwner_HTTPCannotBypass(t *testing.T) {
 	}
 	if !strings.Contains(body, "note-a") {
 		t.Fatalf("HTTP List() did not return alice's own row: %s", body)
+	}
+
+	// Attacker-controlled QUERY PARAMS that name the escape. Strict filter
+	// parsing rejects the unknown params with a 400 before any scan — the
+	// body can never contain bob's row.
+	req2 := httptest.NewRequest(http.MethodGet, "/api/onotes?all_owners=true&cross_owner=1", nil)
+	req2 = withTestUser(req2, "alice")
+	rec2 := httptest.NewRecorder()
+	ch.List()(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("query-param escape want 400 (strict), got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+	if b := rec2.Body.String(); strings.Contains(b, "note-b") || strings.Contains(b, "Beta") {
+		t.Fatalf("rejected request leaked bob's row: %s", b)
 	}
 }
