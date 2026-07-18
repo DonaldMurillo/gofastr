@@ -264,6 +264,9 @@ type App struct {
 	// mcpControl enables the MUTATING MCP tools (module enable/disable)
 	// for trusted /mcp endpoints. Set via WithMCPControl().
 	mcpControl bool
+	// mcpApps queues MCP App registrations (a UI resource + its linking
+	// tool) added via WithMCPApp, registered during InitPlugins.
+	mcpApps []mcp.AppConfig
 	// mcp*DevImplied mark surfaces the dev loop turned on (GOFASTR_DEV,
 	// see NewApp) rather than an explicit option. Dev-implied surfaces
 	// tolerate collisions (hand-mounted /mcp, same-named tools) with a
@@ -1584,6 +1587,14 @@ func (a *App) InitPlugins() error {
 				return err
 			}
 			a.Logger().Warn("dev MCP control tools partially skipped", "error", err)
+		}
+	}
+
+	// MCP Apps (WithMCPApp): register each queued UI resource + linking
+	// tool. An explicit host opt-in, so a collision is a hard error.
+	for _, appCfg := range a.mcpApps {
+		if err := a.MCP.RegisterApp(appCfg); err != nil {
+			return fmt.Errorf("framework: register MCP app %q: %w", appCfg.Name, err)
 		}
 	}
 
