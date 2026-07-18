@@ -448,24 +448,24 @@ var cliReservedCommands = map[string]bool{
 	"login": true, "logout": true, "version": true, "help": true,
 }
 
-func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity, error) {
+// buildEntityModel derives the shared per-entity model (struct name, route
+// table, wire/snake field names, filterability) that both the generated CLI
+// and the generated SDKs (`gofastr generate sdk`) consume. It never fails —
+// CLI-specific validation (reserved commands, flag collisions) lives in
+// buildCLIEntity.
+func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntity {
 	table := decl.Table
 	if table == "" {
 		table = decl.Name
 	}
-	command := strings.ReplaceAll(strings.ToLower(table), "_", "-")
-	if cliReservedCommands[command] {
-		return cliEntity{}, fmt.Errorf("entity %q: its command form %q collides with a CLI built-in — exclude it with --exclude=%s, or rename the table", decl.Name, command, decl.Name)
-	}
 	ent := cliEntity{
 		Struct:     toCamelCase(decl.Name),
-		Command:    command,
+		Command:    strings.ReplaceAll(strings.ToLower(table), "_", "-"),
 		Table:      table,
 		Verbs:      verbs,
 		Search:     len(decl.SearchFields) > 0,
 		SoftDelete: decl.SoftDelete,
 	}
-	seen := map[string]string{} // flag name → field, to catch duplicates
 	for _, fd := range decl.Fields {
 		if fd.Name == "id" || fd.Hidden {
 			continue
@@ -492,6 +492,18 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 		case "string", "text":
 			f.Likeable = true
 		}
+		ent.Fields = append(ent.Fields, f)
+	}
+	return ent
+}
+
+func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity, error) {
+	ent := buildEntityModel(decl, verbs)
+	if cliReservedCommands[ent.Command] {
+		return cliEntity{}, fmt.Errorf("entity %q: its command form %q collides with a CLI built-in — exclude it with --exclude=%s, or rename the table", decl.Name, ent.Command, decl.Name)
+	}
+	seen := map[string]string{} // flag name → field, to catch duplicates
+	for _, f := range ent.Fields {
 		flags := []string{f.Flag}
 		if f.Comparable {
 			flags = append(flags, f.Flag+"-gt", f.Flag+"-gte", f.Flag+"-lt", f.Flag+"-lte")
@@ -501,14 +513,13 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 		}
 		for _, name := range flags {
 			if cliReservedFlags[name] {
-				return cliEntity{}, fmt.Errorf("entity %q: field %q derives CLI flag --%s, which is reserved — rename the field, or exclude the entity with --exclude=%s", decl.Name, fd.Name, name, decl.Name)
+				return cliEntity{}, fmt.Errorf("entity %q: field %q derives CLI flag --%s, which is reserved — rename the field, or exclude the entity with --exclude=%s", decl.Name, f.Snake, name, decl.Name)
 			}
 			if prev, dup := seen[name]; dup {
-				return cliEntity{}, fmt.Errorf("entity %q: fields %q and %q both derive CLI flag --%s — rename one", decl.Name, prev, fd.Name, name)
+				return cliEntity{}, fmt.Errorf("entity %q: fields %q and %q both derive CLI flag --%s — rename one", decl.Name, prev, f.Snake, name)
 			}
-			seen[name] = fd.Name
+			seen[name] = f.Snake
 		}
-		ent.Fields = append(ent.Fields, f)
 	}
 	return ent, nil
 }

@@ -259,11 +259,14 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 
 	var sb strings.Builder
 
-	// Output struct (Post)
+	// Output struct (Post). Hidden fields are skipped everywhere below: the
+	// server never puts them on the wire, and the client also ships inside
+	// the downloadable SDK — emitting hidden column names there would leak
+	// schema the API deliberately conceals.
 	sb.WriteString(fmt.Sprintf("type %s struct {\n", struct_))
 	sb.WriteString("\tID string `json:\"id\"`\n")
 	for _, field := range decl.Fields {
-		if field.Name == "id" {
+		if field.Name == "id" || field.Hidden {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
@@ -277,7 +280,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	// addressing, and including it in the body invites mismatch bugs.
 	sb.WriteString(fmt.Sprintf("type %sInput struct {\n", struct_))
 	for _, field := range decl.Fields {
-		if field.Name == "id" {
+		if field.Name == "id" || field.Hidden {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
@@ -294,7 +297,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	// to fields present in the JSON body, so this is the faithful mapping.
 	sb.WriteString(fmt.Sprintf("type %sPatch struct {\n", struct_))
 	for _, field := range decl.Fields {
-		if field.Name == "id" {
+		if field.Name == "id" || field.Hidden {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
@@ -393,7 +396,7 @@ func (c *Client) Delete%s(ctx context.Context, id string) error {
 	sb.WriteString(fmt.Sprintf("type %sBatchPatch struct {\n", struct_))
 	sb.WriteString("\tID string `json:\"id\"`\n")
 	for _, field := range decl.Fields {
-		if field.Name == "id" {
+		if field.Name == "id" || field.Hidden {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
