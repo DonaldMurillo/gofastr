@@ -22,6 +22,13 @@ pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
 warn() { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
 
+# Git runs hooks with GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (etc.)
+# pointing at THIS repo; they inherit into the test sweep, whose tests
+# shell out to `git init` / `git status` in temp fixtures and would then
+# target this repo and fail. Unset git's own location vars so the sweep
+# runs clean, exactly like CI (which runs tests outside any hook).
+unset $(git rev-parse --local-env-vars 2>/dev/null) 2>/dev/null || true
+
 echo ""
 echo "  Pre-push gate..."
 echo ""

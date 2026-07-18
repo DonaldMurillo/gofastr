@@ -23,6 +23,15 @@ pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
 warn() { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
 
+# Git runs hooks with GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (etc.)
+# pointing at THIS repo, and they inherit into every child process. The
+# test sweep shells out to `git init` / `git status` in temp dirs
+# (gofastr init, the onboarding evals), which would then target this repo
+# instead of their fixture and fail. Unset git's own location vars so the
+# sweep runs in a clean environment, exactly like CI (which runs tests as
+# a plain step, not inside a hook).
+unset $(git rev-parse --local-env-vars 2>/dev/null) 2>/dev/null || true
+
 # ---- 1. Build ----
 echo ""
 go build ./...
