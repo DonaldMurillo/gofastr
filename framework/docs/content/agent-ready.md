@@ -123,6 +123,20 @@ when the request's `Accept` header prefers `text/markdown` (the Cloudflare
 convention). Requires `WithPublicLLMMD` so the per-screen renderers are
 available. Requests without the `Accept` header are unaffected.
 
+### Per-screen `llm.md` carries the screen's SEO
+
+The per-screen `/llm.md` document (and the negotiated-markdown response)
+opens with a YAML front-matter block mirroring the same screen's HTML
+`<head>` metadata: `title`, `description`, `canonical`, `robots`,
+`og_title` / `og_description` / `og_image`, `twitter_card` /
+`twitter_title`, `hreflang` (a list), and `schema_types` (the JSON-LD
+`@type` names). The values are resolved from the same
+`ScreenSEO` bundle + per-concern interfaces (`ScreenCanonical`,
+`ScreenRobots`, `ScreenHreflangs`, `ScreenSchema`) the head renders from,
+so a crawler and an LLM see one consistent metadata set per route.
+Screens with no SEO declarations get no front-matter — the markdown is
+unchanged. See [SEO](/docs/seo) for the per-screen interfaces.
+
 ### MCP auto-mount  (`framework.WithMCP`)
 
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
