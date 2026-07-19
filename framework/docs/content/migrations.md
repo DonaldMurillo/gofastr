@@ -686,7 +686,13 @@ step — `gofastr migrate generate <name>` emits the drift as a reviewable
 numbered migration, `gofastr migrate up` applies it, `gofastr migrate
 status` shows what's pending. Entity seeds still run at Start (idempotent data, not
 schema); a seeded entity whose table is missing fails Start fast instead
-of the app serving against an unmigrated database.
+of the app serving against an unmigrated database. Seeds acquire a DISTINCT
+Postgres advisory lock from migrations, so N replicas booting at once
+serialize their seed phase too — the `_gofastr_seeded` ledger then makes
+each entity's Seed run once globally. (Exception: a `MaxOpenConns(1)`
+Postgres pool can't hold the lock without deadlocking the seed body, so it
+skips the lock with a WARN and is not coordinated across replicas — keep
+the pool above 1 connection.)
 
 `WithoutAutoMigrate` suppresses **entity** DDL. A few framework-owned
 bookkeeping tables are still created on demand regardless — the seed

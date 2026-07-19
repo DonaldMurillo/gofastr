@@ -97,7 +97,10 @@ app.Entity("foods", entity.EntityConfig{
 `Seed` should be idempotent. The ledger is best-effort tracking that
 survives normal restarts but cannot guarantee atomicity between user
 inserts and the ledger row; prefer `INSERT … ON CONFLICT DO NOTHING` or
-a pre-check inside `Seed`.
+a pre-check inside `Seed`. Across replicas, the framework serializes
+the seed phase behind a Postgres advisory lock (distinct from the
+migration lock) so only one replica runs an entity's Seed for a given
+boot race; the ledger then makes it run once globally.
 
 ### Embedded seed data (`SeedFS` + `SeedPath`)
 

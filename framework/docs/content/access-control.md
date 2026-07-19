@@ -349,6 +349,40 @@ mutate both the DB and the policy in one call — the policy's RWMutex covers
 concurrent `Can` checks, so a grant/revoke is "atomic enough": a reader sees
 the state before or after, never a torn map.
 
+### Cross-replica grant propagation
+
+`GrantStore.Grant`/`Revoke` mutate the LOCAL `*RolePolicy` only. With N
+replicas behind a load balancer sharing one database, the other replicas'
+in-memory policies stay stale until restart — an editor granted on replica
+A still fails `Can("posts:write")` on replica B until B reboots.
+
+Attaching a fanout closes that window. Register the store with the app
+(`framework.WithGrantStore`) so the framework auto-wires it to the same
+fanout as `WithFanout`:
+
+```go
+app := framework.NewApp(
+    framework.WithDB(db),
+    framework.WithGrantStore(store),
+    framework.WithFanout(fanout.NewPostgres(dsn, db)),
+)
+```
+
+On every `Grant`/`Revoke`, the store publishes a refresh-signal on the
+`gofastr.access` lane naming the role whose grants changed. Each
+subscriber re-reads that role's rows from `access_grants` and atomically
+swaps them into its local policy via `RolePolicy.ReplaceRole`. The
+message body is never trusted — a crafted payload can only trigger a
+re-read, never pollute the policy directly.
+
+**Consistency window.** Fanout is lossy best-effort. A publish that
+doesn't reach a peer (the peer's queue overflowed, the bus was briefly
+down) leaves that peer stale until the NEXT grant/revoke on the same
+role, or until restart (when `LoadInto` re-hydrates authoritative
+state). The store itself remains correct — it always reads from and
+writes to the DB; only the in-memory cache lags. A reconnecting
+replica's `LoadInto` reloads authoritative state on boot.
+
 Capability validation happens before `GrantStore` writes. A strict rejection
 therefore leaves both the database and live policy unchanged. In warning mode,
 unknown concrete grants remain persisted for compatibility. The admin roles

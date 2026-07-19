@@ -145,6 +145,14 @@ calls run in registration order; the first non-nil error aborts `Start`
 The context is the app's lifecycle context, so a long-running seed
 respects shutdown.
 
+Across replicas, `WithSeed` hooks acquire the SAME seed advisory lock as
+the per-entity phase (distinct from the migration lock), so two replicas
+booting at once cannot run a hook concurrently. `WithSeed` hooks have no
+ledger — they serialize-per-boot but still run on every replica, so keep
+them idempotent (`INSERT … ON CONFLICT DO NOTHING`). (Exception: a
+`MaxOpenConns(1)` Postgres pool skips the lock with a WARN and is not
+coordinated across replicas — keep the pool above 1 connection.)
+
 Use `WithSeed` for app-level or cross-entity seed logic; use
 `EntityConfig.Seed` (idempotent, ledger-tracked) for per-entity fixtures.
 
