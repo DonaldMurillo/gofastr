@@ -15,16 +15,29 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 const readmeBlueprintHeading = "### Declare an app (blueprint)"
+
+// readmeQuickstartHeading anchors the smallest-app Go snippet — the first
+// program the README shows. Its section ends at the first ### heading,
+// "### Updating GoFastr" (readmeSection splits at the next ## or ###).
+const readmeQuickstartHeading = "## Quickstart"
+
+// mcpTrueRe matches the entity-config `MCP:  true,` line without pinning the
+// exact gofmt column alignment — `MCP:` followed by ≥1 whitespace then `true`.
+// A future struct key that lengthens the column must not break this guard.
+var mcpTrueRe = regexp.MustCompile(`MCP:\s+true`)
 
 func repoRootDir(t *testing.T) string {
 	t.Helper()
@@ -267,6 +280,154 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/posts = %d, want 200\n%s", resp.StatusCode, output.String())
+	}
+}
+
+// readmeGoQuickstart extracts the smallest-app Go program — the first ```go
+// fence under "## Quickstart" (the one with a func main).
+func readmeGoQuickstart(t *testing.T) string {
+	t.Helper()
+	section, err := readmeSection(readmeContent(t), readmeQuickstartHeading)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := fencedBlock(section, "go", "func main()")
+	if err != nil {
+		t.Fatalf("README smallest-app Go snippet missing: %v", err)
+	}
+	return block
+}
+
+// TestReadmeGoQuickstartRuns is the executable gate for the smallest-app Go
+// snippet. It extracts the exact program, swaps only the hard-coded listen
+// address for a free port (the one transform, mirroring the go.mod injection
+// the blueprint gate does), compiles it against the working tree, boots it,
+// and asserts the runtime claims the README's comments make:
+//   - GET /posts == 200 (anonymous read) — Public: true opts out of
+//     secure-by-default (crud requireAuthenticated) so the documented
+//     "complete server" does not 401.
+//   - POST /posts == 201 (anonymous write) — Public: true's comment promises
+//     read AND write; this catches a regression where read is open but create
+//     silently still requires a session.
+//   - POST /mcp initialize returns a JSON-RPC result AND tools/list contains
+//     posts_list + posts_create — WithMCP() mounts /mcp AND MCP:true on the
+//     entity actually registered its CRUD tools (not just an empty /mcp).
+//
+// This gate exists because those claims silently drifted from the code
+// (issue #65 secure-by-default and the WithMCP requirement) while the snippet
+// went untested.
+func TestReadmeGoQuickstartRuns(t *testing.T) {
+	src := readmeGoQuickstart(t)
+	// Guard the three source-level claims so a future edit can't drop the
+	// flags and leave the runtime assertions passing for the wrong reason.
+	// MCP:true is matched with a regexp (not the exact gofmt-aligned literal)
+	// so a future struct-key addition that re-aligns the column does not
+	// silently break this guard.
+	for _, want := range []string{"framework.WithMCP()", "Public: true"} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("README smallest-app snippet lost %q — it backs a runtime claim:\n%s", want, src)
+		}
+	}
+	if !mcpTrueRe.MatchString(src) {
+		t.Fatalf("README smallest-app snippet lost MCP:true — it backs the /mcp tool-registration claim:\n%s", src)
+	}
+
+	repoRoot := repoRootDir(t)
+	dir := t.TempDir()
+	addr := freeAddr(t)
+	src = strings.Replace(src, `":8080"`, `"`+addr+`"`, 1)
+
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module readme.example/smallest\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	writeTestFile(t, filepath.Join(dir, "go.mod"), goMod)
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	writeTestFile(t, filepath.Join(dir, "main.go"), src)
+
+	appBin := testExecutablePath(filepath.Join(dir, "readme-smallest-app"))
+	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
+	buildCmd.Dir = dir
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("README smallest-app snippet did not build: %v\n%s", err, output)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, appBin)
+	cmd.Dir = dir
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start README smallest-app: %v", err)
+	}
+	defer func() {
+		cancel()
+		_ = cmd.Wait()
+	}()
+
+	baseURL := "http://" + addr
+	waitForHTTP(t, baseURL+"/posts", &output)
+
+	// Anonymous READ — the documented "complete server" is reachable, and
+	// Public: true opts out of secure-by-default so it does not 401.
+	getResp, err := http.Get(baseURL + "/posts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /posts = %d, want 200 (Public opt-out missing?)\n%s", getResp.StatusCode, output.String())
+	}
+
+	// Anonymous WRITE — Public: true's comment promises read AND write, so a
+	// POST must persist. Catches the regression where read is open but create
+	// silently still requires a session (the secure-by-default default).
+	postResp, err := http.Post(baseURL+"/posts", "application/json", strings.NewReader(`{"title":"gate"}`))
+	if err != nil {
+		t.Fatalf("POST /posts: %v\n%s", err, output.String())
+	}
+	postResp.Body.Close()
+	if postResp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /posts = %d, want 201 (Public: true should grant anonymous write)\n%s", postResp.StatusCode, output.String())
+	}
+
+	// MCP is live AND carries the entity CRUD tools the snippet promises
+	// (posts_list/get/create/update/delete). The Streamable HTTP transport is
+	// stateless JSON-RPC over POST — no Mcp-Session-Id threading needed — so
+	// initialize then tools/list can be called directly. Asserting the tool
+	// names are present (not just that /mcp != 404) catches a regression where
+	// WithMCP() still mounts /mcp but MCP:true was dropped from the entity (or
+	// tool registration failed past boot), leaving an empty tool set.
+	client := &http.Client{Timeout: 5 * time.Second}
+	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"readme-gate","version":"0"}}}`
+	initResp, err := client.Post(baseURL+"/mcp", "application/json", strings.NewReader(initReq))
+	if err != nil {
+		t.Fatalf("POST /mcp initialize: %v\n%s", err, output.String())
+	}
+	initBody, _ := io.ReadAll(initResp.Body)
+	initResp.Body.Close()
+	if initResp.StatusCode == http.StatusNotFound {
+		t.Fatalf("POST /mcp = 404 — WithMCP() did not mount /mcp\n%s", output.String())
+	}
+	if !strings.Contains(string(initBody), `"result"`) {
+		t.Fatalf("POST /mcp initialize did not return a JSON-RPC result (status %d): %s\n%s", initResp.StatusCode, initBody, output.String())
+	}
+	listReq := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
+	listResp, err := client.Post(baseURL+"/mcp", "application/json", strings.NewReader(listReq))
+	if err != nil {
+		t.Fatalf("POST /mcp tools/list: %v\n%s", err, output.String())
+	}
+	listBody, _ := io.ReadAll(listResp.Body)
+	listResp.Body.Close()
+	for _, want := range []string{"posts_list", "posts_create"} {
+		if !strings.Contains(string(listBody), want) {
+			t.Fatalf("POST /mcp tools/list missing %q — MCP:true did not register the entity's CRUD tools (got: %s)\n%s", want, listBody, output.String())
+		}
 	}
 }
 

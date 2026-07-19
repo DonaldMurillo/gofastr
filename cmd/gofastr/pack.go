@@ -26,7 +26,7 @@ func decodeBlueprintString(yml string) (Blueprint, error) {
 }
 
 // =============================================================================
-// pack.go — the inverse of generate. encodeBlueprintYAML serializes a Blueprint
+// pack.go — a lossy app→blueprint snapshot. encodeBlueprintYAML serializes a Blueprint
 // back to gofastr.yml; the AST readers (further down) reconstruct a Blueprint
 // from a generated app's Go source so `gofastr pack <dir>` recovers the
 // authoring YAML. The invariant the round-trip test gates:
@@ -2608,8 +2608,9 @@ func packBlueprint(dir string) (Blueprint, error) {
 	return bp, nil
 }
 
-// runPack implements `gofastr pack [app-dir] [-o out.yml]` — the inverse of
-// generate. It reconstructs the gofastr.yml from a generated app's Go source.
+// runPack implements `gofastr pack [app-dir] [-o out.yml]` — a lossy
+// best-effort snapshot, not a round-trip inverse of generate. It reconstructs
+// a gofastr.yml from a generated app's Go source.
 func runPack(args []string) {
 	dir := "."
 	out := ""
@@ -2622,8 +2623,10 @@ func runPack(args []string) {
 			}
 		case "-h", "--help":
 			info("Usage: gofastr pack [app-dir] [-o out.yml]")
-			info("Reconstructs gofastr.yml from a generated app's Go source (entities, app")
-			info("config, theme, screens, nav, seed). The inverse of `gofastr generate`.")
+			info("Reconstructs a best-effort gofastr.yml from a generated app's Go source")
+			info("(entities, app config, theme, screens, nav, seed). Lossy — not a round-trip")
+			info("inverse of `gofastr generate`; hand-written handlers/hooks/business logic")
+			info("are not recovered. See framework/ARCHITECTURE.md (\"pack is one-way\").")
 			return
 		default:
 			if !strings.HasPrefix(args[i], "-") {
