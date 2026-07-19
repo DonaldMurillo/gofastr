@@ -25,6 +25,7 @@ shared store) or run on exactly one replica.
 | Live events / SSE / island push | in-process `EventBus` + `island.Manager` | an event emitted on A never reaches a browser connected to B | `framework.WithFanout(fanout.NewPostgres(dsn, db))` — see "SSE across replicas" below |
 | `battery/cache` memory backend | per-process | stale reads after another replica writes | `cache.NewRedisCache(client)`, or accept per-replica caching for derived-only data |
 | File uploads on local storage | per-replica disk (`storage.NewLocalStorage`, `upload.NewLocalStorage`) | upload lands on A, download from B 404s | S3-compatible backend (`battery/storage`'s S3 client), or a shared volume mounted on every replica |
+| Runtime RBAC grants (`access.GrantStore`) | in-memory `RolePolicy` cache per process | editor granted on A still denied on B until B restarts | `framework.WithGrantStore(store)` + `framework.WithFanout(...)` — grant/revoke publishes a refresh-signal on the `gofastr.access` lane; every replica re-reads the role's grants from `access_grants` |
 
 Auth enforces the first two at boot in production mode (`DevMode:
 false`): the in-memory session store logs a WARN; the in-memory 2FA
@@ -38,6 +39,19 @@ refusal downgrades to a WARN.
 
 - **Migrations** — auto-migrate takes a Postgres advisory lock, so N
   replicas booting simultaneously run the migration once.
+- **Startup seeds** — `RunSeeds` and `WithSeed` hooks acquire a
+  DISTINCT Postgres advisory lock (separate from migrations) so N
+  booting replicas never race a seed func. Combined with the
+  `_gofastr_seeded` ledger, an entity's `Seed` runs once globally; the
+  other replicas see the ledger row on their locked turn and skip. A
+  crashed lock holder's session-level lock is released by Postgres
+  automatically — no permanent block. (`WithSeed` hooks have no
+  ledger, so they serialize-per-boot but still run on every replica —
+  keep them idempotent.) **Exception:** a Postgres pool capped at
+  `MaxOpenConns(1)` cannot hold the advisory lock (it would deadlock the
+  seed body), so it skips the lock with a WARN and N such replicas are
+  NOT coordinated — keep the pool above 1 connection for multi-replica
+  seed serialization.
 - **`queue.DBQueue`** — claims jobs with `FOR UPDATE SKIP LOCKED`;
   competing workers on every replica are the *intended* topology.
 - **Webhook delivery (`LeasedStore`)** — leases deliveries so two
@@ -128,6 +142,10 @@ the connection. Options, in order of preference:
       the ingress.
 - [ ] SSE push crosses replicas: `WithFanout` attached (and side-effect
       handlers moved to outbox consumers), or sticky sessions configured.
+- [ ] Runtime RBAC grants propagate: `WithGrantStore` attached when
+      `access.GrantStore` is in use, so grant/revoke reaches every
+      replica's `RolePolicy` without a restart. (Code-defined-only
+      policies — `policy.Grant` at boot — need nothing extra.)
 - [ ] Cache backend shared (Redis) if cached data must be coherent across replicas.
 - [ ] `AuthConfig.AllowInMemoryStores` **removed** — the boot warning is
       your regression test for the first two items.

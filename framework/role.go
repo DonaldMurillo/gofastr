@@ -35,8 +35,9 @@ const (
 	// and binds addr, but serves ONLY the health surface (/healthz +
 	// /readyz). It does NOT mount the app router, entity CRUD, OpenAPI,
 	// docs, admin, or well-known discovery routes. Auto-migrate, seeds,
-	// plugins, and batteries still run (migrations take a lock; either
-	// process type may boot first).
+	// plugins, and batteries still run: migrations take their own advisory
+	// lock and seeds take a SEPARATE one, so either process type may boot
+	// first without racing schema or seed writes.
 	RoleWorker Role = "worker"
 )
 

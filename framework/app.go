@@ -29,8 +29,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
@@ -145,6 +147,12 @@ type App struct {
 	// modules manages registered modules and their enable/disable state.
 	// Created in NewApp; nil-safe (NewModuleManager always returns non-nil).
 	modules *ModuleManager
+
+	// access, when set (WithGrantStore), is the app's RBAC GrantStore.
+	// When a fanout is also attached (WithFanout), grant/revoke propagate
+	// to every replica as a refresh-signal. Nil by default — apps that
+	// don't use RBAC are unaffected.
+	access *access.GrantStore
 
 	// processModules supervises out-of-process third-party modules
 	// (issue #37, wave 2a). Lazily constructed by RegisterProcessModule;
@@ -578,6 +586,22 @@ func WithFanout(f fanout.Fanout) AppOption {
 	}
 	return func(a *App) {
 		a.fanout = f
+	}
+}
+
+// WithGrantStore registers the app's RBAC GrantStore so the framework can
+// auto-wire cross-replica grant/revoke invalidation. When a fanout is also
+// attached (WithFanout), every GrantStore.Grant/Revoke publishes a
+// refresh-signal on the "gofastr.access" lane and each replica re-reads
+// the named role's grants from the DB into its local RolePolicy — never
+// trusting the message body. Without a fanout the store is usable but
+// grant/revoke stays local to this process (other replicas heal on
+// restart). The store MUST already be constructed (NewGrantStore) and
+// have EnsureSchema + LoadInto run on it before Start; the framework
+// only wires the fanout subscription.
+func WithGrantStore(gs *access.GrantStore) AppOption {
+	return func(a *App) {
+		a.access = gs
 	}
 }
 
@@ -1097,6 +1121,16 @@ func NewApp(opts ...AppOption) *App {
 		if err := a.modules.subscribeFanout(); err != nil {
 			panic("framework: module fanout subscribe: " + err.Error())
 		}
+	}
+	if a.fanout != nil && a.access != nil {
+		stop, err := a.access.SetFanout(a.fanout)
+		if err != nil {
+			panic("framework: access fanout subscribe: " + err.Error())
+		}
+		a.OnStop(func() error {
+			stop()
+			return nil
+		})
 	}
 
 	// WithIdempotency / WithI18n add entries to the default chain; if
@@ -1898,12 +1932,35 @@ func (a *App) Start(addr string) error {
 			return abort(fmt.Errorf("run seeds: %w", err))
 		}
 	}
-
 	// App-level seed hooks (App.WithSeed). Run after auto-migration + the
 	// per-entity RunSeeds phase so every table exists, and before plugins
-	// init so a plugin that reads seed data sees it.
-	if err := a.runSeedHooks(); err != nil {
-		return abort(fmt.Errorf("seed hooks: %w", err))
+	// init so a plugin that reads seed data sees it. Serialize across
+	// replicas behind the SAME advisory lock as RunSeeds ( DISTINCT from
+	// the migration lock) so two booting replicas don't race a hook.
+	// WithSeed hooks have no ledger — they serialize-per-boot but still
+	// run on every replica, so keep them idempotent. SQLite is unwrapped
+	// (single-process; the lock pin would fight the pool the hooks use).
+	// With no DB the call is unchanged (no coordination to do).
+	var seedHookErr error
+	if a.DB != nil && migrate.DetectDialect(a.DB) == migrate.DialectPostgres {
+		if a.DB.Stats().MaxOpenConnections == 1 {
+			// A 1-conn pool can't hold the advisory lock without deadlocking
+			// the hooks' own queries, so hooks run UNLOCKED and are NOT
+			// serialized across replicas — the same gap RunSeeds documents
+			// for a MaxOpenConns(1) Postgres pool. Warn loudly.
+			a.Logger().Warn("seed hooks advisory lock skipped: Postgres pool has MaxOpenConns(1), so App.WithSeed hooks are NOT serialized across replicas — raise MaxOpenConns above 1")
+			seedHookErr = a.runSeedHooks()
+		} else {
+			seedHookErr = coremig.WithAdvisoryLockKey(
+				a.appCtx, a.DB, migrate.DialectPostgres, coremig.SeedAdvisoryLockKey,
+				func(_ *sql.Conn) error { return a.runSeedHooks() },
+			)
+		}
+	} else {
+		seedHookErr = a.runSeedHooks()
+	}
+	if seedHookErr != nil {
+		return abort(fmt.Errorf("seed hooks: %w", seedHookErr))
 	}
 
 	// Initialize plugins and batteries (routes, middleware, tools, hooks).
