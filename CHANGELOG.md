@@ -5,6 +5,54 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.37.0] - 2026-07-19
+
+Accuracy-and-fixes release: closes two adapter/queue issues and runs a
+multi-model audit over the README and the shipped agent skills, correcting
+claims that had drifted from the code. No breaking changes.
+
+### Added
+
+- **Scheduled-job delivery options** (#116). `ScheduleBuilder` and
+  `DurableScheduleBuilder` gain fluent `Lane` / `Priority` / `MaxAttempts`
+  options. The durable scheduler persists them (additive, idempotent column
+  migration) and carries them into every fired `Job`; re-registering a schedule
+  updates the options without resetting its watermark. Omitted options keep
+  today's defaults (empty lane, priority 0, max attempts 3). Recurring bulk work
+  can now target a dedicated lane instead of standing up a separate table/worker.
+- **`CURRENT_TIMESTAMP` / `CURRENT_DATE` / `CURRENT_TIME` column defaults** in
+  the bundled pure-Go SQLite adapter (part of #115), evaluated per insert — the
+  auth OAuth-links table (`created_at ... DEFAULT CURRENT_TIMESTAMP`) now works
+  on the bundled adapter.
+
+### Fixed
+
+- **SQLite adapter applies column `DEFAULT` before `NOT NULL`** (#115). An
+  omitted `NOT NULL DEFAULT ...` column no longer fails. Bare `TRUE`/`FALSE` now
+  parse as integer literals (quoted `"true"`/`` `true` ``/`[true]` still resolve
+  as identifiers), the no-primary-key insert path is unified through the same
+  builder as the conflict path (so `NOT NULL` is always enforced and an explicit
+  `NULL` still fails even when a default exists), and omitted defaults inherit
+  column affinity.
+
+### Changed
+
+- **README accuracy pass.** A multi-model audit corrected ~20 claims that had
+  drifted from the code (the Swagger UI path, `core/`/`battery/` counts and
+  lists, the MCP/auth reality of the smallest-app snippet, the batch `curl`
+  content type) and softened several overclaims. The smallest-app Go snippet is
+  now covered by an executable-README gate that boots it and asserts anonymous
+  read/write and the registered MCP tools. `pack` and migration wording ("lossy,
+  not an inverse"; "a Down section when a safe inverse exists") is aligned across
+  the README, `pack.go`, `blueprints.md`, and `migrations.md`.
+- **Shipped-skills accuracy pass.** Audited the `.claude/skills` + agent personas
+  against the code and corrected stale references — the `battery/log` tool count
+  and registration prerequisite, log-level restore semantics, the full set of
+  runtime-mutating MCP tools, several `adversarial-tests` reference rows, a
+  non-shipped agent/skill reference, a wrong default port, and a persona payload
+  description. Two in-code MCP tool descriptions were brought in line with the
+  runtime.
+
 ## [0.36.0] - 2026-07-19
 
 Production-hardening release: closes the verified OAuth-identity and
