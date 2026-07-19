@@ -221,13 +221,14 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 			return fmt.Errorf("access: persist grant %q→%q: %w", role, permission, err)
 		}
 	}
-	// Reconcile the live policy to committed DB state (baseline ∪ DB) rather
-	// than additively mutating memory — this keeps the in-memory role a pure
-	// function of (DB, baseline), so a concurrent remote reload can never
-	// leave a torn view (the grant → remote-revoke → local-reapply race).
-	if err := s.reloadRole(ctx, role); err != nil {
-		return fmt.Errorf("access: reconcile after grant %q: %w", role, err)
-	}
+	// The DB write succeeded — apply the grant DIRECTLY to the live policy. A
+	// local grant/revoke is an authoritative admin action on THIS replica and
+	// mutates memory directly (an admin may revoke a grant that was seeded in
+	// code and never persisted to the DB). The baseline ∪ DB reconcile is used
+	// ONLY on the remote fanout path (reloadRole), where its job is to stop a
+	// peer's refresh from wiping this replica's code-defined grants — never to
+	// second-guess a local mutation.
+	s.policy.grantPrepared(role, prepared)
 	// Signal other replicas to re-read this role's grants from the DB
 	// (non-blocking; a stalled bus never wedges the grant).
 	s.publish(role)
@@ -258,13 +259,14 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 			return fmt.Errorf("access: persist revoke %q→%q: %w", role, p, err)
 		}
 	}
-	// Reconcile the live policy to committed DB state (baseline ∪ DB). A
-	// code-defined baseline grant is immutable this way — it survives the
-	// reload by design; to drop one, change the code. DB-granted permissions
-	// (the revocable ones) are gone from both DB and the rebuilt memory view.
-	if err := s.reloadRole(ctx, role); err != nil {
-		return fmt.Errorf("access: reconcile after revoke %q: %w", role, err)
-	}
+	// DB write succeeded — remove from the live policy DIRECTLY. A local
+	// revoke is authoritative and removes the permission from memory even if
+	// it was seeded in code (never in the DB), so an admin revoke takes effect
+	// immediately. NOTE: a code-SEEDED grant lives only in this replica's
+	// memory, so its revocation does not propagate to peers via the DB
+	// refresh-signal — seed store-managed grants via GrantStore.Grant (which
+	// persists them) if they must be revocable across replicas.
+	s.policy.Revoke(role, perms...)
 	// Signal other replicas to re-read (non-blocking).
 	s.publish(role)
 	return nil
