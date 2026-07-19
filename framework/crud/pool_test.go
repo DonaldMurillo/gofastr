@@ -2,6 +2,7 @@ package crud
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 )
 
@@ -199,4 +200,81 @@ func TestScanRowsPooledKeyFunc(t *testing.T) {
 		t.Error("MY_COL value is nil")
 	}
 	returnRowSlice(result)
+}
+
+// TestScanRowsPooled_NoAliasingAcrossRows pins the contract that the
+// per-row scratch []any pool introduced for issue #100B doesn't alias scan
+// destinations across rows. The pool hands the same backing slice to the
+// next iteration once the previous row's map is built; if the row-map
+// build didn't COPY each value out (or if the pool returned the slice too
+// early), every row in the result would silently contain the LAST row's
+// values. Scan a 50-row result set (the bench's limit=50 workload) and
+// assert every row carries its own id/name.
+func TestScanRowsPooled_NoAliasingAcrossRows(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite3 driver not available")
+	}
+	defer db.Close()
+
+	if _, err := db.Exec("CREATE TABLE t (id INTEGER, name TEXT)"); err != nil {
+		t.Skipf("sqlite3 not available: %v", err)
+	}
+	// 50 rows mirrors the bench's limit=50; enough that a pool with one
+	// hot slot would surface aliasing as a uniform last-row result.
+	const N = 50
+	for i := range N {
+		if _, err := db.Exec("INSERT INTO t (id, name) VALUES (?, ?)", i, fmt.Sprintf("row%d", i)); err != nil {
+			t.Fatalf("seed row %d: %v", i, err)
+		}
+	}
+
+	rows, err := db.Query("SELECT id, name FROM t ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	result, err := scanRowsPooled(rows, []string{"id", "name"}, func(s string) string { return s })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer returnRowSlice(result)
+
+	if len(*result) != N {
+		t.Fatalf("expected %d rows, got %d", N, len(*result))
+	}
+	for i, row := range *result {
+		gotName, _ := row["name"].(string)
+		wantName := fmt.Sprintf("row%d", i)
+		if gotName != wantName {
+			t.Fatalf("row %d name = %q, want %q (scratch-slice aliasing suspected)", i, gotName, wantName)
+		}
+		gotID, _ := row["id"].(int64)
+		if int(gotID) != i {
+			t.Fatalf("row %d id = %v, want %d (scratch-slice aliasing suspected)", i, gotID, i)
+		}
+	}
+
+	// Drive the pool through two full cycles — by now any aliasing bug
+	// would also surface as a stale value leaking into a fresh scan.
+	rows2, err := db.Query("SELECT id, name FROM t ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows2.Close()
+	result2, err := scanRowsPooled(rows2, []string{"id", "name"}, func(s string) string { return s })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer returnRowSlice(result2)
+	if len(*result2) != N {
+		t.Fatalf("second scan: expected %d rows, got %d", N, len(*result2))
+	}
+	for i, row := range *result2 {
+		gotName, _ := row["name"].(string)
+		if want := fmt.Sprintf("row%d", i); gotName != want {
+			t.Fatalf("second scan row %d name = %q, want %q", i, gotName, want)
+		}
+	}
 }

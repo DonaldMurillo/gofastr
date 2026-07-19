@@ -251,7 +251,7 @@ func BenchmarkT7_FilteredList_NetHTTP(b *testing.B) {
 func BenchmarkT7_FilteredList_GoFastr(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		app := setupBlogDomain(b, db, 500, 0)
-		req := httptest.NewRequest(http.MethodGet, "/posts?status=published&limit=50", nil)
+		req := benchAuthedGet("/posts?status=published&limit=50")
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
