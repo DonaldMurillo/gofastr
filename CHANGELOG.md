@@ -5,10 +5,23 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.35.0] - 2026-07-18
+
+Hardens the list data-plane and the presence surface, and makes GoFastr's UI
+capabilities discoverable by job-to-be-done: strict list-filter rejection
+(#100, **breaking**), opt-in presence topic authorization (#98), and a UI
+capability map (#102).
 
 ### Added
 
+- **UI capability map** (#102). A new `ui-capability-map.md` doc (browsable via
+  `gofastr docs` and the `framework_docs_*` MCP tools, linked from the README
+  and docs catalog) routes from a UI *problem* — live dashboard, optimistic
+  board, master/detail, server-authoritative reactive state — to the GoFastr
+  primitives that compose it and the runnable example that proves it, with
+  "see also" cross-links across the interactive-patterns / signal-store /
+  runtime-contract / events / presence / scaling docs. Adds a
+  UI-capability-discovery eval suite.
 - **Presence topic authorization** (#98). `island.Manager.AuthorizeTopic`, when
   set, gates which `?presence=<topic>` topics a connection may join. The hook
   runs once per requested topic at SSE-connect time with the request context
