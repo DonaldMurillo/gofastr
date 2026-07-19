@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.35.0
+through: v0.36.0
 
 releases:
   - version: v0.3.0
@@ -197,3 +197,13 @@ releases:
       - change: Presence topic authorization hook (#98)
         breaking: false
         guidance: "New island.Manager.AuthorizeTopic(ctx, topic) bool gates which ?presence= topics a connection may join, before any subscription or roster emission. Additive: a nil hook (the default) authorizes every topic, so existing presence apps are byte-identical. Opt in to protect private topics whose roster (display names can be emails) would otherwise leak to anyone who guesses the topic string."
+  - version: v0.36.0
+    title: Mandatory OAuth linking + multi-replica RBAC/seed hardening
+    notes:
+      - change: OAuth login requires a durable OAuthLinker store (#98)
+        breaking: true
+        guidance: "OAuth2Plugin.Init now FAILS CLOSED when the configured UserStore does not implement OAuthLinker — the legacy email-only fallback is gone (an IdP emitting an unverified email could otherwise sign in as an existing account). Use auth.NewEntityUserStore (now a linker; it creates a <table>_oauth_links table on EnsureSchema) or set AuthConfig.AllowInMemoryStores:true for local dev. A verified-email OAuth login now REFUSES (409) an existing password account; the user adds the provider via the new authenticated GET /auth/oauth/{provider}/link flow. OIDC now enforces email_verified."
+        detect: 'NewOAuth2Plugin\(|OAuth2Config\{'
+      - change: Cross-replica RBAC + advisory-locked seeds (#99)
+        breaking: false
+        guidance: "To propagate runtime grant/revoke across replicas, pass your access.GrantStore to framework.WithGrantStore alongside WithFanout — grant/revoke then refresh every replica (re-read from DB; code-defined baseline grants preserved). Additive: single-process apps are unaffected. Startup seeds + WithSeed hooks now run under a distinct Postgres advisory lock so N replicas seed once; a MaxOpenConns(1) pool skips the lock with a WARN — keep the pool above 1 for multi-replica seed coordination."
