@@ -170,15 +170,20 @@ func TestUICapabilityMapSearchVocabulary(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Search(%q): %v", term, err)
 		}
+		// The capability map is still the umbrella index, but the
+		// dedicated optimistic-ui doc now also covers the optimistic-
+		// family terms (and is dense enough to saturate the search cap,
+		// pushing ui-capability-map out for the "optimistic" query).
+		// Either routing is a correct answer for these terms.
 		found := false
 		for _, hit := range hits {
-			if hit.Topic == "ui-capability-map" {
+			if hit.Topic == "ui-capability-map" || hit.Topic == "optimistic-ui" {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("Search(%q) did not route to ui-capability-map: %+v", term, hits)
+			t.Errorf("Search(%q) did not route to ui-capability-map or optimistic-ui: %+v", term, hits)
 		}
 	}
 }

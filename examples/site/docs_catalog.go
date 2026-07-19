@@ -115,6 +115,7 @@ var docIntents = []docIntent{
 			{"seo", "SEO", "Meta tags, Open Graph, JSON-LD, sitemap, robots, and the one-image icon surface."},
 			{"accessibility", "Accessibility", "Built-in ARIA guarantees, the guided audit command, and the build gate."},
 			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions."},
+			{"optimistic-ui", "Optimistic UI", "The mutation lifecycle, rollback vs authoritative refresh, and seven composed recipes — toggle, inline edit, create, delete, kanban, group mutex, and slow/failure."},
 			{"pane-host", "Pane host", "Master-detail split-pane layout that collapses to an overlay drawer on narrow screens."},
 			{"plugin-platform", "Plugin platform", "Host third-party JS plugins in a sandboxed opaque-origin iframe with a capability-gated postMessage protocol."},
 			{"process-modules", "Process modules", "Third-party modules as isolated child processes: crash/upgrade/revoke without touching the host, capability-brokered data, sandbox trust tiers."},

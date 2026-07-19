@@ -369,4 +369,5 @@ These are the misreadings of the model that have already cost rework
   [theming](theming.md).
 - **Delivering a user action's response over SSE.** SSE is push-only
   (background events). The result of a user action arrives in the RPC
-  response itself.
+  response itself. See [Optimistic UI](optimistic-ui.md) for the full
+  mutation lifecycle.

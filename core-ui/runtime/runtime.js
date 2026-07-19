@@ -1025,16 +1025,18 @@
         const mode = node.getAttribute('data-fui-signal-mode') || 'text';
         if (mode === 'html') {
           // The html escape hatch is for TRUSTED HTML *strings* only.
-          // Non-string values (e.g. the auto-built dispatchRPC error
-          // object {ok:false,status,text}) carry untrusted server-error
-          // text; JSON.stringify does NOT HTML-escape, so routing it
-          // through innerHTML would execute reflected markup. Render
-          // non-strings as text (mirrors text-mode below).
-          if (typeof value === 'string') {
-            node.innerHTML = value;
-          } else {
-            node.textContent = (value == null) ? '' : JSON.stringify(value);
-          }
+          // On a non-2xx response dispatchRPC broadcasts the auto-built
+          // error object {ok:false,status,text} into the signal. That
+          // object is NOT trusted HTML — and applying it here (via
+          // innerHTML OR textContent) would either execute reflected
+          // markup or overwrite the existing trusted region with a
+          // JSON blob, corrupting the UI on every failed RPC. The
+          // documented optimistic-UI invariant — "a failed delete
+          // leaves the row/list unchanged" — depends on this no-op.
+          // Text-mode nodes below still render a human-readable
+          // "Error: …" string, so failure feedback is not lost.
+          if (typeof value !== 'string') return;
+          node.innerHTML = value;
           window.__gofastr.scanAndLoadCSS(node);
           // Wire any toast items the freshly-swapped HTML brought in.
           // Awaits the toasts module — when an island-driven update
