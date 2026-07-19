@@ -299,11 +299,12 @@ func (l *Lexer) readQuotedIdentifier() Token {
 				l.advance()
 			} else {
 				return Token{
-					Type:  TokenQuotedID,
-					Value: buf.String(),
-					Pos:   pos,
-					Line:  line,
-					Col:   col,
+					Type:   TokenQuotedID,
+					Value:  buf.String(),
+					Pos:    pos,
+					Line:   line,
+					Col:    col,
+					Quoted: true,
 				}
 			}
 		} else {
@@ -329,13 +330,14 @@ func (l *Lexer) readBacktickIdentifier() Token {
 	for l.pos < len(l.input) {
 		ch := l.input[l.pos]
 		if ch == '`' {
-			l.advance()
+			l.advance() // consume closing `
 			return Token{
-				Type:  TokenIdent,
-				Value: buf.String(),
-				Pos:   pos,
-				Line:  line,
-				Col:   col,
+				Type:   TokenIdent,
+				Value:  buf.String(),
+				Pos:    pos,
+				Line:   line,
+				Col:    col,
+				Quoted: true,
 			}
 		}
 		buf.WriteByte(ch)
@@ -359,13 +361,14 @@ func (l *Lexer) readBracketIdentifier() Token {
 	for l.pos < len(l.input) {
 		ch := l.input[l.pos]
 		if ch == ']' {
-			l.advance()
+			l.advance() // consume closing ]
 			return Token{
-				Type:  TokenIdent,
-				Value: buf.String(),
-				Pos:   pos,
-				Line:  line,
-				Col:   col,
+				Type:   TokenIdent,
+				Value:  buf.String(),
+				Pos:    pos,
+				Line:   line,
+				Col:    col,
+				Quoted: true,
 			}
 		}
 		buf.WriteByte(ch)
