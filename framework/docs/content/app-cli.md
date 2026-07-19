@@ -5,8 +5,8 @@ client you distribute to *your* customers — the `stripe`/`gh` experience
 for the app you built. The output is a standalone, stdlib-only
 `package main` that imports exactly one thing: your generated
 `entities/client` package. Customers authenticate with a scoped API
-token minted in your app, and every entity gets the full CRUD surface
-plus batch operations and a live event stream.
+token minted in your app, and every entity gets the full set of CRUD
+operations plus batch operations and a live event stream.
 
 ```bash
 cd your-app        # the directory holding entities/

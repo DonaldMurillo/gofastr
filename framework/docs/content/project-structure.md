@@ -38,7 +38,7 @@ default) or declared in a [`gofastr.yml` blueprint](blueprints.md). When you
 generate from a blueprint (`gofastr generate --from=gofastr.yml`), it scaffolds
 owned Go straight into this root layout — a flat `package main` (`main.go`,
 `app.go`, `screens.go`, …) plus the `entities/` package — that you read, edit,
-and commit. The blueprint is a one-way on-ramp, not a source of truth:
+and commit. The blueprint is optional and one-time, not a source of truth:
 `generate` is one-shot (it refuses to overwrite an existing project unless you
 pass `--force`), so once the code is yours you own and edit it directly, and
 you can delete `gofastr.yml` entirely — the running app does not need it. Most
@@ -47,8 +47,8 @@ small apps never need more than this.
 **`--out=<dir>` (or `output_dir:` in the blueprint's `app:` block) scaffolds into
 a subpackage** instead of the module root — useful when the repo is a monorepo or
 an example that also hosts its own Go test package and you want the app to live
-under, say, `app/`. The flagship [`examples/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/ecommerce)
-uses `output_dir: app` for exactly this reason; develop it with
+under, say, `app/`. The [`examples/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/ecommerce)
+example app uses `output_dir: app` for exactly this reason; develop it with
 `gofastr dev --dir app` (hot reload) or run it once with `go run ./app`. The
 subpackage is still owned Go — `--out` only changes *where* the scaffold
 lands, not whether you own it.
@@ -71,9 +71,9 @@ myapp/
 └── static/
 ```
 
-This is the one structural opinion worth holding: **organize by domain
-(`billing/`, `projects/`), not by layer (`controllers/`, `services/`,
-`repositories/`).** Everything about a feature lives together, which is easier
+The opinion GoFastr holds here: **organize by domain (`billing/`,
+`projects/`), not by layer (`controllers/`, `services/`, `repositories/`).**
+Everything about a feature lives together, which is easier
 to navigate and matches how the standard library and most large Go codebases
 are organized. `internal/` keeps these packages private to your module.
 
@@ -109,6 +109,7 @@ A domain package under `internal/` can mix framework entities and hand-written
   existing project (pass `--force` to regenerate the whole set).
 - **Layer-based packages (`services/`, `repositories/`).** In Go this scatters
   one feature across many directories. Organize by domain instead.
-- **Keeping `gofastr.yml` around as a source of truth.** It's a one-way on-ramp.
-  After scaffolding, the owned Go is canonical; you can delete the blueprint and
+- **Keeping `gofastr.yml` around as a source of truth.** It's an optional,
+  one-time input to the scaffold — the app never reads it again. After
+  scaffolding, the owned Go is canonical; you can delete the blueprint and
   the app still runs.

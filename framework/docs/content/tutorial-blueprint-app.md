@@ -1,6 +1,7 @@
 # Tutorial: one blueprint → UI + API you own
 
-This is the thesis tutorial. In about twenty minutes you will:
+This tutorial covers the optional `gofastr.yml` blueprint scaffolder
+end to end. In about twenty minutes you will:
 
 1. write a `gofastr.yml` blueprint and generate a working app — a
    server-rendered UI **and** a REST API (plus OpenAPI and MCP tools)
@@ -11,12 +12,12 @@ This is the thesis tutorial. In about twenty minutes you will:
 3. keep going in plain Go — a hand-written screen and role management;
 4. point at the deploy recipe for the single-binary Docker image.
 
-The one rule that shapes everything below: **`gofastr generate` is
-one-shot.** You run it once to scaffold. From that moment the emitted
-Go — not the blueprint — is the source of truth, and you evolve the app
-by editing it, exactly the way you would any Go project. The generator
-even refuses to overwrite an existing project without `--force`, so it
-can't silently clobber your work.
+One thing matters here: **`gofastr generate` is one-shot.** You run it
+once to scaffold. From that moment the emitted Go — not the blueprint —
+is the source of truth, and you evolve the app by editing it, the same
+way you'd edit any Go project. The generator refuses to overwrite an
+existing project without `--force`, so it can't silently clobber your
+work.
 
 Every command below is copy-paste runnable. Each step ends with a
 `curl` that proves the step worked.
@@ -83,8 +84,8 @@ screens:
 `auth.enabled` wires the auth battery — register/login/logout routes and
 session middleware — because you'll want a signed-in user in the next
 step. The `entity_list` gives you a server-rendered table with search,
-sort, and pagination out of the box. Once an entity has an enum, bool, or
-relation column, add `filters: [<column>, …]` to the block and the
+sort, and pagination without you writing any of that code. Once an
+entity has an enum, bool, or relation column, add `filters: [<column>, …]` to the block and the
 generated screen renders a `ui.FilterToolbar` of facet filters above the
 table — see the [`entity_list` reference](blueprints.md) for the details.
 
@@ -104,15 +105,14 @@ The scaffold is normal, owned Go — a flat `package main` at the module root:
 order (one `screen_<name>.go` per screen — the home page here), `app.go` the
 `RegisterGenerated` wiring
 (including the auth setup), `main.go` the entrypoint. Read them — they are
-short, there is no hidden layer underneath, and they carry no `DO NOT EDIT`
-header because they're yours to edit and commit. This is the whole point:
-`gofastr generate` is one-shot, so from here the owned Go — not the
-blueprint — is the source of truth. (Run it again and it refuses to
+short and carry no `DO NOT EDIT` header, because they're yours to edit
+and commit. `gofastr generate` is one-shot, so from here the owned Go —
+not the blueprint — is the source of truth. (Run it again and it refuses to
 overwrite; `--force` regenerates the *entire* set and would discard the
 edits you're about to make, so you won't use it past this first run.)
 
-Prove all three surfaces from a second terminal — the REST API lives
-under the `/api` prefix:
+Check the UI, the API, and the MCP tools from a second terminal — the
+REST API lives under the `/api` prefix:
 
 ```bash
 # The API — auto-CRUD with validation, filtering, pagination:
@@ -124,7 +124,7 @@ curl http://localhost:8080/api/notes
 # The UI — server-rendered screen at /:
 curl -s http://localhost:8080/ | grep "My Notes"
 
-# The agent surface — MCP tools generated from the same declaration:
+# The agent tools — MCP tools generated from the same declaration:
 curl -s -X POST http://localhost:8080/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -405,7 +405,7 @@ Go you own:
   PocketBase, Encore, Wasp, and hand-rolling.
 - [`examples/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/ecommerce)
   — a five-entity blueprint (auth + owner-scoped orders) generated and
-  surface-tested end-to-end.
+  tested end-to-end.
 
 ## Common mistakes
 

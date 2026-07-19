@@ -1,8 +1,8 @@
 # Benchmarks
 
 GoFastr ships a tiered set of Go benchmarks. Each tier maps to a category
-of claim or hot path; together they exercise the surfaces the README
-advertises against both SQLite and Postgres.
+of claim or hot path; together they exercise the parts of the framework
+the README makes claims about, against both SQLite and Postgres.
 
 ## Tiers
 
@@ -102,8 +102,8 @@ network round-trips dominate.
 
 ### 1.4 Streaming vs buffered
 **Known caveat:** `parsePagination` clamps `?limit=` to ≤100, so the
-streaming surface's intended workload (`limit ≥ streamListThreshold =
-1000`) is not reachable from the HTTP surface. The benchmark therefore
+workload streaming is meant for (`limit ≥ streamListThreshold =
+1000`) can't be reached over HTTP. The benchmark therefore
 exercises streaming at limit=100, which measures the per-row encode/write
 overhead but does not show the bounded-memory advantage. Worth fixing.
 
@@ -196,7 +196,7 @@ What to look for:
 Hand-rolled `net/http` + `database/sql` implementations of plaintext,
 JSON, single-query, and filtered list endpoints — paired with the same
 endpoints expressed through the framework. The delta is what the
-declare-once surface actually costs.
+declare-once style actually costs.
 
 What to look for:
 
@@ -227,9 +227,9 @@ What to look for:
 
 ## Tier 9 — UI runtime: streams, islands, full SSR
 
-The framework's value proposition isn't just JSON CRUD — it's the
-SSR-with-hydration runtime, the SSE/island plumbing, and the UI host.
-These benchmarks measure those paths.
+The framework does more than JSON CRUD: it also has an SSR-with-hydration
+runtime, SSE/island plumbing, and a UI host. These benchmarks measure
+those paths.
 
 | Bench | Workload |
 |-------|----------|
@@ -280,11 +280,11 @@ LOAD=500 make bench-resources    # override
 
 Three bench apps under `benchmarks/apps/<name>/`:
 
-| App       | Surface                                                              |
+| App       | What it uses                                                          |
 |-----------|----------------------------------------------------------------------|
 | `minimal` | `NewApp` + one plaintext route. No DB, no entities. Establishes the floor. |
 | `crud`    | One entity, SQLite + auto-migrate + CRUD routes.                     |
-| `full`    | Upper bound — every supported framework surface wired on: three related entities with relations, audit log, cron, MCP, UI host + one screen, file storage, in-memory search backend, RolePolicy + RequirePermission, multi-tenant scope, custom endpoints, plugin, OpenAPI + Swagger UI, lifecycle hooks. |
+| `full`    | Upper bound — every supported framework feature wired on: three related entities with relations, audit log, cron, MCP, UI host + one screen, file storage, in-memory search backend, RolePolicy + RequirePermission, multi-tenant scope, custom endpoints, plugin, OpenAPI + Swagger UI, lifecycle hooks. |
 
 Plus the two cmd binaries (`gofastr`, `kiln`) for build-only comparison.
 
@@ -303,7 +303,7 @@ Output is Markdown to stdout and `dist/bench/resources.md`:
   driver. Switching to a pure-Go driver (`modernc.org/sqlite`) would
   cut this in half but slow the binary a few %.
 - **Bin size delta `full` − `crud`** is what every other framework
-  surface costs at once: UI host, file storage, search backend, audit,
+  feature costs at once: UI host, file storage, search backend, audit,
   cron, MCP, access control, multi-tenant, OpenAPI/Swagger, plugins.
   About **+0.6 MB** total — they're code paths inside the framework
   and its sibling packages, not separate binaries' worth of code.

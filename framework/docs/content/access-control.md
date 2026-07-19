@@ -82,7 +82,7 @@ flips it to `session_id`. If your deployment overrides
 `Spec.SetSecurityScheme("cookieAuth", …)` replaces it by name.
 
 > **Important — `EntityConfig.Access` is HTTP-only.** It gates the HTTP
-> CRUD surface, not in-process repository or `CrudHandler` calls. This is
+> CRUD routes, not in-process repository or `CrudHandler` calls. This is
 > intentional: in-process Go code is trusted, while owner and tenant
 > isolation still apply at the data layer. SSR screens do not inherit
 > `EntityConfig.Access` checks automatically. Enforce per-row rules for SSR

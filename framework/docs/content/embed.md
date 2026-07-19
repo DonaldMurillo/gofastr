@@ -1,16 +1,16 @@
 # Embed — local semantic search
 
-`battery/embed` adds vector-based semantic retrieval to any GoFastr app. It is positioned next to `battery/search` (keyword) and `battery/cache`: one Go API, one HTTP surface, one CLI subcommand, one Kiln integration hook.
+`battery/embed` adds vector-based semantic retrieval to any GoFastr app. It sits alongside `battery/search` (keyword) and `battery/cache`: one Go API, one set of HTTP routes, one CLI subcommand, one Kiln integration hook.
 
 This doc covers the architecture, persistence, watcher, hybrid pipeline, and the agent integration. For the package-level cheatsheet and file map, see [`battery/embed/README.md`](../battery/embed/README.md).
 
-## Why this lives in the framework
+## Why this is in-process by default
 
-GoFastr's bet is that AI-era apps want retrieval as a primitive, not as a service. Three properties follow:
+Retrieval runs in the same process as your app, instead of requiring a separate vector DB or embedding service. A few things follow from that:
 
 - **In-process by default.** No vector DB, no embedding service. The default index runs in the same process as your routes, hooks, and Kiln agent.
 - **Pure-Go core.** Brute-force cosine, gob snapshot, polling watcher — no third-party deps in the core path. The only optional CGO is the ONNX runtime that drives the default embedder in M1.5.
-- **Composable surfaces.** Go API for in-app use; HTTP routes for cross-process/cross-host; CLI for ops; Kiln hook for agent context. The same index serves all four.
+- **Four entry points, one index.** Go API for in-app use; HTTP routes for cross-process/cross-host; CLI for ops; Kiln hook for agent context. The same index serves all four.
 
 ## Architecture
 
@@ -136,7 +136,7 @@ gofastr embed clear
 
 When `GOFASTR_URL` is set, `query` and `stats` are dispatched to that running server's `/embed/*` routes. `index`, `watch`, and `clear` are always local — they mutate state and we don't want two writers fighting for the same file.
 
-## HTTP surface
+## HTTP routes
 
 | Method | Path | Body | Status |
 | --- | --- | --- | --- |
@@ -236,7 +236,7 @@ if err := embedder.Probe(ctx); err != nil {
 
 ## Durable store (pgvector)
 
-The default [FlatStore] is in-process: fast, zero-dep, and the right choice for a single-replica app. Its limitation (called out above under "Why this lives in the framework") is that the index lives in one process's RAM. When you need a **shared, durable** index — multiple app replicas hitting the same vectors, or survival across restarts with no snapshot/WAL plumbing — use `PgVectorStore`, a [Store] backed by a Postgres table with a [pgvector](https://github.com/pgvector/pgvector) embedding column.
+The default [FlatStore] is in-process: fast, zero-dep, and the right choice for a single-replica app. Its limitation (called out above under "Why this is in-process by default") is that the index lives in one process's RAM. When you need a **shared, durable** index — multiple app replicas hitting the same vectors, or survival across restarts with no snapshot/WAL plumbing — use `PgVectorStore`, a [Store] backed by a Postgres table with a [pgvector](https://github.com/pgvector/pgvector) embedding column.
 
 ```go
 embedder := embed.NewOllamaEmbedder(embed.OllamaConfig{Model: "nomic-embed-text"})

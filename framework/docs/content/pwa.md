@@ -112,8 +112,9 @@ the page set is closed and every byte is immutable — so the exported
 install — every page, every framework asset (including component
 stylesheets under their versioned `?v=` URLs), the shell — and
 navigations are served cache-first, tolerating static hosts' trailing-
-slash redirects, with the network as fallback. Land once, install the
-app, and every page works offline — including pages never visited.
+slash redirects, with the network as fallback. Visit the site once,
+install it, and every page works offline after that — even ones you
+never opened.
 
 User static-dir files are precached best-effort: one un-servable file
 does not fail the install and pin clients to a previous deployment.
@@ -164,7 +165,7 @@ default CSP blocks inline JS.)
 
 ## Static export
 
-`App.ExportStatic` emits the full PWA surface alongside the pages:
+`App.ExportStatic` emits all of the PWA files alongside the pages:
 `manifest.webmanifest`, `service-worker.js`,
 `__gofastr/pwa/register.js`, and `__gofastr/pwa/offline/index.html`.
 Under a non-root `BasePath` (e.g. a GitHub Pages project site) the
@@ -175,8 +176,8 @@ the exported app installs and works offline from the subpath. See
 
 ## Blueprint support
 
-`gofastr generate` scaffolds the whole surface from an `app.pwa` block —
-including replaceable placeholder icons. See
+`gofastr generate` scaffolds the whole PWA setup described above from an
+`app.pwa` block — including replaceable placeholder icons. See
 [Blueprints](/docs/blueprints).
 
 ## Common mistakes

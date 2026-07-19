@@ -93,8 +93,8 @@ gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>]
 
 Defaults can live in `gofastr.codegen.yml` as a generator entry named
 `sdk` (flags win). The same entry runs under `gofastr generate --config`
-via the built-in in-process generator — the first first-party generator in
-the codegen registry:
+via the built-in in-process generator — the first generator that ships
+built into the codegen registry:
 
 ```yaml
 codegen:
@@ -186,7 +186,7 @@ Files the export already produced (or the user static dir) always win.
 
 Custom entity `Endpoints` get no typed methods — both SDKs expose the
 `Do`/`do` escape hatch and the reference pages list them. Multipart
-uploads (Image/File fields) stay off the SDK surface, matching the CLI.
-Servers reconfigured to snake_case responses (`WithJSONCase`) should set
+uploads (Image/File fields) aren't available in the generated SDKs,
+matching the CLI. Servers reconfigured to snake_case responses (`WithJSONCase`) should set
 `sdkdocs.Config.SnakeCase` for the docs examples; the generated SDKs
 assume the camelCase default.

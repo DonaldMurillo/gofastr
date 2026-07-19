@@ -3,7 +3,7 @@
 `framework/image` is a chainable image pipeline — decode → transform →
 encode — implemented in pure Go on top of `image/jpeg`, `image/png`,
 `image/gif`, and `golang.org/x/image`. No CGo, no system libraries, no
-native build step. The API surface is inspired by Bun.Image; the
+native build step. The API is inspired by Bun.Image; the
 implementation is independent.
 
 ## Quickstart
@@ -371,7 +371,7 @@ hand it directly to `storage.Save`).
 - **Expecting WebP-lossless to match `cwebp` file sizes.** The pure-Go
   encoder tries five uniform predictor modes (1, 2, 11, 12, 13) per
   image and emits the smallest output, plus subtract-green and LZ77
-  + an 8-bit color cache. Honest comparison against `cwebp -z 9`
+  + an 8-bit color cache. Compared against `cwebp -z 9`
   (libwebp 1.6) and `png.BestCompression`:
 
   | Content (256×256) | PNG-best | Ours WebP-LL | `cwebp -z 9` | ours vs PNG | ours vs cwebp |
@@ -381,11 +381,11 @@ hand it directly to `storage.Save`).
   | natural photo | ~110k | 125.5k | 111.7k | 1.14× | **1.12×** |
   | white noise | ~197k | 196.8k | 196.7k | 1.00× | 1.00× |
 
-  The framing: **we beat PNG** on smooth and structured content by
+  In short: **we beat PNG** on smooth and structured content by
   2-3×; **`cwebp` beats us** by another 2-4× on the same content (its
   per-block adaptive mode + cross-color + palette path) but only by
   ~12% on natural photos and ~0% on noise. For PNG-replacement
-  delivery in the framework's UI pipeline, our output is competitive;
+  delivery in the framework's UI pipeline, our output is good enough;
   for "smallest-possible WebP" you'd still go to `cwebp`.
 
   The encoder infrastructure for per-block mode evaluation is in

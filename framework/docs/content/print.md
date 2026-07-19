@@ -1,6 +1,6 @@
 # Printable documents
 
-`battery/print` gives a GoFastr app printing out of the box. You **declare
+`battery/print` adds printing to a GoFastr app. You **declare
 a printable document** the same way you declare a screen/route — a named,
 route-addressable document — and the battery server-renders it into a
 clean, chrome-free, **print-friendly HTML** page: its own `@page` size and

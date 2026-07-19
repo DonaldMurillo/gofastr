@@ -167,7 +167,7 @@ func setupServer() *framework.App {
 		// ContentNegotiation field below.
 		uihost.WithPublicLLMMD(),
 		uihost.WithAppIcon(appIconPNG()),
-		uihost.WithDescription("An early (v0.x) Go full-stack framework where AI agents are first-class authors."),
+		uihost.WithDescription("The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, a REST API, MCP tools, and migrations — plain Go you own. Early (v0.x)."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
 			URL:   "https://gofastr.dev",
@@ -187,13 +187,13 @@ func setupServer() *framework.App {
 		// discovery URLs.
 		uihost.WithAgentReady(uihost.AgentReadyConfig{
 			Title:              "GoFastr",
-			Summary:            "An early (v0.x) Go web framework where AI agents are first-class authors and consumers. MCP tools + framework docs are served at /mcp.",
+			Summary:            "The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, a REST API, migrations, and MCP tools an agent can call with the same login and permissions your users have. Docs and tools at /mcp. Early (v0.x).",
 			AllowAIBots:        &allowAIBots,
 			ContentNegotiation: &markdownNeg,
 			ContentSignals:     "ai-train=no, search=yes, ai-input=yes",
 			AgentCard: &uihost.AgentCardConfig{
 				Name:        "GoFastr",
-				Description: "Framework docs + introspection agent for gofastr.dev.",
+				Description: "Framework docs and tools for gofastr.dev, served over MCP.",
 				MCPEndpoint: "/mcp",
 			},
 		}),
@@ -768,6 +768,7 @@ func htmlEscape(s string) string {
 // the palette seed stay editable side by side.
 func registerScreens(site *app.App) {
 	site.Register("/", &HomeScreen{}, nil)
+	registerHubs(site) // /primitives, /framework, /agents, /interactivity, /generator
 	site.Register("/get-started", &GetStartedScreen{}, nil)
 	site.Register("/docs/", &ConceptsIndexScreen{}, nil)
 	// One /docs/<slug> page per catalog entry, each rendering the embedded

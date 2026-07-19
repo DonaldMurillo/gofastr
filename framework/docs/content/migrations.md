@@ -8,7 +8,8 @@ GoFastr has two migration paths:
    indexes and foreign keys) **and adds missing columns to existing
    tables** (`ALTER TABLE ADD COLUMN` — additive only, never a drop,
    rename, or type change). Runs on `App.Start`. Best for development
-   and for apps where the entity declaration is the source of truth.
+   and for apps that keep their schema in entity declarations rather
+   than hand-written SQL.
 2. **SQL files with directives.** `core/migrate` runs versioned `.sql`
    files. Best when you need to express data backfills, complex
    constraints, or anything the entity declaration can't.
@@ -290,7 +291,7 @@ on entity fields too.
 
 ## Stored routines (functions, procedures, triggers, views)
 
-Routines are first-class migration objects. A `migrate.Routine` runs on every
+Routines are migration objects, same as tables and views. A `migrate.Routine` runs on every
 boot (idempotent `CREATE OR REPLACE`) after tables migrate, and `migrate
 generate` tracks it so a changed body produces a reversible versioned
 migration (its `Down` restores the previous definition).
@@ -495,7 +496,7 @@ if err := app.DB.QueryRowContext(ctx, "SELECT debits, credits FROM compute_total
 
 In tests, point a fresh Postgres DB at the same `db/routines` directory via
 `App.RoutinesFS` — the routines land in one transaction with the schema, and
-`app_routines` introspection will report each one as `ledger_state=present`
+the `app_routines` tool will report each one as `ledger_state=present`
 once boot completes.
 
 ## Views (virtual tables built from entities)
@@ -610,7 +611,7 @@ CREATE TABLE _migrations (
 
 Created lazily on first `Up`/`Down`/`Status` call. The `checksum` and
 `dirty` columns are backfilled automatically onto tables created by an
-older GoFastr, so upgrading is seamless. When migration groups are in
+older GoFastr, so upgrading needs no manual fix. When migration groups are in
 use, the table additionally gains `group_name TEXT NOT NULL DEFAULT ''`
 and the primary key becomes `(group_name, version)` — upgraded in
 place the first time a non-default group is applied. Never edit the
@@ -752,8 +753,8 @@ that compiles in tests will fail in prod. The framework's
 
 ## Production safety
 
-The migration system is built to be relied on for critical infrastructure,
-not just dev convenience. The guarantees:
+The migration system is meant for production use, not just local
+development convenience. What it guarantees:
 
 - **Advisory locking.** Every migration run — auto-migrate on boot and
   the versioned `Up`/`Down`/`Force` — is serialized by a Postgres
@@ -786,11 +787,11 @@ not just dev convenience. The guarantees:
   without running it (adopt an existing database) or removes it (treat
   as pending) — and clears any dirty flag either way.
 
-These features map onto the production-grade feature set of mature
-migrators (golang-migrate, goose, Atlas): versioned up/down, advisory
-locking, transactional runs with a no-transaction escape hatch, dirty
-state, checksums/drift detection, baseline, and a destructive-change
-safety gate.
+This is the same feature set as other established migrators
+(golang-migrate, goose, Atlas): versioned up/down, advisory locking,
+transactional runs with a no-transaction escape hatch, dirty state,
+checksums/drift detection, baseline, and a destructive-change safety
+gate.
 
 ## Concurrency model
 

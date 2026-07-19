@@ -67,18 +67,18 @@ need to forward, set, or check the flag — it's transparent.
 
 ## The dev loop is also livereload for agents
 
-The same `GOFASTR_DEV` gate auto-enables the MCP agent surface:
-`framework.NewApp` mounts `/mcp` (skipping, with a warning, if the host
-hand-mounted one), registers the read-only introspection tools
-(`app_routes`, `app_readiness`, `framework_docs_search`, …) and the
-mutating control tools (`app_module_enable` / `app_module_disable`);
-every CRUD-enabled entity serves its MCP data tools without per-entity
+The same `GOFASTR_DEV` gate turns on MCP for agents: `framework.NewApp`
+mounts `/mcp` (skipping, with a warning, if the host hand-mounted one),
+registers read-only tools for reading the running app's state
+(`app_routes`, `app_readiness`, `framework_docs_search`, …) and tools
+that change it (`app_module_enable` / `app_module_disable`); every
+CRUD-enabled entity serves its MCP data tools without per-entity
 `mcp: true`; and battery/log — when registered — enables its
 `log_recent` / `log_filter` / `log_metrics` / `log_set_level` debug
-tools. A connected agent can orient, read recent requests and errors,
-read and write app data, and toggle modules on the running dev app
-with zero wiring. See [agent-ready](agent-ready.md). Opt out with
-`GOFASTR_DEV_MCP=0`.
+tools. A connected agent can check what's running, read recent
+requests and errors, read and write app data, and turn modules on or
+off on the running dev app without extra setup. See
+[agent-ready](agent-ready.md). Opt out with `GOFASTR_DEV_MCP=0`.
 
 ## Opting out
 
@@ -86,7 +86,7 @@ with zero wiring. See [agent-ready](agent-ready.md). Opt out with
 # Keep rebuild-on-save but disable browser refresh:
 GOFASTR_DEV_LIVERELOAD=0 gofastr dev
 
-# Keep rebuild + refresh but disable the dev MCP agent surface:
+# Keep rebuild + refresh but disable the dev MCP tools:
 GOFASTR_DEV_MCP=0 gofastr dev
 ```
 

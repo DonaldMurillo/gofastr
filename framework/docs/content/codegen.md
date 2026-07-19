@@ -1,6 +1,6 @@
 # Codegen
 
-GoFastr code generation is driven by a general YAML configuration surface.
+GoFastr code generation is configured through a general YAML format.
 Generators are project extensions that consume structured sources and emit any
 generated code files under a safe output root. This is distinct from the
 [blueprint](blueprints.md) pipeline (`gofastr generate --from=gofastr.yml`),
@@ -50,7 +50,7 @@ codegen:
 is a subdirectory under that root. Generated paths must be relative and cannot
 contain parent traversal.
 
-Each generator names an `extension`, with one first-party exception: a
+Each generator names an `extension`, with one built-in exception: a
 generator entry named `sdk` (no `extension`) runs the built-in SDK
 generator — the same output as `gofastr generate sdk`; see the
 [sdk](sdk.md) doc. Use optional `id` when running the same generator more
@@ -87,7 +87,7 @@ External extensions let projects add arbitrary code generation without linking
 that code into the `gofastr` CLI.
 
 The old built-in `gofastr generate ts` / `gofastr generate typescript` command
-has been removed from this surface. Projects that need TypeScript or frontend
+has been removed. Projects that need TypeScript or frontend
 artifacts should configure a project extension and decide their own output
 shape rather than relying on a maintained built-in TypeScript target.
 

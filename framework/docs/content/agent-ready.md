@@ -5,8 +5,8 @@ look for a small set of well-known discovery artifacts before they can use a
 site: a curated `/llms.txt`, an A2A agent card, sitemap + robots, `Link`
 response headers pointing at all of it, and markdown content negotiation.
 GoFastr already ships the *plumbing* — MCP tools, an OpenAPI spec, per-screen
-markdown docs, sitemap, robots — so the agent-readiness surface is mostly the
-*discovery* layer that makes those capabilities findable.
+markdown docs, sitemap, robots — so getting agent-ready mostly means adding
+the *discovery* layer that makes those capabilities findable.
 
 Every piece below is **opt-in and additive**: existing robots/sitemap/openapi/
 llm.md behavior is unchanged. Turn the sane defaults on in one call, or wire
@@ -142,7 +142,7 @@ unchanged. See [SEO](/docs/seo) for the per-screen interfaces.
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
 JSON-RPC + GET Server-Sent Events), replacing the manual
 `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`. Combined with
-`WithMCPIntrospection()`, the server's ten introspection tools —
+`WithMCPIntrospection()`, the ten tools that read the running app's state —
 `app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
 `app_readiness`, `app_routines`, `framework_docs_list`, `framework_docs_get`,
 `framework_docs_search` — are reachable at the canonical endpoint the
@@ -155,9 +155,9 @@ both options wired.
 running app (persisted through the module store, dependency-checked). Keep
 it off any `/mcp` reachable by untrusted callers.
 
-Auth on the tool surface splits by kind: entity CRUD tools re-dispatch
+Auth splits by tool kind: entity CRUD tools re-dispatch
 through the router, so session/JWT auth, owner scoping, and RBAC apply
-exactly as over HTTP (the caller's Cookie/Authorization from the `/mcp`
+exactly as they do over HTTP (the caller's Cookie/Authorization from the `/mcp`
 request carries through). Directly registered tools — custom
 `app.MCP.RegisterTool` handlers and `Endpoint.MCPHandler` twins — run
 without route middleware; gate them per-caller with `mcp.Gated` +
@@ -324,7 +324,7 @@ origin and every artifact stays consistent, including behind a proxy that sets
 
 ## Granular options
 
-| Option | Surface |
+| Option | Serves |
 |---|---|
 | `uihost.WithAgentReady(cfg)` | Bundle: llms.txt + card + AI-bot robots + Link headers (incl. OpenAPI `service-desc` when `cfg.OpenAPIEndpoint` is set, e.g. `"/openapi.json"`). |
 | `uihost.WithLLMsTxt(title, summary, sections)` | `/llms.txt` only. |
@@ -347,7 +347,7 @@ origin and every artifact stays consistent, including behind a proxy that sets
   does *not* mount MCP for you — call `framework.WithMCP()` alongside it.
 - **Advertising markdown negotiation without `WithPublicLLMMD`.**
   `WithMarkdownNegotiation` renders via the per-screen LLM doc, which only
-  exists when the markdown surface is public. Without it, the negotiated
+  exists when markdown rendering is public. Without it, the negotiated
   response falls through to HTML.
 - **Hand-writing per-route `/llm.md` links in `/llms.txt`.** Non-screen routes
   (`/api/*`, `/healthz`, `/.well-known/*`) have no markdown — link the

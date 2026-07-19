@@ -7,9 +7,9 @@ the demand-loaded `compute` module dispatch structured-clone messages to it.
 Workers and Wasm bytes are served from same-origin, content-addressed URLs, so
 they remain compatible with the default CSP and immutable browser caching.
 
-## Public surface
+## Public API
 
-| Surface | Purpose |
+| API | Purpose |
 |---|---|
 | `compute.RegisterWorker(name string, js []byte)` | Register a classic, self-contained Worker script. |
 | `compute.RegisterWASM(name string, wasm []byte)` | Register WebAssembly bytes. |
@@ -247,8 +247,8 @@ with the app instead of pointing a worker at a CDN.
 
 `SharedArrayBuffer` and WebAssembly threads require cross-origin isolation,
 which means both COOP and COEP. GoFastr sets COOP to `same-origin` but does not
-enable COEP. Shared memory and Wasm threads are therefore unavailable on this
-surface. No COEP header is added by compute registration.
+enable COEP. Shared memory and Wasm threads are therefore unavailable here.
+No COEP header is added by compute registration.
 
 ## Common mistakes
 

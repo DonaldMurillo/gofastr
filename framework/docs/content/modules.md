@@ -55,7 +55,7 @@ topo-sort orders module init, and records the manifest.
 Registering two modules with the same name panics, exactly like a
 duplicate battery.
 
-## Attribution of surfaces
+## What gets attributed to a module
 
 During a module's `Init`, the framework marks the module as "current" and
 every registration funnel stamps ownership:
@@ -66,7 +66,7 @@ every registration funnel stamps ownership:
   disabling one does not affect the other. Entity CRUD routes (mounted
   by `app.Entity`) are attributed the same way.
 - **MCP tools**: every `app.MCP.RegisterTool` records tool → module.
-- **Entities**: `app.Entity` records entity → module for introspection.
+- **Entities**: `app.Entity` records entity → module so it can be reported later.
 - **Cron**: `app.AddCron(scheduler)` called from a module's `Init`
   stamps the scheduler with a gate that skips jobs when the module is
   disabled.
@@ -170,11 +170,11 @@ blocked on, rolled back, or dropped. See the migrations doc for details.
 `force --group=<name>` is the reconciliation escape hatch when a module
 is permanently removed.
 
-## Introspection
+## Reading module state
 
 The `app_modules` MCP tool (available via `WithMCPIntrospection`) lists
 every module's name, version, description, dependencies, migration
-group, enabled state, and owned surface counts (routes, entities, tools).
+group, enabled state, and how many routes, entities, and tools it owns.
 Enable/disable is Go-API-only for now — no mutating MCP tools.
 
 ## Common mistakes
@@ -193,9 +193,9 @@ Enable/disable is Go-API-only for now — no mutating MCP tools.
   registration inside the module's `Init`.
 - **Expecting process isolation.** A disabled module's code is still
   loaded in the process — its types, closures, and goroutines spawned
-  outside the gate are still live. The gates cover dispatch surfaces
-  (routes, cron, queue, MCP), not arbitrary Go code. Process isolation
-  is explicitly out of scope.
+  outside the gate are still live. The gates cover routes, cron, queue,
+  and MCP dispatch, not arbitrary Go code. Process isolation is
+  explicitly out of scope.
 - **Existence probing via trailing-slash redirects.** A `GET /modsub`
   for a module that registered `/modsub/` triggers Go ServeMux's
   automatic 307 redirect to `/modsub/` — before any gate fires.

@@ -1,10 +1,10 @@
 # Blueprints
 
-A `gofastr.yml` blueprint is GoFastr's single declaration format. It is a
-CLI codegen *on-ramp* — declare your entities, screens, nav, seed
-data, and endpoint/middleware stubs in one file, then scaffold owned Go from
-it. The blueprint is not a source of truth: after scaffolding, the generated
-Go is canonical and you can delete `gofastr.yml`. Generate with:
+A `gofastr.yml` blueprint is an optional way to scaffold a GoFastr app:
+declare your entities, screens, nav, seed data, and endpoint/middleware
+stubs in one file, then generate owned Go from it. The blueprint is not
+a source of truth: after scaffolding, the generated Go is canonical and
+you can delete `gofastr.yml`. Generate with:
 
 ```bash
 gofastr validate gofastr.yml
@@ -44,7 +44,7 @@ The blueprint scaffolds a working app, then gets out of the way. This table
 is what it produces *today* — everything else is ordinary owned Go you write
 against the framework (the emitted code is the starting point, not a ceiling).
 
-| Surface | Generated from the blueprint | Hand-written Go |
+| Area | Generated from the blueprint | Hand-written Go |
 |---|---|---|
 | **Marketing pages** | `hero`, `page_header`, `card`, `pricing`, `stat_row`, `callout`, `markdown`, `link_button` blocks composed from `framework/ui`; auth-aware header | Any bespoke section not in the block catalog |
 | **Auth** | Register/login/logout/me wiring, session middleware, `login_form`/`signup_form` screens, guest-only redirects, bootstrap admin | Custom auth flows (SSO, MFA policy, email verification UX) |
@@ -266,13 +266,13 @@ screens/endpoints/middleware/plugins through `RegisterGenerated` (in
 `app.go`, same `package main`), mounts the UI host, and serves
 `app.static_dir` through the generated UI host.
 
-The generated app is agent-ready out of the box: `framework.WithMCP()`
-mounts `/mcp` (POST JSON-RPC + GET SSE) plus the discovery well-knowns
+The generated app mounts MCP by default: `framework.WithMCP()` mounts
+`/mcp` (POST JSON-RPC + GET SSE) plus the discovery well-knowns
 (`/mcp/server-card`, `/.well-known/mcp/server-card.json`,
 `/.well-known/mcp/catalog.json`), serving the per-entity CRUD tools
 (`mcp: true`) alongside the `framework.WithMCPIntrospection()` set
-(`app_routes`, `app_readiness`, `framework_docs_search`, …). The
-introspection tools are read-only but reveal the app's shape — remove
+(`app_routes`, `app_readiness`, `framework_docs_search`, …). Those tools
+are read-only but let a caller read the app's routes and config — remove
 `WithMCPIntrospection()` from `main.go` if `/mcp` is reachable by
 untrusted callers in production.
 
@@ -437,10 +437,10 @@ gofastr pack examples/meridian -o recovered.yml
 
 Synthesized `/new` + `/{id}/edit` form screens are dropped (they weren't
 authored). Generate and pack are a matched inverse pair for the declarative
-surface — `app`, `entities`, `screens`, `nav`, and `seed` — so the invariant
+pieces — `app`, `entities`, `screens`, `nav`, and `seed` — so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for a blueprint of those
-constructs (modulo comments + formatting); the Meridian flagship round-trips
-exactly, gated by a test. When you add a new construct in that surface, teach
+constructs (modulo comments + formatting); the Meridian example round-trips
+exactly, gated by a test. When you add a new construct to that set, teach
 **both** the generator and pack, or that test fails.
 
 `endpoints`, `middleware`, `plugins`, and `helpers` are **not** recovered by
@@ -487,7 +487,7 @@ entity's `screen_<entity>_crud.go` mount func (run via `mountGenerated`), from
 that entity's `CrudHandler`, fields, and relations — see [Generated screen
 files](#generated-screen-files). `appBaseCSS()` (mounted
 ahead of `static/app.css`) is an owned, empty-by-default extension point for
-app-specific base CSS — every generated surface composes `framework/ui`
+app-specific base CSS — every generated screen composes `framework/ui`
 components and `core-ui/app` layouts that ship their own styling, so the
 generator itself emits zero bespoke CSS.
 
@@ -521,7 +521,7 @@ When any entity declares an `access:` block, its auto-CRUD API is permission-gat
 `access.RolePolicy` that grants the **admin role** (`app.admin.role`) the wildcard
 (`*`) and an `access.Middleware` that resolves the signed-in user's roles, mounted
 after the session middleware. The admin operator can therefore manage every entity
-through its own gated API (the same surface the back-office uses); add finer
+through its own gated API (the same API the back-office uses); add finer
 per-role `Grant`s in `RegisterGenerated` as you define more roles.
 
 ### UI component blocks (the framework/ui catalog)
@@ -538,9 +538,9 @@ The layout blocks map directly to `framework/ui`: `stack` and `cluster` accept
 semantic `gap`, `align`, and `justify` props (`cluster` also accepts
 `no_wrap`); `grid` accepts `min` and `gap`; `stat_grid` is the dashboard grid
 variant with a `12rem` default minimum. Spacing must use the shared
-`none|xs|sm|md|lg|xl|2xl` tokens—blueprints do not create a second CSS surface.
+`none|xs|sm|md|lg|xl|2xl` tokens—blueprints do not create a second styling system.
 
-**Long-form content** — `markdown` renders rich prose (`ui.Markdown`) from a
+**Long-form content** — `markdown` renders formatted prose (`ui.Markdown`) from a
 `text:` string (headings, **bold**, lists, etc.) at a readable measure; the plain
 `type: heading` / `type: paragraph` blocks are also typeset to a comfortable
 column on marketing pages. **Pricing** — a `pricing` block takes
@@ -661,7 +661,7 @@ endpoints mounted under `base_path`. The generated app also mounts
 `auth.SessionMiddleware` on the router, so the session cookie issued at
 login resolves to a user on every request — this is what makes
 `owner_field` and `access` scoping work for logged-in users on the
-generated CRUD/MCP surface. Without a valid session, owner-scoped
+generated CRUD and MCP endpoints. Without a valid session, owner-scoped
 entities fail closed (401/403) for reads and writes alike.
 
 The generated app also wires the **auth UX** so the session is reflected
@@ -691,7 +691,7 @@ generated app commits no credentials:
   no admin is seeded)
 
 When the blueprint holds any of these values, the generator also emits a
-`.env` carrying them (so the app runs out of the box) plus a
+`.env` carrying them (so the app runs without extra setup) plus a
 `.gitignore` that excludes it. The generated `main.go` loads
 `.env.local`/`.env` before opening the DB; a real process env var
 always wins over the files. `generate` is one-shot and refuses to
@@ -731,7 +731,7 @@ development.
 
 #### CSRF
 
-The generated app does **not** mount `auth.CSRF`. The generated surface
+The generated app does **not** mount `auth.CSRF`. The generated API
 is JSON-first (REST CRUD + `/mcp`), and the CSRF middleware rejects any
 unsafe-method request that doesn't echo the CSRF cookie back as an
 `X-CSRF-Token` header (or `_csrf` form field) — plain JSON and MCP
@@ -975,7 +975,7 @@ fields (names containing tokens like `email`, `phone`, `address`, `ssn`,
 every *authenticated* user could read and write every other user's row on
 the generated API (the secure-by-default gate already stops anonymous
 callers — the exposure here is cross-user). Enabling `app.auth` alone does
-**not** suppress the rule: a session is necessary to reach the surface but
+**not** suppress the rule: a session is necessary to reach the API but
 not sufficient to scope it — only per-entity scoping does that.
 `gofastr validate` reports this as an error (exit 1),
 naming the entity, the matched fields, and the remedies; `gofastr generate`
@@ -1010,8 +1010,8 @@ the app-generator boundary.
 ### Generated `e2e_test.go` is driver- and OS-portable
 
 Every generated app ships an `e2e_test.go` (gated by `-short`) that builds the
-binary, boots it as a child process, and drives the real HTTP surface. Two
-portability rules are baked into that template:
+binary, boots it as a child process, and drives the real HTTP endpoints. Two
+portability rules are built into that template:
 
 - **Windows binary name.** The build target gets a `.exe` suffix when
   `runtime.GOOS == "windows"` so `exec.Command(bin)` resolves on Windows —
@@ -1035,14 +1035,14 @@ portability rules are baked into that template:
   restart. Before deploying, set `DevMode: false` **and** a real
   `JWTSecret` (from a secret manager) in the generated `app.go`
   `auth.AuthConfig` — the emitted code is yours, so edit it rather than
-  regenerating. Serve HTTPS. (If you'd rather bake it in *before* the
+  regenerating. Serve HTTPS. (If you'd rather set it *before* the
   one-shot generate, set `dev_mode: false` + `jwt_secret` in the
   blueprint — but `dev_mode: false` without `jwt_secret` fails
   validation, and the generated app's auth battery would refuse to boot.)
 - **Expecting `app.auth: enabled` to protect entity data.** The
   session middleware is pass-through for anonymous requests. Only
   per-entity `owner_field`, `access`, or `multi_tenant` gate the
-  generated CRUD/MCP surface — that's why the unscoped-PII check fires
+  generated CRUD and MCP endpoints — that's why the unscoped-PII check fires
   even with auth enabled.
 - **Writing flow-style inline maps.** `core/yaml` rejects
   `{name: x, type: relation}` — every map must be indented

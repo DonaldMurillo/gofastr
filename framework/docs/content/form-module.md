@@ -1,6 +1,6 @@
 # Form Module
 
-Complete form infrastructure for GoFastr — HTML primitives, framework UI components, form patterns, validation, and accessibility.
+Form components for GoFastr: HTML primitives, framework UI components, form patterns, validation, and accessibility.
 
 ## Components
 
@@ -140,7 +140,7 @@ All components pass **axe-core 4.10** with zero violations:
 
 ## Demo Page
 
-`/components/forms` — comprehensive demo showcasing every form component with live examples, validation round-trip, and accessible markup.
+`/components/forms` — demo page showing every form component with live examples, validation round-trip, and accessible markup.
 
 ## Common mistakes
 

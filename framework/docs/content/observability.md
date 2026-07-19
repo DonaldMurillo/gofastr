@@ -1,8 +1,7 @@
 # Observability (metrics & tracing)
 
-GoFastr ships production-grade HTTP metrics and OpenTelemetry tracing
-middleware. Both are **opt-in** so a minimal app stays minimal, but they
-are one option each to turn on.
+GoFastr includes HTTP metrics and OpenTelemetry tracing middleware. Both
+are **opt-in** — a minimal app stays minimal until you turn one on.
 
 ## Metrics (Prometheus)
 

@@ -10,11 +10,11 @@ render can catch.
 
 `framework/ui` and `core-ui` components carry their ARIA contract
 internally — labelled landmarks, `aria-expanded` on disclosures,
-`aria-selected` mirroring on tabs, focus traps on modal surfaces,
+`aria-selected` mirroring on tabs, focus traps on modals,
 `aria-live` announcement regions, keyboard navigation on menus, trees,
 carousels, and sortable lists. Composing the design system instead of
-hand-rolling markup is the single highest-leverage accessibility
-decision an app makes (see the UI architecture doc's hard rules).
+hand-rolling markup is the single biggest accessibility win an app can
+make (see the UI architecture doc's hard rules).
 
 The typed HTML layer makes the remaining requirements *visible in the
 config struct*: `html.Image` has an `Alt` field, `html.Button` a
@@ -143,4 +143,4 @@ dev`'s server during development, or against a staging deploy in CI.
 - **Fixing the symptom in CSS.** An axe `color-contrast` finding on a
   component means the *token* is wrong (`--color-text-subtle` on
   `--color-surface`), not that one selector needs an override — fix the
-  theme so every surface inherits the correction.
+  theme so every component inherits the correction.

@@ -239,8 +239,8 @@ ring belongs in your KMS adapter.
 
 ## Auto-bridging from `framework/event`
 
-When you want every internal event to fan out to webhook subscribers
-without per-event glue, call `webhook.Bridge`:
+To send every internal event to webhook subscribers without writing
+per-event glue, call `webhook.Bridge`:
 
 ```go
 cancel := webhook.Bridge(app.Events(), mgr)              // entity.created/updated/deleted

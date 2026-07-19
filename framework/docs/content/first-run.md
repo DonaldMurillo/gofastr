@@ -33,8 +33,8 @@ file, so a crash mid-setup simply re-enters setup on the next boot.
 ## The interactive skin
 
 When setup is incomplete and required values are missing from the
-environment, `Start` binds the port but serves a **setup surface**
-instead of the app router: the SSR wizard (composed from the design
+environment, `Start` binds the port but serves setup pages instead
+of the app router: the SSR wizard (composed from the design
 system — `AuthCard`, `ProgressSteps`, `FormField`), plus `/healthz`
 and `/readyz`. Every other path answers 503 "setup required" — no
 entity CRUD, no OpenAPI, no admin, nothing reachable before bootstrap.

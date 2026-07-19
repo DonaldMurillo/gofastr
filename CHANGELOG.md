@@ -51,6 +51,15 @@ GoFastr's live-data and optimistic-UI capabilities into runnable references.
 - **`email_verified` enforced** (#98). OIDC logins consult `email_verified`
   (fetching userinfo when the id_token omits it, never overwriting a signed
   `false`); an unverified email never binds to an existing account.
+- **Positioning pass** (#113). GoFastr is presented as a full-stack Go
+  framework that doesn't get in the way of you or your agents — the blueprint
+  generator and the entity declaration are optional features, not the
+  identity. No API changes. The embedded `framework/docs/content/*` corpus is
+  reframed in plain words, full-stack-first (facts/flags/links/samples
+  unchanged); the README is repositioned with the blueprint demoted to a
+  clearly-optional design bet and a "Built with GoFastr" section; and the docs
+  site (`examples/site`) reworks its area hubs into taught pages, renames
+  `/patterns` to `/framework`, and moves page metadata/footer onto the tagline.
 
 ### Performance
 

@@ -43,15 +43,15 @@ app.RegisterProcessModule(framework.ProcessModuleDescriptor{
 
 The fields:
 
-- **Routes** — the HTTP surface, host-registered behind the existing module
+- **Routes** — the HTTP routes, host-registered behind the existing module
   route gate. The child cannot add, rename, or reshape routes.
-- **Tools** — the optional MCP tool surface (see below). Digests are
-  byte-compared against `module.tool.list` at handshake.
+- **Tools** — the optional MCP tools the module declares (see below).
+  Digests are byte-compared against `module.tool.list` at handshake.
 - **RequestedGrants** — the verbatim `resource:verb` list the operator
   reviews at install. Effective grants = requested ∩ approved.
 - **TrustTier** — selects the runner: `TrustedTrusted` (crash isolation
-  only, dev/first-party) or `TrustUntrusted` (requires a probe-passing
-  sandbox, fail-closed otherwise).
+  only, for dev or in-house modules) or `TrustUntrusted` (requires a
+  probe-passing sandbox, fail-closed otherwise).
 - **MigrationGroup** — the `#33` migration group the module owns.
 
 ## Install + operator approval
@@ -137,8 +137,8 @@ Three load-bearing points:
    the `REVOKE` on `public` is the real boundary — the role holds no
    privileges outside its own schema regardless of `search_path`.
 2. **The DDL session authenticates AS `module_billing_role`** (a separate
-   login role, member of nothing), not a powerful session that `SET ROLE`s
-   down. Only then is `RESET ROLE` a no-op and `SET ROLE <powerful>`
+   login role, member of nothing), not an elevated session that `SET ROLE`s
+   down. Only then is `RESET ROLE` a no-op and `SET ROLE <an elevated role>`
    refused.
 3. **The tracking table is schema-local** (`module_billing._migrations`),
    so the runner's advisory-lock + checksum-integrity + single-transaction
@@ -175,9 +175,9 @@ removes registration but drops nothing. A destructive
 `DROP SCHEMA module_M CASCADE` is a separate, privileged control-plane
 action, never an uninstall side effect.
 
-## MCP tool surface
+## MCP tools
 
-A module may declare an AI-agent-callable **tool surface** in its
+A module may declare AI-agent-callable **tools** in its
 descriptor. The host — not the child — registers each tool into its
 existing `core/mcp.Server` under a namespaced id:
 
@@ -196,7 +196,7 @@ reverse `host.*` calls are checked as module-grant ∩ caller-authority
 route with the same grants couldn't; there is no separate tool-permission
 vocabulary.
 
-## UI surface
+## UI rendering
 
 A module owns *screen logic* only. It returns a bounded, declarative
 `ui.node.v1` node tree — a closed, host-owned component enum with typed
@@ -273,7 +273,7 @@ Three contracts the child MUST honor (the host enforces them; violation is
 terminal `Failed` or a per-call 503):
 
 - **The descriptor is authoritative.** Routes, tools, requested grants, and
-  the surface digest come from the operator-approved
+  the digest fields come from the operator-approved
   `ProcessModuleDescriptor`, never from the child. `module.handshake` only
   *echoes* `surface_sha256`; `module.tool.list` must be byte-equal to the
   descriptor's tool digests. A child that adds a route/tool or reshapes a
@@ -292,18 +292,19 @@ terminal `Failed` or a per-call 503):
   headers, so a child that dies mid-call yields a buffered 503, never a
   truncated 200.
 
-To install a built child, compute its surface digest
+To install a built child, compute the digest of its routes and tools
 (`framework.ComputeSurfaceSHA256`) and tool digests
-(`framework.ModuleToolDigest`) from the same surface the child serves, pin
-the executable's SHA-256, and `RegisterProcessModule` the descriptor; the
-gate test's `demoDescriptor` helper shows the exact bookkeeping.
+(`framework.ModuleToolDigest`) from the same routes and tools the child
+serves, pin the executable's SHA-256, and `RegisterProcessModule` the
+descriptor; the gate test's `demoDescriptor` helper shows the exact
+bookkeeping.
 
 ## Common mistakes
 
 - **Treating `search_path` as the isolation fence.** It is session-mutable
   and the publisher can `SET search_path TO public, module_M` freely. The
   fence is the `REVOKE` — the role holds no privileges outside its own
-  schema. Stating otherwise is the routine mis-sale of fixed `search_path`.
+  schema. Claiming otherwise is the common, wrong take on fixed `search_path`.
 - **Forgetting to run the migration coordinator.** A module with a
   declared migration group never reaches Ready until the coordinator stamps
   `MigrationsAppliedAt`; it looks "stuck disabled" with proxy 503s.
