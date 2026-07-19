@@ -3,6 +3,7 @@ package crud
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -15,7 +16,14 @@ import (
 // Accepts either the DB column name (snake_case) or the JSON-cased name
 // (camelCase) so clients can pass whatever they see on the wire.
 func (ch *CrudHandler) projectFromRequest(r *http.Request) ([]string, error) {
-	raw := strings.TrimSpace(r.URL.Query().Get("fields"))
+	return ch.projectFromRequestQ(r.URL.Query())
+}
+
+// projectFromRequestQ is the no-reparse variant of projectFromRequest.
+// The List handler threads its single url.Values through every helper so
+// ?fields= isn't re-parsed per call.
+func (ch *CrudHandler) projectFromRequestQ(q url.Values) ([]string, error) {
+	raw := strings.TrimSpace(q.Get("fields"))
 	if raw == "" {
 		return ch.visibleFields(), nil
 	}

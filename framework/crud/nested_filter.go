@@ -3,6 +3,7 @@ package crud
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -47,25 +48,21 @@ type nestedFilter struct {
 // Unknown relations and unknown fields on the target return an error so
 // the caller can map to 400 — silent ignoring would mask client typos.
 func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
+	return parseNestedFiltersValues(r.URL.Query(), ent, registry)
+}
+
+func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
 	relsByName := map[string]entity.Relation{}
 	for _, rel := range ent.Config.Relations {
 		relsByName[rel.Name] = rel
 	}
 
-	suffixes := []struct {
-		suffix string
-		op     filter.FilterOp
-	}{
-		{"_gte", filter.OpGte},
-		{"_lte", filter.OpLte},
-		{"_gt", filter.OpGt},
-		{"_lt", filter.OpLt},
-		{"_like", filter.OpLike},
-		{"_in", filter.OpIn},
-	}
+	// filter.FilterSuffixes is the canonical operator-suffix table — reuse
+	// it instead of rebuilding a local literal per call. Order is the same
+	// (longer suffixes first) so ?author.name_gte=v matches _gte not _gt.
 
 	var out []nestedFilter
-	for key, values := range r.URL.Query() {
+	for key, values := range q {
 		if !strings.Contains(key, ".") || len(values) == 0 {
 			continue
 		}
@@ -81,10 +78,10 @@ func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Reg
 
 		fieldName := fieldRaw
 		op := filter.OpEq
-		for _, s := range suffixes {
-			if strings.HasSuffix(fieldRaw, s.suffix) {
-				fieldName = strings.TrimSuffix(fieldRaw, s.suffix)
-				op = s.op
+		for _, s := range filter.FilterSuffixes {
+			if strings.HasSuffix(fieldRaw, s.Suffix) {
+				fieldName = strings.TrimSuffix(fieldRaw, s.Suffix)
+				op = s.Op
 				break
 			}
 		}

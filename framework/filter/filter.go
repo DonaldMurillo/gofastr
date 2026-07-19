@@ -3,6 +3,7 @@ package filter
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/fuzzy"
@@ -110,6 +111,31 @@ func Allow(keys ...string) FilterOption {
 	}
 }
 
+// FilterSuffixOp pairs a query-string operator suffix (e.g. "_gt") with
+// its FilterOp. Exported so the CRUD layer's nested-filter parser can
+// share the same canonical table (no per-call rebuild, no duplicate
+// literal to drift between packages).
+type FilterSuffixOp struct {
+	Suffix string
+	Op     FilterOp
+}
+
+// FilterSuffixes is the canonical operator-suffix table for the equality,
+// comparison, LIKE, and IN operators. Order matters: longer suffixes MUST
+// be tested before their shorter prefixes (e.g. `_gte` before `_gt`,
+// otherwise `?score_gte=5` matches `_gt` and leaves an `e=` field-name
+// fragment). The table is a pure function of the operator set, so it is
+// hoisted to a package var — ParseFilters/ParseSort no longer rebuild it
+// per call.
+var FilterSuffixes = [...]FilterSuffixOp{
+	{"_gte", OpGte},
+	{"_lte", OpLte},
+	{"_gt", OpGt},
+	{"_lt", OpLt},
+	{"_like", OpLike},
+	{"_in", OpIn},
+}
+
 // ParseFilters extracts filters from query parameters based on entity fields.
 // Supported patterns:
 //
@@ -126,8 +152,8 @@ func Allow(keys ...string) FilterOption {
 // predicate on a column the caller can't read turns row-count/result
 // changes into a value-disclosure oracle — an attacker could probe a
 // Hidden column (e.g. a password hash) via ?password_hash_like=… and
-// exfiltrate it prefix by prefix. A Hidden field name is treated as an
-// unknown filter param and never produces a ParsedFilter.
+// exfiltrate it prefix by prefix. A Hidden field name is treated as
+// an unknown filter param and never produces a ParsedFilter.
 //
 // STRICT by default: an unknown top-level filter key (a typo like
 // ?stauts=active, or a suffixed op on a non-field) returns a structured
@@ -137,7 +163,22 @@ func Allow(keys ...string) FilterOption {
 // page, cursor, …) and nested relation filters (dotted keys like
 // author.name, validated separately by parseNestedFilters) are skipped, not
 // rejected. Pass [Lenient] to restore the old drop-silently behavior.
+//
+// This is a thin wrapper around ParseFiltersValues that parses the request
+// URL once. Callers that already have a url.Values (e.g. the CRUD List
+// handler, which parses once and threads the result through every helper)
+// should call ParseFiltersValues directly to avoid the re-parse.
 func ParseFilters(r *http.Request, fields []schema.Field, opts ...FilterOption) ([]ParsedFilter, error) {
+	return ParseFiltersValues(r.URL.Query(), fields, opts...)
+}
+
+// ParseFiltersValues is the allocation-conscious variant of ParseFilters:
+// it accepts an already-parsed url.Values so a caller that parsed
+// ?field=value once can reuse it across filter/sort/paginate/include
+// helpers without re-paying url.URL.Query (which re-parses RawQuery and
+// allocates a fresh url.Values on every call). Behaviour is identical to
+// ParseFilters for the same underlying query string.
+func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOption) ([]ParsedFilter, error) {
 	var o filterOpts
 	for _, opt := range opts {
 		opt(&o)
@@ -153,20 +194,9 @@ func ParseFilters(r *http.Request, fields []schema.Field, opts ...FilterOption) 
 		names = append(names, f.Name)
 	}
 
-	q := r.URL.Query()
-	var filters []ParsedFilter
+	// FilterSuffixes is package-level — see its declaration above.
 
-	suffixes := []struct {
-		suffix string
-		op     FilterOp
-	}{
-		{"_gte", OpGte},
-		{"_lte", OpLte},
-		{"_gt", OpGt},
-		{"_lt", OpLt},
-		{"_like", OpLike},
-		{"_in", OpIn},
-	}
+	var filters []ParsedFilter
 
 	// Track which query keys we've consumed so plain field=value
 	// doesn't also match a field that was handled by a suffix.
@@ -194,14 +224,14 @@ func ParseFilters(r *http.Request, fields []schema.Field, opts ...FilterOption) 
 		// named "stream" or "q") is still filtered rather than silently
 		// swallowed, which would return an unfiltered result set.
 		matched := false
-		for _, s := range suffixes {
-			if strings.HasSuffix(key, s.suffix) {
-				fieldName := strings.TrimSuffix(key, s.suffix)
+		for _, s := range FilterSuffixes {
+			if strings.HasSuffix(key, s.Suffix) {
+				fieldName := strings.TrimSuffix(key, s.Suffix)
 				if !fieldSet[fieldName] {
 					continue
 				}
 				consumed[fieldName] = true
-				if s.op == OpIn {
+				if s.Op == OpIn {
 					parts := strings.Split(values[0], ",")
 					// Cap the IN list. An attacker can otherwise post a
 					// 10K-element ?id_in=a,a,a,… string and force the
@@ -216,7 +246,7 @@ func ParseFilters(r *http.Request, fields []schema.Field, opts ...FilterOption) 
 						filters = append(filters, ParsedFilter{Field: fieldName, Op: OpIn, Value: p})
 					}
 				} else {
-					filters = append(filters, ParsedFilter{Field: fieldName, Op: s.op, Value: values[0]})
+					filters = append(filters, ParsedFilter{Field: fieldName, Op: s.Op, Value: values[0]})
 				}
 				matched = true
 				break
@@ -275,9 +305,9 @@ func unknownFilterError(key string, fieldNames []string) error {
 // none.
 func nearestField(key string, fieldNames []string) string {
 	base := key
-	for _, s := range []string{"_gte", "_lte", "_gt", "_lt", "_like", "_in"} {
-		if strings.HasSuffix(base, s) {
-			base = strings.TrimSuffix(base, s)
+	for _, s := range FilterSuffixes {
+		if strings.HasSuffix(base, s.Suffix) {
+			base = strings.TrimSuffix(base, s.Suffix)
 			break
 		}
 	}
@@ -311,7 +341,17 @@ func nearestField(key string, fieldNames []string) string {
 // 400-shaped error rather than being silently ignored — silent drop
 // turns probe attempts into "the API works the same with or without
 // this param" oracles that mask broken client code.
+//
+// Thin wrapper around ParseSortValues; callers that already hold a
+// url.Values should call ParseSortValues directly.
 func ParseSort(r *http.Request, fields []schema.Field) ([]ParsedSort, error) {
+	return ParseSortValues(r.URL.Query(), fields)
+}
+
+// ParseSortValues is the allocation-conscious variant of ParseSort: it
+// accepts an already-parsed url.Values so the CRUD List handler can
+// thread the same parsed query through every helper.
+func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) {
 	allowed := make(map[string]bool, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
@@ -320,7 +360,7 @@ func ParseSort(r *http.Request, fields []schema.Field) ([]ParsedSort, error) {
 		allowed[f.Name] = true
 	}
 
-	sortParams := r.URL.Query()["sort"]
+	sortParams := q["sort"]
 	if len(sortParams) == 0 {
 		return nil, nil
 	}

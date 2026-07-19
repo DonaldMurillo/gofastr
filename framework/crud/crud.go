@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -165,20 +166,29 @@ func (ch *CrudHandler) InjectTenant(data map[string]any, ctx context.Context) {
 // that's an information-disclosure path. The query param is honoured
 // only when a user is present in the request context.
 func (ch *CrudHandler) ApplySoftDeleteFilter(qb *query.QueryBuilder, r *http.Request) {
-	if ch.Entity.Config.SoftDelete {
-		if !ch.trashedAllowed(r) {
-			qb.Where("deleted_at IS NULL")
-		}
-	}
+	ch.applySoftDeleteFilterQ(qb, r.URL.Query(), r.Context())
 }
 
 // ApplySoftDeleteFilterCount adds a deleted_at IS NULL filter to a count query.
 // Same authentication gate as ApplySoftDeleteFilter.
 func (ch *CrudHandler) ApplySoftDeleteFilterCount(cb *query.CountBuilder, r *http.Request) {
-	if ch.Entity.Config.SoftDelete {
-		if !ch.trashedAllowed(r) {
-			cb.Where("deleted_at IS NULL")
-		}
+	ch.applySoftDeleteFilterCountQ(cb, r.URL.Query(), r.Context())
+}
+
+// applySoftDeleteFilterQ is the no-reparse variant of ApplySoftDeleteFilter.
+// List/ServeStreamingList parse the URL query once and thread the same
+// url.Values through every helper; this variant accepts it directly so the
+// soft-delete gate doesn't pay url.URL.Query a second time per call.
+func (ch *CrudHandler) applySoftDeleteFilterQ(qb *query.QueryBuilder, q url.Values, ctx context.Context) {
+	if ch.Entity.Config.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
+		qb.Where("deleted_at IS NULL")
+	}
+}
+
+// applySoftDeleteFilterCountQ mirrors applySoftDeleteFilterQ for count queries.
+func (ch *CrudHandler) applySoftDeleteFilterCountQ(cb *query.CountBuilder, q url.Values, ctx context.Context) {
+	if ch.Entity.Config.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
+		cb.Where("deleted_at IS NULL")
 	}
 }
 
@@ -187,10 +197,17 @@ func (ch *CrudHandler) ApplySoftDeleteFilterCount(cb *query.CountBuilder, r *htt
 // authenticated user — anonymous callers are denied visibility into
 // soft-deleted data regardless of how they ask.
 func (ch *CrudHandler) trashedAllowed(r *http.Request) bool {
-	if r.URL.Query().Get("trashed") != "true" {
+	return ch.trashedAllowedQ(r.URL.Query(), r.Context())
+}
+
+// trashedAllowedQ is the no-reparse variant. The List handler computes it
+// once from its single parsed url.Values and reuses the result across the
+// count + data query builders.
+func (ch *CrudHandler) trashedAllowedQ(q url.Values, ctx context.Context) bool {
+	if q.Get("trashed") != "true" {
 		return false
 	}
-	if _, ok := getHandlerUser(r.Context()); !ok {
+	if _, ok := getHandlerUser(ctx); !ok {
 		return false
 	}
 	return true
@@ -332,9 +349,18 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		page, perPage := parsePagination(r, ch.Entity.Config.MaxListLimit)
+		// Parse the URL query ONCE and thread it through every helper.
+		// r.URL.Query() re-parses RawQuery and allocates a fresh
+		// url.Values on every call; the previous List body paid that
+		// ~13-15× per request (pagination, includes, filters, sort,
+		// nested filters, q-column edge case, ?q= search, ?where= tree,
+		// ?cursor check, projection, ?stream check, soft-delete gate ×2,
+		// explicit offset). Handing the same parsed Values to every
+		// helper eliminates the re-parse without changing any semantics.
+		q := r.URL.Query()
+		page, perPage := parsePaginationValues(q, ch.Entity.Config.MaxListLimit)
 
-		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
+		includes, err := parseIncludeTreeQ(q, ch.Entity, ch.Registry)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
@@ -347,7 +373,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		if extra := ch.Entity.Config.AllowedFilterParams; len(extra) > 0 {
 			filterOpts = append(filterOpts, filter.Allow(extra...))
 		}
-		filters, err := filter.ParseFilters(r, ch.Entity.GetFields(), filterOpts...)
+		filters, err := filter.ParseFiltersValues(q, ch.Entity.GetFields(), filterOpts...)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid filters: "+err.Error())
 			return
@@ -357,11 +383,11 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// present, a plain ?q=value would be parsed as an OpEq filter on a
 		// column named "q". Drop it — plain ?q= means search. Suffixed ops
 		// (?q_like=, ?q_gt=, …) still filter the column.
-		filters = stripQColumnEqFilter(filters, len(ch.Entity.Config.SearchFields) > 0, r.URL.Query().Has("q"))
+		filters = stripQColumnEqFilter(filters, len(ch.Entity.Config.SearchFields) > 0, q.Has("q"))
 
 		// Nested filters like ?author.name=alice. Parsed once and applied to
 		// both the count + data queries below.
-		nested, err := parseNestedFilters(r, ch.Entity, ch.Registry)
+		nested, err := parseNestedFiltersValues(q, ch.Entity, ch.Registry)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
@@ -372,13 +398,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// and append them as Where clauses. They feed the count, data,
 		// cursor, and stream sinks uniformly because listPayload.Where is
 		// applied to each. Zero signature changes.
-		searchWheres := ch.searchWhereClauses(r)
+		searchWheres := ch.searchWhereClausesQ(q)
 
 		// ?where=<json> nested predicate tree (OR-groups / nested AND-OR).
 		// Compiles to ONE parenthesized WHERE clause that AND-composes with
 		// the owner/tenant/soft-delete scopes exactly like the search
 		// clauses above — a user OR-group can never widen past a scope.
-		treeWheres, err := ch.whereTreeClauses(r)
+		treeWheres, err := ch.whereTreeClausesQ(q)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid where: "+err.Error())
 			return
@@ -403,23 +429,22 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// Cursor pagination is opt-in: presence of the ?cursor key (even
 		// empty for first-page) switches to keyset mode and emits the
 		// CursorPage envelope.
-		if r.URL.Query().Has("cursor") {
+		if q.Has("cursor") {
 			ch.serveCursorList(ctx, w, r, includes, filters, nested, listPayload.Where)
 			return
 		}
 
-		sorts, err := filter.ParseSort(r, ch.Entity.GetFields())
+		sorts, err := filter.ParseSortValues(q, ch.Entity.GetFields())
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		cols, err := ch.projectFromRequest(r)
+		cols, err := ch.projectFromRequestQ(q)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-
 		// Streaming-list opt-in: explicit ?stream=true, or auto-on when the
 		// requested limit is huge. Streaming skips include resolution to keep
 		// memory bounded — so it CANNOT honour ?include= or per-row AfterList
@@ -433,7 +458,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// not an explicit opt-in) → fall through to the buffered path, which
 		// resolves includes and runs AfterList correctly. Correctness wins
 		// over the streaming memory optimisation when the two conflict.
-		explicitStream := r.URL.Query().Get("stream") == "true"
+		explicitStream := q.Get("stream") == "true"
 		hasAfterList := ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterList)) > 0
 		if explicitStream || perPage >= streamListThreshold {
 			if len(includes) > 0 {
@@ -460,7 +485,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplyToCountQuery(countQb, filters)
 		ch.ApplyTenantScopeCount(countQb, r)
 		ch.ApplyOwnerScopeCount(countQb, r)
-		ch.ApplySoftDeleteFilterCount(countQb, r)
+		ch.applySoftDeleteFilterCountQ(countQb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { countQb.Where(sql, args...) },
 			ch.Entity.GetTable(), ch.PrimaryKey, nested,
@@ -481,7 +506,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplyToQuery(qb, filters)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
-		ch.ApplySoftDeleteFilter(qb, r)
+		ch.applySoftDeleteFilterQ(qb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
 			ch.Entity.GetTable(), ch.PrimaryKey, nested,
@@ -497,7 +522,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// without ?page=), and it is a documented control param — honoring it
 		// here is what makes those requests return the intended window
 		// instead of silently serving page 1.
-		if o, ok := explicitOffset(r); ok {
+		if o, ok := explicitOffsetValues(q); ok {
 			offset = o
 		}
 		qb.Limit(perPage)
@@ -578,11 +603,18 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 // soft-delete scopes because the query builder wraps each Where clause
 // in parens.
 func (ch *CrudHandler) searchWhereClauses(r *http.Request) []hook.WhereClause {
+	return ch.searchWhereClausesQ(r.URL.Query())
+}
+
+// searchWhereClausesQ is the no-reparse variant. Accepts a pre-parsed
+// url.Values so the List handler can share its single parse across every
+// helper that previously called r.URL.Query() itself.
+func (ch *CrudHandler) searchWhereClausesQ(q url.Values) []hook.WhereClause {
 	if len(ch.Entity.Config.SearchFields) == 0 {
 		return nil
 	}
-	q := r.URL.Query().Get("q")
-	conds := filter.SearchConditions(ch.Entity.Config.SearchFields, q)
+	qVal := q.Get("q")
+	conds := filter.SearchConditions(ch.Entity.Config.SearchFields, qVal)
 	if len(conds) == 0 {
 		return nil
 	}
@@ -601,7 +633,12 @@ func (ch *CrudHandler) searchWhereClauses(r *http.Request) []hook.WhereClause {
 // AND-composes with owner/tenant/soft-delete scopes because the query
 // builder wraps each Where in parens.
 func (ch *CrudHandler) whereTreeClauses(r *http.Request) ([]hook.WhereClause, error) {
-	raw := r.URL.Query().Get("where")
+	return ch.whereTreeClausesQ(r.URL.Query())
+}
+
+// whereTreeClausesQ is the no-reparse variant of whereTreeClauses.
+func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, error) {
+	raw := q.Get("where")
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
@@ -969,10 +1006,14 @@ func isUniqueViolation(err error) bool {
 // adding a query param. When the entity has explicitly raised the
 // limit, the streaming-list path uses min(MaxListLimit, streamListThreshold).
 func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
+	return parsePaginationValues(r.URL.Query(), entityMax)
+}
+
+func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
 	page = 1
 	perPage = 20
 
-	if v := r.URL.Query().Get("page"); v != "" {
+	if v := q.Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = n
 		}
@@ -983,9 +1024,9 @@ func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
 	// ?limit is the canonical page-size param; ?per_page is accepted as an
 	// alias (a common REST convention) so a client using it gets the size it
 	// asked for rather than a silent default. ?limit wins when both are sent.
-	sizeParam := r.URL.Query().Get("limit")
+	sizeParam := q.Get("limit")
 	if sizeParam == "" {
-		sizeParam = r.URL.Query().Get("per_page")
+		sizeParam = q.Get("per_page")
 	}
 	if sizeParam != "" {
 		if n, err := strconv.Atoi(sizeParam); err == nil && n > 0 {
@@ -1007,7 +1048,11 @@ func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
 // caps the row count, so an oversized offset just returns an empty window —
 // no need to clamp it here.
 func explicitOffset(r *http.Request) (int, bool) {
-	v := r.URL.Query().Get("offset")
+	return explicitOffsetValues(r.URL.Query())
+}
+
+func explicitOffsetValues(q url.Values) (int, bool) {
+	v := q.Get("offset")
 	if v == "" {
 		return 0, false
 	}

@@ -9,9 +9,16 @@ type CountBuilder struct {
 	args   []any
 }
 
-// Count creates a new CountBuilder for the given table.
+// Count creates a new CountBuilder for the given table. wheres/args are
+// pre-capped — see query.Select's rationale (CRUD List adds ~4-5 Where
+// clauses per count + data builder; without the hint each grows through
+// 1 → 2 → 4 → 8 across the request).
 func Count(table string) *CountBuilder {
-	return &CountBuilder{table: table}
+	return &CountBuilder{
+		table:  table,
+		wheres: make([]whereClause, 0, defaultWhereCap),
+		args:   make([]any, 0, defaultArgCap),
+	}
 }
 
 // Where appends a WHERE condition (ANDed with previous conditions).

@@ -1,4 +1,4 @@
-# Performance results — 2026-07-15 (v0.26.0)
+# Performance results — 2026-07-18 (v0.26.0)
 
 Current measured results for the framework's hot paths. Each section
 names the benchmark that produced the numbers, so a future change can
@@ -32,15 +32,41 @@ go test ./framework/ -run=^$ -bench=<pattern> \
   11.5 ms/op — a **4.1× streaming win**. SQLite is too fast to show the
   gap clearly (15.7 vs 13.9 ms).
 
-### FilteredList vs hand-rolled net/http — known gap
+### FilteredList vs hand-rolled net/http — overhead reduction (2026-07-18)
 - Benchmarks: `BenchmarkT7_FilteredList_GoFastr` vs
-  `BenchmarkT7_FilteredList_NetHTTP`
-- SQLite: GoFastr 176 µs / 2442 allocs; net/http 82 µs / 1881 allocs —
-  **+115% time, +30% allocs**. Postgres: 906 µs vs 406 µs.
-- This is the one hot path where the framework's convenience overhead has
-  not been closed. Allocations came down from the original 3187 but the
-  time gap persists. Treat regressions here seriously; improvements are
-  wanted.
+  `BenchmarkT7_FilteredList_NetHTTP`.
+- **Fixture-fix caveat (commit-window):** generated CRUD required a
+  session by default since commit `4758c4a0`, but the
+  `setupBlogDomain` fixture had no `OwnerField`/`Access`/`Config.Public`
+  — anonymous bench requests 401'd before reaching the List body. The
+  bench harness now injects a user via `handler.SetUser(req.Context(),
+  …)`, mirroring production auth middleware, so the numbers below reflect
+  the REAL List path. The pre-fix 176 µs / 2442 allocs figure measured
+  the auth rejection, not the list.
+- **Issue #100B optimizations (parse `r.URL.Query()` once per request,
+  pool the per-row scan buffer, hoist the operator-suffix table, pre-cap
+  QueryBuilder/CountBuilder `wheres`/`args`):**
+
+  | Dialect  | Metric    | Before          | After           | Δ            |
+  |----------|-----------|-----------------|-----------------|--------------|
+  | SQLite   | sec/op    | 167.1 µs ± 3%   | 162.6 µs ± 3%   | **−2.69%** (p=0.003) |
+  | SQLite   | B/op      | 96.29 Ki ± 0%   | 85.64 Ki ± 0%   | **−11.06%** (p=0.000) |
+  | SQLite   | allocs/op | 2.447k ± 0%     | 2.353k ± 0%     | **−3.84%** (p=0.000) |
+  | Postgres | sec/op    | 825.3 µs ± 7%   | 850.2 µs ± 7%   | ~ (p=0.247, n.s.) |
+  | Postgres | B/op      | 77.20 Ki ± 0%   | 66.58 Ki ± 0%   | **−13.75%** (p=0.000) |
+  | Postgres | allocs/op | 1.952k ± 0%     | 1.858k ± 0%     | **−4.82%** (p=0.000) |
+
+  benchstat `-benchtime=1s -count=10`, geomean −5.38% sec/op, −12.42%
+  B/op, −4.33% allocs/op. Postgres time is network-bound (the testcontainers
+  round-trip dominates), so the Go-side allocation/bytes win doesn't show
+  up in wall time on that tier; SQLite (in-memory, no network) shows the
+  full stack improvement.
+- The hand-rolled net/http baseline is unchanged (`BenchmarkT7_FilteredList_NetHTTP`);
+  the gap to it shrank on bytes/allocs but persists on time because the
+  declare-once surface still pays for case conversion, projection, and
+  include-tree resolution that the hand-rolled handler skips. The next
+  lever is item 5 of the brief (caching static per-entity work behind
+  registration) — gated on a sanitize-still-rejects regression test.
 
 ### JSON case conversion
 - Benchmark: `BenchmarkJSONCasing`

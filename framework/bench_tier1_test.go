@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -140,6 +141,18 @@ func setupBlogDomain(b *testing.B, db *sql.DB, numPosts, commentsPerPost int) *A
 	return app
 }
 
+// benchAuthedGet builds a GET request with an authenticated user already
+// stamped into its context, mirroring how production auth middleware hands
+// a request to the CRUD layer. Commit 4758c4a0 made generated CRUD require
+// a session by default; without this, the setupBlogDomain fixtures (no
+// OwnerField, no Access, no Config.Public) 401 in requireAuthenticated
+// before the List body runs — so every bench that hit /posts via the
+// framework was measuring the auth rejection, not the list path.
+func benchAuthedGet(target string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	return req.WithContext(handler.SetUser(req.Context(), "bench-user"))
+}
+
 // ----------------------------------------------------------------------------
 // 1.1 — Includes vs N+1: the "no N+1 — one query per relation per level" claim
 // ----------------------------------------------------------------------------
@@ -158,7 +171,7 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 			limit := limit
 			b.Run(fmt.Sprintf("eager-include/limit=%d", limit), func(b *testing.B) {
 				path := fmt.Sprintf("/posts?limit=%d&include=author,comments", limit)
-				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req := benchAuthedGet(path)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
@@ -171,7 +184,7 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 
 			b.Run(fmt.Sprintf("naive-n+1/limit=%d", limit), func(b *testing.B) {
 				listPath := fmt.Sprintf("/posts?limit=%d", limit)
-				listReq := httptest.NewRequest(http.MethodGet, listPath, nil)
+				listReq := benchAuthedGet(listPath)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
@@ -192,13 +205,13 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 							authorID, _ = row["author_id"].(string)
 						}
 						if authorID != "" {
-							authReq := httptest.NewRequest(http.MethodGet, "/authors/"+authorID, nil)
+							authReq := benchAuthedGet("/authors/" + authorID)
 							rec := httptest.NewRecorder()
 							app.Router().ServeHTTP(rec, authReq)
 						}
 						postID, _ := row["id"].(string)
 						if postID != "" {
-							commReq := httptest.NewRequest(http.MethodGet, "/comments?post_id="+postID, nil)
+							commReq := benchAuthedGet("/comments?post_id=" + postID)
 							rec := httptest.NewRecorder()
 							app.Router().ServeHTTP(rec, commReq)
 						}
