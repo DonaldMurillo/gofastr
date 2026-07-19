@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"strings"
+	"time"
 )
 
 // ExprEval evaluates an expression against a row of values.
@@ -268,15 +269,28 @@ func (e *ExprEval) evalColumnRef(ex ColumnRef) (Value, error) {
 		return e.Row[idx], nil
 	}
 
-	// Unqualified: look up in column map
-	idx, ok := e.ColumnMap[strings.ToLower(ex.Column)]
-	if !ok {
-		return NullValue, &evalError{"unknown column: " + ex.Column}
+	// Unqualified: look up in column map. A real column of the same name
+	// ALWAYS wins — that is why CURRENT_TIMESTAMP / CURRENT_DATE /
+	// CURRENT_TIME are only consulted when no column resolved.
+	if idx, ok := e.ColumnMap[strings.ToLower(ex.Column)]; ok {
+		if idx >= len(e.Row) {
+			return NullValue, nil
+		}
+		return e.Row[idx], nil
 	}
-	if idx >= len(e.Row) {
-		return NullValue, nil
+
+	// Bare CURRENT_TIMESTAMP / CURRENT_DATE / CURRENT_TIME keyword used
+	// outside any row context (e.g. a column DEFAULT evaluated at insert
+	// time). SQLite formats these in UTC.
+	switch strings.ToUpper(ex.Column) {
+	case "CURRENT_TIMESTAMP":
+		return TextValue(time.Now().UTC().Format("2006-01-02 15:04:05")), nil
+	case "CURRENT_DATE":
+		return TextValue(time.Now().UTC().Format("2006-01-02")), nil
+	case "CURRENT_TIME":
+		return TextValue(time.Now().UTC().Format("15:04:05")), nil
 	}
-	return e.Row[idx], nil
+	return NullValue, &evalError{"unknown column: " + ex.Column}
 }
 
 func (e *ExprEval) evalBinary(ex BinaryExpr) (Value, error) {
