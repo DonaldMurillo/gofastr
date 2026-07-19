@@ -68,3 +68,23 @@ func runStartPhasesForTest(a *App) error {
 	}
 	return a.runStartHooks()
 }
+
+// TestRunSeedHooksSerialized_SQLiteUnlocked covers the non-Postgres branch of
+// runSeedHooksSerialized: with a SQLite (or nil) DB there is no advisory lock,
+// so the hooks run unlocked. Fast (no container).
+func TestRunSeedHooksSerialized_SQLiteUnlocked(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	ran := false
+	a := NewApp(WithDB(db))
+	a.WithSeed(func(context.Context) error { ran = true; return nil })
+	if err := a.runSeedHooksSerialized(); err != nil {
+		t.Fatalf("serialized (sqlite): %v", err)
+	}
+	if !ran {
+		t.Fatal("seed hook did not run on SQLite")
+	}
+}

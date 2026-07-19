@@ -1877,6 +1877,29 @@ func (a *App) Shutdown(ctx context.Context) error {
 	return firstErr
 }
 
+// runSeedHooksSerialized runs the App.WithSeed hooks, serializing them across
+// replicas behind the seed advisory lock (DISTINCT from the migration lock) so
+// two booting replicas don't race a hook. A MaxOpenConns(1) Postgres pool
+// cannot hold the lock without deadlocking the hooks' own queries, so it runs
+// unlocked with a loud WARN (the same gap RunSeeds documents). SQLite / no-DB
+// run unlocked (single-process; the lock pin would fight the pool). WithSeed
+// hooks have no ledger — they serialize-per-boot but still run on every
+// replica, so keep them idempotent.
+func (a *App) runSeedHooksSerialized() error {
+	a.ensureLifecycleContext()
+	if a.DB == nil || migrate.DetectDialect(a.DB) != migrate.DialectPostgres {
+		return a.runSeedHooks()
+	}
+	if a.DB.Stats().MaxOpenConnections == 1 {
+		a.Logger().Warn("seed hooks advisory lock skipped: Postgres pool has MaxOpenConns(1), so App.WithSeed hooks are NOT serialized across replicas — raise MaxOpenConns above 1")
+		return a.runSeedHooks()
+	}
+	return coremig.WithAdvisoryLockKey(
+		a.appCtx, a.DB, migrate.DialectPostgres, coremig.SeedAdvisoryLockKey,
+		func(_ *sql.Conn) error { return a.runSeedHooks() },
+	)
+}
+
 // ensureLifecycleContext lazily creates the app's cancellable lifecycle
 // context under serverMu — the same lock that guards server. Start and
 // runStartHooks both call this before binding the port, and Shutdown
@@ -1941,26 +1964,8 @@ func (a *App) Start(addr string) error {
 	// run on every replica, so keep them idempotent. SQLite is unwrapped
 	// (single-process; the lock pin would fight the pool the hooks use).
 	// With no DB the call is unchanged (no coordination to do).
-	var seedHookErr error
-	if a.DB != nil && migrate.DetectDialect(a.DB) == migrate.DialectPostgres {
-		if a.DB.Stats().MaxOpenConnections == 1 {
-			// A 1-conn pool can't hold the advisory lock without deadlocking
-			// the hooks' own queries, so hooks run UNLOCKED and are NOT
-			// serialized across replicas — the same gap RunSeeds documents
-			// for a MaxOpenConns(1) Postgres pool. Warn loudly.
-			a.Logger().Warn("seed hooks advisory lock skipped: Postgres pool has MaxOpenConns(1), so App.WithSeed hooks are NOT serialized across replicas — raise MaxOpenConns above 1")
-			seedHookErr = a.runSeedHooks()
-		} else {
-			seedHookErr = coremig.WithAdvisoryLockKey(
-				a.appCtx, a.DB, migrate.DialectPostgres, coremig.SeedAdvisoryLockKey,
-				func(_ *sql.Conn) error { return a.runSeedHooks() },
-			)
-		}
-	} else {
-		seedHookErr = a.runSeedHooks()
-	}
-	if seedHookErr != nil {
-		return abort(fmt.Errorf("seed hooks: %w", seedHookErr))
+	if err := a.runSeedHooksSerialized(); err != nil {
+		return abort(fmt.Errorf("seed hooks: %w", err))
 	}
 
 	// Initialize plugins and batteries (routes, middleware, tools, hooks).
