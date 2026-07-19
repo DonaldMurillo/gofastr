@@ -158,3 +158,95 @@ func TestConfirmActionAutofocusConfirm(t *testing.T) {
 		t.Errorf("did NOT expect autofocus on Cancel (ghost) when AutofocusConfirm=true, got tag: %s", ghostTag)
 	}
 }
+
+// TestConfirmActionSuccessSignal wires the response-signal attribute on
+// the Confirm button. The runtime reads data-fui-rpc-signal to decide
+// where the 2xx body goes — without it, a ConfirmAction that mutates
+// server state (e.g. delete) can never reconcile a list region.
+func TestConfirmActionSuccessSignal(t *testing.T) {
+	_, b := ConfirmAction(ConfirmActionConfig{
+		Name:          "delete-row-1",
+		TriggerLabel:  "Delete",
+		Title:         "Delete row?",
+		Body:          "Permanent.",
+		RPCPath:       "/row/1/delete",
+		SuccessSignal: "row-list",
+	})
+	body := string(b.Definition().Slots[0].Component.Render())
+	dangerTag := substringFromTag(body, "<button", strings.Index(body, "ui-button--danger"))
+	if !strings.Contains(dangerTag, `data-fui-rpc-signal="row-list"`) {
+		t.Errorf("expected data-fui-rpc-signal=\"row-list\" on the Confirm button, got tag: %s", dangerTag)
+	}
+	// Sanity: the Cancel button must NOT carry the signal — only the
+	// confirm action reconciles state.
+	ghostTag := substringFromTag(body, "<button", strings.Index(body, "ui-button--ghost"))
+	if strings.Contains(ghostTag, "data-fui-rpc-signal") {
+		t.Errorf("did NOT expect data-fui-rpc-signal on Cancel, got tag: %s", ghostTag)
+	}
+}
+
+// TestConfirmActionNoSignalByDefault confirms the opt-in nature of
+// SuccessSignal: a fire-and-forget confirm renders no signal attribute.
+func TestConfirmActionNoSignalByDefault(t *testing.T) {
+	_, b := ConfirmAction(ConfirmActionConfig{
+		Name:         "fire-and-forget",
+		TriggerLabel: "Go",
+		Title:        "Go?",
+		Body:         "Now?",
+		RPCPath:      "/go",
+	})
+	body := string(b.Definition().Slots[0].Component.Render())
+	if strings.Contains(body, "data-fui-rpc-signal") {
+		t.Errorf("expected NO data-fui-rpc-signal in body by default, got: %s", body)
+	}
+}
+
+// TestConfirmActionSuccessSignalRejectedNames pins the
+// selector-injection guard: the runtime interpolates the signal name
+// verbatim into the CSS attribute selector
+// `[data-fui-signal="<name>"]`, so any character outside [A-Za-z0-9_-]
+// is either an invalid selector (silently no-ops) or a breakout
+// (`x"],[data-fui-signal="secret`). Names that are safe MUST still pass.
+func TestConfirmActionSuccessSignalRejectedNames(t *testing.T) {
+	bad := []string{
+		`x"],[data-fui-signal="secret`,
+		`na"me`,
+		`with space`,
+		`hash#`,
+		`dot.name`,
+		`[bracket]`,
+		`preserved"quote`,
+		`non-ascii-é`,
+		`back\slash`,
+	}
+	for _, name := range bad {
+		t.Run("bad/"+name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic for unsafe SuccessSignal name %q", name)
+				}
+			}()
+			ConfirmAction(ConfirmActionConfig{
+				Name:          "x",
+				TriggerLabel:  "Delete",
+				Title:         "T",
+				Body:          "B",
+				RPCPath:       "/x",
+				SuccessSignal: name,
+			})
+		})
+	}
+	good := []string{"row-list", "opt_delete_list", "a", "A1", "n4", "list-1", "_underscore", "dash-"}
+	for _, name := range good {
+		t.Run("good/"+name, func(t *testing.T) {
+			_, _ = ConfirmAction(ConfirmActionConfig{
+				Name:          "x",
+				TriggerLabel:  "Delete",
+				Title:         "T",
+				Body:          "B",
+				RPCPath:       "/x",
+				SuccessSignal: name,
+			})
+		})
+	}
+}

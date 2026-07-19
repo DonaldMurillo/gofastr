@@ -174,6 +174,50 @@ func TestHtmlSignalDoesNotInjectObjectMarkup(t *testing.T) {
 	}
 }
 
+// htmlSignalSkipsNonStringAsserts pins the stronger invariant beyond
+// TestHtmlSignalDoesNotInjectObjectMarkup: in html mode, a non-string
+// value (the dispatchRPC error object {ok:false,status,text} broadcast
+// on every non-2xx) must NOT touch the DOM at all. The earlier textContent
+// fallback was XSS-safe but still overwrote the trusted region with a
+// JSON blob, corrupting the list on every failed optimistic delete/create.
+// The optimistic-UI cookbook relies on this no-op: "a failed delete leaves
+// the row/list unchanged."
+//
+// Surface: the html-mode branch of setSignal in runtime.js.
+func TestHtmlSignalSkipsNonStringValues(t *testing.T) {
+	src := readSrc(t, "runtime.js")
+	fnIdx := strings.Index(src, "setSignal(name, value)")
+	if fnIdx < 0 {
+		t.Fatal("could not locate setSignal in runtime.js")
+	}
+	body := src[fnIdx:]
+	if end := strings.Index(body, "signal(name) {"); end > 0 {
+		body = body[:end]
+	}
+	htmlIdx := strings.Index(body, "if (mode === 'html')")
+	if htmlIdx < 0 {
+		t.Fatal("could not locate html-mode branch in setSignal")
+	}
+	htmlBranch := body[htmlIdx:]
+	if end := strings.Index(htmlBranch, "} else if (mode === 'attr')"); end > 0 {
+		htmlBranch = htmlBranch[:end]
+	}
+	// Must guard non-string values with an early return so a broadcast
+	// error object never reaches innerHTML OR textContent.
+	if !strings.Contains(htmlBranch, "typeof value !== 'string'") &&
+		!strings.Contains(htmlBranch, "typeof value != 'string'") {
+		t.Error("SECURITY: [html-signal] html-mode branch must early-return on non-string values (typeof value !== 'string') so a failed-RPC error object does not overwrite the trusted region")
+	}
+	// The corruption shape — writing JSON.stringify(value) into textContent
+	// — must be gone from the html-mode branch entirely.
+	for _, line := range strings.Split(htmlBranch, "\n") {
+		l := strings.TrimSpace(line)
+		if strings.Contains(l, "textContent") && strings.Contains(l, "JSON.stringify") {
+			t.Errorf("SECURITY: [html-signal] html-mode branch still writes JSON.stringify(value) into textContent — a non-2xx broadcast overwrites the trusted region with a JSON blob; line:\n%s", l)
+		}
+	}
+}
+
 // sseIslandSelectorEscaped asserts the SSE island handler escapes the
 // server-supplied island name before interpolating it into a CSS
 // attribute selector. Without CSS.escape() a crafted island name like

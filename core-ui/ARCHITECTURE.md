@@ -91,7 +91,7 @@ server side and the runtime does the work.
 | `data-fui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
 | `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page — the RPC mutated server state, so the destination must be fetched fresh |
 | `data-fui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
-| `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`) |
+| `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`). `html` is the trusted-HTML escape hatch: on a string value the runtime replaces `innerHTML`, on a non-string value (e.g. the dispatchRPC error object `{ok:false,status,text}` broadcast on non-2xx) it leaves the DOM **unchanged** so a failed RPC cannot corrupt the trusted region. `text` always renders (a human-readable "Error: …" string for error objects). `attr` updates the attribute named by `data-fui-signal-attr`. |
 | `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
 | `data-fui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
 | `data-fui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
@@ -284,6 +284,15 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
   → every node with data-fui-signal="customers-rows" data-fui-signal-mode="html" gets innerHTML replaced
   → no URL change, no <main> swap, no other DOM touched
 ```
+
+On a non-2xx response, `dispatchRPC` broadcasts the auto-built error
+object `{ok:false,status,text}` into the named signal. `html`-mode
+regions **skip the DOM write** for that non-string value (their content
+is trusted HTML by contract; overwriting it with a JSON blob would
+corrupt the region on every failed RPC). `text`-mode regions render a
+human-readable "Error: <status> — <text>" line. This is the
+optimistic-UI invariant: a failed mutation leaves the bound region
+exactly where it was.
 
 ### Global document state (`__gofastr.doc`)
 

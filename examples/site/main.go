@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -275,6 +276,93 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	// Optimistic UI demo endpoints — see framework/docs/content/optimistic-ui.md
+	// and the four /components/optimistic-* demos. Each endpoint is a
+	// demo-only no-op or in-memory mutation; same caveat as the rest of
+	// the /__site/* family: no CSRF, no rate limit, no auth.
+
+	// Recipe 2 (inline edit): one endpoint returns 2xx so the
+	// OptimisticAction commits; the other returns 422 so it shakes and
+	// reverts. Neither reads a body — the OptimisticAction runtime is
+	// fire-and-forget.
+	fwApp.Router().Post("/__site/optimistic/edit/ok", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	fwApp.Router().Post("/__site/optimistic/edit/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "validation failed", http.StatusUnprocessableEntity)
+	}))
+
+	// Recipe 7 (slow / failure): one delays then succeeds, one fails
+	// immediately. The slow endpoint exercises the pending window
+	// (aria-busy + disabled) before commit; the fail endpoint exercises
+	// the shake-and-revert path.
+	fwApp.Router().Post("/__site/optimistic/slow", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(2 * time.Second)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	fwApp.Router().Post("/__site/optimistic/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "save failed", http.StatusUnprocessableEntity)
+	}))
+
+	// Recipe 3 (create): append a row to the in-memory CREATE store and
+	// return the fresh authoritative list HTML. The runtime swaps the
+	// list region's innerHTML with the response body. The create store
+	// is independent of the delete store so a created n4 never reaches
+	// /components/optimisticdelete (whose modals are mounted only for
+	// the initial n1–n3).
+	fwApp.Router().Post("/__site/optimistic/create", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		optimisticCreateNotes.Lock()
+		id := fmt.Sprintf("n%d", optimisticCreateNotes.Next)
+		optimisticCreateNotes.Next++
+		optimisticCreateNotes.Items = append(optimisticCreateNotes.Items, optimisticNote{
+			ID:    id,
+			Title: fmt.Sprintf("Note #%d (created %s)", optimisticCreateNotes.Next-1, time.Now().Format("15:04:05")),
+		})
+		body := renderOptimisticCreateListLocked()
+		optimisticCreateNotes.Unlock()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, string(body))
+	}))
+
+	// Recipe 4 (delete): remove the row whose id matches ?id= from the
+	// DELETE store, then return the fresh authoritative list HTML. The
+	// runtime swaps the list region's innerHTML with the response body.
+	// A missing or unknown id leaves the list unchanged.
+	fwApp.Router().Post("/__site/optimistic/delete", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		optimisticDeleteNotes.Lock()
+		if id != "" {
+			next := optimisticDeleteNotes.Items[:0]
+			for _, n := range optimisticDeleteNotes.Items {
+				if n.ID != id {
+					next = append(next, n)
+				}
+			}
+			optimisticDeleteNotes.Items = append([]optimisticNote(nil), next...)
+		}
+		body := renderOptimisticDeleteListLocked()
+		optimisticDeleteNotes.Unlock()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, string(body))
+	}))
+
+	// Recipe 4 failure path: the demo's "Delete n1 (will fail)" trigger
+	// posts here. Always 422, never mutates the store — exercised by
+	// TestE2E_Optimistic_Delete_Fail_LeavesListUnchanged to pin the
+	// "failed delete leaves the list/row unchanged" invariant. The
+	// runtime broadcasts the auto-built error object into opt-delete-list
+	// and the html-mode region ignores the non-string value (no swap).
+	fwApp.Router().Post("/__site/optimistic/delete/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "delete rejected (demo)", http.StatusUnprocessableEntity)
+	}))
+
+	// ConfirmAction modals for the optimistic-delete demo — one per row
+	// in the current notes list, mounted once at startup. After a
+	// delete the matching trigger is gone from the rendered list, so a
+	// stale modal is simply unreachable; reload re-renders without it.
+	for _, b := range optimisticDeleteModals() {
+		widget.MountBuilder(fwApp.Router(), b)
+	}
 
 	// Interactive demo endpoints — each returns JSON the runtime pushes
 	// into a signal or triggers a widget open / SPA navigate.
