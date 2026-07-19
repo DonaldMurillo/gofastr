@@ -1,6 +1,7 @@
 package island
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,6 +51,22 @@ type Manager struct {
 	presenceConns    map[uint64]*presenceConn
 	nextPresenceID   uint64
 	OnPresenceChange func(topic string)
+
+	// AuthorizeTopic, when set, gates which presence topics a connection may
+	// join. It is called once per requested topic at SSE-connect time with
+	// the request context (carrying the server-derived authenticated user);
+	// returning false drops that topic BEFORE any subscription or roster
+	// emission, so an unauthorized viewer never sees the roster (which can
+	// contain emails) and never receives join/leave events. A nil hook
+	// authorizes every topic — presence is public by default (opt-in
+	// gating), so existing apps are unaffected. Rejected topics are dropped
+	// silently: there is no error distinguishing an unauthorized topic from a
+	// nonexistent one, so the gate is not a private-topic existence oracle.
+	//
+	// Set once before serving traffic (like OnPresenceChange). It is read
+	// under mu so a set-once assignment races nothing; hot-swapping it on a
+	// live manager is not supported.
+	AuthorizeTopic func(ctx context.Context, topic string) bool
 
 	// dropped counts island updates discarded because a client's SSE buffer
 	// was full (slow/stalled consumer). Exposed via DroppedUpdates so the
