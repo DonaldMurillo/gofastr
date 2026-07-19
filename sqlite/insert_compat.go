@@ -14,6 +14,15 @@ func (e *Engine) executeInsertWithConflict(s *InsertStmt, params []Value, tableI
 	for _, values := range valueRows {
 		rowValues, rowid, err := buildInsertRow(tableInfo, s.Columns, values)
 		if err != nil {
+			// INSERT OR IGNORE turns a *constraint* violation (e.g. NOT
+			// NULL) into a skipped row rather than an error, matching
+			// SQLite. Non-constraint errors (arity, "no such column")
+			// still fail. `ON CONFLICT ... DO NOTHING` targets UNIQUE
+			// conflicts only and does NOT suppress a NOT NULL violation,
+			// so this is gated on OrIgnore alone.
+			if s.OrIgnore && isConstraintError(err) {
+				continue
+			}
 			return nil, err
 		}
 		conflictRowID, conflictRow, conflicted, err := e.findInsertConflict(
@@ -105,7 +114,28 @@ func (e *Engine) insertValueRows(s *InsertStmt, params []Value) ([][]Value, erro
 	return rows, nil
 }
 
+// isConstraintError reports whether err is a row-constraint violation
+// (NOT NULL / UNIQUE / PRIMARY KEY / CHECK / FOREIGN KEY) — the class of
+// error that `INSERT OR IGNORE` turns into a skipped row. Arity and
+// schema errors ("no such column") are not constraint errors and still
+// fail under OR IGNORE.
+func isConstraintError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "constraint failed")
+}
+
 func buildInsertRow(tableInfo *TableInfo, columns []string, values []Value) ([]Value, int64, error) {
+	// Arity: a row must supply exactly as many values as the INSERT names
+	// — the length of an explicit column list, or the table width for the
+	// positional form. SQLite rejects a mismatch rather than silently
+	// defaulting the shortfall or dropping the excess. These are NOT
+	// constraint errors, so `INSERT OR IGNORE` does not suppress them.
+	if len(columns) > 0 {
+		if len(values) != len(columns) {
+			return nil, 0, &engineError{fmt.Sprintf("%d values for %d columns", len(values), len(columns))}
+		}
+	} else if len(values) != len(tableInfo.Columns) {
+		return nil, 0, &engineError{fmt.Sprintf("table %s has %d columns but %d values were supplied", tableInfo.Name, len(tableInfo.Columns), len(values))}
+	}
 	rowValues := make([]Value, len(tableInfo.Columns))
 	// provided[i] is true when column i was explicitly supplied by the
 	// INSERT statement (either by name in `columns` or positionally). Only

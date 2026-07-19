@@ -34,6 +34,11 @@ claims that had drifted from the code. No breaking changes.
   builder as the conflict path (so `NOT NULL` is always enforced and an explicit
   `NULL` still fails even when a default exists), and omitted defaults inherit
   column affinity.
+- **SQLite `INSERT` fidelity** (#118, #119, surfaced during the #115 review). An
+  `INSERT` with a column/value count mismatch now errors instead of silently
+  defaulting the shortfall or dropping the excess, and `INSERT OR IGNORE` skips a
+  row that violates a constraint (e.g. `NOT NULL`) rather than erroring, while a
+  plain `INSERT` and non-constraint (arity) errors still fail.
 
 ### Changed
 
