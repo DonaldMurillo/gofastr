@@ -102,5 +102,16 @@ occurrence, watermark advance, and queue job commit in one transaction. Late
 evaluation records old ticks as skipped and enqueues only the newest due tick.
 The resulting `Job.OccurrenceID` is the stable run-correlation key.
 
+**Per-schedule options.** Both `ScheduleBuilder` and `DurableScheduleBuilder`
+expose fluent `Lane`, `Priority`, `MaxAttempts` methods after `Job`. They are
+carried unchanged into every fired `Job`: `Lane("bulk")` tags the job for
+bulk-lane workers and any shared catch-all worker (tagging alone does not
+reserve capacity or keep bulk off interactive workers — see Lanes above),
+`Priority(n)` nudges dequeue order, `MaxAttempts(k)` bounds per-occurrence
+retries. Omit them for today's defaults (empty lane, 0, 3). On the durable
+builder the values PERSIST with the schedule row; re-registering the same ID
+updates them without resetting the next-run watermark, and the columns are
+added to existing tables by an idempotent migration.
+
 **Don't use `MemoryQueue` for real workloads.** Jobs die with the
 process — fine for tests, dangerous for anything users can observe.

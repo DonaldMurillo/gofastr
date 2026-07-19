@@ -51,23 +51,29 @@ type DurableScheduler struct {
 
 // DurableScheduleBuilder configures one persisted recurring schedule.
 type DurableScheduleBuilder struct {
-	scheduler *DurableScheduler
-	id        string
-	interval  time.Duration
-	cronSpec  string
-	jobType   string
-	payload   json.RawMessage
+	scheduler   *DurableScheduler
+	id          string
+	interval    time.Duration
+	cronSpec    string
+	jobType     string
+	payload     json.RawMessage
+	lane        string
+	priority    int
+	maxAttempts int
 }
 
 type durableSchedule struct {
-	id        string
-	jobType   string
-	payload   json.RawMessage
-	interval  time.Duration
-	cronSpec  string
-	nextRun   time.Time
-	updatedAt time.Time
-	version   int64
+	id          string
+	jobType     string
+	payload     json.RawMessage
+	interval    time.Duration
+	cronSpec    string
+	lane        string
+	priority    int
+	maxAttempts int
+	nextRun     time.Time
+	updatedAt   time.Time
+	version     int64
 }
 
 // NewDurableScheduler creates a replica-safe scheduler backed by q's SQL
@@ -135,6 +141,33 @@ func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableSchedu
 	return b
 }
 
+// Lane routes every Job fired by this schedule to the given capacity-
+// reservation lane (see DBQueue.WithDBLaneWorkers). Empty (the default)
+// lands the job on the shared/default lane. The value persists alongside
+// the schedule definition; re-registering the same schedule ID updates it.
+func (b *DurableScheduleBuilder) Lane(name string) *DurableScheduleBuilder {
+	b.lane = name
+	return b
+}
+
+// Priority sets the priority carried into every Job fired by this schedule.
+// Higher integers are dequeued first. Defaults to 0. The value persists
+// alongside the schedule definition; re-registering the same schedule ID
+// updates it.
+func (b *DurableScheduleBuilder) Priority(p int) *DurableScheduleBuilder {
+	b.priority = p
+	return b
+}
+
+// MaxAttempts bounds the retry ceiling carried into every Job fired by this
+// schedule. Zero (the default) lets Enqueue resolve it to 3 — matching the
+// pre-options behaviour. The value persists alongside the schedule
+// definition; re-registering the same schedule ID updates it.
+func (b *DurableScheduleBuilder) MaxAttempts(n int) *DurableScheduleBuilder {
+	b.maxAttempts = n
+	return b
+}
+
 // Register persists the schedule definition without resetting an existing
 // watermark.
 func (b *DurableScheduleBuilder) Register() error {
@@ -171,18 +204,24 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 	}
 	_, err := b.scheduler.queue.db.Exec(
 		fmt.Sprintf(`INSERT INTO %s
-			(id, job_type, payload, interval_ns, cron_spec, next_run, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)
+			(id, job_type, payload, interval_ns, cron_spec,
+			 lane, priority, max_attempts,
+			 next_run, updated_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 			ON CONFLICT(id) DO UPDATE SET
 				job_type=excluded.job_type,
 				payload=excluded.payload,
 				interval_ns=excluded.interval_ns,
 				cron_spec=excluded.cron_spec,
+				lane=excluded.lane,
+				priority=excluded.priority,
+				max_attempts=excluded.max_attempts,
 				updated_at=excluded.updated_at,
 				version=%s.version+1`,
 			b.scheduler.queue.schedulerSchedulesTable(),
 			b.scheduler.queue.schedulerSchedulesTable()),
 		b.id, b.jobType, payload, int64(b.interval), b.cronSpec,
+		b.lane, b.priority, b.maxAttempts,
 		next.UTC(), time.Now().UTC(),
 	)
 	if err == nil {
@@ -353,7 +392,9 @@ func (s *DurableScheduler) acquireLease(ctx context.Context, now time.Time) (int
 
 func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durableSchedule, error) {
 	rows, err := s.queue.db.QueryContext(ctx,
-		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec, next_run, updated_at, version
+		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec,
+				lane, priority, max_attempts,
+				next_run, updated_at, version
 			FROM %s WHERE next_run <= $1 ORDER BY next_run, id`,
 			s.queue.schedulerSchedulesTable()),
 		now,
@@ -369,7 +410,8 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 		var intervalNS int64
 		var nextRun, updatedAt any
 		if err := rows.Scan(&row.id, &row.jobType, &payload, &intervalNS,
-			&row.cronSpec, &nextRun, &updatedAt, &row.version); err != nil {
+			&row.cronSpec, &row.lane, &row.priority, &row.maxAttempts,
+			&nextRun, &updatedAt, &row.version); err != nil {
 			return nil, err
 		}
 		row.payload = json.RawMessage(payload)
@@ -480,7 +522,9 @@ func (s *DurableScheduler) commitOccurrences(
 			OccurrenceID: occurrenceID,
 			Type:         schedule.jobType,
 			Payload:      schedule.payload,
-			MaxAttempts:  3,
+			Lane:         schedule.lane,
+			Priority:     schedule.priority,
+			MaxAttempts:  schedule.maxAttempts,
 			CreatedAt:    now,
 			ScheduledAt:  tick,
 		}); err != nil {
@@ -527,6 +571,9 @@ func (s *DurableScheduler) ensureTables() error {
 			payload TEXT NOT NULL,
 			interval_ns BIGINT NOT NULL DEFAULT 0,
 			cron_spec TEXT NOT NULL DEFAULT '',
+			lane TEXT NOT NULL DEFAULT '',
+			priority INTEGER NOT NULL DEFAULT 0,
+			max_attempts INTEGER NOT NULL DEFAULT 0,
 			next_run %s NOT NULL,
 			updated_at %s NOT NULL,
 			version BIGINT NOT NULL DEFAULT 0
