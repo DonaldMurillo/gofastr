@@ -1,9 +1,9 @@
 # UI composition recipes
 
-GoFastr's component catalog answers “what exists.” This guide answers “what
-page grammar fits the user's task?” Choose a recipe after completing the
-project's `DESIGN.md`, then compose it from framework primitives. Applications
-ship no bespoke CSS and do not recreate structural markup.
+GoFastr's component catalog lists what components exist. This guide covers
+which layout pattern fits a given user task. Pick a recipe after filling out
+the project's `DESIGN.md`, then build it from framework primitives. Apps ship
+no CSS of their own and don't rebuild structural markup that already exists.
 
 These are decision recipes, not templates to copy unchanged. Preserve the
 hierarchy and responsive intent; adapt the content and components to the
@@ -64,8 +64,8 @@ ui.Container(ui.ContainerConfig{Width: ui.ContainerWide},
 ```
 
 `RecordSummary` controls the heading scale on phones, places its natural-width
-`Actions` in the lead region, and gives a concise `Aside` a purposeful support
-rail on wide canvases. On phones the action leads that support region instead
+`Actions` in the lead region, and gives a concise `Aside` a support rail on
+wide canvases. On phones the action leads that support region instead
 of falling below the full summary. Keep `Description` to one or two sentences,
 keep `Highlight` to one decision plus one short condition, and move the full
 narrative later. `MetricBand` stays one compact row on wide viewports and
@@ -191,10 +191,10 @@ active controls.
 6. Render at about 390px and 1440px in light and dark schemes.
 7. Identify the three weakest visible decisions and revise them.
 
-If the recipe cannot be expressed without local structural markup or CSS,
-record the missing reusable capability and add it to the design system. The
-application is the completeness test; it is not an exception to the styling
-contract.
+If a recipe can't be built without local structural markup or CSS, that's a
+missing piece in the design system — write it down and add it there. The app
+doesn't get an exception to the no-CSS rule; building it is how you find what's
+missing.
 
 ## Common mistakes
 

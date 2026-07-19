@@ -11,12 +11,12 @@ are distinct from components:
 
 Examples of widgets the framework already supports:
 
-- **FloatingPanel** — corner-anchored chat / devtools / agent surface
+- **FloatingPanel** — corner-anchored chat / devtools / agent panel
 - **Modal** — center dialog with backdrop, ESC + click-outside dismiss
 - **Toast** — ephemeral bottom notifications
 - **Drawer** — edge-mounted sliding panel
 - **Banner** — top strip for build progress, version warnings, etc.
-- **Popover** — click-triggered anchored surface, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.
+- **Popover** — click-triggered anchored panel, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.
 
 `kiln/chat/panel.go` is the canonical real-world consumer: the agent
 chat panel is implemented as a `FloatingPanel` widget.
@@ -42,7 +42,7 @@ widget.Mount(router, &panel)
 
 To open a widget from the page, wire any element with
 `data-fui-open="<widget-name>"` — the runtime handles the click, shows
-the widget, and (for modal surfaces) moves focus in:
+the widget, and (for modals) moves focus in:
 
 ```html
 <button data-fui-open="my-panel">Open panel</button>
@@ -119,9 +119,9 @@ component owns only its internal content and layout. Per position:
   `min/max-inline-size` caps, and `overflow: auto` so tall content
   scrolls inside the dialog. A modal using `header`, `body`, and
   `footer` slots therefore reads as ONE dialog card, and a plain
-  `preset.Modal` looks like a dialog out of the box — bodies must
-  **not** re-paint background / padding / radius on their root (that
-  double-pads the panel).
+  `preset.Modal` looks like a dialog with no extra styling — bodies
+  must **not** re-paint background / padding / radius on their root
+  (that double-pads the panel).
 
 Full-bleed modal bodies (media viewers, custom chrome) opt out of the
 centered panel so the body owns every pixel: the panel stays a
@@ -334,8 +334,8 @@ come from `widget.MountRuntime(r)` — once per host, not per widget.
 
 ## Theming
 
-Widgets resolve through `core-ui/style` and pick up the framework
-default theme out of the box. Token overrides flow through:
+Widgets resolve through `core-ui/style` and use the framework default
+theme without extra setup. Token overrides flow through:
 
 1. `core-ui/widget/theme.PageTheme(overrides ...style.Theme)` returns
    a merged `style.Theme`. Use it to author custom widget chrome.
@@ -359,12 +359,12 @@ The framework runtime is **strict-CSP safe**. The bootstrap never:
 (`style`, `srcdoc`, `on*=`) so a bad agent turn can't poison the page.
 
 Compose typed `framework/ui` components, `core-ui/patterns`, or semantic
-`core-ui/html` primitives. App-local utility-class palettes are a second
-styling surface and are not part of the current contract.
+`core-ui/html` primitives. App-local utility-class palettes are a
+separate styling approach and are not part of the current contract.
 
 ## Testing
 
-`examples/site` exercises every widget surface end-to-end —
+`examples/site` exercises every widget kind end-to-end —
 Modal (`/components/modal`), Drawer (`/components/drawer`), Toast
 (`/components/toast`), Menu (`/components/menu`), Sidebar
 (`/components/sidebar`), and the trigger-anchored Popover preset
@@ -376,7 +376,7 @@ scroll-tracking, and the trigger-active highlight contract.
 For backend-only verification (no chromedp), see
 `core-ui/widget/widget_test.go` and
 `core-ui/widget/preset/preset_test.go` — they cover the builder
-semantics, mounted route surface, preset defaults, and JSON state
+semantics, the mounted routes, preset defaults, and JSON state
 encoding.
 
 ## Common mistakes

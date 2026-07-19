@@ -171,7 +171,7 @@ through `router.Post / router.Get / …` directly and don't carry
 schema metadata that the spec generator can consume. There is no
 plugin → OpenAPI extension hook today.
 
-Until that hook lands, the auth surface is documented through this
+Until that hook lands, the auth routes are documented through this
 file, the plugin source comments, and integration tests. If your
 deployment needs an OpenAPI document that includes the auth routes,
 hand-write them into a sibling spec and merge with the generated one
@@ -191,7 +191,7 @@ in the gateway / docs pipeline.
   `slowThreshold`). Preferred for production paths where the unsampled
   `Logging()` cost dominates the middleware chain.
 - `DiscardLogging()` — request-timing wrapper that emits no log lines;
-  for high-throughput surfaces where structured logging is handled by
+  for high-throughput paths where structured logging is handled by
   an upstream proxy or APM agent.
 - `SecurityHeaders(SecurityHeadersConfig)` — defensive headers above.
 - `CORS(CORSConfig)` — cross-origin headers + preflight.
@@ -264,9 +264,10 @@ tools registered directly via `app.MCP.RegisterTool` or
 [agent-ready](agent-ready.md)).
 
 `gofastr generate` prints a warning listing every entity left publicly
-readable/writable (`public: true`) so a generated app's open surface is
-never silent. See [entity-declarations](entity-declarations.md) →
-"Default CRUD authentication" for the blueprint YAML shape.
+readable/writable (`public: true`), so a generated app never has open
+entities you didn't get told about. See
+[entity-declarations](entity-declarations.md) → "Default CRUD
+authentication" for the blueprint YAML shape.
 
 ## Common mistakes
 

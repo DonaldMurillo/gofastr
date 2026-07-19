@@ -13,7 +13,7 @@ client consumers, and no client-side computed values.
 
 One **producer** (an island/widget or a screen loader) owns a value. Many
 **consumers** (pure presentational components) bind to it read-only. When the
-producer updates the value, the change fans out through a single signal to every
+producer updates the value, the change goes out through a single signal to every
 consumer **client-side** — no server round-trip per consumer.
 
 ```go

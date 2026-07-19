@@ -43,7 +43,7 @@ Go helpers: `interactive.SetLocal()`, `interactive.IncLocal()`,
 ### Counter
 
 `framework/ui.Counter` renders a numeric counter with +/− buttons.
-Uses `data-fui-signal-inc` under the hood. Configurable `Step` for
+Uses `data-fui-signal-inc`. Configurable `Step` for
 non-unit increments.
 
 ### Tabs
@@ -361,9 +361,9 @@ path** instead of a blanket rollback:
    oversized, non-JSON, or unreadable — including an empty body —
    falls back to the generic copy (today's behavior, backward
    compatible).
-2. When a valid message is present, it is surfaced through the polite
-   `aria-live` region (replacing the generic copy) and the framework
-   toast surface (`__gofastr.toast`, loaded on demand) when one is
+2. When a valid message is present, it is shown through the polite
+   `aria-live` region (replacing the generic copy) and the framework's
+   toast helper (`__gofastr.toast`, loaded on demand) when one is
    wired.
 3. If `ConflictRPC` is set, the runtime then GET-fetches it and
    replaces the destination list's `innerHTML` with the response
@@ -494,7 +494,7 @@ check that it uses `{id}`, not `:id`.
 
 `Action.WithConfirm` (above) uses native `window.confirm` — fine for
 admin/internal tools, but unthemed and unautomatable. For a destructive
-action in a user-facing surface, `framework/ui.ConfirmAction` renders a
+action in an app your users interact with directly, `framework/ui.ConfirmAction` renders a
 design-system **alertdialog** instead: a modal that matches your theme
 (light + dark, via tokens — zero bespoke CSS), traps focus, closes on Escape,
 and is drivable by tests.
@@ -564,13 +564,13 @@ island re-render). The status values are just data you supply.
 > an open connection to a given entity. Deriving the live roster —
 > binding the authenticated user to their SSE connection, observing
 > connect/disconnect, and aggregating that across replicas — is work an
-> app wires itself for now. A first-class presence source is tracked in
+> app wires itself for now. Adding this to the framework is tracked in
 > issue #47.
 
 ## Complex interactive components
 
 These are full components (not wrapper functions) that ship with their
-own runtime modules for rich client-side behavior.
+own runtime modules for client-side behavior.
 
 | Component | Runtime module | Behavior |
 |---|---|---|

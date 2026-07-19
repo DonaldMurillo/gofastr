@@ -10,9 +10,9 @@ results, the harness contract) are exempt — the exemption list lives in
 
 ## Start here
 
-- [Blueprint tutorial](tutorial-blueprint-app.md) — the thesis
-  walkthrough: blueprint → generated UI + API → auth + owner scoping
-  + RBAC → customize in plain Go → deploy.
+- [Blueprint tutorial](tutorial-blueprint-app.md) — walks through the
+  optional scaffolder: blueprint → generated UI + API → auth + owner
+  scoping + RBAC → customize in plain Go → deploy.
 - [Comparison](comparison.md) — vs PocketBase, Encore, Wasp, and
   hand-rolled Gin+sqlc; weaknesses stated honestly.
 
@@ -25,7 +25,7 @@ results, the harness contract) are exempt — the exemption list lives in
 - [`ROADMAP.md`](../ROADMAP.md) — forward-looking work (proposals,
   performance opportunities, in-flight plans).
 
-## Entity surface
+## Entity APIs
 
 - [Entity declarations](entity-declarations.md) — JSON + Go field types
   and the runtime/code-gen loaders.
@@ -42,7 +42,7 @@ results, the harness contract) are exempt — the exemption list lives in
 - [Query DSL](query-dsl.md) — agent-friendly query parser →
   `core/query` builder.
 
-## App surface
+## App features
 
 - [Hooks & transactions](hooks-and-transactions.md) — lifecycle hook
   points, `TxFromContext`, `App.InTx`, typed hooks.
@@ -59,8 +59,8 @@ results, the harness contract) are exempt — the exemption list lives in
 - [Audit log](audit-log.md) — `WithAuditLog`, transactional row
   writes, schema.
 - [Server logs](log.md) — `battery/log`: structured JSON access logs,
-  panic recovery, lifecycle events; fan-out to file (default or chosen
-  path) and webhook sinks.
+  panic recovery, lifecycle events; writes to a file (default or a
+  path you choose) and to webhook sinks.
 - [Plugins](plugins.md) — `Plugin` + optional capability interfaces.
 - [Heavy-JS plugin platform](plugin-platform.md) — sandboxed-iframe
   isolation host for megabyte-class client plugins; capability grants
@@ -101,7 +101,7 @@ results, the harness contract) are exempt — the exemption list lives in
 - [Signal store](signal-store.md) — `core-ui/store` typed shared
   client state with SSR seeding.
 
-## Operational surface
+## Operations
 
 - [Worktree isolation](isolation.md) — automatic local port, DB, and
   service-env isolation for linked Git worktrees.
@@ -119,8 +119,8 @@ results, the harness contract) are exempt — the exemption list lives in
   delivery, retry-with-backoff, dead-letter, glob event filters.
 - [Internationalization](i18n.md) — `core/i18n` translator,
   JSON catalogs, plurals, `Accept-Language` negotiation.
-- [Unified notifications](notifications.md) — `battery/notify`
-  multi-channel fan-out with per-channel templates.
+- [Unified notifications](notifications.md) — `battery/notify` sends
+  to multiple channels, each with its own template.
 - [Factories / fixtures](factories.md) — `framework/factory`
   Rails-style test setup helpers.
 - [Testkit](testkit.md) — `framework/testkit`: isolated per-test Postgres

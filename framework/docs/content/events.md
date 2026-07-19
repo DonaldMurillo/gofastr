@@ -268,7 +268,7 @@ handler)` + `ob.StartRelay(ctx)`.
   parents). **Delivery to consumers is unaffected and prompt** — only the
   parent's `dispatched` bookkeeping (and retention/GC) lags by the grace.
 - **Dead-letter & replay.** A delivery that returns an error **or
-  panics** (the relay surfaces a panicking consumer as a delivery error
+  panics** (the relay reports a panicking consumer as a delivery error
   rather than swallowing it) increments its `attempts` and schedules an
   exponential backoff. After `MaxAttempts` (default 10) it is marked
   `dead`. `Replay(rowID)` resets all dead/abandoned deliveries of a row;

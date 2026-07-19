@@ -1,10 +1,10 @@
 # Feature flags
 
-`core/featureflag` is GoFastr's feature-flag primitive — small enough
-to stay in-process, expressive enough to gate the cases that come up in
-real shipping: global kill switches, percentage rollouts, per-user
-overrides for beta testers, per-tenant enablement for design partners,
-and per-environment restriction so a staging-only flag never reaches
+`core/featureflag` is GoFastr's feature-flag package. It stays
+in-process and covers the cases that come up in real projects: global
+kill switches, percentage rollouts, per-user overrides for beta
+testers, per-tenant enablement for design partners, and
+per-environment restriction so a staging-only flag never reaches
 production.
 
 The package is named `featureflag` to avoid colliding with the standard

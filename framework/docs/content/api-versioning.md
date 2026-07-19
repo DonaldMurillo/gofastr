@@ -9,7 +9,7 @@ projections and deprecation headers. Pick the smallest one that fits.
 - **Versions that deprecate, sunset, and reshape payloads** → the
   experimental `framework/experimental/apiversions` package.
 
-The prefix flows through *every* surface GoFastr generates — REST routes,
+The prefix applies everywhere GoFastr generates paths — REST routes,
 the OpenAPI document, and the MCP tools — so a client, an SDK generator,
 and an AI agent all see the same paths.
 
@@ -41,7 +41,7 @@ Input is normalised: `"api"`, `"/api"`, and `"/api/"` all become
 
 ### What the prefix touches
 
-| Surface | Behaviour under `WithAPIPrefix("/api/v1")` |
+| Where | Behaviour under `WithAPIPrefix("/api/v1")` |
 | --- | --- |
 | **REST routes** | mounted at `/api/v1/<table>` (list/get/create/update/delete, `_batch`, `_events`, …). |
 | **OpenAPI** (`/openapi.json`) | the prefix is expressed as the spec's **server URL** (`servers: [{ url: "/api/v1" }]`); operation paths stay bare (`/posts`). Generated SDKs prepend the server URL, so they call `/api/v1/posts`. |
@@ -84,7 +84,7 @@ date, reshape payloads between versions) use the **experimental**
 and adds the version-lifecycle pieces.
 
 > **Status:** experimental. The API may change; it lives under
-> `framework/experimental/` and is not part of the stable surface.
+> `framework/experimental/` and is not part of the stable API.
 
 ### Mount a version and deprecate it
 
@@ -162,7 +162,7 @@ for that version, so `v1` clients never see `summary`.
   via a middleware or reverse-proxy rewrite, update `AppConfig.OpenAPIServers`
   to match — otherwise SDK generators and agents read incorrect base paths.
 - **Using the `apiversions` package in stable production without pinning.**
-  The `framework/experimental/apiversions` package has an unstable API surface.
+  The `framework/experimental/apiversions` package has an API that can still change.
   Treat it like a preview: write tests that compile against the types you use
   so a breaking rename fails your build rather than silently misbehaving at
   runtime.

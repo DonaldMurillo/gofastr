@@ -1,13 +1,13 @@
 # Horizontal scaling
 
 One replica of a GoFastr app is self-contained: sessions, rate limits,
-cron, queues, and live UI updates all work out of the box because their
-default state lives **in the process**. The moment you run a second
+cron, queues, and live UI updates all work with no extra setup because
+their default state lives **in the process**. The moment you run a second
 replica behind a load balancer, every one of those defaults needs a
-shared backend or a deliberate single-runner strategy. This page is the
-complete list — what breaks, why, and the replica-safe alternative.
+shared backend or a deliberate single-runner strategy. This page lists
+what breaks, why, and the replica-safe alternative for each one.
 
-## The one-line summary
+## Summary
 
 The database is the only state the replicas share. Anything that
 defaults to process memory must either move into the DB (or another

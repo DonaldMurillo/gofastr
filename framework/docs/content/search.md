@@ -97,8 +97,9 @@ using it in anything user-facing.
 
 `search.NewPostgres(db, cfg)` returns a backend that stores documents in a
 single Postgres table with a generated `TSVECTOR` column, so a Postgres-first
-app gets ranked full-text search with zero extra infrastructure. Call
-`EnsureSchema` once on boot, then `Index`/`Search` like any backend:
+app gets ranked full-text search without standing up separate search
+infrastructure. Call `EnsureSchema` once on boot, then `Index`/`Search` like
+any backend:
 
 ```go
 idx, err := search.NewPostgres(db, search.PostgresConfig{})
@@ -176,7 +177,7 @@ never matches. The Postgres backend encodes this as JSONB containment
 ### Prefix matching
 
 The query builder joins terms with AND and suffixes the **last** term with
-`:*`, so partial input matches as the user types — ideal for command palettes
+`:*`, so partial input matches as the user types — useful for command palettes
 and autocomplete. A query for `"pagin"` matches documents containing
 `"pagination"`.
 
@@ -192,9 +193,9 @@ every document.
 ## The SQLite FTS5 backend
 
 `search.NewSQLiteFTS(db, cfg)` returns a backend backed by a single SQLite FTS5
-virtual table, so a SQLite-first app gets ranked BM25 full-text search with
-zero extra infrastructure. Call `EnsureSchema` once on boot, then
-`Index`/`Search` like any backend:
+virtual table, so a SQLite-first app gets ranked BM25 full-text search without
+standing up separate search infrastructure. Call `EnsureSchema` once on boot,
+then `Index`/`Search` like any backend:
 
 ```go
 idx, err := search.NewSQLiteFTS(db, search.SQLiteFTSConfig{})
@@ -270,8 +271,9 @@ transaction — re-indexing the same id replaces in place with no duplicate rows
 
 - **Memory** — tests, single-binary demos, small read-only sites. Loses
   everything on restart.
-- **PostgresSearch** — a Postgres-first production app. Ranked search with
-  no extra infrastructure, plus weighted fields for title-vs-body ranking.
+- **PostgresSearch** — a Postgres-first production app. Ranked search
+  without standing up separate search infrastructure, plus weighted fields
+  for title-vs-body ranking.
 - **SQLiteFTS** — a SQLite-first app (embedded, single-file, edge). Ranked
   BM25 search without standing up Postgres. Needs the `sqlite_fts5` build tag.
 
