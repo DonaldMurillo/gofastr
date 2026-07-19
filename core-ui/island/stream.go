@@ -41,6 +41,15 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 
 	sse := stream.NewSSEWriter(w)
 
+	// Gate the requested topics through AuthorizeTopic (nil hook = all
+	// allowed) BEFORE anything is subscribed. Running the app-supplied hook
+	// here — before ConnectSession — means a panicking hook cannot leak a
+	// subscription (there is none yet); net/http recovers the request and
+	// nothing needs teardown. An unauthorized topic never yields a
+	// subscription or a roster entry. The request context carries the
+	// server-derived user the hook authorizes against.
+	topics = m.filterAuthorizedTopics(r.Context(), topics)
+
 	// Subscribe BEFORE flushing headers. Flushing headers (the "connected"
 	// comment below) unblocks the HTTP client — its Do() returns — so a
 	// client that pushes immediately on connect would otherwise win the

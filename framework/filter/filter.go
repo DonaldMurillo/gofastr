@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
@@ -64,6 +65,51 @@ type ParsedSort struct {
 	Desc  bool
 }
 
+// reservedListParams are the list-endpoint control keys that are never
+// entity fields. Strict parsing skips them so a legitimate ?sort=/?page=/…
+// is not rejected as an unknown filter. Keep in sync with the params the
+// CRUD list handler actually reads (crud.go, pagination, projection,
+// include, search, where-tree, soft-delete, streaming).
+var reservedListParams = map[string]bool{
+	"sort": true, "page": true, "limit": true, "per_page": true,
+	"offset": true, "cursor": true, "direction": true, "where": true,
+	"fields": true, "include": true, "trashed": true, "stream": true,
+	"q": true,
+}
+
+// filterOpts holds the resolved options for a ParseFilters call.
+type filterOpts struct {
+	lenient bool
+	allowed map[string]bool
+}
+
+// FilterOption tunes ParseFilters behavior.
+type FilterOption func(*filterOpts)
+
+// Lenient restores the pre-strict behavior: an unknown top-level filter key
+// is silently dropped instead of returning an error. It exists as a
+// migration escape hatch for apps that historically relied on unrecognized
+// query params being ignored. Prefer the strict default — a dropped filter
+// returns an UNFILTERED result set, which is a data-exposure and
+// broken-client hazard.
+func Lenient() FilterOption { return func(o *filterOpts) { o.lenient = true } }
+
+// Allow declares extra query-param keys that are NOT entity fields but are
+// legitimately consumed elsewhere on the request (a BeforeList hook, custom
+// middleware). Strict parsing skips them instead of rejecting them, so a
+// host keeps typo-protection for real fields without falling back to
+// Lenient (which disables it entirely). Keys are matched exactly.
+func Allow(keys ...string) FilterOption {
+	return func(o *filterOpts) {
+		if o.allowed == nil {
+			o.allowed = make(map[string]bool, len(keys))
+		}
+		for _, k := range keys {
+			o.allowed[k] = true
+		}
+	}
+}
+
 // ParseFilters extracts filters from query parameters based on entity fields.
 // Supported patterns:
 //
@@ -82,13 +128,29 @@ type ParsedSort struct {
 // Hidden column (e.g. a password hash) via ?password_hash_like=… and
 // exfiltrate it prefix by prefix. A Hidden field name is treated as an
 // unknown filter param and never produces a ParsedFilter.
-func ParseFilters(r *http.Request, fields []schema.Field) ([]ParsedFilter, error) {
+//
+// STRICT by default: an unknown top-level filter key (a typo like
+// ?stauts=active, or a suffixed op on a non-field) returns a structured
+// error rather than being silently dropped. Dropping it would return an
+// UNFILTERED 200 — a broken client reads the whole table and an attacker's
+// probe looks identical to the real query. Reserved list controls (sort,
+// page, cursor, …) and nested relation filters (dotted keys like
+// author.name, validated separately by parseNestedFilters) are skipped, not
+// rejected. Pass [Lenient] to restore the old drop-silently behavior.
+func ParseFilters(r *http.Request, fields []schema.Field, opts ...FilterOption) ([]ParsedFilter, error) {
+	var o filterOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	fieldSet := make(map[string]bool, len(fields))
+	names := make([]string, 0, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
 			continue
 		}
 		fieldSet[f.Name] = true
+		names = append(names, f.Name)
 	}
 
 	q := r.URL.Query()
@@ -110,11 +172,27 @@ func ParseFilters(r *http.Request, fields []schema.Field) ([]ParsedFilter, error
 	// doesn't also match a field that was handled by a suffix.
 	consumed := make(map[string]bool)
 
+	// unknown records the first rejected key when strict — surfaced as a
+	// single structured error after the loop (query-map iteration order is
+	// non-deterministic, so report deterministically: the lexically
+	// smallest bad key, with a suggestion).
+	unknown := ""
+
 	for key, values := range q {
-		if len(values) == 0 || key == "sort" || key == "page" || key == "limit" || key == "offset" || key == "cursor" || key == "where" {
+		if len(values) == 0 {
+			continue
+		}
+		// Nested relation filters (author.name=…) are parsed and validated
+		// separately by parseNestedFilters (which enforces the same
+		// schema/Hidden allow-list) — skip dotted keys entirely here.
+		if strings.Contains(key, ".") {
 			continue
 		}
 
+		// A KNOWN field is matched FIRST — before the reserved-control skip —
+		// so a column whose name collides with a control word (e.g. a field
+		// named "stream" or "q") is still filtered rather than silently
+		// swallowed, which would return an unfiltered result set.
 		matched := false
 		for _, s := range suffixes {
 			if strings.HasSuffix(key, s.suffix) {
@@ -148,13 +226,80 @@ func ParseFilters(r *http.Request, fields []schema.Field) ([]ParsedFilter, error
 			continue
 		}
 
-		// Plain field=value → equals
-		if fieldSet[key] && !consumed[key] {
-			filters = append(filters, ParsedFilter{Field: key, Op: OpEq, Value: values[0]})
+		// A plain known field name. When it was already consumed by a
+		// suffixed op on the same request, drop the redundant equals — but it
+		// is still a KNOWN field, so it must never be reported as unknown.
+		if fieldSet[key] {
+			if !consumed[key] {
+				filters = append(filters, ParsedFilter{Field: key, Op: OpEq, Value: values[0]})
+			}
+			continue
+		}
+
+		// Not a field. A reserved list control or a host-declared extra
+		// param is consumed elsewhere on the request — skip it silently.
+		if reservedListParams[key] || o.allowed[key] {
+			continue
+		}
+
+		// Truly unrecognized. Fail closed unless the caller opted into
+		// lenient mode. Record the lexically smallest so the error is
+		// deterministic under randomized map iteration.
+		if !o.lenient && (unknown == "" || key < unknown) {
+			unknown = key
 		}
 	}
 
+	if unknown != "" {
+		return nil, unknownFilterError(unknown, names)
+	}
+
 	return filters, nil
+}
+
+// unknownFilterError builds the structured 400-shaped error for an
+// unrecognized filter key, appending a "did you mean" suggestion when a
+// field name is an unambiguous near-match. The bad key is always named so a
+// generated client can surface it verbatim.
+func unknownFilterError(key string, fieldNames []string) error {
+	if suggestion := nearestField(key, fieldNames); suggestion != "" {
+		return fmt.Errorf("unknown filter %q (did you mean %q?)", key, suggestion)
+	}
+	return fmt.Errorf("unknown filter %q", key)
+}
+
+// nearestField returns the single closest field name to key within a small
+// edit distance, or "" when there is no close or unambiguous match. It also
+// strips a known operator suffix from key first, so ?scor_gt suggests
+// "score". Kept deliberately conservative — a wrong suggestion is worse than
+// none.
+func nearestField(key string, fieldNames []string) string {
+	base := key
+	for _, s := range []string{"_gte", "_lte", "_gt", "_lt", "_like", "_in"} {
+		if strings.HasSuffix(base, s) {
+			base = strings.TrimSuffix(base, s)
+			break
+		}
+	}
+	best, bestDist, ties := "", 1<<30, 0
+	// Allow more slack for longer names; a 1-char typo in "status" and a
+	// 2-char transposition should both resolve.
+	maxDist := 2
+	if len(base) <= 4 {
+		maxDist = 1
+	}
+	for _, name := range fieldNames {
+		d := fuzzy.Levenshtein(base, name)
+		if d < bestDist {
+			best, bestDist, ties = name, d, 1
+		} else if d == bestDist {
+			ties++
+		}
+	}
+	if best == "" || bestDist > maxDist || ties > 1 {
+		return ""
+	}
+	return best
 }
 
 // ParseSort extracts sort information from query parameters.

@@ -60,6 +60,57 @@ func TestCLIInvocationStatsDistinguishesDevFromOtherSubcommands(t *testing.T) {
 	}
 }
 
+func TestCLIDocsInvocationStats(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "cli.log")
+	log := "docs --grep live dashboard\n" +
+		"docs ui-capability-map\n" +
+		"docs --grep=reconciliation\n" +
+		"docs ui-capability-map\n" +
+		"dev\n"
+	if err := os.WriteFile(logPath, []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stats := cliDocsInvocationStats(logPath)
+	if stats.Calls != 4 || !stats.UsedCapabilityMap {
+		t.Fatalf("docs stats = %+v, want four calls and capability-map discovery", stats)
+	}
+	if got := strings.Join(stats.Searches, "|"); got != "live dashboard|reconciliation" {
+		t.Fatalf("searches = %q", got)
+	}
+	if got := strings.Join(stats.Topics, "|"); got != "ui-capability-map" {
+		t.Fatalf("topics = %q", got)
+	}
+}
+
+func TestLeaderboardReportsDocsFunnel(t *testing.T) {
+	summary := Summary{Candidates: []CandidateResult{{
+		VariantID: "working-tree", ScenarioID: "s", Repetition: 1,
+		BuilderDocsCalls: 2, BuilderUsedCapabilityMap: true,
+		BuilderDocsTopics:   []string{"ui-capability-map"},
+		BuilderDocsSearches: []string{"live dashboard"},
+	}}}
+	md := leaderboardMarkdown(summary)
+	if !strings.Contains(md, "2 `gofastr docs` call(s); capability map `true`") ||
+		!strings.Contains(md, "topics `ui-capability-map`") ||
+		!strings.Contains(md, "searches `live dashboard`") {
+		t.Fatalf("leaderboard missing docs funnel line:\n%s", md)
+	}
+}
+
+func TestSummaryAggregatesDocsDiscovery(t *testing.T) {
+	summary := summarize(&Suite{Name: "docs", Variants: []Variant{{ID: "v"}}}, "run", []CandidateResult{
+		{VariantID: "v", BuilderDocsCalls: 2, BuilderUsedCapabilityMap: true},
+		{VariantID: "v"},
+	}, nil)
+	if len(summary.Variants) != 1 {
+		t.Fatalf("variants = %+v", summary.Variants)
+	}
+	got := summary.Variants[0]
+	if got.MeanDocsCalls != 1 || got.CapabilityMapDiscoveryRate != 0.5 {
+		t.Fatalf("docs aggregate = %+v", got)
+	}
+}
+
 // The funnel signal must reach the human-readable output, not just JSON.
 func TestLeaderboardReportsDevLoopFunnel(t *testing.T) {
 	summary := Summary{Candidates: []CandidateResult{{

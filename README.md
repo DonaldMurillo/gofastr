@@ -430,6 +430,8 @@ shared across the whole `go test` invocation so cold-start is amortised.
 
 ### `core-ui/` — server-driven UI runtime
 
+Start from the [UI capability map](framework/docs/content/ui-capability-map.md) when the question is product-shaped — live dashboard, optimistic board, master/detail workspace, server-authoritative reactive state, static export, or deliberate SPA integration — rather than a package name.
+
 A separate, independently usable system for rendering interactive UIs from Go: signals, HTML primitives (`core-ui/html`), composed UI patterns (`core-ui/patterns`), server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a vanilla-JS runtime. Fresh `gofastr init` apps mount the adaptive `framework/ui/theme.Default()` palette, so light/dark behavior is complete from the first render. See `examples/site` for an app that exercises every feature — including the 90+ `framework/ui` primitives, compact operational composition (`RecordSummary` + `MetricBand`), modal/drawer/popover/toast widgets, and CRUD-by-island patterns. Each component has a live demo at `/components/<slug>` on that site; the one-page catalog is [`ui-new-components.md`](framework/docs/content/ui-new-components.md) (`gofastr docs ui-new-components`), and `go doc github.com/DonaldMurillo/gofastr/framework/ui` lists every constructor.
 
 ### `battery/` — pluggable infrastructure
@@ -449,7 +451,8 @@ gofastr agents sync                 Refresh AGENTS.md and agents/ detail files
 gofastr theme init                  Scaffold a typed theme/theme.go you own
 gofastr generate --from=<bp.yml>    Generate Go (SQL + REST + OpenAPI + MCP + UI) from a blueprint
 gofastr pack <app-dir>              Reconstruct the blueprint YAML from a generated app (inverse of generate)
-gofastr build                       Generate then go build
+gofastr build                       Generate, vet, accessibility-check, then build the root package
+gofastr build --pkg ./cmd/server    Run the same pipeline for a main package below the project root
 gofastr dev                         Start dev server with hot-reload
 gofastr migrate up | down | status  Run versioned migrations (advisory-locked, checksum + dirty-state guarded)
 gofastr migrate up --create-db      Create the target database first if it doesn't exist
@@ -497,6 +500,7 @@ connected to a running app.
 
 - [Blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md) — **generate a whole app from one file**: blueprint → generated UI + API → auth + owner scoping + RBAC → customize in plain Go → deploy
 - [Kiln (experimental)](framework/docs/content/kiln.md) — agent-driven build mode
+- [UI capability map](framework/docs/content/ui-capability-map.md) — **start from the job**: architecture, state ownership, delivery/scaling semantics, runnable proof, and explicit non-goals
 - [UI getting started](framework/docs/content/ui-getting-started.md) — **the 15-minute path**: scaffold → design direction → theme → framework-native composition
 - [UI composition recipes](framework/docs/content/ui-composition-recipes.md) — product-shaped page structures built entirely from `framework/ui` primitives
 - [UI components index](framework/docs/content/ui-new-components.md) — **the catalog**: every component the framework ships, with its `go doc` path and live demo at `/components/<slug>` in `examples/site`

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -60,4 +61,71 @@ func cliInvocationStats(logPath string) (calls int, usedDev bool) {
 			return calls, usedDev
 		}
 	}
+}
+
+type cliDocumentationStats struct {
+	Calls             int
+	Searches          []string
+	Topics            []string
+	UsedCapabilityMap bool
+}
+
+// cliDocsInvocationStats extracts documentation-discovery evidence from the
+// same PATH-shim log as cliInvocationStats. The builder prompt names no docs
+// command or topic, so these are behavioral funnel signals rather than prompt
+// compliance. Searches and topics are unique and sorted for stable artifacts.
+func cliDocsInvocationStats(logPath string) cliDocumentationStats {
+	f, err := os.Open(logPath)
+	if err != nil {
+		return cliDocumentationStats{}
+	}
+	defer f.Close()
+
+	stats := cliDocumentationStats{}
+	searches := map[string]bool{}
+	topics := map[string]bool{}
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] != "docs" {
+			continue
+		}
+		stats.Calls++
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "docs"))
+		switch {
+		case strings.HasPrefix(rest, "--grep="):
+			query := strings.Trim(strings.TrimSpace(strings.TrimPrefix(rest, "--grep=")), `"'`)
+			if query != "" {
+				searches[query] = true
+			}
+		case strings.HasPrefix(rest, "--grep"):
+			query := strings.Trim(strings.TrimSpace(strings.TrimPrefix(rest, "--grep")), `"'`)
+			if query != "" {
+				searches[query] = true
+			}
+		default:
+			args := strings.Fields(rest)
+			if len(args) == 0 {
+				continue
+			}
+			topic := strings.Trim(args[0], `"'`)
+			if topic == "" || strings.HasPrefix(topic, "-") {
+				continue
+			}
+			topics[topic] = true
+			if topic == "ui-capability-map" {
+				stats.UsedCapabilityMap = true
+			}
+		}
+	}
+	for query := range searches {
+		stats.Searches = append(stats.Searches, query)
+	}
+	for topic := range topics {
+		stats.Topics = append(stats.Topics, topic)
+	}
+	sort.Strings(stats.Searches)
+	sort.Strings(stats.Topics)
+	return stats
 }

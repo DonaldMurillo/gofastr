@@ -106,6 +106,12 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
 - URL-bearing attributes bound via `BindAttr` keep the runtime's
   `javascript:`/`data:` scheme guard.
 
+## See also
+
+- [UI capability map](ui-capability-map.md) shows when a local signal, typed store, server recomputation, or durable database state is the right boundary.
+- [Interactive patterns](interactive-patterns.md) covers RPC producers that publish authoritative values and fragments.
+- [Runtime contract](runtime-contract.md) defines seeding and SPA-navigation rules.
+
 ## Common mistakes
 
 - **Re-declaring a slice name with a different default.** Panics at

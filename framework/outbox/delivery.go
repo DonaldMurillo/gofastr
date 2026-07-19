@@ -44,20 +44,20 @@ func (o *Outbox) ListDeliveries(ctx context.Context, rowID string) ([]Delivery, 
 		var d Delivery
 		d.RowID = rowID
 		var lastError sql.NullString
-		var nextAttempt, dispatched sql.NullTime
+		var nextAttempt, dispatched any
 		if err := rows.Scan(&d.Consumer, &d.Status, &d.Attempts, &lastError, &nextAttempt, &dispatched); err != nil {
 			return nil, err
 		}
 		if lastError.Valid {
 			d.LastError = lastError.String
 		}
-		if nextAttempt.Valid {
-			t := nextAttempt.Time
-			d.NextAttemptAt = &t
+		d.NextAttemptAt, err = outboxTimePtr(nextAttempt)
+		if err != nil {
+			return nil, fmt.Errorf("outbox: decode delivery %q next_attempt_at: %w", d.Consumer, err)
 		}
-		if dispatched.Valid {
-			t := dispatched.Time
-			d.DispatchedAt = &t
+		d.DispatchedAt, err = outboxTimePtr(dispatched)
+		if err != nil {
+			return nil, fmt.Errorf("outbox: decode delivery %q dispatched_at: %w", d.Consumer, err)
 		}
 		out = append(out, d)
 	}
@@ -445,8 +445,14 @@ func scanClaimedDelivery(row interface {
 }) (claimedDelivery, error) {
 	var d claimedDelivery
 	var payload sql.NullString
-	if err := row.Scan(&d.RowID, &d.Consumer, &d.Attempts, &d.Type, &payload, &d.CreatedAt); err != nil {
+	var createdAt any
+	if err := row.Scan(&d.RowID, &d.Consumer, &d.Attempts, &d.Type, &payload, &createdAt); err != nil {
 		return claimedDelivery{}, err
+	}
+	var err error
+	d.CreatedAt, err = outboxTime(createdAt)
+	if err != nil {
+		return claimedDelivery{}, fmt.Errorf("outbox: decode delivery %q created_at: %w", d.Consumer, err)
 	}
 	if payload.Valid {
 		d.Payload = []byte(payload.String)

@@ -85,6 +85,8 @@ weight. Do not stack a narrow table down the left half of a desktop canvas and
 leave an accidental empty rail. Let the framework grid reflow the pair to a
 single readable column on phones.
 
+**Live proof:** [RecordSummary](/components/recordsummary), [MetricBand](/components/metricband), and [Timeline](/components/timeline) in the component gallery.
+
 ---
 
 ## 2. Investigation workspace
@@ -115,6 +117,8 @@ On a phone, render the reader first and make source/annotation access explicit
 with normal routes or framework drawers; do not serialize three desktop panes
 into one endless page.
 
+**Live proof:** the full [/examples/workspace](/examples/workspace) route and the [PaneHost](/components/panehost) gallery demonstration.
+
 ---
 
 ## 3. Split narrative
@@ -135,6 +139,8 @@ On mobile, put the explanatory copy before the artifact when it establishes
 context; put the artifact first when recognition is the primary task. Check
 long code lines and actions at 390px rather than assuming the two columns will
 collapse cleanly.
+
+**Live proof:** [HeroSplit](/components/herosplit), [CodeBlock](/components/codeblock), and [TerminalBlock](/components/terminalblock) in the component gallery.
 
 ---
 
@@ -157,6 +163,8 @@ Mobile detail should keep identity, price, availability, and the primary
 action close to the first useful image. Do not make the user traverse a full
 desktop gallery before reaching the action.
 
+**Live proof:** [Gallery](/components/gallery), [Lightbox](/components/lightbox), and [FilterToolbar](/components/filtertoolbar) in the component gallery.
+
 ---
 
 ## 5. Transactional field flow
@@ -178,6 +186,8 @@ Keep the first mobile viewport focused: route/job identity, state, required
 readings, issue capture, and completion. Secondary history can follow after the
 active controls.
 
+**Live proof:** [ProgressSteps](/components/progresssteps), [Form](/components/form), and [Sticky](/components/sticky) in the component gallery.
+
 ---
 
 ## Choosing without overfitting
@@ -195,6 +205,13 @@ If a recipe can't be built without local structural markup or CSS, that's a
 missing piece in the design system — write it down and add it there. The app
 doesn't get an exception to the no-CSS rule; building it is how you find what's
 missing.
+
+## See also
+
+- [UI capability map](ui-capability-map.md) chooses the state, mutation, delivery, and scaling boundaries before a page recipe.
+- [UI components index](ui-new-components.md) lists every constructor and live gallery route.
+- [Runtime contract](runtime-contract.md) defines SSR, RPC islands, and SSE.
+- [Signal store](signal-store.md) covers typed client projection and derived state.
 
 ## Common mistakes
 

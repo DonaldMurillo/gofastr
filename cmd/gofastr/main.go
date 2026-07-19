@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 )
 
 // Version info — overridden via -ldflags at build time.
@@ -114,6 +116,9 @@ func printHelp() {
   theme init            Scaffold theme/theme.go for a UI project
   build                 Run codegen + go vet + accessibility lint + go build
                         --no-a11y skips the accessibility gate
+                        --pkg=<path> selects the main package built after the
+                        project-root vet and accessibility gates (default .);
+                        for example --pkg ./cmd/server
   dev                   Start dev server with auto-restart
     Flags:
       --addr=<host:port>  Listen address (default localhost:8080); -p <port> short form
@@ -256,42 +261,13 @@ func dispatch(args []string) {
 		// Fuzzy suggestion: check if it's close to a known command
 		suggestions := []string{"init", "generate", "pack", "validate", "build", "dev", "migrate", "test", "embed", "harness", "docs", "agents", "audit", "upgrade", "version"}
 		for _, s := range suggestions {
-			if strings.HasPrefix(s, cmd) || levenshtein(cmd, s) <= 2 {
+			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))
 			}
 		}
 		printHelp()
 		osExit(1)
 	}
-}
-
-// levenshtein returns the edit distance between two strings.
-func levenshtein(a, b string) int {
-	la, lb := len(a), len(b)
-	if la == 0 {
-		return lb
-	}
-	if lb == 0 {
-		return la
-	}
-	d := make([][]int, la+1)
-	for i := range d {
-		d[i] = make([]int, lb+1)
-		d[i][0] = i
-	}
-	for j := 0; j <= lb; j++ {
-		d[0][j] = j
-	}
-	for i := 1; i <= la; i++ {
-		for j := 1; j <= lb; j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
-		}
-	}
-	return d[la][lb]
 }
 
 func min(vals ...int) int {

@@ -628,6 +628,14 @@ search := interactive.LiveSearch(
 
 ---
 
+## See also
+
+- [UI capability map](ui-capability-map.md) starts from optimistic UI, live dashboard, mutation, rollback, and reconciliation jobs.
+- [`docs/ui-new-components.md`](ui-new-components.md) — full component catalog.
+- [`docs/widgets.md`](widgets.md) — widget framework (Modal, Drawer, Popover mounts).
+- [runtime-contract](runtime-contract.md) — the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
+- [`docs/ui-getting-started.md`](ui-getting-started.md) — first-time UI setup.
+
 ## Common mistakes
 
 - **Assuming a hand-written `data-fui-rpc` route is auto-registered.**
@@ -659,12 +667,3 @@ search := interactive.LiveSearch(
   contract.** Every attribute the runtime reads must land in
   `core-ui/ARCHITECTURE.md` and the runtime test suite — undocumented
   attributes are drift the next author can't discover.
-
----
-
-## See also
-
-- [`docs/ui-new-components.md`](ui-new-components.md) — full component catalog.
-- [`docs/widgets.md`](widgets.md) — widget framework (Modal, Drawer, Popover mounts).
-- [runtime-contract](runtime-contract.md) — the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
-- [`docs/ui-getting-started.md`](ui-getting-started.md) — first-time UI setup.

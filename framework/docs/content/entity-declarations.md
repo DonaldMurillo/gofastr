@@ -570,6 +570,62 @@ rows, err := handler.ListAll(ctx, crud.ListOptions{Search: "go concurrency"})
 Setting `Search` on an entity without `SearchFields` returns an error
 (fail loud, matching the unknown-sort policy).
 
+## Flat filters (`?field_op=value`)
+
+The List endpoint filters on any known, non-Hidden column via query
+params:
+
+```
+GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
+```
+
+| Suffix   | Operator                                   |
+| -------- | ------------------------------------------ |
+| _(none)_ | `=` (equals)                               |
+| `_gt`    | `>`                                        |
+| `_gte`   | `>=`                                       |
+| `_lt`    | `<`                                        |
+| `_lte`   | `<=`                                       |
+| `_like`  | literal `contains` (`LIKE '%value%'`)      |
+| `_in`    | `IN (…)` — comma-separated, capped at 1000 |
+
+**Unknown filters fail closed (strict).** A misspelled or unrecognized
+top-level filter — `?stauts=open`, or a suffixed op on a non-field like
+`?scor_gt=5` — returns a **400** naming the bad key (with a "did you
+mean" suggestion when a field is an unambiguous near-match), rather than
+being silently dropped. Silently dropping a filter returns an
+**unfiltered** result set: a broken client reads the whole table, and an
+attacker's probe is indistinguishable from a real query. This mirrors the
+existing fail-closed policy for `?sort=` and `?where=`.
+
+Hidden columns are rejected with the **same** "unknown filter" wording as
+a nonexistent column, so the error can't be used to distinguish
+hidden-from-absent (the value-disclosure-oracle rationale — this also
+holds for nested relation filters like `?author.password_hash_like=`).
+Reserved list controls (`sort`, `page`, `limit`, `per_page`, `offset`,
+`cursor`, `direction`, `where`, `fields`, `include`, `trashed`, `stream`,
+`q`) and nested relation filters (dotted keys like `?author.name=alice`)
+are never treated as unknown filters. A declared **column** whose name
+collides with a control word (say a field literally named `stream`) still
+filters — a known field always wins over the reserved-word skip, so it is
+never silently swallowed.
+
+**Custom params.** An endpoint that reads its own non-column query params
+(e.g. a `BeforeList` hook scoping on `?region=eu`) declares them so strict
+parsing skips them without disabling typo protection for real fields:
+
+```go
+app.Entity("things", entity.EntityConfig{
+    AllowedFilterParams: []string{"region"}, // consumed by a BeforeList hook
+})
+```
+
+**Escape hatch.** To tolerate *arbitrary* extra params (e.g. legacy
+tracking params) rather than an enumerated set, opt back into the old
+drop-silently behavior with `EntityConfig.LenientFilters: true`. Prefer
+`AllowedFilterParams` or fixing the caller — a dropped filter is a
+data-exposure hazard.
+
 ## Nested predicate filters (`?where=`)
 
 The flat `?field_op=value` params AND-compose. When you need **boolean

@@ -30,7 +30,8 @@ const streamListThreshold = 1000
 //
 // `page` is honoured the same way the non-stream List handler honours it:
 // OFFSET (page-1)*limit. Without this, ?page=2&stream=true would re-stream
-// page 1 while reporting page 1 — silently dropping the offset.
+// page 1 while reporting page 1 — silently dropping the offset. An explicit
+// ?offset= overrides the page-derived offset, matching the buffered path.
 func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
 	// Same owner+tenant gate the public List handler enforces. Direct
 	// callers (in-process or chained from List) must not bypass it —
@@ -75,7 +76,14 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	}
 	filter.ApplySortToQuery(qb, sorts)
 	qb.Limit(limit)
-	if page > 1 {
+	// An explicit ?offset= overrides the page-derived offset, matching the
+	// buffered List() path — otherwise ?offset=N&stream=true would silently
+	// serve page 1 (the process-module broker paginates by raw offset).
+	if o, ok := explicitOffset(r); ok {
+		if o > 0 {
+			qb.Offset(o)
+		}
+	} else if page > 1 {
 		qb.Offset((page - 1) * limit)
 	}
 

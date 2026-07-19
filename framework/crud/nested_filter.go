@@ -99,12 +99,18 @@ func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Reg
 
 		// Validate the field exists on the target entity (when the registry
 		// has it). Without the registry we trust the field name as-is.
+		//
+		// A Hidden column is treated as NOT declared — the identical error to
+		// a nonexistent field, so the response can't distinguish hidden from
+		// absent. Otherwise a nested predicate (?author.password_hash_like=…)
+		// would resurrect exactly the value-disclosure oracle the flat-filter
+		// Hidden exclusion blocks, just one relation hop away.
 		if registry != nil {
 			if target, err := registry.Get(rel.Entity); err == nil {
 				known := false
 				for _, f := range target.GetFields() {
 					if f.Name == fieldName {
-						known = true
+						known = !f.Hidden
 						break
 					}
 				}
@@ -170,7 +176,12 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 				known := false
 				for _, f := range target.GetFields() {
 					if f.Name == spec.Field {
-						known = true
+						// A Hidden target column is treated as not-declared —
+						// the same value-disclosure-oracle rejection the HTTP
+						// path applies in parseNestedFilters. Without this, a
+						// typed caller passing a partially user-influenced
+						// field name rebuilds the oracle one relation hop away.
+						known = !f.Hidden
 						break
 					}
 				}

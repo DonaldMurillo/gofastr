@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.33.0
+through: v0.35.0
 
 releases:
   - version: v0.3.0
@@ -187,3 +187,13 @@ releases:
       - change: Generated typed client grows Token, batch, Watch, and Do
         breaking: false
         guidance: "entities/client gains an opt-in Token field (Authorization: Bearer), BatchCreate/BatchUpdate/BatchDelete<Entity>, Watch<Entity> (SSE), and a raw Do escape hatch. Regenerate the client (gofastr generate --force from your blueprint, or re-run pack+generate) to pick them up; existing call sites keep compiling."
+  - version: v0.35.0
+    title: Strict list filters + presence topic authorization
+    notes:
+      - change: Unknown list filters now return 400 (#100)
+        breaking: true
+        guidance: "The auto-CRUD List endpoint REJECTS an unknown top-level filter (a typo like ?stauts=open, or a suffixed op on a non-field) with a 400 naming the bad key, instead of silently dropping it and returning an UNFILTERED result set. Fix clients that send unrecognized params. An endpoint whose BeforeList hook reads its own non-column query params declares them via EntityConfig.AllowedFilterParams; EntityConfig.LenientFilters (or filter.Lenient()) restores the old drop-silently behavior. Also: ?per_page is now a ?limit alias and ?offset is honored on both buffered and streaming list paths."
+        detect: 'filter\.ParseFilters\('
+      - change: Presence topic authorization hook (#98)
+        breaking: false
+        guidance: "New island.Manager.AuthorizeTopic(ctx, topic) bool gates which ?presence= topics a connection may join, before any subscription or roster emission. Additive: a nil hook (the default) authorizes every topic, so existing presence apps are byte-identical. Opt in to protect private topics whose roster (display names can be emails) would otherwise leak to anyone who guesses the topic string."

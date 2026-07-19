@@ -352,6 +352,12 @@ benchstat dist/bench/before.txt dist/bench/all.txt
 `benchstat` (`go install golang.org/x/perf/cmd/benchstat@latest`) reports
 geometric mean + p-value so noise doesn't show up as a regression.
 
+## See also
+
+- [UI capability map](ui-capability-map.md) separates composed capability from packaged convenience and measured performance.
+- [Runtime contract](runtime-contract.md) defines the UI paths being measured.
+- [Events and SSE](events.md) documents delivery semantics behind drop-rate metrics.
+
 ## Common mistakes
 
 - **Not skipping Postgres when it's unavailable.** Use

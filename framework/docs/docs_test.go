@@ -1,6 +1,9 @@
 package docs
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -11,7 +14,7 @@ import (
 // doc enforces "every doc removal requires an explicit decision."
 //
 // Bump it up when adding docs. Be reluctant to decrement.
-const MinExpectedTopics = 64
+const MinExpectedTopics = 65
 
 func TestEmbedManifestFloor(t *testing.T) {
 	topics, err := List()
@@ -155,6 +158,95 @@ func TestGuideDocsEndWithCommonMistakes(t *testing.T) {
 	}
 }
 
+func TestUICapabilityMapSearchVocabulary(t *testing.T) {
+	terms := []string{
+		"optimistic", "realtime", "live dashboard", "reactive state",
+		"rollback", "reconciliation", "client state", "live updates",
+		"event stream", "mutation", "derived state", "cache invalidation",
+		"server-driven UI",
+	}
+	for _, term := range terms {
+		hits, err := Search(term)
+		if err != nil {
+			t.Fatalf("Search(%q): %v", term, err)
+		}
+		found := false
+		for _, hit := range hits {
+			if hit.Topic == "ui-capability-map" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Search(%q) did not route to ui-capability-map: %+v", term, hits)
+		}
+	}
+}
+
+func TestUICapabilityMapLinksResolve(t *testing.T) {
+	body, err := Get("ui-capability-map")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"CRUD/admin", "Optimistic mutations", "Live dashboards",
+		"Master/detail", "Sortable lists and Kanban",
+		"Notifications, progress, and activity feeds",
+		"Server-authoritative reactive SaaS", "Static/exportable UI",
+		"SPA integration", "canvas/media editors", "offline-first CRDT",
+	} {
+		if !strings.Contains(string(body), required) {
+			t.Errorf("ui-capability-map is missing required coverage %q", required)
+		}
+	}
+
+	linkRE := regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
+	for _, match := range linkRE.FindAllStringSubmatch(string(body), -1) {
+		target := strings.Split(strings.Split(match[1], "#")[0], "?")[0]
+		switch {
+		case strings.HasSuffix(target, ".md") && !strings.HasPrefix(target, "../../../examples/"):
+			topic := strings.TrimSuffix(filepath.Base(target), ".md")
+			if _, err := Get(topic); err != nil {
+				t.Errorf("mapped primary doc %q does not resolve: %v", target, err)
+			}
+		case strings.HasPrefix(target, "../../../examples/"):
+			resolved := filepath.Clean(filepath.Join("content", filepath.FromSlash(target)))
+			if _, err := os.Stat(resolved); err != nil {
+				t.Errorf("mapped runnable example %q does not resolve: %v", target, err)
+			}
+		}
+	}
+}
+
+func TestUICompositionRecipeGalleryProofsResolve(t *testing.T) {
+	body, err := Get("ui-composition-recipes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(body), "**Live proof:**"); got != 5 {
+		t.Fatalf("composition recipes have %d live proofs, want one for each of 5 recipes", got)
+	}
+	components, err := os.ReadFile(filepath.Join("..", "..", "examples", "site", "components.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	componentRE := regexp.MustCompile(`\]\(/components/([a-z0-9-]+)\)`)
+	for _, match := range componentRE.FindAllStringSubmatch(string(body), -1) {
+		if !strings.Contains(string(components), `{"`+match[1]+`",`) {
+			t.Errorf("recipe gallery route /components/%s has no catalog entry", match[1])
+		}
+	}
+	mainBody, err := os.ReadFile(filepath.Join("..", "..", "examples", "site", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exampleRE := regexp.MustCompile(`\]\((/examples/[a-z0-9-]+)\)`)
+	for _, match := range exampleRE.FindAllStringSubmatch(string(body), -1) {
+		if !strings.Contains(string(mainBody), `"`+match[1]+`"`) {
+			t.Errorf("recipe example route %s is not registered", match[1])
+		}
+	}
+}
 func TestSearchEmptyTerm(t *testing.T) {
 	hits, _ := Search("")
 	if len(hits) != 0 {

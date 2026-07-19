@@ -28,15 +28,19 @@ func TestList_ScanErr(t *testing.T) {
 }
 
 // crud.go:336 — List filter parse error → 400.
-func TestList_IgnoresUnknownFilter(t *testing.T) {
+func TestList_RejectsUnknownFilter(t *testing.T) {
 	ch, _ := covFaultNotes(t)
-	// An unknown filter param (unrecognised field/suffix) is leniently
-	// ignored, not rejected — the list still succeeds.
+	// An unknown filter param (unrecognised field/suffix) is REJECTED, not
+	// silently dropped — silently dropping returns an unfiltered result set
+	// (#100A). The bad key is named in the body so a client can surface it.
 	req := withTestUser(httptest.NewRequest("GET", "/notes?title_zz=x", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("unknown filter = %d, want 200 (lenient)", rec.Code)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown filter = %d, want 400 (strict)", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "title_zz") {
+		t.Fatalf("400 body must name the bad key, got %s", rec.Body.String())
 	}
 }
 

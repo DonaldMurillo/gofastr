@@ -291,6 +291,70 @@ func TestParseNestedFilters_Paths(t *testing.T) {
 	}
 }
 
+// A Hidden column on the TARGET entity must not be reachable as a nested
+// predicate — otherwise ?author.password_hash_like=… resurrects the
+// value-disclosure oracle the flat-filter Hidden exclusion blocks, one
+// relation hop away. The rejection must be non-leaky: identical wording to a
+// nonexistent field, so the error can't distinguish hidden from absent.
+func TestParseNestedFilters_HiddenTargetFieldRejected(t *testing.T) {
+	ent := covRelEntity()
+	reg := stubRegistry{byName: map[string]*entity.Entity{
+		"users": entity.Define("users", entity.EntityConfig{
+			Name: "users", Table: "users",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String},
+				{Name: "password_hash", Type: schema.String, Hidden: true},
+			},
+		}.WithTimestamps(false)),
+	}}
+
+	r := httptest.NewRequest("GET", "/?author.password_hash_like=%242a%2410%24", nil)
+	_, hiddenErr := parseNestedFilters(r, ent, reg)
+	if hiddenErr == nil {
+		t.Fatal("SECURITY: hidden target field reachable as nested predicate")
+	}
+	// Non-leaky: a truly-absent field must produce the same error shape.
+	r2 := httptest.NewRequest("GET", "/?author.nonexistent_like=x", nil)
+	_, absentErr := parseNestedFilters(r2, ent, reg)
+	if absentErr == nil {
+		t.Fatal("nonexistent target field must also error")
+	}
+	norm := func(s, field string) string { return strings.ReplaceAll(s, field, "F") }
+	if norm(hiddenErr.Error(), "password_hash") != norm(absentErr.Error(), "nonexistent") {
+		t.Errorf("SECURITY: hidden vs absent nested errors differ — oracle:\n hidden: %v\n absent: %v", hiddenErr, absentErr)
+	}
+}
+
+// The in-process typed-repo nested path (resolveNestedFilters) must reject a
+// Hidden target column exactly like the HTTP path — its doc comment claims
+// parity, and a typed caller passing a partially user-influenced field name
+// would otherwise rebuild the value-disclosure oracle one hop away.
+func TestResolveNestedFilters_HiddenTargetFieldRejected(t *testing.T) {
+	ent := covRelEntity()
+	reg := stubRegistry{byName: map[string]*entity.Entity{
+		"users": entity.Define("users", entity.EntityConfig{
+			Name: "users", Table: "users",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String},
+				{Name: "password_hash", Type: schema.String, Hidden: true},
+			},
+		}.WithTimestamps(false)),
+	}}
+
+	_, err := resolveNestedFilters(ent, reg, []NestedFilter{
+		{Relation: "author", Field: "password_hash", Op: filter.OpLike, Value: "x"},
+	})
+	if err == nil {
+		t.Fatal("SECURITY: in-process nested filter accepted a Hidden target column")
+	}
+	// A visible field still resolves.
+	if _, err := resolveNestedFilters(ent, reg, []NestedFilter{
+		{Relation: "author", Field: "name", Op: filter.OpEq, Value: "alice"},
+	}); err != nil {
+		t.Fatalf("visible nested field must resolve, got %v", err)
+	}
+}
+
 func TestAuditCtx_RoundTrip(t *testing.T) {
 	if AuditRequestFromContext(context.Background()) != nil {
 		t.Error("expected nil request when unset")

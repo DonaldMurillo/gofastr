@@ -30,6 +30,125 @@ entity declaration are optional features, not the identity. No API changes.
   homepage gains a "Built with GoFastr" section, and page metadata, footer, and
   the agent card move off "agents are first-class authors" onto the tagline.
 
+## [0.35.0] - 2026-07-18
+
+Hardens the list data-plane and the presence surface, and makes GoFastr's UI
+capabilities discoverable by job-to-be-done: strict list-filter rejection
+(#100, **breaking**), opt-in presence topic authorization (#98), and a UI
+capability map (#102).
+
+### Added
+
+- **UI capability map** (#102). A new `ui-capability-map.md` doc (browsable via
+  `gofastr docs` and the `framework_docs_*` MCP tools, linked from the README
+  and docs catalog) routes from a UI *problem* — live dashboard, optimistic
+  board, master/detail, server-authoritative reactive state — to the GoFastr
+  primitives that compose it and the runnable example that proves it, with
+  "see also" cross-links across the interactive-patterns / signal-store /
+  runtime-contract / events / presence / scaling docs. Adds a
+  UI-capability-discovery eval suite.
+- **Presence topic authorization** (#98). `island.Manager.AuthorizeTopic`, when
+  set, gates which `?presence=<topic>` topics a connection may join. The hook
+  runs once per requested topic at SSE-connect time with the request context
+  (carrying the server-derived user), **before** any subscription or roster
+  emission — so an unauthorized viewer never receives the roster (which can
+  contain emails) or join/leave events. Rejection is silent (the topic is
+  simply not joined), so the gate is not a private-topic existence oracle. A
+  nil hook (the default) authorizes every topic — presence stays public unless
+  an app opts in, so existing apps are unaffected. See [presence](presence.md)
+  → "Topic authorization".
+
+### Changed
+
+- **BREAKING — strict filter parsing on the List endpoint** (#100). An
+  unknown top-level filter query param (a typo like `?stauts=open`, or a
+  suffixed op on a non-field like `?scor_gt=5`) now returns a **400**
+  naming the bad key — with a "did you mean" suggestion when a field is an
+  unambiguous near-match — instead of being silently dropped. Silently
+  dropping a filter returned an **unfiltered** result set: a broken client
+  read the whole table and an attacker's probe was indistinguishable from a
+  real query. This aligns flat filters with the existing fail-closed policy
+  for `?sort=` and `?where=`. Hidden columns are rejected with the identical
+  "unknown filter" wording as a nonexistent column, so the error is not a
+  hidden-vs-absent oracle. Reserved list controls (`sort`, `page`, `limit`,
+  `offset`, `cursor`, `direction`, `where`, `fields`, `include`, `trashed`,
+  `stream`, `q`) and nested relation filters (`?author.name=`) are never
+  treated as unknown filters.
+
+  A declared column whose name collides with a control word (a field named
+  `stream`, `q`, …) still filters — a known field wins over the reserved-word
+  skip, so it is never silently swallowed. `?per_page` is accepted as an
+  alias for `?limit` (a common REST convention) so it neither 400s nor
+  silently serves the default page size.
+
+  **Migration.** An endpoint that reads its own non-column query params (a
+  `BeforeList` hook scoping on `?region=`) declares them with
+  `EntityConfig.AllowedFilterParams: []string{"region"}` so strict parsing
+  skips them without disabling typo protection. To tolerate *arbitrary*
+  extra params, restore the old drop-silently behavior per entity with
+  `EntityConfig.LenientFilters: true`, or per call with
+  `filter.ParseFilters(r, fields, filter.Lenient())`. Prefer the narrow
+  options — a dropped filter is a data-exposure hazard. See
+  [entity declarations → Flat filters](entity-declarations.md).
+
+### Fixed
+
+- **Hidden columns reachable via nested filters** (#100). A `Hidden` column
+  on a relation's target entity could be probed through a nested predicate
+  (`?author.password_hash_like=…`), resurrecting the same value-disclosure
+  oracle the flat-filter Hidden exclusion blocks. Both the HTTP nested path
+  and the in-process typed-repo path now reject a hidden target field with
+  the identical error as a nonexistent field (non-leaky).
+- **`?offset=` now honored on the List endpoint** (#100). The raw
+  `?offset=` row-skip control was accepted but silently ignored (the paged
+  query always derived its offset from `?page`), so a caller paginating by
+  offset — notably the process-module broker, which sends `?offset=` without
+  `?page` — silently received page 1. An explicit non-negative `?offset=`
+  now overrides the page-derived offset on both the buffered and streaming
+  list paths.
+
+## [0.34.0] - 2026-07-18
+
+Makes framework-owned SQL work with the bundled pure-Go SQLite adapter (#91),
+adds package targeting to `gofastr build` (#92), and hardens durable scheduler
+watermarks and occurrence retention (#96, #97).
+
+### Added
+
+- **`gofastr build --pkg`** (#92). `build` now accepts the same command-package
+  target as `gofastr dev`, including both `--pkg value` and `--pkg=value`.
+  Unknown flags, missing values, option-like package values, and unexpected
+  positional arguments fail before code generation or compilation. Build
+  failures identify the selected package target.
+- **Bounded durable-scheduler catch-up** (#97).
+  `DurableSchedulerConfig.MaxCatchUpOccurrences` limits the occurrence history
+  materialized after downtime and defaults to 1,000. Fixed intervals
+  fast-forward arithmetically, while cron schedules retain only the newest
+  bounded window.
+
+### Changed
+
+- **Bounded scheduler occurrence retention** (#97). Occurrences default to a
+  30-day retention window, pruning runs at most hourly after due work is
+  committed, and a negative `OccurrenceRetention` disables pruning. New
+  `(schedule_id, enqueued_job_id)` and `created_at` indexes keep overlap checks
+  and retention sweeps bounded.
+
+### Fixed
+
+- **Bundled pure-Go SQLite framework compatibility** (#91). The adapter now
+  supports the framework's numbered placeholders, conflict clauses,
+  `RETURNING`, correlated `EXISTS`, and multi-statement parsing. Writes enforce
+  primary-key, `NOT NULL`, and unique constraints consistently; failed
+  statements roll back atomically, and unique indexes reject existing or
+  future duplicate keys.
+- **Durable scheduler watermark stalls** (#96). Watermark compare-and-swap now
+  uses a monotonic schedule version instead of timestamp equality, so database
+  precision or timezone normalization cannot silently stall a schedule.
+  Re-registering a schedule also advances the version to fence stale
+  definitions, and malformed persisted timestamps return errors rather than
+  becoming zero values.
+
 ## [0.33.0] - 2026-07-18
 
 Adds MCP Apps support to `core/mcp` (#90) and a durable, replica-safe

@@ -441,6 +441,8 @@ func (l *Lexer) readOperator() Token {
 	case '~':
 		l.advance()
 		return Token{Type: TokenTilde, Value: "~", Pos: pos, Line: line, Col: col}
+	case '$':
+		return l.readDollarParameter()
 	case '?':
 		l.advance()
 		return Token{Type: TokenQuestion, Value: "?", Pos: pos, Line: line, Col: col}

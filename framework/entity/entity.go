@@ -117,6 +117,26 @@ type EntityConfig struct {
 	// Ignored when SeedFS is nil.
 	SeedPath string
 
+	// LenientFilters opts the entity's auto-CRUD List endpoint OUT of strict
+	// filter parsing. By default an unknown top-level filter key (a typo like
+	// ?stauts=active) is REJECTED with a 400 rather than silently dropped —
+	// silently dropping it returns an UNFILTERED result set, which is a
+	// data-exposure and broken-client hazard. Set true only as a migration
+	// escape hatch for an endpoint that must tolerate arbitrary extra query
+	// params (e.g. legacy tracking params); prefer fixing the caller.
+	// Default false (strict).
+	LenientFilters bool
+
+	// AllowedFilterParams declares extra query-param keys that are NOT entity
+	// columns but are legitimately consumed elsewhere on the List request —
+	// typically read by a BeforeList hook or custom middleware (e.g. a
+	// bespoke "?region=eu" scope param). Strict filter parsing skips these
+	// instead of rejecting them, so the endpoint keeps typo-protection for
+	// real fields without falling back to LenientFilters (which disables it
+	// entirely). Reserved list controls are always allowed and need not be
+	// listed here.
+	AllowedFilterParams []string
+
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.
 	timestampsSet bool

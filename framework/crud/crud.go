@@ -340,7 +340,14 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		filters, err := filter.ParseFilters(r, ch.Entity.GetFields())
+		var filterOpts []filter.FilterOption
+		if ch.Entity.Config.LenientFilters {
+			filterOpts = append(filterOpts, filter.Lenient())
+		}
+		if extra := ch.Entity.Config.AllowedFilterParams; len(extra) > 0 {
+			filterOpts = append(filterOpts, filter.Allow(extra...))
+		}
+		filters, err := filter.ParseFilters(r, ch.Entity.GetFields(), filterOpts...)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid filters: "+err.Error())
 			return
@@ -485,6 +492,14 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplySortToQuery(qb, sorts)
 
 		offset := (page - 1) * perPage
+		// An explicit ?offset= overrides the page-derived offset. The
+		// process-module broker paginates by raw offset (it sets ?offset=
+		// without ?page=), and it is a documented control param — honoring it
+		// here is what makes those requests return the intended window
+		// instead of silently serving page 1.
+		if o, ok := explicitOffset(r); ok {
+			offset = o
+		}
 		qb.Limit(perPage)
 		qb.Offset(offset)
 
@@ -944,8 +959,8 @@ func isUniqueViolation(err error) bool {
 	return false
 }
 
-// parsePagination extracts page and per_page from query params.
-// Defaults: page=1, per_page=20.
+// parsePagination extracts the page number (?page) and page size (?limit,
+// or its ?per_page alias) from query params. Defaults: page=1, perPage=20.
 //
 // The per_page cap is 100 by default. Entities can raise this via
 // EntityConfig.MaxListLimit. ?stream=true on its own does NOT raise
@@ -965,8 +980,15 @@ func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
 
 	maxPerPage := listLimitCap(entityMax)
 
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+	// ?limit is the canonical page-size param; ?per_page is accepted as an
+	// alias (a common REST convention) so a client using it gets the size it
+	// asked for rather than a silent default. ?limit wins when both are sent.
+	sizeParam := r.URL.Query().Get("limit")
+	if sizeParam == "" {
+		sizeParam = r.URL.Query().Get("per_page")
+	}
+	if sizeParam != "" {
+		if n, err := strconv.Atoi(sizeParam); err == nil && n > 0 {
 			perPage = n
 		}
 	}
@@ -977,6 +999,23 @@ func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
 		perPage = maxPerPage
 	}
 	return
+}
+
+// explicitOffset reads a raw ?offset= row skip. Returns (n, true) only for a
+// well-formed non-negative integer; a missing, malformed, or negative value
+// yields (0, false) so the caller keeps the page-derived offset. LIMIT still
+// caps the row count, so an oversized offset just returns an empty window —
+// no need to clamp it here.
+func explicitOffset(r *http.Request) (int, bool) {
+	v := r.URL.Query().Get("offset")
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 // listLimitCap is the effective per-request row cap for an entity:

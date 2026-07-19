@@ -132,6 +132,12 @@ the connection. Options, in order of preference:
 - [ ] `AuthConfig.AllowInMemoryStores` **removed** — the boot warning is
       your regression test for the first two items.
 
+## See also
+
+- [UI capability map](ui-capability-map.md) contrasts reconstructable and affinity-bound islands by product job.
+- [Events and SSE](events.md) defines cross-replica fanout semantics.
+- [Presence](presence.md) documents lossy, self-healing roster aggregation.
+
 ## Common mistakes
 
 - **Scaling to two replicas with default sessions.** Users get randomly
