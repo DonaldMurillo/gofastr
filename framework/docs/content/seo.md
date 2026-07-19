@@ -79,6 +79,17 @@ func (s *PostScreen) ScreenSEO() uihost.SEO {
 rendered as `<script type="application/ld+json">` with `</`
 neutralized so content can't break out of the script block.
 
+## Per-screen `llm.md` inherits the same metadata
+
+When `uihost.WithPublicLLMMD` is on, each screen's `/llm.md` document
+opens with a YAML front-matter block mirroring the resolved values above:
+`title`, `description`, `canonical`, `robots`, the OG / Twitter fields,
+`hreflang` (a list), and `schema_types` (the JSON-LD `@type` names). The
+front-matter is rendered from the same resolved `SEO` value as the HTML
+`<head>`, so an agent reading the markdown and a crawler reading the
+page see one consistent metadata set per route. Screens with no SEO
+declarations get no front-matter. See [Agent-readiness](/docs/agent-ready).
+
 ## sitemap.xml and robots.txt
 
 `WithSitemap` lists every registered route. Dynamic routes

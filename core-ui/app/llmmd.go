@@ -8,6 +8,24 @@ import (
 	"strings"
 )
 
+// ScreenLLMMDWithMeta renders the screen's llm.md with an optional
+// caller-supplied metadata block (e.g. SEO front-matter resolved by an
+// upper layer that can see the screen's SEO interfaces) inserted at the
+// very top of the document. metaPrefix is emitted verbatim before the
+// "# <title>" heading; pass "" for no prefix.
+//
+// The layering contract: core-ui/app cannot import framework/uihost,
+// so the SEO bundle is resolved in the host layer and passed down here
+// as an opaque prefix string. This keeps the markdown builder free of
+// the SEO type graph while still inheriting every field the HTML head
+// emits.
+func ScreenLLMMDWithMeta(screen *Screen, metaPrefix string) string {
+	if metaPrefix == "" {
+		return ScreenLLMMD(screen)
+	}
+	return metaPrefix + "\n" + ScreenLLMMD(screen)
+}
+
 // ScreenLLMMD generates an LLM-friendly markdown document for a single
 // screen/page. The output describes the route, its parameters, the
 // screen type, and any metadata useful for LLM agents navigating the app.
