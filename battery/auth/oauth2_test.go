@@ -159,17 +159,17 @@ func TestOAuth2Plugin_Redirect_Success(t *testing.T) {
 func TestOAuth2Plugin_StateGenerationAndValidation(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret"})
 
-	state, err := p.generateState("mock")
+	state, err := p.generateState("mock", "")
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
 
-	if !p.validateAndConsumeState(state, "mock") {
+	if _, ok := p.validateAndConsumeState(state, "mock"); !ok {
 		t.Fatal("state should be valid")
 	}
 
 	// Replay should fail (state consumed)
-	if p.validateAndConsumeState(state, "mock") {
+	if _, ok := p.validateAndConsumeState(state, "mock"); ok {
 		t.Fatal("replayed state should be rejected")
 	}
 }
@@ -177,12 +177,12 @@ func TestOAuth2Plugin_StateGenerationAndValidation(t *testing.T) {
 func TestOAuth2Plugin_StateWrongProvider(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret"})
 
-	state, err := p.generateState("mock")
+	state, err := p.generateState("mock", "")
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
 
-	if p.validateAndConsumeState(state, "other") {
+	if _, ok := p.validateAndConsumeState(state, "other"); ok {
 		t.Fatal("state should not validate for different provider")
 	}
 }
@@ -195,7 +195,7 @@ func TestOAuth2Plugin_StateExpiry(t *testing.T) {
 	// HMAC the production code would produce.
 	state := mintBackdatedState(t, p, "mock", time.Now().Add(-15*time.Minute))
 
-	if p.validateAndConsumeState(state, "mock") {
+	if _, ok := p.validateAndConsumeState(state, "mock"); ok {
 		t.Fatal("expired state should be rejected")
 	}
 }
@@ -229,11 +229,11 @@ func TestOAuth2Plugin_StateSurvivesRestart_Stateless(t *testing.T) {
 	p1 := NewOAuth2Plugin(OAuth2Config{StateSecret: "shared-key"})
 	p2 := NewOAuth2Plugin(OAuth2Config{StateSecret: "shared-key"})
 
-	state, err := p1.generateState("mock")
+	state, err := p1.generateState("mock", "")
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
-	if !p2.validateAndConsumeState(state, "mock") {
+	if _, ok := p2.validateAndConsumeState(state, "mock"); !ok {
 		t.Fatal("stateless state must validate on a freshly-restarted process with the same key")
 	}
 }
@@ -246,14 +246,14 @@ func TestOAuth2Plugin_StateSurvivesRestart_Stateless(t *testing.T) {
 func TestOAuth2Plugin_StateReplayRejected(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "replay-test-key"})
 
-	state, err := p.generateState("mock")
+	state, err := p.generateState("mock", "")
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
-	if !p.validateAndConsumeState(state, "mock") {
+	if _, ok := p.validateAndConsumeState(state, "mock"); !ok {
 		t.Fatal("first validate must succeed")
 	}
-	if p.validateAndConsumeState(state, "mock") {
+	if _, ok := p.validateAndConsumeState(state, "mock"); ok {
 		t.Fatal("replayed state must be rejected by nonce dedup")
 	}
 }
@@ -261,7 +261,7 @@ func TestOAuth2Plugin_StateReplayRejected(t *testing.T) {
 func TestOAuth2Plugin_StateTampered(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret"})
 
-	state, err := p.generateState("mock")
+	state, err := p.generateState("mock", "")
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
@@ -269,11 +269,19 @@ func TestOAuth2Plugin_StateTampered(t *testing.T) {
 	// Tamper with the state
 	tampered := "tampered" + state[5:]
 
-	if p.validateAndConsumeState(tampered, "mock") {
+	if _, ok := p.validateAndConsumeState(tampered, "mock"); ok {
 		t.Fatal("tampered state should be rejected")
 	}
 }
 
+// TestOAuth2Plugin_Callback_SuccessExistingUser pins the AUTO-LINK path of
+// the new linking contract: a pre-existing PASSWORDLESS account + an OAuth
+// callback asserting a VERIFIED email for the same address must re-bind
+// (link the provider) and log the user in. This is the safe migration path
+// for accounts created by a prior OAuth login. The collision-with-password
+// path is covered by TestOAuth_RefusesEmailCollisionWithExistingAccount;
+// the unverified-email path is covered by the resolveOAuthUser decision
+// table in oauth2_link_resolver_test.go.
 func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 	mock := &mockProvider{
 		name: "mock",
@@ -282,17 +290,28 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 			Expiry:      time.Now().Add(time.Hour),
 		},
 		userResp: &OAuth2UserInfo{
-			ID:       "ext-123",
-			Email:    "alice@example.com",
-			Name:     "Alice",
-			Provider: "mock",
+			ID:            "ext-123",
+			Email:         "alice@example.com",
+			Name:          "Alice",
+			Provider:      "mock",
+			EmailVerified: true,
 		},
 	}
 	mgr, userStore := newOAuth2Manager(t, mock)
 	r := mountOAuth2Routes(mgr)
 
-	// Pre-seed a user
-	seedUser(t, userStore, "alice@example.com", "existingpassword")
+	// Pre-seed a PASSWORDLESS local account — the shape a prior OAuth
+	// login leaves behind. HasPassword() reports false; the verified-email
+	// match is therefore allowed to auto-link rather than refused.
+	ctx := context.Background()
+	existing, err := userStore.CreateUserNoPassword(ctx, "alice@example.com", []string{"user"})
+	if err != nil {
+		t.Fatalf("CreateUserNoPassword: %v", err)
+	}
+	hasPw, _ := userStore.HasPassword(ctx, existing.GetID())
+	if hasPw {
+		t.Fatalf("seeded user must be passwordless for the auto-link path")
+	}
 
 	// First, hit redirect to get a valid state
 	redirectReq := httptest.NewRequest(http.MethodGet, "/auth/oauth/mock", nil)
@@ -311,6 +330,19 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 		t.Fatalf("expected 302, got %d: %s", cbW.Code, cbW.Body.String())
 	}
 
+	// The pre-existing passwordless user must now be linked to the
+	// (provider, provider_id) — that is the contract this test pins. A
+	// drift here would mean the auto-link branch was skipped and a fresh
+	// user was created instead.
+	linked, err := userStore.FindByOAuth(ctx, "mock", "ext-123")
+	if err != nil {
+		t.Fatalf("FindByOAuth after callback: %v", err)
+	}
+	if linked.GetID() != existing.GetID() {
+		t.Fatalf("auto-link bound a different user: linked=%q existing=%q",
+			linked.GetID(), existing.GetID())
+	}
+
 	// Check session cookie was set
 	var cookie *http.Cookie
 	for _, c := range cbW.Result().Cookies() {
@@ -322,13 +354,16 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 		t.Fatal("expected session cookie to be set")
 	}
 
-	// Verify session is valid
+	// Verify session is valid AND points at the pre-existing user — not a
+	// freshly created one. This is the load-bearing assertion: the verified
+	// email re-bound the existing identity rather than creating a new one.
 	sess, err := mgr.SessionStore().Get(context.Background(), cookie.Value)
 	if err != nil {
 		t.Fatalf("session should be valid: %v", err)
 	}
-	if sess.UserID == "" {
-		t.Fatal("session should have a user ID")
+	if sess.UserID != existing.GetID() {
+		t.Fatalf("session UserID = %q; want the pre-existing %q (auto-link)",
+			sess.UserID, existing.GetID())
 	}
 }
 
@@ -409,7 +444,7 @@ func TestOAuth2Plugin_Callback_MissingCode(t *testing.T) {
 	p.Init(mgr)
 
 	// Generate a valid state manually
-	state, _ := p.generateState("mock")
+	state, _ := p.generateState("mock", "")
 
 	r := router.New()
 	p.RegisterRoutes(r, "/auth")
@@ -789,7 +824,7 @@ func runCallback(t *testing.T, mgr *AuthManager, r *router.Router, providerName 
 	t.Helper()
 	plugin, _ := mgr.Plugin("oauth2")
 	op := plugin.(*OAuth2Plugin)
-	state, err := op.generateState(providerName)
+	state, err := op.generateState(providerName, "")
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
@@ -859,8 +894,13 @@ func TestOAuth_RefusesEmailCollisionWithExistingAccount(t *testing.T) {
 		SessionTTL: time.Hour, SessionCookie: "session_id", UserStore: store,
 	})
 	prov := &stubOAuthProvider{
-		name:     "stub",
-		userInfo: &OAuth2UserInfo{ID: "attacker-id", Email: "victim@example.com", Provider: "stub"},
+		name: "stub",
+		userInfo: &OAuth2UserInfo{
+			ID:            "attacker-id",
+			Email:         "victim@example.com",
+			Provider:      "stub",
+			EmailVerified: true,
+		},
 	}
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"stub": prov},

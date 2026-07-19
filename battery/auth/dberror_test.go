@@ -32,6 +32,14 @@ func (s *flakyUserStore) CreateUser(_ context.Context, email, _ string, _ []stri
 	// (set cookie, redirect). The TEST asserts createCalled stayed false.
 	return &BasicUser{ID: "auto-created", Email: email, Roles: []string{"user"}}, nil
 }
+func (s *flakyUserStore) FindByOAuth(_ context.Context, _, _ string) (User, error) {
+	// Mirror FindByEmail's failure mode so resolveOAuthUser's linker lookup
+	// also fails loudly — never conflated with "not found".
+	return nil, s.err
+}
+func (s *flakyUserStore) LinkOAuth(_ context.Context, _, _, _ string) error {
+	return s.err
+}
 
 // TestMagicLinkVerify_DBErrorDoesNotAutoCreate confirms a transient
 // FindByEmail error does NOT silently auto-create a user. CreateUser
@@ -103,7 +111,7 @@ func TestOAuth2Callback_DBErrorDoesNotAutoCreate(t *testing.T) {
 	mgr.RegisterRoutes(r)
 
 	// Generate a state via the plugin to get past CSRF check.
-	state, err := plugin.generateState("stub")
+	state, err := plugin.generateState("stub", "")
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}

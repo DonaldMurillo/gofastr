@@ -35,6 +35,14 @@ type OIDCClaimsMapping struct {
 	EmailClaim  string
 	NameClaim   string
 	AvatarClaim string
+	// EmailVerifiedClaim names the boolean claim that asserts the email
+	// has been verified by the IdP. Defaults to "email_verified" per
+	// OIDC Core §5.1. Some IdPs emit the value as the string "true"
+	// rather than a JSON bool; both shapes are accepted (the string is
+	// matched case-insensitively). When the claim is absent or unparseable,
+	// EmailVerified is set to false — an unverifiable email must never
+	// bind to an existing local account.
+	EmailVerifiedClaim string
 }
 
 // OIDCConfig configures an OIDCProvider.
@@ -368,11 +376,12 @@ func (p *OIDCProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2
 		return nil, errors.New("oidc: userinfo missing subject")
 	}
 	return &OAuth2UserInfo{
-		ID:        id,
-		Email:     claimString(ui, p.cfg.Claims.EmailClaim),
-		Name:      claimString(ui, p.cfg.Claims.NameClaim),
-		AvatarURL: claimString(ui, p.cfg.Claims.AvatarClaim),
-		Provider:  p.name,
+		ID:            id,
+		Email:         claimString(ui, p.cfg.Claims.EmailClaim),
+		Name:          claimString(ui, p.cfg.Claims.NameClaim),
+		AvatarURL:     claimString(ui, p.cfg.Claims.AvatarClaim),
+		Provider:      p.name,
+		EmailVerified: parseEmailVerified(ui, p.cfg.Claims.EmailVerifiedClaim),
 	}, nil
 }
 
@@ -381,7 +390,12 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 	email := claimString(claims, p.cfg.Claims.EmailClaim)
 	name := claimString(claims, p.cfg.Claims.NameClaim)
 	avatar := claimString(claims, p.cfg.Claims.AvatarClaim)
-	if email == "" {
+	emailVerified, verifiedPresent := parseEmailVerifiedClaim(claims, p.cfg.Claims.EmailVerifiedClaim)
+	// Fetch userinfo when the id_token is missing the email OR the
+	// email_verified claim. Either gap can block a legitimate verified-email
+	// migration (a passwordless account that should auto-link), and the IdP
+	// often surfaces the missing claim at the userinfo endpoint.
+	if email == "" || !verifiedPresent {
 		if d, err := p.ensureDiscovery(ctx); err == nil && d.UserinfoEndpoint != "" {
 			if ui, err := p.fetchUserinfo(ctx, token, d.UserinfoEndpoint); err == nil {
 				tokenSub := claimString(claims, "sub")
@@ -400,6 +414,12 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 				if avatar == "" {
 					avatar = claimString(ui, p.cfg.Claims.AvatarClaim)
 				}
+				// A signature-bound id_token email_verified ALWAYS wins — never
+				// overwrite a signed `false` with an unsigned userinfo `true`.
+				// Consult userinfo only when the id_token did NOT carry the claim.
+				if !verifiedPresent {
+					emailVerified, _ = parseEmailVerifiedClaim(ui, p.cfg.Claims.EmailVerifiedClaim)
+				}
 			}
 		}
 	}
@@ -407,12 +427,50 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 		return nil, errors.New("oidc: id_token missing subject claim")
 	}
 	return &OAuth2UserInfo{
-		ID:        id,
-		Email:     email,
-		Name:      name,
-		AvatarURL: avatar,
-		Provider:  p.name,
+		ID:            id,
+		Email:         email,
+		Name:          name,
+		AvatarURL:     avatar,
+		Provider:      p.name,
+		EmailVerified: emailVerified,
 	}, nil
+}
+
+// parseEmailVerified reads the configured EmailVerifiedClaim from a claim
+// map. Accepts a JSON bool, or the strings "true"/"false" (some IdPs emit
+// the value as a string). Anything else — including the claim's absence —
+// resolves to false. An unverifiable email must never bind to an account.
+// parseEmailVerifiedClaim reads the configured email_verified claim, returning
+// its boolean value AND whether the claim was PRESENT at all. Presence drives
+// the OIDC userinfo fallback: a signature-bound id_token claim (even an
+// explicit `false`) must never be overwritten by an unsigned userinfo `true`,
+// so callers consult userinfo only when the id_token did not carry the claim.
+func parseEmailVerifiedClaim(claims map[string]interface{}, claimName string) (value, present bool) {
+	if len(claims) == 0 {
+		return false, false
+	}
+	if claimName == "" {
+		claimName = "email_verified"
+	}
+	raw, ok := claims[claimName]
+	if !ok {
+		return false, false
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v, true
+	case string:
+		return strings.EqualFold(v, "true"), true
+	}
+	// Present but an unrecognized type — treat as present + false: an
+	// unparseable verification claim must never read as verified, and the
+	// signed token having carried *something* means we do not re-fetch.
+	return false, true
+}
+
+func parseEmailVerified(claims map[string]interface{}, claimName string) bool {
+	v, _ := parseEmailVerifiedClaim(claims, claimName)
+	return v
 }
 
 func (p *OIDCProvider) fetchUserinfo(ctx context.Context, token, endpoint string) (map[string]interface{}, error) {

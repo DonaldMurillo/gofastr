@@ -263,7 +263,15 @@ func TestLogin_PersistsRefreshToken(t *testing.T) {
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	seedUser(t, userStore, "bob@example.com", "pw-existing")
+	// Pre-seed bob AND pre-link the (provider, id) the mock will return.
+	// The callback resolves via the link (a re-login), and the test then
+	// verifies the refresh token was persisted for that user. Without the
+	// pre-link, the new linking contract refuses the callback (bob has a
+	// password; an unverified email match must not bind).
+	bob := seedUser(t, userStore, "bob@example.com", "pw-existing")
+	if err := userStore.LinkOAuth(context.Background(), bob.GetID(), "mock", "ext-1"); err != nil {
+		t.Fatalf("LinkOAuth: %v", err)
+	}
 
 	r := mountOAuth2Routes(mgr)
 	// Redirect to mint a valid state.
