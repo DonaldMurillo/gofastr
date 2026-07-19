@@ -245,7 +245,7 @@ func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
 	// the catalog request is in flight, and the user clicks during
 	// the wait. If the click delegator is gated on the catalog .then,
 	// the click hits no listener and dies.
-	app := setupServer()
+	app := newTestApp(t)
 	stall := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/__gofastr/widgets" {
 			time.Sleep(800 * time.Millisecond)
@@ -288,7 +288,7 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
 	}
-	app := setupServer()
+	app := newTestApp(t)
 	srv500 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/__gofastr/runtime/toasts.js" {
 			// Force toasts.js to 500 — simulates a deploy mid-flight.

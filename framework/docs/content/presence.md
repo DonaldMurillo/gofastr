@@ -229,6 +229,7 @@ before; non-sticky deployments now aggregate correctly too.
 
 ## See also
 
+- [Live dashboards](live-dashboards.md) reuses `PresenceSessions(topic)` as the delivery-target list for a dashboard's SSE island push.
 - [UI capability map](ui-capability-map.md) places collaborative awareness in the wider state and delivery model.
 - [Events and SSE](events.md) defines the shared best-effort push lane.
 - [Horizontal scaling](scaling.md) covers fanout and affinity implications.

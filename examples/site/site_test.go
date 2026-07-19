@@ -10,6 +10,7 @@ package main
 // honest component labels, the 404 path echo, and the code-block changes.
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -17,13 +18,30 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 )
+
+// newTestApp boots the site via setupServer and wires app.Shutdown
+// into t.Cleanup. setupServer starts background goroutines (notably
+// the live-dashboard metric ticker, which runs every 700ms and only
+// stops when app.Shutdown fires the OnStop hooks). Without this
+// cleanup every helper invocation leaks a live ticker goroutine that
+// keeps mutating the shared demo state across tests. main() drives
+// the same lifecycle via Start + signal-handler Shutdown.
+func newTestApp(t *testing.T) *framework.App {
+	t.Helper()
+	app := setupServer()
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+	return app
+}
 
 // serve runs one request through the site's router and returns the recorder.
 func serve(t *testing.T, method, target string) *httptest.ResponseRecorder {
 	t.Helper()
-	app := setupServer()
+	app := newTestApp(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, target, nil)
 	req.Host = "localhost:8083" // loopback origin → dev session cookie
@@ -63,7 +81,7 @@ func TestSessionCookieIsBrowserUsableOverLocalhost(t *testing.T) {
 	g := httptest.NewRecorder()
 	greq := httptest.NewRequest(http.MethodGet, "/__gofastr/widgets?page=/", nil)
 	greq.Host = "localhost:8083"
-	setupServer().Router().ServeHTTP(g, greq)
+	newTestApp(t).Router().ServeHTTP(g, greq)
 	if g.Code != http.StatusUnauthorized {
 		t.Fatalf("widgets without cookie: got %d, want 401", g.Code)
 	}
