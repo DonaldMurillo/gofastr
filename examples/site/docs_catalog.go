@@ -98,6 +98,7 @@ var docIntents = []docIntent{
 		Path: []string{"UI capability map", "Getting started (UI)", "Composition recipes"},
 		Docs: []docEntry{
 			{"ui-capability-map", "UI capability map", "Live dashboards, optimistic boards, master/detail, reactive state, static export, and SPA integration — mapped to proof and delivery semantics."},
+			{"live-dashboards", "Live dashboards", "Compose SSE island push, store.Computed, a bounded feed, and the connection-health banner — and the boundaries that decide when each is the right shape."},
 			{"ui-getting-started", "Getting started (UI)", "The path: scaffold → theme → screen → custom component."},
 			{"ui-composition-recipes", "Composition recipes", "Choose a page shape before composing framework-owned primitives."},
 			{"ui-wiring", "Wiring UI into an app", "framework.App + core-ui app + uihost, end to end in one annotated main.go."},

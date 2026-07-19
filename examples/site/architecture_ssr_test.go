@@ -20,7 +20,7 @@ import (
 // — exactly the binary served at :8083. Returns the base URL.
 func archStartServer(t *testing.T) string {
 	t.Helper()
-	fwApp := setupServer()
+	fwApp := newTestApp(t)
 	srv := httptest.NewServer(fwApp.Router())
 	t.Cleanup(srv.Close)
 	return srv.URL

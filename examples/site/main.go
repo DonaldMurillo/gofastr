@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -196,6 +197,11 @@ func setupServer() *framework.App {
 				MCPEndpoint: "/mcp",
 			},
 		}),
+		// Live-dashboard demo: ship the computed-slice reducer as an
+		// external script (CSP-safe — no inline JS). Must load AFTER
+		// runtime.js, which is the WithExtraScripts order. The reducer
+		// mirrors dashStatusLabel in screen_livedash.go.
+		uihost.WithExtraScripts("/__site/livedash-reducers.js"),
 	)
 
 	// ── Presence demo wiring (additive) ────────────────────────────
@@ -500,6 +506,93 @@ func setupServer() *framework.App {
 	// battery/print demo documents under /print/*.
 	registerPrintDemos(fwApp)
 
+	// ── Live-dashboard demo wiring (additive) ───────────────────
+	// /examples/live-dashboard?presence=live-dashboard-demo — a queue
+	// ops dashboard fed by SSE island push. The demo state lives in
+	// the package-level liveDash value (screen_livedash.go); this block
+	// starts the ticker that advances it, registers the four island
+	// regions for reconnect/refresh, and serves the reducer JS that
+	// backs the store.Computed status pill.
+
+	// Reducer JS for dash.status (the store.Computed pill). External
+	// script via WithExtraScripts — CSP-clean, loaded AFTER runtime.js
+	// so window.__gofastr._reducers isn't clobbered on boot. The body
+	// mirrors dashStatusLabel in screen_livedash.go — keep them in
+	// sync or the SSR label flashes on hydration.
+	fwApp.Router().Get("/__site/livedash-reducers.js", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		fmt.Fprint(w, `(function(){
+  var G = window.__gofastr = window.__gofastr || {};
+  G._reducers = G._reducers || {};
+  // Mirrors dashStatusLabel(open, ackd) in screen_livedash.go.
+  G._reducers['dash.status'] = function(deps) {
+    var open = (deps['dash.incidentsOpen'] - 0) || 0;
+    if (open <= 0) return 'All systems operational';
+    if (open <= 2) return 'Degraded \u2014 ' + open + ' open';
+    return 'Major incident \u2014 ' + open + ' open';
+  };
+})();
+`)
+	}))
+
+	// Health endpoint for the NetworkRetryBanner's Retry button. The
+	// runtime probes it on click AND on a gofastr:sse-status reconnect.
+	// 204 = healthy; anything else keeps the banner up.
+	fwApp.Router().Get("/__site/livedash/health", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// Reconnect/refresh endpoint. SSE is lossy — a dropped frame is
+	// gone. This endpoint returns the CURRENT rendered island HTML so
+	// an app can reconcile after the SSE stream reconnects. The runtime
+	// does NOT call this automatically; the doc shows the one-line
+	// listener an app adds on gofastr:sse-status.
+	fwApp.Router().Get("/__site/livedash/refresh", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		islandID := r.URL.Query().Get("island")
+		snap := liveDash.snapshot()
+		var body string
+		switch islandID {
+		case "stats":
+			body = string(renderDashStats(snap))
+		case "feed":
+			body = string(renderDashFeed(snap))
+		case "jobs":
+			body = string(renderDashJobs(snap))
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, body)
+	}))
+
+	// Ticker goroutine: advance the demo state and push fresh island
+	// HTML to every session on liveDashTopic. The push targets are
+	// presence sessions — only viewers who joined the topic receive
+	// updates. To isolate tenants, push per-tenant topics with per-tenant
+	// state (a fixed topic broadcasts identical HTML to all viewers; see
+	// docs/live-dashboards "Tenant isolation").
+	liveDashCtx, stopLiveDash := context.WithCancel(context.Background())
+	go func() {
+		ticker := time.NewTicker(700 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-liveDashCtx.Done():
+				return
+			case <-ticker.C:
+				liveDash.tick()
+				liveDash.pushAll(host.Islands)
+			}
+		}
+	}()
+	// Stop the ticker on shutdown so RunWithSignals / SIGTERM drains
+	// cleanly — no orphaned goroutine pushing into a closed manager.
+	fwApp.OnStop(func() error {
+		stopLiveDash()
+		return nil
+	})
+
 	return fwApp
 }
 
@@ -515,6 +608,7 @@ var paletteCatalog = []paletteRoute{
 	{"Entity declarations — modeling the domain", "/docs/entity-declarations"},
 	{"Examples — six reference apps", "/examples"},
 	{"Workspace — master-detail pane-host example", "/examples/workspace"},
+	{"Live dashboard — SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
 	{"Live presence — viewer roster demo", "/examples/presence?presence=presence-demo"},
 	{"Kiln — agent build mode (experimental)", "/kiln"},
 	{"Philosophy — the convictions essay", "/philosophy"},
@@ -604,6 +698,11 @@ func registerScreens(site *app.App) {
 	// The ?presence= param is threaded into the SSE <meta> tag by
 	// handlePage so the connection joins the topic.
 	site.Register("/examples/presence", &PresenceScreen{}, nil)
+	// ── Live-dashboard demo (additive) ──────────────────────────
+	// /examples/live-dashboard?presence=live-dashboard-demo — an ops
+	// dashboard fed by SSE island push. The ticker that advances the
+	// demo state is wired in setupServer; see screen_livedash.go.
+	site.Register("/examples/live-dashboard", &LiveDashboardScreen{}, nil)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
 	// SEO demo pages (per-concern interfaces + the ScreenSEO bundle).
