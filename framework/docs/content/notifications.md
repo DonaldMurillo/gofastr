@@ -1,9 +1,10 @@
 # Unified notifications
 
-`battery/notify` is a small fan-out primitive: each notification has
-a type ("order.shipped", "password.reset"), a Recipient, and a free-
-form Data map. The Notifier renders a per-channel template against
-Data and fires every applicable channel concurrently.
+`battery/notify` sends one notification through several channels at
+once: each notification has a type ("order.shipped", "password.reset"),
+a Recipient, and a free-form Data map. The Notifier renders a
+per-channel template against Data and fires every applicable channel
+concurrently.
 
 It's deliberately small. Each channel is its own adapter; the
 package bundles `LoggerChannel` (dev) and `EmailChannel` (wrapping

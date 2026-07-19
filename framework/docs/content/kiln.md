@@ -1,8 +1,9 @@
 # Kiln — agent-driven build mode
 
 > **Experimental.** Kiln is a separate binary for shaping a GoFastr app live.
-> Its durable graduation artifact is the same `gofastr.yml` blueprint consumed
-> by the current generator; generated Go remains the source of truth.
+> When you graduate, it writes the same `gofastr.yml` blueprint the generator
+> already reads — a scaffolder, not the thing you ship. The generated Go code
+> is what you keep; it's the source of truth, not the blueprint.
 
 Kiln gives an agent a small, journaled application IR. Each accepted edit is
 replayed into a fresh framework app, SQLite is migrated, and the browser sees
@@ -43,7 +44,7 @@ empty-state host and use the floating panel. Important endpoints are:
 | `POST/GET /mcp/app` | Rebuilt app's entity MCP tools. |
 | `GET /.kiln/events` | Journal/build SSE stream. |
 
-`kiln mcp` and `kiln acp` expose the same tool surface over stdio. Pass
+`kiln mcp` and `kiln acp` expose the same tools over stdio. Pass
 `--no-http` when a parent process owns the UI.
 
 ## Agent adapters
@@ -54,10 +55,10 @@ an agent. A free-form command is parsed as an executable plus arguments and
 receives the prompt as its final argument.
 
 Kiln injects `KILN_URL`, installs the current embedded skill, and enforces an
-HTTP boundary for built-in adapters: they must mutate the app through the tool
-surface, not by editing the repository.
+HTTP boundary for built-in adapters: they must mutate the app by calling
+Kiln's tools, not by editing the repository.
 
-## Tool surface
+## Tools
 
 Read and configuration:
 
@@ -123,8 +124,8 @@ Prefer design-system kinds:
 
 Semantic leaf kinds such as `heading`, `paragraph`, `text`, `link`, `form`,
 `input`, `button`, `list`, and table elements remain available. `class`,
-`style`, and `on*` props are rejected: pages compose the shared design system
-instead of inventing a second styling surface. Form actions that target CRUD
+`style`, and `on*` props are rejected: pages use the shared design system
+instead of a second way to style things. Form actions that target CRUD
 must use the API prefix, for example `/api/notes`.
 
 Example:
@@ -154,7 +155,7 @@ Example:
 ```
 
 `add_page` assigns stable node `_id` values and version `1`.
-`update_page_element` performs optimistic, surgical tree edits using those IDs
+`update_page_element` performs optimistic edits to that tree using those IDs
 and an optional `if_match` version.
 
 ## Graduate to owned Go
@@ -190,11 +191,11 @@ succeeded is guaranteed to re-parse into the same values.
 
 ## Security boundary
 
-Kiln's mutation surface is intentionally unauthenticated and local-development
+Kiln's HTTP endpoints are intentionally unauthenticated and local-development
 only. The default loopback bind is the primary boundary. Unsafe cross-origin
 browser requests are rejected; non-browser clients without an `Origin` header
 and same-origin requests are allowed. Binding `--addr 0.0.0.0:8765` is an
-explicit decision to expose the tool surface and should only be done behind an
+explicit decision to expose those endpoints and should only be done behind an
 appropriate network/auth boundary.
 
 ## Verification

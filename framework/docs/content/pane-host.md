@@ -6,7 +6,7 @@
 open, focus restore on close, and a responsive collapse). It does NOT
 own content loading.
 
-Use it for master/detail surfaces, inspector panels, a list + a live
+Use it for master/detail views, inspector panels, a list + a live
 preview — anywhere a primary region stays put while a side region opens
 and closes around it.
 

@@ -1,9 +1,9 @@
 # Batch endpoints
 
-Every entity with `CRUD` enabled exposes three transactional batch
-endpoints under the `_batch` suffix. All items in a single request
-share one database transaction: the first per-item failure rolls back
-the entire transaction.
+Any entity with `CRUD` enabled gets three transactional batch
+endpoints under the `_batch` suffix. All items in one request run in
+a single database transaction: the first per-item failure rolls back
+the whole transaction.
 
 ## Routes
 
@@ -31,21 +31,22 @@ the entire transaction.
 - The first per-item failure populates `error` (and optionally
   `fields` for validation failures) on that index. Later indices are
   marked `"skipped": true`.
-- Earlier successes still have their `data` recorded for diagnostic
-  purposes, but `committed: false` means nothing was persisted.
+- Earlier successes still show their `data` so you can see what
+  would have happened, but `committed: false` means none of it was
+  saved.
 
 ## Limits
 
-- `MaxBatchSize = 100` items per request. Exceeding it returns
+- `MaxBatchSize = 100` items per request. Go over that and you get
   `400 Bad Request` before any item runs.
-- `items` (or `ids`) cannot be empty.
+- `items` (or `ids`) can't be empty.
 
 ## Behaviour & guarantees
 
 - **Atomic.** One transaction; one commit or one rollback.
 - **Hooks run inside the transaction.** `BeforeCreate`, `AfterUpdate`,
   etc. fire per item. A hook error rolls back the whole batch.
-- **Events fire only on commit.** `entity.created` etc. emit after a
+- **Events fire only on commit.** `entity.created` etc. fire after a
   successful commit, in input order, one per item — never on rollback.
 - **No partial success.** If you need "skip failures and keep the
   rest", make `MaxBatchSize` individual calls instead.
@@ -75,11 +76,11 @@ curl -X DELETE http://localhost:8080/posts/_batch \
 
 ## Common mistakes
 
-- **Treating a non-committed response as a 200.** It returns 400.
-  Inspect `committed` before trusting `results[*].data`.
+- **Treating a non-committed response as a 200.** It's a 400. Check
+  `committed` before you trust `results[*].data`.
 - **Counting on event ordering across batches.** Within a batch,
-  events fire in input order. Across overlapping batches, ordering is
-  determined by transaction commit order — not predictable.
-- **Sending more than 100 items.** Split client-side.
+  events fire in input order. Across overlapping batches, order
+  depends on transaction commit order — don't count on it.
+- **Sending more than 100 items.** Split it client-side.
 - **Mixing batch and per-item requests in a saga.** Mixing makes
   rollback semantics ambiguous. Pick one.

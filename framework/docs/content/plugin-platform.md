@@ -105,8 +105,9 @@ the generic broker owns everything protocol-level.
 ## Opting out — the trusted mount
 
 Isolation is the default; a **loud, host-side opt-out** exists for
-plugins the app owner compiles in and vouches for (first-party code
-where the geometry/theming costs of the frame aren't worth paying).
+plugins the app owner compiles in and vouches for (code the team wrote
+itself, where the geometry/theming costs of the frame aren't worth
+paying).
 The wysiwyg plugin's `WithTrustedMount()` is the reference: same plugin
 API and protocol envelopes, transport swapped from postMessage to
 direct calls, no iframe. The opt-out is never a default and never

@@ -167,12 +167,15 @@ func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 	}
 }
 
-func TestHomeExampleCardsDeepLink(t *testing.T) {
+func TestHomeLinksToExamples(t *testing.T) {
 	html := body(t, "/")
-	for _, slug := range []string{"blog", "site", "api-tour"} {
-		if !strings.Contains(html, `href="/examples#`+slug+`"`) {
-			t.Errorf("home example card should deep-link to /examples#%s", slug)
-		}
+	// The explore grid links to the examples hub; the "Built with GoFastr"
+	// section deep-links the flagship.
+	if !strings.Contains(html, `href="/examples"`) {
+		t.Error("home should link to the examples hub at /examples")
+	}
+	if !strings.Contains(html, `href="/examples#meridian"`) {
+		t.Error("home 'Built with GoFastr' section should deep-link the flagship at /examples#meridian")
 	}
 }
 

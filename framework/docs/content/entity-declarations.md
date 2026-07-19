@@ -280,7 +280,8 @@ entities:
 
 `gofastr generate` prints a warning at the end of every run listing every
 entity left publicly readable/writable (i.e. every `public: true`
-declaration), so the open surface of a generated app is never silent.
+declaration), so a generated app's public entities are never a silent
+surprise.
 
 `gofastr dev`'s auto-registered entity MCP tools (and any `mcp: true`
 entity in production) dispatch through the same router + middleware chain
@@ -442,7 +443,7 @@ policy says yes.
 
 **Read-only.** `CrossOwnerRead` never touches Create/Update/Delete —
 those stay owner-scoped. A staff member can *see* every ticket but
-cannot PUT/PATCH/DELETE another user's row through the auto-CRUD surface.
+cannot PUT/PATCH/DELETE another user's row through auto-CRUD.
 Cross-user writes still return 404. Multi-tenant isolation is also
 preserved: a granted context in tenant A never sees tenant B rows.
 
@@ -675,8 +676,8 @@ This scaffolds the owned entity package into `entities/` at the module root:
   constants, typed repository, lifecycle subscriptions, and its own
   `app.Entity(...)` registration that self-registers via `init()`. A new
   entity is a new file; existing files are never rewritten.
-- `client/client.go` with a standalone Go HTTP client covering the full
-  CRUD surface per entity: list/get/create/update/patch/delete, the
+- `client/client.go` with a standalone Go HTTP client covering every
+  CRUD operation per entity: list/get/create/update/patch/delete, the
   atomic `_batch` endpoints (`BatchCreate<Entity>` /
   `BatchUpdate<Entity>` / `BatchDelete<Entity>`, returning the
   `{committed, results[]}` envelope even on rollback), and the live

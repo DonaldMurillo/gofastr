@@ -1,7 +1,7 @@
 # Server logs (`battery/log`)
 
 The `battery/log` plugin wires structured JSON-line server logs into the
-app. A single `*slog.Logger` fans out to one or more **sinks**; built-in
+app. A single `*slog.Logger` writes to one or more **sinks**; built-in
 sinks cover three destinations:
 
 1. A **default file** under the OS state dir (`$XDG_STATE_HOME/<app>/server.log`).
@@ -79,7 +79,7 @@ etc.) can call these to inspect the running app live:
 | `log_metrics`   | Current counter snapshot — same data as `Plugin.Metrics()`.                                          |
 | `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterwards).     |
 
-Opt-in because the surface reveals a lot about the running app —
+Opt-in because these tools reveal a lot about the running app —
 weigh the disclosure before enabling on a production MCP server
 exposed to untrusted callers.
 
@@ -97,8 +97,8 @@ app.RegisterPlugin(log.New(log.Config{
 }))
 ```
 
-Pair with `framework.WithMCPIntrospection()` for parallel introspection
-of the app's routes / plugins / batteries / config / readiness — see
+Pair with `framework.WithMCPIntrospection()` so an agent can also ask
+the app about its routes / plugins / batteries / config / readiness — see
 `framework/mcp_introspection.go`.
 
 ## Metrics

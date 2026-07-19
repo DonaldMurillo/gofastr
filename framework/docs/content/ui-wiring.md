@@ -5,7 +5,7 @@ case: you have a plain `framework.App` (entities, CRUD, batteries) and
 want to add server-rendered screens to it by hand — or you're reading a
 generated `main.go` and want to know what each line is for.
 
-Three objects, one bridge:
+This doc covers three objects and the bridge between them:
 
 | Object | Package | Owns |
 |---|---|---|

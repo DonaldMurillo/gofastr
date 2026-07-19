@@ -23,8 +23,8 @@ gofastr upgrade --to vX.Y.Z    # plan against a specific release
 gofastr upgrade --apply        # also run go get / tidy / build / test
 ```
 
-The plan lists each in-between release's notes (BREAKING entries
-first-class), and where a change has a known code signature, the report
+The plan lists each in-between release's notes (BREAKING entries called
+out clearly), and where a change has a known code signature, the report
 points at the affected `file:line` in *your* project — the same guided
 style as `gofastr audit a11y`. `--apply` then runs the mechanical
 steps and stops at the first failure so you fix with the notes in hand.

@@ -43,7 +43,7 @@ engine itself knows about *clients*, never about transports.
   decisions is acknowledged and accepted.
 - **No bundled language-model SDK.** Raw HTTP per provider.
 - **No vendor-specific instruction format as primary.** AGENTS.md
-  and SKILL.md are the canonical surfaces; CLAUDE.md, .cursorrules,
+  and SKILL.md are canonical; CLAUDE.md, .cursorrules,
   GEMINI.md, .windsurfrules, .github/copilot-instructions.md are
   read if present and appended, never the source of truth.
 - **No "MVP-shaped" cut corners that would block a later
@@ -54,21 +54,21 @@ engine itself knows about *clients*, never about transports.
   dogfooded web client. The harness lives in the GoFastr monorepo
   and ships at the same SHA as the framework. Framework changes
   that break the web client are fixed in the same PR; the harness
-  is a first-class consumer of `framework/`, not a downstream pin.
+  is a direct consumer of `framework/`, not a downstream pin.
 
 ---
 
 ## Hard rules
 
 1. **The agent loop contains orchestration only.** No provider-specific
-   code, no surface-specific code, no profile-specific code, no skill
+   code, no transport-specific code, no profile-specific code, no skill
    business logic. If a behavior can be expressed as middleware, an
    event subscriber, or a plugin registration, it lives outside the
    loop. No exceptions.
 2. **No third-party imports.** Stdlib and `golang.org/x/*` only. The
    single import boundary is enforced by `go.mod` review and by the
    `harness/internal/depscheck` build tag.
-3. **AGENTS.md is the primary project-instruction surface.** Vendor
+3. **AGENTS.md is the primary source of project instructions.** Vendor
    files are additive fallbacks read by separate `ContextSource`
    implementations.
 4. **SKILL.md is the primary skill format.** Three-tier progressive
@@ -634,7 +634,7 @@ Typed pub/sub. Every interesting state change emits an event:
 | `MCPServerDown` | an MCP server gave up after exhausting restart budget; its tools entered degraded state. |
 | `SessionEnded` | engine shutdown reason (`idle`, `user`, `error`, `binary-shutdown`). |
 
-Surfaces, hooks, plugins, and the cost dashboard all subscribe.
+Clients, hooks, plugins, and the cost dashboard all subscribe.
 
 ### 4. Pluggable backends
 
@@ -742,8 +742,8 @@ path (Copilot 401 → OpenRouter with same model name) is pre-wired.
 ### Internal canonical message shape
 
 The engine works in an Anthropic-shape canonical form (it's the most
-expressive: tool_use/tool_result are first-class, content blocks are
-typed). Each provider adapter translates outbound and inbound. **Two
+expressive: tool_use/tool_result are modeled as full content blocks,
+and every content block is typed). Each provider adapter translates outbound and inbound. **Two
 honest limits on this canonicalization:**
 
 - **Thinking / reasoning blocks are provider-bound.** Anthropic
@@ -929,7 +929,7 @@ same scenarios (send / cancel / permission / disconnect / reconnect /
 multi-attach) against every transport so cross-transport drift gets
 caught early.
 
-### REST surface
+### REST API
 
 A handful of resources, JSON bodies, idempotent where possible:
 
@@ -959,7 +959,7 @@ GET    /v1/auth/token                        Issue capability token (when runnin
 mode (`?wait=turn`) or the streaming default (returns 202; events
 flow via SSE).
 
-### WebSocket surface
+### WebSocket API
 
 A single endpoint:
 
@@ -976,7 +976,7 @@ Bidirectional. Frames are tagged JSON:
 
 Reconnect resumes from a `lastEventId` query param.
 
-### MCP-server surface
+### MCP server API
 
 The harness exposes its own engine as an MCP server so any
 MCP-capable client (Claude Code, Codex, Cursor, custom agents, the
@@ -1052,16 +1052,16 @@ with a `skill: <name>` directive to run the skill inside the harness.
 
 #### Why this matters
 
-The interesting capability isn't "another way to attach a UI." It's
-**agent-driving-agent**: an outer agent (e.g. Claude Code in a
-different repo) can invoke `harness.run_agent_with_shell_access` and
-treat a whole harness session as a single capability. Composes
-naturally with sub-agents, parallel runs, CI orchestration, and the
-self-improvement loop (a harness in `--framework` mode driving
-another harness in default mode to test framework changes against a
-sample app). The honest tool name and identity-class enforcement are
-what make this capability transparent rather than a confused-deputy
-hazard.
+This is more than another way to attach a UI: it lets one agent
+drive another agent's harness session (**agent-driving-agent**). An
+outer agent (e.g. Claude Code in a different repo) can call
+`harness.run_agent_with_shell_access` and treat a whole harness
+session as a single tool call. That works for sub-agents, parallel
+runs, CI orchestration, and testing framework changes end-to-end (a
+harness in `--framework` mode driving another harness in default
+mode against a sample app). The tool's honest name and the
+identity-class enforcement are what keep this transparent instead of
+turning into a confused-deputy hazard.
 
 #### Observability of agent-driven sessions
 
@@ -1214,7 +1214,7 @@ was chosen (so the requester knows where to look):
 The requester must POST the code back within 60 s to receive the
 token. This blocks the simplest "any process running as the user
 mints tokens" attack — the attacker needs concurrent visibility of
-one of the user's trusted surfaces.
+one of the user's trusted clients.
 
 For headless/CI use, a pre-provisioned token file
 (`~/.config/gofastr/harness/ci-token.json`) is read at boot; the
@@ -1281,8 +1281,7 @@ session without exposing the rest of the harness.
 
 ## Protocol versioning & evolution
 
-The control protocol is the **long-term API surface** of the
-harness. Every external client (IDE plugin, TS SDK, Python client,
+The control protocol is the harness's **long-term API**. Every external client (IDE plugin, TS SDK, Python client,
 mobile app, agents driving us over MCP) commits to its shape. This
 section is normative — implementers MUST follow it, and the
 `control/conformance/` suite tests against it.
@@ -1360,7 +1359,7 @@ Transport-specific framing:
 
 ### Unknown-field policy
 
-| Surface | Unknown field rule |
+| Where | Unknown field rule |
 |---|---|
 | `Command` body fields | **Ignore unknown** (additive evolution) |
 | `Event` body fields | **Ignore unknown** |
@@ -1581,8 +1580,9 @@ hooks, and SSE plumbing all exercise themselves through the harness.
 
 ### External clients
 
-Anything that can speak HTTP or WebSocket is a first-class client.
-Reference implementations to ship in `docs/harness-clients/`:
+Anything that can speak HTTP or WebSocket can act as a client, no
+different from the bundled ones. Reference implementations to ship
+in `docs/harness-clients/`:
 
 - **curl recipes**: create a session, send input, stream events.
 - **TypeScript client**: thin npm package wrapping `fetch` +
@@ -1708,8 +1708,8 @@ with `«ttl-expired»`. Configurable per-profile.
   copied events are rewritten so the resumed engine can issue new
   tool_use blocks without colliding with the original conversation
   if both branches are later compared.
-- **Replay = step-through.** Drives a surface from the log for
-  debugging UIs. **Does not re-execute** — provider calls are not
+- **Replay = step-through.** Powers a debugging UI by replaying
+  from the log. **Does not re-execute** — provider calls are not
   re-issued. Cache state and live MCP connections are
   non-replayable; replay shows what happened, not "what would
   happen again." Re-execution under different conditions is a
@@ -1751,8 +1751,8 @@ cannot exfiltrate it from the harness's own memory.
 
 Per § Threat model, the default Bash permission preset **blocks**
 `security`, `secret-tool`, `keyctl`, and `kwalletcli` to prevent
-the obvious credential-exfiltration paths via the agent's own tool
-surface.
+the obvious credential-exfiltration paths via the agent's own
+tools.
 
 #### First-run setup — `gofastr harness creds`
 
@@ -2108,8 +2108,8 @@ when it isn't.
   Tried as middleware first; middleware is monomorphic
   (one-request-to-one-provider) and broke on every cross-provider
   concern.
-- **Parallel tool calls** — ToolMiddleware that fans out to N
-  concurrent dispatchers and aggregates. Engine sees one
+- **Parallel tool calls** — ToolMiddleware that dispatches to N
+  concurrent workers and aggregates the results. Engine sees one
   `ToolResult` per `ToolCall` either way.
 - **Cost budgets** — event subscriber on `CostIncremented` plus a
   RequestMiddleware that aborts when the cap is exceeded.
@@ -2135,7 +2135,7 @@ when it isn't.
   that instantiates a **child `EngineRun`** with a cheaper
   `Provider`. **Scoped sync-only in v0.x**: the tool blocks the
   parent turn; child events are not surfaced to parent clients
-  (the child has its own log + attach surface if observation is
+  (the child has its own log and attach point if observation is
   needed). A general parent/child `EngineGraph` model (cancellation
   propagation, event fan-in, multi-session ownership) is a v1+
   topic — calling out the limit now keeps `delegate` honest as a
@@ -2312,7 +2312,7 @@ encryption as the session log.
 | `context/` | https://agents.md/ |
 | `control/` | This doc § Control plane — especially auth, multi-client, Threat model |
 | `control/multiplex/` | This doc § Multi-client semantics |
-| `control/mcpserver/` | MCP spec **plus** this doc § MCP-server surface — note the renamed tool and identity-class rules |
+| `control/mcpserver/` | MCP spec **plus** this doc § MCP server API — note the renamed tool and identity-class rules |
 | `control/auth/` | This doc § Threat model and § Authentication |
 | `client/tui/` | This doc § TUI; `golang.org/x/term` package docs |
 | `client/web/` | `core-ui/ARCHITECTURE.md` (the UI runtime is what the web client dogfoods) |

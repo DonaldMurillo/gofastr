@@ -120,15 +120,17 @@ func (h *HeaderComponent) Render() render.HTML {
 	return ui.SiteHeader(ui.SiteHeaderConfig{
 		Brand: brand,
 		NavItems: []ui.SiteHeaderLink{
-			{Label: "Docs", Href: "/docs/", MatchPrefix: true},
-			{Label: "Get started", Href: "/get-started", MatchPrefix: true},
+			{Label: "Primitives", Href: "/primitives", MatchPrefix: true},
+			{Label: "Framework", Href: "/framework", MatchPrefix: true},
+			{Label: "Agents", Href: "/agents", MatchPrefix: true},
+			{Label: "Interactivity", Href: "/interactivity", MatchPrefix: true},
+			{Label: "Generator", Href: "/generator", MatchPrefix: true},
 			{Label: "Examples", Href: "/examples", MatchPrefix: true},
-			{Label: "Components", Href: "/components/", MatchPrefix: true},
-			{Label: "Kiln", Href: "/kiln", MatchPrefix: true},
 		},
 		MobileExtraLinks: []ui.SiteHeaderLink{
 			{Label: "Home", Href: "/"},
-			{Label: "Philosophy", Href: "/philosophy", MatchPrefix: true},
+			{Label: "Docs (all)", Href: "/docs/", MatchPrefix: true},
+			{Label: "Get started", Href: "/get-started", MatchPrefix: true},
 			{Label: "GitHub ↗", Href: "https://github.com/DonaldMurillo/gofastr", External: true},
 		},
 		Actions:      render.Join(actionChildren...),
@@ -149,7 +151,7 @@ func (f *FooterComponent) Render() render.HTML {
 			html.Span(html.TextConfig{Class: "site-foot-brand__ver"}, render.Text("v"+siteVersion)),
 		),
 		html.Paragraph(html.TextConfig{Class: "site-foot-brand__copy"},
-			render.Text("A Go full-stack framework where agents are first-class authors. Early (v0.x). Built in public."),
+			render.Text("The full-stack Go framework that doesn't get in the way of you or your agents. Early (v0.x). Built in public."),
 		),
 	)
 

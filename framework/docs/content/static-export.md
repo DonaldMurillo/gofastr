@@ -115,8 +115,8 @@ against the serverless host:
 | `data-fui-open` (modals, ⌘K palette) | disabled | widget catalog needs the server |
 | SSE islands | not emitted | the SSE `<meta>` is omitted at render time |
 
-A dismissible "Static preview — run locally" banner (via the single shared
-`framework/ui.Banner` styling surface) is injected so server-backed demos
+A dismissible "Static preview — run locally" banner (using the shared
+`framework/ui.Banner` component) is injected so server-backed demos
 read as intentionally inactive rather than broken. The dismissal persists
 in `localStorage`.
 

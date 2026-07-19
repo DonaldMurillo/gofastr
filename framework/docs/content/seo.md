@@ -1,9 +1,11 @@
 # SEO — meta tags, Open Graph, JSON-LD, sitemap, robots, icons
 
-Every SEO surface a crawler or social preview reads is a typed option or
-a small screen interface — no hand-written `<head>` strings, and every
-emitted value is HTML-escaped with URL fields scheme-checked (http(s)/
-relative only), so user-supplied titles or URLs can't inject markup.
+Everything a crawler or social preview reads — meta tags, Open Graph,
+JSON-LD, sitemap, robots.txt — comes from a typed option or a small
+interface on a screen component, not a hand-written `<head>` string.
+Every emitted value is HTML-escaped, and URL fields are scheme-checked
+(http(s)/relative only), so a user-supplied title or URL can't inject
+markup.
 
 Two declaration levels compose:
 
@@ -35,7 +37,7 @@ host := uihost.New(site,
 | `WithRobotsMeta` | `<meta name="robots">` on every page (e.g. `"noindex"` for staging) |
 | `WithSitemap(SitemapConfig{…})` | the `/sitemap.xml` endpoint (see below) |
 | `WithRobots(RobotsConfig{…})` | the `/robots.txt` endpoint (see below) |
-| `WithAppIcon(source)` | the full icon surface (see below) |
+| `WithAppIcon(source)` | every icon file the app needs (see below) |
 | `WithFavicon(href)` | a single `<link rel="icon">` for a hand-managed file |
 | `WithThemeColor`, `WithPreconnect` | `<meta name="theme-color">`, `<link rel="preconnect">` |
 
@@ -96,7 +98,7 @@ Both endpoints are **also written as files by static export**
 `--export-base` folded into every `<loc>` and the derived `Sitemap:`
 URL. See [Static-site export](/docs/static-export).
 
-## Icons: one source image → the whole surface
+## Icons: one source image → every icon file
 
 `WithAppIcon(source []byte)` takes one image (ideally ≥512px; non-square
 sources are center-cropped) and derives everything at startup:

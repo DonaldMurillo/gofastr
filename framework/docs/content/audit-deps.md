@@ -9,9 +9,9 @@ of every call site, grouped by Go import path, sorted alphabetically.
 A malicious dependency that lands in your `go.mod` can run arbitrary Go
 code at process start. That's the same trust model as importing any Go
 package — `os.Exec`, `net.Dial`, file writes, and route hijacks are all
-available to it. The audit doesn't change that surface; it just makes
-the *most invisible* part of it visible: things that happen before
-`main()` runs.
+available to it. The audit doesn't change that attack surface; it just
+makes the *most invisible* part of it visible: things that happen
+before `main()` runs.
 
 In particular, the audit flags packages that contribute to GoFastr's
 global registries:

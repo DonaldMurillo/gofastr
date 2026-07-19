@@ -1,6 +1,6 @@
 # UI getting started
 
-Take `gofastr init` → a themed, product-specific app composed from framework primitives. This doc is the linear path: do the steps in order; you'll have a working app after every one.
+Running `gofastr init` scaffolds a themed, product-specific app built from framework primitives. This doc walks through the setup steps in order — you'll have a working app after each one.
 
 The module is published — `go mod tidy` resolves it from the Go module proxy. Pin a tagged version (e.g. `v0.4.0`) rather than tracking `main`.
 
@@ -272,8 +272,8 @@ handle above still works and remains the simplest path for a single app.
 
 Open `DESIGN.md` before selecting components. Name the primary user and task,
 the dominant element on each route, the intended density and hierarchy, and
-what mobile keeps, condenses, or moves. Then choose the closest framework-native
-composition:
+what mobile keeps, condenses, or moves. Then choose the closest composition
+built from framework components:
 
 ```bash
 gofastr docs ui-composition-recipes

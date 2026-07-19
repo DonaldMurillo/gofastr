@@ -126,7 +126,7 @@ app.RegisterBattery(admin.New(admin.Config{
 On the `?status=failed` view, each row gets a **Replay** button when the
 wired queue supports it (`DBQueue` does; in-memory / Redis don't yet). The
 replay route mutates state, so it runs behind the same admin gate as every
-other surface and carries a CSRF token — there is no unauthenticated way to
+other route and carries a CSRF token — there is no unauthenticated way to
 re-fire jobs.
 
 When `Queue` is nil, the overview section and Queue navigation item are hidden;
@@ -144,7 +144,7 @@ When `Config.Policy` + `Config.GrantStore` are wired, the admin exposes a
 **role→permission matrix** at `<PathPrefix>/rbac/roles`. When
 `Config.Auth` is wired, it exposes a **user→role assignment** screen at
 `<PathPrefix>/rbac/users`. Both are behind the same admin default-deny gate
-as every other surface.
+as every other route.
 
 ```go
 policy := framework.NewRolePolicy()
@@ -194,7 +194,7 @@ screen is not mounted.
 
 ## Authorization
 
-Every admin surface is gated and **secure by default**: the battery
+Every admin page is gated and requires authentication by default: the battery
 requires an authenticated user that holds the **admin role** (default
 `"admin"`). A user satisfies this when its `GetRoles() []string` includes
 the role — `battery/auth`'s `User` does. Anonymous callers get `401`;

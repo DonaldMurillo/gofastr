@@ -1,18 +1,18 @@
 # Theming
 
-Every visual decision in the framework routes through one typed theme:
+Every visual decision in the framework goes through one typed theme:
 `core-ui/style.Theme`. Components never hardcode colors or spacing —
-they reference CSS custom properties (`var(--color-primary)`,
-`var(--spacing-md)`, …), and the host emits the theme as a `:root`
+they read CSS custom properties (`var(--color-primary)`,
+`var(--spacing-md)`, …), and the host writes the theme as a `:root`
 block at `/__gofastr/app.css`. Change a token value and every
-component, battery screen, and widget that references it updates —
-no component CSS is ever edited to re-skin an app.
+component, battery screen, and widget that reads it updates —
+you never edit a component's CSS to re-skin an app.
 
 ## The token catalog
 
-`style.Theme` is a struct of typed token groups. Every field is
-required (`WithTheme` panics at startup naming any missing token), and
-each group emits CSS variables with a fixed prefix:
+`style.Theme` is a struct made of typed token groups. Every field is
+required — `WithTheme` panics at startup and names any token you left
+out. Each group writes CSS variables with a fixed prefix:
 
 | Theme group | Emits | Examples |
 |---|---|---|
@@ -26,12 +26,12 @@ each group emits CSS variables with a fixed prefix:
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
 | `Typography` | `--text-<name>` | `--text-sm`, `--text-base`, `--text-2xl` |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational — media queries can't read vars) |
-| `Layout` | `--spacing-touch-target` | the WCAG minimum tap target (44px) buttons and inputs size against |
-| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com` — the syntax-highlight palette code blocks read. The one *optional* group: unset slots fall back to the built-in palette. Dark values go in `Theme.DarkCode` (map, like `DarkColors`) |
+| `Layout` | `--spacing-touch-target` | the WCAG minimum tap-target size (44px); buttons and inputs use it for sizing |
+| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com` — the syntax-highlight colors code blocks read. This is the only optional group: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
 
-Token names auto-derive from the Go field path in kebab-case
-(`Colors.PrimaryFg` → `--color-primary-fg`); an explicit `Name` on a
-token overrides that. In component CSS written with
+Token names come from the Go field path, converted to kebab-case
+(`Colors.PrimaryFg` → `--color-primary-fg`). Set an explicit `Name` on
+a token to override that. In component CSS written with
 `style.ComponentSheet` or `ui.VariantCSS`, the `{group.name}` shorthand
 resolves to the variable: `{colors.primary}` → `var(--color-primary)`,
 `{spacing.lg}` → `var(--spacing-lg)`.
@@ -41,40 +41,43 @@ resolves to the variable: `{colors.primary}` → `var(--color-primary)`,
 Three entry points produce a `style.Theme` you pass to
 `site.WithTheme(...)`:
 
-- **`style.DefaultTheme()`** — the fully-populated lower-level light
-  baseline. It intentionally leaves `DarkColors` empty for compatibility.
+- **`style.DefaultTheme()`** — the fully-populated, lower-level light
+  baseline. It leaves `DarkColors` empty on purpose, for compatibility.
 - **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", DarkColors: map[string]string{"primary": "#5EEAD4"}})`**
-  — the framework's canonical adaptive theme used by fresh scaffolds. It
-  includes complete, contrast-safe light and dark palettes plus a flat override
-  struct for the tokens hosts most often swap: the light palette, explicit dark
-  token values, the three font stacks, and the radius scale. Light overrides
-  are deliberately not copied into dark mode because contrast-safe values
-  normally differ. Unset fields keep their defaults.
-- **`gofastr theme init`** — writes `theme/theme.go`, the complete
-  adaptive default as a literal you own and edit. Best for apps that will keep
-  diverging; edit `Colors` and `DarkColors` together.
+  — the adaptive theme fresh scaffolds start with. It ships complete,
+  contrast-safe light and dark palettes, plus a flat override struct for
+  the tokens hosts change most often: the light palette, explicit dark
+  token values, the three font stacks, and the radius scale. Light
+  overrides are not copied into dark mode automatically, because
+  contrast-safe values are usually different for dark. Any field you
+  don't set keeps its default.
+- **`gofastr theme init`** — writes `theme/theme.go`, the full adaptive
+  default as a literal you own and can edit directly. Use this for apps
+  that will keep changing their theme over time; edit `Colors` and
+  `DarkColors` together.
 
-Apps that need tokens beyond the canonical set embed `style.Theme` in
-their own struct and add fields; framework components only read the
-embedded canonical tokens, app components read the extras directly.
+If your app needs tokens beyond the built-in set, embed `style.Theme`
+in your own struct and add fields. Framework components only read the
+embedded built-in tokens; your own components can read the extra
+fields directly.
 
-Verify the result at `/__gofastr/app.css` — your values should appear
+Check the result at `/__gofastr/app.css` — your values should show up
 as `:root` custom properties.
 
 ## Self-hosting web fonts
 
 Setting `Fonts.Body`/`Fonts.Heading` to a custom family only names the
-font — the browser still needs the files, and **CDN font URLs are
-blocked by the default CSP** (`default-src 'self'`; see
-[security](security.md) → "Content-Security-Policy"). A
-`@font-face` pointing at `rsms.me`, Google Fonts, or any other origin
-silently fails and the stack falls through to its fallback. Self-host
-instead:
+font — the browser still needs the actual font files, and **the
+default CSP blocks CDN font URLs** (`default-src 'self'`; see
+[security](security.md) → "Content-Security-Policy"). A `@font-face`
+rule pointing at `rsms.me`, Google Fonts, or any other outside origin
+fails silently, and the browser uses the fallback font instead.
+Self-host the font instead:
 
 1. Put the font files under your static dir:
    `static/fonts/Inter-Variable.woff2` (serve it with
    `uihost.WithStaticDir("static")`).
-2. Register the `@font-face` through the styling surface — site CSS via
+2. Add the `@font-face` rule through site CSS —
    `uihost.WithCustomCSS` / `ReadCustomCSSFile("static/app.css")`:
 
    ```css
@@ -94,47 +97,48 @@ instead:
    t.Fonts.Heading.Value = t.Fonts.Body.Value
    ```
 
-Same-origin URLs pass the default CSP untouched. If you genuinely must
-load a third-party font, you have to override
-`ContentSecurityPolicy` explicitly — see the warning in
+Same-origin URLs pass the default CSP with no changes needed. If you
+really need to load a font from a third party, you have to override
+`ContentSecurityPolicy` yourself — read the warning in
 [security](security.md) before you do.
 
 ## Dark mode — `DarkColors` and `data-color-scheme`
 
-`Theme.DarkColors` is a map of color-token name → dark value
+`Theme.DarkColors` is a map from color-token name to its dark value
 (`"background": "#15141B"`, …). `framework/ui/theme.Default()` and
-`gofastr theme init` supply a complete map; the lower-level
-`style.DefaultTheme()` leaves it empty for compatibility.
+`gofastr theme init` fill in a complete map; the lower-level
+`style.DefaultTheme()` leaves it empty, for compatibility.
 
-When non-empty, the emitted CSS re-declares those tokens under
-`:root[data-color-scheme="dark"]`, plus a `prefers-color-scheme: dark`
-fallback that applies only while the user hasn't forced light. The
-**`data-color-scheme` attribute on `<html>` is the switch** —
-`ui.ThemeToggle` and the color-scheme bootstrap set it (and persist
-the choice), and every surface that emits theme CSS recolors through
-the variable cascade when it flips.
+When the map isn't empty, the generated CSS re-declares those tokens
+under `:root[data-color-scheme="dark"]`, plus a
+`prefers-color-scheme: dark` fallback that only applies while the user
+hasn't forced light mode. The **`data-color-scheme` attribute on
+`<html>` is the actual switch** — `ui.ThemeToggle` and the color-scheme
+bootstrap set it (and remember the choice), and any element reading a
+theme CSS variable picks up the new color the moment it flips.
 
-Two rules follow:
+Follow these rules:
 
 1. **Never gate your own light/dark styling on
-   `prefers-color-scheme`.** A media query can't see the user's
-   in-app toggle, so it disagrees with the attribute the moment the
-   user picks the non-OS scheme. Dark values belong in `DarkColors`
+   `prefers-color-scheme`.** A media query can't see the in-app toggle,
+   so it disagrees with the attribute as soon as the user picks a
+   scheme that doesn't match the OS. Put dark values in `DarkColors`
    (or a `:root[data-color-scheme="dark"]` scoped rule) so the toggle
-   drives everything.
-2. **Reference tokens, not literal colors,** in any CSS you write —
-   a hardcoded hex is invisible to the dark re-declaration and
-   becomes a light-colored island on a dark page.
-3. **Do not render `ui.ThemeToggle` with a light-only custom theme.** Keep the
-   scaffold's adaptive default or provide every semantic dark token first. The
-   toggle also updates the browser's native color-scheme state, so a partial
-   palette can mix dark UA link/control colors with light app surfaces.
+   controls everything.
+2. **Reference tokens, not literal colors,** in any CSS you write. A
+   hardcoded hex value is invisible to the dark re-declaration and
+   turns into a light-colored patch on a dark page.
+3. **Don't render `ui.ThemeToggle` with a light-only custom theme.**
+   Keep the scaffold's adaptive default, or supply every semantic dark
+   token yourself first. The toggle also changes the browser's native
+   color-scheme state, so a partial palette can end up mixing dark
+   browser link/control colors with light app colors.
 
 ## Section-level overrides — `ui.Themed`
 
-To re-skin one subtree (a dark marketing band, a branded callout,
-per-tenant accents) without touching the rest of the page, register an
-override theme and wrap the section:
+To re-skin one part of a page (a dark marketing band, a branded
+callout, per-tenant accents) without touching the rest of the page,
+register an override theme and wrap the section:
 
 ```go
 var Dark = style.RegisterThemeOverride(darkTheme)
@@ -146,83 +150,86 @@ ui.Themed(Dark,
 )
 ```
 
-`Themed` emits a `<div class="fui-theme-<hash>">`; the override's
-token block ships in `app.css` scoped to that class, and every
-descendant component dereferences `var(--color-…)` against it instead
-of `:root`. Registering the same theme twice returns the same handle,
-so the CSS ships once.
+`Themed` wraps the content in a `<div class="fui-theme-<hash>">`. The
+override's token block ships in `app.css` scoped to that class, and
+every component inside it reads `var(--color-…)` from that class
+instead of from `:root`. Registering the same theme twice returns the
+same handle, so its CSS only ships once.
 
 ## Per-component knobs — the `--ui-*` variables
 
 Some components expose dimensions or accents that aren't global
-tokens — a container's width cap, a doc layout's rail width, a code
-block's scroll max. These are published as `--ui-<component>-<knob>`
-variables with built-in fallbacks, so a host overrides them from its
-own stylesheet without forking the component:
+tokens — a container's max width, a doc layout's rail width, a code
+block's scroll max height. These are exposed as
+`--ui-<component>-<knob>` variables with built-in fallbacks, so a host
+can override them from its own stylesheet without forking the
+component:
 
 ```css
 /* app.css or a style.Contribute block */
 :root { --ui-container-wide: 1240px; }
 ```
 
-They also work scoped — set one inside a `ui.Themed` section or on a
-specific wrapper class to retune a single instance. The knobs are
-named in each component's source next to the CSS that reads them
-(e.g. `ui.Container`: `--ui-container-default/narrow/wide`;
+You can also scope them — set one inside a `ui.Themed` section, or on
+a specific wrapper class, to change a single instance. Each
+component's source lists its knobs next to the CSS that reads them
+(for example `ui.Container`: `--ui-container-default/narrow/wide`;
 `ui.DocLayout`: `--ui-doc-layout-rail/gap/max-width`) — grep
-`framework/ui` for `--ui-` to see the full set.
+`framework/ui` for `--ui-` to see the full list.
 
 ## Why you can't just override component CSS
 
-Component stylesheets and your site CSS load in an order you don't
-control. At SSR, the host emits the page's component-CSS bundle first
-and `/__gofastr/app.css` after it — but any component whose CSS loads
-lazily *after* hydration (it first appears in an island response, a
-widget, or an SPA navigation) gets its `<link>` appended to the end of
-`<head>`, after `app.css`. So an equal-specificity site rule against a
-component's internals (`.ui-button { background: … }`) wins on one
-page and silently loses on another, depending on how the component's
-sheet arrived; escalating with `!important` or higher-specificity
-selectors wins today and breaks on the next component change.
+Component stylesheets and your site CSS don't always load in the same
+order. At first paint, the host writes the page's component-CSS bundle
+first and `/__gofastr/app.css` after it. But if a component's CSS
+loads lazily, after hydration — because it first shows up in an island
+response, a widget, or an SPA navigation — its `<link>` gets appended
+to the end of `<head>`, after `app.css`. So a site rule with the same
+specificity as a component's internal rule (`.ui-button { background:
+… }`) wins on one page and silently loses on another, depending on how
+that component's stylesheet arrived. Reaching for `!important` or a
+higher-specificity selector "fixes" it today and breaks again the next
+time the component changes.
 
-Component internals are not the theming surface. Restyle through the
-supported channels instead — they behave identically regardless of
-load order:
+Don't restyle component internals directly. Use one of these instead —
+they work the same way no matter what order things loaded in:
 
-- **Token values** (this doc) for anything the palette/scale controls.
+- **Token values** (this doc) for anything the palette or scale
+  controls.
 - **`--ui-*` variables** for per-component knobs.
 - **Registered variants** (`ui.RegisterButtonVariant`,
   `RegisterCardVariant`, `RegisterStatusVariant`, …) for a new named
-  look — the variant CSS ships inside the component's own sheet and
-  joins render-time validation. See
+  look — the variant CSS ships inside the component's own stylesheet
+  and goes through the same render-time validation. See
   [ui-getting-started](ui-getting-started.md) § "Custom variants on
   framework components".
 
-If none of those can express what you need, the component is missing
-a config option or variant — extend it upstream rather than patching
-its internals from outside.
+If none of those can do what you need, the component is missing a
+config option or variant. Add it there, upstream, instead of patching
+its internals from the outside.
 
 ## Common mistakes
 
 - **Gating dark mode on `prefers-color-scheme` alone.** The in-app
   toggle sets `data-color-scheme` on `<html>`; a bare media query
   ignores it and fights the user's choice. Put dark values in
-  `Theme.DarkColors` and let the emitted CSS handle both signals.
-- **Overriding a component's internals from site CSS.** The relative
-  order of `app.css` and a component's sheet differs between first
-  paint (component CSS first) and lazy load after hydration (component
-  CSS last), so an equal-specificity override works on some pages and
-  silently fails on others. Use tokens, `--ui-*` knobs, or a
-  registered variant.
-- **Hardcoding a hex where a token belongs.** It renders fine in
-  light mode and turns into a wrong-colored island the first time
-  dark mode or a `ui.Themed` section wraps it. Write
-  `{colors.primary}` / `var(--color-primary)`.
-- **Booting with a half-populated theme.** Every token is required;
-  `WithTheme` panics at startup naming the missing field path. Start
-  from `style.DefaultTheme()` / `gofastr theme init` and edit values.
-- **Editing `--color-*` variables per component instead of theming.**
-  Re-declaring global tokens on one component's selector "works" but
-  is invisible to dark mode and other consumers of the token. For a
-  one-section reskin that's what `ui.Themed` + a registered override
-  theme is for.
+  `Theme.DarkColors` and let the generated CSS handle both signals.
+- **Overriding a component's internals from site CSS.** The order of
+  `app.css` and a component's stylesheet differs between first paint
+  (component CSS loads first) and a lazy load after hydration
+  (component CSS loads last), so an equal-specificity override works
+  on some pages and silently fails on others. Use tokens, `--ui-*`
+  knobs, or a registered variant instead.
+- **Hardcoding a hex value where a token belongs.** It looks fine in
+  light mode and turns into a wrong-colored patch the first time dark
+  mode or a `ui.Themed` section wraps it. Write `{colors.primary}` /
+  `var(--color-primary)` instead.
+- **Starting the app with a half-filled-in theme.** Every token is
+  required; `WithTheme` panics at startup and names the missing field
+  path. Start from `style.DefaultTheme()` or `gofastr theme init` and
+  edit values from there.
+- **Editing `--color-*` variables on one component instead of
+  theming.** Re-declaring a global token on one component's selector
+  "works," but dark mode and every other consumer of that token never
+  see it. For a one-section reskin, use `ui.Themed` plus a registered
+  override theme instead.

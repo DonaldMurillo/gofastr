@@ -7,7 +7,7 @@ database on `t.Cleanup`.
 
 > **Framework-internal vs public.** The internal helpers in
 > `framework/internal/testdb` follow a schema-based isolation strategy
-> and are not exported. `testkit` is the stable public surface for
+> and are not exported. `testkit` is the stable public API for
 > host-app test code.
 
 ## Isolated databases

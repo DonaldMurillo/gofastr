@@ -9,7 +9,7 @@ password-reset code in.
 
 The lower-level primitives in `framework/auth` (argon2id, the typed
 `Guard`, dialect detection, the `TokenStore`) are dependencies of the
-plugins, not a parallel API surface. Apps wire `battery/auth`.
+plugins, not a second API to use directly. Apps wire `battery/auth`.
 
 ## Quickstart
 
@@ -367,7 +367,7 @@ ss.Create(ctx, sa)
 // then auth.IssueToken with OwnerKind: "service", OwnerID: sa.ID
 ```
 
-Service-account management has **no HTTP surface in v1** — create and
+Service-account management has **no HTTP endpoints in v1** — create and
 disable them from trusted server code (`SetDisabled`).
 
 ### Management endpoints (`TokensPlugin`)
@@ -545,7 +545,7 @@ users, total, err := mgr.ListUsers(ctx, auth.ListUsersOptions{
 `total` is the full row count (independent of the page), so a UI can
 render "showing 1–50 of 832". There is **no HTTP route** — call it
 from trusted server code (an admin handler you mount yourself), not
-the auth plugin surface.
+the auth plugin's routes.
 
 `ListUsers` type-asserts the configured `UserStore` for the optional
 `UserLister` interface. `EntityUserStore` implements it; a custom
@@ -636,7 +636,7 @@ client's expectations), set `AppConfig.JSONCase = "snake_case"`.
 
 ## Rate limiting
 
-Three independent surfaces:
+Three independent rate limits:
 
 ```go
 auth.AuthConfig{
@@ -694,7 +694,7 @@ auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{Store: shared} }
 ```
 
 One store instance can back every limiter: keys are namespaced by
-`RateLimiterConfig.Scope`, which each built-in surface defaults to a
+`RateLimiterConfig.Scope`, which each built-in limiter defaults to a
 distinct value (`login_ip`, `login_account`, `register`, `twofa`, …).
 A store error **fails closed** (denies with a short Retry-After) — an
 attacker must never lift the limit by degrading its backend. See
@@ -811,7 +811,7 @@ refresh grant (Google does), so the stored refresh token is retained.
 actually issues a refresh token.
 
 `RefreshOAuthToken` errors when no refresh token is stored — the user must
-re-authenticate. **Security-sensitive surface:** route changes here through
+re-authenticate. **Security-sensitive code:** route changes here through
 the auth audit gate before merge.
 
 ## OIDC (any compliant IdP)
