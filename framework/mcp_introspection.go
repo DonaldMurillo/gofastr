@@ -81,7 +81,7 @@ func (a *App) registerIntrospectionTools() error {
 		},
 		{
 			name:        "app_routines",
-			description: "List every registered stored routine (function / procedure / trigger / view-as-routine) with its name, declared dialect (empty = all), sha256 checksum of the Up body, ledger state (present | drifted | missing | unknown), and best-effort liveness (does the object exist in pg_proc / pg_views on Postgres, unknown on SQLite). Read-only. Use to verify a routine body change has propagated, or to spot a routine the code still registers but the boot no longer applies.",
+			description: "List every registered stored routine (function / procedure / trigger / view-as-routine) with its name, declared dialect (empty = all), sha256 checksum of the Up body, ledger state (present | drifted | missing | skipped_for_dialect | unknown — skipped_for_dialect means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness (does the object exist in pg_proc / pg_views on Postgres, unknown on SQLite). Read-only. Use to verify a routine body change has propagated, or to spot a routine the code still registers but the boot no longer applies.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolRoutines,
 		},

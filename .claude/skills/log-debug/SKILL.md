@@ -5,9 +5,11 @@ description: Investigate a running GoFastr app by querying its log MCP tools. Us
 
 # Debug a live GoFastr app via the log MCP tools
 
-The `battery/log` plugin registers four JSON-RPC tools on the App's
-MCP server. Use these to investigate a running app — agent
-live-debugging, not log greps from the user.
+The `battery/log` plugin registers JSON-RPC tools on the App's MCP
+server: three read-only (`log_recent`, `log_filter`, `log_metrics`)
+unconditionally, plus `log_set_level` only when
+`log.Config.AllowMCPMutation` is true. Use these to investigate a
+running app — agent live-debugging, not log greps from the user.
 
 ## Prerequisites
 
@@ -29,7 +31,7 @@ GOFASTR_DEV=1 go run ./examples/site   # :8083; plain go-run without the env has
 
 Then curl `http://localhost:8082/mcp` (or whatever port your app uses).
 
-## The four tools
+## The tools (three read-only, plus optional `log_set_level`)
 
 | Tool            | Use                                                                                  |
 |-----------------|--------------------------------------------------------------------------------------|
@@ -42,7 +44,8 @@ Then curl `http://localhost:8082/mcp` (or whatever port your app uses).
 
 Use the Bash tool to curl the MCP endpoint with a JSON-RPC payload.
 The MCP URL is `http://localhost:<PORT>/mcp` (ask the user if you
-don't know the port — common defaults are 8082 / 8088).
+don't know the port — common defaults are 8082 (dev-watch) / 8083
+(plain `go run ./examples/site`); prefer the URL the launch output prints).
 
 ### Last 5 access entries
 
@@ -97,20 +100,23 @@ trace IDs older than the ring buffer's window (default 1000 entries).
 If the agent needs verbose output for an investigation:
 
 ```bash
-# Flip to DEBUG
-curl -s http://localhost:8082/mcp \
+# Flip to DEBUG. The response returns {.level:"DEBUG", .previous_level:"<X>"}
+# — save previous_level so you can restore what was actually there.
+RESP=$(curl -s http://localhost:8082/mcp \
   -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
-       "params":{"name":"log_set_level","arguments":{"level":"DEBUG"}}}' \
-  | jq -r '.result.content[0].text' | jq .
+       "params":{"name":"log_set_level","arguments":{"level":"DEBUG"}}}')
+echo "$RESP" | jq -r '.result.content[0].text' | jq .
+PREV=$(echo "$RESP" | jq -r '.result.content[0].text' | jq -r '.previous_level')
 
 # ...reproduce the bug, then call log_recent / log_filter...
 
-# Restore INFO (always restore — leaving DEBUG on in prod is rude)
+# Restore the captured level (always restore — leaving DEBUG on in prod is rude;
+# the starting level comes from log.Config.Level, NOT guaranteed INFO)
 curl -s http://localhost:8082/mcp \
   -X POST -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
-       "params":{"name":"log_set_level","arguments":{"level":"INFO"}}}' \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",
+       \"params\":{\"name\":\"log_set_level\",\"arguments\":{\"level\":\"$PREV\"}}}" \
   | jq -r '.result.content[0].text' | jq .
 ```
 
@@ -135,7 +141,8 @@ plugin lost entries — anything queried might be incomplete.
   and structured; only fall through to file (via `historical=true`)
   when the ring window's been exhausted.
 - **Don't leave DEBUG on after an investigation.** Other observers
-  see the firehose. Call `log_set_level INFO` when done.
+  see the firehose. Restore the `previous_level` the DEBUG call
+  returned — not a hard-coded INFO (the app may start at WARN/ERROR).
 - **Don't treat `remote` as authoritative.** Unless the app set
   `Config.TrustForwardedFor`, `remote` is just `r.RemoteAddr`;
   `forwarded_for` is the raw client header — attacker-controlled.

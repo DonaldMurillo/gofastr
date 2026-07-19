@@ -30,7 +30,7 @@ running GoFastr app via MCP. For deep recipes, jump to:
 | "Turn module X off / back on"               | `app_module_disable`, `app_module_enable` (mutating)     |
 | "How does framework feature X work?"        | `framework_docs_search` → `framework_docs_get`           |
 | "Are the logs even working?"                | `log_metrics` — non-zero counters = lost entries          |
-| "Crank up DEBUG for 30 seconds, then back"  | `log_set_level DEBUG` → reproduce → `log_set_level INFO` |
+| "Crank up DEBUG for 30 seconds, then back"  | `log_set_level DEBUG` (save `.previous_level`) → reproduce → `log_set_level <previous_level>` |
 
 ## Getting started
 
@@ -45,13 +45,15 @@ Outside the dev loop, the app opts in explicitly:
 
 ```go
 fwApp := framework.NewApp(
-    framework.WithMCP(),                    // mounts /mcp (POST + GET SSE) + discovery well-knowns
+    framework.WithConfig(framework.AppConfig{Name: "<your-app>"}),  // battery/log needs a non-empty app name for its state dir
+    framework.WithMCP(),                    // mounts /mcp (POST + GET SSE) + discovery wellknowns
     framework.WithMCPIntrospection(),       // app_* + framework_docs_* tools (read-only)
     framework.WithMCPControl(),             // app_module_enable/disable (mutating — trusted /mcp only)
 )
 fwApp.RegisterPlugin(log.New(log.Config{
-    EnableMCP:   true,                       // log_* tools
-    MCPRingSize: 2000,
+    EnableMCP:        true,                  // log_recent, log_filter, log_metrics (read-only)
+    AllowMCPMutation: true,                  // also registers log_set_level (mutating — trusted /mcp only)
+    MCPRingSize:      2000,
 }))
 ```
 
@@ -61,13 +63,14 @@ have `WithMCP` + `WithMCPIntrospection` + the log battery wired. Spin
 the site up with the repo's normal dev workflow:
 
 ```bash
-./scripts/dev-watch.sh         # examples/site on :8082, auto-rebuild
+./scripts/dev-watch.sh                    # examples/site on :8082, auto-rebuild — log_* tools on
 # or
-go run ./examples/site         # :8083 — plain go-run has no PORT set
+GOFASTR_DEV=1 go run ./examples/site      # :8083; plain `go run` exposes introspection but NOT log_* (dev-only)
 ```
 
-Then point curl at `http://localhost:8082/mcp` (or `:8083` for
-go-run) and use the log-debug + app-introspect skills' recipes.
+Then point curl at `http://localhost:8082/mcp` (or `:8083` for the
+`GOFASTR_DEV=1` form) and use the log-debug + app-introspect skills'
+recipes.
 
 ## The JSON-RPC envelope
 
@@ -95,10 +98,14 @@ to get back to structured JSON. List available tools via
 - **Don't reach for MCP when grepping the file directly is easier.** If
   the user knows exactly what they're looking for and has shell access,
   `tail -f ~/.local/state/<app>/server.log | grep …` may be the right
-  move. MCP wins when the agent (not the user) is the consumer.
+  move (Linux honors `$XDG_STATE_HOME` before `~/.local/state`).
+  MCP wins when the agent (not the user) is the consumer.
 - **Don't curl tools you don't know the shape of.** `tools/list` first
   if you're not sure what's registered; the descriptions are written
   for agents.
-- **Don't forget to revert state mutations.** `log_set_level` is the
-  only mutating tool right now, but treat it like a temporary debug
-  toggle: flip on, reproduce, flip off.
+- **Don't forget to revert state mutations.** The mutating tools are
+  `log_set_level`, plus (when `WithMCPControl()` is wired)
+  `app_module_enable` / `app_module_disable`. Treat each like a
+  temporary debug toggle: flip on, reproduce, flip back — capture
+  `previous_level` from `log_set_level` so you restore what was
+  actually there, not a hard-coded INFO.
