@@ -110,7 +110,14 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return ensurePostgresBoolColumns(ctx, s.db, s.table, s.fieldMap.PasswordSet)
+	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, s.fieldMap.PasswordSet); err != nil {
+		return err
+	}
+	// The OAuth link table backs OAuthLinker / AccountLister / AccountUnlinker
+	// for this store. Creating it here (rather than in OAuth2Plugin.Init) means
+	// the schema is right even for hosts that never turn OAuth on — and that a
+	// host that adds OAuth later doesn't need a separate migration step.
+	return s.EnsureOAuthLinksSchema(ctx)
 }
 
 // ensurePostgresBoolColumns upgrades legacy INTEGER boolean columns owned by

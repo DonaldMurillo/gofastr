@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,11 +20,23 @@ type memoryUserStore struct {
 	users  map[string]*storeEntry // keyed by email
 	byID   map[string]*storeEntry // keyed by id
 	nextID int
+
+	// mu guards ALL fields above and the linker `links` map. The store is
+	// exercised concurrently by the OAuth-linking concurrency test
+	// (resolveOAuthUser under N goroutines), so every method that touches
+	// state locks it. A value-type mutex is zero-value safe, so existing
+	// zero-value memoryUserStore values keep working with no lazy init.
+	mu    sync.Mutex
+	links map[string]memoryLinkEntry
 }
 
 type storeEntry struct {
 	user User
 	hash string
+	// passwordSet distinguishes a real-password user from one created via
+	// CreateUserNoPassword. Defaults to true (zero value of bool is false,
+	// but all pre-existing seed/CreateUser paths set it explicitly).
+	passwordSet bool
 }
 
 func newMemoryUserStore() *memoryUserStore {
@@ -34,6 +47,8 @@ func newMemoryUserStore() *memoryUserStore {
 }
 
 func (s *memoryUserStore) FindByEmail(_ context.Context, email string) (User, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	e, ok := s.users[email]
 	if !ok {
 		return nil, "", ErrUserNotFound
@@ -42,6 +57,8 @@ func (s *memoryUserStore) FindByEmail(_ context.Context, email string) (User, st
 }
 
 func (s *memoryUserStore) FindByID(_ context.Context, id string) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	e, ok := s.byID[id]
 	if !ok {
 		return nil, ErrUserNotFound
@@ -50,13 +67,19 @@ func (s *memoryUserStore) FindByID(_ context.Context, id string) (User, error) {
 }
 
 func (s *memoryUserStore) CreateUser(_ context.Context, email, hashedPassword string, roles []string) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, exists := s.users[email]; exists {
 		return nil, ErrEmailTaken
 	}
 	s.nextID++
 	id := fmt.Sprintf("user-%d", s.nextID)
 	user := &BasicUser{ID: id, Email: email, Roles: roles}
-	entry := &storeEntry{user: user, hash: hashedPassword}
+	// passwordSet defaults to true for the CreateUser path: existing tests
+	// that hash a real password (seedUser) get HasPassword() == true. The
+	// CreateUserNoPassword extension in memory_user_store_linker_test.go
+	// flips this to false.
+	entry := &storeEntry{user: user, hash: hashedPassword, passwordSet: true}
 	s.users[email] = entry
 	s.byID[id] = entry
 	return user, nil
