@@ -291,6 +291,31 @@ if err := sched.Cron("0 2 * * *").
 go sched.Start(ctx) // blocks until ctx is cancelled
 ```
 
+```go
+// Lane / Priority / MaxAttempts on a schedule are carried verbatim into
+// every Job the scheduler fires — set them to tag the fired job's lane
+// (matching lane workers and any shared catch-all worker can claim it),
+// to jump the dequeue order, or to bound retries per occurrence.
+sched.Every(15 * time.Minute).
+    Job("bulk-reindex", nil).
+    Lane("bulk").         // bulk-lane AND shared workers can claim this
+    Priority(-5).         // lower priority than ad-hoc work
+    MaxAttempts(1).       // one shot — never retry a partial reindex
+    Register()
+```
+
+`Lane`, `Priority`, and `MaxAttempts` are fluent options on both
+`ScheduleBuilder` and `DurableScheduleBuilder`. Omit them for today's
+defaults: empty lane, priority 0, and `MaxAttempts` resolved to 3 at
+enqueue time. They are carried unchanged into every `Job` the schedule
+fires. `Lane("bulk")` makes the fired job claimable by bulk-lane workers
+AND by any shared/catch-all worker — tagging a lane alone does NOT keep
+bulk work off interactive workers; to do that, dedicate workers to an
+interactive lane (so there is no shared pool draining bulk) instead of
+relying on the tag (see [Lanes](#lanes)). `Priority(n)` nudges dequeue
+order among pending work, and `MaxAttempts(k)` bounds how many times a
+single occurrence may retry before dead-lettering.
+
 `Every(d)` schedules fire on a fixed interval; `Cron(spec)` schedules
 fire when the cron expression's next time arrives — use it for
 time-of-day work like "every day at 02:00" that an interval cannot
@@ -358,6 +383,27 @@ go func() {
     }
 }()
 ```
+
+The same `Lane` / `Priority` / `MaxAttempts` options exist on the durable
+builder. They PERSIST alongside the schedule definition: re-registering
+the same schedule ID updates them without resetting the watermark, and
+every fired occurrence carries them into its `Job` (so a bulk lane stays
+routed to bulk workers across restarts and replicas):
+
+```go
+if err := durable.Every("nightly-bulk-reindex", 24*time.Hour).
+    Job("bulk-reindex", nil).
+    Lane("bulk").
+    Priority(-5).
+    MaxAttempts(1).
+    Register(); err != nil {
+    log.Fatal(err)
+}
+```
+
+The options columns (`lane`, `priority`, `max_attempts`) are added to an
+existing `scheduler_schedules` table by an idempotent migration during
+`NewDurableScheduler` — no manual schema work is required on upgrade.
 
 One replica holds a heartbeat-expiry lease for efficient evaluation. Every
 lease acquisition after expiry increments a fencing token. Before committing
