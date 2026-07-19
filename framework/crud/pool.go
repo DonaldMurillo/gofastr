@@ -35,6 +35,19 @@ var ptrSlicePool = sync.Pool{
 	},
 }
 
+// anySlicePool caches the per-row []any scratch buffer handed to rows.Scan
+// (the slice whose element addresses become sql.RawBytes / string / int64
+// destinations). Without this pool the previous code allocated a fresh
+// []any per row — at 50 rows that's 50 small allocations that live just
+// long enough to drive GC. The slice is borrowed per row and returned
+// after the row map is built, mirroring borrowPtrSlice/returnPtrSlice.
+var anySlicePool = sync.Pool{
+	New: func() any {
+		s := make([]any, 0, 16)
+		return &s
+	},
+}
+
 // borrowRowSlice gets a pre-allocated slice from the pool.
 func borrowRowSlice() *[]map[string]any {
 	return rowSlicePool.Get().(*[]map[string]any)
@@ -95,25 +108,33 @@ func scanRowsPooled(rows *sql.Rows, cols []string, keyFunc func(string) string) 
 
 func scanRowsPooledWithKeys(rows *sql.Rows, cols, keys []string) (*[]map[string]any, error) {
 	results := borrowRowSlice()
+	ncol := len(cols)
 	for rows.Next() {
-		ptrs := borrowPtrSlice(len(cols))
-		values := make([]any, len(cols))
-		for i := range values {
+		ptrs := borrowPtrSlice(ncol)
+		valuesPtr := borrowAnySlice(ncol)
+		values := *valuesPtr
+		// Point each slot at the address of the corresponding scratch slot.
+		// rows.Scan writes through these pointers; the row map below copies
+		// the decoded values out before the scratch slice is returned to
+		// the pool, so no pooled slot escapes into the result.
+		for i := range ncol {
 			(*ptrs)[i] = &values[i]
 		}
 		if err := rows.Scan(*ptrs...); err != nil {
 			returnPtrSlice(ptrs)
+			returnAnySlice(valuesPtr)
 			returnRowSlice(results)
 			return nil, err
 		}
 		// Use pooled map instead of make
 		rowPtr := rowMapPool.Get().(*map[string]any)
 		row := *rowPtr
-		for i := range cols {
+		for i := range ncol {
 			row[keys[i]] = convertValue(values[i])
 		}
 		*results = append(*results, row)
 		returnPtrSlice(ptrs)
+		returnAnySlice(valuesPtr)
 	}
 	// A false rows.Next() can be a mid-iteration error, not just EOF. Propagate
 	// it rather than returning a truncated result set as success (mirrors
@@ -123,6 +144,33 @@ func scanRowsPooledWithKeys(rows *sql.Rows, cols, keys []string) (*[]map[string]
 		return nil, err
 	}
 	return results, nil
+}
+
+// borrowAnySlice gets a pre-allocated []any scratch slice sized to n. The
+// pool's high-water mark caps the retained capacity; oversized slices are
+// dropped on return so one wide row can't pin a huge buffer.
+func borrowAnySlice(n int) *[]any {
+	s := anySlicePool.Get().(*[]any)
+	if cap(*s) < n {
+		*s = make([]any, n)
+	} else {
+		*s = (*s)[:n]
+	}
+	return s
+}
+
+// returnAnySlice clears and returns a scratch slice to the pool. Oversized
+// slices are dropped (mirrors returnPtrSlice) so a pathological row width
+// can't pin a giant allocation in the pool forever.
+func returnAnySlice(s *[]any) {
+	for i := range *s {
+		(*s)[i] = nil
+	}
+	if cap(*s) > maxPooledMapEntries {
+		return
+	}
+	*s = (*s)[:0]
+	anySlicePool.Put(s)
 }
 
 func convertedKeys(cols []string, keyFunc func(string) string) []string {

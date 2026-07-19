@@ -35,11 +35,31 @@ type orderClause struct {
 }
 
 // Select creates a new QueryBuilder selecting the given columns.
+//
+// wheres/args are pre-capped (defaultWhereCap / defaultArgCap) because the
+// CRUD List handler adds ~4-5 WHERE clauses per query × 2 queries
+// (count + data). Starting at nil forces repeated slice growth (1 → 2 →
+// 4 → 8) for the common case; a small capacity hint lets the runtime
+// allocate once at the expected size.
 func Select(columns ...string) *QueryBuilder {
 	return &QueryBuilder{
 		columns: columns,
+		wheres:  make([]whereClause, 0, defaultWhereCap),
+		args:    make([]any, 0, defaultArgCap),
 	}
 }
+
+const (
+	// defaultWhereCap is sized for the CRUD List count/data builders, which
+	// append ~4-5 Where clauses each (filters + tenant + owner + soft-delete
+	// + nested + hook-where). 4 doubles to 8 on the first overflow, so the
+	// common 1-2-where path (the FilteredList bench, Get-by-id, typed-query
+	// single-row reads) doesn't pay for headroom it won't use while the
+	// 5-where production path saves the 1 → 2 → 4 growth churn.
+	defaultWhereCap = 4
+	// defaultArgCap mirrors defaultWhereCap for the flat args slice.
+	defaultArgCap = 4
+)
 
 // From sets the table to query.
 func (qb *QueryBuilder) From(table string) *QueryBuilder {

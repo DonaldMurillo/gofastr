@@ -68,7 +68,7 @@ empty HMAC key would make every JWT forgeable.
 |---|---|---|
 | `CorePlugin` | `POST /auth/{login,register,logout}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. |
 | `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. |
-| `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). Binds identity by `(provider, providerID)` when the store implements `OAuthLinker`; refuses silent linking on email collision with an existing local account. |
+| `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does) — fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable}`, `GET /auth/2fa/backup-codes` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. |
@@ -109,7 +109,7 @@ safe-but-reduced path.
 
 | Interface | Used by | Effect when implemented |
 |---|---|---|
-| `OAuthLinker` | `OAuth2Plugin` | Bind identity to `(provider, providerID)` instead of email. Refuse silent linking on email collision. |
+| `OAuthLinker` | `OAuth2Plugin` | **Required** for production OAuth login: binds identity to `(provider, providerID)`. `EntityUserStore` implements it (creates a `<user_table>_oauth_links` table on `EnsureSchema`). Without it, `OAuth2Plugin.Init` fails closed in production — the legacy email-only fallback is gone because an IdP emitting an unverified email could otherwise sign in as an existing account. |
 | `OAuthEnrichedLinker` | `OAuth2Plugin` | Persist profile fields (name, avatar, email) so `AccountsPlugin` can return them in `/auth/accounts`. |
 | `OAuthUserCreator` | `OAuth2Plugin`, `MagicLinkPlugin` | Record at creation time that the user has no password. Lets `PasswordChecker.HasPassword` return false correctly. |
 | `OAuthTokenRefresher` | `RefreshOAuthToken` / `ValidOAuthToken` | Exchange a stored refresh token for a fresh access token. Implemented by `GoogleProvider` and `GitHubProvider`. See "OAuth token store + refresh". |
@@ -748,15 +748,160 @@ gated.
 ## Account linking
 
 ```
-GET    /auth/accounts            → list of linked OAuth providers + profile
-DELETE /auth/unlink/{provider}   → remove a link
-GET    /auth/oauth/{provider}    → initiate link/sign-in
-GET    /auth/oauth/{provider}/cb → callback, binds (provider, providerID)
+GET    /auth/accounts                   → list of linked OAuth providers + profile
+DELETE /auth/unlink/{provider}          → remove a link
+GET    /auth/oauth/{provider}           → sign in with a provider (login flow)
+GET    /auth/oauth/{provider}/link      → link a provider to the CURRENT user (authenticated)
+GET    /auth/oauth/{provider}/callback  → callback, binds (provider, providerID)
 ```
 
 Unlink refuses (`409`) when the requested unlink would leave the user
 with no remaining login method. The check considers both linked OAuth
 accounts and whether the user has set a real password.
+
+### Linking a provider to a logged-in account (the recovery path)
+
+When an OAuth login's verified email matches an existing **password**
+account, the login callback refuses with `409` — a bare OAuth round-trip
+must not take over a local credential (see the decision table below). The
+supported way to add that provider is the **authenticated link flow**:
+
+1. While logged in, the user hits `GET /auth/oauth/{provider}/link`. This
+   requires a valid, fully-authenticated session (a pending-2FA session is
+   rejected) and encodes the current user's id into the HMAC-signed OAuth
+   `state`, then redirects to the provider.
+2. The provider returns to the normal callback. Because the signed state
+   carries a user id, the callback runs the **link** branch instead of the
+   login decision table: it re-checks that the session still belongs to
+   that same user, refuses (`409`) if the provider identity is already
+   bound to a *different* account, and otherwise links `(provider,
+   provider_id)` to the proven user.
+
+The user has proven ownership of both the account (session) and the
+provider (the OAuth round-trip), so this is the ONLY path that may link a
+provider whose email matches a password account. A forged or altered
+`state` fails the HMAC; a mismatched session is rejected (`403`); no
+session is rejected (`401`).
+
+## OAuth identity linking
+
+OAuth login MUST bind the returned identity to `(provider, provider_id)`
+via a durable link store. `(provider, provider_id)` is the only assertion
+an IdP makes that survives an email change — email is mutable, names
+collide, and an unverified email is attacker-controllable. The link store
+is the serialization point that closes the account-takeover hole where an
+IdP emitting an unverified email signs in as an existing local account.
+
+`EntityUserStore` implements `OAuthLinker` and creates its link table on
+`EnsureSchema` — named `<user_table>_oauth_links` by convention, with a
+composite primary key on `(provider, provider_id)` and a `user_id` index
+that powers `ListAccounts` / `UnlinkOAuth`. The table is created
+automatically; hosts never hand-roll the DDL. A user may link more than
+one provider (Google + GitHub + a corporate OIDC), so links live in their
+own table rather than as columns on the users table.
+
+### Fail-closed Init
+
+`OAuth2Plugin.Init` refuses to boot when the configured `UserStore` does
+not implement `OAuthLinker` and neither `DevMode` nor
+`AllowInMemoryStores` is set:
+
+```
+auth: OAuth login requires a durable (provider, provider_id) → user_id
+link store — the configured UserStore does not implement OAuthLinker, so
+an IdP emitting an unverified email could sign in as an existing account.
+Use auth.NewEntityUserStore(...) (now a linker) or set
+AuthConfig.AllowInMemoryStores: true for local dev
+```
+
+The legacy email-only fallback is gone. `DevMode: true` and
+`AllowInMemoryStores: true` keep the no-linker path reachable so the
+rest of the OAuth plumbing (redirect, state token, callback errors) stays
+unit-testable; the path logs a WARN, and `resolveOAuthUser` itself
+returns `errOAuthNoLinker` at request time rather than silently
+downgrading.
+
+### Callback resolution policy
+
+`resolveOAuthUser` runs this decision table on every callback:
+
+1. **Existing link.** `FindByOAuth(provider, providerID)` hit → log in
+   as the linked user. Profile refresh via `LinkOAuthEnriched` is
+   best-effort and does not block login.
+2. **Verified-email match.** No link, but the IdP asserts the email is
+   verified (`OAuth2UserInfo.EmailVerified == true`) and `FindByEmail`
+   returns an existing account. The branch depends on whether the
+   existing account has a password:
+   - **Password account** → refuse with `409 errOAuthEmailCollision`.
+     The user must log in with their password and link the provider
+     from `/auth/accounts` — a verified email alone must not bind to a
+     credential the IdP didn't issue.
+   - **Passwordless account** → AUTO-LINK and log in. Safe migration:
+     the account was created by a prior OAuth login, and the verified
+     email re-binds the same identity.
+3. **Otherwise.** No link, no verified-email match (this includes an
+   UNVERIFIED email matching an existing account), or no email match at
+   all → create a new passwordless user and link the `(provider,
+   provider_id)`. A concurrent create that wins the link PK is
+   authoritative; the just-created user is left as an orphan
+   (best-effort ignore — the email-unique constraint means a future
+   callback re-resolves cleanly).
+
+**An unverified email NEVER binds to an existing account.** It falls
+through to step 3 as if the email didn't match — the core takeover
+regression. If the email happens to collide with an existing account,
+the unique-email constraint then blocks the fresh create and the
+callback fails closed.
+
+### `email_verified` enforcement
+
+`OAuth2UserInfo.EmailVerified` is the signal step 2 uses. It is set
+strictly:
+
+- **OIDC**: parsed from the id_token's `email_verified` claim (or the
+   configured `OIDCClaimsMapping.EmailVerifiedClaim`). Accepts a JSON
+   bool or the string `"true"` (some IdPs emit the value as a string).
+   Defaults to `false` when absent — a missing assertion is never a
+   verified email.
+- **Google**: from the `email_verified` (modern) or `verified_email`
+   (legacy) userinfo field.
+- **GitHub**: `true` only when the email came back from
+   `/user/emails?verified=true`. GitHub's `/user` endpoint surfaces the
+   public email but does not assert verification; the conservative
+   default is `false`.
+
+A provider that cannot assert verification always yields
+`EmailVerified == false`, which means email-only matching is off for
+that callback.
+
+### Migration (BREAKING)
+
+Before this change, the callback fell back to email-only matching when
+the `UserStore` did not implement `OAuthLinker`, and OIDC never checked
+`email_verified`. Both paths silently let an IdP emitting an unverified
+email sign in as an existing local account.
+
+After upgrade:
+
+- **Existing OAuth links are unchanged.** Users who logged in via OAuth
+   before the upgrade already have a `(provider, provider_id)` row in the
+   link table (or get one on their first post-upgrade callback, via the
+   verified-email + passwordless auto-link branch).
+- **Passwordless accounts auto-relink on next login.** An account whose
+   only credential is a prior OAuth login has `password_set = false`; a
+   verified-email callback re-binds it without operator action.
+- **Password accounts must link a provider from settings.** The first
+   OAuth login for an email that belongs to a password account is
+   refused with `409` by design — the user must log in with their
+   password and link the provider via `/auth/oauth/{provider}` while
+   authenticated, then `/auth/accounts` reflects the bind. This blocks
+   an attacker controlling a verified-but-not-theirs email from taking
+   over a password account.
+- **Hosts on a non-`EntityUserStore` backend** must implement
+   `OAuthLinker` (and ideally `OAuthEnrichedLinker`, `AccountLister`,
+   `AccountUnlinker`, `PasswordChecker`) or set
+   `AuthConfig.AllowInMemoryStores: true` to acknowledge the risk. The
+   `Init` failure message names both options.
 
 ## OAuth token store + refresh
 
@@ -876,12 +1021,19 @@ already have, so it is deliberately omitted. Supporting public clients
 via a cookie or store — and is out of scope for the confidential provider.
 
 **Claims mapping.** `OIDCClaimsMapping` overrides which claim supplies
-each field (defaults `sub`, `email`, `name`, `picture`) for IdPs that use
-`preferred_username` or `upn`:
+each field (defaults `sub`, `email`, `name`, `picture`, `email_verified`)
+for IdPs that use `preferred_username` or `upn`:
 
 ```go
 Claims: auth.OIDCClaimsMapping{EmailClaim: "upn", NameClaim: "preferred_username"},
 ```
+
+**`email_verified` is enforced.** The callback reads the IdP's
+`email_verified` claim (JSON bool, or the string `"true"` for IdPs that
+emit it that way) and refuses to bind an UNVERIFIED email to an existing
+account — see [OAuth identity linking](#oauth-identity-linking). A
+missing claim defaults to `false`: a missing assertion is never a
+verified email.
 
 If the mapped email is empty and the IdP exposes a `userinfo_endpoint`,
 it is fetched with the bearer token and only the missing fields are

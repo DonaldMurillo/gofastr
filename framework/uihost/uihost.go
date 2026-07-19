@@ -1035,6 +1035,10 @@ func (ds *UIHost) injectChrome(page, pagePath, sessionID, presenceTopic string) 
 //     that need to declare canonical, OG, JSON-LD, etc. inline.
 //
 // pagePath is the route path used to resolve the screen.
+//
+// The per-concern SEO fields are resolved first via resolveScreenSEO
+// (the shared resolution path also used to render the per-screen
+// llm.md front-matter), then rendered to HTML.
 func (ds *UIHost) screenHeadHTML(pagePath string) string {
 	if ds.App == nil || pagePath == "" {
 		return ""
@@ -1043,61 +1047,28 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 	if !ok {
 		return ""
 	}
-	// ScreenSEO is the bundle-style override. When present, it takes
-	// precedence over the per-concern interfaces for the fields it
-	// declares. Empty fields fall through so a screen can use
-	// ScreenSEO for some and per-concern interfaces for others.
-	var bundle SEO
-	if b, ok := screen.Component.(ScreenSEO); ok {
-		bundle = b.ScreenSEO()
-	}
+	resolved := resolveScreenSEO(screen)
 
 	var parts []string
-	// Description: bundle → ScreenDescriber (via screen.Description).
-	desc := bundle.Description
-	if desc == "" {
-		desc = screen.Description
-	}
-	if desc != "" {
+	if resolved.Description != "" {
 		parts = append(parts, fmt.Sprintf(
 			`<meta name="description" content="%s">`,
-			stdhtml.EscapeString(desc),
+			stdhtml.EscapeString(resolved.Description),
 		))
 	}
-	// Robots: bundle → ScreenRobots.
-	robots := bundle.Robots
-	if robots == "" {
-		if r, ok := screen.Component.(ScreenRobots); ok {
-			robots = r.ScreenRobots()
-		}
-	}
-	if robots != "" {
+	if resolved.Robots != "" {
 		parts = append(parts, fmt.Sprintf(
 			`<meta name="robots" content="%s">`,
-			stdhtml.EscapeString(robots),
+			stdhtml.EscapeString(resolved.Robots),
 		))
 	}
-	// Canonical: bundle → ScreenCanonical.
-	canonical := bundle.Canonical
-	if canonical == "" {
-		if c, ok := screen.Component.(ScreenCanonical); ok {
-			canonical = c.ScreenCanonical()
-		}
-	}
-	if canonical != "" && isSafeHeadURL(canonical) {
+	if resolved.Canonical != "" && isSafeHeadURL(resolved.Canonical) {
 		parts = append(parts, fmt.Sprintf(
 			`<link rel="canonical" href="%s">`,
-			stdhtml.EscapeString(canonical),
+			stdhtml.EscapeString(resolved.Canonical),
 		))
 	}
-	// Hreflangs: bundle → ScreenHreflangs.
-	hreflangs := bundle.Hreflangs
-	if len(hreflangs) == 0 {
-		if h, ok := screen.Component.(ScreenHreflangs); ok {
-			hreflangs = h.ScreenHreflangs()
-		}
-	}
-	for _, link := range hreflangs {
+	for _, link := range resolved.Hreflangs {
 		if link.Lang == "" || link.URL == "" || !isSafeHeadURL(link.URL) {
 			continue
 		}
@@ -1109,21 +1080,14 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 	}
 	// OG + Twitter: bundle only (the global WithOpenGraph / WithTwitterCard
 	// already handle the site-wide defaults).
-	if bundle.OG != nil {
-		parts = append(parts, ogTags(*bundle.OG)...)
+	if resolved.OG != nil {
+		parts = append(parts, ogTags(*resolved.OG)...)
 	}
-	if bundle.Twitter != nil {
-		parts = append(parts, twitterTags(*bundle.Twitter)...)
+	if resolved.Twitter != nil {
+		parts = append(parts, twitterTags(*resolved.Twitter)...)
 	}
-	// Schema: bundle → ScreenSchema.
-	schema := bundle.Schema
-	if len(schema) == 0 {
-		if s, ok := screen.Component.(ScreenSchema); ok {
-			schema = s.ScreenSchema()
-		}
-	}
-	if len(schema) > 0 {
-		parts = append(parts, string(seo.Render(schema...)))
+	if len(resolved.Schema) > 0 {
+		parts = append(parts, string(seo.Render(resolved.Schema...)))
 	}
 	// Catch-all per-screen HTML escape hatch. Caller-supplied — scrub
 	// inline <script> tags before injection (XSS defense-in-depth).
@@ -1133,6 +1097,67 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// resolveScreenSEO resolves the effective SEO for a screen by composing
+// its ScreenSEO bundle with the per-concern interfaces, applying the
+// same precedence screenHeadHTML has historically used:
+//
+//   - Description: bundle.Description → screen.Description (which
+//     ScreenDescriber populated at Register time).
+//   - Robots: bundle.Robots → ScreenRobots interface.
+//   - Canonical: bundle.Canonical → ScreenCanonical interface.
+//   - Hreflangs: bundle.Hreflangs → ScreenHreflangs interface.
+//   - OG / Twitter: bundle only (no per-concern equivalents).
+//   - Schema: bundle.Schema → ScreenSchema interface.
+//
+// Empty bundle fields fall through so a screen can mix the bundle with
+// the per-concern interfaces. The returned SEO is the merged value both
+// the HTML head and the per-screen llm.md front-matter render from —
+// keeping the two surfaces in lockstep (#108).
+func resolveScreenSEO(screen *app.Screen) SEO {
+	var bundle SEO
+	if b, ok := screen.Component.(ScreenSEO); ok {
+		bundle = b.ScreenSEO()
+	}
+
+	desc := bundle.Description
+	if desc == "" {
+		desc = screen.Description
+	}
+	robots := bundle.Robots
+	if robots == "" {
+		if r, ok := screen.Component.(ScreenRobots); ok {
+			robots = r.ScreenRobots()
+		}
+	}
+	canonical := bundle.Canonical
+	if canonical == "" {
+		if c, ok := screen.Component.(ScreenCanonical); ok {
+			canonical = c.ScreenCanonical()
+		}
+	}
+	hreflangs := bundle.Hreflangs
+	if len(hreflangs) == 0 {
+		if h, ok := screen.Component.(ScreenHreflangs); ok {
+			hreflangs = h.ScreenHreflangs()
+		}
+	}
+	schema := bundle.Schema
+	if len(schema) == 0 {
+		if s, ok := screen.Component.(ScreenSchema); ok {
+			schema = s.ScreenSchema()
+		}
+	}
+	return SEO{
+		Description: desc,
+		Canonical:   canonical,
+		Hreflangs:   hreflangs,
+		Robots:      robots,
+		OG:          bundle.OG,
+		Twitter:     bundle.Twitter,
+		Schema:      schema,
+	}
 }
 
 // ogTags returns the per-page Open Graph meta tags for the given OG
@@ -1958,7 +1983,10 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
-			w.Write([]byte(app.ScreenLLMMD(sc)))
+			seo := resolveScreenSEO(sc)
+			fm := screenSEOFrontMatter(sc.Title, seo)
+			md := app.ScreenLLMMDWithMeta(sc, fm)
+			w.Write([]byte(md))
 		})
 		// Clean trailing slash to avoid double-slash patterns
 		// (e.g. "/docs/" + "/llm.md" → "//llm.md" which panics).

@@ -39,6 +39,7 @@ import (
 	patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
 	patternsTree "github.com/DonaldMurillo/gofastr/core-ui/patterns/tree"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -135,6 +136,201 @@ func resetKanbanBoard() {
 		}},
 	}
 	kanbanBoard.Version = 1
+}
+
+// ── Optimistic UI demos (/components/optimistic-*) ──────────────────
+// Two INDEPENDENT in-memory note stores — one per recipe. They MUST stay
+// separate: the create demo appends rows (n4, n5, …) that the delete
+// demo has no mounted ConfirmAction modal for, so sharing a store would
+// let the delete demo render an `opt-delete-n4` trigger whose modal was
+// never mounted (clicking it silently does nothing). Each demo only
+// ever sees its own store, and each delete-row trigger has its modal
+// mounted exactly once at startup.
+type optimisticNote struct {
+	ID, Title string
+}
+
+// initialOptimisticNotes is the snapshot both stores reset to. The
+// delete store stays at this set forever (the only mutation is the
+// delete RPC, which is reset before each e2e); the create store grows
+// past it as the user clicks Add.
+var initialOptimisticNotes = []optimisticNote{
+	{ID: "n1", Title: "Ship the optimistic-ui cookbook"},
+	{ID: "n2", Title: "Document the mutation lifecycle"},
+	{ID: "n3", Title: "Pair ConfirmAction with delete"},
+}
+
+// optimisticCreateNotes backs /components/optimisticcreate: Add appends
+// a row and the create RPC returns the fresh list HTML.
+var optimisticCreateNotes = struct {
+	sync.Mutex
+	Items []optimisticNote
+	Next  int
+}{
+	Items: append([]optimisticNote(nil), initialOptimisticNotes...),
+	Next:  4,
+}
+
+// optimisticDeleteNotes backs /components/optimisticdelete: each row's
+// Delete opens a ConfirmAction modal; the delete RPC removes the row
+// and returns the fresh list HTML. The fail-DELETE demo row is wired
+// to opt-delete-fail-n1 (see optimisticDeleteModals) and never mutates
+// this store — its RPC always returns 422 to exercise the "failed
+// delete leaves the list unchanged" invariant.
+var optimisticDeleteNotes = struct {
+	sync.Mutex
+	Items []optimisticNote
+}{
+	Items: append([]optimisticNote(nil), initialOptimisticNotes...),
+}
+
+// renderOptimisticCreateListLocked renders the create-store notes as a
+// <ul> of rows. Used at SSR and as the create-RPC response body: the
+// runtime swaps the list region's innerHTML with this HTML on 2xx.
+// Caller must hold optimisticCreateNotes.Lock().
+func renderOptimisticCreateListLocked() render.HTML {
+	items := make([]render.HTML, 0, len(optimisticCreateNotes.Items))
+	for _, n := range optimisticCreateNotes.Items {
+		items = append(items, html.ListItem(html.ListItemConfig{
+			ExtraAttrs: html.Attrs{"data-opt-id": n.ID},
+		}, render.Text(n.Title)))
+	}
+	if len(items) == 0 {
+		// Empty state — the list region reconciles to zero items (#82
+		// style), so the swap target is never a bare missing element.
+		return html.Paragraph(html.TextConfig{Class: "ui-muted"},
+			render.Text("No notes yet — click Add."))
+	}
+	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
+}
+
+// renderOptimisticCreateList is the lock-acquiring wrapper used by the
+// SSR demo path. The create RPC handler in main.go calls the Locked
+// variant directly under its own held lock to avoid a double-acquire.
+func renderOptimisticCreateList() render.HTML {
+	optimisticCreateNotes.Lock()
+	defer optimisticCreateNotes.Unlock()
+	return renderOptimisticCreateListLocked()
+}
+
+// renderOptimisticDeleteListLocked renders the delete-store notes as a
+// <ul> with a Delete trigger per row. Each trigger is the ConfirmAction
+// trigger for its row's modal (mounted by optimisticDeleteModals).
+// Caller must hold optimisticDeleteNotes.Lock().
+func renderOptimisticDeleteListLocked() render.HTML {
+	items := make([]render.HTML, 0, len(optimisticDeleteNotes.Items))
+	for _, n := range optimisticDeleteNotes.Items {
+		trigger, _ := ui.ConfirmAction(ui.ConfirmActionConfig{
+			Name:         "opt-delete-" + n.ID,
+			TriggerLabel: "Delete",
+			Title:        "Delete this note?",
+			Body:         "It will be removed from the list.",
+			RPCPath:      "/__site/optimistic/delete?id=" + n.ID,
+			ConfirmLabel: "Delete it",
+		})
+		items = append(items, html.ListItem(html.ListItemConfig{
+			ExtraAttrs: html.Attrs{"data-opt-id": n.ID},
+		},
+			html.Div(html.DivConfig{Class: "demo-row"},
+				render.Text(n.Title),
+				trigger,
+			),
+		))
+	}
+	if len(items) == 0 {
+		return html.Paragraph(html.TextConfig{Class: "ui-muted"},
+			render.Text("No notes — the list reconciled to zero. Reload to reset the demo."))
+	}
+	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
+}
+
+// renderOptimisticDeleteList is the lock-acquiring wrapper.
+func renderOptimisticDeleteList() render.HTML {
+	optimisticDeleteNotes.Lock()
+	defer optimisticDeleteNotes.Unlock()
+	return renderOptimisticDeleteListLocked()
+}
+
+// optimisticFailDeleteTrigger is the inline trigger for the
+// "Delete (will fail)" affordance rendered below the list. It opens
+// the dedicated opt-delete-fail-n1 modal (mounted by
+// optimisticDeleteModals) whose RPC always returns 422 — the runtime
+// then leaves the opt-delete-list region untouched, exercising the
+// optimistic-UI "failed delete leaves the row/list unchanged"
+// invariant. Rendered as a free-standing button (no list row) so the
+// store never carries a phantom "fail row".
+func optimisticFailDeleteTrigger() render.HTML {
+	trigger, _ := ui.ConfirmAction(ui.ConfirmActionConfig{
+		Name:         "opt-delete-fail-n1",
+		TriggerLabel: "Delete n1 (will fail)",
+		Title:        "Delete this note?",
+		Body:         "The demo handler rejects this with 422 — the list must stay unchanged.",
+		RPCPath:      "/__site/optimistic/delete/fail?id=n1",
+		ConfirmLabel: "Delete it",
+		// Bound to the same region as the working deletes: on 2xx the
+		// runtime would swap the list; on the demo's 422 it skips the
+		// swap (html-mode + non-string = no-op, see runtime.js).
+		SuccessSignal: "opt-delete-list",
+	})
+	return trigger
+}
+
+// optimisticDeleteModals returns one *widget.Builder per delete-store
+// row (the ConfirmAction modal matching that row's Delete trigger),
+// PLUS the opt-delete-fail-n1 modal for the "will fail" affordance.
+// main.go mounts these once at startup. The delete store never grows
+// past initialOptimisticNotes, so every rendered trigger has its modal
+// mounted — no orphan opt-delete-nN triggers.
+func optimisticDeleteModals() []*widget.Builder {
+	optimisticDeleteNotes.Lock()
+	defer optimisticDeleteNotes.Unlock()
+	out := make([]*widget.Builder, 0, len(optimisticDeleteNotes.Items)+1)
+	for _, n := range optimisticDeleteNotes.Items {
+		_, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
+			Name:         "opt-delete-" + n.ID,
+			TriggerLabel: "Delete",
+			Title:        "Delete this note?",
+			Body:         "It will be removed from the list.",
+			RPCPath:      "/__site/optimistic/delete?id=" + n.ID,
+			ConfirmLabel: "Delete it",
+			// SuccessSignal wires the 2xx response body (the fresh
+			// shorter list HTML returned by the delete handler) into
+			// the opt-delete-list signal region — the runtime swaps
+			// the region's innerHTML, the row disappears, and the
+			// modal closes via data-fui-rpc-close. On a non-2xx the
+			// runtime leaves the region unchanged (html-mode skips
+			// non-string values), which is the "failed delete leaves
+			// the list unchanged" invariant.
+			SuccessSignal: "opt-delete-list",
+		})
+		out = append(out, modal)
+	}
+	// "Will fail" affordance — same SuccessSignal, different RPC path
+	// that always returns 422. Mounted once so its trigger is valid.
+	_, failModal := ui.ConfirmAction(ui.ConfirmActionConfig{
+		Name:          "opt-delete-fail-n1",
+		TriggerLabel:  "Delete n1 (will fail)",
+		Title:         "Delete this note?",
+		Body:          "The demo handler rejects this with 422 — the list must stay unchanged.",
+		RPCPath:       "/__site/optimistic/delete/fail?id=n1",
+		ConfirmLabel:  "Delete it",
+		SuccessSignal: "opt-delete-list",
+	})
+	out = append(out, failModal)
+	return out
+}
+
+// resetOptimisticNotes restores BOTH demo stores to their initial
+// state. Called by e2e tests to guarantee isolation across runs.
+func resetOptimisticNotes() {
+	optimisticCreateNotes.Lock()
+	optimisticCreateNotes.Items = append([]optimisticNote(nil), initialOptimisticNotes...)
+	optimisticCreateNotes.Next = 4
+	optimisticCreateNotes.Unlock()
+
+	optimisticDeleteNotes.Lock()
+	optimisticDeleteNotes.Items = append([]optimisticNote(nil), initialOptimisticNotes...)
+	optimisticDeleteNotes.Unlock()
 }
 
 // componentEntry — one component in the catalog.
@@ -1126,6 +1322,140 @@ const page = await api.posts.list({ limit: 25 });`},
 			),
 		)
 	}},
+	{"optimisticinlineedit", "Optimistic Inline Edit", "Optimistic UI",
+		"Edit a field + save; the button flips optimistically, rolls back + shakes on rejection.",
+		func() render.HTML {
+			// The text input is visual — its value does not transmit on
+			// the OptimisticAction fetch (the runtime is fire-and-
+			// forget). The two buttons exercise both reconciliation
+			// paths against the same field: one commits, one rolls back.
+			return html.Div(html.DivConfig{Class: "demo-stack"},
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `ui.OptimisticAction(ui.OptimisticActionConfig{
+    Endpoint:     "/api/rename/validate",
+    IdleLabel:    "Save",
+    SuccessLabel: "Saved ✓",
+})`}),
+				html.Div(html.DivConfig{Class: "demo-row"},
+					html.Label(html.LabelConfig{
+						For:  "opt-edit-name",
+						Text: "Display name",
+					}),
+					html.Input(html.InputConfig{
+						Type:  "text",
+						Name:  "name",
+						ID:    "opt-edit-name",
+						Value: "Acme Corp",
+					}),
+				),
+				html.Div(html.DivConfig{Class: "demo-row"},
+					ui.OptimisticAction(ui.OptimisticActionConfig{
+						Endpoint:     "/__site/optimistic/edit/ok",
+						IdleLabel:    "Save",
+						SuccessLabel: "Saved ✓",
+					}),
+					ui.OptimisticAction(ui.OptimisticActionConfig{
+						Endpoint:     "/__site/optimistic/edit/fail",
+						IdleLabel:    "Save (reject)",
+						SuccessLabel: "Saving…",
+						Variant:      ui.ButtonSecondary,
+					}),
+				),
+				html.Div(html.DivConfig{Class: "fact"},
+					render.Text("Click Save — the button flips to “Saved ✓” optimistically, the 2xx keeps it committed. Click Save (reject) — the button flips, then shakes and reverts when the 4xx lands. To transmit the actual input value, wrap the field in a form with interactive.OnSubmit (see the optimistic-ui doc, Recipe 2)."),
+				),
+			)
+		}},
+	{"optimisticcreate", "Optimistic Create", "Optimistic UI",
+		"Click Add → server appends a row and returns authoritative list HTML.",
+		func() render.HTML {
+			addBtn := interactive.OnClick(
+				ui.Button(ui.ButtonConfig{Label: "Add note"}),
+				interactive.Post("/__site/optimistic/create").
+					OnSuccess(interactive.SetSignal("opt-create-list")),
+			)
+			// The list region is bound to a signal in mode=html. On 2xx
+			// the runtime swaps its innerHTML with the response, which
+			// is the fresh authoritative list (with the new row's real
+			// server-assigned id).
+			listRegion := html.Div(html.DivConfig{
+				ExtraAttrs: html.Attrs{
+					"data-fui-signal":      "opt-create-list",
+					"data-fui-signal-mode": "html",
+				},
+			}, renderOptimisticCreateList())
+			return html.Div(html.DivConfig{Class: "demo-stack"},
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
+    ui.Button(ui.ButtonConfig{Label: "Add"}),
+    interactive.Post("/__site/optimistic/create").
+        OnSuccess(interactive.SetSignal("opt-create-list")),
+)`}),
+				addBtn,
+				listRegion,
+				html.Div(html.DivConfig{Class: "fact"},
+					render.Text("The full list HTML is the response body. A true temp-row pattern (row visible before the RPC resolves, then replaced by the authoritative row on 2xx) needs an island with a small bit of registered JS — see the optimistic-ui doc, Recipe 3."),
+				),
+			)
+		}},
+	{"optimisticdelete", "Optimistic Delete + Confirm", "Optimistic UI",
+		"Each row's Delete opens a themed ConfirmAction modal; on confirm the list swaps to the shorter authoritative list.",
+		func() render.HTML {
+			// ConfirmAction returns (trigger, modal). The trigger
+			// renders inline per row; main.go mounts the matching
+			// modals once at startup via optimisticDeleteModals().
+			listRegion := html.Div(html.DivConfig{
+				ExtraAttrs: html.Attrs{
+					"data-fui-signal":      "opt-delete-list",
+					"data-fui-signal-mode": "html",
+				},
+			}, renderOptimisticDeleteList())
+			return html.Div(html.DivConfig{Class: "demo-stack"},
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
+    Name:    "opt-delete-" + item.ID,
+    RPCPath: "/__site/optimistic/delete?id=" + item.ID,
+})
+widget.Mount(app.Router(), modal.Build()) // once, at startup`}),
+				listRegion,
+				optimisticFailDeleteTrigger(),
+				html.Div(html.DivConfig{Class: "fact"},
+					render.Text("Confirm → POST → on 2xx the response replaces the list region with the authoritative shorter list. On failure (4xx) the runtime skips the swap (html-mode + non-string value = no-op), so the row stays put — try “Delete n1 (will fail)” to see it. Pair with an Undo window for a true optimistic-remove pattern (Recipe 4)."),
+				),
+			)
+		}},
+	{"optimisticslow", "Optimistic Slow + Failure", "Optimistic UI",
+		"Pending state, commit after delay, rollback + shake on failure, with a NetworkRetryBanner.",
+		func() render.HTML {
+			return html.Div(html.DivConfig{Class: "demo-stack"},
+				ui.NetworkRetryBanner(ui.NetworkRetryBannerConfig{
+					HealthEndpoint: "/__gofastr/health",
+				}),
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `ui.OptimisticAction(ui.OptimisticActionConfig{
+    Endpoint:     "/api/save-slow",   // ~2s, then 2xx
+    IdleLabel:    "Save",
+    SuccessLabel: "Saving…",
+})
+ui.OptimisticAction(ui.OptimisticActionConfig{
+    Endpoint:     "/api/save-fail",   // 422
+    IdleLabel:    "Save (will fail)",
+    SuccessLabel: "Saving…",
+})`}),
+				html.Div(html.DivConfig{Class: "demo-row"},
+					ui.OptimisticAction(ui.OptimisticActionConfig{
+						Endpoint:     "/__site/optimistic/slow",
+						IdleLabel:    "Save (slow)",
+						SuccessLabel: "Saving…",
+					}),
+					ui.OptimisticAction(ui.OptimisticActionConfig{
+						Endpoint:     "/__site/optimistic/fail",
+						IdleLabel:    "Save (will fail)",
+						SuccessLabel: "Saving…",
+						Variant:      ui.ButtonSecondary,
+					}),
+				),
+				html.Div(html.DivConfig{Class: "fact"},
+					render.Text("Save (slow) exercises the pending window — the button is aria-busy + disabled for ~2s, then commits. Save (will fail) flips optimistically, then shakes and reverts when the 4xx lands. Neither auto-retries; for durable retries use a queue + idempotency key."),
+				),
+			)
+		}},
 	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette — wired in nav (try it).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("CommandPalette returns a (trigger, *widget.Builder) pair — mount the modal once at app startup. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),

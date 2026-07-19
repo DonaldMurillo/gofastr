@@ -705,8 +705,13 @@ func TestAudit_OAuthLinkedLoginRefused(t *testing.T) {
 	})
 	mgr2.Use(NewOAuth2Plugin(OAuth2Config{
 		Providers: map[string]OAuth2Provider{"stub": &stubOAuthProvider{
-			name:     "stub",
-			userInfo: &OAuth2UserInfo{ID: "attacker-id", Email: "victim@example.com", Provider: "stub"},
+			name: "stub",
+			userInfo: &OAuth2UserInfo{
+				ID:            "attacker-id",
+				Email:         "victim@example.com",
+				Provider:      "stub",
+				EmailVerified: true,
+			},
 		}},
 		StateSecret: "test-secret",
 	}))

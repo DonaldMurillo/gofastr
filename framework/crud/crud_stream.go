@@ -41,12 +41,23 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	if !ch.requireScope(w, r, opRead) {
 		return
 	}
+	// Parse the URL query once and thread it through the helpers, mirroring
+	// the List() body. ServeStreamingList is called from List() (which has
+	// already enforced requireScope) but is also a public entrypoint for
+	// direct in-process callers, so it must do its own scoping AND its own
+	// single-parse to keep the soft-delete gate and ?offset= read off the
+	// same url.Values instead of re-parsing per call.
+	q := r.URL.Query()
 	// COUNT first so the envelope has the totals up front.
 	countQb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(countQb, filters)
 	ch.ApplyTenantScopeCount(countQb, r)
 	ch.ApplyOwnerScopeCount(countQb, r)
-	ch.ApplySoftDeleteFilterCount(countQb, r)
+	// Soft-delete's ?trashed= gate authorizes against the REQUEST user, so it
+	// must read r.Context() — not the DB-operation ctx (which callers may seed
+	// with a different identity for in-process execution). The buffered List()
+	// path uses r.Context() here; keep the stream path identical.
+	ch.applySoftDeleteFilterCountQ(countQb, q, r.Context())
 	applyNestedFilters(
 		func(sql string, args ...any) { countQb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
@@ -66,7 +77,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	filter.ApplyToQuery(qb, filters)
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)
-	ch.ApplySoftDeleteFilter(qb, r)
+	ch.applySoftDeleteFilterQ(qb, q, r.Context())
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
@@ -79,7 +90,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	// An explicit ?offset= overrides the page-derived offset, matching the
 	// buffered List() path — otherwise ?offset=N&stream=true would silently
 	// serve page 1 (the process-module broker paginates by raw offset).
-	if o, ok := explicitOffset(r); ok {
+	if o, ok := explicitOffsetValues(q); ok {
 		if o > 0 {
 			qb.Offset(o)
 		}

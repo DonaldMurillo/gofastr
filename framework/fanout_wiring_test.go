@@ -3,6 +3,8 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
@@ -121,4 +124,91 @@ func TestWithFanout_NilPanics(t *testing.T) {
 		}
 	}()
 	WithFanout(nil)
+}
+
+// TestWithFanout_GrantStorePropagates proves WithGrantStore wires the RBAC
+// GrantStore into the app's shared fanout: a grant on replica A's store
+// propagates to replica B's live policy without a restart.
+func TestWithFanout_GrantStorePropagates(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1) // one shared in-memory DB for both stores
+	ctx := context.Background()
+
+	policyA := access.NewRolePolicy()
+	storeA := access.NewGrantStore(db, policyA)
+	if err := storeA.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema A: %v", err)
+	}
+	if err := storeA.LoadInto(ctx, policyA); err != nil {
+		t.Fatalf("LoadInto A: %v", err)
+	}
+	policyB := access.NewRolePolicy()
+	storeB := access.NewGrantStore(db, policyB)
+	if err := storeB.LoadInto(ctx, policyB); err != nil {
+		t.Fatalf("LoadInto B: %v", err)
+	}
+
+	f := fanout.NewInProcess()
+	// WithGrantStore + WithFanout wires each store's SetFanout into the bus.
+	appA := NewApp(WithFanout(f), WithGrantStore(storeA), WithoutDefaultMiddleware())
+	appB := NewApp(WithFanout(f), WithGrantStore(storeB), WithoutDefaultMiddleware())
+	// Shutdown detaches the wiring (exercises the OnStop stop() path).
+	defer func() { _ = appA.Shutdown(ctx); _ = appB.Shutdown(ctx) }()
+
+	if err := storeA.Grant(ctx, "editor", "posts:read"); err != nil {
+		t.Fatalf("Grant on A: %v", err)
+	}
+
+	cB := access.WithRoles(access.WithPolicy(ctx, policyB), []string{"editor"})
+	deadline := time.Now().Add(2 * time.Second)
+	for !access.Can(cB, "posts:read") {
+		if time.Now().After(deadline) {
+			t.Fatal("grant on replica A did not propagate to replica B via WithGrantStore wiring")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// accessSubErrFanout succeeds for every topic EXCEPT the access lane, letting
+// a test drive the access-fanout-subscribe error path without tripping the
+// module lane first.
+type accessSubErrFanout struct{}
+
+func (accessSubErrFanout) Publish(context.Context, string, []byte) error { return nil }
+func (accessSubErrFanout) Subscribe(topic string, _ func([]byte)) (func(), error) {
+	if topic == "gofastr.access" {
+		return nil, errors.New("subscribe boom")
+	}
+	return func() {}, nil
+}
+
+// TestWithGrantStore_FanoutSubscribeErrorPanics covers the wiring's failure
+// path: if the GrantStore's SetFanout fails to subscribe, app construction
+// panics with an actionable message rather than silently running unwired.
+func TestWithGrantStore_FanoutSubscribeErrorPanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic when the access fanout Subscribe errors")
+		}
+		if !strings.Contains(fmt.Sprint(r), "access fanout subscribe") {
+			t.Fatalf("panic = %v, want it to mention access fanout subscribe", r)
+		}
+	}()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	policy := access.NewRolePolicy()
+	store := access.NewGrantStore(db, policy)
+	if err := store.EnsureSchema(context.Background()); err != nil {
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+	// Construction wires access.SetFanout, which errors → panic.
+	NewApp(WithFanout(accessSubErrFanout{}), WithGrantStore(store), WithoutDefaultMiddleware())
 }

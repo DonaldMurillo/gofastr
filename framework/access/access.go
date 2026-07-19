@@ -74,6 +74,22 @@ func (rp *RolePolicy) Capabilities() []Permission {
 	return capabilities
 }
 
+// Snapshot returns a deep copy of the current role→permissions map. Used by
+// GrantStore to capture the code-defined baseline grants (before DB grants are
+// overlaid) so a cross-replica refresh can merge baseline ∪ DB instead of
+// replacing a role with only its DB rows.
+func (rp *RolePolicy) Snapshot() map[string][]Permission {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+	out := make(map[string][]Permission, len(rp.rolePermissions))
+	for role, perms := range rp.rolePermissions {
+		cp := make([]Permission, len(perms))
+		copy(cp, perms)
+		out[role] = cp
+	}
+	return out
+}
+
 // StrictCapabilities makes unknown capability grants fail instead of warning.
 // It returns the policy so callers can opt in while constructing it.
 func (rp *RolePolicy) StrictCapabilities() *RolePolicy {
@@ -278,6 +294,30 @@ func (rp *RolePolicy) Revoke(role string, permissions ...Permission) {
 		}
 	}
 	rp.rolePermissions[role] = filtered
+}
+
+// ReplaceRole atomically REPLACES the set of permissions held by role with
+// perms (after the same prepare/validate/dedupe pass Grant uses). Unlike
+// Grant, permissions absent from perms are dropped — the role ends up with
+// exactly perms, nothing more. Use to re-sync a role's grants from an
+// authoritative source (e.g. after a cross-replica invalidation re-reads
+// the access_grants table). Honors strictCapabilities exactly like Grant:
+// an unknown capability in perms is rejected and the role is left
+// unchanged.
+func (rp *RolePolicy) ReplaceRole(role string, perms ...Permission) error {
+	prepared, err := rp.prepareGrants(perms)
+	if err != nil {
+		return err
+	}
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+	// prepareGrants already deduped and allocated fresh backing, but copy
+	// so future append-style mutations of rolePermissions[role] can't
+	// retroactively edit the caller's slice.
+	out := make([]Permission, len(prepared))
+	copy(out, prepared)
+	rp.rolePermissions[role] = out
+	return nil
 }
 
 // permissionsFor returns a defensive snapshot of permissions for the

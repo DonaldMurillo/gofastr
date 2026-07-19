@@ -36,18 +36,26 @@ type Credentials struct {
 	Token    string // API key or bearer token
 }
 
-// OAuthLinker is the optional UserStore extension that lets the OAuth2
-// callback bind a user to a (provider, provider_id) pair. Stores that
-// implement this interface get the safer flow:
+// OAuthLinker is the REQUIRED UserStore extension for OAuth login: it binds
+// a user to a durable (provider, provider_id) pair. OAuth2Plugin.Init fails
+// closed in production when the configured store is not an OAuthLinker (only
+// DevMode / AllowInMemoryStores relaxes it), so the legacy email-only path is
+// gone. EntityUserStore now implements this by default.
 //
-//  1. FindByOAuth(provider, providerID) — returns the locally-linked user.
-//  2. If no match, fall back to FindByEmail. A pre-existing local account
-//     with the same email is REFUSED (409) to prevent silent takeover by
-//     a non-verifying provider.
-//  3. If no match by either path, CreateUser + LinkOAuth.
+// The callback's resolveOAuthUser decision table (see oauth2.go):
 //
-// Stores that do NOT implement OAuthLinker get the legacy email-only
-// behavior — keep that path off in production.
+//  1. FindByOAuth(provider, providerID) matches → LOGIN as that user.
+//  2. No link, but the provider's email (email_verified) matches an existing
+//     local account:
+//     - account HAS a password → REFUSED (409): the user must log in with
+//     their password and add the provider via the authenticated link flow
+//     (GET /auth/oauth/{provider}/link) — protects the local credential
+//     from IdP-email takeover.
+//     - account is PASSWORDLESS → AUTO-LINK + login (safe migration: a prior
+//     OAuth-created account re-binds to the same verified identity).
+//  3. Email is UNVERIFIED, or no email match → CreateUser + LinkOAuth (a
+//     fresh distinct account; an unverified email never binds to an existing
+//     one). See framework/docs/content/auth.md for the full contract.
 type OAuthLinker interface {
 	FindByOAuth(ctx context.Context, provider, providerID string) (User, error)
 	LinkOAuth(ctx context.Context, userID, provider, providerID string) error

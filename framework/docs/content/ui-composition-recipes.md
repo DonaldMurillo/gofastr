@@ -212,6 +212,7 @@ missing.
 - [UI components index](ui-new-components.md) lists every constructor and live gallery route.
 - [Runtime contract](runtime-contract.md) defines SSR, RPC islands, and SSE.
 - [Signal store](signal-store.md) covers typed client projection and derived state.
+- [Optimistic UI](optimistic-ui.md) for the mutation lifecycle and how optimistic recipes compose into each page grammar.
 
 ## Common mistakes
 

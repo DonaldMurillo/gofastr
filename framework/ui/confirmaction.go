@@ -67,6 +67,25 @@ type ConfirmActionConfig struct {
 	// RPCMethod defaults to "POST".
 	RPCMethod string
 
+	// SuccessSignal, when set, emits data-fui-rpc-signal="<name>" on
+	// the Confirm button. On a 2xx response the runtime broadcasts
+	// the response body (typically the fresh authoritative list HTML)
+	// into the named signal — pair it with a
+	// data-fui-signal="<name>" data-fui-signal-mode="html" region to
+	// swap in that HTML (e.g. the shorter list after a delete). On a
+	// non-2xx response html-mode regions are left unchanged (the
+	// optimistic-UI invariant: a failed delete leaves the row/list
+	// intact), while text-mode regions render a human-readable
+	// "Error: …" string. Empty (the default) leaves the response
+	// unused, which is correct for fire-and-forget confirms.
+	//
+	// The name MUST match ^[A-Za-z0-9_-]+$ — ConfirmAction panics
+	// otherwise. The runtime interpolates the value into a CSS
+	// attribute selector (querySelectorAll '[data-fui-signal="…"]'),
+	// so any other shape is either an invalid selector (silently
+	// drops the broadcast) or a selector-injection footgun.
+	SuccessSignal string
+
 	// AutofocusConfirm flips the initial focus from Cancel (the
 	// default, safer choice for destructive flows where accidental
 	// Enter must not fire the action) to Confirm. Set to true for
@@ -96,6 +115,9 @@ func ConfirmAction(cfg ConfirmActionConfig) (render.HTML, *widget.Builder) {
 	if cfg.RPCPath == "" {
 		panic("ui: ConfirmAction requires RPCPath")
 	}
+	if cfg.SuccessSignal != "" && !validSuccessSignalName(cfg.SuccessSignal) {
+		panic("ui: ConfirmAction SuccessSignal must match ^[A-Za-z0-9_-]+$, got " + cfg.SuccessSignal)
+	}
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -117,7 +139,7 @@ func ConfirmAction(cfg ConfirmActionConfig) (render.HTML, *widget.Builder) {
 		method = "POST"
 	}
 	trigger := buildConfirmTrigger(cfg.Name, cfg.TriggerLabel, variant)
-	modal := buildConfirmModal(cfg.Name, cfg.Title, cfg.Body, confirm, cancel, method, cfg.RPCPath, cfg.AutofocusConfirm)
+	modal := buildConfirmModal(cfg.Name, cfg.Title, cfg.Body, confirm, cancel, method, cfg.RPCPath, cfg.SuccessSignal, cfg.AutofocusConfirm)
 	return trigger, modal
 }
 
@@ -142,7 +164,29 @@ func parseButtonVariant(v string) ButtonVariant {
 	return ButtonDanger
 }
 
-func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpcPath string, autofocusConfirm bool) *widget.Builder {
+// validSuccessSignalName returns true iff name is a safe identifier
+// for use as a data-fui-rpc-signal / data-fui-signal value. The runtime
+// interpolates the name verbatim into the CSS attribute selector
+// `[data-fui-signal="<name>"]`; values outside [A-Za-z0-9_-] are either
+// invalid selectors (the broadcast silently no-ops) or selector-injection
+// (a `"` or `]` breaks out of the attribute matcher). Keep this in sync
+// with the same shape used by interactive.SetSignal and the CSS.escape
+// contract documented in core-ui/ARCHITECTURE.md.
+func validSuccessSignalName(name string) bool {
+	for _, c := range name {
+		switch {
+		case c >= 'a' && c <= 'z',
+			c >= 'A' && c <= 'Z',
+			c >= '0' && c <= '9',
+			c == '_' || c == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpcPath, successSignal string, autofocusConfirm bool) *widget.Builder {
 	titleID := name + "-title"
 	bodyID := name + "-body"
 	slot := &confirmDialogSlot{
@@ -154,6 +198,7 @@ func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpc
 		cancelLabel:      cancelLabel,
 		rpcMethod:        method,
 		rpcPath:          rpcPath,
+		successSignal:    successSignal,
 		autofocusConfirm: autofocusConfirm,
 	}
 	return preset.Modal(name).
@@ -165,11 +210,11 @@ func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpc
 }
 
 type confirmDialogSlot struct {
-	titleID, bodyID           string
-	title, body               string
-	confirmLabel, cancelLabel string
-	rpcMethod, rpcPath        string
-	autofocusConfirm          bool
+	titleID, bodyID                   string
+	title, body                       string
+	confirmLabel, cancelLabel         string
+	rpcMethod, rpcPath, successSignal string
+	autofocusConfirm                  bool
 }
 
 func (s *confirmDialogSlot) Render() render.HTML {
@@ -180,6 +225,9 @@ func (s *confirmDialogSlot) Render() render.HTML {
 		"data-fui-rpc":        s.rpcPath,
 		"data-fui-rpc-method": s.rpcMethod,
 		"data-fui-rpc-close":  "",
+	}
+	if s.successSignal != "" {
+		confirmAttrs["data-fui-rpc-signal"] = s.successSignal
 	}
 	// Only the OPT-IN case carries an autofocus attribute. Cancel is
 	// rendered first in DOM order so the Modal preset's "focus the

@@ -95,11 +95,11 @@ the UI side; the same rule applies to your own clients.
 
 ## See also
 
+- [Live dashboards](live-dashboards.md) composes this push lane into a realistic ops dashboard, with the delivery-semantics decision table.
 - [UI capability map](ui-capability-map.md) distinguishes realtime UI invalidation from durable workflow delivery.
 - [Presence](presence.md) uses the same push lane for self-healing rosters.
 - [Horizontal scaling](scaling.md) covers fanout and replica topology.
 - [Benchmarks](benchmarks.md) documents SSE delivery/drop measurements.
-
 ## Common mistakes
 
 - **Subscribing to SSE for confirmations.** SSE is fire-and-forget.

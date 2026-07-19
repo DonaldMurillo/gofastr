@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -36,7 +37,14 @@ type IncludeNode struct {
 // Example: "author.profile, comments" against a posts entity yields two
 // roots: author (with profile as a child) and comments (no children).
 func parseIncludeTree(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]*IncludeNode, error) {
-	raw := strings.TrimSpace(r.URL.Query().Get("include"))
+	return parseIncludeTreeQ(r.URL.Query(), ent, registry)
+}
+
+// parseIncludeTreeQ is the no-reparse variant. The List handler threads
+// its single url.Values through; this avoids r.URL.Query() re-parsing
+// RawQuery on every helper call.
+func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registry) ([]*IncludeNode, error) {
+	raw := strings.TrimSpace(q.Get("include"))
 	if raw == "" {
 		return nil, nil
 	}

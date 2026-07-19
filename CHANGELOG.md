@@ -5,30 +5,84 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.36.0] - 2026-07-19
 
-Positioning pass — GoFastr is presented as a full-stack Go framework that
-doesn't get in the way of you or your agents. The blueprint generator and the
-entity declaration are optional features, not the identity. No API changes.
+Production-hardening release: closes the verified OAuth-identity and
+multi-replica-correctness findings, cuts filtered-list overhead, and turns
+GoFastr's live-data and optimistic-UI capabilities into runnable references.
+
+### BREAKING
+
+- **OAuth login requires a durable link store** (#98). `OAuth2Plugin.Init`
+  fails closed when the `UserStore` does not implement `OAuthLinker` — the
+  legacy email-only fallback is gone (an IdP emitting an unverified email could
+  otherwise sign in as an existing account). `EntityUserStore` now implements
+  it (creates a `<table>_oauth_links` table on `EnsureSchema`). A verified-email
+  OAuth login refuses (409) an existing password account; the user adds the
+  provider via the new authenticated `GET /auth/oauth/{provider}/link` flow.
+  Set `AllowInMemoryStores` for local dev. See `upgrades.yml`.
+
+### Added
+
+- **Multi-replica RBAC invalidation** (#99). `framework.WithGrantStore` +
+  `WithFanout` propagate grant/revoke across replicas as a refresh-signal
+  (receivers re-read authoritative DB rows; code-defined baseline grants are
+  preserved), via a non-blocking publish queue + a background refresh worker.
+- **Authenticated OAuth link flow** (#98). `GET /auth/oauth/{provider}/link`
+  lets a logged-in user bind an additional provider (the signed state carries
+  the user id; the callback re-verifies the session and refuses a
+  foreign-owned identity).
+- **Live-dashboard reference** (#103). `/examples/live-dashboard` plus a new
+  `live-dashboards.md` covering update scheduling, delivery semantics (SSE is
+  not a durable ledger), tenant isolation, and performance evidence.
+- **Optimistic-mutation cookbook** (#104). New `optimistic-ui.md` (lifecycle
+  contract + seven executable recipes) and `ConfirmActionConfig.SuccessSignal`
+  to reconcile a list region on a successful confirm.
+- **Per-screen `llm.md` SEO** (#108). `/{path}/llm.md` now carries YAML
+  front-matter mirroring the HTML head SEO (description, canonical, robots,
+  Open Graph, Twitter, JSON-LD types, hreflang).
 
 ### Changed
 
-- **Embedded docs reframed** in plain words, full-stack-first. The
-  `framework/docs/content/*` corpus (browsable with `gofastr docs` and via the
-  `framework_docs_*` MCP tools) now leads with the framework and the two-layer
-  `core`/`framework` model instead of the blueprint pipeline, and marketing
-  language is removed throughout. Facts, flags, links, and code samples are
-  unchanged.
-- **README** repositioned to match: full-stack-framework-first, the blueprint
-  demoted to the last and clearly-optional design bet, the Quickstart reordered
-  so the Go entity form comes before the blueprint, and a "Built with GoFastr"
-  section that leads with a real production app. The executable-README
-  quickstart gate still passes.
-- **Docs site (`examples/site`)** reworked: the area hubs are now taught pages
-  (concept → real code → one reference link), the `/patterns` area is renamed
-  to `/framework` (its own copy already called it the framework layer), the
-  homepage gains a "Built with GoFastr" section, and page metadata, footer, and
-  the agent card move off "agents are first-class authors" onto the tagline.
+- **Startup seeds are advisory-lock serialized** (#99). Entity seeds and
+  `WithSeed` hooks run under a distinct Postgres advisory lock so N replicas
+  seed once; a `MaxOpenConns(1)` pool cannot hold the lock and skips it with a
+  WARN (keep the pool above 1 for multi-replica seed coordination).
+- **`email_verified` enforced** (#98). OIDC logins consult `email_verified`
+  (fetching userinfo when the id_token omits it, never overwriting a signed
+  `false`); an unverified email never binds to an existing account.
+- **Positioning pass** (#113). GoFastr is presented as a full-stack Go
+  framework that doesn't get in the way of you or your agents — the blueprint
+  generator and the entity declaration are optional features, not the
+  identity. No API changes. The embedded `framework/docs/content/*` corpus is
+  reframed in plain words, full-stack-first (facts/flags/links/samples
+  unchanged); the README is repositioned with the blueprint demoted to a
+  clearly-optional design bet and a "Built with GoFastr" section; and the docs
+  site (`examples/site`) reworks its area hubs into taught pages, renames
+  `/patterns` to `/framework`, and moves page metadata/footer onto the tagline.
+
+### Performance
+
+- **Filtered-list overhead cut** (#100). Parse the query string once and thread
+  it through the List helpers, pool the row scan buffer, pre-size the query
+  builder: ~11–14% fewer bytes and ~4–5% fewer allocs on SQLite and Postgres
+  (benchstat), with no change to owner/tenant/RBAC/soft-delete/projection
+  semantics.
+
+### Security
+
+- **Cross-issuer OAuth takeover closed** (#98). The `(provider, provider_id)`
+  link namespace binds to the state-validated registry key, not the
+  provider-returned `Name()` — two OIDC issuers both defaulting to `oidc` could
+  otherwise collide and take over each other's accounts. Concurrent-link races
+  now fail closed to the durable-PK winner.
+- **Streaming soft-delete authorization** (#100). `ServeStreamingList`
+  authorized the `?trashed=` gate against the DB-operation context instead of
+  the request context (a data-disclosure the buffered List path did not have) —
+  now uses `r.Context()`.
+- **ConfirmAction signal safety** (#104). `SuccessSignal` names are validated
+  (`^[A-Za-z0-9_-]+$`) to prevent selector injection, and a failed RPC no
+  longer overwrites an html-mode signal region with an error object.
 
 ## [0.35.0] - 2026-07-18
 

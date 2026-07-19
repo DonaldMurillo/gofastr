@@ -24,6 +24,23 @@ var lockPollInterval = 200 * time.Millisecond
 // contention.
 const AdvisoryLockKey int64 = 6724469554113028193
 
+// SeedAdvisoryLockKey is the fixed 64-bit key used for the SEED advisory
+// lock on Postgres — DISTINCT from AdvisoryLockKey so that two replicas
+// booting simultaneously serialize schema migration and seeding
+// independently. Without a separate key, a replica that finished its DDL
+// but still holds the migration lock to run its seeds would block every
+// other replica's DDL phase (and vice versa). Same stability rule as
+// AdvisoryLockKey: derived once from "gofastr.seed" and frozen — changing
+// it would let two replicas run a Seed func concurrently.
+//
+// Combined with the _gofastr_seeded ledger (framework/migrate/seed.go),
+// the lock turns RunSeeds into run-ONCE-globally: whichever replica wins
+// the lock runs the Seed body and records the ledger row; the others wait
+// for the lock, then short-circuit on the ledger. A crashed lock holder's
+// session-level lock is released automatically by Postgres when the
+// connection closes — no permanent block.
+const SeedAdvisoryLockKey int64 = 7583194026157293042
+
 // WithAdvisoryLock runs fn while holding a database-level lock that serializes
 // migration across every process pointed at the same database. fn receives the
 // pinned *sql.Conn that holds the lock and MUST do all of its work on that

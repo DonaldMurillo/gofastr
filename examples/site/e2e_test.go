@@ -25,7 +25,7 @@ import (
 
 func siteE2EServer(t *testing.T) string {
 	t.Helper()
-	app := setupServer()
+	app := newTestApp(t)
 	srv := httptest.NewServer(app.Router())
 	t.Cleanup(srv.Close)
 	return srv.URL

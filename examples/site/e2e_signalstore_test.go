@@ -19,15 +19,41 @@ import (
 )
 
 // consoleErrSink collects browser-level errors: console.error calls,
-// uncaught exceptions, AND Log-domain entries (where CSP violations land).
+// uncaught exceptions, AND Log-domain entries (where CSP violations
+// AND network-resource failures land). Log entries keep their source,
+// text, and URL so the test can tell an EXPECTED 4xx (a demo's reject
+// endpoint) from an unrelated 404/500 — the former is tolerated, the
+// latter stays fatal.
 type consoleErrSink struct {
 	mu   sync.Mutex
-	errs []string
+	errs []consoleErr
+}
+
+// consoleErr is one collected error entry. URL is empty for
+// console.error / uncaught-exception entries (Chrome does not attach
+// a URL to those); it is populated for Log entries that name a
+// resource (network errors, CSP violation sources).
+type consoleErr struct {
+	msg    string // human-readable line, surfaced in test output
+	source string // cdplog.Source* value ("network", "violation", …) — "" for non-Log entries
+	text   string // raw entry text
+	url    string // resource URL — "" when Chrome did not attach one
 }
 
 func (s *consoleErrSink) add(msg string) {
 	s.mu.Lock()
-	s.errs = append(s.errs, msg)
+	s.errs = append(s.errs, consoleErr{msg: msg})
+	s.mu.Unlock()
+}
+
+func (s *consoleErrSink) addEntry(source, text, url string) {
+	s.mu.Lock()
+	s.errs = append(s.errs, consoleErr{
+		msg:    "log[" + source + "]: " + text,
+		source: source,
+		text:   text,
+		url:    url,
+	})
 	s.mu.Unlock()
 }
 
@@ -44,7 +70,7 @@ func (s *consoleErrSink) listen(ctx context.Context) {
 			}
 		case *cdplog.EventEntryAdded:
 			if e.Entry != nil && e.Entry.Level == cdplog.LevelError {
-				s.add("log[" + string(e.Entry.Source) + "]: " + e.Entry.Text)
+				s.addEntry(string(e.Entry.Source), e.Entry.Text, e.Entry.URL)
 			}
 		}
 	})
@@ -53,7 +79,72 @@ func (s *consoleErrSink) listen(ctx context.Context) {
 func (s *consoleErrSink) errors() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]string(nil), s.errs...)
+	out := make([]string, len(s.errs))
+	for i, e := range s.errs {
+		out[i] = e.msg
+	}
+	return out
+}
+
+// matchesReject reports whether the entry is a network-resource error
+// for one of the supplied reject path substrings — the demo endpoints
+// that intentionally return 4xx (e.g. "/__site/optimistic/edit/fail").
+// Source MUST be "network" so a same-path CSP or script error stays
+// fatal; the URL/text must mention one of the paths so an UNRELATED
+// 404/500 (different URL) is not silently swallowed.
+func (e consoleErr) matchesReject(paths []string) bool {
+	if e.source != string(cdplog.SourceNetwork) {
+		return false
+	}
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if strings.Contains(e.url, p) || strings.Contains(e.text, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// errorsExcludingExpectedReject returns the collected errors minus
+// network-resource errors whose URL or text matches one of the
+// expected reject path substrings. Those entries are Chrome's
+// automatic record of an HTTP non-2xx — they fire whenever a test
+// exercises a demo's intentional reject path (e.g. Save (reject) →
+// 422 → rollback, or Delete (will fail) → 422 → list unchanged).
+//
+// Pair with rejectSeen (same paths) to also ASSERT the intended 4xx
+// actually fired. UNRELATED network errors (any other URL) and every
+// non-network entry (console.error, CSP violation, uncaught exception)
+// still surface here and fail the test.
+func (s *consoleErrSink) errorsExcludingExpectedReject(paths ...string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.errs))
+	for _, e := range s.errs {
+		if e.matchesReject(paths) {
+			continue
+		}
+		out = append(out, e.msg)
+	}
+	return out
+}
+
+// rejectSeen reports whether the browser observed at least one
+// network-resource error matching one of the expected reject path
+// substrings. Used to positively ASSERT that a demo's intended 4xx
+// actually fired (defends against a silently-passing test where the
+// reject endpoint was unreachable or returned 2xx by mistake).
+func (s *consoleErrSink) rejectSeen(paths ...string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.errs {
+		if e.matchesReject(paths) {
+			return true
+		}
+	}
+	return false
 }
 
 // interactiveSlugs are the client-side interactivity demos. Every one must

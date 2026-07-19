@@ -398,3 +398,44 @@ func TestScreenLLMMD_ScreenLoaderFallback(t *testing.T) {
 		t.Error("expected dynamic content note for ScreenLoader, got:", md)
 	}
 }
+
+// ============================================================================
+// ScreenLLMMDWithMeta — metadata prefix
+// ============================================================================
+
+func TestScreenLLMMDWithMeta_EmptyPrefixMatchesBase(t *testing.T) {
+	screen := NewScreen("/", &basicComp{})
+	screen.Title = "Home"
+	screen.Description = "The homepage"
+
+	got := ScreenLLMMDWithMeta(screen, "")
+	want := ScreenLLMMD(screen)
+	if got != want {
+		t.Errorf("empty prefix must equal ScreenLLMMD output\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestScreenLLMMDWithMeta_InsertsPrefixBeforeTitle(t *testing.T) {
+	screen := NewScreen("/", &basicComp{})
+	screen.Title = "Home"
+	screen.Description = "The homepage"
+
+	meta := "---\ntitle: \"Home\"\ndescription: \"Front-matter desc\"\n---"
+	md := ScreenLLMMDWithMeta(screen, meta)
+
+	// Front-matter must appear at the very top of the document.
+	if !strings.HasPrefix(md, meta+"\n") {
+		t.Errorf("expected metaPrefix at the top, got:\n%s", md)
+	}
+	// The "# Home" heading must appear AFTER the front-matter.
+	titleIdx := strings.Index(md, "# Home")
+	fmEnd := strings.Index(md, meta) + len(meta)
+	if titleIdx < fmEnd {
+		t.Errorf("title must come after metaPrefix; titleIdx=%d fmEnd=%d\n%s",
+			titleIdx, fmEnd, md)
+	}
+	// Existing body must still be present.
+	if !strings.Contains(md, "## Route") {
+		t.Errorf("expected '## Route' section to remain; got:\n%s", md)
+	}
+}

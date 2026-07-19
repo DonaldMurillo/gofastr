@@ -207,6 +207,23 @@ What to look for:
   30% overhead from filter parsing, case conversion, projection logic.
 - **FilteredList delta is the worst case** (allocations dominate).
   This is the hottest optimization target.
+- **Fixture authentication (2026-07-18).** Since commit `4758c4a0`
+  generated CRUD requires a session by default, so `BenchmarkT7_FilteredList_GoFastr`
+  and `BenchmarkTier1_IncludesVsN1` build their requests with
+  `benchAuthedGet` (helper in `bench_tier1_test.go`), which stamps a
+  user into the request context via `handler.SetUser` — the same shape
+  production auth middleware produces. Without it the `setupBlogDomain`
+  entities (no `OwnerField`/`Access`/`Config.Public`) 401 before the
+  List body runs and the bench measures the rejection, not the list.
+- **Single-parse threading (2026-07-18, issue #100B).** The List and
+  ServeStreamingList handlers now parse `r.URL.Query()` exactly once per
+  request and thread the resulting `url.Values` through every helper
+  (filter, sort, pagination, includes, nested filters, soft-delete gate,
+  projection, offset, stream check). The `filter` package exposes
+  additive `ParseFiltersValues` / `ParseSortValues` variants and a
+  shared exported `FilterSuffixes` operator table; the `r`-taking
+  originals remain as thin wrappers so external callers are unaffected.
+  See `perf-results.md` for the resulting before/after benchstat.
 
 ## Tier 9 — UI runtime: streams, islands, full SSR
 

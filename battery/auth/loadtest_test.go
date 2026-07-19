@@ -145,7 +145,7 @@ func TestLoad_OAuthStateNonces_BoundedUnderRedirectStorm(t *testing.T) {
 
 	const N = 5000
 	for i := 0; i < N; i++ {
-		if _, err := p.generateState("mock"); err != nil {
+		if _, err := p.generateState("mock", ""); err != nil {
 			t.Fatalf("generateState %d: %v", i, err)
 		}
 	}
@@ -183,11 +183,11 @@ func TestLoad_OAuthStateNonces_GarbageCollectsExpired(t *testing.T) {
 
 	// Now trigger the GC by validating one fresh state — that path is
 	// where the size-gated purge runs.
-	fresh, err := p.generateState("mock")
+	fresh, err := p.generateState("mock", "")
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
-	if !p.validateAndConsumeState(fresh, "mock") {
+	if _, ok := p.validateAndConsumeState(fresh, "mock"); !ok {
 		t.Fatal("fresh validate failed")
 	}
 

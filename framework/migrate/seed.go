@@ -103,18 +103,32 @@ func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string)
 // _gofastr_seeded ledger. Subsequent restarts short-circuit when the
 // entity already has a ledger row. Call after AutoMigrate.
 //
+// Multi-replica safety: the ensure-ledger → read-ledger → run → record
+// sequence runs while holding [coremig.SeedAdvisoryLockKey] (a Postgres
+// advisory lock DISTINCT from the migration lock). Combined with the
+// ledger, this makes an entity's Seed run ONCE globally: whichever
+// replica wins the lock runs the body and records the row; the others
+// wait, then short-circuit on the ledger. SQLite serializes at the file
+// level so the lock is a no-op there. A crashed lock holder's
+// session-level lock is released automatically by Postgres — no
+// permanent block.
+//
+// Exception — MaxOpenConns(1): the advisory lock pins a connection, so a
+// Postgres pool capped at ONE connection would deadlock the seed body's
+// own queries. Such a pool SKIPS the lock (logging a WARN) and runs
+// unlocked, so N single-connection replicas are NOT coordinated and can
+// race a Seed. Keep the pool above 1 connection for cross-replica seed
+// serialization (the default unlimited pool is fine).
+//
 // Contract:
-//   - Seed implementations MUST be idempotent. The framework cannot
-//     guarantee atomicity between user inserts and the ledger row, and
-//     concurrent RunSeeds calls across multiple processes can both see
-//     "not seeded" and both invoke Seed. Use INSERT … ON CONFLICT DO
-//     NOTHING (or a pre-check) inside Seed.
+//   - Seed implementations SHOULD be idempotent. The framework now
+//     serializes startup seeds across replicas, so the legacy race is
+//     closed; idempotency is still the right posture because a Seed
+//     that crashed mid-flight is NOT rolled back, and the next boot
+//     re-runs it (no ledger row was recorded).
 //   - Seeds run serially in topological order. Independent seeds run
 //     one at a time; batch parallel work inside a single Seed func
 //     when needed.
-//   - RunSeeds is intended for serialized startup (one process at a
-//     time). HA deployments should gate seeding behind an external
-//     mechanism (init container, one-shot job, advisory lock).
 //   - The supplied ctx propagates into each Seed call. Cancelling ctx
 //     unblocks Seed implementations that respect it.
 //   - db == nil is a silent no-op, matching AutoMigrate's behaviour.
@@ -124,7 +138,6 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	if db == nil {
 		return nil
 	}
-	logger := seedLoggerFromCtx(ctx)
 	dialect := DetectDialect(db)
 
 	hasSeed := false
@@ -138,6 +151,43 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 		return nil
 	}
 
+	// Serialize the seed phase across replicas behind a Postgres advisory
+	// lock DISTINCT from the migration lock. Seed funcs receive the pool db
+	// (their signature requires *sql.DB), so the lock pins its own conn and
+	// the body runs against the pool — correct on Postgres where every conn
+	// shares the database. A MaxOpenConns(1) pool (e.g. test harness, or a
+	// deployment that deliberately serializes all DB access on one conn)
+	// would deadlock: the pinned lock conn IS the only conn, so the body's
+	// pool queries block forever. Skip the lock in that case — a
+	// single-conn pool already serializes this process's access, and the
+	// lock only coordinates ACROSS processes. SQLite is single-process and
+	// file-serialized, so the lock is meaningless there too; run unwrapped.
+	poolSize := db.Stats().MaxOpenConnections
+	if dialect == DialectPostgres && poolSize != 1 {
+		return coremig.WithAdvisoryLockKey(ctx, db, dialect, coremig.SeedAdvisoryLockKey, func(_ *sql.Conn) error {
+			return runSeedsBody(ctx, db, dialect, registry)
+		})
+	}
+	if dialect == DialectPostgres && poolSize == 1 {
+		// Cannot take the advisory lock on a 1-conn pool: WithAdvisoryLock
+		// pins a connection, leaving none for the seed body's pool queries →
+		// deadlock. We run UNLOCKED here, so seeds are NOT coordinated across
+		// replicas in this configuration — N replicas each with a 1-conn pool
+		// can each observe "not seeded" and race a Seed (the ledger's ON
+		// CONFLICT DO NOTHING dedupes the row, not the Seed execution). Warn
+		// loudly on the default logger (the ctx seed logger defaults to
+		// Discard, and this gap must always surface) rather than silently
+		// weaken the single-run guarantee.
+		slog.Default().Warn("seed advisory lock skipped: Postgres pool has MaxOpenConns(1), so startup seeds are NOT serialized across replicas — raise MaxOpenConns above 1 to enable cross-replica seed coordination")
+	}
+	return runSeedsBody(ctx, db, dialect, registry)
+}
+
+// runSeedsBody is the ensure-ledger → read-ledger → run → record loop,
+// extracted so RunSeeds can wrap it in the advisory lock on Postgres and
+// call it directly on SQLite. db is the pool; seed funcs receive it as-is.
+func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, registry entity.Registry) error {
+	logger := seedLoggerFromCtx(ctx)
 	if err := ensureSeedLedger(ctx, db, dialect); err != nil {
 		return fmt.Errorf("seed: ensure ledger: %w", err)
 	}

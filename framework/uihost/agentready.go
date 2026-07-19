@@ -594,6 +594,9 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Write([]byte(app.ScreenLLMMD(screen)))
+	seo := resolveScreenSEO(screen)
+	fm := screenSEOFrontMatter(screen.Title, seo)
+	md := app.ScreenLLMMDWithMeta(screen, fm)
+	w.Write([]byte(md))
 	return true
 }

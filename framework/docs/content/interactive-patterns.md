@@ -631,6 +631,8 @@ search := interactive.LiveSearch(
 ## See also
 
 - [UI capability map](ui-capability-map.md) starts from optimistic UI, live dashboard, mutation, rollback, and reconciliation jobs.
+- [Optimistic UI](optimistic-ui.md) for the mutation lifecycle contract,
+  rollback vs authoritative refresh, and the seven composed recipes.
 - [`docs/ui-new-components.md`](ui-new-components.md) — full component catalog.
 - [`docs/widgets.md`](widgets.md) — widget framework (Modal, Drawer, Popover mounts).
 - [runtime-contract](runtime-contract.md) — the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
