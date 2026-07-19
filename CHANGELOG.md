@@ -5,6 +5,31 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+Positioning pass — GoFastr is presented as a full-stack Go framework that
+doesn't get in the way of you or your agents. The blueprint generator and the
+entity declaration are optional features, not the identity. No API changes.
+
+### Changed
+
+- **Embedded docs reframed** in plain words, full-stack-first. The
+  `framework/docs/content/*` corpus (browsable with `gofastr docs` and via the
+  `framework_docs_*` MCP tools) now leads with the framework and the two-layer
+  `core`/`framework` model instead of the blueprint pipeline, and marketing
+  language is removed throughout. Facts, flags, links, and code samples are
+  unchanged.
+- **README** repositioned to match: full-stack-framework-first, the blueprint
+  demoted to the last and clearly-optional design bet, the Quickstart reordered
+  so the Go entity form comes before the blueprint, and a "Built with GoFastr"
+  section that leads with a real production app. The executable-README
+  quickstart gate still passes.
+- **Docs site (`examples/site`)** reworked: the area hubs are now taught pages
+  (concept → real code → one reference link), the `/patterns` area is renamed
+  to `/framework` (its own copy already called it the framework layer), the
+  homepage gains a "Built with GoFastr" section, and page metadata, footer, and
+  the agent card move off "agents are first-class authors" onto the tagline.
+
 ## [0.33.0] - 2026-07-18
 
 Adds MCP Apps support to `core/mcp` (#90) and a durable, replica-safe
