@@ -43,7 +43,8 @@ type IndexInfo struct {
 	RootPage  int
 	Columns   []string
 	Unique    bool
-	Where     string // Partial index WHERE clause
+	Where     string // Partial index WHERE predicate (raw source, serialized)
+	WhereExpr Expr   // Parsed predicate; nil for non-partial indexes
 	SQL       string // Original CREATE INDEX statement
 }
 
@@ -173,6 +174,9 @@ func (s *Schema) Copy() *Schema {
 	}
 	for k, v := range s.indexes {
 		cp := *v
+		// WhereExpr is an immutable AST shared across schema snapshots;
+		// a shallow copy is sufficient and avoids deep-walking the
+		// expression on every statement-level snapshot.
 		c.indexes[k] = &cp
 	}
 	return c
@@ -269,7 +273,14 @@ func ApplyAffinity(v Value, affinity ColumnAffinity) Value {
 			}
 		}
 		if v.Type == DataTypeFloat {
-			return IntegerValue(int64(v.FloatVal))
+			// SQLite INTEGER affinity converts a REAL to INTEGER only
+			// when the conversion is lossless (the float has no
+			// fractional component and fits in int64). A literal like
+			// DEFAULT 1.5 must stay REAL.
+			// https://www.sqlite.org/datatype3.html#type_affinity
+			if n, ok := losslessInt64FromFloat(v.FloatVal); ok {
+				return IntegerValue(n)
+			}
 		}
 
 	case AffinityReal:
@@ -330,6 +341,27 @@ func looksLikeInteger(s string) bool {
 		}
 	}
 	return true
+}
+
+// losslessInt64FromFloat reports whether f has an exact integer
+// representation that fits in an int64. Used by ApplyAffinity to decide
+// whether INTEGER affinity may convert a REAL storage class to INTEGER
+// without losing information (SQLite's lossless-only rule).
+func losslessInt64FromFloat(f float64) (int64, bool) {
+	if f != f { // NaN
+		return 0, false
+	}
+	// 2^63 is exactly representable as a float64; values >= 2^63 or
+	// < -2^63 cannot fit in an int64 even if mathematically integral.
+	const int64Edge = 9223372036854775808.0
+	if f >= int64Edge || f < -int64Edge {
+		return 0, false
+	}
+	n := int64(f)
+	if float64(n) == f {
+		return n, true
+	}
+	return 0, false
 }
 
 // BuildTableInfo creates a TableInfo from a parsed CREATE TABLE statement.

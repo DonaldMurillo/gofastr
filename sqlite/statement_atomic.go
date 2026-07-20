@@ -19,16 +19,18 @@ func (e *Engine) executeMutationAtomic(stmt Statement, parsed Statement, params 
 	}
 
 	// An explicit transaction already owns the pager's COW journal. Snapshot
-	// its current state so a failed statement rolls back to the statement
+	// the in-memory pager state (page cache + dirty bits + the transaction's
+	// pre-BEGIN originals) so a failed statement rolls back to the statement
 	// boundary without discarding earlier successful work in the transaction.
-	pagerSnapshot := e.pager.Snapshot()
+	// StatementSnapshot must NOT touch the on-disk file: the outer
+	// transaction's eventual RollbackTxn assumes the file still reflects the
+	// pre-BEGIN state.
+	pagerSnapshot := e.pager.StatementSnapshot()
 	result, err := e.executeMutation(stmt, parsed, params)
 	if err == nil {
 		return result, nil
 	}
-	if restoreErr := e.pager.Restore(pagerSnapshot); restoreErr != nil {
-		return nil, fmt.Errorf("%w (statement rollback failed: %v)", err, restoreErr)
-	}
+	e.pager.StatementRestore(pagerSnapshot)
 	e.schema = schemaSnapshot
 	return nil, err
 }

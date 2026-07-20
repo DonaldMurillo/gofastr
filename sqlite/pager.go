@@ -471,37 +471,70 @@ func (p *Pager) Close() error {
 	return nil
 }
 
-// Snapshot returns a byte snapshot of all pager state for transaction rollback.
-func (p *Pager) Snapshot() []byte {
-	p.Flush()
-	size := p.file.Len()
-	data := make([]byte, size)
-	if size > 0 {
-		p.file.ReadAt(data, 0)
-	}
-	return data
+// pagerStatementSnapshot captures in-memory pager state at a statement
+// boundary so a failed statement can be rolled back WITHOUT disturbing
+// the enclosing transaction's COW rollback journal.
+//
+// This is intentionally separate from the transaction's own COW
+// rollback state (txnOrigPages). The transaction journal stores the
+// pre-BEGIN page images so ROLLBACK can restore the table to its
+// state before BEGIN. The statement snapshot stores the state at the
+// statement boundary so a failed statement inside the transaction
+// does not leak its partial writes into either the transaction's
+// eventual commit or its rollback.
+//
+// Critically, this snapshot NEVER flushes the page cache to disk.
+// Inside a transaction the on-disk file is unchanged (only the
+// in-memory cache is mutated); flushing here would race with the
+// outer transaction's eventual rollback, which assumes the file still
+// reflects the pre-BEGIN state. The old Snapshot()/Restore() pair
+// flushed and then replaced the file contents, which silently
+// discarded txnOrigPages' ability to recover pre-BEGIN images —
+// see TestRollbackAfterFailedStatement.
+type pagerStatementSnapshot struct {
+	pages     [][]byte
+	dirty     []bool
+	pageCount int
+	origPages map[int][]byte
 }
 
-// Restore restores pager state from a snapshot.
-func (p *Pager) Restore(data []byte) error {
-	// Clear cache
-	p.pages = make([][]byte, 0, 64)
-	p.dirty = make([]bool, 0, 64)
-	// Write data back to file
-	if err := p.file.Truncate(int64(len(data))); err != nil {
-		return err
-	}
-	if len(data) > 0 {
-		if _, err := p.file.WriteAt(data, 0); err != nil {
-			return err
+// StatementSnapshot captures pager state for statement-level rollback.
+// It does not flush.
+func (p *Pager) StatementSnapshot() *pagerStatementSnapshot {
+	pages := make([][]byte, len(p.pages))
+	for i, pg := range p.pages {
+		if pg != nil {
+			cp := make([]byte, p.pageSize)
+			copy(cp, pg)
+			pages[i] = cp
 		}
 	}
-	// Recalculate page count
-	p.pageCount = len(data) / p.pageSize
-	if p.pageCount < 1 {
-		p.pageCount = 1
+	dirty := append([]bool(nil), p.dirty...)
+	origPages := make(map[int][]byte, len(p.txnOrigPages))
+	for k, v := range p.txnOrigPages {
+		cp := make([]byte, len(v))
+		copy(cp, v)
+		origPages[k] = cp
 	}
-	return nil
+	return &pagerStatementSnapshot{
+		pages:     pages,
+		dirty:     dirty,
+		pageCount: p.pageCount,
+		origPages: origPages,
+	}
+}
+
+// StatementRestore restores pager state captured by StatementSnapshot,
+// including the transaction's pre-BEGIN page images, so statement
+// rollback composes with transaction rollback.
+func (p *Pager) StatementRestore(s *pagerStatementSnapshot) {
+	if s == nil {
+		return
+	}
+	p.pages = s.pages
+	p.dirty = s.dirty
+	p.pageCount = s.pageCount
+	p.txnOrigPages = s.origPages
 }
 
 // BeginTxn starts a page-level COW transaction.

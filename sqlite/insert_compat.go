@@ -212,12 +212,13 @@ func (e *Engine) findInsertConflict(
 	allConstraints := e.uniqueConstraints(tableInfo)
 	constraints := allConstraints
 	if conflict != nil && len(conflict.Target) > 0 {
-		constraints = nil
+		filtered := constraints[:0:0]
 		for _, constraint := range allConstraints {
-			if sameColumns(constraint, conflict.Target) {
-				constraints = append(constraints, constraint)
+			if sameColumns(constraint.Columns, conflict.Target) {
+				filtered = append(filtered, constraint)
 			}
 		}
+		constraints = filtered
 		if len(constraints) == 0 {
 			return 0, nil, false, &engineError{"ON CONFLICT clause does not match a UNIQUE constraint"}
 		}
@@ -240,7 +241,19 @@ func (e *Engine) findInsertConflict(
 		}
 		existing := recordToValues(record, tableInfo)
 		for _, constraint := range constraints {
-			if rowsConflict(tableInfo, existing, candidate, constraint) {
+			// A partial UNIQUE constraint only applies to rows the
+			// predicate selects on BOTH sides — the existing row and
+			// the candidate. If either side is out of the predicate,
+			// the constraint cannot fire between them.
+			if constraint.Predicate != nil {
+				if !rowMatchesPredicate(tableInfo, existing, constraint.Predicate) {
+					continue
+				}
+				if !rowMatchesPredicate(tableInfo, candidate, constraint.Predicate) {
+					continue
+				}
+			}
+			if rowsConflict(tableInfo, existing, candidate, constraint.Columns) {
 				return rowid, existing, true, nil
 			}
 		}

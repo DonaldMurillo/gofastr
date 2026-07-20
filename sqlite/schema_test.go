@@ -347,10 +347,18 @@ func TestApplyAffinityInteger(t *testing.T) {
 		t.Errorf("ApplyAffinity(TextValue(42), INTEGER) = %v, want integer 42", result)
 	}
 
-	// Float → integer
+	// Float with fractional component stays REAL — SQLite's INTEGER
+	// affinity converts REAL to INTEGER only when lossless.
+	// https://www.sqlite.org/datatype3.html#type_affinity
 	result = ApplyAffinity(FloatValue(3.7), AffinityInteger)
-	if result.Type != DataTypeInteger || result.IntVal != 3 {
-		t.Errorf("ApplyAffinity(FloatValue(3.7), INTEGER) = %v, want integer 3", result)
+	if result.Type != DataTypeFloat || result.FloatVal != 3.7 {
+		t.Errorf("ApplyAffinity(FloatValue(3.7), INTEGER) = %v, want float 3.7", result)
+	}
+
+	// Lossless float → integer (no fractional component)
+	result = ApplyAffinity(FloatValue(4.0), AffinityInteger)
+	if result.Type != DataTypeInteger || result.IntVal != 4 {
+		t.Errorf("ApplyAffinity(FloatValue(4.0), INTEGER) = %v, want integer 4", result)
 	}
 
 	// Non-numeric text stays text

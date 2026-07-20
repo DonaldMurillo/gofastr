@@ -31,8 +31,8 @@ type PagerInterface interface {
 	SetPageData(num int, data []byte) error
 	Flush() error
 	Close() error
-	Snapshot() []byte
-	Restore([]byte) error
+	StatementSnapshot() *pagerStatementSnapshot
+	StatementRestore(*pagerStatementSnapshot)
 	GetSchemaPage() int
 	SetSchemaPage(page int)
 	BeginTxn()
@@ -151,10 +151,7 @@ func (e *Engine) LoadSchema() error {
 				IsPrimaryKey: cd.IsPK,
 				IsRowID:      cd.IsRowID,
 			}
-			if cd.HasDefault {
-				v := TextValue(cd.Default)
-				col.Default = &v
-			}
+			loadColumnDefault(&col, cd)
 			ti.Columns = append(ti.Columns, col)
 		}
 		for _, fd := range td.ForeignKeys {
@@ -174,12 +171,57 @@ func (e *Engine) LoadSchema() error {
 			RootPage:  idx.RootPage,
 			Unique:    idx.Unique,
 			SQL:       idx.SQL,
+			Where:     idx.Where,
 		}
 		ii.Columns = append(ii.Columns, idx.Columns...)
+		if idx.Where != "" {
+			if expr, err := ParseExpression(idx.Where); err == nil && expr != nil {
+				ii.WhereExpr = expr
+			}
+		}
 		e.schema.indexes[strings.ToLower(ii.Name)] = ii
 	}
 
 	return nil
+}
+
+// loadColumnDefault restores a column's DEFAULT from its serialized form.
+// New-format files always carry the DEFAULT expression source in
+// default_expr (SaveSchema renders the AST via FormatExpr); re-parsing it
+// restores both constant fast-path values and non-constant defaults
+// (CURRENT_TIMESTAMP et al.). Legacy files stored only the raw TextVal of
+// the constant: numbers as their digits, text UNQUOTED (so `pending` must
+// not be fed to ParseExpression as the source of truth — it reads as an
+// identifier), and non-text non-numeric values as "". For legacy data a
+// literal parse is accepted only for non-text types (the numeric
+// round-trip); everything else stays the raw text — including the empty
+// string, which is a real default (lane TEXT NOT NULL DEFAULT ”) in
+// legacy files.
+func loadColumnDefault(col *ColumnDef, cd colData) {
+	switch {
+	case cd.HasDefault && cd.DefaultExpr != "":
+		if expr, err := ParseExpression(cd.DefaultExpr); err == nil && expr != nil {
+			col.DefaultExpr = expr
+			if lit, ok := expr.(LiteralExpr); ok {
+				if val, err := (&ExprEval{}).Eval(lit); err == nil {
+					col.Default = &val
+				}
+			}
+		}
+	case cd.HasDefault:
+		if expr, err := ParseExpression(cd.Default); err == nil {
+			if lit, ok := expr.(LiteralExpr); ok && lit.Type != DataTypeText {
+				if val, err := (&ExprEval{}).Eval(lit); err == nil {
+					col.Default = &val
+					col.DefaultExpr = expr
+				}
+			}
+		}
+		if col.Default == nil {
+			v := TextValue(cd.Default)
+			col.Default = &v
+		}
+	}
 }
 
 // SaveSchema persists the current schema to the database.
@@ -198,6 +240,17 @@ func (e *Engine) SaveSchema() error {
 				cd.HasDefault = true
 				cd.Default = c.Default.TextVal
 			}
+			// Persist non-constant defaults (CURRENT_TIMESTAMP,
+			// datetime('now'), parenthesized expressions, ...) by
+			// rendering their AST back to source text that LoadSchema
+			// can re-parse. Without this, file-backed databases lose
+			// dynamic defaults on reopen and NOT NULL inserts fail.
+			if c.DefaultExpr != nil {
+				if src := FormatExpr(c.DefaultExpr); src != "" {
+					cd.DefaultExpr = src
+					cd.HasDefault = true
+				}
+			}
 			d.Columns = append(d.Columns, cd)
 		}
 		for _, fk := range ti.ForeignKeys {
@@ -206,7 +259,16 @@ func (e *Engine) SaveSchema() error {
 		sd.Tables = append(sd.Tables, d)
 	}
 	for _, ii := range e.schema.indexes {
-		sd.Indexes = append(sd.Indexes, indexData{Name: ii.Name, Table: ii.TableName, RootPage: ii.RootPage, Unique: ii.Unique, SQL: ii.SQL, Columns: ii.Columns})
+		id := indexData{Name: ii.Name, Table: ii.TableName, RootPage: ii.RootPage, Unique: ii.Unique, SQL: ii.SQL, Columns: ii.Columns}
+		if ii.WhereExpr != nil {
+			if src := FormatExpr(ii.WhereExpr); src != "" {
+				id.Where = src
+			}
+		} else if ii.Where != "" {
+			// Legacy/unparsed source retained verbatim.
+			id.Where = ii.Where
+		}
+		sd.Indexes = append(sd.Indexes, id)
 	}
 
 	data, err := json.Marshal(sd)
@@ -1439,6 +1501,28 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 		} else if duplicate {
 			return nil, &engineError{"UNIQUE constraint failed"}
 		}
+		// findInsertConflict only sees the on-disk table state, so two
+		// rows updated by the SAME statement could pick the same key
+		// without ever tripping the B-tree check. SQLite evaluates
+		// constraints per-row and fails the statement on the first
+		// collision; mirror that by also checking each pending row we
+		// have already accumulated. Statement atomicity (Fix 1) then
+		// guarantees no partial application leaks through.
+		for _, prior := range toUpdate {
+			for _, c := range e.uniqueConstraints(tableInfo) {
+				if c.Predicate != nil {
+					if !rowMatchesPredicate(tableInfo, prior.values, c.Predicate) {
+						continue
+					}
+					if !rowMatchesPredicate(tableInfo, newRow, c.Predicate) {
+						continue
+					}
+				}
+				if rowsConflict(tableInfo, prior.values, newRow, c.Columns) {
+					return nil, &engineError{"UNIQUE constraint failed"}
+				}
+			}
+		}
 
 		if err := e.checkForeignKeyInsert(tableInfo, newRow); err != nil {
 			return nil, err
@@ -1453,12 +1537,19 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 		appendReturningRow(result, tableInfo, newRow)
 	}
 
-	// Apply updates
+	// Apply updates. Insert at the existing rowid overwrites the table
+	// row in place. For each index we delete the entry for this rowid
+	// first so a row that has moved OUT of a partial-index predicate
+	// leaves no stale entry behind; insertIntoIndexes then re-adds the
+	// entry only if the NEW row matches the predicate.
 	for _, u := range toUpdate {
 		if err := e.btree.Insert(tableInfo.RootPage, u.rowid, u.record); err != nil {
-			if err := e.insertIntoIndexes(tableInfo.Name, u.rowid, u.values); err != nil {
-				return nil, err
-			}
+			return nil, err
+		}
+		if err := e.deleteFromIndexes(tableInfo.Name, u.rowid); err != nil {
+			return nil, err
+		}
+		if err := e.insertIntoIndexes(tableInfo.Name, u.rowid, u.values); err != nil {
 			return nil, err
 		}
 	}
@@ -1601,7 +1692,7 @@ func (e *Engine) executeCreateIndex(s *CreateIndexStmt) (*Result, error) {
 		return nil, &engineError{"no such table: " + s.Table}
 	}
 	if s.Unique {
-		if err := e.validateUniqueIndex(tableInfo, indexColumns(s.Columns)); err != nil {
+		if err := e.validateUniqueIndex(tableInfo, indexColumns(s.Columns), s.Where); err != nil {
 			return nil, err
 		}
 	}
@@ -1627,6 +1718,12 @@ func (e *Engine) executeCreateIndex(s *CreateIndexStmt) (*Result, error) {
 
 		// Build index key from indexed columns
 		vals := recordToValues(record, tableInfo)
+		// A partial index only contains rows the predicate selects;
+		// skip everything else so the index B-tree never holds entries
+		// for out-of-predicate rows.
+		if s.Where != nil && !rowMatchesPredicate(tableInfo, vals, s.Where) {
+			continue
+		}
 		idxCols := indexColumns(s.Columns)
 		keyVals := make([]Value, len(idxCols))
 		for i, colName := range idxCols {
@@ -1650,13 +1747,18 @@ func (e *Engine) executeCreateIndex(s *CreateIndexStmt) (*Result, error) {
 	}
 	cursor.Close()
 
-	e.schema.AddIndex(&IndexInfo{
+	ii := &IndexInfo{
 		Name:      s.Name,
 		TableName: s.Table,
 		RootPage:  rootPage,
 		Columns:   indexColumns(s.Columns),
 		Unique:    s.Unique,
-	})
+	}
+	if s.Where != nil {
+		ii.WhereExpr = s.Where
+		ii.Where = FormatExpr(s.Where)
+	}
+	e.schema.AddIndex(ii)
 
 	return &Result{}, nil
 }
@@ -2713,15 +2815,24 @@ func (e *Engine) evalJoinOn(join JoinClause, tables []joinEntry, joinIdx int, co
 	return ok && b != 0
 }
 
-// insertIntoIndexes adds a row to all indexes on the given table.
+// insertIntoIndexes adds a row to every index on the given table that
+// the row belongs in. For a partial index the row is added only when it
+// satisfies the index's WHERE predicate; otherwise the index skips it
+// (no entry is created, mirroring SQLite). The caller is responsible
+// for removing any stale entry from a prior version of the row — see
+// deleteFromIndexes, which UPDATE uses to handle rows that have moved
+// out of the predicate.
 func (e *Engine) insertIntoIndexes(tableName string, rowid int64, rowValues []Value) error {
 	indexes := e.schema.IndexesForTable(tableName)
+	tableInfo, hasTable := e.schema.GetTable(tableName)
+	if !hasTable {
+		return nil
+	}
 	for _, idx := range indexes {
 		if idx.RootPage == 0 {
 			continue
 		}
-		tableInfo, ok := e.schema.GetTable(tableName)
-		if !ok {
+		if idx.WhereExpr != nil && !rowMatchesPredicate(tableInfo, rowValues, idx.WhereExpr) {
 			continue
 		}
 		keyVals := make([]Value, len(idx.Columns))
@@ -2736,6 +2847,27 @@ func (e *Engine) insertIntoIndexes(tableName string, rowid int64, rowValues []Va
 		allVals := append(keyVals, IntegerValue(rowid))
 		idxRecord := valuesToRecord(allVals)
 		if err := e.btree.Insert(idx.RootPage, rowid, idxRecord); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteFromIndexes removes a rowid from every index on the table.
+// UPDATE calls this before insertIntoIndexes so that a row moving OUT
+// of a partial index's predicate has its stale entry removed, and so
+// that re-inserting an unconditional index replaces the prior key
+// cleanly without depending on Insert-overwrites-rowid semantics.
+func (e *Engine) deleteFromIndexes(tableName string, rowid int64) error {
+	indexes := e.schema.IndexesForTable(tableName)
+	for _, idx := range indexes {
+		if idx.RootPage == 0 {
+			continue
+		}
+		// btree.Delete returns nil for a missing rowid, which is the
+		// correct outcome for a partial index that never contained
+		// this row — no special-casing needed.
+		if err := e.btree.Delete(idx.RootPage, rowid); err != nil {
 			return err
 		}
 	}
@@ -2772,6 +2904,14 @@ func (e *Engine) tryIndexScan(tableName string, where Expr, params []Value) [][]
 	indexes := e.schema.IndexesForTable(tableName)
 	var idx *IndexInfo
 	for _, i := range indexes {
+		// Partial indexes only contain rows matching their predicate, so
+		// using one for a generic equality scan would silently drop
+		// non-matching rows from the result set. Keep them out of scan
+		// planning until predicate-aware scan routing exists —
+		// correctness over speed.
+		if i.WhereExpr != nil {
+			continue
+		}
 		if len(i.Columns) == 1 && strings.EqualFold(i.Columns[0], colRef.Column) && i.RootPage != 0 {
 			idx = i
 			break
@@ -2850,14 +2990,15 @@ type tableData struct {
 }
 
 type colData struct {
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	Affinity   int    `json:"affinity"`
-	NotNull    bool   `json:"not_null"`
-	HasDefault bool   `json:"has_default"`
-	Default    string `json:"default"`
-	IsPK       bool   `json:"is_pk"`
-	IsRowID    bool   `json:"is_rowid"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Affinity    int    `json:"affinity"`
+	NotNull     bool   `json:"not_null"`
+	HasDefault  bool   `json:"has_default"`
+	Default     string `json:"default,omitempty"`
+	DefaultExpr string `json:"default_expr,omitempty"`
+	IsPK        bool   `json:"is_pk"`
+	IsRowID     bool   `json:"is_rowid"`
 }
 
 type fkDataSer struct {
@@ -2871,6 +3012,7 @@ type indexData struct {
 	Table    string   `json:"table"`
 	RootPage int      `json:"root_page"`
 	Unique   bool     `json:"unique"`
-	SQL      string   `json:"sql"`
+	SQL      string   `json:"sql,omitempty"`
 	Columns  []string `json:"columns"`
+	Where    string   `json:"where,omitempty"`
 }
