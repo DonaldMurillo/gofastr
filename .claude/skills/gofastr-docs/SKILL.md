@@ -21,6 +21,7 @@ skill applies. Docs are part of the change, not a follow-up.
 | `framework/docs/content/search.md` | `battery/search` interface + backends. | New backend, interface change, new query option. |
 | `framework/docs/content/security.md` | Default middleware stack + security headers. | New default middleware, header change, new policy primitive. |
 | `framework/docs/content/widgets.md` | `core-ui/widget` builder API. | New widget, new preset, new theme hook. |
+| `framework/docs/content/reactivity.md` | The reactivity ladder (client signals → RPC → poll → SSE push) + the stateless-interactive-layer contract. | Any change to signals, polling, the SSE bus, session tokens, `WithSecret`, or which rung a surface should use. |
 | `examples/*/README.md` | Per-example walkthrough. | When the example's behaviour or wiring changes. |
 
 There is no `docs/api-reference/` — the public API is documented via

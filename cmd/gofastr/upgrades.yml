@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.37.0
+through: v0.38.0
 
 releases:
   - version: v0.3.0
@@ -207,3 +207,22 @@ releases:
       - change: Cross-replica RBAC + advisory-locked seeds (#99)
         breaking: false
         guidance: "To propagate runtime grant/revoke across replicas, pass your access.GrantStore to framework.WithGrantStore alongside WithFanout — grant/revoke then refresh every replica (re-read from DB; code-defined baseline grants preserved). Additive: single-process apps are unaffected. Startup seeds + WithSeed hooks now run under a distinct Postgres advisory lock so N replicas seed once; a MaxOpenConns(1) pool skips the lock with a WARN — keep the pool above 1 for multi-replica seed coordination."
+  - version: v0.38.0
+    title: Stateless interactive layer + pull-first reactivity ladder
+    notes:
+      - change: WithFanout requires an app secret (#112)
+        breaking: true
+        guidance: "Sessions are stateless HMAC tokens; a multi-replica deployment (WithFanout) now FAILS AT BOOT unless framework.WithSecret or GOFASTR_SECRET supplies the shared signing secret (>=32 chars, e.g. `openssl rand -base64 32`) on every replica. Single replica with no secret keeps the zero-config per-boot key. Sticky sessions are no longer part of the scaling contract."
+        detect: 'WithFanout\('
+      - change: Dead stateful island/signal surface removed (#112)
+        breaking: true
+        guidance: "UIHost.RegisterSignal / RegisterWidget / PushIsland / GetSession, the SignalAny interface, and POST /__gofastr/signal/{id} are gone, as are island.Manager.Register/Unregister/Push/Get/ListBySession, Island.SessionID, and Island.Update. Server push = render the HTML yourself and call Manager.PushUpdate (or presence); the client-side signal seed (#gofastr-signals) is unrelated and unchanged."
+        detect: 'RegisterSignal\(|RegisterWidget\(|PushIsland\(|GetSession\(|SignalAny|ListBySession\(|\.SessionID\b'
+      - change: island.Manager.Subscribe returns a per-subscriber channel + cancel
+        breaking: true
+        guidance: "Subscribe(sessionID) now returns (<-chan IslandUpdate, func()) — each SSE connection gets its own channel and updates broadcast to ALL of a session's tabs (they previously competed for one shared channel). The cancel func replaces the removed Manager.Unsubscribe; ConnectSession changed identically."
+        detect: 'ConnectSession\(|\.Unsubscribe\([^,)]+\)'
+      - change: Widget SSE bindings replaced by polling (#112)
+        breaking: true
+        guidance: "Builder.SSE / SSERefetch / SSERefresh / SSEReload and the SSEBinding type are removed — each widget opened a private EventSource, contradicting the one-bus contract. Passive freshness is Builder.Poll(interval) (re-fetches /state, re-applies changed signals) or page-level data-fui-poll + data-fui-poll-src; genuinely push-shaped surfaces use the shared /__gofastr/sse bus. See `gofastr docs reactivity` for the ladder."
+        detect: '\.SSE\(|SSERefetch\(|SSERefresh\(|SSEReload\(|SSEBinding\{'

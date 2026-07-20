@@ -74,6 +74,7 @@ development — see [dotenv](dotenv.md); real env always wins). Common vars:
 | `DATABASE_URL` | Your app reads this and passes the connection to `WithDB`. |
 | `APP_ENV` | Selects `.env.<APP_ENV>` in development. |
 | auth secrets | If you use `battery/auth`, set its JWT/session secret explicitly in production — do not rely on the dev auto-generated secret (it rotates per process and silently invalidates sessions). See [auth](auth.md). |
+| `GOFASTR_SECRET` | HMAC signing key for the uihost session token. Set it (or use `framework.WithSecret` in code) so a session token issued by one replica verifies on every other replica. With one replica and no secret, an ephemeral boot secret is minted (sessions roll over on restart). With `WithFanout` and no secret, the app refuses to boot. See [Reactivity model](reactivity.md) and [Horizontal scaling](scaling.md). |
 
 ## Secrets
 
@@ -150,6 +151,7 @@ what-breaks/what-fixes-it list.
 
 - [ ] `CGO_ENABLED` matches your DB driver (0 for pgx, 1 for go-sqlite3).
 - [ ] Auth/session secret set explicitly (not the dev default).
+- [ ] `GOFASTR_SECRET` set (or `framework.WithSecret` in code) before running a second replica. Required with `WithFanout`.
 - [ ] Migrations run as a deploy step (or accepted on-boot for single-replica).
 - [ ] Readiness/liveness probes wired.
 - [ ] `/metrics` scraped from inside the network only.

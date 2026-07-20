@@ -42,15 +42,29 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   going from `/a` to `/b`.
 - **In-page state changes are islands**: a click fires an RPC, the
   server returns new island HTML, the runtime swaps just that island.
-- **Server-pushed updates** flow through signals + SSE for genuine
-  background events, not user actions.
+- **Passive freshness is polled, not pushed**: `data-fui-poll` /
+  `widget Builder.Poll` for dashboards/counters/statuses — no held
+  connection, no fanout dependency.
+- **Server-pushed updates** (SSE, the single `/__gofastr/sse` bus) are
+  the last resort: presence, collaboration, sub-second updates — genuine
+  background events, never user actions. The full ladder is
+  `framework/docs/content/reactivity.md`.
+- **The interactive layer is stateless**: state lives in the DB or the
+  client signal store, never in server RAM. Sessions are signed tokens
+  (`WithSecret` / `GOFASTR_SECRET`); any replica serves any request.
 
 ## Hard rules
 
 1. Never make in-page state changes (sort, paginate, expand) into routes.
    They are islands.
 2. Never re-implement pagination/sort/filter math in JS. Server-side.
-3. Never use SSE to deliver responses to user actions. SSE is push-only.
+3. Never use SSE to deliver responses to user actions. SSE is push-only,
+   lives on the single `/__gofastr/sse` bus (never a bespoke
+   `EventSource` on app surfaces — dev-mode tooling like
+   `framework/dev` livereload and kiln's build-mode reload ships its
+   own, and that's the whole exception class), and is reserved for
+   presence/collab/sub-second semantics — passive freshness polls
+   instead (`data-fui-poll`).
 4. Never add `location.href = …` or full reloads as a "fix".
 5. Never add new `data-fui-*` attributes without updating
    `core-ui/ARCHITECTURE.md` and the runtime test suite.

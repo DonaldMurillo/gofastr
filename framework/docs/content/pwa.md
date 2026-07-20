@@ -86,7 +86,7 @@ The generated worker is deliberately conservative:
   against the previous deployment's runtime or CSS.
 - **Sensitive endpoints are never intercepted and can never be
   precached.** `/__gofastr/sse`, `/__gofastr/session`,
-  `/__gofastr/signal/*`, `/__gofastr/action`, `/__gofastr/widgets`,
+  `/__gofastr/action`, `/__gofastr/widgets`,
   `/api/*`, and `/auth/*` are on a deny list baked into the worker;
   `Precache` entries that point at them (or at another origin) are
   dropped. Apps that mount their API or auth elsewhere extend the list

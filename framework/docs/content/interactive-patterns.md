@@ -279,6 +279,50 @@ Attribute injected: `data-fui-push-state="path"`.
 
 ---
 
+## Polling patterns
+
+Polling is passive freshness without a held connection. The runtime
+re-fetches a region on a Go-duration interval and swaps the body —
+the same code path an RPC signal swap uses.
+
+### Page-level polling
+
+Two attributes on the region you want to refresh:
+
+```html
+<div data-fui-poll="30s" data-fui-poll-src="/islands/orders/today">
+  …initial SSR content…
+</div>
+```
+
+- `data-fui-poll` is a Go duration (`30s`, `5m`, `1h`). Five seconds
+  is the floor.
+- `data-fui-poll-src` is the URL the runtime fetches; the response
+  body replaces the region's `innerHTML`.
+- The interval is jittered, pauses while the tab is hidden, and
+  doubles the interval on a failed fetch (capped at 5x the base, reset on the next success).
+- Any replica can answer the fetch from the DB. No fanout, no held
+  connection.
+
+Use a read endpoint — a poll fires on a timer, so a write endpoint
+would write on every tab on every interval.
+
+### Widget-level polling
+
+For a widget that tracks a server-side value, `Builder.Poll(interval)`
+re-fetches the widget's `/state` on the cadence and re-applies changed
+signals. See [Widgets](widgets.md) → Polling.
+
+### When to pick polling
+
+Polling is the recommended tier for a surface that needs to stay
+fresh on a cadence — a counter, a status pill, a dashboard. Reserve
+SSE push for semantics that need the connection: presence,
+collaborative editing, sub-second updates. See
+[Reactivity model](reactivity.md) for the full ladder.
+
+---
+
 ## Sortable List (single + kanban)
 
 `core-ui/patterns/sortablelist` renders a reorderable `<ol>` with HTML5

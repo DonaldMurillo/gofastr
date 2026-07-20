@@ -110,7 +110,7 @@ stores anyway if either matters.
 Server-pushed events flow over an SSE connection to the replica the
 browser happened to reach. A write handled by a different replica emits
 on *its* bus and pushes to *its* island manager, not the one holding
-the connection. Options, in order of preference:
+the connection. Two answers, in order of preference:
 
 1. **Shared fan-out** — `framework.WithFanout` bridges the real-time
    lane across replicas. `framework/fanout.NewPostgres(dsn, db)` uses
@@ -121,15 +121,34 @@ the connection. Options, in order of preference:
    `On`/`Subscribe` handlers fire on **every** replica, so side-effect
    work must move to outbox consumers and derived emits must gate on
    `event.IsRemote(ctx)`.
-2. **Sticky sessions** (cookie-based affinity at the LB) — the browser
-   and its mutations land on the same replica; push works unchanged.
-   Still the recommendation for stateful uihost *widget* apps: the
-   fanout fixes delivery-where-connected, but island objects and signal
-   state remain per-replica, so an RPC landing on a replica without the
-   widget's state can't re-render it.
-3. **Design around it** — SSE push is for background events; if all
-   your islands re-render from user actions (RPC round-trips), nothing
-   is lost without push.
+2. **Poll instead.** For passive freshness — a dashboard, a counter, a
+   status pill — `data-fui-poll` re-fetches on an interval from any
+   replica and needs no fanout at all. Reserve SSE push for semantics
+   that need the connection: presence, collaborative editing,
+   sub-second updates. See [Reactivity model](reactivity.md) for the
+   full ladder.
+
+## Sessions
+
+The uihost session is an HMAC-signed token, not a server-side record.
+A token issued by one replica verifies on any other replica that
+shares the signing secret, so any replica can serve any request.
+
+- **Set the secret in production** — `framework.WithSecret(secret)` in
+  code, or the `GOFASTR_SECRET` environment variable. Either lands the
+  same key on every replica.
+- **One replica, no secret configured.** The framework mints an
+  ephemeral boot secret at startup. Sessions work, but they roll over
+  on every restart because the next boot mints a new one. Fine for
+  single-node; wrong the moment a second replica is on the table.
+- **Fanout without a secret fails at boot.** A multi-replica deploy
+  that wired `WithFanout` but forgot `GOFASTR_SECRET` (or `WithSecret`)
+  refuses to start, with an error naming both. This is deliberate —
+  silent token mismatch in production is worse than a loud boot
+  failure.
+
+Sticky sessions are not part of the contract. A token is portable;
+route the request to whichever replica the load balancer picks.
 
 ## Checklist before adding the second replica
 
@@ -141,7 +160,11 @@ the connection. Options, in order of preference:
       auth.NewSQLRateLimitStore(db, "auth_rate_limits")`), or enforced at
       the ingress.
 - [ ] SSE push crosses replicas: `WithFanout` attached (and side-effect
-      handlers moved to outbox consumers), or sticky sessions configured.
+      handlers moved to outbox consumers), or use `data-fui-poll` for
+      passive freshness that needs no fanout.
+- [ ] `GOFASTR_SECRET` set (or `framework.WithSecret` in code) so the
+      HMAC-signed uihost session token verifies on every replica.
+      Required with `WithFanout` — the app refuses to boot otherwise.
 - [ ] Runtime RBAC grants propagate: `WithGrantStore` attached when
       `access.GrantStore` is in use, so grant/revoke reaches every
       replica's `RolePolicy` without a restart. (Code-defined-only
@@ -168,9 +191,11 @@ the connection. Options, in order of preference:
 - **Running `framework/cron` on every replica** because each job
   "checks if it already ran" against the DB. That check is a race, not
   a lock. Move the work to `DBQueue` or pin the scheduler to one process.
-- **Relying on SSE push without sticky sessions.** Everything appears
-  to work in staging (one replica) and half of live updates silently
-  vanish in production.
+- **Relying on SSE push without fanout.** Everything appears to work
+  in staging (one replica) and half of live updates silently vanish in
+  production. Wire `WithFanout` and set `GOFASTR_SECRET` before adding
+  the second replica, or pick polling for surfaces that don't need
+  push.
 - **Treating the in-process login rate limit as a security boundary at
   N replicas.** Without a shared store the budget multiplies by replica
   count and blocks don't propagate. Set `RateLimiterConfig.Store` (one

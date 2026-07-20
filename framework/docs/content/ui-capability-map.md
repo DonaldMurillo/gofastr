@@ -14,7 +14,8 @@ Use this as the default architecture:
 database/server = durable business truth
 signals/store    = immediate UI projection
 RPC              = mutation and reconciliation
-SSE              = update/invalidation delivery
+polling          = passive freshness without a held connection
+SSE              = push delivery when the connection is part of the truth
 HTML/data result = authoritative response
 ```
 
@@ -35,7 +36,7 @@ to the public contract rather than repeating it here.
 |---|---|---|---|---|
 | CRUD/admin or form-heavy screens | `ui.DataTable`, `ui.Form`, `ui.FormField`, entity CRUD, `battery/admin` | The database is truth. Filters, validation, pagination, and writes run on the server. RPC or normal form responses return authoritative HTML/data. CRUD requests are stateless and replica-safe; sessions and live invalidation still need the shared backends described in scaling. | [`/components/datatable`](../../../examples/site/components.go), [`/components/form`](../../../examples/site/components.go), and [`examples/backoffice`](../../../examples/backoffice/main.go) | [Forms](form-module.md), [Admin](admin.md), [Interactive patterns](interactive-patterns.md) |
 | Optimistic mutations | `ui.OptimisticAction`, `ui.ToggleAction`, versioned `sortablelist` | A signal/DOM change is a temporary projection. The RPC owns validation and commit. Non-2xx rolls back; a versioned 409 refetches authoritative server HTML. Do not wait for SSE to confirm the initiating action. | [`/components/optimisticaction`](../../../examples/site/components.go), [`/components/toggleaction`](../../../examples/site/components.go) | [Optimistic UI](optimistic-ui.md), [Interactive patterns](interactive-patterns.md), [Runtime contract](runtime-contract.md) |
-| Live dashboards and streamed status | SSR charts/status components, `store.Slice`, island signals, SSE | SSR supplies the first complete view. The server owns metrics; signals project the latest value. SSE is best-effort update/invalidation delivery and may drop old frames for slow consumers. Add `WithFanout` across replicas; use an outbox/queue for lossless work. | [`/examples/live-dashboard`](../../../examples/site/screen_livedash.go), [`/components/rpc-signal`](../../../examples/site/components.go), [`/components/linechart`](../../../examples/site/components.go), [`/components/recordsummary`](../../../examples/site/components.go) | [Live dashboards](live-dashboards.md), [Signal store](signal-store.md), [Events and SSE](events.md), [Scaling](scaling.md) |
+| Live dashboards and streamed status | SSR charts/status components, `store.Slice`, island signals, `data-fui-poll`, SSE | SSR supplies the first complete view. The server owns metrics; signals project the latest value. Polling (`data-fui-poll`) is the recommended tier for passive metric refresh — any replica answers, no fanout, no held connection. SSE is best-effort push delivery for sub-second updates and may drop old frames for slow consumers; it needs `WithFanout` across replicas. Use an outbox/queue for lossless work. | [`/examples/live-dashboard`](../../../examples/site/screen_livedash.go), [`/components/rpc-signal`](../../../examples/site/components.go), [`/components/linechart`](../../../examples/site/components.go), [`/components/recordsummary`](../../../examples/site/components.go) | [Live dashboards](live-dashboards.md), [Reactivity model](reactivity.md), [Signal store](signal-store.md), [Events and SSE](events.md), [Scaling](scaling.md) |
 | Master/detail workspaces | `ui.PaneHost`, server-rendered detail fragments, routes for durable/deep-linkable identity | The route identifies the selected durable record. Opening/swapping a pane is in-page projection; RPC can return its detail HTML. `PaneHost` owns pane behavior, not data fetching. Reconstructable handlers are stateless; process-held pane/widget objects require affinity. | [`/examples/workspace`](../../../examples/site/screen_workspace.go), [`/components/panehost`](../../../examples/site/components.go) | [Pane host](pane-host.md), [UI composition recipes](ui-composition-recipes.md) |
 | Sortable lists and Kanban | `core-ui/patterns/sortablelist`, stable keys, optional group/container/version | The browser previews a reorder. RPC persists it. Non-2xx restores the prior DOM; versioned 409 responses refetch server-rendered column state for reconciliation. Durable order belongs in the database. | [`/components/sortablelist`](../../../examples/site/components.go) | [Interactive patterns](interactive-patterns.md), [Runtime contract](runtime-contract.md) |
 | Notifications, progress, and activity feeds | `ui.NotificationBell`, toast presets, `progress`, `ui.Timeline`, signals/SSE | A toast is ephemeral projection; durable notification/read state belongs in the database. Progress can be an RPC result for user work or an SSE update for background work. An activity feed that must not lose entries comes from durable rows/outbox, not the lossy SSE buffer. | [`/components/notificationbell`](../../../examples/site/components.go), [`/components/progress`](../../../examples/site/components.go), [`/components/timeline`](../../../examples/site/components.go) | [Widgets](widgets.md), [Events and SSE](events.md), [Notifications](notifications.md) |
@@ -65,8 +66,11 @@ These terms describe server ownership, not visual appearance.
   its RPC. This is the preferred shape.
 - An **affinity-bound island** holds mutable widget/island objects in one
   process. `WithFanout` can deliver an update to the replica holding an SSE
-  connection, but it cannot recreate that object on another replica. Use
-  sticky sessions or redesign the handler around reconstructable state.
+  connection, but it cannot recreate that object on another replica.
+  Redesign the handler around reconstructable state — read from
+  URL/session/database on every request — so any replica can serve any
+  RPC. Sticky routing is not part of the contract; a portable session
+  token (see [Reactivity model](reactivity.md)) makes it unnecessary.
 - A client-only signal is neither durable nor affinity-bound server state. It
   is a projection and may reset unless declared app-global and reseeded.
 
@@ -77,6 +81,7 @@ Read [Horizontal scaling](scaling.md) before adding the second replica.
 | Lane | Guarantee | Use it for | Do not use it for |
 |---|---|---|---|
 | RPC response | One request receives one status and authoritative HTML/data response | Mutations, validation, reconciliation, fragment swaps | Broadcast to other sessions |
+| Polling | The browser re-fetches a region on a Go-duration interval; any replica answers from the DB | Passive freshness — counters, statuses, dashboards — without a held connection | Surfaces that need push under a second, or that must reflect the connection itself (presence) |
 | SSE/event bus | Best effort; default slow-client mode drops the oldest queued frames | Latest status, invalidation, presence, live dashboard updates | Billing, audit, exactly-once workflows |
 | Fanout | Best-effort broadcast between replicas; handlers run on every replica | Making SSE/island push visible wherever the browser connected | Single-execution side effects |
 | Queue/outbox | Durable, at-least-once processing; consumers must be idempotent | Workflows, email, webhooks, audit-adjacent side effects | Immediate browser confirmation |

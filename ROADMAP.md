@@ -202,13 +202,13 @@ caveats" shape. Fix shape: put ledger-check → callback → ledger-write
 (and app-level `WithSeed` hooks) behind the existing Postgres advisory
 lock primitive (`core/migrate/lock.go`), or pin seeding to one role.
 
-### 7.6 Stateful islands don't scale past one replica (design)
+### 7.6 Stateful islands don't scale past one replica — RESOLVED (v0.38.0, #112)
 
-Even with `WithFanout`, island widget state (objects + signals) is
-per-replica — an RPC landing on the wrong replica can't re-render the
-widget, so widget-heavy apps need sticky sessions
-(`framework/docs/content/scaling.md`, "SSE across replicas"). This is
-the ceiling on the flagship interaction model, and cross-replica
-presence aggregation (#47) is blocked behind the same decision. Choose
-one contract: stateless islands that reload from the DB, a pluggable
-shared island-state backend, or documented sticky-only.
+The stateless contract shipped: sessions are HMAC tokens any replica
+verifies (`WithSecret` / `GOFASTR_SECRET`), the island manager retains
+no widget objects (callers render from reconstructable state and
+`PushUpdate` transports the HTML), the dead server-side signal registry
+is gone, and passive freshness polls (`data-fui-poll`, `Builder.Poll`)
+instead of holding connections. Sticky sessions are out of the scaling
+contract entirely. See `framework/docs/content/reactivity.md` and
+CHANGELOG 0.38.0.

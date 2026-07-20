@@ -9,8 +9,9 @@ reconciliation model, composed from existing primitives — `OptimisticAction`,
 `ToggleAction`, versioned `sortablelist`, `ConfirmAction`, and the generic
 RPC wrappers in `core-ui/interactive`.
 
-If you are looking for the wider state boundary (signals vs RPC vs SSE),
-start at [UI capability map](ui-capability-map.md). This page assumes that
+If you are looking for the wider state boundary (signals vs RPC vs
+polling vs SSE), start at [Reactivity model](reactivity.md) or
+[UI capability map](ui-capability-map.md). This page assumes that
 boundary and zooms in on the mutation half.
 
 ---
@@ -726,8 +727,11 @@ should be undertaken deliberately, not as a side effect of a docs pass.
 - [Interactive patterns](interactive-patterns.md) — the full
   `data-fui-*` vocabulary, including the sortable list and ConfirmAction
   reference.
+- [Reactivity model](reactivity.md) — the four ways to make a page
+  change after first paint (signals, RPC, polling, SSE) and the
+  statelessness contract.
 - [UI capability map](ui-capability-map.md) — the wider state boundary
-  (signals vs RPC vs SSE) and where optimistic state lives.
+  and where optimistic state lives.
 - [Runtime contract](runtime-contract.md) — the SSR/hydration/island/SSE
   model and the `data-fui-*` attribute reference.
 - [UI composition recipes](ui-composition-recipes.md) — page grammar for

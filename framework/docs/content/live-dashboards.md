@@ -167,6 +167,29 @@ The delivery lane you choose is the contract you are promising. **SSE
 is not a durable ledger.** It is best-effort push for "the server's
 current state changed; here is the new view."
 
+### Pull (poll) vs push (SSE)
+
+Pick the lane by who needs to know *when*:
+
+- **Poll when the dashboard shows the server's current value on a
+  cadence.** `data-fui-poll="5s" data-fui-poll-src="/islands/stats"`
+  re-fetches the region on the interval; any replica answers from the
+  DB. No fanout, no held connection, no per-session push channel. This
+  is the recommended tier for a status pill, a counter, a queue-depth
+  gauge, or any surface where a few seconds of staleness is fine and
+  the user did not ask for the update.
+- **Push with SSE when the server needs to initiate the update or the
+  cadence is sub-second.** Presence rosters and collaborative surfaces
+  need the connection itself — either because the connection IS part
+  of the truth (presence) or because polling at the cadence the
+  product needs would hammer the server. SSE costs a held connection
+  per page and (across replicas) a fanout.
+
+The demo on this page uses SSE because the ticker fires faster than a
+sensible poll and the doc needs to show the push lane. A real
+dashboard that ticks once every 5–30 seconds should poll. See
+[Reactivity model](reactivity.md) for the full ladder.
+
 ### Decision table
 
 | Job | Source of truth | Lane | Reconnect behavior | Duplicate handling |

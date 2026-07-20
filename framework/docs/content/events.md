@@ -93,9 +93,16 @@ filter changes) must come back over the request that triggered them —
 never via SSE. The framework's island runtime enforces this rule on
 the UI side; the same rule applies to your own clients.
 
+SSE is the last rung of the reactivity ladder. Reach for client
+signals, RPC, and polling first; reserve SSE for product semantics
+that need the connection — presence, collaborative editing,
+sub-second internal dashboards. See [Reactivity model](reactivity.md)
+for the full ladder and the decision criteria.
+
 ## See also
 
 - [Live dashboards](live-dashboards.md) composes this push lane into a realistic ops dashboard, with the delivery-semantics decision table.
+- [Reactivity model](reactivity.md) — the four ways to make a page change after first paint; SSE is the last rung.
 - [UI capability map](ui-capability-map.md) distinguishes realtime UI invalidation from durable workflow delivery.
 - [Presence](presence.md) uses the same push lane for self-healing rosters.
 - [Horizontal scaling](scaling.md) covers fanout and replica topology.
