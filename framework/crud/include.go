@@ -204,7 +204,17 @@ func splitIncludePath(s string) []string {
 func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string) ([]filter.ParsedFilter, error) {
 	knownField := map[string]bool{}
 	for _, f := range fields {
-		knownField[f.Name] = true
+		// A Hidden column is treated as NOT declared — the identical
+		// "not on target entity" error a nonexistent field gets. The
+		// eager loader scrubs Hidden columns from the OUTPUT, but a
+		// scoped filter on one would still reach the WHERE clause, and
+		// the related row's presence/absence in the response leaks
+		// whether the value matched — the same value-disclosure oracle
+		// the top-level and nested filter paths close (see
+		// nested_filter.go), one relation hop away.
+		if !f.Hidden {
+			knownField[f.Name] = true
+		}
 	}
 	suffixes := []struct {
 		suffix string
