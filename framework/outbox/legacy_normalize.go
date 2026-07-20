@@ -4,15 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
-// normalizeLegacyTimestamps rewrites space-separated (legacy mattn/go-sqlite3)
-// timestamp strings in the time columns of the parent and delivery tables to
-// the canonical RFC3339Nano text the pure driver binds for time.Time. SQLite
+// normalizeLegacyTimestamps rewrites timestamp strings in the time columns
+// of the parent and delivery tables to the canonical text layout the
+// CONNECTED driver binds for time.Time (RFC3339Nano on the pure driver,
+// space-separated on mattn/go-sqlite3 — see probeBindLayout). SQLite
 // stores these columns as TEXT, and the relay's lease/grace SQL predicates
 // (claimed_until <= $1, created_at <= $2) compare them lexicographically. A
 // same-day legacy value like '2026-07-20 23:59:59+00:00' sorts BEFORE the
@@ -32,15 +34,43 @@ func (o *Outbox) normalizeLegacyTimestamps(ctx context.Context) error {
 	if o.dialect != dialectSQLite {
 		return nil
 	}
-	if err := o.normalizeParentTimes(ctx); err != nil {
+	layout := o.probeBindLayout(ctx)
+	if err := o.normalizeParentTimes(ctx, layout); err != nil {
 		return err
 	}
-	return o.normalizeDeliveryTimes(ctx)
+	return o.normalizeDeliveryTimes(ctx, layout)
+}
+
+// probeBindLayout detects the text layout the connected driver produces
+// when a time.Time is bound as a parameter — the format the relay's own
+// predicates compare against, and therefore the canonical target for
+// normalization. The pure driver binds RFC3339Nano; mattn/go-sqlite3
+// binds a space-separated form. Rows already in the probed layout are
+// canonical FOR THIS HOST and skipped, which keeps the pass idempotent on
+// either driver instead of rewriting every row on every relay start when
+// the host runs mattn. An unrecognized probe result falls back to
+// RFC3339Nano (the rewrite still self-corrects, because the rewritten
+// value is bound as time.Time and the driver formats it).
+func (o *Outbox) probeBindLayout(ctx context.Context) string {
+	ref := time.Date(2001, 2, 3, 4, 5, 6, 789012345, time.UTC)
+	var got string
+	if err := o.db.QueryRowContext(ctx, `SELECT CAST($1 AS TEXT)`, ref).Scan(&got); err != nil {
+		return time.RFC3339Nano
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999-07:00", // mattn/go-sqlite3
+	} {
+		if ref.Format(layout) == got {
+			return layout
+		}
+	}
+	return time.RFC3339Nano
 }
 
 // normalizeParentTimes canonicalizes the four time columns of event_outbox,
 // keyed by id.
-func (o *Outbox) normalizeParentTimes(ctx context.Context) error {
+func (o *Outbox) normalizeParentTimes(ctx context.Context, layout string) error {
 	if !o.tableExists(ctx, o.table) {
 		return nil
 	}
@@ -74,7 +104,7 @@ func (o *Outbox) normalizeParentTimes(ctx context.Context) error {
 		return err
 	}
 	for _, r := range collected {
-		sets, args, err := legacyTimeSets([]timeCol{
+		sets, args, err := legacyTimeSets(layout, []timeCol{
 			{"created_at", r.created},
 			{"dispatched_at", r.dispatched},
 			{"next_attempt_at", r.next},
@@ -100,7 +130,7 @@ func (o *Outbox) normalizeParentTimes(ctx context.Context) error {
 // event_outbox_delivery, keyed by (row_id, consumer). Reads are fully
 // drained before any UPDATE for the same MaxOpenConns(1) reason as the
 // parent path.
-func (o *Outbox) normalizeDeliveryTimes(ctx context.Context) error {
+func (o *Outbox) normalizeDeliveryTimes(ctx context.Context, layout string) error {
 	if !o.tableExists(ctx, o.deliveryTable) {
 		return nil
 	}
@@ -130,7 +160,7 @@ func (o *Outbox) normalizeDeliveryTimes(ctx context.Context) error {
 		return err
 	}
 	for _, r := range collected {
-		sets, args, err := legacyTimeSets([]timeCol{
+		sets, args, err := legacyTimeSets(layout, []timeCol{
 			{"created_at", r.created},
 			{"next_attempt_at", r.next},
 			{"claimed_until", r.claimed},
@@ -158,15 +188,15 @@ type timeCol struct {
 }
 
 // legacyTimeSets builds SET-clause fragments and bind args for the time
-// columns whose stored value isn't already in canonical RFC3339Nano form.
-// NULL columns produce no fragment (left untouched). Canonical values parse
-// and reformat to the same string → skipped, which makes the whole pass
-// idempotent. Unparseable values return an error: a value parseOutboxTime
-// can't handle is data corruption, and silently keeping it would leave the
-// bug in place. The bound value is normalized to UTC so the rewrite matches
-// what the relay itself writes (now().UTC()), keeping 'Z' suffixes uniform
-// across rows for stable lexicographic comparison.
-func legacyTimeSets(cols []timeCol) ([]string, []any, error) {
+// columns whose stored value isn't already in the canonical layout for the
+// connected driver (see probeBindLayout). NULL columns produce no fragment
+// (left untouched). Canonical values parse and reformat to the same string
+// → skipped, which makes the whole pass idempotent on either driver.
+// Unparseable values return an error: a value parseOutboxTime can't handle
+// is data corruption, and silently keeping it would leave the bug in
+// place. The bound value is normalized to UTC and bound as time.Time, so
+// the driver writes exactly what its own predicate binds compare against.
+func legacyTimeSets(layout string, cols []timeCol) ([]string, []any, error) {
 	var sets []string
 	var args []any
 	for _, c := range cols {
@@ -177,7 +207,7 @@ func legacyTimeSets(cols []timeCol) ([]string, []any, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("outbox: decode legacy %s: %w", c.col, err)
 		}
-		canonical := parsed.UTC().Format(time.RFC3339Nano)
+		canonical := parsed.UTC().Format(layout)
 		if s, ok := c.raw.(string); ok && s == canonical {
 			continue
 		}
@@ -201,6 +231,15 @@ func (o *Outbox) tableExists(ctx context.Context, bareName string) bool {
 	err := o.db.QueryRowContext(ctx, q).Scan(&n)
 	if err == nil || err == sql.ErrNoRows {
 		return true
+	}
+	// "no such table" is the expected WithoutEnsureTable-before-migration
+	// case and stays silent. Anything else (e.g. SQLITE_BUSY from another
+	// process holding the file lock) also skips normalization — the relay
+	// keeps working via the post-scan parse fallback — but is worth a
+	// trace, since silence here would hide a persistent fault.
+	if !strings.Contains(strings.ToLower(err.Error()), "no such table") {
+		slog.Default().Warn("outbox: table probe failed; skipping timestamp normalization this start",
+			"table", bareName, "err", err)
 	}
 	return false
 }
