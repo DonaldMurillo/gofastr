@@ -178,6 +178,12 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	if err := q.ensureTable(); err != nil {
 		return nil, fmt.Errorf("ensure table: %w", err)
 	}
+	// Canonicalize any space-separated (legacy mattn/go-sqlite3) timestamps
+	// in the queue and scheduler tables before the first claim query runs.
+	// SQLite-only no-op on Postgres; idempotent. See legacy_normalize.go.
+	if err := q.normalizeLegacyTimestamps(context.Background()); err != nil {
+		return nil, fmt.Errorf("normalize legacy timestamps: %w", err)
+	}
 	return q, nil
 }
 

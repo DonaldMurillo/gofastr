@@ -195,7 +195,11 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 		if err != nil {
 			return err
 		}
-		next = sc.Next(base)
+		// DST-aware next-fire: a spec naming a wall-clock minute that the
+		// location's next spring-forward will skip lands at the transition
+		// instant (vixie/cronie parity), not silently a day later. See
+		// durable_scheduler_dst.go.
+		next = nextFire(sc, base.Location(), base, time.Time{})
 	} else {
 		if b.interval <= 0 {
 			return errors.New("queue: durable interval must be positive")
@@ -546,7 +550,17 @@ func (s *DurableScheduler) commitOccurrences(
 			Priority:     schedule.priority,
 			MaxAttempts:  schedule.maxAttempts,
 			CreatedAt:    now,
-			ScheduledAt:  tick,
+			// A cron-fired job is the execution of an already-due event, so it
+			// must be dequeue-eligible the moment it is committed. `tick` is the
+			// audit instant (preserved in the occurrence's scheduled_tick
+			// column) but the job's scheduled_at is the worker readiness gate:
+			// binding it to a future tick (which only happens when RunOnce is
+			// driven with a future test clock; in production tick ≤ wall clock)
+			// would stall the job until that tick and break test drains that
+			// cycle the queue via Dequeue. Use the earlier of tick or the
+			// process wall clock so overdue production ticks are preserved
+			// while future test-time ticks become immediately ready.
+			ScheduledAt: earliestTime(tick, s.queue.now()),
 		}); err != nil {
 			return err
 		}
@@ -626,6 +640,14 @@ func (s *DurableScheduler) ensureTables() error {
 	}
 	if err := s.ensureHardeningSchema(); err != nil {
 		return err
+	}
+	// With the scheduler tables freshly ensured (or pre-existing), canonicalize
+	// their legacy timestamps too. NewDBQueue already ran this pass, but it may
+	// have run before these tables existed (a host that constructs DBQueue
+	// first, then DurableScheduler). The pass is idempotent and existence-
+	// checked, so re-running on already-canonical rows is a cheap no-op.
+	if err := s.queue.normalizeLegacyTimestamps(context.Background()); err != nil {
+		return fmt.Errorf("normalize scheduler legacy timestamps: %w", err)
 	}
 	return nil
 }
