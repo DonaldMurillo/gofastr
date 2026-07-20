@@ -49,6 +49,9 @@ func (s *DurableScheduler) ensureHardeningSchema() error {
 	if err := s.ensureScheduleOptionsColumns(); err != nil {
 		return err
 	}
+	if err := s.ensureScheduleTZColumn(); err != nil {
+		return err
+	}
 	for _, statement := range []string{
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (schedule_id, enqueued_job_id)",
 			s.queue.schedulerIndex("scheduler_occurrences_schedule_job_idx"),
@@ -167,6 +170,57 @@ func (s *DurableScheduler) ensureScheduleOptionsColumns() error {
 		if err != nil && !isDuplicateColumnErr(err) {
 			return err
 		}
+	}
+	return nil
+}
+
+// ensureScheduleTZColumn adds the tz column that records the IANA location
+// name a cron schedule was registered in, so cron field evaluation happens
+// in the schedule's wall-clock location instead of UTC. Idempotent: Postgres
+// uses ADD COLUMN IF NOT EXISTS, and the SQLite path scans PRAGMA
+// table_info first so we only ALTER when the column is actually missing
+// (matching ensureScheduleVersionColumn / ensureScheduleOptionsColumns).
+// The column is additive NOT NULL DEFAULT ”, so existing rows — and
+// interval schedules, which never consult tz — evaluate exactly as before.
+func (s *DurableScheduler) ensureScheduleTZColumn() error {
+	table := s.queue.schedulerSchedulesTable()
+	if s.queue.dialect == dialectPostgres {
+		_, err := s.queue.db.Exec(fmt.Sprintf(
+			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS tz TEXT NOT NULL DEFAULT ''",
+			table))
+		return err
+	}
+	rows, err := s.queue.db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	present := false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if strings.EqualFold(name, "tz") {
+			present = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if present {
+		return nil
+	}
+	_, err = s.queue.db.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN tz TEXT NOT NULL DEFAULT ''", table))
+	if err != nil && !isDuplicateColumnErr(err) {
+		return err
 	}
 	return nil
 }

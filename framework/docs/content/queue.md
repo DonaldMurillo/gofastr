@@ -405,6 +405,31 @@ The options columns (`lane`, `priority`, `max_attempts`) are added to an
 existing `scheduler_schedules` table by an idempotent migration during
 `NewDurableScheduler` — no manual schema work is required on upgrade.
 
+Cron field evaluation follows the location of the registration anchor.
+`Register()` anchors in UTC, so `"0 2 * * *"` fires at 02:00 UTC — the
+behavior schedules have always had. To evaluate a spec in a zone's
+wall-clock time (including across DST shifts), register with `RegisterAt`
+and a time in a named IANA zone:
+
+```go
+loc, _ := time.LoadLocation("America/New_York")
+if err := durable.Cron("nightly-rollup", "0 2 * * *").
+    Job("nightly-rollup", nil).
+    RegisterAt(time.Now().In(loc)); err != nil {
+    log.Fatal(err)
+}
+```
+
+The zone name persists with the schedule (a `tz` column added by the same
+idempotent migration as the options columns). UTC, fixed-offset zones
+(`time.FixedZone`), and `time.Local` store the empty default and evaluate
+in UTC — `time.Local` would resolve to a different zone on every replica.
+Re-registering a schedule with a different cadence keeps the stored
+watermark and self-heals: evaluation advances to the next valid occurrence
+of the new spec instead of failing. A schedule whose stored state cannot
+produce a due tick is logged and skipped each heartbeat; other schedules
+keep firing.
+
 One replica holds a heartbeat-expiry lease for efficient evaluation. Every
 lease acquisition after expiry increments a fencing token. Before committing
 an occurrence, the scheduler re-checks that exact owner/token row. The

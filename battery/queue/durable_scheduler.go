@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -61,13 +62,13 @@ type DurableScheduleBuilder struct {
 	priority    int
 	maxAttempts int
 }
-
 type durableSchedule struct {
 	id          string
 	jobType     string
 	payload     json.RawMessage
 	interval    time.Duration
 	cronSpec    string
+	tz          string
 	lane        string
 	priority    int
 	maxAttempts int
@@ -169,9 +170,12 @@ func (b *DurableScheduleBuilder) MaxAttempts(n int) *DurableScheduleBuilder {
 }
 
 // Register persists the schedule definition without resetting an existing
-// watermark.
+// watermark. The anchor is UTC, so cron field evaluation keeps the
+// historical "0 2 * * *" = 02:00 UTC semantics regardless of the server's
+// local zone; register with RegisterAt and a time in a named IANA zone to
+// evaluate a cron spec in that zone's wall-clock time.
 func (b *DurableScheduleBuilder) Register() error {
-	return b.RegisterAt(time.Now())
+	return b.RegisterAt(time.Now().UTC())
 }
 
 // RegisterAt is Register with a deterministic first-run anchor.
@@ -204,15 +208,16 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 	}
 	_, err := b.scheduler.queue.db.Exec(
 		fmt.Sprintf(`INSERT INTO %s
-			(id, job_type, payload, interval_ns, cron_spec,
+			(id, job_type, payload, interval_ns, cron_spec, tz,
 			 lane, priority, max_attempts,
 			 next_run, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 			ON CONFLICT(id) DO UPDATE SET
 				job_type=excluded.job_type,
 				payload=excluded.payload,
 				interval_ns=excluded.interval_ns,
 				cron_spec=excluded.cron_spec,
+				tz=excluded.tz,
 				lane=excluded.lane,
 				priority=excluded.priority,
 				max_attempts=excluded.max_attempts,
@@ -220,7 +225,7 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 				version=%s.version+1`,
 			b.scheduler.queue.schedulerSchedulesTable(),
 			b.scheduler.queue.schedulerSchedulesTable()),
-		b.id, b.jobType, payload, int64(b.interval), b.cronSpec,
+		b.id, b.jobType, payload, int64(b.interval), b.cronSpec, tzName(base.Location()),
 		b.lane, b.priority, b.maxAttempts,
 		next.UTC(), time.Now().UTC(),
 	)
@@ -253,9 +258,24 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 	for _, schedule := range due {
 		ticks, nextRun, err := schedule.dueTicks(now, s.maxCatchUpOccurrences)
 		if err != nil {
-			return true, err
+			// A single corrupted schedule (genuine data corruption, since
+			// tz and cadence-change mismatches are handled inside dueTicks)
+			// must not abort evaluation of the remaining due schedules.
+			// Surface it via the logger so operators notice, then continue.
+			slog.Default().Error("queue: durable scheduler skipping schedule",
+				"schedule_id", schedule.id, "err", err.Error())
+			continue
 		}
 		if len(ticks) == 0 {
+			// Even with no ticks due, the cursor may need advancing — the
+			// cadence-change path returns a corrected nextRun strictly after
+			// the stored watermark. Persist it so the schedule stops waking
+			// the loop every heartbeat and resumes firing on the new cadence.
+			if !nextRun.IsZero() && !nextRun.Equal(schedule.nextRun) {
+				if err := s.commitOccurrences(ctx, schedule, nil, nextRun, fence, now); err != nil {
+					return true, err
+				}
+			}
 			continue
 		}
 		if s.beforeOccurrenceCommit != nil {
@@ -392,7 +412,7 @@ func (s *DurableScheduler) acquireLease(ctx context.Context, now time.Time) (int
 
 func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durableSchedule, error) {
 	rows, err := s.queue.db.QueryContext(ctx,
-		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec,
+		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec, tz,
 				lane, priority, max_attempts,
 				next_run, updated_at, version
 			FROM %s WHERE next_run <= $1 ORDER BY next_run, id`,
@@ -410,7 +430,7 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 		var intervalNS int64
 		var nextRun, updatedAt any
 		if err := rows.Scan(&row.id, &row.jobType, &payload, &intervalNS,
-			&row.cronSpec, &row.lane, &row.priority, &row.maxAttempts,
+			&row.cronSpec, &row.tz, &row.lane, &row.priority, &row.maxAttempts,
 			&nextRun, &updatedAt, &row.version); err != nil {
 			return nil, err
 		}
@@ -571,6 +591,7 @@ func (s *DurableScheduler) ensureTables() error {
 			payload TEXT NOT NULL,
 			interval_ns BIGINT NOT NULL DEFAULT 0,
 			cron_spec TEXT NOT NULL DEFAULT '',
+			tz TEXT NOT NULL DEFAULT '',
 			lane TEXT NOT NULL DEFAULT '',
 			priority INTEGER NOT NULL DEFAULT 0,
 			max_attempts INTEGER NOT NULL DEFAULT 0,
