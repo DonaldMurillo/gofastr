@@ -59,6 +59,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -379,6 +380,23 @@ func renderDashStats(s liveDashData) render.HTML {
 	return ui.Grid(ui.GridConfig{Min: "12rem"}, cards...)
 }
 
+// renderDashPollCards renders the rung-3 contrast block: the same queue
+// metrics served as a plain HTML fragment the page re-fetches on an
+// interval (data-fui-poll) — no SSE, no island push, no fanout. The
+// render timestamp makes each refresh visible.
+func renderDashPollCards(s liveDashData) render.HTML {
+	return ui.Grid(ui.GridConfig{Min: "12rem"},
+		ui.StatCard(ui.StatCardConfig{
+			Label: "Queue depth (polled)", Value: strconv.FormatInt(s.depth, 10),
+			Direction: ui.TrendFlat, Trend: "every 5s",
+		}),
+		ui.StatCard(ui.StatCardConfig{
+			Label: "Fragment rendered", Value: time.Now().Format("15:04:05"),
+			Direction: ui.TrendFlat, Trend: "server clock",
+		}),
+	)
+}
+
 // renderDashFeed renders the activity-feed Timeline. The server trims to
 // liveDashFeedCap entries before rendering; the newest event is last.
 // An empty feed renders a calm placeholder rather than panicking — a
@@ -555,6 +573,26 @@ func (s *LiveDashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 				ExtraAttrs: html.Attrs{"data-island": liveDashStatsID},
 				AriaLabel:  "Live metrics",
 			}, renderDashStats(snap)),
+
+			// The poll-rung contrast. The stats above are rung 4 of the
+			// reactivity ladder (SSE push: the ticker pushes HTML the
+			// moment it changes); this card is rung 3 (data-fui-poll:
+			// the browser re-fetches a server-rendered fragment on an
+			// interval). Same markup pipeline, no connection, no
+			// fanout — any replica answers the GET.
+			ui.Card(ui.CardConfig{
+				Heading:      "The same metrics, polled",
+				HeadingLevel: 2,
+				Description:  "This block is rung 3 of the reactivity ladder: data-fui-poll re-fetches a server-rendered fragment every 5 seconds. No SSE, no held connection, no fanout — any replica answers the GET. The stat cards above are rung 4: the server pushes the moment a tick lands. See /docs/reactivity for when each rung fits.",
+			},
+				html.Div(html.DivConfig{
+					AriaLabel: "Polled metrics",
+					ExtraAttrs: html.Attrs{
+						"data-fui-poll":     "5s",
+						"data-fui-poll-src": "/__site/livedash/poll-fragment",
+					},
+				}, renderDashPollCards(snap)),
+			),
 
 			// Two-column grid: activity feed (left) + jobs (right).
 			// Each region is a wrapper that holds an SSR-only heading
