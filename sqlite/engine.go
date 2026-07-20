@@ -1290,7 +1290,7 @@ func (e *Engine) executeInsert(s *InsertStmt, params []Value) (*Result, error) {
 	var totalAffected int64
 
 	for _, valueRow := range s.Values {
-		// Evaluate expressions
+		// Evaluate value expressions.
 		eval := &ExprEval{Params: params}
 		values := make([]Value, len(valueRow))
 		for i, expr := range valueRow {
@@ -1301,54 +1301,16 @@ func (e *Engine) executeInsert(s *InsertStmt, params []Value) (*Result, error) {
 			values[i] = val
 		}
 
-		// Map to columns
-		rowValues := make([]Value, len(tableInfo.Columns))
-		if len(s.Columns) > 0 {
-			// Explicit column list
-			for i, colName := range s.Columns {
-				colIdx := tableInfo.ColumnIndex(colName)
-				if colIdx < 0 {
-					return nil, &engineError{"no such column: " + colName}
-				}
-				if i < len(values) {
-					rowValues[colIdx] = ApplyAffinity(values[i], tableInfo.Columns[colIdx].Affinity)
-				}
-			}
-		} else {
-			// All columns in order
-			for i := range tableInfo.Columns {
-				if i < len(values) {
-					rowValues[i] = ApplyAffinity(values[i], tableInfo.Columns[i].Affinity)
-				} else {
-					rowValues[i] = NullValue
-				}
-			}
-		}
-
-		// Fill defaults for missing values
-		for i := range rowValues {
-			if rowValues[i].Type == DataTypeNull && tableInfo.Columns[i].Default != nil {
-				rowValues[i] = *tableInfo.Columns[i].Default
-			}
-		}
-
-		// Determine rowid
-		var rowid int64
-		if tableInfo.HasRowIDAlias() {
-			// Get rowid from the INTEGER PRIMARY KEY column
-			pkIdx := tableInfo.PrimaryKey
-			if rowValues[pkIdx].IsNull() {
-				// Auto-assign rowid
-				rowid = tableInfo.NextAutoIncrement()
-				rowValues[pkIdx] = IntegerValue(rowid)
-			} else {
-				rowid = rowValues[pkIdx].IntVal
-				tableInfo.SetAutoIncrement(rowid)
-			}
-		} else {
-			// Use internal rowid counter
-			// For simplicity, use a hash or auto-increment
-			rowid = tableInfo.NextAutoIncrement()
+		// buildInsertRow centralizes the column mapping, DEFAULT
+		// application (omitted columns only, with affinity applied),
+		// NOT NULL enforcement, and rowid handling — identical to the
+		// executeInsertWithConflict path. Routing the "simple" branch
+		// through it ensures a NOT NULL violation on an explicit NULL
+		// still fails even when the column has a default, and that a
+		// DEFAULT value inherits the column affinity.
+		rowValues, rowid, err := buildInsertRow(tableInfo, s.Columns, values)
+		if err != nil {
+			return nil, err
 		}
 
 		// Build record

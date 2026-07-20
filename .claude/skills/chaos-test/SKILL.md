@@ -19,7 +19,7 @@ Invoke this skill when:
 
 Do NOT use this skill for:
 - Adding regression tests (use chromedp in `examples/site/e2e_*.go`)
-- Code review (use Agent with `general-purpose` or `ui-ux-advisor`)
+- Code review (use Agent with `general-purpose`, or a UX-review agent if your environment provides one)
 - Static analysis of the codebase
 
 ## Pre-flight

@@ -176,9 +176,15 @@ type ColumnDef struct {
 	Type         string // Original type string from SQL
 	Affinity     ColumnAffinity
 	NotNull      bool
-	Default      *Value // Default value, nil means no default
+	Default      *Value // Default value, nil means no constant default
 	IsPrimaryKey bool
 	IsRowID      bool // True if this is the INTEGER PRIMARY KEY (aliased to rowid)
+	// DefaultExpr is the raw DEFAULT expression; nil when none. For
+	// non-constant defaults such as CURRENT_TIMESTAMP this is the source
+	// evaluated PER INSERT, since the value depends on the time of the
+	// statement. Constant defaults additionally populate Default as a
+	// fast path.
+	DefaultExpr Expr
 }
 
 // CompareResult represents the outcome of comparing two values.

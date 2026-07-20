@@ -13,8 +13,9 @@ Use these to orient before reading code or before issuing requests.
 ## Prerequisites
 
 Any GoFastr app running under `gofastr dev` has the full surface
-automatically (mount + introspection + control + log debug tools;
-opt-out `GOFASTR_DEV_MCP=0`). Outside the dev loop the app must be
+automatically (mount + introspection + control automatically, plus
+`log_*` tools when `battery/log` is registered; opt-out
+`GOFASTR_DEV_MCP=0`). Outside the dev loop the app must be
 built with `framework.WithMCPIntrospection()` and expose `/mcp` (via
 `framework.WithMCP()`) — both `examples/site` and blueprint-generated
 apps wire both. Launch the site with `./scripts/dev-watch.sh` (port
@@ -32,7 +33,7 @@ was launched.
 | `app_modules`           | List modules with manifest metadata (version, deps, migration group), enabled state, and owned surface counts. |
 | `app_config`            | AppConfig snapshot: `name`, `json_case`, `debug_endpoints`, `no_llmmd`, `request_timeout_ms`, `disable_request_timeout`. |
 | `app_readiness`         | Run all registered readiness checks; same set `/readyz` consults, invokable programmatically. |
-| `app_routines`          | Every registered stored routine: name, declared dialect, sha256 checksum of the Up body, ledger state (present/drifted/missing/unknown), and best-effort liveness in `pg_proc`/`pg_views` (Postgres; unknown on SQLite). Use to confirm a routine body change propagated, or spot one the boot skipped. |
+| `app_routines`          | Every registered stored routine: name, declared dialect, sha256 checksum of the Up body, ledger state (present/drifted/missing/skipped_for_dialect/unknown — `skipped_for_dialect` means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness in `pg_proc`/`pg_views` (Postgres; unknown on SQLite). Use to confirm a routine body change propagated, or spot one the boot skipped. |
 | `framework_docs_list`   | Every framework doc topic embedded in the binary (name, title, summary).              |
 | `framework_docs_get`    | Full markdown of one topic by name (e.g. `entity-declarations`).                      |
 | `framework_docs_search` | Substring search across all topics (min 3 chars, `limit` caps hits).                  |

@@ -67,7 +67,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 			handler     func(ctx context.Context, params map[string]any) (any, error)
 		}{
 			name:        "log_set_level",
-			description: "Change the minimum log level emitted by the fan-out handler. Useful for temporarily switching to DEBUG during an investigation, then restoring INFO. Returns the previous level. Only registered when log.Config.AllowMCPMutation is true.",
+			description: "Change the minimum log level emitted by the fan-out handler. Useful for temporarily switching to DEBUG during an investigation, then restoring the previous level (returned in `.previous_level`). Returns the previous level. Only registered when log.Config.AllowMCPMutation is true.",
 			schema: map[string]any{
 				"type":     "object",
 				"required": []string{"level"},

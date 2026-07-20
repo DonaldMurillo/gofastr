@@ -128,11 +128,12 @@ const (
 
 // Token represents a lexical token in a SQL statement.
 type Token struct {
-	Type  TokenType
-	Value string // Raw text of the token
-	Pos   int    // Byte offset in the input
-	Line  int    // Line number (1-based)
-	Col   int    // Column number (1-based)
+	Type   TokenType
+	Value  string // Raw text of the token
+	Pos    int    // Byte offset in the input
+	Line   int    // Line number (1-based)
+	Col    int    // Column number (1-based)
+	Quoted bool   // True if this identifier was a quoted form ("..", `..`, [..])
 }
 
 // String returns a human-readable representation of the token.

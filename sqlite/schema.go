@@ -362,11 +362,19 @@ func BuildTableInfo(stmt *CreateTableStmt, rootPage int) *TableInfo {
 			case ConstraintUnique:
 				info.UniqueConstraints = append(info.UniqueConstraints, []string{colAST.Name})
 			case ConstraintDefault:
-				// Evaluate the default expression to a Value
-				if con.Value != nil {
+				// ALWAYS remember the raw DEFAULT expression so non-constant
+				// defaults (CURRENT_TIMESTAMP et al.) can be evaluated per
+				// insert at write time. The constant fast-path (col.Default)
+				// is populated ONLY for LiteralExpr — anything else (e.g. a
+				// ColumnRef resolving to CURRENT_TIMESTAMP via the keyword
+				// fallback in evalColumnRef) would otherwise be cached at
+				// CREATE TABLE time and never re-evaluated. Non-constant
+				// defaults leave col.Default == nil and the insert path
+				// falls back to evaluating col.DefaultExpr.
+				col.DefaultExpr = con.Value
+				if lit, ok := con.Value.(LiteralExpr); ok {
 					eval := &ExprEval{}
-					val, err := eval.Eval(con.Value)
-					if err == nil {
+					if val, err := eval.Eval(lit); err == nil {
 						col.Default = &val
 					}
 				}

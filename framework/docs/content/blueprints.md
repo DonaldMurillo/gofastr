@@ -417,10 +417,11 @@ anything beyond a single placeholder, write a partial yml and use `--add`.
 `generate theme <name>` is intentionally not provided: theme tokens live in
 the owned `app.go` (there is no new-file representation to scaffold).
 
-## Packing: `gofastr pack` (the inverse of generate)
+## Packing: `gofastr pack` (lossy app→blueprint snapshot)
 
-`gofastr pack [app-dir]` reconstructs a `gofastr.yml` from a generated app's Go
-source — the inverse of `gofastr generate`. It reads the real artifacts via the
+`gofastr pack [app-dir]` reconstructs a best-effort `gofastr.yml` from a generated
+app's Go source — a lossy snapshot, not a round-trip inverse of `gofastr
+generate`. It reads the real artifacts via the
 Go AST (it does **not** stash a manifest): the per-entity `entities/<name>.go`
 files for entities (falling back to a legacy `entities/register.go`),
 `app.go` for app config + theme + auth/admin + nav, `stubs.go`

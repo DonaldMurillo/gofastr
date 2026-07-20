@@ -209,7 +209,7 @@ gofastr migrate generate add_published --from=gofastr.yml --driver=postgres
 It diffs the **entity declarations** in the `gofastr.yml` blueprint against a
 committed **schema snapshot** (`migrations/schema.snapshot.json`) and
 writes the next numbered file, e.g. `migrations/0002_add_published.sql`,
-with both `Up` and a computed `Down`:
+with `Up` plus a `Down` section when a safe inverse exists:
 
 ```sql
 -- +migrate Version 2
@@ -242,8 +242,8 @@ It then updates the snapshot. The typical loop:
    checksummed runner.
 
 What it generates: `CREATE TABLE` (new entity), `ADD COLUMN` (new
-field), `DROP COLUMN` (removed field, marked reversible — re-adds the
-column on `Down` but does not restore row data), and `DROP TABLE`
+field), `DROP COLUMN` (removed field — the `Down` re-adds the column but
+does not restore row data), and `DROP TABLE`
 (removed entity). The forward DDL is built by the same code path as
 auto-migrate, so a generated migration matches what auto-migrate would
 have applied. A new **required** field with **no default** is added
@@ -655,9 +655,9 @@ column its writes scope by.
 
 For destructive changes (drops, renames, type changes), use `gofastr
 migrate generate <name>` to emit a reviewable versioned migration — a
-removed field generates a reversible `DROP COLUMN` — then `gofastr migrate
-up`, or write a numbered SQL file by hand and stop using auto-migrate for
-that table.
+removed field generates a `DROP COLUMN` whose `Down` re-adds the column
+but does not restore row data — then `gofastr migrate up`, or write a
+numbered SQL file by hand and stop using auto-migrate for that table.
 
 `AutoMigrateContext(ctx, db, registry)` is the context-aware variant —
 boot uses it so a shutdown signal cancels a migration that's waiting on

@@ -2093,7 +2093,30 @@ func (p *Parser) parseBlobLiteral() (Expr, error) {
 
 func (p *Parser) parseIdentOrFunction() (Expr, error) {
 	name := p.cur.Value
+	// quoted remembers whether the *current* token was written in a quoted
+	// identifier form ("..", `..`, [..]). A quoted "true" / "false" is a
+	// column named true/false — NOT a boolean literal — and must fall
+	// through to the ColumnRef path. Capture this BEFORE advance() moves
+	// p.cur to the next token.
+	quoted := p.cur.Quoted
 	p.advance()
+
+	// Bare TRUE/FALSE are boolean literals (SQLite 3.23+): they evaluate to
+	// integer 1 and 0 respectively. Only the unqualified, non-call,
+	// non-quoted form is rewritten — a following '(' (function call) or '.'
+	// (table qualifier) means the token is a real identifier such as
+	// true() or t.true, and a quoted "true"/`true`/[true] is a column of
+	// that name. This is what lets `DEFAULT true` / `DEFAULT false`
+	// populate col.Default at CREATE TABLE time while still allowing a
+	// column literally named true to round-trip.
+	if !quoted {
+		if upper := strings.ToUpper(name); (upper == "TRUE" || upper == "FALSE") && p.cur.Type != TokenLParen && p.cur.Type != TokenDot {
+			if upper == "TRUE" {
+				return LiteralExpr{Type: DataTypeInteger, IntVal: 1}, nil
+			}
+			return LiteralExpr{Type: DataTypeInteger, IntVal: 0}, nil
+		}
+	}
 
 	// Function call?
 	if p.cur.Type == TokenLParen {

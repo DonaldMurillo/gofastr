@@ -51,10 +51,10 @@ properties across *every* call site, not for "more cases":
 
 | Property | Common surfaces | Reference fix |
 |---|---|---|
-| URL scheme allow-list (http(s) / relative / fragment only) | any field that flows to `<a href>`, `<img src>`, `<form action>`, `<link href>`, `Link:` response header, OpenAPI `servers[].url`, SEO meta tags, Image/File entity fields | `framework/ui/safety.go::safeURL`, `framework/uihost/uihost.go::isSafeHeadURL`, `framework/crud/crud_upload.go::isSafeMediaURL`, `framework/experimental/apiversions/version.go::safeReplacementURL` |
-| C0 / DEL strip on outbound strings | response header values (`Content-Type`, `Access-Control-*`, `Link:`), log attribute values (`method`, `path`), SSE field bodies, DSL opaque literals, route-group prefix | `core/handler/respond.go::sanitizeHeaderValue`, `core/middleware/cors.go::stripCtrlBytes`, `core/middleware/logging.go::safeLogMethod`, `core/stream/sse.go::scrubSSEDataLines`, `framework/dsl/dsl.go::stripDSLControlBytes` |
-| Strict JSON top-level parsing (reject duplicate / case-folded / unknown keys) | every `Bind` consumer | `core/handler/bind.go::validateBodyKeys` |
-| Fail-closed scoping (multi-tenant + owner-required) on in-process paths | every CRUD method that touches DB state (not just the HTTP path — middleware doesn't protect in-process callers) | `framework/crud/owner.go::requireTenantContext` + every method in `framework/crud/crud_api.go` |
+| URL scheme allow-list (surface-specific: anchors may allow http(s) / relative / fragment / mailto / tel; head/media/header use narrower policies) | any field that flows to `<a href>`, `<img src>`, `<form action>`, `<link href>`, `Link:` response header, OpenAPI `servers[].url`, SEO meta tags, Image/File entity fields | `framework/ui/safety.go::safeURL`, `framework/uihost/uihost.go::isSafeHeadURL`, `framework/crud/crud_upload.go::isSafeMediaURL`, `framework/experimental/apiversions/version.go::safeReplacementURL` |
+| C0 / DEL sanitation on outbound strings (protocol-specific, NOT uniform — SSE `scrubSSEDataLines` strips CR+NUL only to preserve LF framing; `safeLogMethod`/`safeLogPath` fast-path returns clean input unchanged) | response header values (`Content-Type`, `Access-Control-*`, `Link:`), log attribute values (`method`, `path`), SSE field bodies, DSL opaque literals, route-group prefix | `core/handler/respond.go::sanitizeHeaderValue`, `core/middleware/cors.go::stripCtrlBytes`, `core/middleware/logging.go::safeLogMethod` (test the fast-path too), `core/stream/sse.go::scrubSSEDataLines`, `framework/dsl/dsl.go::stripDSLControlBytes` |
+| Strict JSON top-level parsing (reject duplicate / case-folded / unknown keys) — no-op for non-struct-pointer destinations and non-object bodies | every `Bind` consumer decoding a top-level JSON object into a struct pointer | `core/handler/bind.go::validateBodyKeys` |
+| Fail-closed scoping (multi-tenant + owner-required) on in-process paths | every CRUD method that touches DB state (not just the HTTP path — middleware doesn't protect in-process callers) | `framework/crud/owner.go::requireOwnerContext` + `framework/crud/owner.go::requireTenantContext` + every method in `framework/crud/crud_api.go` |
 | Forensic completeness on rollback / soft-delete | batch envelope, upsert ON CONFLICT, audit hook | `framework/crud/crud_batch.go::scrubRolledBackData`, `framework/crud/crud_upsert.go::errSoftDeletedResurrection` |
 | Panic isolation at extension points | every place a third-party callback runs (hooks, plugins, custom handlers) | `framework/hook/hook.go::runHookSafely` |
 
@@ -206,8 +206,11 @@ come from a model is therefore load-bearing:
   Go + primitive-specific advisories, and turn the result into a
   checklist delta both profiles sweep.
 - **Deterministic tools** — `go vet` and `govulncheck` (both
-  first-party Go-team; no third-party analyzers, no external deps) —
-  are the one second opinion that shares no blind spot with any LLM.
+  first-party Go-team; no third-party analyzers) — are the one second
+  opinion that shares no blind spot with any LLM. `govulncheck` is a
+  separate install (`golang.org/x/vuln/cmd/govulncheck`); run it via
+  `make vulncheck`, which fails closed with the install command if
+  the binary is missing.
 
 **The clean-gate (the non-optional invariant):** a surface is
 **CLEARED** only when ALL of these are dry/clean on it — Opus deep pass,

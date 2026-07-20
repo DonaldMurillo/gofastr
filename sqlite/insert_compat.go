@@ -14,6 +14,15 @@ func (e *Engine) executeInsertWithConflict(s *InsertStmt, params []Value, tableI
 	for _, values := range valueRows {
 		rowValues, rowid, err := buildInsertRow(tableInfo, s.Columns, values)
 		if err != nil {
+			// INSERT OR IGNORE turns a *constraint* violation (e.g. NOT
+			// NULL) into a skipped row rather than an error, matching
+			// SQLite. Non-constraint errors (arity, "no such column")
+			// still fail. `ON CONFLICT ... DO NOTHING` targets UNIQUE
+			// conflicts only and does NOT suppress a NOT NULL violation,
+			// so this is gated on OrIgnore alone.
+			if s.OrIgnore && isConstraintError(err) {
+				continue
+			}
 			return nil, err
 		}
 		conflictRowID, conflictRow, conflicted, err := e.findInsertConflict(
@@ -105,8 +114,35 @@ func (e *Engine) insertValueRows(s *InsertStmt, params []Value) ([][]Value, erro
 	return rows, nil
 }
 
+// isConstraintError reports whether err is a row-constraint violation
+// (NOT NULL / UNIQUE / PRIMARY KEY / CHECK / FOREIGN KEY) — the class of
+// error that `INSERT OR IGNORE` turns into a skipped row. Arity and
+// schema errors ("no such column") are not constraint errors and still
+// fail under OR IGNORE.
+func isConstraintError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "constraint failed")
+}
+
 func buildInsertRow(tableInfo *TableInfo, columns []string, values []Value) ([]Value, int64, error) {
+	// Arity: a row must supply exactly as many values as the INSERT names
+	// — the length of an explicit column list, or the table width for the
+	// positional form. SQLite rejects a mismatch rather than silently
+	// defaulting the shortfall or dropping the excess. These are NOT
+	// constraint errors, so `INSERT OR IGNORE` does not suppress them.
+	if len(columns) > 0 {
+		if len(values) != len(columns) {
+			return nil, 0, &engineError{fmt.Sprintf("%d values for %d columns", len(values), len(columns))}
+		}
+	} else if len(values) != len(tableInfo.Columns) {
+		return nil, 0, &engineError{fmt.Sprintf("table %s has %d columns but %d values were supplied", tableInfo.Name, len(tableInfo.Columns), len(values))}
+	}
 	rowValues := make([]Value, len(tableInfo.Columns))
+	// provided[i] is true when column i was explicitly supplied by the
+	// INSERT statement (either by name in `columns` or positionally). Only
+	// omitted columns receive the column's declared DEFAULT — an explicit
+	// NULL must still trip the NOT NULL check below even when a default
+	// exists. (SQLite semantics: DEFAULT fires for *missing* values only.)
+	provided := make([]bool, len(tableInfo.Columns))
 	if len(columns) > 0 {
 		for i, column := range columns {
 			columnIndex := tableInfo.ColumnIndex(column)
@@ -115,18 +151,40 @@ func buildInsertRow(tableInfo *TableInfo, columns []string, values []Value) ([]V
 			}
 			if i < len(values) {
 				rowValues[columnIndex] = ApplyAffinity(values[i], tableInfo.Columns[columnIndex].Affinity)
+				provided[columnIndex] = true
 			}
 		}
 	} else {
 		for i := range tableInfo.Columns {
 			if i < len(values) {
 				rowValues[i] = ApplyAffinity(values[i], tableInfo.Columns[i].Affinity)
+				provided[i] = true
 			}
 		}
 	}
 	for i := range rowValues {
-		if rowValues[i].IsNull() && tableInfo.Columns[i].Default != nil {
-			rowValues[i] = *tableInfo.Columns[i].Default
+		if !provided[i] && rowValues[i].IsNull() {
+			// Resolve the column's declared DEFAULT for an *omitted* column.
+			// Two shapes:
+			//   (a) col.Default != nil — constant default pre-evaluated at
+			//       CREATE TABLE time (literals, TRUE/FALSE). Fast path.
+			//   (b) col.DefaultExpr != nil with col.Default == nil — a
+			//       non-constant default such as CURRENT_TIMESTAMP that
+			//       must be re-evaluated for EVERY insert. The expression
+			//       is evaluated with a fresh ExprEval (no row context),
+			//       which lets evalColumnRef fall back to the CURRENT_*
+			//       keywords.
+			// In both cases the column affinity is applied to the result.
+			// An explicit NULL (provided[i] == true) is intentionally NOT
+			// overwritten here so the NOT NULL check below still trips.
+			col := tableInfo.Columns[i]
+			if col.Default != nil {
+				rowValues[i] = ApplyAffinity(*col.Default, col.Affinity)
+			} else if col.DefaultExpr != nil {
+				if v, err := (&ExprEval{}).Eval(col.DefaultExpr); err == nil {
+					rowValues[i] = ApplyAffinity(v, col.Affinity)
+				}
+			}
 		}
 		if tableInfo.Columns[i].NotNull && rowValues[i].IsNull() {
 			return nil, 0, &engineError{"NOT NULL constraint failed: " + tableInfo.Name + "." + tableInfo.Columns[i].Name}
