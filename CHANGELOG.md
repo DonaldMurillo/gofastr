@@ -5,6 +5,124 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.38.0] - 2026-07-20
+
+The reactivity release (#112). The interactive layer is now truly
+stateless — any replica serves any request — and liveness follows an
+explicit pull-first ladder: client signals → RPC → polling → SSE push.
+The new model doc is `framework/docs/content/reactivity.md`
+(`gofastr docs reactivity`).
+
+### Added
+
+- **Stateless session tokens** (#112). The uihost session map is gone;
+  sessions are HMAC-SHA256-signed tokens verified by signature, so a
+  session minted on one replica is accepted by every other. The cookie
+  carries the signed token; pages embed only the bare stream id, which is
+  no longer a credential — the SSE endpoint requires the cookie token to
+  verify AND match the requested stream, closing a hole the map never
+  covered (subscribing to another session's stream with a leaked id).
+- **App-wide secret**: `framework.WithSecret(secret)` or the
+  `GOFASTR_SECRET` env var (composes with the `.env` autoload; explicit
+  option wins). Subsystem keys are HKDF-derived per purpose — one secret
+  is all a multi-replica deployment configures. Single replica with no
+  secret keeps today's zero-config semantics (per-boot key; sessions roll
+  over on restart, re-minted transparently on next render).
+- **Polling — the missing middle rung.** Page level:
+  `data-fui-poll="30s"` + `data-fui-poll-src="/path"` re-fetches a
+  server-rendered fragment and swaps it through the existing region-swap
+  pipeline (Go-duration syntax, 5s floor, ±10% jitter, pauses while the
+  tab is hidden, backs off on failures; demand-loaded module, core
+  runtime budget untouched). Widget level: `Builder.Poll(interval)`
+  re-fetches `/state` and re-applies changed signals (trusts Go callers
+  down to 100ms). Polling needs no fanout and no held connection — any
+  replica answers. The live-dashboard demo now shows the same metrics
+  polled (rung 3) next to SSE-pushed (rung 4).
+- **`data-fui-rpc-refresh="<widget>"`** — a successful RPC can trigger an
+  immediate `/state` re-fetch on a *named* polling widget, not just the
+  one the button lives in (e.g. a Reset button inside a confirm modal
+  refreshing the chat panel).
+
+### Fixed
+
+- **Two tabs sharing one session now BOTH receive every SSE update.**
+  `island.Manager` previously handed all of a session's subscribers one
+  shared channel, so same-session tabs competed for frames (first
+  receiver wins). Each subscriber now gets its own buffered channel and
+  delivery broadcasts. **BREAKING**: `Manager.Subscribe` returns
+  `(<-chan IslandUpdate, func())` — the cancel replaces the removed
+  `Manager.Unsubscribe`; `ConnectSession` changed the same way.
+- **SPA session rollover — both nav branches.** A partial navigation
+  (`X-Gofastr-Navigate`) with a stale/expired session token re-mints the
+  cookie and names the fresh stream id in `X-Gofastr-Session`; a
+  cross-layout navigation (full fetch) copies the freshly rendered
+  head's SSE meta. Either way the runtime rewires the live meta so the
+  SSE reconnect loop recovers without a hard reload.
+- **Presence hook panics no longer strand state.** `OnPresenceChange`
+  fires under a recover (roster stays consistent, replica announcements
+  still go out), and the SSE handler defers its stream cancel before the
+  presence join so a panicking hook can't leak the subscription.
+- **`data-fui-poll` durations parse like Go.** Fractions (`1.5m`) and
+  full-string validation — a typo now leaves the region unwired instead
+  of silently polling at the wrong cadence.
+- **Long poll intervals no longer hammer the server.** `Builder.Poll`
+  values above ~24.8 days used to wrap through 32-bit coercion and the
+  32-bit `setTimeout` ceiling into a ~10 req/s loop; scheduled delays are
+  now magnitude-preserved and clamped, so a long poll fires slightly
+  early instead of continuously.
+- **SPA rollover recovers on error responses too.** A partial navigation
+  to a 404 or policy-blocked route with a stale token re-mints and the
+  runtime applies the fresh stream id before it bails on the non-2xx —
+  and every re-mint response (success or error) is `Cache-Control:
+  no-store`, as is the widget `/state` endpoint.
+- **kiln reload converges after a dropped connection.** A page-structure
+  edit missed during the reconnect window now refreshes on the next
+  `ready` frame instead of leaving the page stale.
+- **Idle pages recover a dead session without navigating.** When a
+  restart/rotation/expiry kills the token under an open tab, the SSE
+  module (which can't see the 401) re-mints via `POST /__gofastr/session`
+  after repeated reconnect failures, rewrites the stream id, and
+  reconnects — so recovery no longer depends on the user navigating.
+- **Poll back-off on HTTP errors.** Both pollers treated a non-2xx
+  response as a silent no-op; it now reaches the back-off path. A
+  hidden→visible flip while a fetch is in flight can no longer arm a
+  second timer chain (single-chain guard), and a successful widget RPC
+  triggers an immediate `/state` re-fetch so mutations reflect at once.
+
+### Changed
+
+- **BREAKING: `WithFanout` now requires an app secret.** Boot fails with
+  an actionable message when a fanout is attached and no
+  `WithSecret`/`GOFASTR_SECRET` is set — a multi-replica deployment
+  without a shared session key would 401 half of all session checks, so
+  it fails at boot instead of in traffic. Sticky sessions are no longer
+  part of the scaling contract.
+- **kiln chat panel** polls its `/state` every 2s instead of holding
+  per-event SSE bindings. Page-structure world edits (add/delete
+  page/route, session reset) still force an SPA refresh of the current
+  page via a new kiln-owned build-mode reload client
+  (`/.kiln/reload.js`) — the same dev-mode-SSE exception class as
+  `framework/dev` livereload.
+
+### Removed
+
+- **BREAKING: the dead stateful island/signal surface** — all with zero
+  production callers, retained live state in one replica's RAM, and the
+  modern runtime never called them: `UIHost.RegisterSignal`,
+  `UIHost.RegisterWidget`, `UIHost.PushIsland`, `UIHost.GetSession`, the
+  `SignalAny` interface, the `POST /__gofastr/signal/{id}` endpoint (now
+  a plain 404), and `island.Manager`'s island-object retention
+  (`Register`, `Unregister`, `Push`, `Get`, `ListBySession`, plus
+  `Island.SessionID`, `Island.Update`). Surviving push surface: render the HTML yourself
+  and `Manager.PushUpdate`, or presence. The client-side signal seed
+  (`#gofastr-signals`) is unrelated and unchanged.
+- **BREAKING: widget SSE bindings** — `SSEBinding`, `Builder.SSE`,
+  `Builder.SSERefetch`, `Builder.SSERefresh`, `Builder.SSEReload`, the
+  `"sse"` widget-catalog key, and the per-widget `EventSource` block in
+  the runtime (each widget opened private connections, contradicting the
+  one-bus contract). Widgets that need passive freshness use
+  `Builder.Poll`; genuinely push-shaped surfaces use the shared bus.
+
 ## [0.37.0] - 2026-07-19
 
 Accuracy-and-fixes release: closes two adapter/queue issues and runs a
