@@ -63,6 +63,20 @@ func (o *Outbox) Nudge() {
 func (o *Outbox) relayLoop(ctx context.Context, stop <-chan struct{}) {
 	ticker := time.NewTicker(o.pollInterval)
 	defer ticker.Stop()
+	// Normalize any space-separated (legacy mattn/go-sqlite3) timestamp
+	// strings still in the tables before the first claim/sweep, so the
+	// relay's lexicographic time predicates (claimed_until <= $1,
+	// created_at <= cutoff) compare correctly from the first pump. No-op
+	// on Postgres and idempotent; runs here rather than at New so rows
+	// staged between construction and relay start are covered too. A
+	// failure logs once and continues — the relay tolerates a transient
+	// DB outage by polling, and claimErrLogged is the existing surface
+	// for "delivery is stalled".
+	if err := o.normalizeLegacyTimestamps(ctx); err != nil {
+		slog.Default().Error("outbox: legacy timestamp normalization failed; delivery stalled until this clears",
+			"table", o.table, "err", err)
+		o.claimErrLogged = true
+	}
 	for {
 		// A full batch may mean a backlog — drain immediately instead
 		// of waiting for the next tick. Still honour stop/ctx between
