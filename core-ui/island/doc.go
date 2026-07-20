@@ -1,35 +1,40 @@
-// Package island provides a server-driven island architecture using SSE.
+// Package island is the runtime-side manager for server-driven SSE updates.
 //
-// Islands are server-rendered UI widgets that can receive live HTML updates
-// via Server-Sent Events. Each island wraps a component.Component and is
-// tracked by a Manager which handles registration, update pushing, and
-// SSE streaming to connected clients.
+// Islands themselves are server-rendered HTML fragments produced elsewhere
+// (e.g. via core-ui/component and the blueprint generator's
+// island.NewIsland(...).Render()). This package owns the LIVE side: the
+// per-session update streams that carry fresh island HTML to the browser over
+// Server-Sent Events, plus the cross-replica fanout and presence roster that
+// make those streams work across a multi-replica deployment.
 //
 // Basic usage:
 //
 //	mgr := island.NewManager()
-//	isl := island.NewIsland("counter-1", myComponent)
-//	isl.SessionID = "session-abc"
-//	mgr.Register(isl)
 //
-//	// Push an update (e.g. from a handler or goroutine)
-//	mgr.Push("counter-1")
+//	// Each SSE connection subscribes and gets its own channel; cancel
+//	// removes exactly that subscription.
+//	ch, cancel := mgr.Subscribe("session-abc")
+//	defer cancel()
 //
-//	// Serve SSE endpoint for client EventSource connections
+//	// Push a fresh island HTML fragment to every subscriber of the
+//	// session — every tab sharing the cookie receives it.
+//	mgr.PushUpdate(island.IslandUpdate{IslandID: "counter-1", HTML: html}, "session-abc")
+//
+//	// Stream updates to the browser via SSE.
 //	http.HandleFunc("/islands/sse", mgr.ServeSSE)
 //
 // # Cross-replica fanout (real-time lane)
 //
 // By default delivery is per-process: an update pushed on replica A reaches
 // only the browsers connected to A. Manager.SetFanout attaches a
-// core/fanout.Fanout so Push/PushUpdate also broadcast to other replicas and
+// core/fanout.Fanout so PushUpdate also broadcasts to other replicas and
 // updates from other replicas are re-delivered to the local session stream.
 // This fixes delivery-WHERE-connected — a session whose SSE connection lives
 // on another replica still sees updates.
 //
-// It does NOT move island OBJECTS or signal state across replicas. An RPC
-// that lands on a replica without the island object cannot re-render it, so
-// sticky sessions remain the recommendation for stateful widget apps.
-// Delivery is lossy best-effort (this is the real-time lane; durable
-// delivery is the transactional outbox's job).
+// The manager retains no island objects: callers render HTML from
+// reconstructable state (screen definition + DB + request params) and
+// PushUpdate transports it, so any replica can serve any RPC — no sticky
+// routing. Delivery is lossy best-effort (this is the real-time lane;
+// durable delivery is the transactional outbox's job).
 package island

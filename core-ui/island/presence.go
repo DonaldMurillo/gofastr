@@ -2,6 +2,8 @@ package island
 
 import (
 	"context"
+	"log"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -170,11 +172,7 @@ func (h *PresenceHandle) Leave() {
 	delete(m.presenceConns, h.id)
 	cb := m.OnPresenceChange
 	m.mu.Unlock()
-	if cb != nil {
-		for _, t := range h.topics {
-			cb(t)
-		}
-	}
+	firePresenceChange(cb, h.topics)
 	// Announce the updated local roster so peers drop this member promptly.
 	for _, t := range h.topics {
 		m.broadcastLocalTopic(t)
@@ -261,11 +259,7 @@ func (m *Manager) PresenceJoin(sessionID string, identity PresenceIdentity, topi
 	cb := m.OnPresenceChange
 	m.mu.Unlock()
 
-	if cb != nil {
-		for _, t := range conn.topics {
-			cb(t)
-		}
-	}
+	firePresenceChange(cb, conn.topics)
 	// Announce the grown local roster so peers add this member promptly.
 	// No-op without a fanout; the periodic heartbeat reconverges any drop.
 	for _, t := range conn.topics {
@@ -313,4 +307,26 @@ func (m *Manager) PresenceSessions(topic string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// firePresenceChange invokes the app-supplied OnPresenceChange hook for
+// each topic, recovering a panicking hook. The roster mutation has
+// already happened by the time the hook fires; letting an app callback
+// panic escape here would strand half-registered presence state (join
+// returns no handle) or skip the cross-replica announcement (leave).
+// Same recover-and-log posture as Island.Render.
+func firePresenceChange(cb func(string), topics []string) {
+	if cb == nil {
+		return
+	}
+	for _, t := range topics {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("island: OnPresenceChange panic for topic %q: %v\n%s", t, r, debug.Stack())
+				}
+			}()
+			cb(t)
+		}()
+	}
 }

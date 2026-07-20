@@ -18,26 +18,22 @@ type IslandUpdate struct {
 	HTML     string
 }
 
-// streamEntry holds a per-session update stream. The data channel is never
-// closed; instead, the done channel is closed on Unsubscribe to signal
-// termination. This prevents panics from sending to a closed channel.
-//
-// refs counts the number of live subscribers sharing this entry (e.g. the
-// same session open in multiple browser tabs). The stream is only torn down
-// — done closed and the entry deleted — when the last subscriber leaves, so
-// closing one tab does not kill the others' live updates.
+// streamEntry holds a session's live subscribers. Each subscriber (one
+// SSE connection — e.g. each browser tab sharing the session cookie)
+// gets its OWN buffered channel, and deliver broadcasts to all of them.
+// The previous single-shared-channel design made same-session tabs
+// COMPETE for updates (one channel, first receiver wins); per-subscriber
+// channels are what "every subscriber receives the update" requires.
+// Data channels are never closed (senders can't panic); cancel removes
+// the channel from the map and the GC reclaims it.
 type streamEntry struct {
-	ch   chan IslandUpdate
-	done chan struct{} // closed when the last subscriber unsubscribes
-	refs int           // number of live subscribers; guarded by Manager.mu
+	subs map[uint64]chan IslandUpdate // subscriber id → its buffered channel
 }
 
 // Manager tracks active islands across all client sessions.
 type Manager struct {
 	mu      sync.RWMutex
-	islands map[string]*Island         // islandID → Island
-	clients map[string]map[string]bool // sessionID → set of islandIDs
-	streams map[string]*streamEntry    // sessionID → update stream
+	streams map[string]*streamEntry // sessionID → update stream
 
 	// ── Presence ──
 	// presenceConns maps a unique connection id to its presence
@@ -50,6 +46,7 @@ type Manager struct {
 	// presence_fanout.go (cross-replica).
 	presenceConns    map[uint64]*presenceConn
 	nextPresenceID   uint64
+	nextSubID        uint64 // stream-subscriber id source; guarded by mu
 	OnPresenceChange func(topic string)
 
 	// AuthorizeTopic, when set, gates which presence topics a connection may
@@ -73,11 +70,11 @@ type Manager struct {
 	// otherwise-silent loss is observable (wire it to a metric/health check).
 	dropped atomic.Int64
 
-	// fanout, when attached via SetFanout, mirrors Push/PushUpdate updates
+	// fanout, when attached via SetFanout, mirrors PushUpdate updates
 	// to other replicas and re-delivers theirs locally. nodeID is the
 	// originator stamp used to drop own-node echoes. fanoutSend is the
 	// non-blocking enqueue into the publish queue (fanout.PublishQueue) —
-	// Push/PushUpdate run on HTTP request goroutines and must never wait on
+	// PushUpdate runs on HTTP request goroutines and must never wait on
 	// the backend's network/DB round-trip. All guarded by mu.
 	fanout     fanout.Fanout
 	nodeID     string
@@ -110,146 +107,48 @@ func (m *Manager) DroppedUpdates() int64 { return m.dropped.Load() }
 // NewManager creates a new island manager.
 func NewManager() *Manager {
 	return &Manager{
-		islands: make(map[string]*Island),
-		clients: make(map[string]map[string]bool),
 		streams: make(map[string]*streamEntry),
 	}
 }
 
-// Register adds an island to the manager, associated with a session.
-// Returns an error if an island with the same ID already exists.
-func (m *Manager) Register(island *Island) error {
+// Subscribe registers a new subscriber on the session's stream and
+// returns its OWN buffered update channel plus a cancel func that
+// removes exactly this subscription (idempotent). Every subscriber —
+// each tab sharing the session cookie — receives every update; the
+// session's entry is deleted when its last subscriber cancels.
+func (m *Manager) Subscribe(sessionID string) (<-chan IslandUpdate, func()) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, exists := m.islands[island.ID]; exists {
-		return errors.New("island already registered: " + island.ID)
-	}
-
-	m.islands[island.ID] = island
-
-	if m.clients[island.SessionID] == nil {
-		m.clients[island.SessionID] = make(map[string]bool)
-	}
-	m.clients[island.SessionID][island.ID] = true
-
-	return nil
-}
-
-// Unregister removes an island from the manager.
-func (m *Manager) Unregister(islandID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	isl, ok := m.islands[islandID]
-	if !ok {
-		return
-	}
-
-	delete(m.islands, islandID)
-
-	if set, ok := m.clients[isl.SessionID]; ok {
-		delete(set, islandID)
-		if len(set) == 0 {
-			delete(m.clients, isl.SessionID)
-		}
-	}
-}
-
-// Push re-renders an island and sends the update to the client's SSE stream.
-func (m *Manager) Push(islandID string) error {
-	m.mu.Lock()
-	isl, ok := m.islands[islandID]
-	if !ok {
-		m.mu.Unlock()
-		return errors.New("island not found: " + islandID)
-	}
-	html := isl.Update()
-	sessionID := isl.SessionID
-	m.mu.Unlock()
-
-	update := IslandUpdate{
-		IslandID: islandID,
-		HTML:     string(html),
-	}
-	m.deliver(update, sessionID)
-	m.publishFanout(sessionID, update)
-	return nil
-}
-
-// Subscribe returns a channel that receives island updates for a session.
-// If a subscription already exists, it returns the existing channel.
-func (m *Manager) Subscribe(sessionID string) <-chan IslandUpdate {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if entry, ok := m.streams[sessionID]; ok {
-		entry.refs++
-		return entry.ch
-	}
-
-	entry := &streamEntry{
-		ch:   make(chan IslandUpdate, 64),
-		done: make(chan struct{}),
-		refs: 1,
-	}
-	m.streams[sessionID] = entry
-	return entry.ch
-}
-
-// Unsubscribe releases one subscriber's hold on a session's update stream.
-// The stream is only torn down — done closed and the entry deleted — when the
-// last subscriber leaves. This keeps the stream alive for other tabs sharing
-// the same session. The data channel is never closed, preventing panics from
-// concurrent sends.
-func (m *Manager) Unsubscribe(sessionID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	entry, ok := m.streams[sessionID]
 	if !ok {
-		return
+		entry = &streamEntry{subs: make(map[uint64]chan IslandUpdate)}
+		m.streams[sessionID] = entry
 	}
+	m.nextSubID++
+	id := m.nextSubID
+	ch := make(chan IslandUpdate, 64)
+	entry.subs[id] = ch
+	m.mu.Unlock()
 
-	entry.refs--
-	if entry.refs > 0 {
-		return // other subscribers still hold this stream
+	var once sync.Once
+	cancel := func() {
+		once.Do(func() {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if e, ok := m.streams[sessionID]; ok {
+				delete(e.subs, id)
+				if len(e.subs) == 0 {
+					delete(m.streams, sessionID)
+				}
+			}
+		})
 	}
-
-	delete(m.streams, sessionID)
-	close(entry.done) // signal done; data channel is never closed
+	return ch, cancel
 }
 
 // PushUpdate sends a direct update to a session's SSE stream.
 func (m *Manager) PushUpdate(update IslandUpdate, sessionID string) {
 	m.deliver(update, sessionID)
 	m.publishFanout(sessionID, update)
-}
-
-// Get retrieves an island by ID.
-func (m *Manager) Get(islandID string) (*Island, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	isl, ok := m.islands[islandID]
-	return isl, ok
-}
-
-// ListBySession returns all island IDs for a session.
-func (m *Manager) ListBySession(sessionID string) []string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	set, ok := m.clients[sessionID]
-	if !ok {
-		return nil
-	}
-
-	ids := make([]string, 0, len(set))
-	for id := range set {
-		ids = append(ids, id)
-	}
-	return ids
 }
 
 // islandFanoutTopic is the single fanout channel the island managers across
@@ -268,22 +167,31 @@ type islandFanoutMsg struct {
 
 // deliver sends update to the local stream for sessionID if present, using
 // the same non-blocking send + dropped-counter semantics as before the
-// fanout seam. Shared by Push, PushUpdate, and the fanout receive path so a
+// fanout seam. Shared by PushUpdate and the fanout receive path so a
 // remote-delivered update is indistinguishable from a local one at the
 // channel level.
 func (m *Manager) deliver(update IslandUpdate, sessionID string) {
+	// Copy the subscriber channels under the read lock, send outside it.
+	// A concurrent cancel between copy and send just means a buffered
+	// send nobody drains — channels are never closed, so no panic.
 	m.mu.RLock()
 	entry, ok := m.streams[sessionID]
-	m.mu.RUnlock()
-	if !ok {
-		return
+	var chans []chan IslandUpdate
+	if ok {
+		chans = make([]chan IslandUpdate, 0, len(entry.subs))
+		for _, ch := range entry.subs {
+			chans = append(chans, ch)
+		}
 	}
-	select {
-	case entry.ch <- update:
-	case <-entry.done:
-	default:
-		// Drop update if channel is full — client may be slow.
-		m.dropped.Add(1)
+	m.mu.RUnlock()
+	for _, ch := range chans {
+		select {
+		case ch <- update:
+		default:
+			// Drop for THIS subscriber if its buffer is full — a slow
+			// tab must not stall its siblings.
+			m.dropped.Add(1)
+		}
 	}
 }
 
@@ -308,7 +216,7 @@ func (m *Manager) publishFanout(sessionID string, update IslandUpdate) {
 	send(fanout.Wrap(nodeID, body))
 }
 
-// SetFanout attaches a fanout so Push/PushUpdate updates cross replicas and
+// SetFanout attaches a fanout so PushUpdate updates cross replicas and
 // updates originating on other replicas are re-delivered to the local
 // session stream (topic "gofastr.islands"). It ALSO wires the cross-replica
 // PRESENCE lane (topic "gofastr.presence") over the same transport so a
@@ -318,10 +226,10 @@ func (m *Manager) publishFanout(sessionID string, update IslandUpdate) {
 // NEVER re-publishing (no loop). Delivery is lossy best-effort; presence
 // reconverges via periodic full-roster heartbeats.
 //
-// Island delivery-where-connected is fixed as before; Island OBJECTS and
-// signal state remain per-replica, so sticky sessions remain the
-// recommendation for stateful widget apps. Presence state, by contrast, is
-// fully aggregated across replicas.
+// Island delivery-where-connected is fixed here; the manager retains no
+// island objects (callers render from reconstructable state and PushUpdate
+// transports the HTML), so any replica serves any RPC — no sticky routing.
+// Presence state is fully aggregated across replicas.
 //
 // The returned stop detaches BOTH lanes (cancels subscriptions, stops the
 // publish queues, stops the presence heartbeat goroutine, publishes a

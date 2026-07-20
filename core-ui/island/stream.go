@@ -58,23 +58,19 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	// first guarantees the buffered stream exists before the client can
 	// observe the connection as ready. This was a timing-dependent CI flake
 	// in TestServeSSE (5s timeout) on loaded runners.
-	ch := m.ConnectSession(sessionID)
+	ch, cancel := m.ConnectSession(sessionID)
+	// cancel is deferred IMMEDIATELY: PresenceJoin fires the app-supplied
+	// OnPresenceChange hook, and a panicking hook (net/http recovers it)
+	// must not strand the subscription we just created. Same reasoning as
+	// running filterAuthorizedTopics before ConnectSession above.
+	defer cancel()
 	// Presence join happens AFTER the stream exists (so the roster-change
-	// callback can deliver to this session's buffered channel) and BEFORE
-	// we flush headers. Leave runs before Unsubscribe (LIFO defers) so the
-	// departing session's stream is still live while remaining viewers are
-	// notified of the roster change.
+	// callback can deliver to this connection's buffered channel) and
+	// BEFORE we flush headers. Leave runs before cancel (LIFO defers) so
+	// the departing connection's stream is still live while remaining
+	// viewers are notified of the roster change.
 	handle := m.PresenceJoin(sessionID, identity, topics)
-	defer m.Unsubscribe(sessionID)
 	defer handle.Leave()
-
-	// Get the done channel so we can detect unsubscribe.
-	m.mu.RLock()
-	entry, hasEntry := m.streams[sessionID]
-	m.mu.RUnlock()
-	if !hasEntry {
-		return
-	}
 
 	// Flush response headers immediately so the HTTP client doesn't block
 	// waiting for them.
@@ -82,14 +78,13 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 
-	// Respect client context cancellation.
+	// Respect client context cancellation — the sole exit signal; this
+	// connection's channel is private, so no sibling can tear it down.
 	ctx := r.Context()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		case <-entry.done:
 			return
 		case update := <-ch:
 			payload := ssePayload{
@@ -108,8 +103,8 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	}
 }
 
-// ConnectSession establishes a session for SSE streaming.
-// It subscribes to updates and returns the update channel.
-func (m *Manager) ConnectSession(sessionID string) <-chan IslandUpdate {
+// ConnectSession establishes one SSE subscriber on the session's stream,
+// returning this connection's private update channel and its cancel.
+func (m *Manager) ConnectSession(sessionID string) (<-chan IslandUpdate, func()) {
 	return m.Subscribe(sessionID)
 }
