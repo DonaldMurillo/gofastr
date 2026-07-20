@@ -20,11 +20,12 @@ func runBuild(args []string) {
 		osExit(1)
 	}
 
-	// Step 1: run the codegen extension protocol when a gofastr.codegen.yml
 	if err := validateBuildTarget(opts.pkg); err != nil {
 		fail("Build target %q is invalid: %v", opts.pkg, err)
 		osExit(1)
 	}
+
+	// Step 1: run the codegen extension protocol when a gofastr.codegen.yml
 	// is present. Blueprint generation (gofastr generate --from) is an
 	// explicit, separate step — `gofastr build` does not guess a blueprint.
 	if !opts.noGenerate {

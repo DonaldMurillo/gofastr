@@ -5,6 +5,74 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+Post-release review of the v0.32.0–v0.37.0 weekend range (multi-model pass:
+Claude + GLM + Sol) found ten confirmed bugs, all in code merged that
+weekend. Every fix landed test-first; the failing tests are in the same
+commits.
+
+### Added
+
+- **Cron schedules in a named timezone.** `DurableScheduleBuilder.RegisterAt`
+  with a time in an IANA zone (e.g. `America/New_York`) evaluates the cron
+  spec in that zone's wall-clock time, across DST transitions. The zone name
+  persists with the schedule (`tz` column, idempotent migration). `Register()`
+  still anchors in UTC — existing schedules keep their fire times, and
+  `time.Local` / fixed-offset zones deliberately collapse to UTC because they
+  would resolve differently per replica.
+
+### Fixed
+
+- **SQLite: failed statement no longer breaks transaction rollback.** A
+  statement failing inside an explicit transaction (e.g. a multi-row `INSERT`
+  hitting `UNIQUE`) used to flush and replace pager state, so a later
+  `ROLLBACK` silently kept the transaction's earlier writes. Statement
+  rollback is now a pure in-memory snapshot that preserves the transaction's
+  pre-`BEGIN` page images.
+- **SQLite: multi-row `UPDATE` enforces `UNIQUE` across its own rows.**
+  `UPDATE t SET u = 3` over two rows used to commit both; pending rows are
+  now checked against each other (with partial-index predicates honored) and
+  the statement fails like real SQLite.
+- **SQLite: `UPDATE` maintains secondary indexes.** The index write sat in an
+  error branch, so a successful update never refreshed indexes and stale
+  entries kept matching the old value. Updates now delete the old index
+  entries and re-insert per the new row.
+- **SQLite: dynamic column defaults survive reopen.** `DEFAULT
+  CURRENT_TIMESTAMP` (and other expressions) now serialize with the schema
+  (`default_expr`), so file-backed databases no longer fail `NOT NULL`
+  inserts after a restart. Legacy files keep their constant defaults —
+  including empty-string defaults like `lane TEXT NOT NULL DEFAULT ''`.
+- **SQLite: `INTEGER` affinity keeps fractional values REAL.** `DEFAULT 1.5`
+  stored `1`; conversion now happens only when lossless, matching SQLite's
+  affinity rule.
+- **SQLite: partial unique indexes honor their `WHERE` predicate** at
+  creation, on insert, and on update. Out-of-predicate duplicates no longer
+  reject index creation, and enforcement applies only to matching rows.
+  Partial indexes stay out of scan planning (correctness over speed).
+- **Queue: non-UTC cron schedules no longer kill the scheduler.** A schedule
+  registered with a non-UTC anchor errored on its first tick, and that error
+  stopped `Start` — taking every other schedule with it. Evaluation now
+  follows the registration zone, and a schedule that cannot produce a due
+  tick is logged and skipped instead of being fatal.
+- **Queue: changing a schedule's cadence self-heals.** Re-registering with a
+  different cron/interval stranded the old watermark and hit the same fatal
+  error; the scheduler now advances to the next valid occurrence of the new
+  spec through the same version-guarded compare-and-swap as a normal tick.
+- **Outbox: legacy timestamp formats no longer corrupt lease comparisons.**
+  Rows written by mattn/go-sqlite3 (space-separated timestamps) compare
+  lexicographically against the pure driver's RFC3339 values, so an active
+  future lease read as expired — reclaiming in-flight deliveries (double
+  delivery) and mis-timing grace cutoffs. The relay now normalizes legacy
+  values to the canonical format at start (idempotent, sqlite-only); the
+  atomic single-`UPDATE` claim path is unchanged.
+- **Auth: scope-denied responses use the canonical error envelope.**
+  `RequireAPIScopes` / `RequireScope` returned a nested
+  `{"error":{...}}` with `Content-Type: text/plain`, which the generated JS
+  SDK rendered as `api: 403: [object Object]`. Both now emit the flat
+  `{"error","success","code"}` envelope as `application/json`; every
+  `battery/auth` error response now carries the `code` field.
+
 ## [0.37.0] - 2026-07-19
 
 Accuracy-and-fixes release: closes two adapter/queue issues and runs a
