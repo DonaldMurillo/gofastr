@@ -734,10 +734,13 @@ func (p *Parser) parseInsert() (*InsertStmt, error) {
 	}
 	if p.cur.Type == TokenOR {
 		p.advance()
-		if err := p.expectWord("IGNORE"); err != nil {
-			return nil, err
+		if p.consumeWord("IGNORE") {
+			stmt.OrIgnore = true
+		} else if p.consumeWord("REPLACE") {
+			stmt.OrReplace = true
+		} else {
+			return nil, p.errorf("expected IGNORE or REPLACE, got %s (%q)", tokenTypeName(p.cur.Type), p.cur.Value)
 		}
-		stmt.OrIgnore = true
 	}
 	if _, err := p.expect(TokenINTO); err != nil {
 		return nil, err
