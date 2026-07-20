@@ -83,7 +83,7 @@ func TestVisual_StatusFeedbackDuringTurn(t *testing.T) {
 	); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	waitForSSE(t, ctx)
+	waitForPanelPoll(t, ctx)
 	testInFlight.Store(true)
 	l.Notify("agent_turn_started", "omp")
 
@@ -136,7 +136,7 @@ func TestVisual_WorldEditSystemRow(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	waitForSSE(t, ctx)
+	waitForPanelPoll(t, ctx)
 
 	// Type a user message to seat the panel.
 	if err := chromedp.Run(ctx,
@@ -189,7 +189,7 @@ func TestVisual_RapidEditsAccumulate(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	waitForSSE(t, ctx)
+	waitForPanelPoll(t, ctx)
 
 	// Fire 5 add_entity calls quickly.
 	for i, name := range []string{"posts", "users", "comments", "tags", "drafts"} {
@@ -203,7 +203,7 @@ func TestVisual_RapidEditsAccumulate(t *testing.T) {
 	}
 
 	// Wait for at least 5 tool rows to land via SSE.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var n int
 		if err := chromedp.Run(ctx,
@@ -271,7 +271,7 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 	if !strings.Contains(bodyV1, "Version One") {
 		t.Fatalf("v1 body wrong: %q", bodyV1)
 	}
-	waitForSSE(t, ctx)
+	waitForPanelPoll(t, ctx)
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__kilnDocumentSentinel = "same-document"`, nil),
 	); err != nil {
@@ -371,18 +371,17 @@ func TestVisual_PanelChromeStyling(t *testing.T) {
 	saveShot(t, "08_panel_styling", shot)
 }
 
-// waitForSSE polls until the EventSource connects.
-func waitForSSE(t *testing.T, ctx context.Context) {
+func waitForPanelPoll(t *testing.T, ctx context.Context) {
 	t.Helper()
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		var ready bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			return
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
-	t.Fatal("SSE did not open within 8s")
+	t.Fatal("panel poll did not tick within 8s")
 }
 
 // Deleting a page the user is viewing must degrade to the Kiln host fallback,
@@ -416,7 +415,7 @@ func TestVisual_DeletePageShowsFallback(t *testing.T) {
 	if !strings.Contains(body, "Short lived") {
 		t.Fatalf("page body wrong before delete: %q", body)
 	}
-	waitForSSE(t, ctx)
+	waitForPanelPoll(t, ctx)
 
 	if r := tools.ProposePlan(t.Context(), protocol.ProposePlanArgs{
 		PlanID:  "kill-doomed",

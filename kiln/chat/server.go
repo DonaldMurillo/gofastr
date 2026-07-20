@@ -24,9 +24,6 @@ import (
 //go:embed assets/host.html
 var hostHTML string
 
-//go:embed assets/widget.js
-var widgetJS string
-
 // WidgetTag returns the script tag to embed the floating panel on a
 // page. Delegates to widget.RuntimeTag so the URL gets a content-hash
 // cache-bust query param — fresh build invalidates any cached runtime
@@ -81,7 +78,6 @@ var journaledTools = map[string]bool{
 // NOT mounted here — kiln/render installs it as the rebuilt app's
 // NotFound handler so every URL not otherwise claimed shows the widget.
 func (s *Server) Mount(r *router.Router) {
-	r.Get("/kiln/chat/widget.js", http.HandlerFunc(s.serveWidgetJS))
 	r.Get("/kiln/chat/widget.css", http.HandlerFunc(s.serveWidgetCSS))
 	r.Get("/kiln/chat/base.css", http.HandlerFunc(s.serveBaseCSS))
 	r.Get("/kiln/theme.css", http.HandlerFunc(s.serveThemeCSS))
@@ -90,6 +86,7 @@ func (s *Server) Mount(r *router.Router) {
 	r.Post("/kiln/chat/message", http.HandlerFunc(s.serveChatMessage))
 	r.Post("/kiln/tool/{name}", http.HandlerFunc(s.serveToolDispatch))
 	r.Get("/.kiln/events", http.HandlerFunc(s.live.ServeSSE))
+	r.Get("/.kiln/reload.js", http.HandlerFunc(live.ServeReloadJS))
 }
 
 // HostHTML is the empty-state shell. Returned to any unmatched HTML
@@ -105,7 +102,7 @@ func (s *Server) Mount(r *router.Router) {
 // page. For live serving with a Live runtime, prefer HostHTMLForLive.
 func HostHTML() string {
 	return strings.NewReplacer(
-		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
+		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag()+`<script src="/.kiln/reload.js"></script>`,
 		`__KILN_BASE__`, `http://localhost:8765`,
 		`__KILN_LEAD__`, defaultEmptyLead,
 	).Replace(hostHTML)
@@ -116,7 +113,7 @@ func HostHTML() string {
 // empty-world message — for world-aware lead use HostHTMLForLive.
 func HostHTMLForRequest(r *http.Request) string {
 	return strings.NewReplacer(
-		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
+		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag()+`<script src="/.kiln/reload.js"></script>`,
 		`__KILN_BASE__`, baseFromRequest(r),
 		`__KILN_LEAD__`, defaultEmptyLead,
 	).Replace(hostHTML)
@@ -133,7 +130,7 @@ func HostHTMLForLive(l *live.Live) func(*http.Request) string {
 		var lead string
 		l.ReadSession(func(sess *journal.Session) { lead = leadForWorld(sess.World) })
 		return strings.NewReplacer(
-			`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
+			`<script src="/__gofastr/runtime.js"></script>`, WidgetTag()+`<script src="/.kiln/reload.js"></script>`,
 			`__KILN_BASE__`, baseFromRequest(r),
 			`__KILN_LEAD__`, lead,
 		).Replace(hostHTML)
@@ -178,12 +175,6 @@ func baseFromRequest(r *http.Request) string {
 		host = h
 	}
 	return scheme + "://" + host
-}
-
-func (s *Server) serveWidgetJS(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprint(w, widgetJS)
 }
 
 func (s *Server) serveWidgetCSS(w http.ResponseWriter, _ *http.Request) {

@@ -210,12 +210,13 @@ func TestBrowser_ExternalAddEntityShowsInWidget(t *testing.T) {
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
-	// Wait for SSE to connect. EventSource sets __fuiSSEReady on open.
+	// Wait for the panel poll loop to apply its first /state fetch
+	// (pollStatus.ticks — the poll-era analog of the old SSE-open flag).
 	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
@@ -223,12 +224,12 @@ func TestBrowser_ExternalAddEntityShowsInWidget(t *testing.T) {
 			_ = chromedp.Run(ctx, chromedp.Evaluate(`(function(){
 				return JSON.stringify({
 					mounted: !!window.__kilnWidgetMounted,
-					ready: !!window.__fuiSSEReady,
+					ready: !!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0),
 					hasFAB: !!document.querySelector(".kiln-fab"),
 					hasInput: !!document.querySelector(".kiln-input"),
 				});
 			})()`, &diag))
-			t.Fatalf("SSE never opened: diag=%s", diag)
+			t.Fatalf("panel poll never ticked: diag=%s", diag)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -398,7 +399,7 @@ func TestBrowser_ButtonToolCallFires(t *testing.T) {
 
 	// Click triggers a fetch + soft reload (because not on host).
 	// Wait briefly for the chat to land in the journal.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		c := tools.Live().Session().Chat
 		if len(c) > 0 && c[len(c)-1].Message != nil &&
@@ -451,7 +452,7 @@ func TestBrowser_FormSubmitCreatesRow(t *testing.T) {
 	// The runtime's submit handler posts JSON to /api/notes.
 	// Verify the row landed by polling the CRUD listing directly with
 	// the test's HTTP client — no need to fight the reload race.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		body, err := httpGet(t, urlBase+"/api/notes")
 		if err == nil && strings.Contains(body, "a brand new note") {
@@ -583,11 +584,11 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatalf("SSE never opened")
+			t.Fatalf("panel poll never ticked")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -750,7 +751,7 @@ func TestBrowser_ApprovePlanButton(t *testing.T) {
 	}
 
 	// Plan should journal as approved — poll session.Plans.
-	approvedDeadline := time.Now().Add(5 * time.Second)
+	approvedDeadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(approvedDeadline) {
 		plans := tools.Live().Session().Plans
 		if p, ok := plans["p1"]; ok && p.Approved {
@@ -811,11 +812,11 @@ func TestBrowser_HTTPDispatchJournalsToolCallAndResult(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatalf("SSE never opened")
+			t.Fatalf("panel poll never ticked")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -831,7 +832,9 @@ func TestBrowser_HTTPDispatchJournalsToolCallAndResult(t *testing.T) {
 		t.Fatalf("unexpected status %d", resp.StatusCode)
 	}
 
-	// Wait for both rows to land via SSE → refresh.
+	// Wait for both rows to land. The dispatch is a raw server-side HTTP
+	// POST (no client RPC, so no pollNow) — the panel reflects it only on
+	// its 2s±10% /state poll, hence the cadence-headroom window.
 	deadline := time.Now().Add(5 * time.Second)
 	var rows []string
 	for time.Now().Before(deadline) {
@@ -893,7 +896,7 @@ func TestBrowser_ResetSessionButton(t *testing.T) {
 	}
 
 	// Wait for the journal to be wiped — poll session state.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		if len(tools.Live().Session().World.Entities) == 0 &&
 			len(tools.Live().Session().Chat) == 0 {
@@ -1012,7 +1015,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	// kiln-input, RPC paths) lives at /core-ui/widget/<name>/chrome.
 	for _, want := range []string{
 		`"name":"kiln-panel"`,
-		`"signal":"chat_html"`,
+		`"pollMs":2000`,
 		`"chromePath":"/core-ui/widget/kiln-panel/chrome"`,
 	} {
 		if !strings.Contains(string(listBody), want) {
@@ -1124,7 +1127,7 @@ func TestBrowser_SendMessageUpdatesLogViaSSE(t *testing.T) {
 		t.Fatalf("submit: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(2 * time.Second)
 	var logHTML string
 	for time.Now().Before(deadline) {
 		_ = chromedp.Run(ctx,
@@ -1430,11 +1433,11 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatalf("SSE never opened")
+			t.Fatalf("panel poll never ticked")
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -1450,7 +1453,7 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 	testInFlight.Store(true)
 	l.Notify("agent_turn_started", "pi")
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	var seen string
 	for time.Now().Before(deadline) {
 		var s string
@@ -1469,7 +1472,7 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 	testInFlight.Store(false)
 	l.Notify("agent_turn_ended", "pi")
 
-	deadline = time.Now().Add(2 * time.Second)
+	deadline = time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var s string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &s))
@@ -1515,7 +1518,7 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
-	t.Errorf("panel chat list still showed seeded message 2s after Reset — UI did not react to session_reset")
+	t.Errorf("panel chat list still showed seeded message 2s after Reset — the Reset button's data-fui-rpc-refresh=\"kiln-panel\" cross-widget pollNow did not fire (only the 2s cadence would clear it)")
 }
 
 // The empty-state landing page shows a curl example. Previously the
@@ -1669,11 +1672,11 @@ func TestBrowser_WorldSnapshotPillReflectsLiveWorldChanges(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatal("SSE never opened")
+			t.Fatal("panel poll never ticked")
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -1688,7 +1691,7 @@ func TestBrowser_WorldSnapshotPillReflectsLiveWorldChanges(t *testing.T) {
 		t.Fatalf("add_entity failed: %v", res.Error)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var pill string
 		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-snapshot`, &pill, chromedp.ByQuery))
@@ -1755,7 +1758,7 @@ func TestBrowser_ResetButtonAsksForConfirmation(t *testing.T) {
 	); err != nil {
 		t.Fatalf("confirm flow: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var present bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
@@ -2012,11 +2015,11 @@ func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatal("SSE never opened")
+			t.Fatal("panel poll never ticked")
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -2038,7 +2041,7 @@ func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var status string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &status))
@@ -2212,7 +2215,7 @@ func TestBrowser_PagePrefixRendersAsChip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var chipText string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
@@ -2255,11 +2258,11 @@ func TestBrowser_AgentHeaderChipReflectsCurrentAndUpdates(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatal("SSE never opened")
+			t.Fatal("panel poll never ticked")
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -2267,7 +2270,7 @@ func TestBrowser_AgentHeaderChipReflectsCurrentAndUpdates(t *testing.T) {
 	testCurrentAgent.Store("claude-code")
 	l.Notify("agent_changed", "claude-code")
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var got string
 		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-agent`, &got, chromedp.ByQuery))
@@ -2359,11 +2362,11 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatal("SSE never opened")
+			t.Fatal("panel poll never ticked")
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -2372,8 +2375,10 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 	testInFlight.Store(true)
 	l.Notify("agent_turn_started", "pi")
 
-	// Wait for the ticker to land in the status indicator.
-	deadline := time.Now().Add(2 * time.Second)
+	// Wait for the ticker to land in the status indicator. The panel
+	// polls /state on a 2s±10% cadence (server-side notify, no RPC to
+	// shortcut it), so give it two ticks of headroom.
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	var t1 string
 	for time.Now().Before(deadline) {
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking [data-fui-tick-elapsed]'); return e?e.textContent:'';})()`, &t1))
@@ -2516,7 +2521,7 @@ func TestBrowser_TurnDividersBetweenTurns(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var dividers int
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
@@ -2593,11 +2598,11 @@ func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatal("SSE never opened")
+			t.Fatal("panel poll never ticked")
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -2627,7 +2632,7 @@ func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var status string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &status))
@@ -2659,7 +2664,7 @@ func TestBrowser_QuickstartTrayOnEmptyPanel(t *testing.T) {
 	}
 
 	var val string
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
 			`document.querySelector('.kiln-input').value`, &val))
@@ -2680,7 +2685,7 @@ func TestBrowser_QuickstartTrayOnEmptyPanel(t *testing.T) {
 
 	// Tray should disappear once chat history exists.
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "x"})
-	deadline = time.Now().Add(2 * time.Second)
+	deadline = time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var present bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
@@ -2721,7 +2726,7 @@ func TestBrowser_PlanCardHighlightsDestructiveTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var destCount, safeCount int
 		_ = chromedp.Run(ctx,
@@ -2781,11 +2786,11 @@ func TestBrowser_FlashOnUpdateSignals(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatal("SSE never opened")
+			t.Fatal("panel poll never ticked")
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -2795,7 +2800,7 @@ func TestBrowser_FlashOnUpdateSignals(t *testing.T) {
 
 	// Look for .fui-flash within the brief window before the
 	// 600ms timeout removes it.
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var hasClass bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
@@ -2825,11 +2830,11 @@ func TestBrowser_StopButtonCancelsInFlightTurn(t *testing.T) {
 	defer pollCancel()
 	for {
 		var ready bool
-		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.pollStatus && window.__gofastr.pollStatus.ticks > 0)`, &ready)); err == nil && ready {
 			break
 		}
 		if pollCtx.Err() != nil {
-			t.Fatal("SSE never opened")
+			t.Fatal("panel poll never ticked")
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -2845,6 +2850,7 @@ func TestBrowser_StopButtonCancelsInFlightTurn(t *testing.T) {
 	// Start a turn → button appears.
 	testInFlight.Store(true)
 	l.Notify("agent_turn_started", "pi")
+	// Poll cadence is 2s±10%; two ticks of headroom for the button to show.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		var d string
@@ -3067,7 +3073,7 @@ func TestBrowser_SnapshotPillNamesEntitiesWhenFew(t *testing.T) {
 		t.Fatal(err)
 	}
 	var pill string
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-snapshot`, &pill, chromedp.ByQuery))
 		if strings.Contains(pill, "notes") && strings.Contains(pill, "users") {
@@ -3368,7 +3374,7 @@ func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var copied string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`window.__copied`, &copied))
