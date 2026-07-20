@@ -197,6 +197,14 @@ type App struct {
 	// Mount time. Caller-owned — the app never closes it.
 	fanout fanout.Fanout
 
+	// secret is the app-wide secret (WithSecret, or GOFASTR_SECRET).
+	// Subsystem keys are HKDF-derived from it — never used raw — starting
+	// with the uihost session-signing key wired at Mount time. Empty is
+	// valid for a single replica (the host self-mints a per-boot key);
+	// with a fanout attached (multi-replica) Mount fails closed instead,
+	// because sessions minted on one replica must verify on every other.
+	secret []byte
+
 	// noAutoMigrate suppresses the boot-time entity auto-migration
 	// (WithoutAutoMigrate) for deployments that require every schema
 	// change to be an explicit, operator-invoked step.
@@ -849,6 +857,22 @@ func (a *App) Mount(m Mountable) *App {
 			})
 		}
 	}
+	// Hand the mounted host its session-signing key (same duck-typed
+	// seam as SetFanout). Sessions are stateless HMAC tokens: with a
+	// shared secret every replica verifies every replica's tokens; with
+	// no secret and no fanout the host self-mints a per-boot key (the
+	// single-replica zero-config path); no secret WITH a fanout is a
+	// broken deployment — half of session checks would 401 — so it
+	// fails at boot, not in production traffic.
+	if sk, ok := m.(interface{ SetSessionKey([]byte) }); ok {
+		key, err := sessionKeyForMount(a.secret, a.fanout != nil)
+		if err != nil {
+			panic(err.Error())
+		}
+		if key != nil {
+			sk.SetSessionKey(key)
+		}
+	}
 	return a
 }
 
@@ -1038,6 +1062,13 @@ func NewApp(opts ...AppOption) *App {
 
 	for _, opt := range opts {
 		opt(a)
+	}
+	// GOFASTR_SECRET is the zero-code path to an app secret (composes
+	// with the dotenv load above). An explicit WithSecret wins.
+	if a.secret == nil {
+		if env := os.Getenv("GOFASTR_SECRET"); env != "" {
+			a.secret = []byte(validateSecret(env))
+		}
 	}
 	// Resolve the process role once: WithRole wins, then GOFASTR_ROLE,
 	// then RoleAll. An invalid value fails loudly — a typo'd role must

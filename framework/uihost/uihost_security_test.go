@@ -40,20 +40,6 @@ func TestPartialTitleHeaderIsEncoded(t *testing.T) {
 	}
 }
 
-type stubSignal struct {
-	value any
-}
-
-func (s *stubSignal) GetAsInterface() interface{} { return s.value }
-func (s *stubSignal) UpdateAsInterface(v interface{}) {
-	s.value = v
-}
-func (s *stubSignal) Subscribe() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
-}
-
 func TestUIHost_PageSessionCookieUsesSecureFlag(t *testing.T) {
 	ds := newTestUIHost()
 	rec := httptest.NewRecorder()
@@ -168,38 +154,6 @@ func TestSEOScreen_HeadHTMLStripsInlineScriptTags(t *testing.T) {
 	}
 }
 
-func TestUIHost_SignalUpdateRequiresSession(t *testing.T) {
-	ds := newTestUIHost()
-	sig := &stubSignal{}
-	ds.RegisterSignal("dangerous-signal", sig)
-
-	body := strings.NewReader(`{"value":"<img src=x onerror=alert(1)>"}`)
-	req := httptest.NewRequest(http.MethodPost, "/__gofastr/signal/dangerous-signal", body)
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ds.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("SECURITY: [uihost-signal] unauthenticated signal update returned %d. Attack: global signal mutation without session/auth.", rec.Code)
-	}
-}
-
-func TestUIHost_SignalUpdateRejectsForgedSessionQueryParam(t *testing.T) {
-	ds := newTestUIHost()
-	sig := &stubSignal{}
-	ds.RegisterSignal("dangerous-signal", sig)
-
-	body := strings.NewReader(`{"value":"tamper"}`)
-	req := httptest.NewRequest(http.MethodPost, "/__gofastr/signal/dangerous-signal?session=fake-session", body)
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ds.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("SECURITY: [uihost-signal] forged session query param accepted with status %d. Attack: signal mutation with attacker-chosen session id.", rec.Code)
-	}
-}
-
 func TestUIHost_ServerActionRequiresSession(t *testing.T) {
 	a := app.NewApp("action-security")
 	a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
@@ -238,5 +192,50 @@ func TestUIHost_SSERejectsUnknownSessionID(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("SECURITY: [uihost-sse] unknown session id was accepted with status %d. Attack: subscribe to SSE stream with attacker-chosen session token.", rec.Code)
+	}
+}
+
+// TestSSEStreamIDMustMatchCookie pins the branch's load-bearing invariant:
+// possession of a valid session token proves ownership of ONLY the id
+// embedded in it. A caller holding a fully valid cookie for session A must
+// NOT be able to attach to session B's SSE stream by naming B in ?session=.
+// The stream id is deliberately public (embedded in page chrome), so a
+// leaked-but-real id must still be useless without the matching cookie —
+// the sibling of the forged-id hole the old in-memory map never closed
+// (see handleSSE, "subscribing to another user's stream with a
+// leaked-but-real id and no matching cookie"). Loopback origin so the
+// relaxed dev cookie round-trips in the test harness.
+func TestSSEStreamIDMustMatchCookie(t *testing.T) {
+	ds := newTestUIHost()
+	victim := ds.CreateSession()   // stream id we must not be able to reach
+	attacker := ds.CreateSession() // our own valid credential
+	if victim.ID == attacker.ID || victim.Token == "" || attacker.Token == "" {
+		t.Fatalf("test setup: need two distinct valid sessions, got %q / %q", victim.ID, attacker.ID)
+	}
+
+	// Cross-stream: valid cookie for the attacker's own session, but the
+	// query names the victim's public stream id. Must be rejected.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/__gofastr/sse?session="+url.QueryEscape(victim.ID), nil).WithContext(ctx)
+	req.Host = "localhost:8090"
+	req.AddCookie(&http.Cookie{Name: sessionCookieDevName, Value: attacker.Token})
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("SECURITY: [uihost-sse] a valid cookie for session A attached to session B's stream (status %d). Attack: eavesdrop on another viewer's island updates using their public stream id.", rec.Code)
+	}
+
+	// Control: the same valid cookie against its OWN stream id must NOT be
+	// rejected — otherwise the test would pass for the wrong reason.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	cancel2()
+	req2 := httptest.NewRequest(http.MethodGet, "/__gofastr/sse?session="+url.QueryEscape(attacker.ID), nil).WithContext(ctx2)
+	req2.Host = "localhost:8090"
+	req2.AddCookie(&http.Cookie{Name: sessionCookieDevName, Value: attacker.Token})
+	rec2 := httptest.NewRecorder()
+	ds.ServeHTTP(rec2, req2)
+	if rec2.Code == http.StatusUnauthorized {
+		t.Fatalf("a valid cookie against its own stream id was rejected (status %d); the mismatch check must key on id equality, not reject everything", rec2.Code)
 	}
 }

@@ -2,6 +2,7 @@ package uihost
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -46,6 +47,7 @@ func TestHandleSSEPresenceAuthedUserRecords(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// The "attacker" param is present to prove it is never read.
 	req := httptest.NewRequest("GET", "/__gofastr/sse?session="+sess.ID+"&presence=doc:42&user=attacker", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
 	req = req.WithContext(handler.SetUser(ctx, &testPresenceUser{id: "alice", email: "alice@test.com"}))
 
 	w := httptest.NewRecorder()
@@ -89,6 +91,7 @@ func TestHandleSSEPresenceAnonymousNoCrash(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req := httptest.NewRequest("GET", "/__gofastr/sse?session="+sess.ID+"&presence=room", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
 	req = req.WithContext(ctx)
 
 	w := httptest.NewRecorder()
@@ -115,6 +118,7 @@ func TestHandleSSEPresenceNoTopicNoPresence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req := httptest.NewRequest("GET", "/__gofastr/sse?session="+sess.ID, nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
 	req = req.WithContext(ctx)
 
 	w := httptest.NewRecorder()

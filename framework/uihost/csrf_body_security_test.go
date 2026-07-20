@@ -32,25 +32,6 @@ func TestUIHost_SessionCookieUsesStrictSameSite(t *testing.T) {
 	}
 }
 
-func TestUIHost_SignalUpdateRejectsCrossOriginPost(t *testing.T) {
-	ds := newTestUIHost()
-	sig := &stubSignal{}
-	ds.RegisterSignal("dangerous-signal", sig)
-
-	req := httptest.NewRequest(http.MethodPost, "/__gofastr/signal/dangerous-signal?session=forged-session", strings.NewReader(`{"value":"tampered"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://evil.example")
-	rec := httptest.NewRecorder()
-	ds.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("SECURITY: [uihost-csrf] cross-origin signal update returned %d and mutated=%v. Attack: CSRF against signal endpoint.", rec.Code, sig.value)
-	}
-	if sig.value != nil {
-		t.Fatalf("SECURITY: [uihost-csrf] cross-origin signal update mutated value to %#v. Attack: CSRF against signal endpoint.", sig.value)
-	}
-}
-
 func TestUIHost_ServerActionRejectsCrossOriginPost(t *testing.T) {
 	a := app.NewApp("action-csrf")
 	a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
@@ -80,22 +61,6 @@ func TestUIHost_ServerActionRejectsCrossOriginPost(t *testing.T) {
 	}
 }
 
-func TestUIHost_SignalUpdateRejectsOversizeBody(t *testing.T) {
-	ds := newTestUIHost()
-	sig := &stubSignal{}
-	ds.RegisterSignal("dangerous-signal", sig)
-
-	huge := `{"value":"` + strings.Repeat("A", 1<<20) + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/__gofastr/signal/dangerous-signal?session=forged-session", strings.NewReader(huge))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ds.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("SECURITY: [uihost-body] oversize signal body returned %d. Attack: unbounded JSON body DoS on signal endpoint.", rec.Code)
-	}
-}
-
 func TestUIHost_ServerActionRejectsOversizeBody(t *testing.T) {
 	ds := newTestUIHost()
 
@@ -110,16 +75,20 @@ func TestUIHost_ServerActionRejectsOversizeBody(t *testing.T) {
 	}
 }
 
-func TestUIHost_UnregisteredSignalReturnsNotFound(t *testing.T) {
+func TestUIHost_RemovedSignalEndpointReturns404(t *testing.T) {
+	// The /__gofastr/signal/{id} surface has been removed (dead server-side
+	// signal map + island re-render path with no production callers). A POST
+	// to any path under it must be a plain 404 — no handler, no method-only
+	// 405, no auth challenge, no body parsing.
 	ds := newTestUIHost()
 
-	req := httptest.NewRequest(http.MethodPost, "/__gofastr/signal/missing?session=forged-session", strings.NewReader(`{"value":"tampered"}`))
+	req := httptest.NewRequest(http.MethodPost, "/__gofastr/signal/anything", strings.NewReader(`{"value":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("SECURITY: [uihost-signal] unregistered signal probe returned %d. Attack: endpoint probing succeeds with arbitrary signal ids.", rec.Code)
+		t.Fatalf("SECURITY: [uihost-removed] POST /__gofastr/signal/anything returned %d, want 404. Attack: removed endpoint still routed.", rec.Code)
 	}
 }
 

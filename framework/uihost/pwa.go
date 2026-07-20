@@ -105,7 +105,7 @@ type PWAConfig struct {
 	OfflineScreen component.Component
 
 	// DenyPaths extends the built-in sensitive-path deny list
-	// (/__gofastr/{sse,session,signal,action,widgets}, /api, /auth)
+	// (/__gofastr/{sse,session,action,widgets}, /api, /auth)
 	// with app-specific mounts — e.g. a CRUD API at a custom prefix or
 	// an auth battery at a custom base path. Listed paths (and
 	// everything under them) can never be precached and are never
@@ -171,7 +171,6 @@ func (ds *UIHost) resolvedPWA() PWAConfig {
 var pwaSensitivePaths = []string{
 	"/__gofastr/sse",
 	"/__gofastr/session",
-	"/__gofastr/signal",
 	"/__gofastr/action",
 	"/__gofastr/widgets",
 	"/api",

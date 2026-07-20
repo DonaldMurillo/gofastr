@@ -222,7 +222,6 @@ func TestPWAPrecacheDropsSensitive(t *testing.T) {
 	ds := New(a, WithPWA(PWAConfig{Precache: []string{
 		"/__gofastr/sse",
 		"/__gofastr/session",
-		"/__gofastr/signal/x",
 		"/__gofastr/action",
 		"/api/users",
 		"/auth/login",
@@ -256,7 +255,6 @@ func TestPWAPrecacheDropsSensitive(t *testing.T) {
 	for _, banned := range []string{
 		"/__gofastr/sse",
 		"/__gofastr/session",
-		"/__gofastr/signal/x",
 		"/__gofastr/action",
 		"/api/users",
 		"/auth/login",
@@ -278,7 +276,6 @@ func TestPWAServiceWorkerDenyList(t *testing.T) {
 	for _, deny := range []string{
 		"/__gofastr/sse",
 		"/__gofastr/session",
-		"/__gofastr/signal/",
 		"/__gofastr/action",
 		"/api/",
 		"/auth/",

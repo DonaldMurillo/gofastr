@@ -1,7 +1,7 @@
 // Package uihost wires a core-ui application onto a framework.App's router.
 // It mounts page rendering, runtime.js, compiled action JS, SSE island
-// streaming, sessions, and signal-driven updates as routes — there is no
-// standalone server. The framework.App owns the HTTP listener.
+// streaming, and sessions as routes — there is no standalone server. The
+// framework.App owns the HTTP listener.
 package uihost
 
 import (
@@ -41,6 +41,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
+	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
 )
 
 // OG holds Open Graph meta tag values for social sharing.
@@ -65,13 +66,20 @@ type TwitterCard struct {
 
 // UIHost mounts a core-ui application onto a router. It serves rendered
 // pages with runtime.js, compiled action JS, SSE streaming for islands,
-// sessions, and signal-driven live updates. The framework.App is
-// responsible for ListenAndServe.
+// and sessions. The framework.App is responsible for ListenAndServe.
 type UIHost struct {
-	App            *app.App
-	Islands        *island.Manager
-	mu             sync.RWMutex
-	sessions       map[string]*Session                  // sessionID → session
+	App     *app.App
+	Islands *island.Manager
+	mu      sync.RWMutex
+	// sessionKey signs and verifies the stateless session tokens that
+	// replaced the old in-memory session map (issue #112): any process
+	// holding the same key accepts any process's tokens, so sessions are
+	// portable across replicas with zero shared state. New() self-mints a
+	// per-boot key (single-replica, zero config — sessions roll over on
+	// restart exactly like the map did); framework.App.Mount overwrites it
+	// via SetSessionKey with a key derived from the app secret
+	// (WithSecret / GOFASTR_SECRET).
+	sessionKey     []byte
 	actionJS       map[string]string                    // componentID → compiled JS
 	actionHandlers map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
 	customCSS      string                               // extra CSS to inject (e.g. demo.css)
@@ -79,7 +87,6 @@ type UIHost struct {
 	staticDir      string                               // directory to serve static files from
 	staticFS       fs.FS                                // embedded filesystem for static files
 	llmMDPublic    bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
-	signals        map[string]SignalAny                 // signalID → signal for live updates
 	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
 	headTags       []string                             // typed head tags built from convenience options
 	faviconURL     string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
@@ -100,17 +107,59 @@ type UIHost struct {
 	standaloneOnce sync.Once
 }
 
-// Session represents a connected browser session.
+// Session represents a connected browser session. ID ("sess-…") is the
+// bare identifier used as the SSE stream / presence key and embedded in
+// page chrome; Token is the signed credential stored in the session
+// cookie — the ID plus mint time plus an HMAC any replica sharing the
+// key can verify. Only the Token proves anything; the bare ID is public.
 type Session struct {
 	ID      string
 	Created time.Time
+	Token   string
 }
 
-// SignalAny is an interface to allow storing heterogeneous signals.
-type SignalAny interface {
-	GetAsInterface() interface{}
-	UpdateAsInterface(v interface{})
-	Subscribe() <-chan struct{}
+// sessionMaxAge bounds how old a session token may be. Expiry is
+// seamless: page render re-mints and re-sets the cookie whenever the
+// presented token fails verification, so a rollover costs one render.
+const sessionMaxAge = 30 * 24 * time.Hour
+
+// selfMintedSessionKey returns a random per-boot signing key — the
+// single-replica zero-config default. Restart invalidates outstanding
+// tokens; page render re-mints transparently. Multi-replica deployments
+// overwrite it via SetSessionKey (framework fails boot if they don't).
+func selfMintedSessionKey() []byte {
+	var b [32]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		// A wedged CSPRNG at construction time is unrecoverable for a
+		// signing key; every session check will fail closed on the
+		// short key rather than sign with something guessable.
+		slog.Default().Error("uihost: session key mint failed", "err", err)
+		return nil
+	}
+	return b[:]
+}
+
+// SetSessionKey replaces the session-signing key. Called once by
+// framework.App.Mount (before any traffic) with the HKDF-derived key
+// from the app secret; every replica configured with the same secret
+// then accepts every other replica's session tokens. Not intended for
+// per-request use.
+func (ds *UIHost) SetSessionKey(key []byte) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.sessionKey = key
+}
+
+// verifySessionToken authenticates a cookie token and returns the bare
+// session id embedded in it.
+func (ds *UIHost) verifySessionToken(token string) (string, bool) {
+	if token == "" {
+		return "", false
+	}
+	ds.mu.RLock()
+	key := ds.sessionKey
+	ds.mu.RUnlock()
+	return sessiontoken.Verify(key, token, time.Now(), sessionMaxAge)
 }
 
 // SEOScreen is an optional interface that screens can implement to
@@ -594,24 +643,12 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	return out
 }
 
-// RegisterSignal registers a signal with the devserver so the signal update
-// endpoint can apply client-sent values. Safe for concurrent use; the
-// signal-update HTTP handler reads the same map.
-func (ds *UIHost) RegisterSignal(id string, s SignalAny) {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	if ds.signals == nil {
-		ds.signals = make(map[string]SignalAny)
-	}
-	ds.signals[id] = s
-}
-
 // New creates a new development server.
 func New(application *app.App, opts ...Option) *UIHost {
 	ds := &UIHost{
 		App:            application,
 		Islands:        island.NewManager(),
-		sessions:       make(map[string]*Session),
+		sessionKey:     selfMintedSessionKey(),
 		actionJS:       make(map[string]string),
 		actionHandlers: make(map[string]*component.ActionRegistry),
 	}
@@ -629,15 +666,6 @@ func New(application *app.App, opts ...Option) *UIHost {
 		ds.extraScripts = append(ds.extraScripts, dev.LiveReloadScriptURL)
 	}
 	return ds
-}
-
-// RegisterWidget registers a widget with the island manager for a session.
-// Returns the widget wrapped as an island for rendering.
-func (ds *UIHost) RegisterWidget(sessionID string, w *component.Widget) *island.Island {
-	isl := island.NewIsland(fmt.Sprintf("%s-%s", w.ID, sessionID), w)
-	isl.SessionID = sessionID
-	ds.Islands.Register(isl)
-	return isl
 }
 
 // CompileActions compiles a component's action methods to JS and caches them.
@@ -748,31 +776,23 @@ func (ds *UIHost) GetActionJS() string {
 	return sb.String()
 }
 
-// CreateSession creates a new browser session. The ID is 16 bytes of
-// crypto/rand encoded as hex — the prior `sess-<UnixNano()>` form
-// could collide under load when two CreateSession calls landed in
-// the same nanosecond.
+// CreateSession mints a new stateless session token. Nothing is stored
+// server-side: the returned Session is a parsed view of the token, and
+// validity is a signature check (verifySessionToken), not a lookup.
 func (ds *UIHost) CreateSession() *Session {
-	id := "sess-" + newSessionID()
-	sess := &Session{
-		ID:      id,
-		Created: time.Now(),
+	ds.mu.RLock()
+	key := ds.sessionKey
+	ds.mu.RUnlock()
+	now := time.Now()
+	token, id, err := sessiontoken.Mint(key, now)
+	if err != nil {
+		// Only a wedged kernel CSPRNG can land here. Degrade to an
+		// unusable empty-token session rather than panic mid-request;
+		// every check on it fails closed and the next render retries.
+		slog.Default().Error("uihost: session mint failed", "err", err)
+		return &Session{Created: now}
 	}
-	ds.mu.Lock()
-	ds.sessions[id] = sess
-	ds.mu.Unlock()
-	return sess
-}
-
-func newSessionID() string {
-	var b [16]byte
-	if _, err := cryptorand.Read(b[:]); err != nil {
-		// crypto/rand on supported platforms cannot fail; fall back
-		// to the timestamp-based ID rather than panic on a wedged
-		// kernel CSPRNG.
-		return fmt.Sprintf("ts-%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(b[:])
+	return &Session{ID: id, Created: now, Token: token}
 }
 
 // sessionCookieSecureName is the cookie name used over a secure (TLS)
@@ -823,11 +843,27 @@ func useSecureSessionCookie(r *http.Request) bool {
 
 // setSessionCookie writes the session cookie with the name + Secure flag
 // appropriate to this request's origin.
+// plaintextRemoteWarnOnce gates the one-time WARN below.
+var plaintextRemoteWarnOnce sync.Once
+
 func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	secure := useSecureSessionCookie(r)
 	name := sessionCookieDevName
 	if secure {
 		name = sessionCookieSecureName
+	}
+	// Audible footgun: a plaintext NON-loopback origin (http://192.168.…)
+	// gets the hardened Secure/__Host- cookie, which browsers refuse to
+	// store over plain HTTP — so the session never lands and every island
+	// RPC / SSE connect 401s in a loop. The cookie policy is deliberate
+	// (never a relaxed cookie off loopback); the WARN makes the resulting
+	// symptom diagnosable instead of silent. Serve over TLS or loopback.
+	if secure && !requestIsSecure(r) {
+		plaintextRemoteWarnOnce.Do(func() {
+			slog.Default().Warn("uihost: session cookie sent Secure over a plaintext non-loopback origin — browsers will drop it and every session check will 401",
+				"host", r.Host,
+				"fix", "serve over TLS (or a reverse proxy setting X-Forwarded-Proto), or use http://localhost for development")
+		})
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
@@ -854,14 +890,6 @@ func readSessionCookie(r *http.Request) string {
 		return c.Value
 	}
 	return ""
-}
-
-// GetSession retrieves a session by ID.
-func (ds *UIHost) GetSession(id string) (*Session, bool) {
-	ds.mu.RLock()
-	defer ds.mu.RUnlock()
-	s, ok := ds.sessions[id]
-	return s, ok
 }
 
 // ServeHTTP makes UIHost satisfy http.Handler by routing through a private
@@ -933,16 +961,22 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// server can't round-trip a Secure cookie, so it gets the relaxed
 	// form; everything else keeps the hardened __Host- cookie.
 	//
-	// A cookie whose session no longer exists server-side (sessions are
-	// in-memory, so a restart/deploy wipes them) must be re-minted, not
-	// reused — otherwise the embedded SSE id and every island RPC would
-	// reference a dead session and 401 until the user manually cleared
-	// the cookie.
-	sessionID := readSessionCookie(r)
-	if _, live := ds.GetSession(sessionID); sessionID == "" || !live {
+	// A cookie whose token fails verification (expired, tampered, minted
+	// under a rotated or per-boot key) must be re-minted, not reused —
+	// otherwise the embedded SSE id and every island RPC would reference
+	// a dead session and 401 until the user manually cleared the cookie.
+	// The cookie stores the signed token; only the bare id goes into the
+	// page chrome (SSE URL), so the credential never appears in URLs.
+	sessionID, live := ds.verifySessionToken(readSessionCookie(r))
+	if !live {
 		sess := ds.CreateSession()
 		sessionID = sess.ID
-		setSessionCookie(w, r, sessionID)
+		setSessionCookie(w, r, sess.Token)
+		// Same seam as the partial path: a re-mint response carries a
+		// Set-Cookie session token AND embeds the fresh stream id in the
+		// page chrome. Don't let a shared cache replay that pair to a
+		// second visitor. SSR HTML is per-user anyway; make it explicit.
+		w.Header().Set("Cache-Control", "no-store")
 	}
 
 	page := ds.injectChrome(string(html), path, sessionID, boundedPresenceParam(r))
@@ -1427,6 +1461,24 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 // handlePartialPage returns just the screen content for client-side navigation.
 // The runtime.js router swaps the <main> content without a full page reload.
 func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
+	// Stateless-session rollover on the SPA path (#112): a partial
+	// navigation must re-mint an invalid/expired token exactly like a
+	// full render does — otherwise a restart, key rotation, or expiry
+	// leaves this SPA's islands and SSE 401ing until a hard reload.
+	// The fresh bare id travels in X-Gofastr-Session so the runtime
+	// rewires the SSE meta; the signed token rides Set-Cookie only.
+	if _, live := ds.verifySessionToken(readSessionCookie(r)); !live {
+		if sess := ds.CreateSession(); sess.Token != "" {
+			setSessionCookie(w, r, sess.Token)
+			w.Header().Set("X-Gofastr-Session", sess.ID)
+			// no-store the MOMENT we re-mint, before any Decision branch
+			// below can return: the redirect/block/not-found partials
+			// also carry this Set-Cookie + X-Gofastr-Session pair, and a
+			// shared cache replaying any of them would hand one visitor
+			// another's session. The success path re-asserts this header.
+			w.Header().Set("Cache-Control", "no-store")
+		}
+	}
 	// Mirror handlePage: expose the live *http.Request to ScreenLoader
 	// via app.WithRequest so partial-fetched screens can still read URL
 	// query (sort, page, filters) just like full-render screens do.
@@ -1481,6 +1533,12 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Gofastr-Partial", "true")
+	// no-store, unconditionally: a partial is per-user rendered HTML, and
+	// on the re-mint path this response carries Set-Cookie (a signed
+	// session token) + X-Gofastr-Session. A shared cache replaying that
+	// pair would hand one visitor another's live session/stream — RFC
+	// 7234 does not exempt 200+Set-Cookie from caching on its own.
+	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, partialSeedIsland(ctx, string(res.HTML))+string(res.HTML))
 }
 
@@ -1491,15 +1549,15 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing session parameter", http.StatusBadRequest)
 		return
 	}
-	// Reject forged session ids — only ids minted by CreateSession may
-	// receive the update stream. Without this, an attacker could open an
-	// SSE connection with an attacker-chosen id and receive any future
-	// PushUpdate sent to that id, including ones a legitimate caller
-	// might later choose if id space collides.
-	ds.mu.RLock()
-	_, ok := ds.sessions[sessionID]
-	ds.mu.RUnlock()
-	if !ok {
+	// The stream id in the URL is public (it's embedded in page chrome),
+	// so possession of an id must prove nothing. The COOKIE token is the
+	// credential: it must verify AND its embedded id must match the
+	// requested stream. That closes both the old forged-id hole (an
+	// attacker-chosen id receiving future PushUpdates) and its sibling
+	// the map never closed — subscribing to another user's stream with a
+	// leaked-but-real id and no matching cookie.
+	cookieID, ok := ds.verifySessionToken(readSessionCookie(r))
+	if !ok || cookieID != sessionID {
 		http.Error(w, "unknown session", http.StatusUnauthorized)
 		return
 	}
@@ -1565,27 +1623,20 @@ func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 }
 
 // maxMutatingBodyBytes bounds JSON bodies accepted by mutating
-// /__gofastr/* endpoints (signal updates, server actions, session
-// creation). Anything past 64 KiB is rejected with 413 — these
-// endpoints take small structured commands, not file uploads.
+// /__gofastr/* endpoints (server actions, session creation). Anything
+// past 64 KiB is rejected with 413 — these endpoints take small
+// structured commands, not file uploads.
 const maxMutatingBodyBytes = 64 * 1024
 
-// requireValidSession resolves the session id from the session cookie
+// requireValidSession resolves the session token from the session cookie
 // (hardened __Host- form on TLS/non-loopback origins, relaxed dev form
-// on plaintext localhost) and verifies it exists in ds.sessions. On
-// failure writes 401 and
-// returns "", false. Mutating /__gofastr/* endpoints call this so
-// attackers can't pass a forged session id via query string or invent
-// a cookie that was never minted by CreateSession.
+// on plaintext localhost), verifies its signature, and returns the bare
+// session id. On failure writes 401 and returns "", false. Mutating
+// /__gofastr/* endpoints call this so attackers can't pass a forged
+// session via query string or invent a cookie that was never signed by
+// a replica holding the session key.
 func (ds *UIHost) requireValidSession(w http.ResponseWriter, r *http.Request) (string, bool) {
-	id := readSessionCookie(r)
-	if id == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return "", false
-	}
-	ds.mu.RLock()
-	_, ok := ds.sessions[id]
-	ds.mu.RUnlock()
+	id, ok := ds.verifySessionToken(readSessionCookie(r))
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return "", false
@@ -1648,87 +1699,18 @@ func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, js)
 }
 
-// handleCreateSession creates a new session and returns its ID.
+// handleCreateSession mints a new session, sets the signed token cookie,
+// and returns the bare session id. The token itself travels only in the
+// Set-Cookie header — the JSON body carries the public id, which is all
+// a same-origin caller needs (the cookie rides along automatically).
 func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossOrigin(w, r) {
 		return
 	}
 	sess := ds.CreateSession()
+	setSessionCookie(w, r, sess.Token)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"sessionId": sess.ID})
-}
-
-// handleSignalUpdate receives a signal update from the client and pushes
-// island updates via SSE.
-func (ds *UIHost) handleSignalUpdate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if rejectCrossOrigin(w, r) {
-		return
-	}
-	// Reject obviously oversize bodies before any further work so a
-	// DoS payload doesn't get to allocate auth/lookup state.
-	if r.ContentLength > maxMutatingBodyBytes {
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-		return
-	}
-
-	// Parse: /__gofastr/signal/{signalID}
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/__gofastr/signal/"), "/")
-	if len(parts) == 0 {
-		http.Error(w, "invalid signal path", http.StatusBadRequest)
-		return
-	}
-	signalID := parts[0]
-
-	// Resolve the signal first so probing arbitrary ids returns 404
-	// (signal-not-found is not a credentials-leak — the runtime ships
-	// signal ids in client JS already).
-	ds.mu.RLock()
-	sig, sigOK := ds.signals[signalID]
-	ds.mu.RUnlock()
-	if !sigOK {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Auth required for mutation against a known signal.
-	sessionID, ok := ds.requireValidSession(w, r)
-	if !ok {
-		return
-	}
-
-	var body map[string]interface{}
-	if !decodeBounded(w, r, &body) {
-		return
-	}
-
-	// Apply the signal update once. The previous in-loop version
-	// applied the update N times (once per subscribing island) and
-	// also read ds.signals without holding ds.mu while RegisterSignal
-	// writes it — a real data race under concurrent registration.
-	if val, exists := body["value"]; exists {
-		sig.UpdateAsInterface(val)
-	}
-
-	// Push island updates for this session.
-	islandIDs := ds.Islands.ListBySession(sessionID)
-	for _, id := range islandIDs {
-		isl, ok := ds.Islands.Get(id)
-		if !ok {
-			continue
-		}
-		html := isl.Update()
-		ds.Islands.PushUpdate(island.IslandUpdate{
-			IslandID: id,
-			HTML:     string(html),
-		}, sessionID)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // handleServerAction receives a server action invocation from the client.
@@ -1827,16 +1809,11 @@ func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, js)
 }
 
-// PushIsland re-renders an island and pushes the update via SSE.
-func (ds *UIHost) PushIsland(islandID string) error {
-	return ds.Islands.Push(islandID)
-}
-
 // Mount registers the UI's HTTP handlers on the given router.
 //
 // It registers:
 //   - All `/__gofastr/*` infrastructure endpoints (runtime.js, actions.js,
-//     SSE, session, signal updates, server actions, widget JS, CSS chunks)
+//     SSE, session, server actions, widget JS, CSS chunks)
 //   - A NotFound handler that first attempts static-file resolution (from
 //     either staticDir or staticFS) and falls back to page rendering.
 //
@@ -1857,8 +1834,6 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// otherwise mask the method-mismatch with a 404 page render).
 	r.Post("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
 	r.Get("/__gofastr/session", http.HandlerFunc(methodNotAllowed))
-	r.Post("/__gofastr/signal/{id}", http.HandlerFunc(ds.handleSignalUpdate))
-	r.Get("/__gofastr/signal/{id}", http.HandlerFunc(methodNotAllowed))
 	r.Post("/__gofastr/action", http.HandlerFunc(ds.handleServerAction))
 	r.Get("/__gofastr/action", http.HandlerFunc(methodNotAllowed))
 	r.Get("/__gofastr/widget/{id}", http.HandlerFunc(ds.handleWidgetJS))
@@ -2241,8 +2216,8 @@ func actionsToJS(componentID string, reg *component.ActionRegistry) string {
 // updates reach sessions whose SSE connection lives on another replica.
 // framework.WithFanout calls this automatically when the host is mounted
 // (via a duck-typed check), so apps normally never call it directly. See
-// island.Manager.SetFanout for the semantics and the per-replica-state
-// caveat (sticky sessions remain the recommendation for stateful widgets).
+// island.Manager.SetFanout for the delivery semantics (lossy real-time
+// lane; the durable lane is the outbox's job).
 func (ds *UIHost) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	return ds.Islands.SetFanout(f)
 }
