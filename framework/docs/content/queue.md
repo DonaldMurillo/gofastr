@@ -424,6 +424,11 @@ The zone name persists with the schedule (a `tz` column added by the same
 idempotent migration as the options columns). UTC, fixed-offset zones
 (`time.FixedZone`), and `time.Local` store the empty default and evaluate
 in UTC — `time.Local` would resolve to a different zone on every replica.
+The in-memory `Scheduler` differs here: it has no persistence, so its cron
+specs evaluate against the process clock in the process's local zone.
+Moving a schedule from `Scheduler` to `DurableScheduler.Register()` on a
+non-UTC host shifts its fire time to the UTC wall clock — pass the
+intended zone via `RegisterAt` to keep local-time semantics.
 Re-registering a schedule with a different cadence keeps the stored
 watermark and self-heals: evaluation advances to the next valid occurrence
 of the new spec instead of failing. A schedule whose stored state cannot

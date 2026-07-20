@@ -9,8 +9,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 Post-release review of the v0.32.0–v0.37.0 weekend range (multi-model pass:
 Claude + GLM + Sol) found ten confirmed bugs, all in code merged that
-weekend. Every fix landed test-first; the failing tests are in the same
-commits.
+weekend. A second round — rotated reviewers plus an adversarial pass over
+the first round's fixes — found twelve more, including one security fix.
+Every fix landed test-first; the failing tests are in the same commits.
 
 ### Added
 
@@ -66,6 +67,44 @@ commits.
   delivery) and mis-timing grace cutoffs. The relay now normalizes legacy
   values to the canonical format at start (idempotent, sqlite-only); the
   atomic single-`UPDATE` claim path is unchanged.
+- **Security — hidden columns can no longer be probed through include
+  scoped filters.** `?include=rel(password_hash_like=SEC%)` accepted
+  filters on `Hidden` columns of the include target; the related row's
+  presence in the response leaked whether the value matched
+  (prefix-bruteforceable) — the same oracle the strict-filter release
+  closed on the flat, nested, and `?where=` paths. A hidden field now gets
+  the identical "not on target entity" rejection a nonexistent field gets.
+- **SQLite (round 2): nine more engine fixes**, found by reviewing the
+  first round's fixes and sweeping untouched paths for the same defect
+  classes: DDL inside a rolled-back transaction no longer resurfaces after
+  reopen (schema flushes are deferred to commit; rollback restores the
+  header, schema pointer, allocated pages, and file length); `ALTER TABLE
+  ADD COLUMN` no longer corrupts indexed reads (index records were decoded
+  as table records and padded with defaults, returning the wrong row);
+  plain multi-row `VALUES` inserts now enforce separately created unique
+  indexes; `RENAME COLUMN` renames through index metadata, unique
+  constraints, and partial-index predicates; a valid multi-row `UPDATE`
+  key shift (`SET u = u - 1`) is no longer rejected; partial-index
+  predicates use SQL truthiness (`0.5` is true); `INSERT OR REPLACE` is
+  implemented (it previously failed to parse); `DELETE` and upsert paths
+  maintain index entries; REAL/NUMERIC/TEXT affinity conversions match
+  SQLite (signed/padded numeric text, lossless-integral to INTEGER,
+  numbers to text, blobs stay blobs).
+- **Queue: legacy timestamp formats normalized, like the outbox.** The
+  same mixed-format lexicographic comparison reclaimed in-flight jobs with
+  active leases (double execution) and ran future-scheduled jobs
+  immediately (retry backoff voided). `NewDBQueue` now normalizes the job
+  and scheduler tables the way the outbox relay does.
+- **Queue: DST transitions follow vixie cron.** A schedule in a zone that
+  falls back no longer fires twice in the repeated hour, and one whose
+  wall time is skipped by spring-forward fires once at the transition
+  instant instead of silently losing the day (registration and watermark
+  advance included).
+- **Outbox: normalization is idempotent on the CGO driver too.** The
+  canonical-format check now probes the layout the connected driver
+  actually binds, so hosts on mattn/go-sqlite3 no longer rewrite every row
+  at every relay start; a failed table probe other than "no such table"
+  (e.g. a locked file) is now logged instead of silently skipping.
 - **Auth: scope-denied responses use the canonical error envelope.**
   `RequireAPIScopes` / `RequireScope` returned a nested
   `{"error":{...}}` with `Content-Type: text/plain`, which the generated JS
