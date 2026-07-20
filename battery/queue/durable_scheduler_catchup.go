@@ -44,52 +44,37 @@ func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time
 		return nil, time.Time{}, err
 	}
 	loc := schedule.location()
-	// Search backwards so a long outage costs a fixed amount of memory and
-	// retains the newest audit rows instead of the oldest ones. Cron field
-	// matching is location-sensitive (the spec "0 2 * * *" means 02:00 in
-	// the schedule's registration location, not 02:00 UTC), so the cursor
-	// we walk minute-by-minute is rendered in that location before the
-	// field comparison. The absolute instant is what we store.
-	candidate := now.Truncate(time.Minute).In(loc)
-	reversed := make([]time.Time, 0, limit)
-	for scanned := 0; scanned < maxCronCatchUpSearchMinutes && !candidate.Before(cursor); scanned++ {
-		if parsed.Matches(candidate) {
-			reversed = append(reversed, candidate.UTC())
-			if len(reversed) == limit {
-				break
-			}
-		}
-		candidate = candidate.Add(-time.Minute)
+	// Forward walk in absolute minutes, evaluating the cron fields against
+	// each minute rendered in the schedule's registration location. Cron
+	// field matching is location-sensitive (the spec "0 2 * * *" means 02:00
+	// in the schedule's registration location, not 02:00 UTC). DST transition
+	// semantics (vixie/cronie parity) are implemented by firesInRange: a
+	// wall-clock match in a fall-back repeated hour fires only at its earlier
+	// absolute instant, and a skipped wall-clock minute inside a spring-
+	// forward gap fires once at the transition instant. The absolute instant
+	// is what we store. See durable_scheduler_dst.go.
+	ticks, err := firesInRange(parsed, loc, cursor, now, limit)
+	if err != nil {
+		return nil, time.Time{}, err
 	}
-	if len(reversed) == 0 {
-		// Cadence-change recovery: the stored cursor is not an occurrence
-		// of the current spec (typical after re-registering an existing
-		// schedule with a different cron, or after switching interval→
-		// cron — `ON CONFLICT ... DO UPDATE` deliberately preserves the
-		// old next_run to fence concurrent claimants). Advance to the
-		// next valid occurrence strictly after the cursor instead of
-		// erroring: the caller persists the recovered watermark so the
-		// schedule keeps firing on the new cadence without operator
-		// intervention.
-		next := parsed.Next(cursor.In(loc))
-		if next.IsZero() {
-			return nil, time.Time{}, fmt.Errorf("queue: schedule %q did not advance", schedule.id)
-		}
-		nextUTC := next.UTC()
-		if nextUTC.After(now) {
-			return nil, nextUTC, nil
-		}
-		nextNext := parsed.Next(next)
-		if nextNext.IsZero() || !nextNext.After(next) {
-			return nil, time.Time{}, fmt.Errorf("queue: schedule %q did not advance", schedule.id)
-		}
-		return []time.Time{nextUTC}, nextNext.UTC(), nil
+	// Advance the watermark past `now`, fenced against the LAST fired tick so
+	// a fall-back repeat immediately after a fire is skipped (prevFire is the
+	// wall-minute already consumed).
+	var next time.Time
+	if len(ticks) > 0 {
+		next = nextFire(parsed, loc, now, ticks[len(ticks)-1])
+	} else {
+		// Cadence-change recovery: the stored cursor is not an occurrence of
+		// the current spec (typical after re-registering an existing schedule
+		// with a different cron, or after switching interval→cron — `ON
+		// CONFLICT ... DO UPDATE` deliberately preserves the old next_run to
+		// fence concurrent claimants). Advance to the next valid occurrence
+		// strictly after the cursor instead of erroring: the caller persists
+		// the recovered watermark so the schedule keeps firing on the new
+		// cadence without operator intervention. With DST-aware nextFire this
+		// also self-corrects across a spring-forward inside the gap.
+		next = nextFire(parsed, loc, cursor, time.Time{})
 	}
-	ticks := make([]time.Time, len(reversed))
-	for i := range reversed {
-		ticks[len(reversed)-1-i] = reversed[i]
-	}
-	next := parsed.Next(now.In(loc))
 	if next.IsZero() || !next.After(now) {
 		return nil, time.Time{}, fmt.Errorf("queue: schedule %q did not advance", schedule.id)
 	}
