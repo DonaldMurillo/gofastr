@@ -294,9 +294,14 @@ func ApplyAffinity(v Value, affinity ColumnAffinity) Value {
 		}
 
 	case AffinityText:
-		if v.Type == DataTypeBlob {
-			// BLOB to TEXT
-			return TextValue(string(v.BlobVal))
+		// SQLite TEXT affinity converts INTEGER and REAL values into
+		// their text form, but leaves BLOBs untouched (a blob stays a
+		// blob). https://www.sqlite.org/datatype3.html#type_affinity
+		switch v.Type {
+		case DataTypeInteger:
+			return TextValue(formatInt64(v.IntVal))
+		case DataTypeFloat:
+			return TextValue(formatFloat64(v.FloatVal))
 		}
 
 	case AffinityBlob:
@@ -306,17 +311,23 @@ func ApplyAffinity(v Value, affinity ColumnAffinity) Value {
 		}
 
 	case AffinityNumeric:
-		// Try integer first, then float
-		if v.Type == DataTypeText {
-			s := v.TextVal
-			// Check if it looks like an integer
-			if looksLikeInteger(s) {
-				if n, err := parseInt64(s); err == nil {
+		// NUMERIC affinity stores a value as INTEGER when it can be
+		// represented losslessly as an integer, and as REAL otherwise.
+		// This applies to both TEXT inputs (parsed as a number first)
+		// and REAL inputs (e.g. the literal 4.0 under a NUMERIC column
+		// is stored as INTEGER 4). Non-numeric TEXT is kept as TEXT.
+		// https://www.sqlite.org/datatype3.html#type_affinity
+		switch v.Type {
+		case DataTypeText:
+			if f, ok := v.AsFloat64(); ok {
+				if n, ok := losslessInt64FromFloat(f); ok {
 					return IntegerValue(n)
 				}
-			}
-			if f, ok := v.AsFloat64(); ok {
 				return FloatValue(f)
+			}
+		case DataTypeFloat:
+			if n, ok := losslessInt64FromFloat(v.FloatVal); ok {
+				return IntegerValue(n)
 			}
 		}
 	}

@@ -86,6 +86,32 @@ func rowMatchesPredicate(table *TableInfo, row []Value, predicate Expr) bool {
 	if err != nil || val.IsNull() {
 		return false
 	}
-	b, ok := val.AsInt64()
-	return ok && b != 0
+	return isTruthyValue(val)
+}
+
+// isTruthyValue reports whether a Value is true under SQLite's
+// boolean semantics: NULL and BLOBs are false; numeric values are true
+// when nonzero (including fractional floats); text is true only when it
+// parses as a nonzero number. See https://www.sqlite.org/lang_expr.html#boolean
+// ("a zero or NULL is false ... any other string is considered to be true
+// if it is numeric and nonzero").
+func isTruthyValue(v Value) bool {
+	switch v.Type {
+	case DataTypeNull:
+		return false
+	case DataTypeInteger:
+		return v.IntVal != 0
+	case DataTypeFloat:
+		return v.FloatVal != 0
+	case DataTypeText:
+		// SQLite evaluates numeric-looking text as its numeric value;
+		// non-numeric text is treated as 0 (false).
+		if f, ok := v.AsFloat64(); ok {
+			return f != 0
+		}
+		return false
+	case DataTypeBlob:
+		return false
+	}
+	return false
 }

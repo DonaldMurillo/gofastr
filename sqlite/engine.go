@@ -35,6 +35,7 @@ type PagerInterface interface {
 	StatementRestore(*pagerStatementSnapshot)
 	GetSchemaPage() int
 	SetSchemaPage(page int)
+	IsInTxn() bool
 	BeginTxn()
 	CommitTxn()
 	RollbackTxn() error
@@ -316,6 +317,14 @@ func (e *Engine) SaveSchema() error {
 		pn++
 	}
 
+	// Defer the flush when inside a transaction: flushed pages cannot
+	// be un-flushed by RollbackTxn's cache restore, so writing now
+	// would let a rolled-back DDL (CREATE TABLE / CREATE INDEX inside
+	// BEGIN ... ROLLBACK) leak to disk and resurface after reopen.
+	// CommitTxn performs the deferred flush at transaction end.
+	if e.pager.IsInTxn() {
+		return nil
+	}
 	return e.pager.Flush()
 }
 
@@ -1344,7 +1353,7 @@ func (e *Engine) executeInsert(s *InsertStmt, params []Value) (*Result, error) {
 	if err := validateReturningColumns(tableInfo, s.Returning); err != nil {
 		return nil, err
 	}
-	if s.OrIgnore || s.Conflict != nil || len(s.Returning) > 0 || len(tableInfo.UniqueConstraints) > 0 || s.Select != nil {
+	if s.OrIgnore || s.OrReplace || s.Conflict != nil || len(s.Returning) > 0 || len(e.uniqueConstraints(tableInfo)) > 0 || s.Select != nil {
 		return e.executeInsertWithConflict(s, params, tableInfo)
 	}
 
@@ -1496,10 +1505,30 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 		if err := validateUpdatedRow(tableInfo, row, newRow); err != nil {
 			return nil, err
 		}
-		if _, _, duplicate, err := e.findInsertConflict(tableInfo, newRow, nil, rowid); err != nil {
+		conflictRowID, _, duplicate, err := e.findInsertConflict(tableInfo, newRow, nil, rowid)
+		if err != nil {
 			return nil, err
-		} else if duplicate {
-			return nil, &engineError{"UNIQUE constraint failed"}
+		}
+		if duplicate {
+			// The on-disk B-tree scan sees rows at their PRE-statement
+			// image. When the row it flagged as a conflict is itself
+			// staged for update by this statement, its stale image will
+			// be replaced before commit — the pairwise pending check
+			// below is the authoritative conflict test for staged-vs-
+			// staged, so a conflict against a staged rowid is not (yet)
+			// a real violation. This matches SQLite, which evaluates
+			// UNIQUE per final row image: UPDATE t SET u=u-1 over
+			// (1,1),(2,2) succeeds with (1,0),(2,1).
+			staged := false
+			for _, prior := range toUpdate {
+				if prior.rowid == conflictRowID {
+					staged = true
+					break
+				}
+			}
+			if !staged {
+				return nil, &engineError{"UNIQUE constraint failed"}
+			}
 		}
 		// findInsertConflict only sees the on-disk table state, so two
 		// rows updated by the SAME statement could pick the same key
@@ -1571,22 +1600,34 @@ func (e *Engine) executeDelete(s *DeleteStmt, params []Value) (*Result, error) {
 
 	// If no WHERE, delete all rows efficiently
 	if s.Where == nil {
-		// Recreate the B-tree
-		newRoot, err := e.btree.CreateBTree()
-		if err != nil {
-			return nil, err
-		}
-		// Count rows first for RowsAffected
+		// Walk every row once to drop its secondary-index entries
+		// before the table B-tree is rebuilt; otherwise each index
+		// retains entries pointing into a now-empty table, and any
+		// later INSERT at a recycled rowid would resurface the stale
+		// value.
 		cursor, err := e.btree.Scan(tableInfo.RootPage)
 		if err != nil {
 			return nil, err
 		}
 		var count int64
 		for cursor.Next() {
+			rowid, _, err := cursor.Get()
+			if err != nil {
+				cursor.Close()
+				return nil, err
+			}
+			if err := e.deleteFromIndexes(tableName, rowid); err != nil {
+				cursor.Close()
+				return nil, err
+			}
 			count++
 		}
 		cursor.Close()
-
+		// Recreate the (now-empty) table B-tree root.
+		newRoot, err := e.btree.CreateBTree()
+		if err != nil {
+			return nil, err
+		}
 		tableInfo.RootPage = newRoot
 		return &Result{RowsAffected: count}, nil
 	}
@@ -1643,6 +1684,12 @@ func (e *Engine) executeDelete(s *DeleteStmt, params []Value) (*Result, error) {
 			return nil, err
 		}
 		if err := e.btree.Delete(tableInfo.RootPage, rowid); err != nil {
+			return nil, err
+		}
+		// Removing the table row must also remove every secondary-index
+		// entry keyed by this rowid, or a subsequently recycled rowid
+		// resurfaces under the dead row's indexed value.
+		if err := e.deleteFromIndexes(tableInfo.Name, rowid); err != nil {
 			return nil, err
 		}
 	}
@@ -1857,7 +1904,101 @@ func (e *Engine) executeAlterRenameColumn(s *AlterRenameColumnStmt) (*Result, er
 	if !found {
 		return nil, &engineError{"no such column: " + s.OldName}
 	}
+	// Propagate the rename into every place column names are cached, so
+	// constraints and indexes stay attached to the renamed column.
+	// SQLite's own ALTER TABLE RENAME COLUMN rewrites the schema SQL of
+	// every dependent object; here we rewrite the equivalent in-memory
+	// metadata directly.
+	oldLower := strings.ToLower(s.OldName)
+	for i, uc := range ti.UniqueConstraints {
+		for j, col := range uc {
+			if strings.EqualFold(col, s.OldName) {
+				ti.UniqueConstraints[i][j] = s.NewName
+			}
+		}
+	}
+	for _, idx := range e.schema.IndexesForTable(ti.Name) {
+		for i, col := range idx.Columns {
+			if strings.EqualFold(col, s.OldName) {
+				idx.Columns[i] = s.NewName
+			}
+		}
+		if idx.WhereExpr != nil {
+			idx.WhereExpr = renameColumnRefs(idx.WhereExpr, oldLower, s.NewName)
+		}
+	}
 	return &Result{}, nil
+}
+
+// renameColumnRefs walks an expression tree and returns a copy in which
+// every ColumnRef whose name matches oldName (case-insensitive) has been
+// replaced with newName. Expr node types are VALUES, so this returns
+// rebuilt nodes rather than mutating in place; the caller reassigns the
+// root. Used by ALTER TABLE RENAME COLUMN to keep partial-index WHERE
+// predicates consistent after a column rename.
+func renameColumnRefs(expr Expr, oldLower, newName string) Expr {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case ColumnRef:
+		if strings.ToLower(e.Column) == oldLower {
+			e.Column = newName
+		}
+		return e
+	case BinaryExpr:
+		e.Left = renameColumnRefs(e.Left, oldLower, newName)
+		e.Right = renameColumnRefs(e.Right, oldLower, newName)
+		return e
+	case UnaryExpr:
+		e.Expr = renameColumnRefs(e.Expr, oldLower, newName)
+		return e
+	case FunctionCall:
+		for i, arg := range e.Args {
+			e.Args[i] = renameColumnRefs(arg, oldLower, newName)
+		}
+		return e
+	case IsNullExpr:
+		e.Expr = renameColumnRefs(e.Expr, oldLower, newName)
+		return e
+	case BetweenExpr:
+		e.Expr = renameColumnRefs(e.Expr, oldLower, newName)
+		e.Low = renameColumnRefs(e.Low, oldLower, newName)
+		e.High = renameColumnRefs(e.High, oldLower, newName)
+		return e
+	case InExpr:
+		e.Expr = renameColumnRefs(e.Expr, oldLower, newName)
+		for i, v := range e.Values {
+			e.Values[i] = renameColumnRefs(v, oldLower, newName)
+		}
+		return e
+	case LikeExpr:
+		e.Expr = renameColumnRefs(e.Expr, oldLower, newName)
+		e.Pattern = renameColumnRefs(e.Pattern, oldLower, newName)
+		if e.Escape != nil {
+			e.Escape = renameColumnRefs(e.Escape, oldLower, newName)
+		}
+		return e
+	case ParenExpr:
+		e.Expr = renameColumnRefs(e.Expr, oldLower, newName)
+		return e
+	case CastExpr:
+		e.Expr = renameColumnRefs(e.Expr, oldLower, newName)
+		return e
+	case CaseExpr:
+		if e.Operand != nil {
+			e.Operand = renameColumnRefs(e.Operand, oldLower, newName)
+		}
+		for _, w := range e.Whens {
+			w.Condition = renameColumnRefs(w.Condition, oldLower, newName)
+			w.Result = renameColumnRefs(w.Result, oldLower, newName)
+		}
+		if e.Else != nil {
+			e.Else = renameColumnRefs(e.Else, oldLower, newName)
+		}
+		return e
+	}
+	return expr
 }
 
 func (e *Engine) executePragma(s *PragmaStmt) (*Result, error) {
@@ -2945,16 +3086,20 @@ func (e *Engine) tryIndexScan(tableName string, where Expr, params []Value) [][]
 		if err != nil {
 			return nil
 		}
-		// Index record: [col_value, rowid]
-		recVals := recordToValues(record, tableInfo)
-		if len(recVals) < 2 {
+		// Index records carry the indexed-column values followed by the
+		// rowid ([v0, v1, ..., rowid]) — they are NOT table rows and
+		// must not be padded to table width (recordToValues pads with
+		// DEFAULTs after ALTER ADD COLUMN, which would mask the rowid
+		// and yield the wrong table row on lookup).
+		idxVals := record.Columns
+		if len(idxVals) < 2 {
 			continue
 		}
 		// Compare the indexed column value
-		if CompareValues(recVals[0], val) == 0 {
-			// Match — get the rowid (last value in index record)
-			rowid := recVals[len(recVals)-1]
-			if rv, ok := rowid.AsInt64(); ok {
+		if CompareValues(idxVals[0], val) == 0 {
+			// Match — the rowid is the last value in the index record.
+			rowidVal := idxVals[len(idxVals)-1]
+			if rv, ok := rowidVal.AsInt64(); ok {
 				// Fetch the actual table row
 				rec, err := e.btree.Search(tableInfo.RootPage, rv)
 				if err != nil {

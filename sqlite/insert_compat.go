@@ -43,6 +43,33 @@ func (e *Engine) executeInsertWithConflict(s *InsertStmt, params []Value, tableI
 			switch {
 			case s.OrIgnore || (s.Conflict != nil && s.Conflict.DoNothing):
 				continue
+			case s.OrReplace:
+				// REPLACE conflict resolution: delete EVERY existing row
+				// that conflicts with the candidate (there can be more
+				// than one when multiple UNIQUE constraints overlap),
+				// then fall through to the plain-insert path below to
+				// write the new row. Each deletion removes both the
+				// table row and its secondary-index entries so no stale
+				// index pointers remain.
+				// See https://www.sqlite.org/lang_conflict.html
+				seen := map[int64]bool{}
+				for {
+					cid, _, conflict, err := e.findInsertConflict(tableInfo, rowValues, nil, 0)
+					if err != nil {
+						return nil, err
+					}
+					if !conflict || seen[cid] {
+						break
+					}
+					seen[cid] = true
+					if err := e.btree.Delete(tableInfo.RootPage, cid); err != nil {
+						return nil, err
+					}
+					if err := e.deleteFromIndexes(tableInfo.Name, cid); err != nil {
+						return nil, err
+					}
+				}
+				// Fall through: insert the new row below.
 			case s.Conflict != nil:
 				updated, err := applyConflictUpdates(tableInfo, conflictRow, rowValues, s.Conflict.Updates, params)
 				if err != nil {
@@ -60,6 +87,16 @@ func (e *Engine) executeInsertWithConflict(s *InsertStmt, params []Value, tableI
 					return nil, err
 				}
 				if err := e.btree.Insert(tableInfo.RootPage, conflictRowID, valuesToRecord(updated)); err != nil {
+					return nil, err
+				}
+				// ON CONFLICT DO UPDATE is a row REPLACEMENT: delete
+				// the prior index entries for this rowid before
+				// inserting the updated ones, mirroring plain UPDATE.
+				// Without this, a partial-index row whose predicate is
+				// now false would retain a stale entry, and an
+				// unconditional index entry whose key changed would
+				// duplicate.
+				if err := e.deleteFromIndexes(tableInfo.Name, conflictRowID); err != nil {
 					return nil, err
 				}
 				if err := e.insertIntoIndexes(tableInfo.Name, conflictRowID, updated); err != nil {

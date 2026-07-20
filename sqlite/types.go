@@ -3,6 +3,8 @@
 // compatible with the standard SQLite library, and provides a database/sql driver.
 package sqlite
 
+import "strings"
+
 // SQLite magic header string
 const magicHeader = "SQLite format 3\x00"
 
@@ -343,7 +345,10 @@ func parseInt64(s string) (int64, error) {
 }
 
 func parseFloat64(s string) (float64, error) {
-	// Simple float parser - handles basic decimal notation
+	// Trim surrounding whitespace — SQLite accepts numeric literals and
+	// column values with leading/trailing spaces under REAL/NUMERIC
+	// affinity (e.g. ' 3.5 ', '+4.25').
+	s = strings.TrimSpace(s)
 	if len(s) == 0 {
 		return 0, errEmptyString
 	}
@@ -353,6 +358,11 @@ func parseFloat64(s string) (float64, error) {
 	if s[0] == '-' {
 		neg = true
 		i = 1
+	} else if s[0] == '+' {
+		i = 1
+	}
+	if i >= len(s) {
+		return 0, errBadNumber
 	}
 
 	var result float64
