@@ -218,6 +218,7 @@
       const anchorResize = NS._widgets[cfg.name]?.anchorResize;
       const anchorScroll = NS._widgets[cfg.name]?.anchorScroll;
       const anchorTrigger = NS._widgets[cfg.name]?.anchorTrigger;
+      const pollStop = NS._widgets[cfg.name]?.pollStop;
       if (outsideHandler) document.removeEventListener('click', outsideHandler);
       if (anchorResize) window.removeEventListener('resize', anchorResize);
       if (anchorScroll) window.removeEventListener('scroll', anchorScroll, { capture: true });
@@ -225,6 +226,7 @@
         anchorTrigger.classList.remove('is-popover-trigger-active');
         anchorTrigger.removeAttribute('data-fui-popover-trigger');
       }
+      if (pollStop) pollStop();
       if (widgetEl && widgetEl.style) {
         widgetEl.style.left = '';
         widgetEl.style.top = '';
@@ -258,15 +260,6 @@
         }
       }
       if (cfg.deepLinkKey && cfg.deepLinkValue) NS._deepLinkStripUrl(cfg);
-      // Close any widget-scoped SSE streams opened during mount so
-      // the server-side connection is freed on every modal close.
-      const streams = NS._widgets[cfg.name]?.seenStreams;
-      if (streams) {
-        for (const path in streams) {
-          const es = streams[path];
-          if (es && typeof es.close === 'function') es.close();
-        }
-      }
     }
     NS._widgets[cfg.name].dismiss = dismiss;
 
@@ -284,63 +277,29 @@
         .catch(() => {});
     }
 
-    // SSE bindings (per-widget, separate from the document-level
-    // sse.js island stream). seenStreams is stored on the widget entry
-    // so dismiss() can close them (see close loop above).
-    const seenStreams = {};
-    NS._widgets[cfg.name].seenStreams = seenStreams;
-    for (const b of cfg.sse || []) {
-      if (!seenStreams[b.path]) {
-        try {
-          const es = new EventSource(b.path);
-          seenStreams[b.path] = es;
-          es.addEventListener('open', () => {
-            window.__fuiSSEReady = true;
-            NS.doc.bodyClass('fui-sse-down', false);
-            NS.doc.bodyClass('fui-sse-up', true);
-          });
-          es.addEventListener('error', () => {
-            NS.doc.bodyClass('fui-sse-up', false);
-            NS.doc.bodyClass('fui-sse-down', true);
-          });
-        } catch (_) {
-          seenStreams[b.path] = null;
-        }
-      }
-      const es = seenStreams[b.path];
-      if (!es) continue;
-      if (b.reload) {
-        es.addEventListener(b.event, (ev) => {
-          if (b.match) {
-            let payload = {};
-            try { payload = JSON.parse(ev.data) || {}; } catch (_) {}
-            for (const k in b.match) {
-              if (String(payload[k]) !== String(b.match[k])) return;
-            }
-          }
-          setTimeout(() => {
-            const path = location.pathname + location.search + location.hash;
-            if (NS.navigate) NS.navigate(path, { force: true });
-          }, 200);
-        });
-        continue;
-      }
-      if (b.refetch) {
-        es.addEventListener(b.event, () => {
-          fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((state) => {
-              if (state && b.signal in state) NS.setSignal(b.signal, state[b.signal]);
-            })
-            .catch(() => {});
-        });
-      } else {
-        es.addEventListener(b.event, (ev) => {
-          let payload;
-          try { payload = JSON.parse(ev.data); } catch (_) { payload = ev.data; }
-          NS.setSignal(b.signal, payload);
-        });
-      }
+    // Polling freshness — when the widget declares BOTH a statePath
+    // (it has signals) AND a pollMs (Builder.Poll), the runtime
+    // re-fetches statePath on the cadence and overwrites each
+    // declared signal with the fresh value. Mount hydration above
+    // skips already-set signals; polling intentionally does NOT —
+    // the whole point is to replace stale values. We still skip the
+    // DOM write when setSignal would be a no-op (value unchanged)
+    // so bound nodes don't flash/re-layout on every tick.
+    //
+    // Semantics shared with data-fui-poll (src/poll.js):
+    //   - ±10% jitter per interval (desynchronise multi-widget polls)
+    //   - pause while document.hidden; on visibilitychange → fetch
+    //     immediately and resume
+    //   - on fetch failure: double the interval, cap at 5× base,
+    //     reset to base on the next success
+    if (cfg.pollMs && cfg.statePath) {
+      // The poll implementation lives in the demand-loaded poll module
+      // (shared cadence/back-off/pollStatus machinery with data-fui-poll)
+      // so widget-bearing pages that never poll don't ship it. _widgetPoll
+      // installs pollStop/pollNow on the widget entry.
+      NS.loadModule('poll').then(() => {
+        if (NS._widgetPoll) NS._widgetPoll(cfg, NS._widgets[cfg.name]);
+      }).catch(() => {});
     }
 
     async function dispatchRPC(node) {
@@ -396,6 +355,16 @@
         const ct = r.headers.get('content-type') || '';
         const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
         if (responseSignal) NS.setSignal(responseSignal, data);
+        // Mutation → authoritative refresh: a successful RPC likely
+        // changed server state a polling widget renders, so re-fetch
+        // /state now instead of waiting out the cadence. Default target
+        // is the widget the button lives in; data-fui-rpc-refresh names
+        // a DIFFERENT widget — e.g. a Reset button inside a confirm
+        // modal (kiln-reset-confirm) refreshing the chat panel
+        // (kiln-panel), which its own closure would never reach.
+        const refreshName = node.getAttribute('data-fui-rpc-refresh') || cfg.name;
+        const wentry = NS._widgets[refreshName];
+        if (wentry && wentry.pollNow) wentry.pollNow();
         if (closeOnSuccess) dismiss();
         if (resetOnSuccess) node.reset();
         // Open a widget on success (e.g. "save in drawer → open results sheet").

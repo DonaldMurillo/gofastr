@@ -692,6 +692,10 @@
   // Screen cache — stores rendered screens for instant back-navigation.
   // -----------------------------------------------------------------------
   const screenCache = new Map(); // path → { html, title, timestamp }
+  // sseMeta reads the live stream-id carrier from a document (default:
+  // the live one). The SSE module re-reads it on every reconnect, so
+  // pointing it at a fresh session id is the whole recovery contract.
+  const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
   const MAX_CACHE_SIZE = 20;
 
   // True LRU: Map preserves insertion order, so delete+set on every
@@ -1449,6 +1453,13 @@
         const t = doc.querySelector('title')?.textContent || document.title;
         document.title = t;
         announceRoute(t);
+        // The full fetch re-renders chrome under the CURRENT session —
+        // if the server re-minted (restart/rotation/expiry), the fresh
+        // head carries the new stream id. Copy it onto the live meta so
+        // the SSE reconnect loop recovers here too, not only on the
+        // partial branch's X-Gofastr-Session path.
+        const fm = sseMeta(doc), lm = sseMeta();
+        if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
         const shell = doc.querySelector('[data-fui-layout]');
         const nm = doc.querySelector('main');
         if (shell && swapLayoutShell(shell)) {
@@ -1465,6 +1476,13 @@
       const resp = await fetch(path, {
         headers: { 'X-Gofastr-Navigate': '1' },
       });
+      // Apply a session rollover BEFORE the ok-check: the server re-mints
+      // (and names the fresh stream id) on 404 / policy-block partials
+      // too, and the browser has already stored the new cookie — if we
+      // threw first, the meta would keep the dead id and never recover
+      // (the next OK nav presents the now-valid cookie, so no header).
+      const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
+      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + rs));
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       // X-Gofastr-Location signals "server policy redirected this
@@ -1472,6 +1490,7 @@
       // the empty body in place." Set by uihost on a Redirect policy
       // outcome. The fetch above won't see a 303 (we deliberately use
       // 200 + header to survive redirect:'follow').
+      // (Session rollover already applied above, before the ok-check.)
       const redirectTo = resp.headers.get('X-Gofastr-Location');
       if (redirectTo) {
         // pushState was already called by the click handler with the
@@ -2134,6 +2153,11 @@
     // with a responsive overlay-drawer collapse. Wires open/close/swap
     // triggers + the focus/scroll-lock lifecycle.
     { name: 'panehost',         selector: '[data-fui-pane-host]' },
+    // Poll: page-level region polling. data-fui-poll="<duration>" +
+    // data-fui-poll-src="<url>" re-fetches the URL on the cadence and
+    // swaps the response HTML into the element. The module owns
+    // parse/clamp/jitter/pause/back-off/teardown; core only loads it.
+    { name: 'poll',         selector: '[data-fui-poll]' },
 ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

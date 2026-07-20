@@ -261,15 +261,21 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 			"closeOnClick":   d.CloseOnClickOutside,
 			"stylePath":      d.StylePath,
 			"chromePath":     chromePathFor(d),
-			"sse":            d.SSE,
 			"deepLinkKey":    d.DeepLinkKey,
 			"deepLinkValue":  d.DeepLinkValue,
 			"deepLinkParams": d.DeepLinkParams,
 		}
 		// statePath is omitted entirely when there are no signals so
 		// the runtime can skip the empty round-trip on every mount.
+		// pollMs is emitted ONLY when both conditions hold: there is
+		// something to poll (statePath exists) AND PollMS > 0. A
+		// widget without signals never carries pollMs even if PollMS
+		// was set — the runtime would have nothing to fetch.
 		if len(d.Signals) > 0 {
 			cfg["statePath"] = d.StatePath
+			if d.PollMS > 0 {
+				cfg["pollMs"] = d.PollMS
+			}
 		}
 		out = append(out, map[string]any{
 			"hidden": d.Hidden,
@@ -319,8 +325,8 @@ func (s *server) serveStyle(w http.ResponseWriter, _ *http.Request) {
 }
 
 // serveState returns the current value of every named signal as JSON.
-// The bootstrap fetches this on first mount; SSE bindings keep things
-// fresh after that.
+// The bootstrap fetches this on first mount; runtime polling (when
+// the widget declared Builder.Poll) keeps things fresh after that.
 func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]any{}
 	for name, src := range s.def.Signals {
@@ -331,6 +337,12 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 		out[name] = v
 	}
 	w.Header().Set("Content-Type", "application/json")
+	// no-store: this IS the freshness source the poll re-fetches. A
+	// cache serving a stale snapshot would make every poll tick report
+	// live (pollStatus increments) while showing old state, and a
+	// post-mutation pollNow would re-apply the stale value. The sibling
+	// catalog + chrome handlers already set no-store; /state needs it most.
+	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(out)
 }
 

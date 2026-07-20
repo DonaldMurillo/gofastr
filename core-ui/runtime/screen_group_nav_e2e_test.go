@@ -158,3 +158,61 @@ func TestGroupSlashlessIndexNavPreservesShell(t *testing.T) {
 		t.Error("slashless group index nav rebuilt the shell — trailing-slash prefix match failed")
 	}
 }
+
+// TestCrossLayoutNavCopiesSSEMeta pins the #112 rollover-recovery half
+// that lives on the cross-layout branch: a layout-changing navigation
+// full-fetches the destination, and the freshly fetched head's
+// gofastr-sse meta (rendered under the CURRENT session — re-minted if
+// the old token died) must be copied onto the live document's meta.
+// Without the copy, a server restart leaves the SSE reconnect loop
+// pinned to the dead stream id until a hard reload.
+func TestCrossLayoutNavCopiesSSEMeta(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	routes := `<script type="application/json" id="gofastr-routes">` +
+		`[{"path":"/","layout":"marketing"},{"path":"/app","layout":"app"}]` +
+		`</script>`
+	mux := http.NewServeMux()
+	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		_, _ = w.Write([]byte(js))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html><head>`+routes+
+			`<meta name="gofastr-sse" content="/__gofastr/sse?session=sess-OLD">`+
+			`</head><body><div data-fui-layout="marketing">`+
+			`<main role="main"><h1 id="home">Home</h1><a id="to-app" href="/app">App</a></main>`+
+			`</div><script src="/__gofastr/runtime.js"></script></body></html>`)
+	})
+	mux.HandleFunc("/app", func(w http.ResponseWriter, _ *http.Request) {
+		// The full fetch's head carries the CURRENT (re-minted) session.
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html><head>`+routes+
+			`<meta name="gofastr-sse" content="/__gofastr/sse?session=sess-NEW">`+
+			`</head><body><div data-fui-layout="app">`+
+			`<main role="main"><h1 id="app-screen">App</h1></main>`+
+			`</div><script src="/__gofastr/runtime.js"></script></body></html>`)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	ctx := newSeedBrowserCtx(t)
+
+	var meta string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#home`, chromedp.ByID),
+		chromedp.Click(`#to-app`, chromedp.ByID),
+		chromedp.WaitVisible(`#app-screen`, chromedp.ByID),
+		chromedp.Evaluate(`document.querySelector('meta[name="gofastr-sse"]')?.getAttribute('content')`, &meta),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if meta != "/__gofastr/sse?session=sess-NEW" {
+		t.Errorf("live SSE meta = %q after cross-layout nav, want the fetched head's sess-NEW — rollover recovery lost on the full-fetch branch", meta)
+	}
+}

@@ -31,7 +31,7 @@
 //	    Slot("header", headerComponent).
 //	    Slot("body",   bodyComponent).
 //	    Signal("page", pageSignalSrc).
-//	    SSE("/.kiln/events", "world_edit", "page").
+//	    Poll(15 * time.Second).
 //	    RPC("POST", "/kiln/tool/reset_session", resetHandler)
 //
 //	widget.Mount(app, def)
