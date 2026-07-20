@@ -50,7 +50,7 @@ var docIntents = []docIntent{
 		Path: []string{"Overview", "Tutorial: blueprint app", "Project structure"},
 		Docs: []docEntry{
 			{"overview", "Overview", "What the framework is, the two layers, and a linked map of every capability."},
-			{"tutorial-blueprint-app", "Tutorial: blueprint app", "The thesis tutorial: one blueprint becomes a UI + API you own, in about twenty minutes."},
+			{"tutorial-blueprint-app", "Tutorial: blueprint app", "The optional blueprint scaffolder end to end: one gofastr.yml becomes a UI + API you own, in about twenty minutes."},
 			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
 			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
 			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release — plus gofastr upgrade, the guided helper."},

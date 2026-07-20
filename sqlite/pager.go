@@ -187,9 +187,17 @@ type Pager struct {
 	dirty     []bool   // tracks which pages need flushing
 	pool      *pagePool
 
-	// Transaction COW: maps page number -> original page data (before first mutation in txn)
-	txnOrigPages map[int][]byte
-	inTxn        bool
+	// Transaction COW state. txnOrigPages captures the original content
+	// of pages mutated during the transaction so RollbackTxn can restore
+	// them. txnOrigPageCount and txnOrigHeader capture the page-count
+	// and database header at BEGIN time so a rollback fully undoes DDL
+	// that allocated pages or moved the schema-page pointer — without
+	// this, CREATE TABLE inside a rolled-back transaction leaks past
+	// ROLLBACK once the file is closed and reopened.
+	txnOrigPages     map[int][]byte
+	txnOrigPageCount int
+	txnOrigHeader    *DatabaseHeader
+	inTxn            bool
 }
 
 // pagePool manages reusable page-sized buffers.
@@ -471,52 +479,150 @@ func (p *Pager) Close() error {
 	return nil
 }
 
-// Snapshot returns a byte snapshot of all pager state for transaction rollback.
-func (p *Pager) Snapshot() []byte {
-	p.Flush()
-	size := p.file.Len()
-	data := make([]byte, size)
-	if size > 0 {
-		p.file.ReadAt(data, 0)
-	}
-	return data
+// pagerStatementSnapshot captures in-memory pager state at a statement
+// boundary so a failed statement can be rolled back WITHOUT disturbing
+// the enclosing transaction's COW rollback journal.
+//
+// This is intentionally separate from the transaction's own COW
+// rollback state (txnOrigPages). The transaction journal stores the
+// pre-BEGIN page images so ROLLBACK can restore the table to its
+// state before BEGIN. The statement snapshot stores the state at the
+// statement boundary so a failed statement inside the transaction
+// does not leak its partial writes into either the transaction's
+// eventual commit or its rollback.
+//
+// Critically, this snapshot NEVER flushes the page cache to disk.
+// Inside a transaction the on-disk file is unchanged (only the
+// in-memory cache is mutated); flushing here would race with the
+// outer transaction's eventual rollback, which assumes the file still
+// reflects the pre-BEGIN state. The old Snapshot()/Restore() pair
+// flushed and then replaced the file contents, which silently
+// discarded txnOrigPages' ability to recover pre-BEGIN images —
+// see TestRollbackAfterFailedStatement.
+type pagerStatementSnapshot struct {
+	pages     [][]byte
+	dirty     []bool
+	pageCount int
+	origPages map[int][]byte
+	// header holds the cached DatabaseHeader at the statement boundary
+	// so a failed mid-transaction statement that moved the schema-page
+	// pointer (or bumped DatabaseSizePages via AllocatePage) can be
+	// fully undone. Without this the header mutation leaks into the
+	// enclosing transaction's eventual commit.
+	header *DatabaseHeader
 }
 
-// Restore restores pager state from a snapshot.
-func (p *Pager) Restore(data []byte) error {
-	// Clear cache
-	p.pages = make([][]byte, 0, 64)
-	p.dirty = make([]bool, 0, 64)
-	// Write data back to file
-	if err := p.file.Truncate(int64(len(data))); err != nil {
-		return err
-	}
-	if len(data) > 0 {
-		if _, err := p.file.WriteAt(data, 0); err != nil {
-			return err
+// StatementSnapshot captures pager state for statement-level rollback.
+// It does not flush.
+func (p *Pager) StatementSnapshot() *pagerStatementSnapshot {
+	pages := make([][]byte, len(p.pages))
+	for i, pg := range p.pages {
+		if pg != nil {
+			cp := make([]byte, p.pageSize)
+			copy(cp, pg)
+			pages[i] = cp
 		}
 	}
-	// Recalculate page count
-	p.pageCount = len(data) / p.pageSize
-	if p.pageCount < 1 {
-		p.pageCount = 1
+	dirty := append([]bool(nil), p.dirty...)
+	origPages := make(map[int][]byte, len(p.txnOrigPages))
+	for k, v := range p.txnOrigPages {
+		cp := make([]byte, len(v))
+		copy(cp, v)
+		origPages[k] = cp
 	}
-	return nil
+	var hdr *DatabaseHeader
+	if p.header != nil {
+		cp := *p.header
+		hdr = &cp
+	}
+	return &pagerStatementSnapshot{
+		pages:     pages,
+		dirty:     dirty,
+		pageCount: p.pageCount,
+		origPages: origPages,
+		header:    hdr,
+	}
+}
+
+// StatementRestore restores pager state captured by StatementSnapshot,
+// including the transaction's pre-BEGIN page images, so statement
+// rollback composes with transaction rollback.
+func (p *Pager) StatementRestore(s *pagerStatementSnapshot) {
+	if s == nil {
+		return
+	}
+	p.pages = s.pages
+	p.dirty = s.dirty
+	p.pageCount = s.pageCount
+	p.txnOrigPages = s.origPages
+	if s.header != nil {
+		if p.header != nil {
+			*p.header = *s.header
+		} else {
+			cp := *s.header
+			p.header = &cp
+		}
+		// Rewrite page 1 so the cached page image matches the restored
+		// header struct (the schema-page pointer lives in page 1's
+		// header bytes via ReservedExpansion).
+		hdrBuf := WriteHeader(p.header)
+		if page1 := p.cachedPage(1); page1 != nil {
+			copy(page1, hdrBuf)
+			if 1 < len(p.dirty) {
+				p.dirty[1] = true
+			}
+		}
+	}
+}
+
+// IsInTxn reports whether a COW transaction is currently open. The
+// engine uses this to defer SaveSchema's Flush to commit time so DDL
+// inside a rolled-back transaction cannot leak to disk.
+func (p *Pager) IsInTxn() bool {
+	return p.inTxn
 }
 
 // BeginTxn starts a page-level COW transaction.
 func (p *Pager) BeginTxn() {
 	p.inTxn = true
 	p.txnOrigPages = make(map[int][]byte)
+	p.txnOrigPageCount = p.pageCount
+	if p.header != nil {
+		cp := *p.header
+		p.txnOrigHeader = &cp
+	} else {
+		p.txnOrigHeader = nil
+	}
 }
 
-// CommitTxn finishes a COW transaction, discarding saved originals.
+// CommitTxn finishes a COW transaction. SaveSchema defers its Flush
+// while a transaction is open, so a successful commit is the point at
+// which every transactional mutation (DDL page allocations, schema
+// page moves, row writes) actually reaches disk.
 func (p *Pager) CommitTxn() {
+	// Flush any deferred dirty pages accumulated during the txn.
+	if p.inTxn {
+		_ = p.Flush()
+	}
 	p.inTxn = false
 	p.txnOrigPages = nil
+	p.txnOrigPageCount = 0
+	p.txnOrigHeader = nil
 }
 
-// RollbackTxn restores only the pages that were modified during the transaction.
+// RollbackTxn undoes every page mutation the transaction made:
+//   - Restores the original content of pages that were modified in
+//     place (txnOrigPages).
+//   - Drops pages allocated during the txn from the cache and rolls
+//     pageCount back, so new schema/table B-tree roots vanish.
+//   - Restores the database header (page 1 + the cached struct),
+//     including the schema-page pointer — SetSchemaPage mutates the
+//     header directly and would otherwise leak a rolled-back DDL's
+//     schema location past reopen.
+//   - Truncates the file if it grew past txnOrigPageCount, so any
+//     pages flushed to disk before the rollback are removed too.
+//   - Flushes the restored state so a subsequent Close writes the
+//     pre-transaction image.
 func (p *Pager) RollbackTxn() error {
 	for pageNum, orig := range p.txnOrigPages {
 		if pageNum < len(p.pages) && p.pages[pageNum] != nil {
@@ -524,11 +630,53 @@ func (p *Pager) RollbackTxn() error {
 			p.dirty[pageNum] = true
 		}
 	}
+	// Drop newly allocated pages from the cache so their stale content
+	// cannot be flushed after the rollback.
+	if p.pageCount > p.txnOrigPageCount {
+		for i := p.txnOrigPageCount + 1; i <= p.pageCount && i < len(p.pages); i++ {
+			p.pages[i] = nil
+			if i < len(p.dirty) {
+				p.dirty[i] = false
+			}
+		}
+		p.pageCount = p.txnOrigPageCount
+	}
+	// Restore the cached header struct AND rewrite page 1 so the on-
+	// disk header matches (DatabaseSizePages + schema-page pointer).
+	if p.txnOrigHeader != nil {
+		if p.header != nil {
+			*p.header = *p.txnOrigHeader
+		} else {
+			cp := *p.txnOrigHeader
+			p.header = &cp
+		}
+		hdrBuf := WriteHeader(p.header)
+		if page1 := p.cachedPage(1); page1 != nil {
+			copy(page1, hdrBuf)
+			if 1 < len(p.dirty) {
+				p.dirty[1] = true
+			}
+		}
+	}
+	// If pages were already flushed past the original length (e.g. an
+	// outer auto-commit statement before the explicit BEGIN, or a
+	// prior transaction), truncate the file back so the rolled-back
+	// pages do not resurface on reopen.
+	if p.file != nil {
+		origLen := int64(p.txnOrigPageCount) * int64(p.pageSize)
+		if p.file.Len() > origLen {
+			if err := p.file.Truncate(origLen); err != nil {
+				return err
+			}
+		}
+	}
 	if err := p.Flush(); err != nil {
 		return err
 	}
 	p.inTxn = false
 	p.txnOrigPages = nil
+	p.txnOrigPageCount = 0
+	p.txnOrigHeader = nil
 	return nil
 }
 

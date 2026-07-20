@@ -2,7 +2,7 @@ package sqlite
 
 import "sort"
 
-func (e *Engine) validateUniqueIndex(table *TableInfo, columns []string) error {
+func (e *Engine) validateUniqueIndex(table *TableInfo, columns []string, predicate Expr) error {
 	cursor, err := e.btree.Scan(table.RootPage)
 	if err != nil {
 		return err
@@ -16,6 +16,13 @@ func (e *Engine) validateUniqueIndex(table *TableInfo, columns []string) error {
 			return err
 		}
 		row := recordToValues(record, table)
+		// A partial unique index only constrains rows the predicate
+		// selects. Skip rows outside the predicate entirely so a table
+		// that already has duplicates in un-indexed rows can still
+		// receive a partial unique index, mirroring SQLite.
+		if predicate != nil && !rowMatchesPredicate(table, row, predicate) {
+			continue
+		}
 		key := make([]Value, len(columns))
 		hasNull := false
 		for i, column := range columns {

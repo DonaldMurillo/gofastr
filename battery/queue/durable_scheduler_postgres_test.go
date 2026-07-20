@@ -45,3 +45,32 @@ func TestPG_DurableSchedulerVersionCASIgnoresTimestampRoundTrip(t *testing.T) {
 			len(jobs), version, nextRun.Format(time.RFC3339Nano), occurrences, queueRows)
 	}
 }
+
+// The tz column round-trips through Postgres: a cron schedule registered in
+// a non-UTC location fires at its local wall-clock time.
+func TestPG_CronNonUTCTick(t *testing.T) {
+	db := pgtest.DB(t)
+	q := newDurableTestQueue(t, db)
+	sched, err := NewDurableScheduler(q, DurableSchedulerConfig{
+		OwnerID: "postgres-tz", LeaseDuration: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	base := time.Date(2026, 1, 15, 1, 0, 0, 0, loc)
+	if err := sched.Cron("daily-local", "0 2 * * *").Job("job", nil).RegisterAt(base); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	tick := time.Date(2026, 1, 15, 2, 0, 0, 0, loc)
+	if err := sched.RunOnce(context.Background(), tick.Add(time.Microsecond)); err != nil {
+		t.Fatalf("RunOnce at local 02:00: %v", err)
+	}
+	if jobs := pendingJobs(t, q); len(jobs) != 1 {
+		t.Fatalf("enqueued %d jobs at local 02:00 tick, want 1", len(jobs))
+	}
+}

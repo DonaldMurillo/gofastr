@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -61,13 +62,13 @@ type DurableScheduleBuilder struct {
 	priority    int
 	maxAttempts int
 }
-
 type durableSchedule struct {
 	id          string
 	jobType     string
 	payload     json.RawMessage
 	interval    time.Duration
 	cronSpec    string
+	tz          string
 	lane        string
 	priority    int
 	maxAttempts int
@@ -169,9 +170,12 @@ func (b *DurableScheduleBuilder) MaxAttempts(n int) *DurableScheduleBuilder {
 }
 
 // Register persists the schedule definition without resetting an existing
-// watermark.
+// watermark. The anchor is UTC, so cron field evaluation keeps the
+// historical "0 2 * * *" = 02:00 UTC semantics regardless of the server's
+// local zone; register with RegisterAt and a time in a named IANA zone to
+// evaluate a cron spec in that zone's wall-clock time.
 func (b *DurableScheduleBuilder) Register() error {
-	return b.RegisterAt(time.Now())
+	return b.RegisterAt(time.Now().UTC())
 }
 
 // RegisterAt is Register with a deterministic first-run anchor.
@@ -191,7 +195,11 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 		if err != nil {
 			return err
 		}
-		next = sc.Next(base)
+		// DST-aware next-fire: a spec naming a wall-clock minute that the
+		// location's next spring-forward will skip lands at the transition
+		// instant (vixie/cronie parity), not silently a day later. See
+		// durable_scheduler_dst.go.
+		next = nextFire(sc, base.Location(), base, time.Time{})
 	} else {
 		if b.interval <= 0 {
 			return errors.New("queue: durable interval must be positive")
@@ -204,15 +212,16 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 	}
 	_, err := b.scheduler.queue.db.Exec(
 		fmt.Sprintf(`INSERT INTO %s
-			(id, job_type, payload, interval_ns, cron_spec,
+			(id, job_type, payload, interval_ns, cron_spec, tz,
 			 lane, priority, max_attempts,
 			 next_run, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 			ON CONFLICT(id) DO UPDATE SET
 				job_type=excluded.job_type,
 				payload=excluded.payload,
 				interval_ns=excluded.interval_ns,
 				cron_spec=excluded.cron_spec,
+				tz=excluded.tz,
 				lane=excluded.lane,
 				priority=excluded.priority,
 				max_attempts=excluded.max_attempts,
@@ -220,7 +229,7 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 				version=%s.version+1`,
 			b.scheduler.queue.schedulerSchedulesTable(),
 			b.scheduler.queue.schedulerSchedulesTable()),
-		b.id, b.jobType, payload, int64(b.interval), b.cronSpec,
+		b.id, b.jobType, payload, int64(b.interval), b.cronSpec, tzName(base.Location()),
 		b.lane, b.priority, b.maxAttempts,
 		next.UTC(), time.Now().UTC(),
 	)
@@ -253,9 +262,24 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 	for _, schedule := range due {
 		ticks, nextRun, err := schedule.dueTicks(now, s.maxCatchUpOccurrences)
 		if err != nil {
-			return true, err
+			// A single corrupted schedule (genuine data corruption, since
+			// tz and cadence-change mismatches are handled inside dueTicks)
+			// must not abort evaluation of the remaining due schedules.
+			// Surface it via the logger so operators notice, then continue.
+			slog.Default().Error("queue: durable scheduler skipping schedule",
+				"schedule_id", schedule.id, "err", err.Error())
+			continue
 		}
 		if len(ticks) == 0 {
+			// Even with no ticks due, the cursor may need advancing — the
+			// cadence-change path returns a corrected nextRun strictly after
+			// the stored watermark. Persist it so the schedule stops waking
+			// the loop every heartbeat and resumes firing on the new cadence.
+			if !nextRun.IsZero() && !nextRun.Equal(schedule.nextRun) {
+				if err := s.commitOccurrences(ctx, schedule, nil, nextRun, fence, now); err != nil {
+					return true, err
+				}
+			}
 			continue
 		}
 		if s.beforeOccurrenceCommit != nil {
@@ -392,7 +416,7 @@ func (s *DurableScheduler) acquireLease(ctx context.Context, now time.Time) (int
 
 func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durableSchedule, error) {
 	rows, err := s.queue.db.QueryContext(ctx,
-		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec,
+		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec, tz,
 				lane, priority, max_attempts,
 				next_run, updated_at, version
 			FROM %s WHERE next_run <= $1 ORDER BY next_run, id`,
@@ -410,7 +434,7 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 		var intervalNS int64
 		var nextRun, updatedAt any
 		if err := rows.Scan(&row.id, &row.jobType, &payload, &intervalNS,
-			&row.cronSpec, &row.lane, &row.priority, &row.maxAttempts,
+			&row.cronSpec, &row.tz, &row.lane, &row.priority, &row.maxAttempts,
 			&nextRun, &updatedAt, &row.version); err != nil {
 			return nil, err
 		}
@@ -526,7 +550,17 @@ func (s *DurableScheduler) commitOccurrences(
 			Priority:     schedule.priority,
 			MaxAttempts:  schedule.maxAttempts,
 			CreatedAt:    now,
-			ScheduledAt:  tick,
+			// A cron-fired job is the execution of an already-due event, so it
+			// must be dequeue-eligible the moment it is committed. `tick` is the
+			// audit instant (preserved in the occurrence's scheduled_tick
+			// column) but the job's scheduled_at is the worker readiness gate:
+			// binding it to a future tick (which only happens when RunOnce is
+			// driven with a future test clock; in production tick ≤ wall clock)
+			// would stall the job until that tick and break test drains that
+			// cycle the queue via Dequeue. Use the earlier of tick or the
+			// process wall clock so overdue production ticks are preserved
+			// while future test-time ticks become immediately ready.
+			ScheduledAt: earliestTime(tick, s.queue.now()),
 		}); err != nil {
 			return err
 		}
@@ -571,6 +605,7 @@ func (s *DurableScheduler) ensureTables() error {
 			payload TEXT NOT NULL,
 			interval_ns BIGINT NOT NULL DEFAULT 0,
 			cron_spec TEXT NOT NULL DEFAULT '',
+			tz TEXT NOT NULL DEFAULT '',
 			lane TEXT NOT NULL DEFAULT '',
 			priority INTEGER NOT NULL DEFAULT 0,
 			max_attempts INTEGER NOT NULL DEFAULT 0,
@@ -605,6 +640,14 @@ func (s *DurableScheduler) ensureTables() error {
 	}
 	if err := s.ensureHardeningSchema(); err != nil {
 		return err
+	}
+	// With the scheduler tables freshly ensured (or pre-existing), canonicalize
+	// their legacy timestamps too. NewDBQueue already ran this pass, but it may
+	// have run before these tables existed (a host that constructs DBQueue
+	// first, then DurableScheduler). The pass is idempotent and existence-
+	// checked, so re-running on already-canonical rows is a cheap no-op.
+	if err := s.queue.normalizeLegacyTimestamps(context.Background()); err != nil {
+		return fmt.Errorf("normalize scheduler legacy timestamps: %w", err)
 	}
 	return nil
 }

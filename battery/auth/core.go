@@ -569,12 +569,17 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 	}
 }
 
-// writeAuthError is the shared error response helper (kept from original).
+// writeAuthError is the shared error helper: it emits the canonical flat
+// envelope {"error","success","code"} with Content-Type application/json —
+// the shape framework/crud/crud.go's writeJSONError uses and the generated
+// SDKs and sdkdocs document. battery/auth keeps a local copy because
+// batteries may not import framework/crud.
 func writeAuthError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]any{
 		"error":   msg,
 		"success": false,
+		"code":    status,
 	})
 }

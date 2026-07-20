@@ -110,6 +110,7 @@ type InsertStmt struct {
 	Values    [][]Expr    // Multiple rows of values
 	Select    *SelectStmt // INSERT ... SELECT ...
 	OrIgnore  bool
+	OrReplace bool
 	Conflict  *InsertConflict
 	Returning []string
 }
