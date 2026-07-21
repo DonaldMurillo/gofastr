@@ -94,6 +94,51 @@ func TestLLMsTxt_NotConfigured404(t *testing.T) {
 	}
 }
 
+// ── /llms-full.txt ─────────────────────────────────────────────────
+
+func TestLLMsFullTxt_HTTP(t *testing.T) {
+	ds := newAgentReadyHost(WithLLMsFullTxt("# Everything\n\ncorpus body\n"))
+	srv := httptest.NewServer(ds)
+	t.Cleanup(srv.Close)
+
+	body, resp := getBody(t, srv.URL+"/llms-full.txt")
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type %q want text/plain", ct)
+	}
+	if body != "# Everything\n\ncorpus body\n" {
+		t.Errorf("content not served verbatim:\n%s", body)
+	}
+}
+
+func TestLLMsFullTxt_NotConfigured404(t *testing.T) {
+	ds := newAgentReadyHost(WithLLMsTxt("T", "s", nil)) // index tier only
+	srv := httptest.NewServer(ds)
+	t.Cleanup(srv.Close)
+	if _, resp := getBody(t, srv.URL+"/llms-full.txt"); resp.StatusCode != 404 {
+		t.Errorf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestLLMsFullTxt_Bundle(t *testing.T) {
+	ds := newAgentReadyHost(WithAgentReady(AgentReadyConfig{
+		Title:    "Site",
+		FullText: "# Full docs\n",
+	}))
+	srv := httptest.NewServer(ds)
+	t.Cleanup(srv.Close)
+
+	if body, resp := getBody(t, srv.URL+"/llms-full.txt"); resp.StatusCode != 200 || body != "# Full docs\n" {
+		t.Errorf("bundle FullText: status %d body %q", resp.StatusCode, body)
+	}
+	// The index tier still serves alongside it.
+	if body, resp := getBody(t, srv.URL+"/llms.txt"); resp.StatusCode != 200 || !strings.Contains(body, "# Site") {
+		t.Errorf("index tier missing: status %d body %q", resp.StatusCode, body)
+	}
+}
+
 // ── A2A agent card ─────────────────────────────────────────────────
 
 func TestAgentCard_JSON(t *testing.T) {

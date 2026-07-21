@@ -48,6 +48,14 @@ type AgentReadyConfig struct {
 	// (requires WithPublicLLMMD) and the per-screen /llm.md docs.
 	Sections []LLMsTxtSection
 
+	// FullText, when non-empty, is served verbatim at /llms-full.txt —
+	// the second tier of the llmstxt.org convention: /llms.txt is the
+	// small index an agent fetches first; /llms-full.txt is the whole
+	// docs corpus in one markdown file for agents that want everything
+	// in a single request. Link it from a Sections entry so agents
+	// reading the index can find it.
+	FullText string
+
 	// AgentCard, when non-nil, serves /.well-known/agent-card.json plus
 	// the legacy /.well-known/agent.json alias. When nil but the bundle
 	// is on, a minimal card is derived from Title/Summary/BaseURL.
@@ -191,6 +199,9 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 	// OpenAPI service-desc link — opt-in (path the host serves the spec at).
 	ar.openAPI = cfg.OpenAPIEndpoint
 
+	// Full-corpus tier — opt-in content for /llms-full.txt.
+	ar.fullTxt = cfg.FullText
+
 	// Content-Signal robots directive — opt-in preference string.
 	ar.contentSignals = cfg.ContentSignals
 
@@ -201,7 +212,8 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 		// option may already have installed ds.agentReady; the early return
 		// leaves it untouched rather than wiping it.
 		if ar.llms == nil && ar.card == nil && ar.allowAIBots == nil &&
-			ar.baseURL == "" && !ar.contentNeg && ar.openAPI == "" && ar.contentSignals == "" {
+			ar.baseURL == "" && !ar.contentNeg && ar.openAPI == "" && ar.contentSignals == "" &&
+			ar.fullTxt == "" {
 			return
 		}
 		// Merge into any config a granular option (WithMarkdownNegotiation,
@@ -245,6 +257,9 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 		if ar.contentSignals != "" {
 			cur.contentSignals = ar.contentSignals
 		}
+		if ar.fullTxt != "" {
+			cur.fullTxt = ar.fullTxt
+		}
 		ds.agentReady = cur
 	}
 }
@@ -257,6 +272,20 @@ func WithLLMsTxt(title, summary string, sections []LLMsTxtSection) Option {
 			ds.agentReady = &agentReadyConfig{}
 		}
 		ds.agentReady.llms = &llmsCfg{title: title, summary: summary, sections: sections}
+	}
+}
+
+// WithLLMsFullTxt serves the given markdown verbatim at /llms-full.txt —
+// the full-corpus tier of the llmstxt.org convention. Pair it with
+// WithLLMsTxt (or the bundle) and add a Sections link to /llms-full.txt
+// so agents reading the index can find it. Granular alternative to the
+// WithAgentReady bundle's FullText field.
+func WithLLMsFullTxt(content string) Option {
+	return func(ds *UIHost) {
+		if ds.agentReady == nil {
+			ds.agentReady = &agentReadyConfig{}
+		}
+		ds.agentReady.fullTxt = content
 	}
 }
 
@@ -308,6 +337,7 @@ type agentReadyConfig struct {
 	contentNeg     bool
 	openAPI        string // OpenAPI spec path → Link: rel="service-desc"
 	contentSignals string // Content-Signal: robots directive value
+	fullTxt        string // /llms-full.txt content (full-corpus tier)
 }
 
 type llmsCfg struct {
@@ -326,6 +356,9 @@ func (ds *UIHost) mountAgentReady(r *router.Router) {
 	}
 	if ds.agentReady.llms != nil {
 		r.Get("/llms.txt", http.HandlerFunc(ds.handleLLMsTxt))
+	}
+	if ds.agentReady.fullTxt != "" {
+		r.Get("/llms-full.txt", http.HandlerFunc(ds.handleLLMsFullTxt))
 	}
 	if ds.agentReady.card != nil {
 		// A2A v1.0 canonical path + the older agent.json alias so both
@@ -346,6 +379,19 @@ func (ds *UIHost) handleLLMsTxt(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(renderLLMsTxt(cfg, ds)))
+}
+
+// handleLLMsFullTxt serves the full-corpus tier verbatim. text/plain to
+// match /llms.txt — agents fetch both the same way.
+func (ds *UIHost) handleLLMsFullTxt(w http.ResponseWriter, req *http.Request) {
+	full := ds.agentReady.fullTxt
+	if full == "" {
+		http.NotFound(w, req)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write([]byte(full))
 }
 
 // renderLLMsTxt builds the markdown per llmstxt.org: H1 title, blockquote
