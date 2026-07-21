@@ -69,7 +69,7 @@ func runDev(args []string) {
 	}
 
 	fmt.Printf("\n  %s Dev server with hot reload\n\n", bold("GoFastr"))
-	info("Watching %s for changes (.go, .js, .css, .html)...", dir)
+	info("Watching %s for changes (.go, .js, .css, .html, .md)...", dir)
 	if pkg != "." {
 		info("Building %s", pkg)
 	}
@@ -241,8 +241,9 @@ func killServer(mu *sync.Mutex, cmd **exec.Cmd) {
 }
 
 // scanModTimes walks the directory and records the latest mod time of
-// source and embedded-asset files. Go embeds .js, .css, and .html at
-// build time, so changes to those files also require a rebuild.
+// source and embedded-asset files. Go embeds .js, .css, .html, and .md
+// at build time (framework docs, llm.md sources), so changes to those
+// files also require a rebuild.
 func scanModTimes(dir string) map[string]time.Time {
 	result := make(map[string]time.Time)
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -256,7 +257,7 @@ func scanModTimes(dir string) map[string]time.Time {
 		}
 		ext := filepath.Ext(path)
 		switch ext {
-		case ".go", ".js", ".css", ".html":
+		case ".go", ".js", ".css", ".html", ".md":
 			result[path] = info.ModTime()
 		}
 		return nil

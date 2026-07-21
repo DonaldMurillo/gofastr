@@ -2,8 +2,9 @@
 
 `framework.NewApp()` and `uihost.New()` auto-wire a tiny SSE-based
 livereload pair when the process is running under `gofastr dev`. Edit
-a `.go` file, the binary restarts, and every open browser tab refreshes
-on its own — no host-app code required.
+a watched file (`.go`, `.js`, `.css`, `.html`, or `.md` — the
+extensions Go embeds), the binary restarts, and every open browser tab
+refreshes on its own — no host-app code required.
 
 The rebuilt server runs with the project directory (`--dir`) as its
 working directory — the same cwd it gets when run by hand — so relative

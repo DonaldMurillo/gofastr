@@ -304,6 +304,15 @@ func TestScanModTimesPicksUpHTMLFiles(t *testing.T) {
 	}
 }
 
+func TestScanModTimesPicksUpMDFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeDevFile(t, filepath.Join(dir, "llm.md"), "# doc")
+	result := scanModTimes(dir)
+	if len(result) != 1 {
+		t.Fatalf("scanModTimes found %d files, want 1 (.md is embedded like .js/.css/.html): %+v", len(result), result)
+	}
+}
+
 func TestScanModTimesIgnoresVendorGitNodeModules(t *testing.T) {
 	dir := t.TempDir()
 	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
