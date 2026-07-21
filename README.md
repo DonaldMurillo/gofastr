@@ -6,130 +6,9 @@ GoFastr is an experimental full-stack Go framework. It covers the whole stack �
 
 Start with [one entity in Go](#quickstart); scaffolding a whole app at once from a `gofastr.yml` blueprint is optional, and the running app never needs it.
 
-## Why this exists
-
-This is a personal project first — a way to practice building something
-large alongside AI. A few things I wanted to dig into:
-
-- **Solidify my web-tech foundations.** Rebuild the stack from the
-  socket up so the fundamentals stop feeling like magic.
-- **Attack UI generation from a different angle.** My background is in
-  Node, so I wanted to see what server-rendered, server-driven UI looks
-  like when you take the heavy client framework off the table and
-  generate the markup in a compiled language instead.
-- **Work in a compiled language.** Most of what I've built is in Node,
-  where mistakes surface at runtime, in production. I wanted to know what
-  it's like when a compiler catches them first — when you ship one binary
-  and types actually hold up under a refactor.
-- **Skip the convention-vs-configuration false choice.** When it's your
-  own framework you don't have to pick a side — you get opinionated
-  defaults *and* a hatch down to plain stdlib code in the same app.
-- **Build something large, fun, and open source with AI.** Most of this
-  repo was written alongside coding agents, so the workflow itself is
-  part of the experiment.
-- **Build for agents on both sides.** In production, the agents your
-  users bring call the app's data over MCP — with the same login and
-  permissions the users have. While you build, `gofastr dev` hands your
-  coding agent the running app's routes, config, and logs over MCP. Both
-  fall out of writing plain, readable Go.
-
 > **Status:** early / `v0.x` — MIT-licensed and usable, but the API may change
 > between releases, so pin a version (`go get …@v0.x.y`). A `v1.0.0` tag will
 > mark the stability promise. Ship at your own risk until then.
-
-> **Validation status (honest version).** The full declaration-to-app pipeline is
-> proven end-to-end by [`examples/meridian`](examples/meridian/) — the flagship:
-> one `gofastr.yml` becomes a SaaS billing console (customers, subscriptions,
-> invoices with status workflows, MRR + charts) *and* its marketing site, auth,
-> RBAC, and admin back-office, with writable app screens (add/edit/delete) — and
-> by [`examples/ecommerce`](examples/ecommerce/), which adds owner-scoped per-user
-> data (orders/order-items per customer, anonymous → 401, cross-user → 404). Both
-> are secure by default and carry a generated end-to-end test suite — every
-> screen, the full create→edit→delete lifecycle, and RBAC asserted — the suite
-> itself generated, not hand-written (each app is scaffolded from its
-> `gofastr.yml` and then extended in owned Go, e.g. Meridian's `sdkdocs` mount
-> and brand CSS). The quickstarts
-> below are CI-gated by executable-README tests
-> (`cmd/gofastr/readme_quickstart_test.go`): the smallest-app Go snippet is
-> extracted, compiled, booted, and curled, and the blueprint block is
-> generated, built, booted, and curled. GoFastr's own
-> build-mode tooling and docs site are built on the framework (see
-> [Built with GoFastr](#built-with-gofastr)). What's still open is external
-> production adoption and load — this is a thesis framework, and that's stated
-> plainly rather than dressed up.
-
-**The promise:** opinionated where you want defaults, plain Go where you don't.
-You declare an entity and the framework emits the database, the REST API, and a
-server-rendered UI as ordinary Go you can read, debug, and step through — then it
-gets out of the way. When it's in your way, drop to `core/` and write `net/http`.
-It's a full-stack framework, not a runtime that owns your control flow.
-
-This cuts both ways in the AI era. On the **output** side, an agent writing your
-code is a reason for that code to be *more* readable, not less — plain Go on
-disk, no reflection to discover entities, no code generated behind your back. On the **input**
-side, an agent doesn't have to learn a framework to add a feature: it writes the
-same entity declaration you would. And once the app is running, the agents your
-users bring reach it through MCP — reading its routes, config, and docs, and
-calling the per-entity tools with the same login and permissions the users have —
-instead of re-reading your files.
-
----
-
-## The design bets
-
-Most Go web frameworks assume a human will hand-write every route, query, validator, migration, form, and authorization check. That glue is exactly what an entity declaration can generate — and increasingly the declaration is written by an AI agent, which makes readable output matter more, not less. GoFastr's bets:
-
-- **Two layers.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Use the framework for the common path; drop to core and write plain `net/http` when it's in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)
-- **One entity, many outputs.** Declare an entity once and get a SQL schema, typed Go models, REST routes, an OpenAPI spec, and MCP tools — plus server-rendered screens when you add the UI. All emitted together, so they start consistent.
-- **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main` — not a black box the tool rewrites behind your back. Registration is ordinary Go in the generated files; no reflection discovers your entities, and no platform sits between your binary and your server.
-- **Secure scopes are part of the declaration.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (fail-closed 403), `multi_tenant` scopes by tenant — and `gofastr validate` flags entities whose PII-shaped field names (email, phone, address, …) are exposed without any of them.
-- **Agent tools are part of the same output, not an add-on.** The same declaration emits an OpenAPI 3 spec and five MCP tools per entity (`products_list`, `products_create`, …) that respect the same owner/RBAC scopes.
-- **Batteries included, not embedded.** Auth, cache, email, queue, search, storage are independent packages behind narrow interfaces — swap any one without forking.
-- **A blueprint scaffolds the whole app when you want a head start.** A single `gofastr.yml` generates both halves — SQL + REST + OpenAPI + MCP *and* the screens — in one pass, consistent from the start. Then it's plain Go you own and edit, and the running app never needs the blueprint again. Fully optional: start with [one entity in Go](#quickstart) and never touch it. See [`examples/meridian`](examples/meridian/) for the whole pipeline — a SaaS console + marketing site — live and tested.
-
-## The repo in 60 seconds
-
-| Directory | What it is | Depend on it when… |
-|---|---|---|
-| `core/` | Stdlib-only primitives — router, query, schema, render, mcp, openapi, migrate. Each usable on its own. | you want plain Go building blocks, no framework. |
-| `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting its focused runtime subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
-| `core-ui/` | Server-driven UI runtime — `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
-| `battery/` | Opt-in infrastructure — admin, auth, cache, email, embed, log, notify, print, queue, search, setup, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
-| `cmd/gofastr` | The CLI — `init`, `generate`, `pack` (lossy app→blueprint snapshot), `migrate`, `build`, `dev`, `docs`, and more. | you're scaffolding or generating code. |
-| `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
-| `examples/` | Runnable reference apps — the `meridian` blueprint flagship (a SaaS billing console + marketing site), the `ecommerce` blueprint pipeline, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
-
-You import `framework` and the batteries you opt into — not each of its subpackages. The
-subpackage split is an internal seam (see `framework/ARCHITECTURE.md`); the
-public API is `framework.X` plus the batteries you reach for.
-
-## Built with GoFastr
-
-In production:
-
-- **[Barcode & QR Code Maker](https://barcode.donaldmurillo.com/)** — a live,
-  no-signup tool to generate and read barcodes and QR codes (QR, EAN-13, UPC-A,
-  Code 128, Data Matrix, and more) as PNG, SVG, or PDF, with CSV/Excel batch
-  export to a ZIP, a REST API, and an MCP server. Built and running on GoFastr.
-
-The framework also runs on itself — GoFastr's own tooling and reference apps are
-built on the same `framework`, `core-ui`, and batteries a user app imports:
-
-- **`examples/site`**, the docs site and canonical component gallery, runs on
-  `framework` + `framework/ui` + `framework/uihost` + the `core-ui` pattern
-  presets + `battery/print`.
-- **`examples/meridian`**, the declaration-first flagship, *is* generated from a
-  `gofastr.yml` blueprint — a believable SaaS billing console (customers,
-  subscriptions, invoices with status workflows, MRR + charts) *and* its public
-  marketing site, auth, RBAC, and admin back-office, with writable app screens
-  (add/edit/delete) and the generated end-to-end test suite green.
-- **`examples/ecommerce`**, a second blueprint pipeline (five entities,
-  owner-scoped orders), is generated the same way and exercised by its own
-  end-to-end test.
-
-These are the tools the project uses on itself, not demos wired up for a
-screenshot. External production adopters are the part still ahead of us — see
-the validation status near the top.
 
 ## Quickstart
 
@@ -172,6 +51,11 @@ For how a flat app grows into `internal/<domain>/` as boundaries appear, see
 [project structure](framework/docs/content/project-structure.md) — structure
 follows the app, not the other way around.
 
+This quickstart is tested, not illustrative: CI extracts the program above
+from this README, compiles it, boots it, and curls it, and the blueprint
+quickstart below is generated, built, booted, and curled the same way
+(`cmd/gofastr/readme_quickstart_test.go`).
+
 Install the CLIs straight from GitHub:
 
 ```bash
@@ -191,27 +75,6 @@ go run ./examples/blog               # minimal blog with auto-CRUD on SQLite
 Linked Git worktrees automatically get isolated local ports and database
 paths when isolation is enabled in `gofastr.yml`; see
 [`framework/docs/content/isolation.md`](framework/docs/content/isolation.md).
-
-### Updating GoFastr
-
-The module dependency and the installed CLI are versioned
-independently — keep them on the same release. Read the [release
-notes](https://github.com/DonaldMurillo/gofastr/releases) for the
-release you're moving to first (breaking changes are marked), then:
-
-```bash
-go list -m -versions github.com/DonaldMurillo/gofastr    # what's available
-go get github.com/DonaldMurillo/gofastr@vX.Y.Z           # the app dependency
-go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z  # the CLI (doesn't update with go.mod)
-go mod tidy && go build ./... && go test ./...
-go list -m github.com/DonaldMurillo/gofastr              # confirm the selected version
-```
-
-Or let the CLI guide it: `gofastr upgrade` reads your `go.mod`, lists
-every migration note between your version and the target, and points at
-the affected lines in your code (`--apply` runs the steps). Full guide:
-[`framework/docs/content/upgrading.md`](framework/docs/content/upgrading.md)
-or `gofastr docs upgrading`.
 
 With the blog example running (`go run ./examples/blog`), open
 <http://localhost:8080> and try:
@@ -332,6 +195,27 @@ example — but a like-for-like entity generates the same shapes. The blueprint
 serves under its `app.api_prefix` (default `/api`), while the Go form mounts at the
 bare path unless you add `framework.WithAPIPrefix`.
 
+### Updating GoFastr
+
+The module dependency and the installed CLI are versioned
+independently — keep them on the same release. Read the [release
+notes](https://github.com/DonaldMurillo/gofastr/releases) for the
+release you're moving to first (breaking changes are marked), then:
+
+```bash
+go list -m -versions github.com/DonaldMurillo/gofastr    # what's available
+go get github.com/DonaldMurillo/gofastr@vX.Y.Z           # the app dependency
+go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z  # the CLI (doesn't update with go.mod)
+go mod tidy && go build ./... && go test ./...
+go list -m github.com/DonaldMurillo/gofastr              # confirm the selected version
+```
+
+Or let the CLI guide it: `gofastr upgrade` reads your `go.mod`, lists
+every migration note between your version and the target, and points at
+the affected lines in your code (`--apply` runs the steps). Full guide:
+[`framework/docs/content/upgrading.md`](framework/docs/content/upgrading.md)
+or `gofastr docs upgrading`.
+
 ## What you get from one entity declaration
 
 | Output           | Auto-generated                                                                  |
@@ -412,20 +296,77 @@ app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
 
 If the hook errors, the parent write is rolled back.
 
-### Testing against Postgres
+## The design bets
 
-The framework's tests fan over both SQLite and Postgres. With Docker
-running, every dialect-aware test runs on both engines automatically:
+Most Go web frameworks assume a human will hand-write every route, query, validator, migration, form, and authorization check. That glue is exactly what an entity declaration can generate — and increasingly the declaration is written by an AI agent, which makes readable output matter more, not less. GoFastr's bets:
 
-```bash
-make test            # SQLite only, fast
-make test-pg         # both dialects via testcontainers (Docker)
-make test-pg-env     # both dialects, points at TEST_POSTGRES_DSN
-make test-race       # race detector across the whole repo
-```
+- **Two layers.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Use the framework for the common path; drop to core and write plain `net/http` when it's in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)
+- **One entity, many outputs.** Declare an entity once and get a SQL schema, typed Go models, REST routes, an OpenAPI spec, and MCP tools — plus server-rendered screens when you add the UI. All emitted together, so they start consistent.
+- **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main` — not a black box the tool rewrites behind your back. Registration is ordinary Go in the generated files; no reflection discovers your entities, and no platform sits between your binary and your server.
+- **Secure scopes are part of the declaration.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (fail-closed 403), `multi_tenant` scopes by tenant — and `gofastr validate` flags entities whose PII-shaped field names (email, phone, address, …) are exposed without any of them.
+- **Agent tools are part of the same output, not an add-on.** The same declaration emits an OpenAPI 3 spec and five MCP tools per entity (`products_list`, `products_create`, …) that respect the same owner/RBAC scopes.
+- **Batteries included, not embedded.** Auth, cache, email, queue, search, storage are independent packages behind narrow interfaces — swap any one without forking.
+- **A blueprint scaffolds the whole app when you want a head start.** A single `gofastr.yml` generates both halves — SQL + REST + OpenAPI + MCP *and* the screens — in one pass, consistent from the start. Then it's plain Go you own and edit, and the running app never needs the blueprint again. Fully optional: start with [one entity in Go](#quickstart) and never touch it. See [`examples/meridian`](examples/meridian/) for the whole pipeline — a SaaS console + marketing site — live and tested.
 
-Each Postgres test gets its own schema for isolation; the container is
-shared across the whole `go test` invocation so cold-start is amortised.
+This cuts both ways in the AI era. On the **output** side, an agent writing your
+code is a reason for that code to be *more* readable, not less — plain Go on
+disk, no reflection to discover entities, no code generated behind your back. On the **input**
+side, an agent doesn't have to learn a framework to add a feature: it writes the
+same entity declaration you would. And once the app is running, the agents your
+users bring reach it through MCP — reading its routes, config, and docs, and
+calling the per-entity tools with the same login and permissions the users have —
+instead of re-reading your files.
+
+## The repo in 60 seconds
+
+| Directory | What it is | Depend on it when… |
+|---|---|---|
+| `core/` | Stdlib-only primitives — router, query, schema, render, mcp, openapi, migrate. Each usable on its own. | you want plain Go building blocks, no framework. |
+| `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting its focused runtime subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
+| `core-ui/` | Server-driven UI runtime — `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
+| `battery/` | Opt-in infrastructure — admin, auth, cache, email, embed, log, notify, print, queue, search, setup, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
+| `cmd/gofastr` | The CLI — `init`, `generate`, `pack` (lossy app→blueprint snapshot), `migrate`, `build`, `dev`, `docs`, and more. | you're scaffolding or generating code. |
+| `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
+| `examples/` | Runnable reference apps — the `meridian` blueprint flagship (a SaaS billing console + marketing site), the `ecommerce` blueprint pipeline, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
+
+You import `framework` and the batteries you opt into — not each of its subpackages. The
+subpackage split is an internal seam (see `framework/ARCHITECTURE.md`); the
+public API is `framework.X` plus the batteries you reach for.
+
+## Built with GoFastr
+
+In production:
+
+- **[Barcode & QR Code Maker](https://barcode.donaldmurillo.com/)** — a live,
+  no-signup tool to generate and read barcodes and QR codes (QR, EAN-13, UPC-A,
+  Code 128, Data Matrix, and more) as PNG, SVG, or PDF, with CSV/Excel batch
+  export to a ZIP, a REST API, and an MCP server. Built and running on GoFastr.
+
+The framework also runs on itself — GoFastr's own tooling and reference apps are
+built on the same `framework`, `core-ui`, and batteries a user app imports:
+
+- **`examples/site`**, the docs site and canonical component gallery, runs on
+  `framework` + `framework/ui` + `framework/uihost` + the `core-ui` pattern
+  presets + `battery/print`.
+- **`examples/meridian`**, the declaration-first flagship, *is* generated from a
+  `gofastr.yml` blueprint — a believable SaaS billing console (customers,
+  subscriptions, invoices with status workflows, MRR + charts) *and* its public
+  marketing site, auth, RBAC, and admin back-office, with writable app screens
+  (add/edit/delete) and the generated end-to-end test suite green.
+- **`examples/ecommerce`**, a second blueprint pipeline (five entities,
+  owner-scoped orders), is generated the same way and exercised by its own
+  end-to-end test.
+
+Both blueprint apps are secure by default and carry a generated end-to-end
+test suite — every screen, the full create→edit→delete lifecycle, and RBAC
+asserted — the suite itself generated, not hand-written (each app is
+scaffolded from its `gofastr.yml` and then extended in owned Go, e.g.
+Meridian's `sdkdocs` mount and brand CSS).
+
+These are the tools the project uses on itself, not demos wired up for a
+screenshot. External production adopters are the part still ahead of us —
+this is a thesis framework, and that's stated plainly rather than dressed
+up. See [Project status](#project-status).
 
 ## The packages
 
@@ -538,6 +479,33 @@ GoFastr is pre-1.0 and explicitly not stable:
 - `core-ui/` is the active research frontier — APIs change between commits.
 - The CLI binary blank-imports only `github.com/mattn/go-sqlite3`. To run migrations against Postgres, build a custom binary that imports your driver of choice.
 
+## Why this exists
+
+This is a personal project first — a way to practice building something
+large alongside AI. A few things I wanted to dig into:
+
+- **Solidify my web-tech foundations.** Rebuild the stack from the
+  socket up so the fundamentals stop feeling like magic.
+- **Attack UI generation from a different angle.** My background is in
+  Node, so I wanted to see what server-rendered, server-driven UI looks
+  like when you take the heavy client framework off the table and
+  generate the markup in a compiled language instead.
+- **Work in a compiled language.** Most of what I've built is in Node,
+  where mistakes surface at runtime, in production. I wanted to know what
+  it's like when a compiler catches them first — when you ship one binary
+  and types actually hold up under a refactor.
+- **Skip the convention-vs-configuration false choice.** When it's your
+  own framework you don't have to pick a side — you get opinionated
+  defaults *and* a hatch down to plain stdlib code in the same app.
+- **Build something large, fun, and open source with AI.** Most of this
+  repo was written alongside coding agents, so the workflow itself is
+  part of the experiment.
+- **Build for agents on both sides.** In production, the agents your
+  users bring call the app's data over MCP — with the same login and
+  permissions the users have. While you build, `gofastr dev` hands your
+  coding agent the running app's routes, config, and logs over MCP. Both
+  fall out of writing plain, readable Go.
+
 ## Contributing
 
 This repo is a personal research tree at the moment. Issues and PRs are welcome but expect strong opinions about scope: the goal is a framework an AI agent can drive end-to-end, not a kitchen-sink CMS.
@@ -547,6 +515,21 @@ Before pushing, the `.githooks/pre-push` gate runs `go test -race -count=1 ./...
 ```bash
 git config core.hooksPath .githooks
 ```
+
+### Testing against Postgres
+
+The framework's tests fan over both SQLite and Postgres. With Docker
+running, every dialect-aware test runs on both engines automatically:
+
+```bash
+make test            # SQLite only, fast
+make test-pg         # both dialects via testcontainers (Docker)
+make test-pg-env     # both dialects, points at TEST_POSTGRES_DSN
+make test-race       # race detector across the whole repo
+```
+
+Each Postgres test gets its own schema for isolation; the container is
+shared across the whole `go test` invocation so cold-start is amortised.
 
 ## License
 
