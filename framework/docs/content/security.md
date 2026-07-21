@@ -13,15 +13,22 @@ registering entities, which also disables it):
 ```go
 middleware.Recovery()
 middleware.RequestID()
-middleware.Logging()
 middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
 middleware.Timeout(30 * time.Second)
 ```
+
+(`WithIdempotency` / `WithI18n` insert their middleware between
+`RequestID` and `SecurityHeaders` when configured.)
 
 `Recovery` is outermost so a panic anywhere below it produces a clean
 `500`. `RequestID` runs next so every later log line carries the trace
 ID. `Timeout` is innermost — a `30s` deadline that cancels the request
 context if the handler hangs.
+
+Access logging is deliberately not in the chain: `battery/log` owns
+structured access logging when registered, and an app that just wants a
+basic line can add `middleware.LoggingFn(app.Logger)` itself — running
+both would double-log every request.
 
 ## SecurityHeaders
 
@@ -210,7 +217,7 @@ Each has a `*_test.go` you can read for the exact behaviour.
   vector for any endpoint that writes. Set `MaxOpenConns(1)` on the
   `*sql.DB`, keep writes off the request path where possible (queue +
   background worker), or run Postgres. Full discussion in
-  `docs/migrations.md` §Concurrency model.
+  [migrations](migrations.md) §Concurrency model.
 
 ## Owner isolation and `CrossOwnerRead`
 

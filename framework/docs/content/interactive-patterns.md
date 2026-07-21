@@ -29,7 +29,7 @@ provides three mutation primitives triggered by click:
 | Attribute | Effect |
 |---|---|
 | `data-fui-signal-set="name:value"` | Sets signal `name` to `value` |
-| `data-fui-signal-inc="name"` | Increments signal `name` by 1 (or by `data-fui-signal-delta`) |
+| `data-fui-signal-inc="name"` | Increments signal `name` by 1 — or use `"name:delta"` for another step |
 | `data-fui-signal-toggle="name"` | Flips signal `name` between `"true"` and `"false"` |
 
 Any element carrying a `data-fui-signal` attribute renders the current

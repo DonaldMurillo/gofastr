@@ -124,7 +124,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **popover** — `core-ui/widget/preset.Popover` — click-triggered floating surface
 - **floatingpanel** — `core-ui/widget/preset.FloatingPanel` — corner-anchored persistent panel
 - **tooltip** — `framework/ui.Tooltip` — CSS-only hover/focus reveal
-- **toast** — `core-ui/widget/preset.ToastStack` — SSE-pushed slide-in notifications
+- **toast** — `core-ui/widget/preset.ToastStack` — client-side slide-in notifications (no SSE, no server queue)
 - **notificationbell** — `framework/ui.NotificationBell` — bell + unread badge + popover dropdown
 - **confirmaction** — `framework/ui.ConfirmAction` — trigger + alertdialog Modal
 - **commandpalette** — *(also under Selection — same component)*
