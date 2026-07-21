@@ -1989,7 +1989,7 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 	hero := html.Div(html.DivConfig{Class: "components-overview__hero"},
 		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Components · v"+siteVersion)),
 		html.Heading(html.HeadingConfig{Level: 1, Class: "components-overview__title"},
-			render.Text("Every UI surface, "),
+			render.Text("Every component, "),
 			html.Span(html.TextConfig{Class: "amber"}, render.Text("as typed Go")),
 			render.Text("."),
 		),
