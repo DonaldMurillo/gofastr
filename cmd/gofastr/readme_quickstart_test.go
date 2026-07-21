@@ -1,15 +1,17 @@
 package main
 
-// Executable-README gate.
+// Executable-docs gate.
 //
-// The README's "Declare an app (blueprint)" quickstart is a contract:
-// the yaml block must load, validate, generate, build, and serve. These
-// tests extract the actual fenced blocks from README.md and execute
-// them, so any README edit that breaks the quickstart fails CI loudly.
-// The extraction is anchored on purpose — if the section heading, the
-// `# gofastr.yml` yaml block, or the documented command sequence moves
-// or changes shape, the gate fails and the README must be fixed to stay
-// runnable (not the other way around).
+// The README's three quickstart programs (core / one entity / screens)
+// and the blueprint tutorial's quickstart are contracts: each fenced
+// block must compile (or load+generate), build, boot, and serve. These
+// tests extract the actual fences from README.md and
+// framework/docs/content/tutorial-blueprint-app.md and execute them, so
+// any edit that breaks a quickstart fails CI loudly. The extraction is
+// anchored on purpose — if a section heading, the `# gofastr.yml` yaml
+// block, or the documented command sequence moves or changes shape, the
+// gate fails and the doc must be fixed to stay runnable (not the other
+// way around).
 
 import (
 	"bytes"
@@ -27,12 +29,13 @@ import (
 	"time"
 )
 
-const readmeBlueprintHeading = "### Declare an app (blueprint)"
+// The blueprint quickstart lives in the tutorial doc, not the README —
+// the README points at the CLI and the tutorial carries the executable
+// path. The gate follows the content: it extracts the tutorial's own
+// fences and runs them.
+const blueprintTutorialPath = "framework/docs/content/tutorial-blueprint-app.md"
 
-// readmeQuickstartHeading anchors the smallest-app Go snippet — the first
-// program the README shows. Its section ends at the first ### heading,
-// "### Updating GoFastr" (readmeSection splits at the next ## or ###).
-const readmeQuickstartHeading = "## Quickstart"
+const readmeBlueprintHeading = "## 1. Blueprint → running app"
 
 // mcpTrueRe matches the entity-config `MCP:  true,` line without pinning the
 // exact gofmt column alignment — `MCP:` followed by ≥1 whitespace then `true`.
@@ -99,9 +102,21 @@ func fencedBlock(section, lang, mustContain string) (string, error) {
 	return "", fmt.Errorf("README anchor missing: no ```%s fence containing %q under %q — the quickstart must keep this block; README edits that drop or rename it break the executable-README gate", lang, mustContain, readmeBlueprintHeading)
 }
 
-func readmeQuickstartBlocks(t *testing.T) (yamlBlock, bashBlock string) {
+func blueprintTutorialContent(t *testing.T) string {
 	t.Helper()
-	section, err := readmeSection(readmeContent(t), readmeBlueprintHeading)
+	raw, err := os.ReadFile(filepath.Join(repoRootDir(t), blueprintTutorialPath))
+	if err != nil {
+		t.Fatalf("read %s: %v", blueprintTutorialPath, err)
+	}
+	return string(raw)
+}
+
+// readmeQuickstartBlocks extracts the tutorial's blueprint quickstart:
+// the gofastr.yml fence, the generate/dev command fence, and the
+// separate mkdir/go-mod-init fence that names the module.
+func readmeQuickstartBlocks(t *testing.T) (yamlBlock, bashBlock, initBlock string) {
+	t.Helper()
+	section, err := readmeSection(blueprintTutorialContent(t), readmeBlueprintHeading)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +128,11 @@ func readmeQuickstartBlocks(t *testing.T) (yamlBlock, bashBlock string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return yamlBlock, bashBlock
+	initBlock, err = fencedBlock(section, "bash", "go mod init")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return yamlBlock, bashBlock, initBlock
 }
 
 // quickstartModule extracts <module> from the documented
@@ -140,19 +159,22 @@ func TestReadmeAnchorMissingFails(t *testing.T) {
 }
 
 func TestReadmeQuickstartShapeIsStable(t *testing.T) {
-	yamlBlock, bashBlock := readmeQuickstartBlocks(t)
-	for _, want := range []string{"entities:", "type: relation"} {
+	yamlBlock, bashBlock, initBlock := readmeQuickstartBlocks(t)
+	for _, want := range []string{"entities:", "screens:"} {
 		if !strings.Contains(yamlBlock, want) {
-			t.Fatalf("README blueprint block lost %q — the quickstart yaml must stay a real relation-bearing blueprint:\n%s", want, yamlBlock)
+			t.Fatalf("tutorial blueprint block lost %q — the quickstart yaml must keep both halves (entities AND screens):\n%s", want, yamlBlock)
 		}
 	}
 	// `gofastr dev`, not `go run .`: only the dev server hot-reloads, and the
 	// quickstart is the development on-ramp. TestReadmeQuickstartBlueprintRuns
 	// keeps the sequence executable by building and booting the same app.
-	for _, want := range []string{"go mod init", "gofastr generate --from=gofastr.yml", "go mod tidy", "gofastr dev"} {
+	for _, want := range []string{"gofastr validate", "gofastr generate --from=gofastr.yml", "go mod tidy", "gofastr dev"} {
 		if !strings.Contains(bashBlock, want) {
-			t.Fatalf("README quickstart command sequence lost %q — the documented path must stay the executable path:\n%s", want, bashBlock)
+			t.Fatalf("tutorial quickstart command sequence lost %q — the documented path must stay the executable path:\n%s", want, bashBlock)
 		}
+	}
+	if !strings.Contains(initBlock, "go mod init") {
+		t.Fatalf("tutorial quickstart lost its `go mod init` step:\n%s", initBlock)
 	}
 }
 
@@ -161,16 +183,16 @@ func TestReadmeQuickstartShapeIsStable(t *testing.T) {
 // validation, and the explicit loop keeps the gate meaningful even if
 // that validation ever loosens.
 func TestReadmeBlueprintRelationsResolve(t *testing.T) {
-	yamlBlock, bashBlock := readmeQuickstartBlocks(t)
+	yamlBlock, _, initBlock := readmeQuickstartBlocks(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, yamlBlock)
 	bp, err := loadBlueprint(path)
 	if err != nil {
-		t.Fatalf("README blueprint does not validate: %v", err)
+		t.Fatalf("tutorial blueprint does not validate: %v", err)
 	}
-	if module := quickstartModule(t, bashBlock); bp.App.Module != module {
-		t.Fatalf("README blueprint module %q != quickstart `go mod init %s`", bp.App.Module, module)
+	if module := quickstartModule(t, initBlock); bp.App.Module != module {
+		t.Fatalf("tutorial blueprint module %q != quickstart `go mod init %s`", bp.App.Module, module)
 	}
 	declared := map[string]bool{}
 	for _, decl := range bp.Entities {
@@ -188,33 +210,35 @@ func TestReadmeBlueprintRelationsResolve(t *testing.T) {
 	}
 }
 
-// Drift gate (c): the README blueprint must pass the repo's own
+// Drift gate (c): the tutorial blueprint must pass the repo's own
 // validator end to end — full blueprint validation (loadBlueprint) plus
-// the unscoped-PII lint that `gofastr validate` enforces. The README
+// the unscoped-PII lint that `gofastr validate` enforces. The tutorial
 // can never again ship a quickstart that the validator rejects.
 func TestReadmeBlueprintPassesValidator(t *testing.T) {
-	yamlBlock, _ := readmeQuickstartBlocks(t)
+	yamlBlock, _, _ := readmeQuickstartBlocks(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, yamlBlock)
 	bp, err := loadBlueprint(path)
 	if err != nil {
-		t.Fatalf("README.md quickstart blueprint fails validateBlueprint: %v", err)
+		t.Fatalf("tutorial quickstart blueprint fails validateBlueprint: %v", err)
 	}
 	for _, f := range lintUnscopedPII(bp) {
-		t.Errorf("README.md quickstart blueprint fails `gofastr validate` (unscoped-pii): %s", f.Message())
+		t.Errorf("tutorial quickstart blueprint fails `gofastr validate` (unscoped-pii): %s", f.Message())
 	}
 }
 
-// The executable quickstart: write the README's blueprint, run the
+// The executable quickstart: write the tutorial's blueprint, run the
 // generate pipeline in-process, build the generated app against the
-// working tree, boot it, and hit a CRUD endpoint.
+// working tree, boot it, and assert the three claims the tutorial's own
+// curl block makes: the entity API answers, the screen renders, and the
+// MCP tools are listed.
 func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
-	yamlBlock, bashBlock := readmeQuickstartBlocks(t)
+	yamlBlock, _, initBlock := readmeQuickstartBlocks(t)
 	repoRoot := repoRootDir(t)
 	dir := t.TempDir()
 
-	module := quickstartModule(t, bashBlock)
+	module := quickstartModule(t, initBlock)
 	goVersion, err := repoGoVersion(repoRoot)
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
@@ -272,30 +296,195 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 	baseURL := "http://" + addr
 	// Blueprint apps mount entity JSON under /api by default (app.api_prefix),
 	// leaving bare paths free for HTML screens.
-	waitForHTTP(t, baseURL+"/api/posts", &output)
-	resp, err := http.Get(baseURL + "/api/posts")
+	waitForHTTP(t, baseURL+"/api/notes", &output)
+	resp, err := http.Get(baseURL + "/api/notes")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /api/posts = %d, want 200\n%s", resp.StatusCode, output.String())
+		t.Fatalf("GET /api/notes = %d, want 200 (public: true)\n%s", resp.StatusCode, output.String())
+	}
+
+	// The server-rendered screen from the blueprint's `screens:` half.
+	screenResp, err := http.Get(baseURL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	screenBody, _ := io.ReadAll(screenResp.Body)
+	screenResp.Body.Close()
+	if screenResp.StatusCode != http.StatusOK || !strings.Contains(string(screenBody), "My Notes") {
+		t.Fatalf("GET / = %d — want 200 with the generated screen (tutorial curls `grep \"My Notes\"`)\n%s", screenResp.StatusCode, output.String())
+	}
+
+	// The MCP tools the tutorial's third curl lists.
+	listReq := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
+	mcpResp, err := http.Post(baseURL+"/mcp", "application/json", strings.NewReader(listReq))
+	if err != nil {
+		t.Fatalf("POST /mcp tools/list: %v\n%s", err, output.String())
+	}
+	mcpBody, _ := io.ReadAll(mcpResp.Body)
+	mcpResp.Body.Close()
+	if !strings.Contains(string(mcpBody), "notes_list") {
+		t.Fatalf("POST /mcp tools/list missing notes_list (got: %s)\n%s", mcpBody, output.String())
 	}
 }
 
-// readmeGoQuickstart extracts the smallest-app Go program — the first ```go
-// fence under "## Quickstart" (the one with a func main).
-func readmeGoQuickstart(t *testing.T) string {
+// The Quickstart shows one complete program per layer, each under its
+// own pinned heading. All three go through the same executable gate.
+const (
+	readmeCoreHeading       = "### Core only"
+	readmeEntityHeading     = "### Framework"
+	readmeDonaldsWayHeading = "### Donald's Way"
+)
+
+// readmeProgram extracts the complete Go program (the first ```go fence
+// with a func main) under the given pinned heading.
+func readmeProgram(t *testing.T, heading string) string {
 	t.Helper()
-	section, err := readmeSection(readmeContent(t), readmeQuickstartHeading)
+	section, err := readmeSection(readmeContent(t), heading)
 	if err != nil {
 		t.Fatal(err)
 	}
 	block, err := fencedBlock(section, "go", "func main()")
 	if err != nil {
-		t.Fatalf("README smallest-app Go snippet missing: %v", err)
+		t.Fatalf("README program under %q missing: %v", heading, err)
 	}
 	return block
+}
+
+// buildAndBootReadmeProgram compiles an extracted README program against
+// the working tree (the one transform: the hard-coded :8080 becomes a
+// free port), boots it, and waits until readyPath responds. The process
+// is killed via t.Cleanup.
+func buildAndBootReadmeProgram(t *testing.T, src, module, binName, readyPath string) (string, *bytes.Buffer) {
+	t.Helper()
+	repoRoot := repoRootDir(t)
+	dir := t.TempDir()
+	addr := freeAddr(t)
+	src = strings.Replace(src, `":8080"`, `"`+addr+`"`, 1)
+
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module " + module + "\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	writeTestFile(t, filepath.Join(dir, "go.mod"), goMod)
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	writeTestFile(t, filepath.Join(dir, "main.go"), src)
+
+	appBin := testExecutablePath(filepath.Join(dir, binName))
+	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
+	buildCmd.Dir = dir
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("README %s program did not build: %v\n%s", binName, err, out)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, appBin)
+	cmd.Dir = dir
+	output := &bytes.Buffer{}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Start(); err != nil {
+		cancel()
+		t.Fatalf("start README %s: %v", binName, err)
+	}
+	t.Cleanup(func() {
+		cancel()
+		_ = cmd.Wait()
+	})
+
+	baseURL := "http://" + addr
+	waitForHTTP(t, baseURL+readyPath, output)
+	return baseURL, output
+}
+
+// TestReadmeCoreQuickstartRuns gates the "Core only" program: the plain
+// core/router + core/render + core/handler app must serve its HTML page
+// and its typed JSON route exactly as the README shows.
+func TestReadmeCoreQuickstartRuns(t *testing.T) {
+	src := readmeProgram(t, readmeCoreHeading)
+	baseURL, output := buildAndBootReadmeProgram(t, src, "readme.example/core", "readme-core-app", "/")
+
+	resp, err := http.Get(baseURL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "Hello from core") {
+		t.Fatalf("GET / = %d, body %q — want 200 with the rendered heading\n%s", resp.StatusCode, body, output.String())
+	}
+
+	pingResp, err := http.Get(baseURL + "/api/ping")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pingBody, _ := io.ReadAll(pingResp.Body)
+	pingResp.Body.Close()
+	if pingResp.StatusCode != http.StatusOK || !strings.Contains(string(pingBody), `"status":"ok"`) {
+		t.Fatalf("GET /api/ping = %d, body %q — want the typed JSON response\n%s", pingResp.StatusCode, pingBody, output.String())
+	}
+}
+
+// TestReadmeDonaldsWayQuickstartRuns gates the full-app program: the
+// server-rendered screen serves HTML at /, the OwnerField entity
+// answers anonymous API reads with 401, the auth battery's routes are
+// mounted (login answers 400 on an empty body, NOT 404), and the MCP
+// endpoint lists the entity tools — the four claims the section makes.
+func TestReadmeDonaldsWayQuickstartRuns(t *testing.T) {
+	src := readmeProgram(t, readmeDonaldsWayHeading)
+	if !strings.Contains(src, "OwnerField") {
+		t.Fatalf("README Donald's Way program lost OwnerField — it backs the anonymous-401 claim:\n%s", src)
+	}
+	// The Init error must stay checked: an unchecked Init boots a server
+	// whose auth routes silently never mounted (the bug this replaced).
+	if !strings.Contains(src, "if err := authMgr.Init(fwApp); err != nil") {
+		t.Fatalf("README Donald's Way program no longer checks authMgr.Init's error — auth fails silently without it:\n%s", src)
+	}
+	baseURL, output := buildAndBootReadmeProgram(t, src, "readme.example/donaldsway", "readme-donaldsway-app", "/")
+
+	resp, err := http.Get(baseURL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "My notes") {
+		t.Fatalf("GET / = %d — want 200 with the server-rendered screen (body %q)\n%s", resp.StatusCode, body, output.String())
+	}
+
+	apiResp, err := http.Get(baseURL + "/api/notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiResp.Body.Close()
+	if apiResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous GET /api/notes = %d, want 401 (OwnerField is secure by default)\n%s", apiResp.StatusCode, output.String())
+	}
+
+	loginResp, err := http.Post(baseURL+"/auth/login", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginResp.Body.Close()
+	if loginResp.StatusCode == http.StatusNotFound {
+		t.Fatalf("POST /auth/login = 404 — the auth battery's routes did not mount\n%s", output.String())
+	}
+
+	listReq := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
+	mcpResp, err := http.Post(baseURL+"/mcp", "application/json", strings.NewReader(listReq))
+	if err != nil {
+		t.Fatalf("POST /mcp tools/list: %v\n%s", err, output.String())
+	}
+	mcpBody, _ := io.ReadAll(mcpResp.Body)
+	mcpResp.Body.Close()
+	if !strings.Contains(string(mcpBody), "notes_list") {
+		t.Fatalf("POST /mcp tools/list missing notes_list (got: %s)\n%s", mcpBody, output.String())
+	}
 }
 
 // TestReadmeGoQuickstartRuns is the executable gate for the smallest-app Go
@@ -317,7 +506,7 @@ func readmeGoQuickstart(t *testing.T) string {
 // (issue #65 secure-by-default and the WithMCP requirement) while the snippet
 // went untested.
 func TestReadmeGoQuickstartRuns(t *testing.T) {
-	src := readmeGoQuickstart(t)
+	src := readmeProgram(t, readmeEntityHeading)
 	// Guard the three source-level claims so a future edit can't drop the
 	// flags and leave the runtime assertions passing for the wrong reason.
 	// MCP:true is matched with a regexp (not the exact gofmt-aligned literal)
@@ -332,46 +521,7 @@ func TestReadmeGoQuickstartRuns(t *testing.T) {
 		t.Fatalf("README smallest-app snippet lost MCP:true — it backs the /mcp tool-registration claim:\n%s", src)
 	}
 
-	repoRoot := repoRootDir(t)
-	dir := t.TempDir()
-	addr := freeAddr(t)
-	src = strings.Replace(src, `":8080"`, `"`+addr+`"`, 1)
-
-	goVersion, err := repoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	goMod := "module readme.example/smallest\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	writeTestFile(t, filepath.Join(dir, "go.mod"), goMod)
-	if err := copyGoSum(repoRoot, dir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
-	writeTestFile(t, filepath.Join(dir, "main.go"), src)
-
-	appBin := testExecutablePath(filepath.Join(dir, "readme-smallest-app"))
-	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
-	buildCmd.Dir = dir
-	if output, err := buildCmd.CombinedOutput(); err != nil {
-		t.Fatalf("README smallest-app snippet did not build: %v\n%s", err, output)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	cmd := exec.CommandContext(ctx, appBin)
-	cmd.Dir = dir
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start README smallest-app: %v", err)
-	}
-	defer func() {
-		cancel()
-		_ = cmd.Wait()
-	}()
-
-	baseURL := "http://" + addr
-	waitForHTTP(t, baseURL+"/posts", &output)
+	baseURL, output := buildAndBootReadmeProgram(t, src, "readme.example/smallest", "readme-smallest-app", "/posts")
 
 	// Anonymous READ — the documented "complete server" is reachable, and
 	// Public: true opts out of secure-by-default so it does not 401.
