@@ -5,6 +5,30 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.38.1] - 2026-07-21
+
+Post-v0.38.0 cleanup: one e2e deflake and the doc drift found by the
+maturity review.
+
+### Fixed
+
+- **Kiln stop-button e2e no longer flakes under CI load.**
+  `TestBrowser_StopButtonCancelsInFlightTurn` gave the stop button 2s to
+  appear, but since #112 the panel learns `in_flight` solely from its
+  2s±10% `/state` poll — the next tick can land after the deadline on a
+  loaded runner (which is how the post-#121 main CI run went red while
+  the identical PR run passed). Both waits now use the 5s poll-cadence
+  headroom every sibling test in the file already uses.
+- **`AuthorizeTopic` doc example matches the shipped hook.** The
+  live-dashboards tenant-isolation example used a pre-ship
+  `(ctx, topic, sid) error` signature; the shipped hook is
+  `(ctx, topic) bool` with silent-drop semantics (rejected topics are
+  simply never subscribed). `presence.md` already had it right.
+- **Doc drift.** `ROADMAP.md` §7 (the v0.20 assessment findings) is
+  deleted — all six items shipped between v0.36.0 and v0.38.0, so the
+  section was advertising fixed security holes as open work — and
+  `CONTRIBUTING.md` named go 1.26.4 while `go.mod` says 1.26.5.
+
 ## [0.38.0] - 2026-07-20
 
 The reactivity release (#112). The interactive layer is now truly

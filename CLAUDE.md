@@ -110,6 +110,9 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 
 ## Where to look first
 
+- Reviewing maturity or choosing roadmap work? Check
+  [`docs/agent-notes.md`](docs/agent-notes.md) before trusting an older status
+  section at face value.
 - New UI / any styling decision? It goes in the design system, full stop
   (Hard rules 7–8). Start in `framework/ui/` if it composes intent
   (PageHeader, FormField, DataTable, Hero, AuthCard). Use `core-ui/html`
