@@ -167,7 +167,7 @@ func setupServer() *framework.App {
 		// ContentNegotiation field below.
 		uihost.WithPublicLLMMD(),
 		uihost.WithAppIcon(appIconPNG()),
-		uihost.WithDescription("The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, a REST API, MCP tools, and migrations — plain Go you own. Early (v0.x)."),
+		uihost.WithDescription("The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder — plain Go you own. Early (v0.x)."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
 			URL:   "https://gofastr.dev",
@@ -186,8 +186,13 @@ func setupServer() *framework.App {
 		// sitemap's canonical origin above, so one origin drives all
 		// discovery URLs.
 		uihost.WithAgentReady(uihost.AgentReadyConfig{
-			Title:              "GoFastr",
-			Summary:            "The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, a REST API, migrations, and MCP tools an agent can call with the same login and permissions your users have. Docs and tools at /mcp. Early (v0.x).",
+			Title:   "GoFastr",
+			Summary: "The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, REST endpoints, an OpenAPI spec, SQL migrations, a typed query builder, and MCP tools an agent can call with the same login and permissions your users have. Docs and tools at /mcp. Early (v0.x).",
+			// Tiered docs index (llmstxt.org): every embedded framework
+			// doc as a raw-markdown link, grouped by the /docs/ reading
+			// intents; /llms-full.txt is the whole corpus in one file.
+			Sections:           llmsSections(),
+			FullText:           llmsFullText(),
 			AllowAIBots:        &allowAIBots,
 			ContentNegotiation: &markdownNeg,
 			ContentSignals:     "ai-train=no, search=yes, ai-input=yes",
@@ -257,6 +262,10 @@ func setupServer() *framework.App {
 	// fuzzy match over a curated route catalog — no DB roundtrip.
 	widget.MountBuilder(fwApp.Router(), paletteBuilder)
 	fwApp.Router().Post("/__site/palette", http.HandlerFunc(servePaletteSearch))
+
+	// Raw markdown for every embedded doc at /docs/<name>.md — the URLs
+	// /llms.txt indexes. The HTML page stays at /docs/<name>.
+	registerDocMarkdownRoutes(fwApp.Router())
 
 	// SectionMenu mobile drawers — the docs + components navs each mount a
 	// preset.Drawer once (backdrop + click-outside/Escape close + scroll lock
