@@ -5,12 +5,10 @@ package main
 //
 //   HERO        version tag · h1 with amber span · 2 ledes · 2 CTAs · install
 //               RHS: code block (blog/main.go, hand-tokenized in code_block.go)
-//   §01         server-rendered UI — SSR/islands model | screen mock
-//   §02         explore grid — 6 route cards into the main areas of the site
-//   §03         arch cards: core / framework / batteries / core-ui
-//   §04         split pane: framework MCP (left) | Kiln (right + terminal mock)
-//   §05         6 example cards, each with path + name + desc + run command
-//   §06         v0.x status disclosure + roadmap dl
+//   §01         the numbers — countable claims, measured or test-gated
+//   §02         server-rendered UI — SSR/islands model | screen mock
+//   §03         explore grid — 6 route cards into the main areas of the site
+//   §04         built with gofastr — production app + the Meridian flagship
 //
 // Sections live inside <main> only — .nav and .foot are owned by the
 // HeaderComponent / FooterComponent. Built with core-ui/html primitives
@@ -28,9 +26,17 @@ package main
 // =============================================================================
 
 import (
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"strconv"
+	"sync"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -47,6 +53,7 @@ func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *HomeScreen) Render() render.HTML {
 	return render.Join(
 		heroSection(),
+		numbersSection(),
 		realAppSection(),
 		exploreSection(),
 		builtWithSection(),
@@ -250,7 +257,86 @@ func heroCodeTabs() render.HTML {
 }
 
 // -----------------------------------------------------------------------------
-// §01 — Server-rendered UI. Most Go frameworks stop at the API; GoFastr renders
+// §01 — The numbers. A strip of countable claims, each one either measured by
+// this running binary (runtime size, doc count) or pinned by a test in the
+// repo (numbers_gate_test.go). No adjectives — a skeptical reader can verify
+// every value.
+// -----------------------------------------------------------------------------
+
+// measuredRuntimeGz is the gzipped size of the core client runtime,
+// measured at first render from the same embedded source this site
+// serves — e.g. "12.2 KB". BestCompression matches the size-budget test
+// (core-ui/runtime/budget_test.go) so the page and the gate report the
+// same number.
+var measuredRuntimeGz = sync.OnceValue(func() string {
+	src, err := runtime.RuntimeJS()
+	if err != nil {
+		return "n/a"
+	}
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return "n/a"
+	}
+	if _, err := zw.Write([]byte(src)); err != nil {
+		return "n/a"
+	}
+	if err := zw.Close(); err != nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f KB", float64(buf.Len())/1024)
+})
+
+// embeddedDocCount counts the docs corpus this binary carries, minus the
+// folder's own README (not a page). Same source as /docs and /llms.txt.
+var embeddedDocCount = sync.OnceValue(func() string {
+	topics, err := docs.List()
+	if err != nil {
+		return "n/a"
+	}
+	n := 0
+	for _, t := range topics {
+		if t.Name != "README" {
+			n++
+		}
+	}
+	return strconv.Itoa(n)
+})
+
+func numbersSection() render.HTML {
+	stat := func(value, label, check string) render.HTML {
+		return html.Div(html.DivConfig{Class: "num-card"},
+			html.Span(html.TextConfig{Class: "num-card__value"}, render.Text(value)),
+			html.Span(html.TextConfig{Class: "num-card__label"}, render.Text(label)),
+			html.Paragraph(html.TextConfig{Class: "num-card__check"}, render.Text(check)),
+		)
+	}
+
+	grid := html.Div(html.DivConfig{Class: "num__grid"},
+		stat(measuredRuntimeGz(), "of client JavaScript, gzipped",
+			"The core runtime, measured from this running binary. Feature modules load on demand; a size-budget test fails the build if any of them grows."),
+		stat(embeddedDocCount(), "docs embedded in every binary",
+			"gofastr docs reads them offline. This site serves the same files under /docs and /llms.txt; agents query them over MCP."),
+		stat("5", "MCP tools per entity",
+			"list, get, create, update, delete — each dispatches through the app router, so the caller's login and permissions apply."),
+		stat("2", "databases",
+			"SQLite and Postgres. No MySQL, no Mongo."),
+		stat("1", "binary to deploy",
+			"go build emits it. No Node, no platform, no telemetry."),
+		stat("0", "npm packages",
+			"There is no package.json in the repo. The client runtime is checked-in JS the binary serves."),
+	)
+
+	head := sectionHead(
+		"Numbers you can check.",
+		render.Text("Each value is measured by this running binary or enforced by a test in the repo — nothing here is an adjective."),
+	)
+
+	return sectionWrap("01 / the numbers", "The numbers", head, grid)
+}
+
+// -----------------------------------------------------------------------------
+// §02 — Server-rendered UI. Most Go frameworks stop at the API; GoFastr renders
 // the pages too, on the server, with a small JS runtime that hydrates in place
 // and turns in-page changes into island calls. The screen mock shows the shape;
 // the left column explains the model. Blueprint is a one-line aside, not the
@@ -279,7 +365,7 @@ func realAppSection() render.HTML {
 		render.Text("Below is the shape of a server-rendered screen — a data table with status badges and a create button, built from framework/ui components and served as plain HTML."),
 	)
 
-	return sectionWrap("01 / server-rendered UI", "Server-rendered UI", head, grid)
+	return sectionWrap("02 / server-rendered UI", "Server-rendered UI", head, grid)
 }
 
 // screenMock is a static, faithful preview of a server-rendered list screen
@@ -336,7 +422,7 @@ func screenMock() render.HTML {
 }
 
 // -----------------------------------------------------------------------------
-// §02 — Explore the framework. A routing grid into the main areas: core
+// §03 — Explore the framework. A routing grid into the main areas: core
 // primitives, composed patterns, the agentic/AI surface, the interactivity
 // model, the code generator, and the example apps. Each card links to a real
 // route on the site.
@@ -382,11 +468,11 @@ func exploreSection() render.HTML {
 		render.Text("Six ways in — pick the one that matches what you're building."),
 	)
 
-	return sectionWrap("02 / explore", "Explore the framework", head, grid)
+	return sectionWrap("03 / explore", "Explore the framework", head, grid)
 }
 
 // -----------------------------------------------------------------------------
-// §03 — Built with GoFastr. Real apps running on the framework: a production
+// §04 — Built with GoFastr. Real apps running on the framework: a production
 // tool (external) and the generated flagship. Proof it ships real software,
 // not just demos. Reuses the .ex-card / .ex__grid classes from the explore grid.
 // -----------------------------------------------------------------------------
@@ -421,7 +507,7 @@ func builtWithSection() render.HTML {
 		render.Text("A real app in production, and the flagship the framework is proven against."),
 	)
 
-	return sectionWrap("03 / built with gofastr", "Built with GoFastr", head, grid)
+	return sectionWrap("04 / built with gofastr", "Built with GoFastr", head, grid)
 }
 
 // Shared section helpers.
