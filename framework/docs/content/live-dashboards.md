@@ -335,17 +335,18 @@ The right shape for a multi-tenant dashboard:
    refused at SSE-connect time:
 
    ```go
-   host.Islands.AuthorizeTopic = func(ctx context.Context, topic string, sid string) error {
+   host.Islands.AuthorizeTopic = func(ctx context.Context, topic string) bool {
        want, err := dashTopicFor(ctx)
        if err != nil {
-           return err
+           return false
        }
-       if topic != want {
-           return fmt.Errorf("topic %q does not match the caller's tenant", topic)
-       }
-       return nil
+       return topic == want
    }
    ```
+
+   Rejected topics are dropped silently — the client is simply never
+   subscribed, so an unauthorized viewer can't distinguish a forbidden
+   topic from a nonexistent one.
 
 3. **Render per-tenant state.** The snapshot must come from the
    tenant-scoped source of truth, not the package-global demo state.

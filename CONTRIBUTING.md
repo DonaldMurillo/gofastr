@@ -8,7 +8,7 @@ Security bugs: see [SECURITY.md](SECURITY.md) — do not open a public issue.
 
 ## Prerequisites (the honest list)
 
-- **Go 1.26+** (`go.mod` says `go 1.26.4`).
+- **Go 1.26+** (`go.mod` says `go 1.26.5`).
 - **Docker** — the `framework/` test suites spin up Postgres via
   testcontainers. Without Docker running, large parts of the suite fail or
   skip. (Alternative: set `TEST_POSTGRES_DSN` and use `make test-pg-env`.)
