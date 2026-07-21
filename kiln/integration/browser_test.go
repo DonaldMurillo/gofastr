@@ -2850,8 +2850,7 @@ func TestBrowser_StopButtonCancelsInFlightTurn(t *testing.T) {
 	// Start a turn → button appears.
 	testInFlight.Store(true)
 	l.Notify("agent_turn_started", "pi")
-	// Poll cadence is 2s±10%; two ticks of headroom for the button to show.
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var d string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
@@ -2874,7 +2873,7 @@ func TestBrowser_StopButtonCancelsInFlightTurn(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	deadline = time.Now().Add(2 * time.Second)
+	deadline = time.Now().Add(5 * time.Second) // RPC round-trip + immediate /state re-fetch under CI load
 	for time.Now().Before(deadline) {
 		var d string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
