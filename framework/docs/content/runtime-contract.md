@@ -28,20 +28,29 @@ partial fetch, swap content, with cache so back is instant — no hard
 refreshes). **Interactions that change state inside the current page are
 handled by islands**: a click triggers an RPC to the server-side island
 handler, which returns the updated island HTML; the runtime swaps just
-that island's content. The rest of the page stays put. **Server-pushed
-updates** (e.g. another user changed something) flow through signals + SSE
-to update bound DOM nodes without any client action.
+that island's content. The rest of the page stays put. **Passive freshness
+is polled**: a region with `data-fui-poll` (or a widget with
+`Builder.Poll`) re-fetches server-rendered HTML on an interval — no held
+connection, no cross-replica infrastructure. **Server-pushed updates**
+(e.g. another user changed something) flow through signals + SSE to update
+bound DOM nodes without any client action — reserved for semantics that
+need the connection itself (presence, collaboration, sub-second updates).
+The full escalation ladder — client signals → RPC → poll → SSE push — is
+[reactivity](reactivity.md); the interactive layer is stateless (sessions
+are signed tokens, state lives in the DB or the client signal store), so
+any replica serves any request.
 
 ---
 
-## The four scenarios
+## The five scenarios
 
 | Scenario | What runs | What's on the wire |
 |---|---|---|
 | **Initial load** of any URL | Full SSR via `framework/uihost` → `app.RenderPage` → `Screen.Load(ctx)` → `Screen.Render()` | One HTML response with everything inline |
 | **Page → page navigation** (`/a` → `/b`) | Client-side router intercepts `<a>` click, fetches partial via `X-Gofastr-Navigate: 1`, swaps `<main>`, caches the previous page for instant back | One small partial HTML response (just the screen content); no full chrome re-fetch |
 | **In-page state change** (sort, paginate, expand a row, open a tab) | Click on an island element → RPC to the island's handler → server returns new island HTML → runtime swaps just the island's slot | One small RPC response with the changed island HTML |
-| **Server-pushed update** (background event, another user's action) | Server-side signal update → SSE event → runtime updates `[data-fui-signal="…"]` nodes | SSE frames over a single long-lived connection |
+| **Passive freshness** (a counter, a status, a dashboard that should stay roughly current) | `data-fui-poll` region (or `Builder.Poll` widget) → interval GET of a server-rendered fragment → runtime swaps the region | One small GET per interval; no connection held, any replica answers |
+| **Server-pushed update** (background event, another user's action) | Server renders fresh island HTML and calls `Manager.PushUpdate` → `island` SSE frame → runtime swaps the matching `[data-island="…"]` region | SSE frames over a single long-lived connection |
 
 **Forms and mutations** follow the in-page pattern: POST to the island's
 RPC handler, response carries the new island HTML.
@@ -85,6 +94,7 @@ server side and the runtime does the work.
 | `data-fui-rpc-reset` | Containing form resets on 2xx |
 | `data-fui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
 | `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page — the RPC mutated server state, so the destination must be fetched fresh |
+| `data-fui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders — e.g. a Reset button inside a confirm modal refreshing the chat panel. |
 | `data-fui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
 | `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`) |
 | `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
@@ -219,6 +229,8 @@ server side and the runtime does the work.
 | `data-fui-carousel-deferred-for="<carousel-id>"` | On the `<script type="application/json">` element that ships alongside a virtual-scroll carousel. The script body is a JSON map of slide index → HTML; the runtime parses it to hydrate placeholder slides on demand. |
 | `data-fui-popover-side` | Written by the runtime onto the anchored popover's widget root after placement — value is the final chosen side (`"top"`, `"bottom"`, `"left"`, `"right"`, post auto-flip). CSS uses it to position the directional arrow (`::before`) and to apply the anchored chrome (border, shadow, max-inline/block-size). Cleared on dismiss. |
 | `data-fui-popover-trigger` | Written by the runtime onto the originating trigger button while its anchored popover is open. The runtime also adds the `.is-popover-trigger-active` class so the trigger can be highlighted while its popover is the currently-active surface. Both are stripped on dismiss or when the popover re-anchors to a different trigger. |
+| `data-fui-poll="<duration>"` | Marks a region for passive freshness. The runtime re-fetches `data-fui-poll-src` on the given Go-duration interval (`30s`, `5m`, `1h`; 5s floor) and replaces the region's `innerHTML` with the response body — same swap path an RPC signal uses. Jittered so a fleet of tabs does not synchronize; pauses while the tab is hidden; doubles the interval on a failed fetch (HTTP errors included; capped at 5x the base, reset on the next success). Any replica can answer the fetch; no fanout, no held connection. Each successful applied tick — page-level and widget-level (`Builder.Poll`) alike — increments `window.__gofastr.pollStatus` (`{ ticks, lastTickAt }`), the poll analog of `sseStatus`, for health UI and tests. |
+| `data-fui-poll-src="<url>"` | The URL the runtime fetches on each `data-fui-poll` tick. The response body replaces the host region's `innerHTML`. Pair with `data-fui-poll`. Use a read endpoint — the poller fires on a timer, so a write endpoint would write on every tab on every interval. |
 | `data-fui-prefetch="<module>"` | On any element: opt the page into hover/focus-prefetch of a split runtime module (e.g. `data-fui-prefetch="fileupload"`). On the first `pointerover` or `focusin` (capture phase, once per element) the runtime fires `__gofastr.loadModule(<module>)` so the module is ready by the time the user clicks. Multiple modules can be listed space-separated. Used to keep typical pages on `core.js` only while still feeling instant on interaction. See `runtime-minification.md` for the size story. |
 | `data-fui-screen-group="<prefix>"` | On the layout wrapper div emitted by `ScreenGroup.RenderLayout`. Identifies the screen group boundary so the runtime can preserve the layout shell during sibling-screen navigation (swap only inner content, not the layout). The prefix matches the group's URL prefix. It carries a trailing slash (`/studio/`), and the runtime matches a slashless index path (`/studio`) as inside the group too, so the group index gets the in-shell swap on its first sibling nav. This takes precedence over the `data-fui-layout` name comparison, so a group registered under a `SetDefaultLayout` (its manifest layout is the inner group layout, the DOM marker is the outer default) still gets in-shell sibling nav rather than a full shell rebuild. |
 | `data-fui-inline-edit="<id>"` | On the display span of an `InlineEdit` component. Clicking it triggers edit mode (span hides, input shows). Enter saves, Escape reverts. |

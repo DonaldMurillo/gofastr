@@ -77,6 +77,10 @@ results, the harness contract) are exempt — the exemption list lives in
 
 ## Building UI
 
+- [Reactivity model](reactivity.md) — the four ways to make a page
+  change after first paint: client signals, RPC, polling, and SSE push.
+  Read this first when deciding how a surface stays fresh. The ladder,
+  the statelessness contract, and the session-token story.
 - [UI capability map](ui-capability-map.md) — task-oriented architecture
   map with runnable proofs, state ownership, replica semantics, and
   explicit non-goals.

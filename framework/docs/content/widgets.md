@@ -32,7 +32,6 @@ import (
 panel := preset.FloatingPanel("my-panel").
     Slot("body", myBodyComponent).
     Signal("counter", widget.SignalFunc(readCounter)).
-    SSE("/.events", "tick", "counter").
     RPCWithSignal("POST", "/api/inc", incHandler, "counter").
     Build()
 
@@ -70,7 +69,6 @@ type Definition struct {
     Bootstrap BootstrapMode                // AutoScript (default) | Embedded
     Slots     []Slot                       // host-supplied content regions
     Signals   map[string]SignalSource      // server-side data → client signals
-    SSE       []SSEBinding                 // event stream → signal updates
     RPCs      []RPCEndpoint                // client buttons/forms → server handlers
     Skeleton  func(slots) render.HTML      // optional custom chrome
     Backdrop  bool                         // dim the page behind
@@ -149,8 +147,10 @@ Two rules govern the opt-out (the selector is `.fui-pos-center >
 
 A **signal** is a named server-side value the runtime keeps in sync
 with `[data-fui-signal="<name>"]` DOM nodes. The widget framework
-fetches initial values from `/<basePath>/state` and updates them via
-SSE bindings.
+fetches the current values from `/<basePath>/state` on mount and on
+each RPC response that names the signal. Polling (`Poll`, below)
+re-fetches `/state` on a cadence; an RPC handler can change the
+signal by returning the new value.
 
 ```go
 panel := widget.New("p").
@@ -171,31 +171,47 @@ For HTML content, use `data-fui-signal-mode="html"`. For attribute
 values, use `data-fui-signal-mode="attr"` plus
 `data-fui-signal-attr="value"` (or whichever attr).
 
-### SSE bindings
+### Polling
 
-When an SSE event arrives, its payload becomes the new value of a
-named signal. Hosts already serving an event stream just declare the
-mapping:
-
-```go
-.SSE("/.kiln/events", "world_edit", "world_summary")
-```
-
-On every `world_edit` event from `/.kiln/events`, the bootstrap pushes
-the event's `data` (JSON-decoded if possible) into `world_summary`,
-and any `[data-fui-signal="world_summary"]` node re-renders.
-
-For a derived server-side signal, use `SSERefetch`: the event is only a
-trigger and the widget's state endpoint provides the fresh value. For an event
-that changes the screen rendered at the current URL, use `SSERefresh`. It runs
-the normal cache-bypassing SPA navigation pipeline, so the screen and layout
-update without a hard browser reload. `SSEReload` remains as a deprecated
-source-compatible alias with the same soft-refresh behavior.
+A widget whose signals track a server-side value can refresh on a
+cadence without holding a connection. Call `Poll` on the builder:
 
 ```go
-.SSERefetch("/.events", "count_changed", "count")
-.SSERefresh("/.events", "world_edit", "op", "add_page")
+panel := preset.FloatingPanel("ops-panel").
+    Slot("body", bodyComponent).
+    Signal("queue_depth", widget.SignalFunc(readQueueDepth)).
+    Poll(15 * time.Second).
+    Build()
 ```
+
+On each interval the runtime re-fetches the widget's `/state` endpoint
+and re-applies the signals that changed — the same code path an RPC
+signal update uses. The interval is a `time.Duration`. Unlike the
+page-level `data-fui-poll` attribute (which clamps to a 5-second
+floor because page markup is cheap to typo), the widget path
+trusts Go callers: `Builder.Poll` records the interval verbatim and the
+browser runtime clamps it to a 100ms floor, so a dev-tool panel can poll
+fast while production surfaces pick an honest cadence. The
+poller pauses while the tab is hidden, jitters so a fleet of tabs
+does not synchronize, and backs off on a failed fetch.
+
+Polling needs no fanout and no held connection. Any replica can answer
+the `/state` fetch from the DB. This is the recommended tier for
+widget surfaces that show a freshening value — counters, queue
+depths, statuses — without paying for SSE. See
+[Reactivity model](reactivity.md) for where polling sits in the wider
+ladder.
+
+### Server-initiated updates
+
+Widget-level SSE bindings (`.SSE`, `.SSERefetch`, the `SSEBinding`
+struct field) are gone. For a widget that must reflect
+server-initiated changes faster than a poll cadence, render the
+updated HTML yourself and call `island.Manager.PushUpdate` against the
+sessions you want to reach (a presence topic, a tenant-scoped topic).
+That is the same push lane presence and live dashboards use, and it
+requires `WithFanout` in a multi-replica deploy. See
+[Presence](presence.md) and [Live dashboards](live-dashboards.md).
 
 ### RPCs
 

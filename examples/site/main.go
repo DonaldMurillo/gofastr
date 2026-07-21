@@ -629,6 +629,15 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
+	// Rung-3 demo fragment: the polled StatCards on /examples/live-dashboard.
+	// A plain GET returning server-rendered HTML — the data-fui-poll region
+	// swaps it in every 5s. Stateless by construction: no stream, no fanout,
+	// any replica serves it.
+	fwApp.Router().Get("/__site/livedash/poll-fragment", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, string(renderDashPollCards(liveDash.snapshot())))
+	}))
+
 	// Reconnect/refresh endpoint. SSE is lossy — a dropped frame is
 	// gone. This endpoint returns the CURRENT rendered island HTML so
 	// an app can reconcile after the SSE stream reconnects. The runtime

@@ -186,7 +186,7 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	//
 	// Two registrations work together:
 	//   - chat.New + Mount: tool-dispatch + widget asset routes
-	//     (/kiln/tool/{name}, /kiln/chat/widget.{js,css}, etc.)
+	//     (/kiln/tool/{name}, /kiln/chat/widget.css, etc.)
 	//   - chat.MountPanel:  the core-ui/widget-driven panel that the
 	//     host fallback page boots into.
 	// AdapterStore is created up-front so the panel modal's

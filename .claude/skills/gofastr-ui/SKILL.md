@@ -16,8 +16,27 @@ hydrates the existing DOM (no re-render). Cross-page navigation
 (`/a` → `/b`) is client-side via partial fetch + cache, no hard refresh.
 In-page state changes (pagination, sort, filter, expand) are **islands**:
 a click fires an RPC, the server returns new island HTML, the runtime
-swaps just that island's content. Server-pushed updates flow through
-signals + SSE for background events only — not user actions.
+swaps just that island's content.
+
+## The reactivity ladder — pick the cheapest rung that works
+
+Liveness escalates through four rungs; each is opt-in and pull beats push
+(canonical doc: `framework/docs/content/reactivity.md`):
+
+1. **Client signals** (`data-fui-signal-*`) — UI-only state, zero server.
+2. **RPC** — user acts, server renders from the DB, runtime swaps. The
+   default for anything touching data. Stateless; any replica answers.
+3. **Polling** (`data-fui-poll`, `widget Builder.Poll`) — passive freshness
+   (dashboards, counters, statuses). No held connection, no fanout needed.
+4. **SSE push** (the single `/__gofastr/sse` bus) — ONLY for semantics
+   that need a connection: presence, collaborative editing, sub-second
+   internal dashboards. Push-only, never responses to user actions.
+   Requires `WithFanout` + `WithSecret`/`GOFASTR_SECRET` multi-replica.
+
+State lives in the DB or the client signal store — never in server RAM.
+Never open a bespoke `EventSource` on an app surface; the bus is the only
+push channel. (Dev-mode tooling — `framework/dev` livereload, kiln's
+build-mode reload — ships its own; that's the whole exception class.)
 
 ## The three failure modes — refuse to do these
 
@@ -40,6 +59,13 @@ page 2.
 **Correct**: server is the source of truth. Always. JS shipped to the
 browser is the generic runtime (`runtime.js`) — never feature-specific
 code.
+
+### ❌ Reaching for SSE when a cheaper rung works
+**Symptom**: a metrics card / status badge / count subscribes to the SSE
+bus (or worse, opens its own `EventSource`) just to stay fresh.
+**Correct**: rung 3 — `data-fui-poll` (page region) or `Builder.Poll`
+(widget). SSE is earned by presence/collab/sub-second semantics only,
+and always via the shared bus.
 
 ## What you compose
 
@@ -140,6 +166,7 @@ re-exports `BaseCSS`. The pattern-CSS unification landed 2026-05-19.
 | `data-fui-rpc="<path>"` | Click/submit fires HTTP request |
 | `data-fui-rpc-signal="<name>"` | Response body becomes the value of signal `<name>` |
 | `data-fui-signal="<name>"` mode=`text\|html\|attr` | Element auto-updates when the signal changes |
+| `data-fui-poll="<interval>"` + `data-fui-poll-src="<path>"` | Region re-fetches + swaps on the interval (≥5s, jittered, pauses hidden) |
 | `data-fui-open="<widget>"` | Opens a mounted widget |
 | `data-fui-comp="<name>"` | Marker for a registered styled component — runtime loads `/__gofastr/comp/<name>.css` once |
 
@@ -177,7 +204,9 @@ The flow:
 - You're about to write `data-fui-spa` or any "opt into SPA mode" attribute.
 - You're about to make pagination an `<a href>`.
 - You're about to add a runtime endpoint that's not part of the
-  SSR / page-nav / island-RPC / SSE-push grid.
+  SSR / page-nav / island-RPC / poll / SSE-push grid.
+- You're about to open an `EventSource` outside the shared bus, or use
+  SSE for something polling would cover.
 - You're about to write client-side feature logic (sorting, filtering,
   paginating, validating) in JS.
 

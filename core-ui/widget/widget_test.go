@@ -70,31 +70,6 @@ func TestSignalRegistration(t *testing.T) {
 	}
 }
 
-func TestSSEBinding(t *testing.T) {
-	def := widget.New("demo").
-		SSE("/.events", "world_edit", "page").
-		Build()
-	if len(def.SSE) != 1 {
-		t.Fatalf("expected 1 SSE binding")
-	}
-	b := def.SSE[0]
-	if b.Path != "/.events" || b.Event != "world_edit" || b.Signal != "page" {
-		t.Errorf("SSE binding wrong: %+v", b)
-	}
-}
-
-func TestSSERefreshRegistersFilteredSoftRefresh(t *testing.T) {
-	def := widget.New("demo").
-		SSERefresh("/.events", "world_edit", "op", "add_page").
-		Build()
-	if len(def.SSE) != 1 || !def.SSE[0].Reload {
-		t.Fatalf("SSERefresh binding missing: %+v", def.SSE)
-	}
-	if got := def.SSE[0].Match["op"]; got != "add_page" {
-		t.Fatalf("match op=%q, want add_page", got)
-	}
-}
-
 func TestRPCDefaultMethodIsPOST(t *testing.T) {
 	def := widget.New("demo").
 		RPC("", "/x", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})).
@@ -156,7 +131,6 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 	def := widget.New("kiln-test").
 		Slot("header", stubComponent{`<span class="hi">hi</span>`}).
 		Signal("page", widget.SignalFunc(func() (any, error) { return "/dashboard", nil })).
-		SSE("/.events", "tick", "page").
 		Build()
 
 	r := router.New()
@@ -187,8 +161,8 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 	// The registry is metadata-only — chrome HTML lives at chromePath.
 	for _, want := range []string{
 		`"name":"kiln-test"`,
-		`"signal":"page"`,
 		`"chromePath":"/core-ui/widget/kiln-test/chrome"`,
+		`"statePath":"/core-ui/widget/kiln-test/state"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("registry missing %q", want)

@@ -223,16 +223,10 @@ func TestUIHostSSERequiresSession(t *testing.T) {
 func TestUIHostSSEStream(t *testing.T) {
 	ds := newTestUIHost()
 
-	// Register an island for a session
 	sess := ds.CreateSession()
-	comp := &testHomeComp{}
-	w := component.NewWidget("live-feed", comp)
-	isl := island.NewIsland("live-feed-"+sess.ID, w)
-	isl.SessionID = sess.ID
-	ds.Islands.Register(isl)
-
-	// Subscribe to session updates
-	ch := ds.Islands.Subscribe(sess.ID)
+	// Subscribe to session updates for a freshly-minted session.
+	ch, cancel := ds.Islands.Subscribe(sess.ID)
+	defer cancel()
 
 	// Push an update in background
 	go func() {
@@ -271,14 +265,106 @@ func TestUIHostCreatesSession(t *testing.T) {
 	if sess.Created.IsZero() {
 		t.Error("expected non-zero creation time")
 	}
-
-	// Should be retrievable
-	got, ok := ds.GetSession(sess.ID)
-	if !ok {
-		t.Error("expected to find session")
+	if sess.Token == "" {
+		t.Error("expected signed token")
 	}
-	if got.ID != sess.ID {
-		t.Errorf("expected session ID %q, got %q", sess.ID, got.ID)
+
+	// The token must verify on the same host and yield the bare id.
+	got, ok := ds.verifySessionToken(sess.Token)
+	if !ok || got != sess.ID {
+		t.Errorf("verifySessionToken = %q, %v; want %q, true", got, ok, sess.ID)
+	}
+	// The bare id is NOT a credential.
+	if _, ok := ds.verifySessionToken(sess.ID); ok {
+		t.Error("bare session id verified as a token")
+	}
+}
+
+func TestPartialNavRemintsInvalidSession(t *testing.T) {
+	// SPA rollover (#112): a partial navigation with a stale/absent
+	// token must re-mint like a full render does — otherwise a restart
+	// or expiry leaves islands + SSE 401ing until a hard reload. The
+	// fresh bare id travels in X-Gofastr-Session so the runtime can
+	// rewire the SSE meta.
+	ds := newTestUIHost()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: "sess-stale.123.forged"})
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("partial nav = %d", w.Code)
+	}
+	newID := w.Header().Get("X-Gofastr-Session")
+	if newID == "" {
+		t.Fatal("stale token on partial nav did not re-mint (no X-Gofastr-Session)")
+	}
+	var tok string
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "__Host-gofastr-session" || c.Name == "gofastr-session" {
+			tok = c.Value
+		}
+	}
+	id, ok := ds.verifySessionToken(tok)
+	if !ok || id != newID {
+		t.Fatalf("re-minted cookie invalid: id=%q ok=%v want %q", id, ok, newID)
+	}
+
+	// The re-mint response must never be cacheable: a shared cache
+	// replaying its Set-Cookie + X-Gofastr-Session pair would hand one
+	// visitor another's session.
+	if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("partial-nav response Cache-Control = %q, want no-store", cc)
+	}
+
+	// A partial nav to a MISSING route with a stale token must STILL
+	// re-mint + name the fresh id + no-store — the runtime reads the
+	// header before it throws on the 404, so recovery can't hinge on a
+	// later OK response (which would present the now-valid cookie and
+	// send no header). Regression for the round-2 P1.
+	req404 := httptest.NewRequest("GET", "/no-such-route", nil)
+	req404.Header.Set("X-Gofastr-Navigate", "1")
+	req404.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: "sess-dead.1.forged"})
+	w404 := httptest.NewRecorder()
+	ds.ServeHTTP(w404, req404)
+	if w404.Code != http.StatusNotFound {
+		t.Fatalf("partial 404 = %d, want 404", w404.Code)
+	}
+	if id := w404.Header().Get("X-Gofastr-Session"); id == "" {
+		t.Error("partial nav to 404 with stale token did not emit X-Gofastr-Session (rollover lost on error responses)")
+	}
+	if cc := w404.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("partial 404 re-mint Cache-Control = %q, want no-store", cc)
+	}
+
+	// A VALID token must not re-mint (no header, no churn).
+	sess := ds.CreateSession()
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
+	w = httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	if got := w.Header().Get("X-Gofastr-Session"); got != "" {
+		t.Fatalf("valid token re-minted on partial nav: %q", got)
+	}
+}
+
+func TestSessionTokenPortableAcrossHosts(t *testing.T) {
+	// The multi-replica contract (#112): two hosts sharing a key accept
+	// each other's tokens; a host with a different key rejects them.
+	key := []byte("0123456789abcdef0123456789abcdef")
+	a, b := newTestUIHost(), newTestUIHost()
+	a.SetSessionKey(key)
+	b.SetSessionKey(key)
+
+	sess := a.CreateSession()
+	if id, ok := b.verifySessionToken(sess.Token); !ok || id != sess.ID {
+		t.Fatalf("replica B rejected replica A's token (= %q, %v)", id, ok)
+	}
+
+	c := newTestUIHost() // self-minted per-boot key ≠ shared key
+	if _, ok := c.verifySessionToken(sess.Token); ok {
+		t.Fatal("host with a different key accepted the token")
 	}
 }
 
@@ -335,8 +421,14 @@ func TestUIHostReuseSession(t *testing.T) {
 	ds.ServeHTTP(w2, req2)
 
 	body := w2.Body.String()
-	// Should contain the same session ID in SSE meta
-	assertContains(t, body, cookie.Value)
+	// The page embeds the bare session id (never the signed token) in
+	// the SSE meta; the id must be the one from the reused cookie.
+	id, ok := ds.verifySessionToken(cookie.Value)
+	if !ok {
+		t.Fatalf("first-request cookie %q does not verify", cookie.Value)
+	}
+	assertContains(t, body, "/__gofastr/sse?session="+id)
+	assertNotContains(t, body, cookie.Value)
 }
 
 func TestUIHostSessionEndpoint(t *testing.T) {
@@ -565,7 +657,7 @@ func TestUIHostMountAutoCompilesScreenActions(t *testing.T) {
 	// Mint a session to satisfy the new auth gate on /__gofastr/actions.js.
 	sess := ds.CreateSession()
 	req = httptest.NewRequest("GET", "/__gofastr/actions.js", nil)
-	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.ID})
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
 	w = httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
@@ -581,7 +673,7 @@ func TestUIHostActionsEndpoint(t *testing.T) {
 
 	sess := ds.CreateSession()
 	req := httptest.NewRequest("GET", "/__gofastr/actions.js", nil)
-	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.ID})
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
@@ -593,79 +685,14 @@ func TestUIHostActionsEndpoint(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// H. Signal Update Endpoint
+// H. Removed endpoints (signal update + register-widget island binding)
 // ---------------------------------------------------------------------------
 
-func TestUIHostSignalUpdateEndpoint(t *testing.T) {
-	ds := newTestUIHost()
-	sess := ds.CreateSession()
-
-	// Register the signal so the handler doesn't 404 on the unknown id.
-	ds.RegisterSignal("counter", &stubSignal{})
-
-	// Register an island for this session
-	comp := &testHomeComp{}
-	w := component.NewWidget("counter", comp)
-	isl := island.NewIsland("counter-"+sess.ID, w)
-	isl.SessionID = sess.ID
-	ds.Islands.Register(isl)
-
-	// Subscribe to updates
-	ch := ds.Islands.Subscribe(sess.ID)
-
-	// Post signal update — carry the session via the __Host- cookie,
-	// since the handler no longer trusts ?session=… query strings.
-	body := strings.NewReader(`{"value": 5}`)
-	req := httptest.NewRequest("POST", "/__gofastr/signal/counter", body)
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.ID})
-	rec := httptest.NewRecorder()
-	ds.ServeHTTP(rec, req)
-
-	if rec.Code != 200 {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// Should receive island update via SSE channel
-	select {
-	case update := <-ch:
-		if update.IslandID != "counter-"+sess.ID {
-			t.Errorf("expected island counter-%s, got %q", sess.ID, update.IslandID)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for island update after signal")
-	}
-}
-
-func TestUIHostSignalUpdateRejectsGet(t *testing.T) {
-	ds := newTestUIHost()
-	req := httptest.NewRequest("GET", "/__gofastr/signal/x", nil)
-	w := httptest.NewRecorder()
-	ds.ServeHTTP(w, req)
-
-	if w.Code != 405 {
-		t.Fatalf("expected 405, got %d", w.Code)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// I. Widget + Island Integration via UIHost
-// ---------------------------------------------------------------------------
-
-func TestUIHostRegisterWidget(t *testing.T) {
-	ds := newTestUIHost()
-	sess := ds.CreateSession()
-
-	btn := &testClickButton{Label: "Click"}
-	w := component.NewWidget("cta-btn", btn)
-	isl := ds.RegisterWidget(sess.ID, w)
-
-	// Island should be registered
-	islHTML := isl.Render()
-	assertContains(t, string(islHTML), `data-island="cta-btn-`+sess.ID+`"`)
-	assertContains(t, string(islHTML), `data-widget="cta-btn"`)
-	assertContains(t, string(islHTML), "Click")
-}
+// The /__gofastr/signal/{id} surface and UIHost.RegisterWidget have been
+// removed — they held dead per-replica state with no production callers.
+// POST /__gofastr/signal/* is now a plain 404 (covered by
+// TestUIHost_RemovedSignalEndpointReturns404 in csrf_body_security_test.go),
+// so no dedicated test is duplicated here.
 
 // --- F11: Static file path traversal prevention ---
 
@@ -717,7 +744,7 @@ func TestUIHost_ServerActionInvokesHandler(t *testing.T) {
 	body := strings.NewReader(`{"action":"test-action","params":{},"componentId":"test-comp"}`)
 	req := httptest.NewRequest(http.MethodPost, "/__gofastr/action", body)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.ID})
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, req)
 

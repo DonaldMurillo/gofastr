@@ -781,25 +781,6 @@ func TestRuntimeReducedMotionFlashSkip(t *testing.T) {
 //   - examples/site/TestE2E_RuntimeSplit_HoverPrefetch — covers the
 //     full network fetch path (a code-split module really lands).
 
-// TestWidgets_SSEClosedOnDismiss guards F4: every EventSource opened by
-// mountWidget must be closed when the widget is dismissed. The previous
-// code left seenStreams local to mountWidget with no close call in
-// dismiss(), leaking live SSE connections across modal open/close cycles.
-func TestWidgets_SSEClosedOnDismiss(t *testing.T) {
-	src, ok := Module("widgets")
-	if !ok {
-		t.Fatal("widgets module not embedded")
-	}
-	// The dismiss() function must iterate seenStreams and call .close()
-	// on each EventSource. Accept any of the canonical forms the
-	// minifier may emit.
-	seenClose := strings.Contains(src, "seenStreams") &&
-		(strings.Contains(src, ".close()") || strings.Contains(src, ".close();"))
-	if !seenClose {
-		t.Error("widgets dismiss() must close seenStreams EventSources on dismiss — SSE leak detected")
-	}
-}
-
 // TestWidget_InjectSignalAria_TextModeOnly guards F15: _injectSignalAria
 // must restrict role=status/aria-live injection to TEXT-mode signal nodes.
 // Applying it to attr-mode or html-mode nodes produces invalid ARIA on

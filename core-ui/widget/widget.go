@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -61,34 +62,6 @@ type SignalFunc func() (any, error)
 
 func (f SignalFunc) Read() (any, error) { return f() }
 
-// SSEBinding maps a server-sent event kind to a signal name. When the
-// named SSE event arrives on the bus mounted at Path, the runtime
-// pushes the event payload into the named signal — every DOM node
-// bound to that signal updates.
-type SSEBinding struct {
-	Path   string `json:"path"`   // e.g. "/.kiln/events"
-	Event  string `json:"event"`  // e.g. "world_edit"
-	Signal string `json:"signal"` // e.g. "page"
-
-	// Refetch=true tells the runtime to re-fetch /state and apply the
-	// signal's fresh value instead of using the SSE event's payload.
-	// Use when the signal source is server-rendered (HTML, derived
-	// state) and the SSE event is just a "something changed" trigger.
-	Refetch bool `json:"refetch,omitempty"`
-
-	// Reload=true tells the runtime to do a full page reload on this
-	// event. Useful for events that change which page is rendered at
-	// the current URL (kiln add_page / delete_page / add_route /
-	// delete_route). Signal is ignored when Reload is set.
-	Reload bool `json:"reload,omitempty"`
-
-	// Match optionally filters the binding to events whose JSON
-	// payload contains all the listed key=value pairs. Useful when
-	// the SSE channel multiplexes by event type (e.g. "world_edit")
-	// and the host wants to react only to specific ops.
-	Match map[string]string `json:"match,omitempty"`
-}
-
 // RPCEndpoint is a server-side HTTP handler the widget can invoke
 // from the client (typically via a button click or form submit). The
 // runtime POSTs to Path; on success it can push the response body
@@ -116,7 +89,6 @@ type Definition struct {
 	Bootstrap BootstrapMode
 	Slots     []Slot
 	Signals   map[string]SignalSource
-	SSE       []SSEBinding
 	RPCs      []RPCEndpoint
 
 	// Skeleton is the host's chrome wrapper. If nil, the framework
@@ -209,6 +181,17 @@ type Definition struct {
 	BootstrapPath string // default: /core-ui/widget/<name>/bootstrap.js
 	StylePath     string // default: /core-ui/widget/<name>/style.css
 	StatePath     string // default: /core-ui/widget/<name>/state
+
+	// PollMS is the freshness interval (milliseconds) the runtime
+	// should re-fetch StatePath on. Zero (the default) disables
+	// polling. Emitted as "pollMs" in the catalog ONLY when both
+	// PollMS > 0 AND the widget declares at least one Signal — a
+	// widget without signals has no StatePath to poll. The runtime
+	// applies ±10% jitter, pauses while document.hidden, fetches
+	// immediately on visibility regain, and backs off (doubling,
+	// capped at 5×) on fetch failure until the next success.
+	// Set via Builder.Poll.
+	PollMS int
 }
 
 // registry is the process-global list of mounted widgets. The framework
@@ -217,7 +200,7 @@ type Definition struct {
 // many widgets register through the registry.
 //
 // Coexistence with core-ui/registry: this registry is widget-specific
-// (Position, Slots, RPCs, Skeleton, SSE bindings, etc.). The newer
+// (Position, Slots, RPCs, Skeleton, polling, etc.). The newer
 // core-ui/registry handles per-component CSS for plain styled
 // components and is fetched by the runtime as
 // window.__gofastr_catalog. Both share the data-fui-style="<name>"
@@ -358,49 +341,20 @@ func (b *Builder) Signal(name string, src SignalSource) *Builder {
 	return b
 }
 
-// SSE binds an SSE event to a signal. When the event fires on the
-// stream at path, the event's payload becomes the named signal's
-// new value.
-func (b *Builder) SSE(path, event, signal string) *Builder {
-	b.def.SSE = append(b.def.SSE, SSEBinding{
-		Path: path, Event: event, Signal: signal,
-	})
+// Poll sets a re-fetch interval for the widget's signal state. The
+// runtime GETs StatePath on this cadence and overwrites each declared
+// signal with the fresh value (skipping the DOM write when the value
+// is unchanged). ±10% jitter, pause-while-hidden, and exponential
+// back-off on fetch failure are applied automatically by the runtime.
+//
+// No-op in catalog emission when the widget declares no Signals
+// (statePath is omitted, so there is nothing to poll). interval is
+// recorded verbatim as milliseconds; the browser runtime enforces a
+// 100ms floor (Go callers are trusted config — the page-attribute
+// path clamps at 5s instead, because markup is cheap to typo).
+func (b *Builder) Poll(interval time.Duration) *Builder {
+	b.def.PollMS = int(interval / time.Millisecond)
 	return b
-}
-
-// SSERefetch binds an SSE event to a signal whose value is rendered
-// server-side. The runtime re-fetches /state on each event and applies
-// the named signal's fresh value, rather than using the event's payload.
-// Use for HTML/derived signals where the SSE event is just a trigger.
-func (b *Builder) SSERefetch(path, event, signal string) *Builder {
-	b.def.SSE = append(b.def.SSE, SSEBinding{
-		Path: path, Event: event, Signal: signal, Refetch: true,
-	})
-	return b
-}
-
-// SSERefresh triggers a cache-bypassing client navigation to the current URL
-// on the SSE event. The runtime swaps the rendered screen through the normal
-// SPA pipeline; it never performs a hard browser reload. Use for events that
-// change what is rendered at the current URL. Pass matchPairs as alternating
-// key/value strings to filter on payload fields.
-func (b *Builder) SSERefresh(path, event string, matchPairs ...string) *Builder {
-	binding := SSEBinding{Path: path, Event: event, Reload: true}
-	if len(matchPairs) >= 2 {
-		binding.Match = map[string]string{}
-		for i := 0; i+1 < len(matchPairs); i += 2 {
-			binding.Match[matchPairs[i]] = matchPairs[i+1]
-		}
-	}
-	b.def.SSE = append(b.def.SSE, binding)
-	return b
-}
-
-// SSEReload is retained for source compatibility. It now performs the same
-// soft, cache-bypassing SPA refresh as SSERefresh; callers should migrate to
-// SSERefresh so the behavior is named accurately.
-func (b *Builder) SSEReload(path, event string, matchPairs ...string) *Builder {
-	return b.SSERefresh(path, event, matchPairs...)
 }
 
 // RPC registers a server-side handler the widget can invoke from

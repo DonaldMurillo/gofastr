@@ -17,20 +17,30 @@ partial fetch, swap content, with cache so back is instant — no hard
 refreshes). **Interactions that change state inside the current page are
 handled by islands**: a click triggers an RPC to the server-side island
 handler, which returns the updated island HTML; the runtime swaps just
-that island's content. The rest of the page stays put. **Server-pushed
-updates** (e.g. another user changed something) flow through signals + SSE
-to update bound DOM nodes without any client action.
+that island's content. The rest of the page stays put. **Passive freshness
+is polled**: a region with `data-fui-poll` (or a widget with
+`Builder.Poll`) re-fetches server-rendered HTML on an interval — no held
+connection, no cross-replica infrastructure. **Server-pushed updates**
+(e.g. another user changed something) flow through signals + SSE to update
+bound DOM nodes without any client action — reserved for semantics that
+need the connection itself (presence, collaboration, sub-second updates),
+never for anything a poll or an RPC covers. The full escalation ladder —
+client signals → RPC → poll → SSE push — is
+`framework/docs/content/reactivity.md`; the interactive layer is stateless
+(sessions are signed tokens, state lives in the DB or the client signal
+store), so any replica serves any request.
 
 ---
 
-## The four scenarios
+## The five scenarios
 
 | Scenario | What runs | What's on the wire |
 |---|---|---|
 | **Initial load** of any URL | Full SSR via `framework/uihost` → `app.RenderPage` → `Screen.Load(ctx)` → `Screen.Render()` | One HTML response with everything inline |
 | **Page → page navigation** (`/a` → `/b`) | Client-side router intercepts `<a>` click, fetches partial via `X-Gofastr-Navigate: 1`, swaps `<main>`, caches the previous page for instant back | One small partial HTML response (just the screen content); no full chrome re-fetch |
 | **In-page state change** (sort, paginate, expand a row, open a tab) | Click on an island element → RPC to the island's handler → server returns new island HTML → runtime swaps just the island's slot | One small RPC response with the changed island HTML |
-| **Server-pushed update** (background event, another user's action) | Server-side signal update → SSE event → runtime updates `[data-fui-signal="…"]` nodes | SSE frames over a single long-lived connection |
+| **Passive freshness** (a counter, a status, a dashboard that should stay roughly current) | `data-fui-poll` region (or `Builder.Poll` widget) → interval GET of a server-rendered fragment → runtime swaps the region | One small GET per interval; no connection held, any replica answers |
+| **Server-pushed update** (background event, another user's action) | Server renders fresh island HTML and calls `Manager.PushUpdate` → `island` SSE frame → runtime swaps the matching `[data-island="…"]` region | SSE frames over a single long-lived connection |
 
 **Forms and mutations** follow the in-page pattern: POST to the island's
 RPC handler, response carries the new island HTML.
@@ -90,6 +100,7 @@ server side and the runtime does the work.
 | `data-fui-rpc-reset` | Containing form resets on 2xx |
 | `data-fui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
 | `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page — the RPC mutated server state, so the destination must be fetched fresh |
+| `data-fui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders — e.g. a Reset button inside a confirm modal refreshing the chat panel. |
 | `data-fui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
 | `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`). `html` is the trusted-HTML escape hatch: on a string value the runtime replaces `innerHTML`, on a non-string value (e.g. the dispatchRPC error object `{ok:false,status,text}` broadcast on non-2xx) it leaves the DOM **unchanged** so a failed RPC cannot corrupt the trusted region. `text` always renders (a human-readable "Error: …" string for error objects). `attr` updates the attribute named by `data-fui-signal-attr`. |
 | `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
@@ -252,6 +263,9 @@ server side and the runtime does the work.
 | `data-fui-sticky="<edge>"` | Emitted by `framework/ui.Sticky` (`layout.go`) with the pinned edge (`top`/`bottom`). No runtime or CSS consumer today (styling keys off `.ui-sticky--*` classes); emit-only structural marker. |
 | `data-fui-z-tier="<tier>"` | Emitted by `framework/ui.Sticky` with the layering tier from `StickyConfig.ZIndexTier` (`sticky` default, or `dropdown`/`modal`/`popover`/`toast` matching the theme's `ZIndexSet` tokens). CSS-only consumer: the `ui-sticky` stylesheet keys `z-index: var(--z-<tier>)` off this attribute so a sticky toolbar can layer above/below other surfaces without bespoke CSS. |
 | `data-fui-viewport="desktop\|mobile"` | Emitted by `framework/ui.Responsive` on each variant wrapper. No runtime or CSS consumer today — the per-breakpoint stylesheet toggles `display` via the `.ui-responsive__desktop` / `.ui-responsive__mobile` classes; emit-only structural marker. |
+| `data-fui-poll="<duration>"` | Marks an element for the demand-loaded `poll` runtime module. On the interval (Go-duration syntax: `"5s"`, `"30s"`, `"1m"`, compound `"1m30s"`) the module GETs `data-fui-poll-src` and swaps the response HTML into the element's `innerHTML` through the same `innerHTML + scanAndLoadCSS` path `html`-mode signal regions use — one region-swap pipeline, not a second one. Clamp: intervals below 5s are raised to 5s so a typo can't DoS the server. ±10% jitter per tick desynchronises a page full of polls; pauses while `document.hidden` and fetches immediately on regain; doubles the interval (capped at 5× base) on fetch failure and resets to base on the next success. The marker is idempotent (`__fuiPollWired` guard); timers self-teardown when the element leaves the DOM and are reclaimed on SPA navigation via the `_moduleScanners.poll` hook. Pair with `data-fui-poll-src`. |
+| `data-fui-poll-src="<url>"` | The GET endpoint the `poll` runtime module fetches on each `data-fui-poll` tick. The response body replaces the parent element's `innerHTML`. Same-origin by default (`credentials: 'same-origin'`); the endpoint should return an HTML fragment, not a full document. Every successful applied tick (page-level here, widget-level `Builder.Poll` alike) increments the shared liveness observable `window.__gofastr.pollStatus` (`{ ticks, lastTickAt }` — one object mutated in place, the poll analog of `sseStatus`); an HTTP-error response counts as a failure and triggers the back-off. |
+
 
 For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Adding a new attribute requires updating this table AND adding a runtime test.
 
@@ -324,8 +338,8 @@ by the SPA full-shell swap after it replaces `[data-fui-layout]`.
 | `<html>` attr | `data-color-scheme` | `colorscheme.js` — the separate SYNCHRONOUS `<head>` bootstrap (plus the theme toggle via `window.__gofastr_colorScheme.set`). It must stay a separate sync script so dark tokens apply before first paint (FOUC); it runs before `runtime.js` exists, so it writes directly. Enumerated in the manifest as documentation | every `--color-*` token block; `<meta name="color-scheme">` mirrors it for UA controls |
 | `<html>` attr | `data-fui-os` | core runtime at boot (`doc.setHtmlAttr`) | `framework/ui.ShortcutHint` CSS picks ⌘ vs Ctrl glyphs |
 | `<html>` attr | `data-fui-static` | the static exporter (`framework/static.Builder`), server-side only — the runtime never writes it. Enumerated as documentation | runtime static-mode guards read it at boot |
-| `<body>` class | `fui-sse-down` | widgets module per-widget SSE `error` handler (`doc.bodyClass`) | CSS connection-state styling (offline banners) |
-| `<body>` class | `fui-sse-up` | widgets module per-widget SSE `open` handler (`doc.bodyClass`) | CSS connection-state styling |
+| `<body>` class | `fui-sse-down` | NOT written by core-ui (the per-widget SSE block that owned it is gone). Kiln's dev-mode reload client (`kiln/live/reload.go`) toggles it on its EventSource `error`; app surfaces should read `window.__gofastr.sseStatus` / `pollStatus` instead | CSS connection-state styling (kiln panel dot) |
+| `<body>` class | `fui-sse-up` | same as `fui-sse-down` — kiln dev-mode reload client only | CSS connection-state styling |
 | `<body>` singleton | `fui-backtotop-sentinel` | backtotop module (`doc.singleton`) — one shared scroll sentinel for every BackToTop button | its own IntersectionObserver |
 | `<body>` singleton | `fui-nav-toast` | core `_showNavToast` (`doc.singleton`) — nav-failure / static-mode notices | user-visible mini toast; styled by `.fui-nav-toast` in `frameworkBuiltinCSS`; e2e tests target `#fui-nav-toast` |
 | `<body>` singleton | `fui-toast-fallback` | core `_fallbackToast` (`doc.singleton`) — the degraded, unstyled toast region used when the toasts module fails to load. Distinct from the styled toast stack by design | user-visible fallback notices; carries `data-fui-toast-fallback` for tests/CSS |
@@ -535,7 +549,7 @@ the rest of this document:
   `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`.
 - **The service worker never interferes with the runtime's rails.**
   Its fetch handler has a baked deny list (`/__gofastr/sse`,
-  `/__gofastr/session`, `/__gofastr/signal/*`, `/__gofastr/action`,
+  `/__gofastr/session`, `/__gofastr/action`,
   `/__gofastr/widgets`, `/api/*`, `/auth/*`, plus `PWAConfig.DenyPaths`
   for custom mounts) and ignores non-GET, so island RPCs, SSE streams,
   sessions, and auth always hit the network untouched. Documents are

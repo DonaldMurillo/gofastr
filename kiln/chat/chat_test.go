@@ -69,25 +69,6 @@ func TestNonHTMLPathStill404s(t *testing.T) {
 	}
 }
 
-func TestWidgetJSServed(t *testing.T) {
-	l, _ := setup(t)
-	req := httptest.NewRequest(http.MethodGet, "/kiln/chat/widget.js", nil)
-	rec := httptest.NewRecorder()
-	l.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "javascript") {
-		t.Errorf("content-type = %q", ct)
-	}
-	body := rec.Body.String()
-	for _, want := range []string{"EventSource", "kiln-widget", "kiln-fab", "kiln-corner"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("widget.js missing %q", want)
-		}
-	}
-}
-
 func TestWidgetCSSServed(t *testing.T) {
 	l, _ := setup(t)
 	req := httptest.NewRequest(http.MethodGet, "/kiln/chat/widget.css", nil)
@@ -335,7 +316,7 @@ func TestChatPanelSurvivesRebuild(t *testing.T) {
 		Entity: &world.Entity{Name: "x", Fields: []world.Field{{Name: "y", Type: "string"}}},
 	})
 	// Panel assets and host fallback should still respond.
-	for _, path := range []string{"/kiln/chat/widget.js", "/kiln/chat/widget.css"} {
+	for _, path := range []string{"/kiln/chat/widget.css"} {
 		rec := httptest.NewRecorder()
 		l.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {

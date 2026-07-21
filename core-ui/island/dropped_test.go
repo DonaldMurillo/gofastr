@@ -7,7 +7,8 @@ import "testing"
 // previously-silent loss observable.
 func TestManager_DroppedUpdatesCounter(t *testing.T) {
 	m := NewManager()
-	_ = m.Subscribe("s1") // buffered (64), nothing draining it
+	_, cancelS1 := m.Subscribe("s1") // buffered (64), nothing draining it
+	defer cancelS1()
 
 	for i := 0; i < 64; i++ {
 		m.PushUpdate(IslandUpdate{IslandID: "i", HTML: "x"}, "s1")

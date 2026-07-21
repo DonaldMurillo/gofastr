@@ -224,8 +224,13 @@ There is still no HTTP roster endpoint.
 
 **No fanout attached** ⇒ the presence lane is a complete no-op: no
 goroutines, no remote state, and `PresenceRoster` returns the byte-identical
-single-replica result. Sticky-session deployments keep working exactly as
-before; non-sticky deployments now aggregate correctly too.
+single-replica result. Attach `framework.WithFanout` when you run a
+second replica so rosters merge across processes.
+
+Presence is the canonical case for SSE push: the roster IS who is
+currently connected, so the connection itself is part of the truth a
+poll cannot reconstruct. See [Reactivity model](reactivity.md) for
+where it sits in the ladder.
 
 ## See also
 

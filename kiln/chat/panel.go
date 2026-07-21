@@ -30,7 +30,7 @@ type AgentStateFn func() any
 // MountPanel registers the kiln chat panel as a core-ui/widget on r.
 // The widget is a framework-managed FloatingPanel; kiln contributes:
 //   - slot HTML for header / log / input (rendered server-side from session)
-//   - SSE bindings that push fresh log HTML into the chat_html signal
+//   - a 2s /state poll that keeps the chat_html/agent/world signals fresh
 //   - RPC handlers for chat send, reset, approve/reject, agent control
 //
 // agentState is read by the gear modal's agent_list_html signal at
@@ -42,8 +42,9 @@ type AgentStateFn func() any
 func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentState AgentStateFn) {
 	pe := &panelEnv{live: l, tools: tools, agentState: agentState}
 
-	// Build slot HTML once per Mount call. SSE events drive signal updates
-	// that re-render the chat log via data-fui-signal="chat_html" (HTML mode).
+	// Build slot HTML once per Mount call. The /state poll drives signal
+	// updates that re-render the chat log via data-fui-signal="chat_html"
+	// (HTML mode); page-structure refresh is kiln/live/reload.go's job.
 	def := preset.FloatingPanel("kiln-panel").
 		Slot("header", htmlComp{html: pe.headerHTML()}).
 		Slot("log", htmlComp{html: pe.logHTMLForCurrent()}).
@@ -58,44 +59,24 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		Signal("world_snapshot", widget.SignalFunc(func() (any, error) {
 			return pe.worldSnapshotText(), nil
 		})).
-		// Every world / chat event triggers a chat_html refresh —
-		// SSERefetch re-pulls the rendered HTML from /state instead
-		// of using the SSE payload (which is just metadata).
-		SSERefetch("/.kiln/events", "chat_user", "chat_html").
-		SSERefetch("/.kiln/events", "chat_assistant", "chat_html").
-		SSERefetch("/.kiln/events", "world_edit", "chat_html").
-		SSERefetch("/.kiln/events", "tool_call", "chat_html").
-		SSERefetch("/.kiln/events", "tool_result", "chat_html").
-		SSERefetch("/.kiln/events", "plan_proposed", "chat_html").
-		SSERefetch("/.kiln/events", "plan_approved", "chat_html").
-		SSERefetch("/.kiln/events", "plan_rejected", "chat_html").
-		// session_reset (synthetic) clears the panel after the user
-		// hits ↺. Without this the chat list shows stale items until
-		// the next event lands. agent_turn_started/ended drive the
-		// in-flight indicator in the header.
-		SSERefetch("/.kiln/events", "session_reset", "chat_html").
-		// In-flight indicator now lives at the bottom of the chat log
-		// itself (typing-bubble style); chat_html owns its render.
-		SSERefetch("/.kiln/events", "agent_turn_started", "chat_html").
-		SSERefetch("/.kiln/events", "agent_turn_ended", "chat_html").
-		// Agent picker → header chip update.
-		SSERefetch("/.kiln/events", "agent_changed", "agent").
-		// World-snapshot pill: live count of entities/pages/routes/hooks.
-		// Refresh on any world_edit so the pill keeps pace with the agent.
-		SSERefetch("/.kiln/events", "world_edit", "world_snapshot").
-		SSERefetch("/.kiln/events", "session_reset", "world_snapshot").
-		// Page-affecting world edits: forced SPA refresh so the now-rendered
-		// page reflects the new world. Filtered by op so add_entity
-		// (which doesn't change page rendering) doesn't trigger reloads.
-		SSERefresh("/.kiln/events", "world_edit", "op", "add_page").
-		SSERefresh("/.kiln/events", "world_edit", "op", "delete_page").
-		SSERefresh("/.kiln/events", "world_edit", "op", "add_route").
-		SSERefresh("/.kiln/events", "world_edit", "op", "delete_route").
+		// All three signals render server-side from the live session /
+		// world, so a 2s poll of /state keeps the whole panel fresh —
+		// chat log, agent chip, and world-snapshot pill alike. This
+		// replaced the per-event widget SSE bindings when those were
+		// removed from the builder (reactivity.md: passive freshness
+		// polls). Kiln is a localhost dev tool: a 2s poll of an
+		// in-memory snapshot costs nothing, and Builder.Poll trusts Go
+		// callers below the page-attribute 5s clamp. Page-STRUCTURE
+		// world edits (add/delete page/route) are not a panel-signal
+		// concern — kiln/live/reload.go's dev-mode client forces the
+		// SPA refresh of the current page for those.
+		Poll(2*time.Second).
 		// RPC: chat send, reset, approve/reject, undo.
-		// SSE refetch owns log updates; the synchronous RPC response is
-		// just an ack. Binding chat_html to the response was a footgun:
-		// on error (or even on success) the JSON ack got stringified
-		// into the log innerHTML.
+		// The /state poll owns log updates (a successful RPC also
+		// triggers an immediate re-fetch); the synchronous RPC response
+		// is just an ack. Binding chat_html to the response was a
+		// footgun: on error (or even on success) the JSON ack got
+		// stringified into the log innerHTML.
 		RPC("POST", "/kiln/panel/send", http.HandlerFunc(pe.serveSend)).
 		RPC("POST", "/kiln/panel/reset", http.HandlerFunc(pe.serveReset)).
 		RPC("POST", "/kiln/panel/approve_plan", http.HandlerFunc(pe.serveApprove)).
@@ -185,7 +166,7 @@ func (pe *panelEnv) resetConfirmHTML() string {
 		`<p class="kiln-modal-tip">Snapshot first with <code>kiln freeze --diff</code> in your terminal — emits a review summary you can paste into a commit message before resetting.</p>` +
 		`<div class="kiln-modal-actions">` +
 		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Cancel <kbd class="kiln-kbd">Esc</kbd></button>` +
-		`<button type="button" class="kiln-modal-apply kiln-modal-danger" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-close>Reset</button>` +
+		`<button type="button" class="kiln-modal-apply kiln-modal-danger" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-refresh="kiln-panel" data-fui-rpc-close>Reset</button>` +
 		`</div>` +
 		`</div>`
 }
@@ -246,8 +227,8 @@ func (pe *panelEnv) agentListHTML() string {
 	// Form posts directly to /kiln/agent (registered by cmd/kiln).
 	// data-fui-rpc-close dismisses the modal on a successful 2xx so
 	// the user gets visible feedback that Apply landed. Re-open to
-	// see the new "current" mark; the panel header chip still needs
-	// SSE wiring (separate task) to update without a modal re-open.
+	// see the new "current" mark; the panel header chip refreshes on
+	// the next /state poll tick (the RPC also triggers one).
 	b.WriteString(`<form class="kiln-adapter-list" data-fui-rpc="/kiln/agent" data-fui-rpc-close>`)
 
 	// "none" sentinel — always present, always installed.
@@ -340,7 +321,7 @@ func (h htmlComp) Render() render.HTML { return render.HTML(h.html) }
 
 func (pe *panelEnv) headerHTML() string {
 	return `<div class="kiln-panel-head">` +
-		`<span class="kiln-panel-conn" title="SSE connection status" aria-label="SSE connection status"></span>` +
+		`<span class="kiln-panel-conn" title="Live connection status" aria-label="Live connection status"></span>` +
 		`<span class="kiln-panel-title">Kiln</span>` +
 		`<span class="kiln-panel-page">/</span>` +
 		// When there's no agent wired, render the chip as a button
@@ -1003,8 +984,9 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 // --- RPC handlers ----------------------------------------------------
 
 // All RPC handlers return a small JSON ack. The actual log update flows
-// to the panel via the SSE refetch binding (chat_user / world_edit /
-// plan_*) — that's the only path that should write to chat_html.
+// to the panel via the /state poll (a successful RPC triggers an
+// immediate re-fetch) — that's the only path that should write to
+// chat_html.
 
 func (pe *panelEnv) serveSend(w http.ResponseWriter, r *http.Request) {
 	var body struct {

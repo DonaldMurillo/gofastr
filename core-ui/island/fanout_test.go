@@ -33,7 +33,8 @@ func TestIslandFanoutCrossDelivery(t *testing.T) {
 	defer stopB()
 
 	// Session is connected only on B.
-	chB := mgrB.Subscribe("sess-cross")
+	chB, cancelChb1 := mgrB.Subscribe("sess-cross")
+	defer cancelChb1()
 
 	// Update originates on A.
 	mgrA.PushUpdate(island.IslandUpdate{IslandID: "isl-cross", HTML: "<p>remote</p>"}, "sess-cross")
@@ -64,8 +65,10 @@ func TestIslandFanoutOwnNodeNoDup(t *testing.T) {
 	defer stopB()
 
 	// Session subscribed on both managers.
-	chA := mgrA.Subscribe("sess-dup")
-	chB := mgrB.Subscribe("sess-dup")
+	chA, cancelCha2 := mgrA.Subscribe("sess-dup")
+	defer cancelCha2()
+	chB, cancelChb3 := mgrB.Subscribe("sess-dup")
+	defer cancelChb3()
 
 	mgrA.PushUpdate(island.IslandUpdate{IslandID: "isl-dup", HTML: "x"}, "sess-dup")
 
@@ -86,42 +89,12 @@ func TestIslandFanoutOwnNodeNoDup(t *testing.T) {
 	}
 }
 
-// TestIslandFanoutPushReRenders: Push (not just PushUpdate) also crosses
-// replicas. The island is registered on A; the session stream lives on B.
-func TestIslandFanoutPushReRenders(t *testing.T) {
-	f := fanout.NewInProcess()
-	mgrA := island.NewManager()
-	mgrB := island.NewManager()
-	stopA, _ := mgrA.SetFanout(f)
-	defer stopA()
-	stopB, _ := mgrB.SetFanout(f)
-	defer stopB()
-
-	isl := island.NewIsland("isl-push", &fanoutComp{html: "rendered"})
-	isl.SessionID = "sess-push"
-	if err := mgrA.Register(isl); err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-
-	chB := mgrB.Subscribe("sess-push")
-	if err := mgrA.Push("isl-push"); err != nil {
-		t.Fatalf("Push: %v", err)
-	}
-	select {
-	case upd := <-chB:
-		if upd.IslandID != "isl-push" {
-			t.Errorf("IslandID = %q, want isl-push", upd.IslandID)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for Push to cross-deliver to B")
-	}
-}
-
 // TestIslandFanoutNoFanoutStillWorks: without SetFanout, PushUpdate behaves
 // exactly as before (local-only delivery).
 func TestIslandFanoutNoFanoutStillWorks(t *testing.T) {
 	mgr := island.NewManager()
-	ch := mgr.Subscribe("solo")
+	ch, cancelCh4 := mgr.Subscribe("solo")
+	defer cancelCh4()
 	mgr.PushUpdate(island.IslandUpdate{IslandID: "i", HTML: "local"}, "solo")
 	select {
 	case upd := <-ch:
@@ -142,7 +115,8 @@ func TestIslandFanoutStopDetaches(t *testing.T) {
 	defer stopB()
 	stopA, _ := mgrA.SetFanout(f)
 
-	chB := mgrB.Subscribe("sess-stop")
+	chB, cancelChb5 := mgrB.Subscribe("sess-stop")
+	defer cancelChb5()
 	mgrA.PushUpdate(island.IslandUpdate{IslandID: "i", HTML: "first"}, "sess-stop")
 	select {
 	case <-chB:
