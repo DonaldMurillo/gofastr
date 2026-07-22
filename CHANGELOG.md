@@ -5,6 +5,58 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.39.0] - 2026-07-21
+
+A first-contact pass over the README and the product site (gofastr.dev):
+lead with what the framework does, in plain words, before the origin
+story. Plus two small additive surfaces — a full-corpus `/llms-full.txt`
+tier and `.md`-aware dev rebuilds — and public-hosting hardening of the
+example site's live interactive demos.
+
+### Added
+
+- **`/llms-full.txt` — the whole-corpus llms tier.**
+  `uihost.WithLLMsFullTxt(content)` (or `AgentReadyConfig.FullText`)
+  serves the entire docs corpus as one `text/plain` file, alongside the
+  existing `/llms.txt` index that links each doc as raw markdown. Nothing
+  links it automatically — you supply the concatenated content. See
+  `gofastr docs agent-ready`.
+- **`gofastr dev` rebuilds on `.md` changes.** The dev watcher now treats
+  `.md` files as build inputs, so editing embedded docs (or any markdown
+  the app renders) triggers the same rebuild + livereload as a `.go` edit.
+
+### Changed
+
+- **README and product site lead with the product.** The README is
+  restructured product-before-biography and run through a plain-words
+  pass (no marketing vocab), with one architecture map instead of several
+  and a gated get-started tutorial. The site's hero, hubs, comparison,
+  and get-started page teach the real scaffolding flow and are pinned by
+  tests so the copy can't drift from the code. A new `gofastr` CLI
+  reference page, a tiered llms.txt over the embedded docs, and a home
+  "numbers you can check" strip (every claim measured live or gated by a
+  test) round it out.
+
+### Security
+
+- **The example site's live demos are isolated and bounded per visitor.**
+  The interactive demos (`examples/site`: kanban, optimistic
+  create/delete, counter) mutated shared package globals — one anonymous
+  visitor could vandalize every other visitor's demo, and one list grew
+  without bound (memory DoS). Each browser now gets its own demo state
+  keyed by a site-owned `site-demo` cookie (an isolation key, not the
+  auth session), held in a map bounded by a hard LRU cap and a TTL
+  janitor; the `/__site/*` endpoints gained body caps, sortable-order
+  dedup, and cookie-shape validation. Example-app hardening (no framework
+  API change) — the pattern is what any public deployment of a stateful
+  demo wants. Reviewed by a Claude + GLM + Sol pass.
+
+### Fixed
+
+- **Distinguishable get-started link.** A bare `http://localhost:8080`
+  inline anchor (an axe `link-in-text-block` violation, and a dead link
+  on the deployed site) is now a code literal.
+
 ## [0.38.1] - 2026-07-21
 
 Post-v0.38.0 cleanup: one e2e deflake and the doc drift found by the
