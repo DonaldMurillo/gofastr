@@ -22,6 +22,28 @@ pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
 warn() { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
 
+# Git feeds ref updates on stdin: "<local ref> <local sha> <remote ref>
+# <remote sha>" per line, with an all-zero local sha for a deletion. A
+# push that ONLY deletes remote branches ships no code, so there is
+# nothing for the gate to test — skip it. Any line with a real local
+# sha keeps the full gate.
+ZERO=0000000000000000000000000000000000000000
+only_deletions=""
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [ -z "$local_sha" ] && continue
+  if [ "$local_sha" = "$ZERO" ]; then
+    only_deletions="${only_deletions:-yes}"
+  else
+    only_deletions="no"
+  fi
+done
+if [ "$only_deletions" = "yes" ]; then
+  echo ""
+  echo "  Pre-push gate: branch deletion only — nothing to test, skipping."
+  echo ""
+  exit 0
+fi
+
 # Git runs hooks with GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (etc.)
 # pointing at THIS repo; they inherit into the test sweep, whose tests
 # shell out to `git init` / `git status` in temp fixtures and would then
