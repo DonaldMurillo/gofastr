@@ -186,7 +186,7 @@ func gsBody() render.HTML {
 			ok("→ Watching . for changes (.go, .js, .css, .html, .md)...\n"),
 			ok("→ blog server ready — http://localhost:8080\n"),
 		),
-		html.Paragraph(html.TextConfig{}, render.Text("Open "), html.Link(html.LinkConfig{Href: "http://localhost:8080", Text: "localhost:8080"}), render.Text(" — the scaffolded home screen renders. Then hit the API from a second terminal:")),
+		html.Paragraph(html.TextConfig{}, render.Text("Open "), codeText("localhost:8080"), render.Text(" — the scaffolded home screen renders. Then hit the API from a second terminal:")),
 		termBlock("$ probe",
 			o("$ curl -s http://localhost:8080/posts\n"),
 			ok("{\"error\":\"authentication required\",\"success\":false,…}   # 401\n"),
