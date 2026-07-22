@@ -1,0 +1,70 @@
+# Safety net for the release flow: every pushed v* tag must have a
+# GitHub release. The human/agent flow (merge → tag → `gh release create`
+# with a descriptive title) is still the primary path — this workflow
+# exists because the last step got skipped twice (v0.22–v0.24 era, then
+# v0.34.0–v0.39.0 backfilled 2026-07-22).
+#
+# Behavior on tag push:
+#   - release already exists → no-op success.
+#   - release missing, CHANGELOG.md has a `## [X.Y.Z]` section → create
+#     the release with that section as the body. Title is just the tag;
+#     edit it afterward to the usual "vX.Y.Z — short description" form.
+#   - release missing AND changelog section missing → FAIL. That means
+#     the changelog roll never happened, which the single-PR release
+#     flow requires; fix the changelog, then re-run via workflow_dispatch.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing v* tag to (re)check, e.g. v0.40.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  ensure-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
+            echo "release for $TAG already exists — nothing to do"
+            exit 0
+          fi
+          ver="${TAG#v}"
+          awk -v ver="$ver" '
+            $0 ~ "^## \\["ver"\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > /tmp/notes.md
+          if ! grep -q '[^[:space:]]' /tmp/notes.md; then
+            echo "::error::no CHANGELOG.md section for $ver — the changelog roll is missing. Add it, then re-run this workflow via workflow_dispatch."
+            exit 1
+          fi
+          gh release create "$TAG" --verify-tag --latest \
+            --title "$TAG" --notes-file /tmp/notes.md
+          echo "created release for $TAG from its CHANGELOG.md section"
