@@ -19,7 +19,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
@@ -311,51 +310,59 @@ func setupServer() *framework.App {
 	// (aria-busy + disabled) before commit; the fail endpoint exercises
 	// the shake-and-revert path.
 	fwApp.Router().Post("/__site/optimistic/slow", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(2 * time.Second)
+		// Long enough to show the pending window (aria-busy + disabled),
+		// short enough not to be a cheap connection-amplification lever on
+		// a public origin.
+		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	fwApp.Router().Post("/__site/optimistic/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "save failed", http.StatusUnprocessableEntity)
 	}))
 
-	// Recipe 3 (create): append a row to the in-memory CREATE store and
-	// return the fresh authoritative list HTML. The runtime swaps the
-	// list region's innerHTML with the response body. The create store
-	// is independent of the delete store so a created n4 never reaches
-	// /components/optimisticdelete (whose modals are mounted only for
-	// the initial n1–n3).
-	fwApp.Router().Post("/__site/optimistic/create", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		optimisticCreateNotes.Lock()
-		id := fmt.Sprintf("n%d", optimisticCreateNotes.Next)
-		optimisticCreateNotes.Next++
-		optimisticCreateNotes.Items = append(optimisticCreateNotes.Items, optimisticNote{
-			ID:    id,
-			Title: fmt.Sprintf("Note #%d (created %s)", optimisticCreateNotes.Next-1, time.Now().Format("15:04:05")),
-		})
-		body := renderOptimisticCreateListLocked()
-		optimisticCreateNotes.Unlock()
+	// Recipe 3 (create): append a row to THIS VISITOR's create list and
+	// return the fresh authoritative list HTML. The runtime swaps the list
+	// region's innerHTML with the response body. Per-session (demo_state.go)
+	// and capped at demoMaxCreateNotes so an Add loop can't grow a bucket
+	// without bound. The create list is independent of the delete list so a
+	// created n4 never reaches /components/optimisticdelete (whose modals are
+	// mounted only for the initial n1–n3).
+	fwApp.Router().Post("/__site/optimistic/create", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess := demoStateWrite(w, r)
+		sess.mu.Lock()
+		if len(sess.createNotes) < demoMaxCreateNotes {
+			id := fmt.Sprintf("n%d", sess.createNext)
+			sess.createNext++
+			sess.createNotes = append(sess.createNotes, optimisticNote{
+				ID:    id,
+				Title: fmt.Sprintf("Note #%d (created %s)", sess.createNext-1, time.Now().Format("15:04:05")),
+			})
+		}
+		body := renderOptimisticCreateListFor(sess)
+		sess.mu.Unlock()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, string(body))
 	}))
 
-	// Recipe 4 (delete): remove the row whose id matches ?id= from the
-	// DELETE store, then return the fresh authoritative list HTML. The
-	// runtime swaps the list region's innerHTML with the response body.
+	// Recipe 4 (delete): remove the row whose id matches ?id= from THIS
+	// VISITOR's delete list, then return the fresh authoritative list HTML.
+	// The runtime swaps the list region's innerHTML with the response body.
 	// A missing or unknown id leaves the list unchanged.
 	fwApp.Router().Post("/__site/optimistic/delete", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
-		optimisticDeleteNotes.Lock()
+		sess := demoStateWrite(w, r)
+		sess.mu.Lock()
 		if id != "" {
-			next := optimisticDeleteNotes.Items[:0]
-			for _, n := range optimisticDeleteNotes.Items {
+			next := sess.deleteNotes[:0]
+			for _, n := range sess.deleteNotes {
 				if n.ID != id {
 					next = append(next, n)
 				}
 			}
-			optimisticDeleteNotes.Items = append([]optimisticNote(nil), next...)
+			sess.deleteNotes = append([]optimisticNote(nil), next...)
 		}
-		body := renderOptimisticDeleteListLocked()
-		optimisticDeleteNotes.Unlock()
+		body := renderOptimisticDeleteListFor(sess)
+		sess.mu.Unlock()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, string(body))
 	}))
@@ -385,15 +392,23 @@ func setupServer() *framework.App {
 	// interactive examples. They have no CSRF protection, rate limiting,
 	// or input sanitization. Do NOT copy these as a template for
 	// production code.
-	var demoCounter atomic.Int64
-	fwApp.Router().Post("/__site/interactive/counter", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	fwApp.Router().Post("/__site/interactive/counter", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess := demoStateWrite(w, r)
+		sess.mu.Lock()
+		sess.counter++
+		n := sess.counter
+		sess.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `%d`, demoCounter.Add(1))
+		fmt.Fprintf(w, `%d`, n)
 	}))
 	fwApp.Router().Post("/__site/interactive/open-drawer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Cap the body — this handler buffers the decoded message, so an
+		// uncapped POST is a memory lever on a public origin. 4 KiB is far
+		// more than the demo's one short field needs.
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 		var body struct {
 			Message string `json:"message"`
 		}
@@ -408,29 +423,38 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	// Sortable kanban demo (/components/sortablelist): a 3-column board
-	// backed by the package-level kanbanBoard store. The move endpoint
-	// accepts order/moved/container/version; the conflict endpoint
-	// returns fresh <li> HTML for 409 reconciliation.
+	// Sortable kanban demo (/components/sortablelist): a 3-column board held
+	// per visitor in demoState (see demo_state.go). The move endpoint accepts
+	// order/moved/container/version; the conflict endpoint returns fresh <li>
+	// HTML for 409 reconciliation. Each visitor moves their own board — no
+	// shared global to vandalize.
 	fwApp.Router().Post("/__site/sortable/move", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
+		// Cap the body — a move carries a handful of short card ids; without
+		// this an attacker could POST a 10 MiB order=k1,k1,k1,… and inflate
+		// the persisted board. Handle the parse error rather than swallow it.
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		container := r.FormValue("container")
 		moved := r.FormValue("moved")
 		orderStr := r.FormValue("order")
 		version := r.FormValue("version")
 
-		kanbanBoard.Lock()
-		defer kanbanBoard.Unlock()
+		sess := demoStateWrite(w, r)
+		sess.mu.Lock()
+		defer sess.mu.Unlock()
 
 		// Optimistic-concurrency check (only when version is sent).
 		if version != "" {
-			if version != fmt.Sprintf("v%d", kanbanBoard.Version) {
+			if version != fmt.Sprintf("v%d", sess.kanbanVer) {
 				w.WriteHeader(http.StatusConflict)
 				return
 			}
 		}
 
-		destIdx, destCol := kanbanColumnByID(container)
+		destIdx, destCol := sess.columnByID(container)
 		if destCol == nil {
 			http.Error(w, "unknown container", http.StatusBadRequest)
 			return
@@ -438,50 +462,58 @@ func setupServer() *framework.App {
 
 		// Build a card lookup across all columns.
 		cardMap := map[string]kanbanCard{}
-		for _, col := range kanbanBoard.Columns {
+		for _, col := range sess.kanban {
 			for _, c := range col.Cards {
 				cardMap[c.Key] = c
 			}
 		}
 
-		// Parse the new destination order.
+		// Parse the new destination order. Dedup by key so a repeated id
+		// (order=k1,k1,k1,…) can't inflate the column past the real card
+		// count — each known card lands at most once.
 		var newCards []kanbanCard
+		seen := make(map[string]bool, len(cardMap))
 		for _, k := range strings.Split(orderStr, ",") {
 			k = strings.TrimSpace(k)
-			if k == "" {
+			if k == "" || seen[k] {
 				continue
 			}
 			if c, ok := cardMap[k]; ok {
+				seen[k] = true
 				newCards = append(newCards, c)
 			}
 		}
 
 		// Cross-container: remove the moved card from its source column.
 		if moved != "" {
-			for i := range kanbanBoard.Columns {
+			for i := range sess.kanban {
 				if i == destIdx {
 					continue
 				}
-				for j, c := range kanbanBoard.Columns[i].Cards {
+				for j, c := range sess.kanban[i].Cards {
 					if c.Key == moved {
-						kanbanBoard.Columns[i].Cards = append(
-							kanbanBoard.Columns[i].Cards[:j],
-							kanbanBoard.Columns[i].Cards[j+1:]...)
+						sess.kanban[i].Cards = append(
+							sess.kanban[i].Cards[:j],
+							sess.kanban[i].Cards[j+1:]...)
 						break
 					}
 				}
 			}
 		}
 
-		kanbanBoard.Columns[destIdx].Cards = newCards
-		kanbanBoard.Version++
+		sess.kanban[destIdx].Cards = newCards
+		sess.kanbanVer++
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	fwApp.Router().Get("/__site/sortable/conflict", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		container := r.URL.Query().Get("container")
-		kanbanBoard.Lock()
-		defer kanbanBoard.Unlock()
-		_, col := kanbanColumnByID(container)
+		// Read path: a 409 reconciliation GET only ever follows a move that
+		// already created the session, so it reads state and never mints a
+		// cookie or creates one. A cookieless edge case reconciles to the seed.
+		sess := demoStateForRequest(r)
+		sess.mu.Lock()
+		defer sess.mu.Unlock()
+		_, col := sess.columnByID(container)
 		if col == nil {
 			http.Error(w, "unknown container", http.StatusNotFound)
 			return
@@ -496,7 +528,7 @@ func setupServer() *framework.App {
 			Group:       "kanban-demo",
 			Container:   col.ID,
 			RPCPath:     "/__site/sortable/move",
-			Version:     fmt.Sprintf("v%d", kanbanBoard.Version),
+			Version:     fmt.Sprintf("v%d", sess.kanbanVer),
 			ConflictRPC: "/__site/sortable/conflict?container=" + col.ID,
 			Items:       items,
 		})))
