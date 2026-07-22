@@ -109,10 +109,14 @@ short and carry no `DO NOT EDIT` header, because they're yours to edit
 and commit. `gofastr generate` is one-shot, so from here the owned Go —
 not the blueprint — is the source of truth. (Run it again and it refuses to
 overwrite; `--force` regenerates the *entire* set and would discard the
-edits you're about to make, so you won't use it past this first run.)
+edits you're about to make, so you won't use it past this first run. To
+scaffold *new* files into an existing app, use `generate --add` /
+`generate entity <name>` — owned files are never touched.)
 
 Check the UI, the API, and the MCP tools from a second terminal — the
-REST API lives under the `/api` prefix:
+REST API lives under the `/api` prefix (the `app.api_prefix` default;
+set it to `""` to serve entities at the bare path — MCP tools and the
+OpenAPI spec follow the prefix automatically):
 
 ```bash
 # The API — auto-CRUD with validation, filtering, pagination:

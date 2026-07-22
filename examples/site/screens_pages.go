@@ -147,80 +147,78 @@ func gsBody() render.HTML {
 		html.Paragraph(html.TextConfig{}, render.Text("One binary covers scaffold, migrate, dev, build, test, and the doc browser. Get it from GitHub:")),
 		termBlock("$ install",
 			render.Text("$ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest\n"),
-			ok("→ installed gofastr v"+siteVersion+" to ~/go/bin\n"),
+			o("$ gofastr --version\n"),
+			ok("gofastr v"+siteVersion+"\n"),
 		),
-		html.Paragraph(html.TextConfig{}, render.Text("Verify it's on your PATH with "), codeText("gofastr --version"), render.Text(".")),
-		callout("If go install fails", "Make sure $GOPATH/bin (or ~/go/bin) is in your PATH. Run echo $PATH and add the missing entry to your shell rc."),
+		callout("If gofastr isn't found", "Make sure $GOPATH/bin (or ~/go/bin) is in your PATH. Run echo $PATH and add the missing entry to your shell rc."),
 	)
 
 	step2 := step("s2", "02", "Scaffold", "~45s",
-		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project — it writes a working main.go, theme.go, and an empty entities directory.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/, a home screen in screens/, a versioned migration, DESIGN.md, a gofastr.yml project config, and the agent onboarding files (AGENTS.md + agents/, CLAUDE.md) — then initializes git.")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
-			ok("→ wrote blog/main.go, blog/theme.go, blog/entities/\n"),
-			ok("→ go.mod created with module \"blog\"\n"),
-			ok("→ next: cd blog && go run .\n"),
+			ok("→ created blog/ — main.go, entities/, screens/, gofastr.yml, DESIGN.md, AGENTS.md, CLAUDE.md\n"),
+			ok("→ next: cd blog && go mod tidy && gofastr dev\n"),
 		),
-		html.Paragraph(html.TextConfig{}, render.Text("Open the scaffolded main.go — it's about 30 lines. Read it.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Open the scaffolded "), codeText("main.go"), render.Text(" — it's short, it's yours, and every registration in it is plain Go. Read it.")),
 	)
 
-	step3 := step("s3", "03", "First entity", "~60s",
-		html.Paragraph(html.TextConfig{}, render.Text("Declare your first entity in Go. One call generates SQL, REST, MCP, OpenAPI, and a typed query builder.")),
-		codeBlock("blog/main.go", []render.HTML{
-			ln(render.Text("  app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" framework."), ty("Entity"), pn("{")),
-			ln(render.Text("    Fields"), pn(":"), render.Text(" framework."), ty("Fields"), pn("{")),
-			ln(render.Text("      "), str_(`"title"`), pn(":"), render.Text(" f."), fn_("String"), pn("()."), fn_("Required"), pn("(),")),
-			ln(render.Text("      "), str_(`"body"`), pn(":"), render.Text("  f."), fn_("Markdown"), pn("(),")),
-			ln(render.Text("    "), pn("},")),
-			ln(render.Text("    Timestamps"), pn(":"), render.Text(" "), kw("true"), pn(",")),
-			ln(render.Text("  "), pn("})")),
+	step3 := step("s3", "03", "The entity", "~60s",
+		html.Paragraph(html.TextConfig{}, render.Text("The scaffold already declared one. Open "), codeText("entities/entities.go"), render.Text(" — one declaration is the table, REST CRUD, validation, an OpenAPI spec, and a typed query builder:")),
+		codeBlock("blog/entities/entities.go", []render.HTML{
+			ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" entity."), ty("EntityConfig"), pn("{")),
+			ln(render.Text("  Fields"), pn(":"), render.Text(" []schema."), ty("Field"), pn("{")),
+			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"title"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("String"), pn(","), render.Text(" Required"), pn(":"), render.Text(" "), kw("true"), pn("},")),
+			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"body"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("Text"), pn("},")),
+			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"published"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("Bool"), pn("},")),
+			ln(render.Text("  "), pn("},")),
+			ln(render.Text("  CRUD"), pn(":"), render.Text(" boolPtr("), kw("true"), pn("),")),
+			ln(pn("})")),
 		}),
-		html.Paragraph(html.TextConfig{}, render.Text("That's the whole declaration. No migrations file. No schema yaml. Just Go.")),
+		html.Paragraph(html.TextConfig{}, render.Text("The matching versioned migration is next to it in the same file — "), codeText("gofastr docs migrations"), render.Text(" covers how those run.")),
 	)
 
-	step4 := step("s4", "04", "Run it", "~15s",
-		html.Paragraph(html.TextConfig{}, render.Text("Start the app. The framework auto-migrates the SQLite schema, mounts /posts, /openapi.json, /mcp, and a livereload SSE stream.")),
+	step4 := step("s4", "04", "Run it", "~60s",
+		html.Paragraph(html.TextConfig{}, render.Text("Resolve dependencies once, then start the dev server — it rebuilds on save, reloads the browser, and hands your coding agent the app over MCP.")),
 		termBlock("$ run",
-			render.Text("$ go run .\n"),
-			ok("→ HTTP on http://localhost:8080\n"),
-			ok("→ migrated posts (1 table)\n"),
-			ok("→ /openapi.json + /mcp ready\n"),
+			render.Text("$ go mod tidy\n"),
+			render.Text("$ gofastr dev\n"),
+			ok("→ Watching . for changes (.go, .js, .css, .html, .md)...\n"),
+			ok("→ blog server ready — http://localhost:8080\n"),
 		),
-		html.Paragraph(html.TextConfig{}, render.Text("In a second terminal, hit the API to prove it works:")),
+		html.Paragraph(html.TextConfig{}, render.Text("Open "), codeText("localhost:8080"), render.Text(" — the scaffolded home screen renders. Then hit the API from a second terminal:")),
 		termBlock("$ probe",
-			o("$ curl -s -X POST http://localhost:8080/posts \\\n"),
-			o("    -H 'content-type: application/json' \\\n"),
-			o("    -d '{\"title\":\"Hello\",\"body\":\"world\"}'\n"),
-			ok("{\"id\":\"01J7…\",\"title\":\"Hello\",\"body\":\"world\",…}\n"),
+			o("$ curl -s http://localhost:8080/posts\n"),
+			ok("{\"error\":\"authentication required\",\"success\":false,…}   # 401\n"),
 		),
+		html.Paragraph(html.TextConfig{}, render.Text("That 401 is the point: auto-CRUD refuses anonymous requests unless you opt out. Add "), codeText("Public: true"), render.Text(" to the entity, save, and the dev server rebuilds — the same curl now answers "), codeText("{\"data\":[]}"), render.Text(". Wiring real login instead is the auth battery ("), codeText("gofastr docs auth"), render.Text(").")),
 	)
 
 	step5 := step("s5", "05", "First page", "~60s",
-		html.Paragraph(html.TextConfig{}, render.Text("Add a server-rendered page. Screens are normal Go structs: Load(ctx) fetches, Render() returns the markup. They live alongside main.go.")),
-		codeBlock("blog/screen_posts.go", []render.HTML{
-			ln(kw("func"), render.Text(" (s "), pn("*"), ty("PostsScreen"), pn(")"), render.Text(" "), fn_("Load"), pn("("), render.Text("ctx context."), ty("Context"), pn(")"), render.Text(" {")),
-			ln(render.Text("  s.posts, "), pn("_"), render.Text(" = posts."), fn_("Query"), pn("("), render.Text("ctx"), pn(")."), fn_("List"), pn("(20)"), render.Text("  "), com("// fetch in Load")),
-			ln(pn("}")),
-			ln(kw("func"), render.Text(" (s "), pn("*"), ty("PostsScreen"), pn(")"), render.Text(" "), fn_("Render"), pn("()"), render.Text(" "), ty("render.HTML"), pn(" {")),
-			ln(render.Text("  "), kw("return"), render.Text(" html."), fn_("Div"), pn("("), render.Text("html."), ty("DivConfig"), pn("{},")),
-			ln(render.Text("    "), com("/* render each post in s.posts */")),
-			ln(render.Text("  "), pn(")")),
+		html.Paragraph(html.TextConfig{}, render.Text("Add a second server-rendered page. A screen is a Go struct whose Render returns the markup — the scaffolded home screen in "), codeText("screens/home.go"), render.Text(" is the pattern:")),
+		codeBlock("blog/screens/about.go", []render.HTML{
+			ln(kw("type"), render.Text(" "), ty("AboutScreen"), render.Text(" "), kw("struct"), pn("{}")),
+			ln(render.Text("")),
+			ln(kw("func"), render.Text(" (s "), pn("*"), ty("AboutScreen"), pn(")"), render.Text(" "), fn_("ScreenTitle"), pn("()"), render.Text(" "), ty("string"), pn(" {"), render.Text(" "), kw("return"), render.Text(" "), str_(`"About"`), pn(" }")),
+			ln(kw("func"), render.Text(" (s "), pn("*"), ty("AboutScreen"), pn(")"), render.Text(" "), fn_("Render"), pn("()"), render.Text(" "), ty("render.HTML"), pn(" {")),
+			ln(render.Text("  "), kw("return"), render.Text(" ui."), fn_("PageHeader"), pn("("), render.Text("ui."), ty("PageHeaderConfig"), pn("{"), render.Text("Title"), pn(":"), render.Text(" "), str_(`"About"`), pn("})")),
 			ln(pn("}")),
 		}),
-		callout("Tip", "Run `gofastr docs` to browse the embedded docs in a TUI — entity-declarations, query-dsl, hooks, all of it."),
+		html.Paragraph(html.TextConfig{}, render.Text("Register it in "), codeText("main.go"), render.Text(" next to the home screen — "), codeText(`site.Register("/about", &screens.AboutScreen{}, nil)`), render.Text(" — save, and the dev server serves it.")),
+		callout("Tip", "Run `gofastr docs` to browse the embedded docs offline — entity-declarations, query-dsl, hooks, all of it."),
 	)
 
 	step6 := step("s6", "06", "What you have", "now",
-		html.Paragraph(html.TextConfig{}, render.Text("In four minutes you've stood up an app with full HTTP + agent surface area:")),
+		html.Paragraph(html.TextConfig{}, render.Text("Four minutes in, this is on disk and running:")),
 		html.Div(html.DivConfig{Class: "result"},
-			html.Heading(html.HeadingConfig{Level: 3}, render.Text("Running, on disk, queryable, agent-driven")),
+			html.Heading(html.HeadingConfig{Level: 3}, render.Text("Running, on disk, yours")),
 			html.UnorderedList(html.ListConfig{},
-				html.ListItem(html.ListItemConfig{}, render.Text("Versioned SQL migrations")),
-				html.ListItem(html.ListItemConfig{}, render.Text("REST CRUD + cursor pagination")),
-				html.ListItem(html.ListItemConfig{}, render.Text("OpenAPI 3 + Swagger UI")),
-				html.ListItem(html.ListItemConfig{}, render.Text("MCP tools at /mcp")),
-				html.ListItem(html.ListItemConfig{}, render.Text("Typed Go query builder")),
-				html.ListItem(html.ListItemConfig{}, render.Text("Hot-reload dev SSE")),
+				html.ListItem(html.ListItemConfig{}, render.Text("A server-rendered home screen (plus yours from step 5)")),
+				html.ListItem(html.ListItemConfig{}, render.Text("A posts entity: REST CRUD, session-gated by default")),
+				html.ListItem(html.ListItemConfig{}, render.Text("A versioned SQL migration, already applied")),
+				html.ListItem(html.ListItemConfig{}, render.Text("An OpenAPI 3 spec (auth-gated; Swagger UI at /api/docs/)")),
+				html.ListItem(html.ListItemConfig{}, render.Text("MCP under gofastr dev: posts_list/posts_create plus app_routes, framework_docs_search — your coding agent reads the running app")),
+				html.ListItem(html.ListItemConfig{}, render.Text("AGENTS.md + agents/ + DESIGN.md, generated for the agent you build with")),
 			),
 		),
 	)
@@ -250,8 +248,8 @@ func gsNext() render.HTML {
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Where next")),
 			html.Div(html.DivConfig{Class: "next__grid"},
 				card("/docs/", "Browse the docs", fmt.Sprintf("%d docs grouped by what you're trying to do.", docCount()), "/docs/"),
-				card("/examples", "Read an example", "Six full apps you can clone and modify.", "/examples"),
-				card("/kiln", "Try Kiln", "Skip the writing entirely — chat your app into being.", "/kiln", experimentalPill()),
+				card("/examples", "Read an example", fmt.Sprintf("%d full apps you can clone and modify.", len(exRowItems())), "/examples"),
+				card("/kiln", "Try Kiln", "Build the app by chatting with an agent; freeze the result into a blueprint you commit.", "/kiln", experimentalPill()),
 			),
 		),
 	)
@@ -284,7 +282,7 @@ func cxHero() render.HTML {
 			render.Text("Read by what you're trying to do."),
 		),
 		html.Paragraph(html.TextConfig{Class: "lede"},
-			render.Text("The framework's surface is grouped into six intents. Pick the one that matches the question you're holding."),
+			render.Text("The docs are grouped by intent. Pick the one that matches the question you're holding."),
 		),
 		html.Paragraph(html.TextConfig{Class: "cx-stats-line"},
 			render.Text(fmt.Sprintf("%d docs · %d intents", docCount(), len(docIntents))),
@@ -373,7 +371,7 @@ type ExamplesScreen struct{}
 
 func (s *ExamplesScreen) ScreenTitle() string { return "Examples" }
 func (s *ExamplesScreen) ScreenDescription() string {
-	return "Six reference apps. Each runs in one command."
+	return fmt.Sprintf("%d reference apps. Each runs in one command.", len(exRowItems()))
 }
 func (s *ExamplesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -384,9 +382,9 @@ func (s *ExamplesScreen) Render() render.HTML {
 func exHero() render.HTML {
 	return html.Section(html.SectionConfig{Class: "ex-hero", Label: "Examples"},
 		container(
-			html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Examples · 6 apps")),
+			html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent(fmt.Sprintf("Examples · %d apps", len(exRowItems())))),
 			html.Heading(html.HeadingConfig{Level: 1},
-				render.Text("Six reference apps. Each runs in one command."),
+				render.Text(fmt.Sprintf("%d reference apps. Each runs in one command.", len(exRowItems()))),
 			),
 			html.Paragraph(html.TextConfig{Class: "lede"},
 				render.Text("Clone the one that looks like your problem; swap the entity declarations. Each app's full source is under examples/ in the repo — copy what you need."),
@@ -395,8 +393,12 @@ func exHero() render.HTML {
 	)
 }
 
-func exRows() render.HTML {
-	rows := []render.HTML{
+// exRowItems builds every example row. Copy that cites an app count
+// (the hero pill, the H1, the get-started card, the meta description)
+// derives it from len() of this slice, so the number can't drift from
+// the content again.
+func exRowItems() []render.HTML {
+	return []render.HTML{
 		exRow("01", "examples/meridian", "Meridian — SaaS console", "flagship", "100% generated",
 			"A billing & revenue console (customers, subscriptions, invoices, MRR + charts) plus its marketing site, auth, RBAC, and an admin back-office — generated from one gofastr.yml, with writable screens (add/edit/delete) and zero hand-written app code.",
 			[]string{"One blueprint → marketing + app + auth + admin", "Server-rendered DataTable / charts / forms, island RPCs", "Writable CRUD + RBAC, with a generated end-to-end test suite"},
@@ -405,17 +407,26 @@ func exRows() render.HTML {
 			// build time, shown verbatim in a scrolling block. Drift-guarded by
 			// TestEmbeddedBlueprintsMatchSource.
 			codeBlockScroll("examples/meridian/gofastr.yml", meridianBlueprintYAML, "yaml")),
-		exRow("02", "examples/blog", "Go-declared blog", "smallest", "~120 LoC",
+		exRow("02", "examples/ecommerce", "ShopFront — storefront", "blueprint pipeline", "100% generated",
+			"A complete storefront from one gofastr.yml — five related entities (categories, products, orders, order_items, reviews), a themed eight-screen UI, custom endpoints, and seed data. Nothing under app/ is hand-written.",
+			[]string{"Second blueprint pipeline beside Meridian", "Owner-scoped orders and reviews", "Exercised by its own end-to-end test"},
+			"cd examples/ecommerce && go run ./app",
+			codeBlock("examples/ecommerce/gofastr.yml", []render.HTML{
+				ln(com("# 5 entities, 8 screens, auth, seeds — one YAML")),
+				ln(render.Text("$ gofastr generate   "), com("// emits ./app — plain Go")),
+				ln(render.Text("$ go run ./app")),
+			})),
+		exRow("03", "examples/blog", "Go-declared blog", "smallest", "~120 LoC",
 			"Users, posts, comments. Three entities. Start here — it's the end-to-end story in one file.",
 			[]string{"Three entities declared in Go", "Auto-CRUD + Swagger UI + MCP", "SQLite by default; swap for Postgres in main.go"},
 			"cd examples/blog && go run .",
 			codeBlock("examples/blog/main.go", []render.HTML{
+				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"users"`), pn(","), render.Text(" …"), pn(")")),
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"comments"`), pn(","), render.Text(" …"), pn(")")),
-				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"tags"`), pn(","), render.Text(" …"), pn(")")),
-				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
+				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8080"`), pn(")")),
 			})),
-		exRow("03", "examples/site", "This site (UI showcase)", "largest", "~6000 LoC",
+		exRow("04", "examples/site", "This site (UI showcase)", "largest", "~6000 LoC",
 			"Every core-ui pattern + framework/ui component, one page each — plus the docs, SEO, multi-step wizard, and print-battery demos. The site you're reading right now.",
 			[]string{"Every core-ui pattern + framework/ui component", "Docs, philosophy, examples, Kiln pages", "SEO interfaces, sitemap/robots, wizard, print"},
 			"cd examples/site && go run .",
@@ -424,45 +435,48 @@ func exRows() render.HTML {
 				ln(render.Text("app "), pn(":="), render.Text(" framework."), fn_("NewUIHostApp"), pn("("), render.Text("host"), pn(")")),
 				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8083"`), pn(")")),
 			})),
-		exRow("04", "examples/api-tour", "API tour", "live docs", "~180 LoC",
-			"Every REST endpoint as a chapter. Each chapter has a live curl example you run from the page.",
+		exRow("05", "examples/api-tour", "API tour", "annotated source", "~180 LoC",
+			"Every v2 API feature in one annotated main.go — with the curl commands to exercise each one in the file header.",
 			[]string{"Cursor + offset pagination", "Eager loading (?include=…)", "Batch endpoints, SSE entity events, uploads"},
 			"cd examples/api-tour && go run .",
 			codeBlock("examples/api-tour/main.go", []render.HTML{
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
 				ln(com("// cursor + offset paging, ?include=, batch, SSE")),
-				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
+				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8080"`), pn(")")),
 			})),
-		exRow("05", "examples/embed-demo", "Local semantic search", "no API key", "~180 LoC",
+		exRow("06", "examples/embed-demo", "Local semantic search", "no API key", "~180 LoC",
 			"A markdown corpus indexed locally via battery/embed. No external API key; works offline.",
 			[]string{"Brute-force cosine, hybrid keyword fusion", "Snapshot + WAL persistence", "Poll-watch for file changes"},
 			"cd examples/embed-demo && go run .",
 			codeBlock("examples/embed-demo/main.go", []render.HTML{
-				ln(render.Text("idx "), pn(":="), render.Text(" embed."), fn_("New"), pn("(…)")),
-				ln(render.Text("idx."), fn_("Add"), pn("("), render.Text("docs…"), pn(")"), render.Text("   "), com("// local vectors")),
-				ln(render.Text("hits "), pn(":="), render.Text(" idx."), fn_("Search"), pn("("), str_(`"how do hooks work"`), pn(", "), render.Text("5"), pn(")")),
+				ln(render.Text("idx, _ "), pn(":="), render.Text(" embed."), fn_("Open"), pn("("), render.Text("embed."), ty("Options"), pn("{…})")),
+				ln(render.Text("idx."), fn_("Add"), pn("("), render.Text("ctx, docs…"), pn(")"), render.Text("   "), com("// local vectors")),
+				ln(render.Text("hits, _ "), pn(":="), render.Text(" idx."), fn_("Query"), pn("("), render.Text("ctx, embed."), ty("Query"), pn("{"), render.Text("Text: "), str_(`"hooks"`), pn(", "), render.Text("Limit: 5"), pn("})")),
 			})),
-		exRow("06", "examples/spa", "Vue + GoFastr API", "BYO client", "~140 LoC server",
+		exRow("07", "examples/spa", "Vue + GoFastr API", "BYO client", "~140 LoC server",
 			"For teams who already have a client app. Shows the framework is happy to just be your typed API.",
-			[]string{"Same auto-CRUD entities", "OpenAPI generates the TypeScript client", "No SSR — just the JSON surface"},
+			[]string{"Same auto-CRUD entities", "Vue 3 + Vue Router from a CDN — no npm, no build step", "No SSR — the Go app serves JSON and the static files"},
 			"cd examples/spa && go run .",
 			codeBlock("examples/spa/main.go", []render.HTML{
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
 				ln(com("// JSON API only — your Vue app is the client")),
-				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
+				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8080"`), pn(")")),
 			})),
-		exRow("07", "examples/static-site", "Static-site mode", "no server", "~90 LoC",
-			"Same renderer, no server. gofastr build emits a CDN-friendly bundle of HTML + CSS + JS.",
-			[]string{"Screens implement Load(ctx) once", "Build-time fetches replace SSR fetches", "Output drops straight on Cloudflare Pages or Netlify"},
-			"cd examples/static-site && gofastr build",
-			codeBlock("examples/static-site/home.go", []render.HTML{
-				ln(kw("func"), render.Text(" (s "), pn("*"), ty("HomeScreen"), pn(")"), render.Text(" "), fn_("Load"), pn("(ctx) {")),
-				ln(render.Text("  s.Posts, _ "), pn("="), render.Text(" posts."), fn_("Query"), pn("(ctx)."), fn_("List"), pn("("), render.Text("20"), pn(")")),
-				ln(pn("}"), render.Text("  "), com("// run at build time, not per-request")),
-				ln(com("// $ gofastr build → ./dist  (no app.Serve)")),
+		exRow("08", "examples/static-site", "Static file server", "no screens", "~60 LoC",
+			"A plain file server on the framework router: static.Mount serves the pages/ directory — HTML and CSS straight from disk, no screens, no runtime JS.",
+			[]string{"static.Mount with SPA mode off — only real files serve", "index.html answers /", "API routes can mount beside it on the same router"},
+			"cd examples/static-site && go run .",
+			codeBlock("examples/static-site/main.go", []render.HTML{
+				ln(render.Text("static."), fn_("Mount"), pn("("), render.Text("app."), fn_("Router"), pn("(), static."), ty("Config"), pn("{")),
+				ln(render.Text("  FS: os."), fn_("DirFS"), pn("("), render.Text("pagesDir"), pn("),")),
+				ln(pn("})")),
+				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":3070"`), pn(")")),
 			})),
 	}
-	return container(render.Join(rows...))
+}
+
+func exRows() render.HTML {
+	return container(render.Join(exRowItems()...))
 }
 
 // exRow renders one example. code is the pre-built code sample (a snippet for
@@ -556,7 +570,7 @@ func kHero() render.HTML {
 				render.Text("."),
 			),
 			html.Paragraph(html.TextConfig{Class: "lede"},
-				render.Text("Kiln is experimental — a separate binary that mounts a chat panel on your running GoFastr app. The agent calls a typed tool surface; the in-memory IR mutates; the schema migrates; the app re-renders — all in-process. Freeze the journal when done to emit the canonical entity files you commit."),
+				render.Text("Kiln is experimental — a separate binary that mounts a chat panel on your running GoFastr app. The agent calls typed tools; the in-memory IR mutates; the schema migrates; the app re-renders — all in-process. Freeze the journal when done to emit the canonical entity files you commit."),
 			),
 			html.Div(html.DivConfig{Class: "k-hero__ctas"},
 				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/kiln", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
@@ -628,7 +642,7 @@ func kDemo() render.HTML {
 			html.Div(html.DivConfig{Class: "lbl"}, render.Text("Plan #4 · 3 ops")),
 			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ add_entity(\"posts\")")),
 			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ add_field(\"posts\", title)")),
-			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ migrate_up()")),
+			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ add_field(\"posts\", status)")),
 			// Real OptimisticAction buttons — the framework's runtime fires
 			// the POST, swaps the label to SuccessLabel on click, rolls back
 			// if the endpoint returns non-2xx. Endpoints are no-op handlers
@@ -686,7 +700,7 @@ func kTimeline() render.HTML {
 				evt("8s", "tool", "Agent calls add_entity", "Mutates the IR: posts(title, body, status). No DB write yet."),
 				evt("12s", "tool", "Agent calls propose_plan", "Lists destructive targets (none) and the three add_* operations."),
 				evt("18s", "approve", "You click Approve", "Plan id is stamped onto the agent's retry call."),
-				evt("19s", "", "Migration runs", "Up-migration generated and applied; the posts table is live."),
+				evt("19s", "", "Schema auto-migrates", "The plan applies and the schema auto-migrates in-process; the posts table is live."),
 				evt("25s", "", "Journal freezable", "kiln freeze --dir build/ snapshots the world; graduate to Go via a gofastr.yml blueprint."),
 			),
 		),
@@ -735,7 +749,7 @@ func kCli() render.HTML {
 		container(
 			html.Heading(html.HeadingConfig{Level: 2},
 				render.Text("Two binaries. "),
-				html.Span(html.TextConfig{Class: "amber"}, render.Text("Three lines of setup")),
+				html.Span(html.TextConfig{Class: "amber"}, render.Text("Two commands of setup")),
 				render.Text("."),
 			),
 			html.Paragraph(html.TextConfig{Class: "lede"},
@@ -828,7 +842,7 @@ func phBody() render.HTML {
 	}
 	article := html.Article(html.ArticleConfig{Class: "ph-article"},
 		html.Paragraph(html.TextConfig{Class: "lede"},
-			render.Text("Most web frameworks assume a human will hand-write every route, query, validator, migration, and form. AI agents already generate that code — but no framework treats their output as the canonical source. GoFastr inverts that. The agent is a first-class author. The human is too. The framework is what they both write to."),
+			render.Text("Most web frameworks assume a human will hand-write every route, query, validator, migration, and form. AI agents already generate that code — but no framework treats their output as the canonical source. GoFastr inverts that. The agent's output is canonical source, same as the human's. The framework is what they both write to."),
 		),
 		html.Section(html.SectionConfig{ID: "why", Label: "Why this exists"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Why this exists")),
@@ -841,23 +855,23 @@ func phBody() render.HTML {
 		html.Section(html.SectionConfig{ID: "two-layers", Label: "Two layers"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("The two layers")),
 			html.Paragraph(html.TextConfig{},
-				render.Text("Two packages, no more. "), codeText("core/"), render.Text(" is twelve stdlib-only Go primitives — router, query, schema, mcp, openapi — each independently usable. "), codeText("framework/"), render.Text(" is the opinionated entity layer composed on top. When the framework is in your way, you drop down to core and write plain Go.")),
+				render.Text("Two packages, no more. "), codeText("core/"), render.Text(" is stdlib-only Go primitives — router, query, schema, mcp, openapi, and more — each independently usable, with no dependencies outside the standard library. "), codeText("framework/"), render.Text(" is the opinionated entity layer composed on top. When the framework is in your way, you drop down to core and write plain Go.")),
 			html.Paragraph(html.TextConfig{}, render.Text("No reflection magic. Generated code is regular Go you can read. The framework's job is to make the typed declaration so expressive that the generated code is shorter than the framework call that produced it.")),
 		),
 		html.Section(html.SectionConfig{ID: "convictions", Label: "Convictions"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Convictions")),
 			html.Div(html.DivConfig{Class: "conv-list"},
-				conv("01", "Declare once, generate many surfaces", "Database, REST, MCP, OpenAPI, typed Go — all from one source."),
+				conv("01", "Declare once, generate the rest", "Database, REST, MCP, OpenAPI, typed Go — all from one source."),
 				conv("02", "No reflection magic", "If the framework looks like it's doing something opaque, open the generated file."),
-				conv("03", "Drop down to core", "If the framework is in your way, the layer below is twelve packages of stdlib-only Go."),
+				conv("03", "Drop down to core", "If the framework is in your way, the layer below is stdlib-only Go with nothing else to fight."),
 				conv("04", "Batteries included, not embedded", "Auth, cache, email, queue, search, storage — narrow interfaces, swappable drivers."),
-				conv("05", "AI agents are first-class authors", "MCP tools, Kiln, agent notes. Every entity ships an agent-facing surface from day one."),
+				conv("05", "AI agents are authors too", "MCP tools, Kiln, agent notes. Every entity ships MCP tools from day one."),
 				conv("06", "Strong opinions, small scope", "Some things we explicitly will not do."),
 			),
 		),
 		html.Section(html.SectionConfig{ID: "agents", Label: "Where agents fit"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Where agents fit")),
-			html.Paragraph(html.TextConfig{}, render.Text("Agents drive the framework the same way humans do. The MCP tool surface is just the REST surface in a different shape; the typed Kiln tools are the framework's mutate API exposed for code-generating agents. Destructive operations require an approved plan — the agent cannot drop your tables without you clicking Approve.")),
+			html.Paragraph(html.TextConfig{}, render.Text("Agents drive the framework the same way humans do. The MCP tools are the REST endpoints in a different shape; the typed Kiln tools are the framework's mutate API exposed for code-generating agents. Destructive operations require an approved plan — the agent cannot drop your tables without you clicking Approve.")),
 			html.Paragraph(html.TextConfig{}, render.Text("The framework also leaves clear breadcrumbs for the agent: doc files embedded in the binary and structured MCP introspection at /mcp. An agent that connects to a running GoFastr app can read its own state and reason about it.")),
 		),
 		html.Section(html.SectionConfig{ID: "next", Label: "What's next"},
@@ -883,7 +897,7 @@ func phBody() render.HTML {
 				html.DescriptionTerm(html.TextConfig{}, render.Text("01")),
 				html.DescriptionDetail(html.TextConfig{}, render.Text("The framework's principles trace from net/http: pattern routing, middleware chains, explicit handler signatures.")),
 				html.DescriptionTerm(html.TextConfig{}, render.Text("02")),
-				html.DescriptionDetail(html.TextConfig{}, render.Text("MCP — Anthropic's Model Context Protocol; used as the agent-facing surface.")),
+				html.DescriptionDetail(html.TextConfig{}, render.Text("MCP — Anthropic's Model Context Protocol; how agents call the app's tools.")),
 				html.DescriptionTerm(html.TextConfig{}, render.Text("03")),
 				html.DescriptionDetail(html.TextConfig{}, render.Text("The two-layer pattern echoes Rich Hickey's distinction between simple and easy.")),
 			),

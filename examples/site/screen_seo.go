@@ -41,7 +41,7 @@ func (*SEOScreen) ScreenHreflangs() []uihost.HreflangLink {
 func (*SEOScreen) ScreenSchema() []seo.Thing {
 	article := seo.NewArticle()
 	article.Headline = "GoFastr SEO module"
-	article.Description = "How per-page SEO surfaces compose in GoFastr."
+	article.Description = "How per-page SEO tags compose in GoFastr."
 	article.URL = "https://gofastr.dev/seo"
 	article.DatePublished = "2026-06-01"
 
@@ -64,7 +64,7 @@ func (s *SEOScreen) Render() render.HTML {
 
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Per-page interfaces")),
 			html.UnorderedList(html.ListConfig{},
-				li(codeText("app.ScreenDescriber"), render.Text(" → "), codeText(`<meta name="description">`), render.Text(". The most-forgotten SEO surface.")),
+				li(codeText("app.ScreenDescriber"), render.Text(" → "), codeText(`<meta name="description">`), render.Text(". The most-forgotten SEO tag.")),
 				li(codeText("uihost.ScreenCanonical"), render.Text(" → "), codeText(`<link rel="canonical">`), render.Text(". Stops query-string variants fragmenting ranking.")),
 				li(codeText("uihost.ScreenHreflangs"), render.Text(" → one "), codeText(`<link rel="alternate">`), render.Text(" per locale.")),
 				li(codeText("uihost.ScreenSchema"), render.Text(" → one "), codeText(`<script type="application/ld+json">`), render.Text(" per item. This page emits an Article + a BreadcrumbList.")),
@@ -129,7 +129,7 @@ func (s *SEOBundleScreen) Render() render.HTML {
 			html.Link(html.LinkConfig{Href: "/seo", Text: "← SEO"}),
 			html.Heading(html.HeadingConfig{Level: 1}, render.Text("SEO bundle — ScreenSEO")),
 			html.Paragraph(html.TextConfig{Class: "lede"}, render.Text(
-				"Same SEO surface as the per-concern interfaces — packed into one method. View-source to see every tag the bundle emitted in <head>.")),
+				"Same tags as the per-concern interfaces — packed into one method. View-source to see every tag the bundle emitted in <head>.")),
 
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Bundle vs per-concern")),
 			html.UnorderedList(html.ListConfig{},

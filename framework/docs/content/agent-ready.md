@@ -72,6 +72,29 @@ one `## Section` per file-list of `- [name](url): notes`. A section titled
 the app's `/llm-pages.md` index — which itself enumerates every screen and its
 per-screen `/llm.md` doc.
 
+### `/llms-full.txt` — the full-corpus tier
+
+The llmstxt.org convention has two tiers: `/llms.txt` is the small index
+an agent fetches first; `/llms-full.txt` is the whole docs corpus in one
+markdown file, for agents that want everything in a single request
+instead of following links. Serve it by passing the concatenated
+markdown:
+
+```go
+uihost.WithLLMsFullTxt(fullCorpusMarkdown)
+// or, via the bundle:
+uihost.WithAgentReady(uihost.AgentReadyConfig{
+	Title:    "Acme",
+	FullText: fullCorpusMarkdown,
+})
+```
+
+The content is served verbatim as `text/plain`. Nothing links it
+automatically — add a `Sections` entry pointing at `/llms-full.txt` so
+agents reading the index can find it. gofastr.dev does exactly this:
+its `/llms.txt` indexes every embedded framework doc as a raw markdown
+URL, and its `/llms-full.txt` is the whole corpus concatenated.
+
 ### A2A agent card  (Agent2Agent v1.0)
 
 `/.well-known/agent-card.json` describes the agent's identity, service
@@ -328,6 +351,7 @@ origin and every artifact stays consistent, including behind a proxy that sets
 |---|---|
 | `uihost.WithAgentReady(cfg)` | Bundle: llms.txt + card + AI-bot robots + Link headers (incl. OpenAPI `service-desc` when `cfg.OpenAPIEndpoint` is set, e.g. `"/openapi.json"`). |
 | `uihost.WithLLMsTxt(title, summary, sections)` | `/llms.txt` only. |
+| `uihost.WithLLMsFullTxt(content)` | `/llms-full.txt` only (full-corpus tier, served verbatim). |
 | `uihost.WithAgentCard(cfg)` | `/.well-known/agent-card.json` + `agent.json` alias. |
 | `uihost.WithAgentLinkHeaders()` | `Link:` headers on HTML only. |
 | `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` → markdown. |
@@ -354,6 +378,9 @@ origin and every artifact stays consistent, including behind a proxy that sets
   `/llm-pages.md` index instead (the default does this).
 - **Calling `WithMCP` and also mounting `/mcp` by hand.** Route conflict →
   panic at startup. Use one.
+- **Serving `/llms-full.txt` without linking it from `/llms.txt`.** Agents
+  start at the index; a full-corpus file nothing points to won't be found.
+  Add a `Sections` entry with URL `/llms-full.txt`.
 - **Mixing `WithAgentReady` with granular agent-ready options** is safe in any
   order. `WithAgentReady` *merges* into whatever a granular option
   (`WithMarkdownNegotiation`, `WithLLMsTxt`, `WithAgentCard`,

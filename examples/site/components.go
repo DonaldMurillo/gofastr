@@ -23,7 +23,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -49,21 +48,19 @@ import (
 var demoCompany = store.New("sitedemo").String("company", "Acme Corp")
 
 // ── Kanban board demo (/components/sortablelist) ────────────────────
-// Package-level in-memory board store — same idiom as wsTickets.
-// The RPC handler in main.go mutates it; Demo() reads it at render
-// time so a reload reflects moves.
+// Held per visitor in demoState (demo_state.go), not a shared global. The
+// move RPC handler in main.go mutates the caller's own board; the SSR builder
+// (kanbanDemo → renderKanbanBoardFor) reads it so a reload reflects the
+// visitor's own moves.
 type kanbanCard struct{ Key, Title string }
 type kanbanColumn struct {
 	ID, Title string
 	Cards     []kanbanCard
 }
 
-var kanbanBoard = struct {
-	sync.Mutex
-	Columns []kanbanColumn
-	Version int
-}{
-	Columns: []kanbanColumn{
+// initialKanbanColumns is the seed board every visitor's session starts from.
+func initialKanbanColumns() []kanbanColumn {
+	return []kanbanColumn{
 		{ID: "todo", Title: "To do", Cards: []kanbanCard{
 			{Key: "k1", Title: "Design API"},
 			{Key: "k2", Title: "Write tests"},
@@ -74,18 +71,17 @@ var kanbanBoard = struct {
 		{ID: "done", Title: "Done", Cards: []kanbanCard{
 			{Key: "k4", Title: "Read ARCHITECTURE.md"},
 		}},
-	},
-	Version: 1,
+	}
 }
 
-// renderKanbanBoard renders 3 linked sortable columns (kanban). Each
-// column shares Group "kanban-demo" and has a unique Container id.
-// Version + ConflictRPC wire the 409 conflict-recovery path.
-func renderKanbanBoard() render.HTML {
-	kanbanBoard.Lock()
-	defer kanbanBoard.Unlock()
-	cols := make([]render.HTML, 0, len(kanbanBoard.Columns))
-	for _, c := range kanbanBoard.Columns {
+// renderKanbanBoardFor renders one session's 3 linked sortable columns. Each
+// column shares Group "kanban-demo" and has a unique Container id. Version +
+// ConflictRPC wire the 409 conflict-recovery path.
+func renderKanbanBoardFor(sess *demoState) render.HTML {
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	cols := make([]render.HTML, 0, len(sess.kanban))
+	for _, c := range sess.kanban {
 		items := make([]patternsSortablelist.Item, len(c.Cards))
 		for i, card := range c.Cards {
 			items[i] = patternsSortablelist.Item{Key: card.Key, Label: card.Title}
@@ -98,7 +94,7 @@ func renderKanbanBoard() render.HTML {
 				Group:       "kanban-demo",
 				Container:   c.ID,
 				RPCPath:     "/__site/sortable/move",
-				Version:     fmt.Sprintf("v%d", kanbanBoard.Version),
+				Version:     fmt.Sprintf("v%d", sess.kanbanVer),
 				ConflictRPC: "/__site/sortable/conflict?container=" + c.ID,
 				Items:       items,
 			}),
@@ -107,90 +103,49 @@ func renderKanbanBoard() render.HTML {
 	return ui.Grid(ui.GridConfig{Min: "14rem", Gap: ui.GapMD}, cols...)
 }
 
-// kanbanColumnByID looks up a column by its container id. Caller must
-// hold kanbanBoard.Lock().
-func kanbanColumnByID(id string) (int, *kanbanColumn) {
-	for i := range kanbanBoard.Columns {
-		if kanbanBoard.Columns[i].ID == id {
-			return i, &kanbanBoard.Columns[i]
+// columnByID looks up a column in this session's board by container id.
+// Caller must hold sess.mu.
+func (sess *demoState) columnByID(id string) (int, *kanbanColumn) {
+	for i := range sess.kanban {
+		if sess.kanban[i].ID == id {
+			return i, &sess.kanban[i]
 		}
 	}
 	return -1, nil
 }
 
-// resetKanbanBoard restores the demo board to its initial state.
+// resetKanbanBoard clears every demo session so the next touch re-seeds.
 // Called by the e2e test to guarantee isolation across runs.
-func resetKanbanBoard() {
-	kanbanBoard.Lock()
-	defer kanbanBoard.Unlock()
-	kanbanBoard.Columns = []kanbanColumn{
-		{ID: "todo", Title: "To do", Cards: []kanbanCard{
-			{Key: "k1", Title: "Design API"},
-			{Key: "k2", Title: "Write tests"},
-		}},
-		{ID: "doing", Title: "Doing", Cards: []kanbanCard{
-			{Key: "k3", Title: "Build sortable kanban"},
-		}},
-		{ID: "done", Title: "Done", Cards: []kanbanCard{
-			{Key: "k4", Title: "Read ARCHITECTURE.md"},
-		}},
-	}
-	kanbanBoard.Version = 1
-}
+func resetKanbanBoard() { resetDemoSessions() }
 
 // ── Optimistic UI demos (/components/optimistic-*) ──────────────────
-// Two INDEPENDENT in-memory note stores — one per recipe. They MUST stay
-// separate: the create demo appends rows (n4, n5, …) that the delete
-// demo has no mounted ConfirmAction modal for, so sharing a store would
-// let the delete demo render an `opt-delete-n4` trigger whose modal was
-// never mounted (clicking it silently does nothing). Each demo only
-// ever sees its own store, and each delete-row trigger has its modal
-// mounted exactly once at startup.
+// Each visitor's demoState carries TWO INDEPENDENT note lists — one per
+// recipe. They MUST stay separate: the create demo appends rows (n4, n5, …)
+// that the delete demo has no mounted ConfirmAction modal for, so sharing a
+// list would let the delete demo render an `opt-delete-n4` trigger whose
+// modal was never mounted (clicking it silently does nothing). Each demo only
+// ever sees its own list, and each delete-row trigger has its modal mounted
+// exactly once at startup (keyed by the initial n1/n2/n3 set every session
+// seeds from).
 type optimisticNote struct {
 	ID, Title string
 }
 
-// initialOptimisticNotes is the snapshot both stores reset to. The
-// delete store stays at this set forever (the only mutation is the
-// delete RPC, which is reset before each e2e); the create store grows
-// past it as the user clicks Add.
+// initialOptimisticNotes is the snapshot every session's create + delete
+// lists seed from. The delete list only shrinks (via the delete RPC); the
+// create list grows past it as the user clicks Add.
 var initialOptimisticNotes = []optimisticNote{
 	{ID: "n1", Title: "Ship the optimistic-ui cookbook"},
 	{ID: "n2", Title: "Document the mutation lifecycle"},
 	{ID: "n3", Title: "Pair ConfirmAction with delete"},
 }
 
-// optimisticCreateNotes backs /components/optimisticcreate: Add appends
-// a row and the create RPC returns the fresh list HTML.
-var optimisticCreateNotes = struct {
-	sync.Mutex
-	Items []optimisticNote
-	Next  int
-}{
-	Items: append([]optimisticNote(nil), initialOptimisticNotes...),
-	Next:  4,
-}
-
-// optimisticDeleteNotes backs /components/optimisticdelete: each row's
-// Delete opens a ConfirmAction modal; the delete RPC removes the row
-// and returns the fresh list HTML. The fail-DELETE demo row is wired
-// to opt-delete-fail-n1 (see optimisticDeleteModals) and never mutates
-// this store — its RPC always returns 422 to exercise the "failed
-// delete leaves the list unchanged" invariant.
-var optimisticDeleteNotes = struct {
-	sync.Mutex
-	Items []optimisticNote
-}{
-	Items: append([]optimisticNote(nil), initialOptimisticNotes...),
-}
-
-// renderOptimisticCreateListLocked renders the create-store notes as a
-// <ul> of rows. Used at SSR and as the create-RPC response body: the
-// runtime swaps the list region's innerHTML with this HTML on 2xx.
-// Caller must hold optimisticCreateNotes.Lock().
-func renderOptimisticCreateListLocked() render.HTML {
-	items := make([]render.HTML, 0, len(optimisticCreateNotes.Items))
-	for _, n := range optimisticCreateNotes.Items {
+// renderOptimisticCreateListFor renders one session's create list as a <ul>
+// of rows. Used at SSR and as the create-RPC response body: the runtime swaps
+// the list region's innerHTML with this HTML on 2xx. Caller must hold sess.mu.
+func renderOptimisticCreateListFor(sess *demoState) render.HTML {
+	items := make([]render.HTML, 0, len(sess.createNotes))
+	for _, n := range sess.createNotes {
 		items = append(items, html.ListItem(html.ListItemConfig{
 			ExtraAttrs: html.Attrs{"data-opt-id": n.ID},
 		}, render.Text(n.Title)))
@@ -204,22 +159,13 @@ func renderOptimisticCreateListLocked() render.HTML {
 	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
 }
 
-// renderOptimisticCreateList is the lock-acquiring wrapper used by the
-// SSR demo path. The create RPC handler in main.go calls the Locked
-// variant directly under its own held lock to avoid a double-acquire.
-func renderOptimisticCreateList() render.HTML {
-	optimisticCreateNotes.Lock()
-	defer optimisticCreateNotes.Unlock()
-	return renderOptimisticCreateListLocked()
-}
-
-// renderOptimisticDeleteListLocked renders the delete-store notes as a
-// <ul> with a Delete trigger per row. Each trigger is the ConfirmAction
-// trigger for its row's modal (mounted by optimisticDeleteModals).
-// Caller must hold optimisticDeleteNotes.Lock().
-func renderOptimisticDeleteListLocked() render.HTML {
-	items := make([]render.HTML, 0, len(optimisticDeleteNotes.Items))
-	for _, n := range optimisticDeleteNotes.Items {
+// renderOptimisticDeleteListFor renders one session's delete list as a <ul>
+// with a Delete trigger per row. Each trigger is the ConfirmAction trigger for
+// its row's modal (mounted by optimisticDeleteModals). Caller must hold
+// sess.mu.
+func renderOptimisticDeleteListFor(sess *demoState) render.HTML {
+	items := make([]render.HTML, 0, len(sess.deleteNotes))
+	for _, n := range sess.deleteNotes {
 		trigger, _ := ui.ConfirmAction(ui.ConfirmActionConfig{
 			Name:         "opt-delete-" + n.ID,
 			TriggerLabel: "Delete",
@@ -242,13 +188,6 @@ func renderOptimisticDeleteListLocked() render.HTML {
 			render.Text("No notes — the list reconciled to zero. Reload to reset the demo."))
 	}
 	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
-}
-
-// renderOptimisticDeleteList is the lock-acquiring wrapper.
-func renderOptimisticDeleteList() render.HTML {
-	optimisticDeleteNotes.Lock()
-	defer optimisticDeleteNotes.Unlock()
-	return renderOptimisticDeleteListLocked()
 }
 
 // optimisticFailDeleteTrigger is the inline trigger for the
@@ -275,17 +214,15 @@ func optimisticFailDeleteTrigger() render.HTML {
 	return trigger
 }
 
-// optimisticDeleteModals returns one *widget.Builder per delete-store
-// row (the ConfirmAction modal matching that row's Delete trigger),
-// PLUS the opt-delete-fail-n1 modal for the "will fail" affordance.
-// main.go mounts these once at startup. The delete store never grows
-// past initialOptimisticNotes, so every rendered trigger has its modal
-// mounted — no orphan opt-delete-nN triggers.
+// optimisticDeleteModals returns one *widget.Builder per initial delete row
+// (the ConfirmAction modal matching that row's Delete trigger), PLUS the
+// opt-delete-fail-n1 modal for the "will fail" affordance. main.go mounts
+// these once at startup, keyed off initialOptimisticNotes — the set EVERY
+// session seeds from and only ever shrinks below. So every rendered trigger,
+// in any session, has its modal mounted — no orphan opt-delete-nN triggers.
 func optimisticDeleteModals() []*widget.Builder {
-	optimisticDeleteNotes.Lock()
-	defer optimisticDeleteNotes.Unlock()
-	out := make([]*widget.Builder, 0, len(optimisticDeleteNotes.Items)+1)
-	for _, n := range optimisticDeleteNotes.Items {
+	out := make([]*widget.Builder, 0, len(initialOptimisticNotes)+1)
+	for _, n := range initialOptimisticNotes {
 		_, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
 			Name:         "opt-delete-" + n.ID,
 			TriggerLabel: "Delete",
@@ -320,17 +257,88 @@ func optimisticDeleteModals() []*widget.Builder {
 	return out
 }
 
-// resetOptimisticNotes restores BOTH demo stores to their initial
-// state. Called by e2e tests to guarantee isolation across runs.
-func resetOptimisticNotes() {
-	optimisticCreateNotes.Lock()
-	optimisticCreateNotes.Items = append([]optimisticNote(nil), initialOptimisticNotes...)
-	optimisticCreateNotes.Next = 4
-	optimisticCreateNotes.Unlock()
+// resetOptimisticNotes clears every demo session so the next touch re-seeds
+// both lists to their initial state. Called by e2e tests for isolation.
+func resetOptimisticNotes() { resetDemoSessions() }
 
-	optimisticDeleteNotes.Lock()
-	optimisticDeleteNotes.Items = append([]optimisticNote(nil), initialOptimisticNotes...)
-	optimisticDeleteNotes.Unlock()
+// ── Session-aware demo builders ─────────────────────────────────────
+// The three stateful demos build their full markup here so both the SSR
+// path (demoStage, with a request-bearing ctx) and any direct Demo() call
+// (static export, catalog fallback — no request, renders the seed) go
+// through one source. demoStateRead is READ-ONLY: it never mints a cookie
+// or writes the store, so SSR shows a visitor their own board without a
+// crawler ever creating state.
+
+// kanbanDemo renders the sortable-kanban demo for the ctx's session.
+func kanbanDemo(ctx context.Context) render.HTML {
+	return renderKanbanBoardFor(demoStateRead(ctx))
+}
+
+// optimisticCreateDemo renders the optimistic-create demo for the ctx's
+// session (code block + Add button + the session's current list).
+func optimisticCreateDemo(ctx context.Context) render.HTML {
+	sess := demoStateRead(ctx)
+	sess.mu.Lock()
+	list := renderOptimisticCreateListFor(sess)
+	sess.mu.Unlock()
+
+	addBtn := interactive.OnClick(
+		ui.Button(ui.ButtonConfig{Label: "Add note"}),
+		interactive.Post("/__site/optimistic/create").
+			OnSuccess(interactive.SetSignal("opt-create-list")),
+	)
+	// The list region is bound to a signal in mode=html. On 2xx the runtime
+	// swaps its innerHTML with the response — the fresh authoritative list
+	// (with the new row's real server-assigned id).
+	listRegion := html.Div(html.DivConfig{
+		ExtraAttrs: html.Attrs{
+			"data-fui-signal":      "opt-create-list",
+			"data-fui-signal-mode": "html",
+		},
+	}, list)
+	return html.Div(html.DivConfig{Class: "demo-stack"},
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
+    ui.Button(ui.ButtonConfig{Label: "Add"}),
+    interactive.Post("/__site/optimistic/create").
+        OnSuccess(interactive.SetSignal("opt-create-list")),
+)`}),
+		addBtn,
+		listRegion,
+		html.Div(html.DivConfig{Class: "fact"},
+			render.Text("The full list HTML is the response body. A true temp-row pattern (row visible before the RPC resolves, then replaced by the authoritative row on 2xx) needs an island with a small bit of registered JS — see the optimistic-ui doc, Recipe 3."),
+		),
+	)
+}
+
+// optimisticDeleteDemo renders the optimistic-delete demo for the ctx's
+// session (code block + the session's current list + the will-fail trigger).
+func optimisticDeleteDemo(ctx context.Context) render.HTML {
+	sess := demoStateRead(ctx)
+	sess.mu.Lock()
+	list := renderOptimisticDeleteListFor(sess)
+	sess.mu.Unlock()
+
+	// ConfirmAction returns (trigger, modal). The trigger renders inline per
+	// row; main.go mounts the matching modals once at startup via
+	// optimisticDeleteModals().
+	listRegion := html.Div(html.DivConfig{
+		ExtraAttrs: html.Attrs{
+			"data-fui-signal":      "opt-delete-list",
+			"data-fui-signal-mode": "html",
+		},
+	}, list)
+	return html.Div(html.DivConfig{Class: "demo-stack"},
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
+    Name:    "opt-delete-" + item.ID,
+    RPCPath: "/__site/optimistic/delete?id=" + item.ID,
+})
+widget.Mount(app.Router(), modal.Build()) // once, at startup`}),
+		listRegion,
+		optimisticFailDeleteTrigger(),
+		html.Div(html.DivConfig{Class: "fact"},
+			render.Text("Confirm → POST → on 2xx the response replaces the list region with the authoritative shorter list. On failure (4xx) the runtime skips the swap (html-mode + non-string value = no-op), so the row stays put — try “Delete n1 (will fail)” to see it. Pair with an Undo window for a true optimistic-remove pattern (Recipe 4)."),
+		),
+	)
 }
 
 // componentEntry — one component in the catalog.
@@ -1367,60 +1375,13 @@ const page = await api.posts.list({ limit: 25 });`},
 		}},
 	{"optimisticcreate", "Optimistic Create", "Optimistic UI",
 		"Click Add → server appends a row and returns authoritative list HTML.",
-		func() render.HTML {
-			addBtn := interactive.OnClick(
-				ui.Button(ui.ButtonConfig{Label: "Add note"}),
-				interactive.Post("/__site/optimistic/create").
-					OnSuccess(interactive.SetSignal("opt-create-list")),
-			)
-			// The list region is bound to a signal in mode=html. On 2xx
-			// the runtime swaps its innerHTML with the response, which
-			// is the fresh authoritative list (with the new row's real
-			// server-assigned id).
-			listRegion := html.Div(html.DivConfig{
-				ExtraAttrs: html.Attrs{
-					"data-fui-signal":      "opt-create-list",
-					"data-fui-signal-mode": "html",
-				},
-			}, renderOptimisticCreateList())
-			return html.Div(html.DivConfig{Class: "demo-stack"},
-				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
-    ui.Button(ui.ButtonConfig{Label: "Add"}),
-    interactive.Post("/__site/optimistic/create").
-        OnSuccess(interactive.SetSignal("opt-create-list")),
-)`}),
-				addBtn,
-				listRegion,
-				html.Div(html.DivConfig{Class: "fact"},
-					render.Text("The full list HTML is the response body. A true temp-row pattern (row visible before the RPC resolves, then replaced by the authoritative row on 2xx) needs an island with a small bit of registered JS — see the optimistic-ui doc, Recipe 3."),
-				),
-			)
-		}},
+		// Session-aware: demoStage renders this with the request ctx so a
+		// reload reflects the visitor's own appends. This bare Demo() (no
+		// request) renders the seed — used only by static export.
+		func() render.HTML { return optimisticCreateDemo(context.Background()) }},
 	{"optimisticdelete", "Optimistic Delete + Confirm", "Optimistic UI",
 		"Each row's Delete opens a themed ConfirmAction modal; on confirm the list swaps to the shorter authoritative list.",
-		func() render.HTML {
-			// ConfirmAction returns (trigger, modal). The trigger
-			// renders inline per row; main.go mounts the matching
-			// modals once at startup via optimisticDeleteModals().
-			listRegion := html.Div(html.DivConfig{
-				ExtraAttrs: html.Attrs{
-					"data-fui-signal":      "opt-delete-list",
-					"data-fui-signal-mode": "html",
-				},
-			}, renderOptimisticDeleteList())
-			return html.Div(html.DivConfig{Class: "demo-stack"},
-				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
-    Name:    "opt-delete-" + item.ID,
-    RPCPath: "/__site/optimistic/delete?id=" + item.ID,
-})
-widget.Mount(app.Router(), modal.Build()) // once, at startup`}),
-				listRegion,
-				optimisticFailDeleteTrigger(),
-				html.Div(html.DivConfig{Class: "fact"},
-					render.Text("Confirm → POST → on 2xx the response replaces the list region with the authoritative shorter list. On failure (4xx) the runtime skips the swap (html-mode + non-string value = no-op), so the row stays put — try “Delete n1 (will fail)” to see it. Pair with an Undo window for a true optimistic-remove pattern (Recipe 4)."),
-				),
-			)
-		}},
+		func() render.HTML { return optimisticDeleteDemo(context.Background()) }},
 	{"optimisticslow", "Optimistic Slow + Failure", "Optimistic UI",
 		"Pending state, commit after delay, rollback + shake on failure, with a NetworkRetryBanner.",
 		func() render.HTML {
@@ -1839,7 +1800,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		)
 	}},
 	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list — single list or linked kanban columns with version-aware 409 recovery.", func() render.HTML {
-		return renderKanbanBoard()
+		return kanbanDemo(context.Background())
 	}},
 	{"infinitescroll", "InfiniteScroll", "Data", "Sentinel-driven lazy pagination — server appends HTML + a next-cursor header.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"}, render.Text(
@@ -1989,7 +1950,7 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 	hero := html.Div(html.DivConfig{Class: "components-overview__hero"},
 		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Components · v"+siteVersion)),
 		html.Heading(html.HeadingConfig{Level: 1, Class: "components-overview__title"},
-			render.Text("Every UI surface, "),
+			render.Text("Every component, "),
 			html.Span(html.TextConfig{Class: "amber"}, render.Text("as typed Go")),
 			render.Text("."),
 		),
@@ -2065,6 +2026,14 @@ func categorySlug(name string) string {
 // /components/{slug} — single-component showcase page.
 // =============================================================================
 
+// ComponentShowcaseScreen implements RenderCtx so the three stateful demos
+// (kanban, optimistic create/delete) read the visitor's session off the request
+// in ctx and a reload reflects their own state. It ALSO keeps an explicit
+// Render() that delegates to RenderCtx with a background context: SSR and
+// static export prefer RenderCtx, but the llm.md generator
+// (core-ui/app/llmmd.go) calls Component.Render() directly — without this the
+// seed-rendering fallback would be an empty component.ContextOnly stub and
+// every /components/*/llm.md page would go blank.
 type ComponentShowcaseScreen struct {
 	Entry componentEntry
 }
@@ -2075,20 +2044,42 @@ func (s *ComponentShowcaseScreen) ScreenTitle() string {
 func (s *ComponentShowcaseScreen) ScreenDescription() string  { return s.Entry.Desc }
 func (s *ComponentShowcaseScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
+// Render is the no-request fallback for direct callers (llm.md). It renders the
+// seed state for the stateful demos; live SSR uses RenderCtx instead.
+func (s *ComponentShowcaseScreen) Render() render.HTML {
+	return s.RenderCtx(context.Background())
+}
+
+// renderDemo returns the live demo for the entry. The three stateful demos
+// get the request ctx so SSR shows the visitor's own session; every other
+// demo is stateless and ignores it.
+func (s *ComponentShowcaseScreen) renderDemo(ctx context.Context) render.HTML {
+	switch s.Entry.Slug {
+	case "sortablelist":
+		return kanbanDemo(ctx)
+	case "optimisticcreate":
+		return optimisticCreateDemo(ctx)
+	case "optimisticdelete":
+		return optimisticDeleteDemo(ctx)
+	default:
+		return s.Entry.Demo()
+	}
+}
+
 // demoStage renders the demo box with an honest label: "Live" for a
 // real interactive instance, "Note" for a wiring explanation.
-func (s *ComponentShowcaseScreen) demoStage() render.HTML {
+func (s *ComponentShowcaseScreen) demoStage(ctx context.Context) render.HTML {
 	label := "Live"
 	if noteOnlyComponents[s.Entry.Slug] {
 		label = "Note"
 	}
 	return html.Div(html.DivConfig{Class: "demo-stage"},
 		html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text(label)),
-		html.Div(html.DivConfig{Class: "demo-stage__viewport"}, s.Entry.Demo()),
+		html.Div(html.DivConfig{Class: "demo-stage__viewport"}, s.renderDemo(ctx)),
 	)
 }
 
-func (s *ComponentShowcaseScreen) Render() render.HTML {
+func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
 	head := html.Div(html.DivConfig{Class: "doc-head"},
 		html.Heading(html.HeadingConfig{Level: 1},
 			render.Text(s.Entry.Name),
@@ -2119,7 +2110,7 @@ func (s *ComponentShowcaseScreen) Render() render.HTML {
 		// Demo panel. Components that render a self-contained live instance
 		// are labeled "Live"; ones that show an explanatory note (need
 		// per-page wiring) are labeled "Note" so the box is honest.
-		s.demoStage(),
+		s.demoStage(ctx),
 		// Example code — the Go that produced the live demo above.
 		s.usage(),
 	)

@@ -245,7 +245,7 @@ func TestE2E_Optimistic_Delete_RemovesOnConfirm(t *testing.T) {
 
 // TestE2E_Optimistic_Slow_PendingThenCommit covers the slow half of
 // Recipe 7: the Save (slow) button enters pending (aria-busy + disabled)
-// while the 2s RPC is in flight, then commits when the 2xx lands.
+// while the 500ms RPC is in flight, then commits when the 2xx lands.
 func TestE2E_Optimistic_Slow_PendingThenCommit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -266,14 +266,14 @@ func TestE2E_Optimistic_Slow_PendingThenCommit(t *testing.T) {
 		chromedp.Navigate(base+"/components/optimisticslow"),
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.optimisticaction)`),
-		// Click Save (slow). The endpoint sleeps 2s before 2xx, so the
-		// pending window is wide enough to sample mid-flight.
+		// Click Save (slow). The endpoint sleeps 500ms before 2xx, so a
+		// 400ms sample lands inside the pending window.
 		chromedp.Evaluate(slowBtn+`.click()`, nil),
 		chromedp.Sleep(400*time.Millisecond), // sample during pending
 		chromedp.Evaluate(slowBtn+`.getAttribute('data-state')`, &pendingState),
 		chromedp.Evaluate(slowBtn+`.getAttribute('aria-busy')`, &pendingBusy),
 		chromedp.Evaluate(slowBtn+`.disabled`, &pendingDisabled),
-		// Wait out the 2s endpoint + settlement.
+		// Wait out the endpoint (500ms) + settlement.
 		chromedp.Sleep(2*time.Second),
 		chromedp.Evaluate(slowBtn+`.getAttribute('data-state')`, &committedState),
 	)

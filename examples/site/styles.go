@@ -40,6 +40,7 @@ func createStyleSheet(t style.Theme) string {
 	architectureLayout(ss)
 	agentsLayout(ss)
 	examplesLayout(ss)
+	numbersLayout(ss)
 	alphaLayout(ss)
 	pageGetStarted(ss)
 	pageConceptsIndex(ss)
@@ -1046,6 +1047,35 @@ func agentsLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
+// .num__grid — the countable-claims strip on the home page. Three columns of
+// value / label / check-line cards.
+// -----------------------------------------------------------------------------
+
+func numbersLayout(ss *style.StyleSheet) {
+	ss.Rule(".num__grid").
+		Set("display", "grid",
+			"grid-template-columns", "repeat(3, 1fr)",
+			"gap", "{spacing.lg}").End()
+	ss.Rule(".num-card").
+		Set("display", "flex", "flex-direction", "column", "gap", "{spacing.xs}",
+			"padding", "{spacing.xl}",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.lg}").End()
+	ss.Rule(".num-card__value").
+		Set("font-family", "{fonts.mono}",
+			"font-size", "var(--t-2xl)",
+			"font-weight", "600",
+			"letter-spacing", "-0.02em",
+			"color", "{colors.primary}").End()
+	ss.Rule(".num-card__label").
+		Set("font-size", "var(--t-md)", "font-weight", "500", "letter-spacing", "-0.01em").End()
+	ss.Rule(".num-card__check").
+		Set("margin-top", "{spacing.sm}",
+			"font-size", "var(--t-sm)", "color", "{colors.text-muted}", "line-height", "1.55").End()
+}
+
+// -----------------------------------------------------------------------------
 // .ex__grid — three-col gallery of example cards.
 // -----------------------------------------------------------------------------
 
@@ -1151,6 +1181,7 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".gen-row .desc, .gen-row .file").Set("grid-column", "2").End()
 		inner.Rule(".arch__grid").Set("grid-template-columns", "1fr 1fr").End()
 		inner.Rule(".ex__grid").Set("grid-template-columns", "1fr").End()
+		inner.Rule(".num__grid").Set("grid-template-columns", "1fr 1fr").End()
 		inner.Rule(".agents__split").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".realapp__grid").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".pane--left").
@@ -1217,6 +1248,7 @@ func responsive(ss *style.StyleSheet) {
 		// All card grids → 1 col.
 		inner.Rule(".arch__grid").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".ex__grid").Set("grid-template-columns", "1fr").End()
+		inner.Rule(".num__grid").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".docs").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".next__grid").Set("grid-template-columns", "1fr").End()
 		// Every page-local hero/body grid that's still multi-col below

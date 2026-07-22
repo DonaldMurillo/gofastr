@@ -171,7 +171,8 @@ func TestPageTitlesSingleSuffix(t *testing.T) {
 
 func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 	html := body(t, "/examples")
-	for _, slug := range []string{"meridian", "blog", "site", "api-tour", "embed-demo", "spa", "static-site"} {
+	slugs := []string{"meridian", "ecommerce", "blog", "site", "api-tour", "embed-demo", "spa", "static-site"}
+	for _, slug := range slugs {
 		if !strings.Contains(html, `id="`+slug+`"`) {
 			t.Errorf("/examples missing anchor id=%q", slug)
 		}
@@ -179,9 +180,18 @@ func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 			t.Errorf("/examples missing source link for %q", slug)
 		}
 	}
-	// Static-site is "no server" — its snippet must NOT show app.Serve.
-	if !strings.Contains(html, "gofastr build") {
-		t.Error("/examples static-site snippet should show 'gofastr build'")
+	// The copy count derives from exRowItems — this pins the row set itself.
+	if got := len(exRowItems()); got != len(slugs) {
+		t.Errorf("exRowItems has %d rows, test expects %d — update both", got, len(slugs))
+	}
+	// The framework has no app.Serve — every snippet shows the real app.Start.
+	if strings.Contains(html, ">Serve<") {
+		t.Error("/examples shows the nonexistent app.Serve — the API is app.Start")
+	}
+	// static-site is a real server (static.Mount + app.Start); the old
+	// fabricated "gofastr build → CDN bundle" story must stay dead.
+	if strings.Contains(html, "gofastr build") {
+		t.Error("/examples static-site row resurrects the fabricated 'gofastr build' story")
 	}
 }
 

@@ -5,12 +5,10 @@ package main
 //
 //   HERO        version tag · h1 with amber span · 2 ledes · 2 CTAs · install
 //               RHS: code block (blog/main.go, hand-tokenized in code_block.go)
-//   §01         server-rendered UI — SSR/islands model | screen mock
-//   §02         explore grid — 6 route cards into the main areas of the site
-//   §03         arch cards: core / framework / batteries / core-ui
-//   §04         split pane: framework MCP (left) | Kiln (right + terminal mock)
-//   §05         6 example cards, each with path + name + desc + run command
-//   §06         v0.x status disclosure + roadmap dl
+//   §01         the numbers — countable claims, measured or test-gated
+//   §02         server-rendered UI — SSR/islands model | screen mock
+//   §03         explore grid — 6 route cards into the main areas of the site
+//   §04         built with gofastr — production app + the Meridian flagship
 //
 // Sections live inside <main> only — .nav and .foot are owned by the
 // HeaderComponent / FooterComponent. Built with core-ui/html primitives
@@ -28,9 +26,17 @@ package main
 // =============================================================================
 
 import (
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"strconv"
+	"sync"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -47,6 +53,7 @@ func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *HomeScreen) Render() render.HTML {
 	return render.Join(
 		heroSection(),
+		numbersSection(),
 		realAppSection(),
 		exploreSection(),
 		builtWithSection(),
@@ -110,13 +117,14 @@ func heroSection() render.HTML {
 	)
 }
 
-// heroCodeTabs — three real, buildable examples shown as tabs: core-only
-// (stdlib primitives), framework + one entity, and the fuller "Donald's Way"
-// (SEO + MCP + auth + a couple of interactive pages). Every API call here is
-// real — sourced from examples/blog, examples/site, and examples/meridian —
-// so the homepage never teaches an API that doesn't exist.
-func heroCodeTabs() render.HTML {
-	coreSrc := `package main
+// The three hero programs — core-only (stdlib primitives), framework +
+// one entity, and the fuller "Donald's Way" (screens + SEO + MCP + auth).
+// All three are byte-identical to the README Quickstart programs, which
+// CI extracts, compiles, boots, and curls
+// (cmd/gofastr/readme_quickstart_test.go) — so the homepage never teaches
+// an API that doesn't exist or a program that doesn't run.
+// TestHeroTabsMatchReadmeQuickstart pins the identity.
+var heroCoreSrc = `package main
 
 import (
 	"context"
@@ -134,12 +142,12 @@ type Pong struct {
 func main() {
 	r := router.New()
 
-	// An HTML page.
+	// A server-rendered page.
 	r.Get("/", render.HTMLHandler(func(req *http.Request) render.HTML {
 		return render.Tag("h1", nil, render.Text("Hello from core."))
 	}))
 
-	// A typed JSON API route.
+	// A typed JSON route — the adapter binds input and serializes output.
 	r.Get("/api/ping", handler.HandlerAdapter(func(ctx context.Context, _ struct{}) (Pong, error) {
 		return Pong{Status: "ok"}, nil
 	}))
@@ -147,10 +155,11 @@ func main() {
 	http.ListenAndServe(":8080", r)
 }`
 
-	frameworkSrc := `package main
+var heroFrameworkSrc = `package main
 
 import (
 	"database/sql"
+	"log"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -158,46 +167,49 @@ import (
 )
 
 func main() {
-	db, _ := sql.Open("sqlite3", "./blog.db")
+	db, _ := sql.Open("sqlite3", "app.db")
+	app := framework.NewApp(framework.WithDB(db), framework.WithMCP()) // WithMCP serves the tools at /mcp
 
-	app := framework.NewApp(
-		framework.WithDB(db),
-		framework.WithConfig(framework.AppConfig{Name: "blog"}),
-	)
-
+	// CRUD is auto-on when a DB is set (CRUD *bool: nil = auto).
 	app.Entity("posts", framework.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
-		},
+		Public: true, // anonymous read AND write; omit it and CRUD requires a session (secure by default)
+		MCP:    true, // emit posts_list/get/create/update/delete MCP tools
+		Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
 	})
 
-	// Auto-migrates and serves REST + OpenAPI on :8080.
-	app.Start(":8080")
+	log.Fatal(app.Start(":8080")) // GET/POST /posts, /openapi.json, MCP — all live
 }`
 
-	donaldSrc := `package main
+var heroDonaldSrc = `package main
 
 import (
 	"database/sql"
+	"log"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func main() {
-	db, _ := sql.Open("sqlite3", "./notes.db")
+// A screen is plain Go: Render returns server-rendered HTML.
+type HomeScreen struct{}
 
-	// Two server-rendered pages. Each gets an auto-generated llm.md.
+func (s *HomeScreen) ScreenTitle() string { return "Notes" }
+func (s *HomeScreen) Render() render.HTML {
+	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("My notes"))
+}
+
+func main() {
+	db, _ := sql.Open("sqlite3", "notes.db")
+
+	// Server-rendered screens. Each also serves an auto llm.md.
 	ui := app.NewApp("Notes")
 	ui.Register("/", &HomeScreen{}, nil)
-	ui.Register("/notes", &NotesScreen{}, nil)
 
 	// SEO for those pages.
 	host := uihost.New(ui,
@@ -211,41 +223,120 @@ func main() {
 		framework.WithDB(db),
 		framework.WithAPIPrefix("/api"),
 		framework.WithMCP(),
-		framework.WithMCPIntrospection(),
 	)
 
-	// One entity → a REST API at /api/notes, MCP tools, and an auto llm.md.
-	// OwnerField scopes rows per user, so agents get the same access as people.
+	// OwnerField scopes rows per user: anonymous → 401, cross-user → 404.
 	fwApp.Entity("notes", framework.EntityConfig{
 		OwnerField: "user_id",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-		},
+		MCP:        true,
+		Fields:     []schema.Field{{Name: "title", Type: schema.String, Required: true}},
 	})
 
 	// Login + sessions.
 	authMgr := auth.New(auth.AuthConfig{
+		DevMode:      true, // dev only: mints a per-process JWT secret; set JWTSecret in prod
 		UserStore:    auth.NewEntityUserStore(db, "auth_users"),
 		SessionStore: auth.NewEntitySessionStore(db, "auth_sessions"),
 	})
 	authMgr.Use(auth.NewCorePlugin())
-	authMgr.Init(fwApp)
+	if err := authMgr.Init(fwApp); err != nil {
+		log.Fatal(err)
+	}
 	fwApp.Use(auth.SessionMiddleware(authMgr))
 
-	fwApp.Start(":8080")
+	log.Fatal(fwApp.Start(":8080"))
 }`
 
+func heroCodeTabs() render.HTML {
 	return ui.CodeTabs(
 		ui.CodeTabsConfig{Name: "hero-examples", Label: "Example apps", LineNumbers: true},
-		ui.CodeSample{Label: "core only", Language: "go", Filename: "main.go", Code: coreSrc},
-		ui.CodeSample{Label: "framework", Language: "go", Filename: "main.go", Code: frameworkSrc},
-		ui.CodeSample{Label: "Donald's Way", Language: "go", Filename: "main.go", Code: donaldSrc},
+		ui.CodeSample{Label: "core only", Language: "go", Filename: "main.go", Code: heroCoreSrc},
+		ui.CodeSample{Label: "framework", Language: "go", Filename: "main.go", Code: heroFrameworkSrc},
+		ui.CodeSample{Label: "Donald's Way", Language: "go", Filename: "main.go", Code: heroDonaldSrc},
 	)
 }
 
 // -----------------------------------------------------------------------------
-// §01 — Server-rendered UI. Most Go frameworks stop at the API; GoFastr renders
+// §01 — The numbers. A strip of countable claims, each one either measured by
+// this running binary (runtime size, doc count) or pinned by a test in the
+// repo (numbers_gate_test.go). No adjectives — a skeptical reader can verify
+// every value.
+// -----------------------------------------------------------------------------
+
+// measuredRuntimeGz is the gzipped size of the core client runtime,
+// measured at first render from the same embedded source this site
+// serves — e.g. "12.2 KB". BestCompression matches the size-budget test
+// (core-ui/runtime/budget_test.go) so the page and the gate report the
+// same number.
+var measuredRuntimeGz = sync.OnceValue(func() string {
+	src, err := runtime.RuntimeJS()
+	if err != nil {
+		return "n/a"
+	}
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return "n/a"
+	}
+	if _, err := zw.Write([]byte(src)); err != nil {
+		return "n/a"
+	}
+	if err := zw.Close(); err != nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f KB", float64(buf.Len())/1024)
+})
+
+// embeddedDocCount counts the docs corpus this binary carries, minus the
+// folder's own README (not a page). Same source as /docs and /llms.txt.
+var embeddedDocCount = sync.OnceValue(func() string {
+	topics, err := docs.List()
+	if err != nil {
+		return "n/a"
+	}
+	n := 0
+	for _, t := range topics {
+		if t.Name != "README" {
+			n++
+		}
+	}
+	return strconv.Itoa(n)
+})
+
+func numbersSection() render.HTML {
+	stat := func(value, label, check string) render.HTML {
+		return html.Div(html.DivConfig{Class: "num-card"},
+			html.Span(html.TextConfig{Class: "num-card__value"}, render.Text(value)),
+			html.Span(html.TextConfig{Class: "num-card__label"}, render.Text(label)),
+			html.Paragraph(html.TextConfig{Class: "num-card__check"}, render.Text(check)),
+		)
+	}
+
+	grid := html.Div(html.DivConfig{Class: "num__grid"},
+		stat(measuredRuntimeGz(), "of client JavaScript, gzipped",
+			"The core runtime, measured from this running binary. Feature modules load on demand; a size-budget test fails the build if any of them grows."),
+		stat(embeddedDocCount(), "docs embedded in every binary",
+			"gofastr docs reads them offline. This site serves the same files under /docs and /llms.txt; agents query them over MCP."),
+		stat("5", "MCP tools per entity",
+			"list, get, create, update, delete — each dispatches through the app router, so the caller's login and permissions apply."),
+		stat("2", "databases",
+			"SQLite and Postgres. No MySQL, no Mongo."),
+		stat("1", "binary to deploy",
+			"go build emits it. No Node, no platform, no telemetry."),
+		stat("0", "npm packages",
+			"There is no package.json in the repo. The client runtime is checked-in JS the binary serves."),
+	)
+
+	head := sectionHead(
+		"Numbers you can check.",
+		render.Text("Each value is measured by this running binary or enforced by a test in the repo — nothing here is an adjective."),
+	)
+
+	return sectionWrap("01 / the numbers", "The numbers", head, grid)
+}
+
+// -----------------------------------------------------------------------------
+// §02 — Server-rendered UI. Most Go frameworks stop at the API; GoFastr renders
 // the pages too, on the server, with a small JS runtime that hydrates in place
 // and turns in-page changes into island calls. The screen mock shows the shape;
 // the left column explains the model. Blueprint is a one-line aside, not the
@@ -261,7 +352,7 @@ func realAppSection() render.HTML {
 		),
 		html.UnorderedList(html.ListConfig{},
 			li(render.Text("Every page is full HTML on first load — fast, and readable by crawlers and agents.")),
-			li(render.Text("A small JS runtime hydrates that HTML in place. No re-render, no client router to ship.")),
+			li(render.Text("A small JS runtime hydrates that HTML in place — no re-render. Cross-page nav swaps content client-side with a route cache; you never write the router.")),
 			li(render.Text("In-page changes — sort, paginate, add a row — are island calls: the server returns new HTML and the runtime swaps one part.")),
 			li(render.Text("You write screens in Go, composed from framework/ui components.")),
 		),
@@ -274,7 +365,7 @@ func realAppSection() render.HTML {
 		render.Text("Below is the shape of a server-rendered screen — a data table with status badges and a create button, built from framework/ui components and served as plain HTML."),
 	)
 
-	return sectionWrap("01 / server-rendered UI", "Server-rendered UI", head, grid)
+	return sectionWrap("02 / server-rendered UI", "Server-rendered UI", head, grid)
 }
 
 // screenMock is a static, faithful preview of a server-rendered list screen
@@ -331,7 +422,7 @@ func screenMock() render.HTML {
 }
 
 // -----------------------------------------------------------------------------
-// §02 — Explore the framework. A routing grid into the main areas: core
+// §03 — Explore the framework. A routing grid into the main areas: core
 // primitives, composed patterns, the agentic/AI surface, the interactivity
 // model, the code generator, and the example apps. Each card links to a real
 // route on the site.
@@ -377,11 +468,11 @@ func exploreSection() render.HTML {
 		render.Text("Six ways in — pick the one that matches what you're building."),
 	)
 
-	return sectionWrap("02 / explore", "Explore the framework", head, grid)
+	return sectionWrap("03 / explore", "Explore the framework", head, grid)
 }
 
 // -----------------------------------------------------------------------------
-// §03 — Built with GoFastr. Real apps running on the framework: a production
+// §04 — Built with GoFastr. Real apps running on the framework: a production
 // tool (external) and the generated flagship. Proof it ships real software,
 // not just demos. Reuses the .ex-card / .ex__grid classes from the explore grid.
 // -----------------------------------------------------------------------------
@@ -406,7 +497,7 @@ func builtWithSection() render.HTML {
 
 	grid := html.Div(html.DivConfig{Class: "ex__grid"},
 		card("https://barcode.donaldmurillo.com/", "in production", "Barcode & QR Code Maker",
-			render.Text("A live, no-signup tool to generate and read barcodes and QR codes as PNG, SVG, or PDF — with CSV/Excel batch export, a REST API, and an MCP server."), true),
+			render.Text("A live tool, no signup required, to generate and read barcodes and QR codes as PNG, SVG, or PDF — with CSV/Excel batch export, a REST API, and an MCP server."), true),
 		card("/examples#meridian", "examples/meridian", "Meridian — SaaS console",
 			render.Text("The flagship: a billing console with customers, subscriptions, invoices, MRR, and charts — plus its marketing site, auth, and admin — generated from one gofastr.yml."), false),
 	)
@@ -416,7 +507,7 @@ func builtWithSection() render.HTML {
 		render.Text("A real app in production, and the flagship the framework is proven against."),
 	)
 
-	return sectionWrap("03 / built with gofastr", "Built with GoFastr", head, grid)
+	return sectionWrap("04 / built with gofastr", "Built with GoFastr", head, grid)
 }
 
 // Shared section helpers.

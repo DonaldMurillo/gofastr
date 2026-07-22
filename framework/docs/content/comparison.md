@@ -1,14 +1,14 @@
 # Comparison — where GoFastr sits
 
-GoFastr is a Go framework: `framework/` and `framework/ui/`, built on
-stdlib-first primitives in `core/` and `core-ui/`. One part of it is a
-`gofastr.yml` blueprint — an optional scaffolder that turns a schema
-into a server-rendered UI and a REST API with scoped permissions,
-generated as plain Go you read, commit, and own. Several tools cover
-parts of that same job; as far as we can tell, none in the Go ecosystem
-cover all of it. This page maps the neighbours honestly — including
-the ways they are better — so you can pick the right tool, which is
-sometimes not this one.
+GoFastr is a full-stack Go framework: server-rendered screens, a REST
+API, MCP tools, and migrations, written as plain Go against
+`framework/` and `framework/ui/`, which sit on stdlib-first primitives
+in `core/` and `core-ui/`. An optional `gofastr.yml` blueprint
+scaffolds a whole app — UI and API with scoped permissions — as Go you
+read, commit, and own. Several tools cover parts of that job; no Go
+tool we know of covers all of it. This page maps the neighbours
+honestly — including the ways they are better — so you can pick the
+right tool, which is sometimes not this one.
 
 A note on "MCP tools from your schema": that was a differentiator in
 early 2025 and is table stakes now — Supabase ships an MCP server,
@@ -26,10 +26,11 @@ configure collections at runtime through the dashboard; you extend it
 by writing hooks (Go or JS) that run *inside* PocketBase's lifecycle.
 
 **The difference in kind:** PocketBase is a host you configure.
-GoFastr generates Go source you then own: a `gofastr.yml` blueprint
-scaffolds a flat `package main` — `main.go`, `app.go`, `screens.go` —
-plus `entities/` — that you commit, diff in code review, debug with a
-debugger, and refactor like any other package. There's no runtime
+GoFastr is Go source you own — written by hand against the framework,
+or scaffolded by the optional blueprint as a flat `package main`
+(`main.go`, `app.go`, `screens.go`, `entities/`) — that you commit,
+diff in code review, debug with a debugger, and refactor like any
+other package. There's no runtime
 schema store and no canonical file you have to keep living inside: you
 generate once, then edit the Go directly, and you can delete the
 blueprint once the code is yours. If you want to drop below the

@@ -253,7 +253,7 @@ func primitivesHub() *TeachHubScreen {
 		Concepts: []hubConcept{
 			{
 				Title:    "Router",
-				Body:     []render.HTML{hubP("Built on net/http. Make a router and register routes with path patterns — the same shapes as the standard library, nothing new to learn.")},
+				Body:     []render.HTML{hubP("Built on net/http. Make a router and register routes with path patterns — the same shapes as the standard library.")},
 				CodeFile: "main.go",
 				CodeLang: "go",
 				Code: `r := router.New()
@@ -368,11 +368,14 @@ func frameworkHub() *TeachHubScreen {
 				CodeFile: "auth.go",
 				CodeLang: "go",
 				Code: `authMgr := auth.New(auth.AuthConfig{
+    DevMode:      true, // dev only: mints a per-process JWT secret; set JWTSecret in prod
     UserStore:    auth.NewEntityUserStore(db, "auth_users"),
     SessionStore: auth.NewEntitySessionStore(db, "auth_sessions"),
 })
 authMgr.Use(auth.NewCorePlugin())
-authMgr.Init(fwApp)
+if err := authMgr.Init(fwApp); err != nil {
+    log.Fatal(err) // without a JWT secret (or DevMode) Init fails closed
+}
 fwApp.Use(auth.SessionMiddleware(authMgr))`,
 				RefSlug: "auth",
 			},
@@ -463,11 +466,14 @@ func agentsHub() *TeachHubScreen {
 				Title: "Dev MCP",
 				Body: []render.HTML{html.Paragraph(html.TextConfig{},
 					codeText("gofastr dev"),
-					render.Text(" gives your coding agent — Claude Code, Codex — read access to the running app over MCP: its routes, config, readiness, embedded docs, and recent logs. It's livereload for agents.")),
+					render.Text(" hands your coding agent — Claude Code, Codex — the running app over MCP: it reads routes, config, readiness, embedded docs, and recent logs, and it can write app data through the same entity tools your API serves. It's livereload for agents; opt out with "),
+					codeText("GOFASTR_DEV_MCP=0"),
+					render.Text(".")),
 				},
 				CodeLang: "shell",
-				Code: `# GOFASTR_DEV=1 mounts read-only tools for your coding agent:
+				Code: `# GOFASTR_DEV=1 mounts the dev MCP tools for your coding agent:
 #   app_routes, app_config, app_readiness, framework_docs_*, log_recent
+#   + every CRUD entity's data tools (posts_list, posts_create, …)
 gofastr dev`,
 				RefSlug: "dev-livereload",
 			},
@@ -520,7 +526,7 @@ func generatorHub() *TeachHubScreen {
 		Name:  "Generator",
 		Title: "Scaffold plain Go from a declaration",
 		Desc:  "GoFastr's code generators: app code from a blueprint, client SDKs, and a customer CLI. Each writes plain Go you own and edit — not a runtime you configure.",
-		Lede:  render.Text("When you want a head start, generate the code. It writes plain Go to disk — you own it, read it, and edit it. No runtime magic, nothing to keep regenerating against."),
+		Lede:  render.Text("When you want a head start, generate the code. It writes plain Go to disk — you own it, read it, and edit it. One shot: nothing to keep regenerating against."),
 		Moves: []string{"code generation", "SDKs", "customer CLI", "blueprints"},
 		Concepts: []hubConcept{
 			{
