@@ -77,6 +77,9 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **multiselect** — `core-ui/patterns/multiselect` — checkbox group with chip display above
 - **form** — `framework/ui.Form` — opinionated `<form>` wrapper with submit + error summary
 - **formfield** — `framework/ui.FormField` — labelled input with required + help + error states
+- **textfield** — `framework/ui.TextField` — typed labelled native text field with required, help, error, autocomplete, and length attributes
+- **numberfield** — `framework/ui.NumberField` — typed labelled native number field with explicit min/max/step bounds
+- **datefield** — `framework/ui.DateField` — typed labelled native date field with HTML-date min/max bounds
 - **formsection** — `framework/ui.FormSection` — grouped fields with a shared heading + description
 - **validationsummary** — `framework/ui.ValidationSummary` — inline summary of form validation errors
 - **conditionalfield** — `framework/ui.ConditionalField` (+ `ConditionalFieldVisible` inverse) — form section shown/hidden by another field's value
