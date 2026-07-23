@@ -22,7 +22,9 @@ type BFFPostureConfig struct {
 // protects cookie-authenticated mutations, and requests carrying an Origin to
 // the API prefix must match the exact allowlist. API tokens with the gfsk_
 // prefix remain available for non-browser automation; bearer JWTs are rejected
-// on the BFF API surface.
+// on the BFF API surface. When no WithAPIPrefix is configured, entity CRUD
+// mounts at the bare root, so the guard covers the entire app — list the
+// app's own origin in AllowedOrigins in that case, or set an API prefix.
 //
 // This option lives in battery/auth (rather than framework) because it needs an
 // AuthManager and importing the auth battery from framework would create a Go
@@ -93,18 +95,21 @@ func validateBFFOrigins(values []string) map[string]struct{} {
 }
 
 func normalizeBFFPrefix(prefix string) string {
-	prefix = "/" + strings.Trim(prefix, "/")
-	if prefix == "/" {
-		return "/api"
-	}
-	return prefix
+	// No APIPrefix means entity CRUD mounts at the bare root — there is
+	// no delimited API surface, so the guard covers the WHOLE app.
+	// Fail-closed: requests without an Origin (top-level navigations)
+	// still pass, but any Origin-carrying or bearer-JWT request answers
+	// to the BFF rules everywhere.
+	return "/" + strings.Trim(prefix, "/")
 }
 
 func bffOriginGuard(prefix func() string, allowed map[string]struct{}) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiPrefix := prefix()
-			if r.URL.Path != apiPrefix && !strings.HasPrefix(r.URL.Path, apiPrefix+"/") {
+			// "/" (no APIPrefix configured) guards every path.
+			if apiPrefix != "/" &&
+				r.URL.Path != apiPrefix && !strings.HasPrefix(r.URL.Path, apiPrefix+"/") {
 				next.ServeHTTP(w, r)
 				return
 			}

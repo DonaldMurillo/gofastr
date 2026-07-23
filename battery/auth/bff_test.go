@@ -246,3 +246,98 @@ func findResponseCookie(resp *http.Response, name string) *http.Cookie {
 	}
 	return nil
 }
+
+func TestBFFPreflightWorksWithoutOPTIONSRoute(t *testing.T) {
+	mgr := New(AuthConfig{DevMode: true, UserStore: newMemoryUserStore()})
+	app := framework.NewApp(WithBFFPosture(mgr, BFFPostureConfig{
+		AllowedOrigins: []string{"https://app.example.com"},
+	}))
+	// CRUD registration adds GET/POST/PUT/PATCH/DELETE but never OPTIONS —
+	// the preflight must be answered by the guard on the 405 fallback path.
+	app.Router().Get("/api/posts", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	pre := httptest.NewRequest(http.MethodOptions, "/api/posts", nil)
+	pre.Header.Set("Origin", "https://app.example.com")
+	pre.Header.Set("Access-Control-Request-Method", "POST")
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, pre)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("preflight on OPTIONS-less route = %d, want 204", rec.Code)
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "https://app.example.com" {
+		t.Fatalf("preflight missing CORS headers: %v", rec.Header())
+	}
+}
+
+func TestBFFNoAPIPrefixGuardsWholeApp(t *testing.T) {
+	mgr := New(AuthConfig{DevMode: true, UserStore: newMemoryUserStore()})
+	app := framework.NewApp(WithBFFPosture(mgr, BFFPostureConfig{
+		AllowedOrigins: []string{"https://app.example.com"},
+	}))
+	// No WithAPIPrefix: entities mount bare, so /posts must still answer
+	// to the origin allowlist and the bearer-JWT rejection.
+	app.Router().Get("/posts", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	evil := httptest.NewRequest(http.MethodGet, "/posts", nil)
+	evil.Header.Set("Origin", "https://evil.example")
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, evil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("bare-mount untrusted Origin = %d, want 403", rec.Code)
+	}
+
+	jwt := httptest.NewRequest(http.MethodGet, "/posts", nil)
+	jwt.Header.Set("Authorization", "Bearer header.payload.signature")
+	rec = httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, jwt)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("bare-mount bearer JWT = %d, want 401", rec.Code)
+	}
+
+	plain := httptest.NewRequest(http.MethodGet, "/posts", nil)
+	rec = httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, plain)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bare-mount plain navigation = %d, want 200", rec.Code)
+	}
+}
+
+func TestLogoutRejectsSameSiteSiblingOrigin(t *testing.T) {
+	mgr := New(AuthConfig{DevMode: true, UserStore: newMemoryUserStore()})
+	app := framework.NewApp(WithBFFPosture(mgr, BFFPostureConfig{
+		AllowedOrigins: []string{"https://app.example.com"},
+	}))
+	mgr.Use(NewCorePlugin())
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	mgr.RegisterRoutes(app.Router())
+
+	// A form on a sibling subdomain is Sec-Fetch-Site: same-site and the
+	// SameSite session cookie IS attached — the Origin host comparison
+	// must refuse the forced logout.
+	sibling := httptest.NewRequest(http.MethodPost, "https://app.example.com/auth/logout", strings.NewReader("next=%2F"))
+	sibling.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	sibling.Header.Set("Sec-Fetch-Site", "same-site")
+	sibling.Header.Set("Origin", "https://evil.example.com")
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, sibling)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("same-site sibling logout = %d, want 403", rec.Code)
+	}
+
+	// The app's own origin (matching host) stays allowed.
+	self := httptest.NewRequest(http.MethodPost, "https://app.example.com/auth/logout", strings.NewReader("next=%2F"))
+	self.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	self.Header.Set("Sec-Fetch-Site", "same-origin")
+	self.Header.Set("Origin", "https://app.example.com")
+	rec = httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, self)
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("same-origin logout unexpectedly rejected: %d", rec.Code)
+	}
+}
