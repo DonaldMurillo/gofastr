@@ -74,7 +74,8 @@ func (s *PresenceScreen) Render() render.HTML {
 		members = siteIslands.PresenceRoster(presenceDemoTopic)
 	}
 
-	return html.Main(html.MainConfig{Class: "presence-demo-page"},
+	// The site layout already owns the document's sole <main> landmark.
+	return html.Div(html.DivConfig{Class: "presence-demo-page"},
 		container(
 			ui.PageHeader(ui.PageHeaderConfig{
 				Eyebrow: "Example · Live presence",

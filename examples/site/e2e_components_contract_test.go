@@ -320,4 +320,57 @@ func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
 	}
 }
 
+func TestE2E_SidebarVariantsAdaptAndPersist(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	const storageKey = "gofastr.sidebar.ui-sidebar-drawer.collapsed"
+	var collapsed, persisted, labelHidden, offCanvasHidden, hamburgerVisible bool
+	var offCanvasState []bool
+	var expanded string
+	var inlineWidth float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/sidebar"),
+		pageReady(),
+		chromedp.Evaluate(`localStorage.removeItem("`+storageKey+`")`, nil),
+		chromedp.Reload(),
+		pageReady(),
+		chromedp.WaitVisible(`[data-fui-sidebar-collapse]`, chromedp.ByQuery),
+		chromedp.Click(`[data-fui-sidebar-collapse]`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar]')?.dataset.collapsed === 'true'`, &collapsed),
+		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar-collapse]')?.getAttribute('aria-expanded') ?? ''`, &expanded),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-sidebar] .ui-sidebar__label')).display === 'none'`, &labelHidden),
+		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar] .ui-sidebar__inline').getBoundingClientRect().width`, &inlineWidth),
+		chromedp.Reload(),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar]')?.dataset.collapsed === 'true'`, &persisted),
+		chromedp.Evaluate(`
+			const sidebar = document.querySelector('[data-fui-sidebar]');
+			sidebar.classList.remove('ui-sidebar--collapsible');
+			sidebar.classList.add('ui-sidebar--off-canvas');
+			[
+				getComputedStyle(sidebar.querySelector('.ui-sidebar__inline')).display === 'none',
+				getComputedStyle(sidebar.querySelector('.ui-sidebar__hamburger')).display !== 'none'
+			]
+		`, &offCanvasState),
+	); err != nil {
+		t.Fatalf("sidebar variants: %v", err)
+	}
+	if len(offCanvasState) == 2 {
+		offCanvasHidden, hamburgerVisible = offCanvasState[0], offCanvasState[1]
+	}
+	if !collapsed || expanded != "false" || !labelHidden || inlineWidth > 80 {
+		t.Errorf("collapsed state incomplete: collapsed=%v expanded=%q labelHidden=%v width=%.1f", collapsed, expanded, labelHidden, inlineWidth)
+	}
+	if !persisted {
+		t.Error("collapsed state did not survive reload")
+	}
+	if !offCanvasHidden || !hamburgerVisible {
+		t.Errorf("off-canvas desktop state incorrect: inlineHidden=%v hamburgerVisible=%v", offCanvasHidden, hamburgerVisible)
+	}
+}
+
 // Note: Popover tests dropped — the site has no /components/popover page.

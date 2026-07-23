@@ -55,6 +55,7 @@ var docIntents = []docIntent{
 			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
 			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
 			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release — plus gofastr upgrade, the guided helper."},
+			{"stability", "API stability", "Compatibility windows, deprecation rules, and the public v1 promise."},
 		},
 	},
 	{
@@ -250,7 +251,7 @@ func allDocsSection() render.HTML {
 			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(itoa(len(cards))+" docs")),
 		),
 		html.Paragraph(html.TextConfig{Class: "intent__lede"},
-			render.Text("The complete embedded reference — every page, alphabetical, featured or not. Same content as `gofastr docs`.")),
+			render.Text("The complete embedded reference: every page, alphabetical, featured or not. It is the same content as `gofastr docs`.")),
 		html.Div(html.DivConfig{Class: "docs"}, cards...),
 	)
 }

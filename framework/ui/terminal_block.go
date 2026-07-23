@@ -76,11 +76,10 @@ func terminalBlockCSS(_ style.Theme) string {
   color: var(--color-text-subtle, #71717A);
 }
 [data-fui-comp="ui-terminal-block"] .ui-terminal-block__dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
   background: var(--color-primary, currentColor);
-  box-shadow: 0 0 6px var(--color-primary, currentColor);
 }
 [data-fui-comp="ui-terminal-block"] .ui-terminal-block__body {
   padding: 10px 12px;

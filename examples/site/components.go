@@ -548,7 +548,10 @@ func componentPkg(slug string) string {
 // ui-sidebar-drawer widget (main.go) so the two agree on DrawerName + content —
 // otherwise the hamburger opens a drawer that was never mounted.
 var sidebarShowcaseConfig = ui.SidebarConfig{
-	Title: "Docs",
+	Title:      "Docs",
+	NavLabel:   "Sidebar component example",
+	Variant:    ui.SidebarCollapsible,
+	DrawerName: "ui-sidebar-drawer",
 	Items: []ui.SidebarItem{
 		{Label: "Modeling", Children: []ui.SidebarItem{
 			{Label: "Entities", Href: "/docs/entities"},
@@ -626,9 +629,11 @@ var componentCatalog = []componentEntry{
 	// ---------- Feedback / surfaces ----------
 	{"banner", "Banner", "Feedback", "Full-width alert; optional dismiss + action.", func() render.HTML {
 		return ui.Banner(ui.BannerConfig{
-			Title:   "v0.x",
-			Body:    "GoFastr is v0.x — pin a version; APIs may change between releases.",
-			Variant: ui.BannerWarn,
+			Title:       "v0.x",
+			Body:        "GoFastr is v0.x — pin a version; APIs may change between releases.",
+			Variant:     ui.BannerWarn,
+			Dismissible: true,
+			DismissID:   "feature-filter-chips-2026-05",
 		})
 	}},
 	{"callout", "Callout", "Feedback", "Bordered prose call-out for tips or warnings.", func() render.HTML {
@@ -818,7 +823,7 @@ var componentCatalog = []componentEntry{
 		})
 	}},
 	{"breadcrumbs", "Breadcrumbs", "Navigation", "Hierarchy trail.", func() render.HTML {
-		return patternsBreadcrumbs.New(patternsBreadcrumbs.Config{},
+		return patternsBreadcrumbs.New(patternsBreadcrumbs.Config{Label: "Component breadcrumb example"},
 			patternsBreadcrumbs.Crumb{Text: "Docs", Href: "/docs/"},
 			patternsBreadcrumbs.Crumb{Text: "Modeling", Href: "/docs/#modeling"},
 			patternsBreadcrumbs.Crumb{Text: "Entities"},
@@ -826,9 +831,9 @@ var componentCatalog = []componentEntry{
 	}},
 	{"pagination", "Pagination", "Navigation", "Page-cursor controls.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsPagination.New(patternsPagination.Config{Current: 2, Total: 8, HrefPattern: "?page=%d"}),
+			patternsPagination.New(patternsPagination.Config{Current: 2, Total: 8, HrefPattern: "?page=%d", Label: "Middle-page example"}),
 			// First-page variant: the Previous boundary renders disabled.
-			patternsPagination.New(patternsPagination.Config{Current: 1, Total: 8, HrefPattern: "?page=%d"}),
+			patternsPagination.New(patternsPagination.Config{Current: 1, Total: 8, HrefPattern: "?page=%d", Label: "First-page example"}),
 		)
 	}},
 	{"toolbar", "Toolbar", "Navigation", "Horizontal action group with separators.", func() render.HTML {
@@ -953,6 +958,25 @@ var componentCatalog = []componentEntry{
 			Label: "Display name", For: "demo-name",
 			Help:  "Visible to everyone in your workspace.",
 			Input: input,
+		})
+	}},
+	{"textfield", "TextField", "Forms", "Typed labelled text input with built-in help and error wiring.", func() render.HTML {
+		return ui.TextField(ui.TextFieldConfig{
+			Name: "project", Label: "Project name", Value: "GoFastr",
+			Help: "Shown to everyone in your workspace.", Required: true,
+		})
+	}},
+	{"numberfield", "NumberField", "Forms", "Typed labelled number input with explicit bounds.", func() render.HTML {
+		min, max, step := 0.0, 100.0, 5.0
+		return ui.NumberField(ui.NumberFieldConfig{
+			Name: "capacity", Label: "Capacity", Value: "25",
+			Min: &min, Max: &max, Step: &step, Help: "Choose a value from 0 to 100.",
+		})
+	}},
+	{"datefield", "DateField", "Forms", "Typed labelled date input with native date bounds.", func() render.HTML {
+		return ui.DateField(ui.DateFieldConfig{
+			Name: "launch-date", Label: "Launch date", Value: "2026-07-22",
+			Min: "2026-01-01", Max: "2026-12-31",
 		})
 	}},
 	{"formsection", "FormSection", "Forms", "Bordered group of related fields.", func() render.HTML {
@@ -1726,6 +1750,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 				{ID: "docs", Label: "docs", Children: []patternsTree.Node{
 					{ID: "docs-readme", Label: "README.md", Href: "#readme"},
 				}},
+				{ID: "vendor", Label: "vendor", LazyPath: "/tree/vendor"},
 			},
 		})
 	}},
@@ -2074,7 +2099,7 @@ func (s *ComponentShowcaseScreen) demoStage(ctx context.Context) render.HTML {
 		label = "Note"
 	}
 	return html.Div(html.DivConfig{Class: "demo-stage"},
-		html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text(label)),
+		html.Heading(html.HeadingConfig{Level: 2, Class: "demo-stage__label"}, render.Text(label)),
 		html.Div(html.DivConfig{Class: "demo-stage__viewport"}, s.renderDemo(ctx)),
 	)
 }

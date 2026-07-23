@@ -58,6 +58,28 @@ func body(t *testing.T, target string) string {
 	return rec.Body.String()
 }
 
+func TestInstallTargetMatchesRenderedRelease(t *testing.T) {
+	old := siteVersion
+	t.Cleanup(func() { siteVersion = old })
+
+	siteVersion = "0.39.1"
+	if got := siteInstallTarget(); got != "v0.39.1" {
+		t.Fatalf("release install target = %q, want v0.39.1", got)
+	}
+	home := string(heroSection())
+	if !strings.Contains(home, "gofastr@v0.39.1") {
+		t.Fatalf("release homepage did not pin its install command: %s", home)
+	}
+
+	siteVersion = "dev"
+	if got := siteInstallTarget(); got != "main" {
+		t.Fatalf("development install target = %q, want main", got)
+	}
+	if strings.Contains(string(heroSection()), "vdev") {
+		t.Fatal("development status must never render malformed vdev")
+	}
+}
+
 // ── Keystone: the /__gofastr session cookie must round-trip over http
 // ── localhost, or every island RPC + the SSE stream 401s. ──────────────
 
@@ -248,10 +270,13 @@ func TestKilnPanelPortIsConsistent(t *testing.T) {
 // ── Components: honest Live/Note labels + real package links. ───────────
 
 func TestComponentDemoLabels(t *testing.T) {
-	if !strings.Contains(body(t, "/components/datatable"), `demo-stage__label">Note`) {
+	labelPattern := func(label string) *regexp.Regexp {
+		return regexp.MustCompile(`<h2[^>]*class="[^"]*\bdemo-stage__label\b[^"]*"[^>]*>` + label + `</h2>`)
+	}
+	if !labelPattern("Note").MatchString(body(t, "/components/datatable")) {
 		t.Error("note-only component (datatable) should be labeled 'Note'")
 	}
-	if !strings.Contains(body(t, "/components/button"), `demo-stage__label">Live`) {
+	if !labelPattern("Live").MatchString(body(t, "/components/button")) {
 		t.Error("live component (button) should be labeled 'Live'")
 	}
 }

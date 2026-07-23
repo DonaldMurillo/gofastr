@@ -104,7 +104,7 @@ func TestE2E_Slider_OutputMirrorsValue(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if before == "" {
-		t.Skip("slider not found — demo may differ from website")
+		t.Fatal("slider not found — the catalog contract and browser test have drifted")
 	}
 	if after != "77" {
 		t.Errorf("output should reflect new value 77, got %q", after)
@@ -129,7 +129,7 @@ func TestE2E_NumberInput_PlusIncrementsValue(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if before == "" {
-		t.Skip("numberinput qty not found")
+		t.Fatal("numberinput qty not found — the catalog contract and browser test have drifted")
 	}
 	if before == after {
 		t.Errorf("+ button should increment value; before=%q after=%q", before, after)
@@ -156,7 +156,7 @@ func TestE2E_NumberInput_MinusClampsToMin(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if value == "" {
-		t.Skip("numberinput qty not found")
+		t.Fatal("numberinput qty not found — the catalog contract and browser test have drifted")
 	}
 	// Min=0 in site demo
 	v, _ := strconv.ParseFloat(value, 64)
@@ -305,7 +305,7 @@ func TestE2E_RangeSlider_CrossClampPreventsCross(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if lo == "" || hi == "" {
-		t.Skip("price-min/price-max inputs not found in site demo")
+		t.Fatal("price-min/price-max inputs not found — the catalog contract and browser test have drifted")
 	}
 	loN, _ := strconv.ParseFloat(lo, 64)
 	hiN, _ := strconv.ParseFloat(hi, 64)
@@ -335,7 +335,7 @@ func TestE2E_RangeSlider_ValueMirrorUpdates(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if before == "" {
-		t.Skip("range slider output not found in site demo")
+		t.Fatal("range slider output not found — the catalog contract and browser test have drifted")
 	}
 	if before == after {
 		t.Errorf("output mirror should change after input; before=%q after=%q", before, after)
@@ -364,7 +364,7 @@ func TestE2E_Banner_DismissHidesElement(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if hiddenBefore == "null" {
-		t.Skip("no dismissable banner found in site demo")
+		t.Fatal("dismissable banner not found — the catalog contract and browser test have drifted")
 	}
 	if hiddenBefore != "false" {
 		t.Fatalf("persistent banner should be visible before click; hidden=%s", hiddenBefore)
@@ -395,7 +395,7 @@ func TestE2E_TreeView_ArrowRightExpandsLazyBranch(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if expandedBefore == "" {
-		t.Skip("vendor treeitem not found in site demo")
+		t.Fatal("vendor treeitem not found — the catalog contract and browser test have drifted")
 	}
 	if expandedAfter != "true" {
 		t.Errorf("vendor should be aria-expanded=true after toggle, got %q", expandedAfter)

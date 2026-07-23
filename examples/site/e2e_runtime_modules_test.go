@@ -216,7 +216,7 @@ func TestE2E_RuntimeSplit_ManifestIsContentAddressed(t *testing.T) {
 		t.Errorf("manifest should declare fileupload hash; got %q", manifest)
 	}
 	if requestedURL == "" {
-		t.Skip("fileupload script not present — marker may not have fired yet")
+		t.Fatal("fileupload script not present — demand-load marker contract regressed")
 	}
 	if !strings.Contains(requestedURL, "?v=") {
 		t.Errorf("fileupload script URL should carry ?v=<hash> cache-buster; got %q", requestedURL)

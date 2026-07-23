@@ -54,6 +54,16 @@ func versionLabel() string {
 	return "v" + siteVersion
 }
 
+// siteInstallTarget keeps the public install command reproducible. Deployed
+// builds receive the release tag through siteVersion; local source builds
+// intentionally point at main rather than pretending @latest is pinned.
+func siteInstallTarget() string {
+	if siteVersion == "" || siteVersion == "dev" {
+		return "main"
+	}
+	return versionLabel()
+}
+
 func (h *HeaderComponent) Render() render.HTML {
 	// Brand stays site-local — the λ mark, lowercase wordmark, and the
 	// amber version status pulse are GoFastr's identity. The framework's
@@ -63,14 +73,14 @@ func (h *HeaderComponent) Render() render.HTML {
 		Href:  "/",
 		Class: "site-brand",
 		ExtraAttrs: html.Attrs{
-			"aria-label": "gofastr — " + versionLabel() + " (v0.x, APIs may change)",
+			"aria-label": "gofastr, " + versionLabel() + " (v0.x, APIs may change)",
 		},
 		Content: render.Join(
 			html.Span(html.TextConfig{Class: "site-brand__mark"}, render.Text("λ")),
 			html.Span(html.TextConfig{Class: "site-brand__name"}, render.Text("gofastr")),
 			html.Span(html.TextConfig{
 				Class:      "site-brand__status",
-				ExtraAttrs: html.Attrs{"title": "v0.x — pin a version; APIs may change between releases."},
+				ExtraAttrs: html.Attrs{"title": "v0.x. Pin a version; APIs may change between releases."},
 			},
 				html.Span(html.TextConfig{Class: "site-brand__pulse"}),
 				html.Span(html.TextConfig{Class: "site-brand__ver"}, render.Text(versionLabel())),
@@ -88,7 +98,7 @@ func (h *HeaderComponent) Render() render.HTML {
 		map[string]string{
 			"class":                   "site-cmd",
 			"type":                    "button",
-			"aria-label":              "Open search — find a doc, component, or example",
+			"aria-label":              "Open search to find a doc, component, or example",
 			"data-fui-open":           "site-command-palette",
 			"data-fui-shortcut-click": "Meta+K",
 		},
@@ -181,7 +191,7 @@ func (f *FooterComponent) Render() render.HTML {
 			}},
 		},
 		Bottom: []render.HTML{
-			html.Span(html.TextConfig{}, render.Text("© 2026 — a research project, not a company.")),
+			html.Span(html.TextConfig{}, render.Text("© 2026. A research project, not a company.")),
 			html.Span(html.TextConfig{}, render.Text("Set in system sans + mono.")),
 		},
 		Class: "site-foot",

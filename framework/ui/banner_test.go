@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestBannerRequiresTitle(t *testing.T) {
@@ -86,5 +88,17 @@ func TestBannerActionRenders(t *testing.T) {
 	}
 	if !strings.Contains(h, `href="/x"`) {
 		t.Errorf("Action HTML should appear in output:\n%s", h)
+	}
+}
+
+func TestBannerCSSAvoidsDecorativeSideStripe(t *testing.T) {
+	css := bannerCSS(style.Theme{})
+	for _, banned := range []string{"border-left:", "border-left-color"} {
+		if strings.Contains(css, banned) {
+			t.Errorf("bannerCSS must not use %q:\n%s", banned, css)
+		}
+	}
+	if !strings.Contains(css, "--ui-banner-accent") {
+		t.Errorf("banner variants should still provide a full-outline accent:\n%s", css)
 	}
 }

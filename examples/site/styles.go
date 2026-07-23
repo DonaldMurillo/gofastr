@@ -508,7 +508,7 @@ func siteNav(ss *style.StyleSheet) {
 			"border-radius", "999px",
 			"color", "{colors.text-muted}",
 			"font-family", "{fonts.mono}",
-			"font-size", "10px",
+			"font-size", "12px",
 			"line-height", "1",
 			"text-transform", "lowercase",
 			"font-weight", "400").End()
@@ -525,8 +525,7 @@ func siteNav(ss *style.StyleSheet) {
 	// when the user has prefers-reduced-motion: reduce.
 	ss.Media("(prefers-reduced-motion: reduce)", func(inner *style.StyleSheet) {
 		inner.Rule(".site-brand__pulse").
-			Set("animation", "none",
-				"box-shadow", "0 0 6px color-mix(in oklch, {colors.primary} 50%, transparent)").End()
+			Set("animation", "none", "box-shadow", "none").End()
 	})
 	// The keyframes live at the top level so the at-rule is emitted
 	// once and reused.
@@ -597,7 +596,7 @@ func siteNav(ss *style.StyleSheet) {
 			"align-items", "center",
 			"gap", "2px",
 			"font-family", "{fonts.mono}",
-			"font-size", "10px",
+			"font-size", "11px",
 			"line-height", "1",
 			"padding", "3px 6px",
 			"border", "1px solid {colors.border}",
@@ -606,7 +605,7 @@ func siteNav(ss *style.StyleSheet) {
 			"color", "{colors.text-muted}",
 			"font-weight", "500").End()
 	ss.Rule(".site-icon").
-		Set("width", "30px", "height", "30px",
+		Set("width", "44px", "height", "44px",
 			"display", "grid", "place-items", "center",
 			"border-radius", "{radii.md}",
 			"color", "{colors.text-subtle}").End()
@@ -1198,12 +1197,11 @@ func responsive(ss *style.StyleSheet) {
 	// 720px collapse leaves the bar crowded through tablet width: the
 	// search trigger gets squeezed from ~288px down to ~209px (768–900px)
 	// and the row reads as busy / pushed. Drop into the framework's own
-	// hamburger drawer at 960px instead — tablets get brand + search +
-	// actions + drawer, and the search keeps full width. ≥980px (large
-	// tablet / laptop) keeps inline nav, where search measures ~288px.
+	// hamburger drawer at 1120px instead — tablets and compact laptops get
+	// brand + search + actions + drawer, and the search keeps full width.
 	// Selector specificity (attr + .site-header, 0,3,0) beats the
 	// component's own 0,2,0 collapse rules regardless of source order.
-	ss.Media("(max-width: 960px)", func(inner *style.StyleSheet) {
+	ss.Media("(max-width: 1120px)", func(inner *style.StyleSheet) {
 		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .ui-site-header__links`).
 			Set("display", "none").End()
 		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .ui-site-header__mobile`).
@@ -1289,6 +1287,8 @@ func responsive(ss *style.StyleSheet) {
 			Set("--ui-site-footer-grid-template", "1fr",
 				"--ui-site-footer-grid-gap", "{spacing.xl}").End()
 		inner.Rule(".ui-site-footer__bottom").Set("flex-direction", "column", "gap", "{spacing.md}", "align-items", "flex-start").End()
+		inner.Rule(".ui-site-footer ul li a").
+			Set("display", "inline-flex", "align-items", "center", "min-height", "44px").End()
 		// Step-rail (get-started) collapses too.
 		inner.Rule(".gs-body").Set("grid-template-columns", "1fr", "gap", "{spacing.lg}", "padding", "{spacing.xl} 0").End()
 		inner.Rule(".step-rail").Set("position", "static", "max-height", "200px", "overflow-y", "auto", "padding-bottom", "{spacing.md}", "border-bottom", "1px solid var(--line-faint)").End()

@@ -198,7 +198,9 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 		Set("display", "grid",
 			"grid-template-columns", "28px 1fr 28px",
 			"gap", "8px",
-			"padding", "6px 0",
+			"padding", "8px 0",
+			"min-height", "44px",
+			"align-items", "center",
 			"color", "{colors.text-muted}").End()
 	ss.Rule(".intent-rail .n").
 		Set("font-family", "{fonts.mono}",
@@ -206,7 +208,7 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 			"color", "{colors.text-subtle}").End()
 	ss.Rule(".intent-rail .ct").
 		Set("font-family", "{fonts.mono}",
-			"font-size", "10px",
+			"font-size", "12px",
 			"color", "var(--fg-4)",
 			"text-align", "right").End()
 	ss.Rule(".intent-rail li a.active").Set("color", "{colors.text}").End()
@@ -264,7 +266,7 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 		Set("display", "flex", "align-items", "center", "gap", "8px").End()
 	ss.Rule(".doc__head .pill").
 		Set("font-family", "{fonts.mono}",
-			"font-size", "10px",
+			"font-size", "12px",
 			"padding", "2px 6px",
 			"border-radius", "{radii.sm}",
 			"text-transform", "lowercase").End()
@@ -291,7 +293,7 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 			"line-height", "1.5").End()
 	ss.Rule(".doc__meta").
 		Set("font-family", "{fonts.mono}",
-			"font-size", "10px",
+			"font-size", "12px",
 			"color", "var(--fg-4)",
 			"margin-top", "auto").End()
 
@@ -389,7 +391,8 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"color", "{colors.primary}").End()
 	ss.Rule(".prose ol").Set("list-style", "decimal").End()
 	ss.Rule(".prose blockquote").
-		Set("border-left", "2px solid {colors.primary}",
+		Set("border", "1px solid color-mix(in oklch, {colors.primary} 28%, {colors.border})",
+			"border-radius", "{radii.sm}",
 			"padding", "{spacing.md} {spacing.lg}",
 			"color", "{colors.text}",
 			"margin", "{spacing.lg} 0",
@@ -404,7 +407,7 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 	ss.Rule(".prose .note").
 		Set("padding", "{spacing.lg}",
 			"background", "color-mix(in oklch, {colors.primary} 6%, {colors.surface})",
-			"border-left", "3px solid {colors.primary}",
+			"border", "1px solid color-mix(in oklch, {colors.primary} 34%, {colors.border})",
 			"border-radius", "{radii.sm}",
 			"margin", "{spacing.lg} 0").End()
 	ss.Rule(".prose .note h4").
@@ -440,7 +443,7 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"position", "absolute",
 			"left", "0",
 			"font-family", "{fonts.mono}",
-			"font-size", "10px",
+			"font-size", "12px",
 			"color", "var(--fg-4)").End()
 	ss.Rule(".toc ol li a").Set("color", "{colors.text-muted}").End()
 	ss.Rule(".toc ol li a.active").Set("color", "{colors.text}").End()
@@ -553,14 +556,13 @@ func pageExamples(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /kiln — agent build mode, louder amber wash.
+// /kiln — agent build mode, with a restrained amber surface tint.
 // -----------------------------------------------------------------------------
 
 func pageKiln(ss *style.StyleSheet) {
-	// body wash on the kiln page only — scoped via a body-level class.
+	// Keep the page distinct without decorative gradients competing with content.
 	ss.Rule(".kiln-page").
-		Set("background-image",
-			"radial-gradient(ellipse at top left, color-mix(in oklch, {colors.primary} 8%, transparent), transparent 50%), radial-gradient(ellipse at bottom right, color-mix(in oklch, {colors.primary} 5%, transparent), transparent 60%)").End()
+		Set("background-color", "color-mix(in oklch, {colors.primary} 2%, {colors.background})").End()
 
 	ss.Rule(".k-hero").Set("padding", "var(--s-9) 0").End()
 	ss.Rule(".k-hero__lockup").
@@ -656,10 +658,9 @@ func pageKiln(ss *style.StyleSheet) {
 			"font-size", "11px",
 			"color", "{colors.text-subtle}").End()
 	ss.Rule(".kpanel__head .dot").
-		Set("width", "6px", "height", "6px",
+		Set("width", "7px", "height", "7px",
 			"border-radius", "999px",
-			"background", "{colors.primary}",
-			"box-shadow", "0 0 6px {colors.primary}").End()
+			"background", "{colors.primary}").End()
 	ss.Rule(".kpanel__head .session").Set("margin-left", "auto").End()
 	ss.Rule(".kpanel__chat").
 		Set("flex", "1",
@@ -868,7 +869,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 	ss.Rule(".ph-toc ol li::before").
 		Set("content", `counter(phtoc, decimal-leading-zero)`,
 			"position", "absolute", "left", "0",
-			"font-family", "{fonts.mono}", "font-size", "10px",
+			"font-family", "{fonts.mono}", "font-size", "12px",
 			"color", "var(--fg-4)").End()
 	ss.Rule(".ph-toc ol li a").Set("color", "{colors.text-muted}").End()
 
@@ -942,7 +943,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 		Set("font-family", "{fonts.mono}", "font-size", "11px", "color", "{colors.text-subtle}").End()
 	ss.Rule(".roadmap__what").Set("color", "{colors.text}", "font-size", "var(--t-sm)").End()
 	ss.Rule(".roadmap__status").
-		Set("font-family", "{fonts.mono}", "font-size", "10px",
+		Set("font-family", "{fonts.mono}", "font-size", "12px",
 			"padding", "2px 8px", "border-radius", "999px",
 			"text-align", "center").End()
 	ss.Rule(".roadmap__status.shipped").
@@ -1239,10 +1240,9 @@ func pageNotFound(ss *style.StyleSheet) {
 			"color", "{colors.text-subtle}",
 			"display", "flex", "align-items", "center", "gap", "8px").End()
 	ss.Rule(".nf__term-head .dot").
-		Set("width", "6px", "height", "6px",
+		Set("width", "7px", "height", "7px",
 			"border-radius", "999px",
-			"background", "{colors.primary}",
-			"box-shadow", "0 0 8px {colors.primary}").End()
+			"background", "{colors.primary}").End()
 	ss.Rule(".nf__term-body").
 		Set("padding", "12px",
 			"font-family", "{fonts.mono}",
