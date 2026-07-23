@@ -550,10 +550,23 @@ func sidebarCSS(_ style.Theme) string {
   transform: rotate(180deg);
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__title,
-[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__label,
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__footer,
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__sublist {
   display: none;
+}
+/* Labels go visually-hidden (clip), NOT display:none — the links and
+   disclosure summaries stay focusable in the collapsed rail, so their
+   only accessible name must survive for AT (WCAG 4.1.2). */
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__link {
   justify-content: center;
