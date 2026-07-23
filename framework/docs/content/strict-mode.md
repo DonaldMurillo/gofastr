@@ -66,17 +66,48 @@ Absence and drift are treated differently, on purpose:
 - **Deleting a screen never breaks the check.** Stale manifest entries
   that resolve to no route are ignored.
 
-## Relaxing a finding
+## Configuring every check
 
-There is no per-check severity config and no warn level. The intended
-escape hatches are the same declarations normal apps use:
+`WithStrict()` with no arguments enforces everything. Pass a
+`StrictConfig` to tune each check individually — the zero value of
+every field is the strictest setting, so configuration only ever
+*relaxes*, and every relaxation is visible in review:
+
+```go
+uihost.WithStrict(uihost.StrictConfig{
+    ScreenDescriptions: uihost.StrictWarn,          // log, don't fail
+    Robots:             uihost.StrictOff,           // skip entirely
+    AxeManifestMissing: uihost.StrictAbsenceEnforce, // unproven checkout must not serve
+    ExemptScreens:      []string{"/machine/feed", "/internal/*"},
+})
+```
+
+| Field | Governs | Zero value |
+|---|---|---|
+| `ScreenTitles` | per-screen title check | enforce |
+| `ScreenDescriptions` | per-screen description check | enforce |
+| `SiteDescription` | `WithDescription` present | enforce |
+| `SiteIcon` | `WithAppIcon`/`WithFavicon` present | enforce |
+| `Sitemap` | `WithSitemap` present | enforce |
+| `Robots` | `WithRobots` present | enforce |
+| `AxeCoverage` | per-screen axe scan recorded (dev only) | enforce |
+| `AxeManifestMissing` | posture when no manifest exists at all | **warn** (`StrictAbsenceWarn`) |
+| `ExemptScreens` | routes the per-screen checks skip — exact pattern or `/prefix/*` | none |
+
+Levels are `StrictEnforce` (fail boot), `StrictWarn` (`slog.Warn`,
+serve), `StrictOff` (skip). `AxeManifestMissing` uses its own trio
+(`StrictAbsenceWarn`/`StrictAbsenceEnforce`/`StrictAbsenceOff`)
+because its default is warn — see above.
+
+Prefer the declaration-level escape hatches before reaching for
+config, though — they carry more information:
 
 - A page that should have no SEO: implement `ScreenSEO` returning the
   zero value.
 - A page that shouldn't exist as a page: register it as a drawer,
   sheet, or dialog if that's what it really is.
-- An app that isn't ready for the bar: remove `WithStrict()`. It is a
-  single option, not a mode with degrees.
+- A whole subtree outside the bar (machine-facing endpoints, internal
+  tooling): `ExemptScreens` with a `/prefix/*` entry.
 
 ## Common mistakes
 

@@ -100,6 +100,7 @@ type UIHost struct {
 	pwaSW           string                               // deployment-constant service worker, computed on first request
 	pwaSWErr        error                                // paired with pwaSW
 	strict          bool                                 // WithStrict — Mount refuses to serve an app that fails the strict checks (strict.go)
+	strictConfig    StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
 	siteDescription bool                                 // set by WithDescription; read by the strict site-surface check
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,

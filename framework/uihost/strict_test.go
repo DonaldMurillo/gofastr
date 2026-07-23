@@ -194,6 +194,116 @@ func TestStrictAxeCoverageEnforcedInDevOnly(t *testing.T) {
 	})
 }
 
+// captureLog swaps the default slog handler for a buffer for the test's
+// duration and returns the buffer.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+func TestStrictConfigWarnLevelLogsAndServes(t *testing.T) {
+	a := app.NewApp("demo")
+	a.Register("/bare", &bareScreen{}, nil)
+	buf := captureLog(t)
+	ds := New(a,
+		WithStrict(StrictConfig{
+			ScreenTitles:       StrictWarn,
+			ScreenDescriptions: StrictWarn,
+			SiteDescription:    StrictWarn,
+			SiteIcon:           StrictWarn,
+			Sitemap:            StrictWarn,
+			Robots:             StrictWarn,
+		}),
+	)
+	if msg := mountPanic(t, ds); msg != "" {
+		t.Fatalf("warn-level checks must serve, not panic:\n%s", msg)
+	}
+	logged := buf.String()
+	for _, want := range []string{"/bare", "title", "description", "sitemap"} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("warn log missing %q; log was:\n%s", want, logged)
+		}
+	}
+}
+
+func TestStrictConfigOffLevelIsSilent(t *testing.T) {
+	a := app.NewApp("demo")
+	a.Register("/bare", &bareScreen{}, nil)
+	buf := captureLog(t)
+	ds := New(a,
+		WithStrict(StrictConfig{
+			ScreenTitles:       StrictOff,
+			ScreenDescriptions: StrictOff,
+			SiteDescription:    StrictOff,
+			SiteIcon:           StrictOff,
+			Sitemap:            StrictOff,
+			Robots:             StrictOff,
+			AxeCoverage:        StrictOff,
+		}),
+	)
+	if msg := mountPanic(t, ds); msg != "" {
+		t.Fatalf("off-level checks must not panic:\n%s", msg)
+	}
+	if strings.Contains(buf.String(), "strict") {
+		t.Fatalf("off-level checks must not log; log was:\n%s", buf.String())
+	}
+}
+
+func TestStrictConfigMixedLevelsSplitCorrectly(t *testing.T) {
+	// Title stays enforced (zero value), description demoted to warn:
+	// boot must fail naming ONLY the title.
+	a := app.NewApp("demo")
+	a.Register("/bare", &bareScreen{}, nil)
+	buf := captureLog(t)
+	ds := New(a, strictSiteOptions()...)
+	applyOption(ds, WithStrict(StrictConfig{ScreenDescriptions: StrictWarn}))
+	msg := mountPanic(t, ds)
+	if !strings.Contains(msg, "title") {
+		t.Fatalf("enforced title finding missing from panic:\n%s", msg)
+	}
+	if strings.Contains(msg, "description") {
+		t.Fatalf("warn-level description leaked into the panic:\n%s", msg)
+	}
+	if !strings.Contains(buf.String(), "description") {
+		t.Fatalf("warn-level description not logged; log was:\n%s", buf.String())
+	}
+}
+
+func TestStrictConfigExemptScreens(t *testing.T) {
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	a.Register("/machine/feed", &bareScreen{}, nil)
+	a.Register("/internal/tools/report", &bareScreen{}, nil)
+	ds := New(a, strictSiteOptions()...)
+	applyOption(ds, WithStrict(StrictConfig{
+		ExemptScreens: []string{"/machine/feed", "/internal/*"},
+	}))
+	if msg := mountPanic(t, ds); msg != "" {
+		t.Fatalf("exempt screens still checked:\n%s", msg)
+	}
+}
+
+func TestStrictConfigManifestMissingCanBeEnforced(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("GOFASTR_DEV", "1")
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	ds := New(a, strictSiteOptions()...)
+	applyOption(ds, WithStrict(StrictConfig{AxeManifestMissing: StrictAbsenceEnforce}))
+	msg := mountPanic(t, ds)
+	if !strings.Contains(msg, "manifest") {
+		t.Fatalf("AxeManifestMissing: StrictEnforce did not fail boot:\n%s", msg)
+	}
+}
+
+// applyOption applies one more Option to an already-constructed host —
+// test shorthand for composing strictSiteOptions with a custom config.
+func applyOption(ds *UIHost, opt Option) { opt(ds) }
+
 func TestStrictAxeCoverageSkipsScreenlessApp(t *testing.T) {
 	// An app with no page screens (API-only, or dialogs/drawers only) has
 	// nothing an axe test could scan — dev boot must not demand a manifest.
