@@ -74,6 +74,10 @@ type SidebarConfig struct {
 	// Title is rendered as the sidebar's top heading. Empty omits it.
 	Title string
 
+	// NavLabel names the navigation landmark. Defaults to "Primary".
+	// Set a distinct label when more than one navigation landmark appears.
+	NavLabel string
+
 	// Items is the navigation tree.
 	Items []SidebarItem
 
@@ -93,6 +97,10 @@ type SidebarConfig struct {
 	// Defaults to "ui-sidebar-drawer". Apps that host multiple
 	// sidebars per page must override to avoid collisions.
 	DrawerName string
+
+	// CollapseStorageKey overrides the localStorage key used by the
+	// collapsible variant. Defaults to "gofastr.sidebar.<DrawerName>.collapsed".
+	CollapseStorageKey string
 
 	// SuppressDrawerTrigger hides the hamburger button rendered by
 	// Sidebar (some apps put their hamburger in the page header
@@ -199,7 +207,15 @@ func (s sidebarComponent) render() render.HTML {
 	// landmark-complementary-is-top-level rule fires on the double
 	// landmark. The layout's <nav> is the sole landmark; this element
 	// is the styled shell (display:contents, so it adds no box).
-	b.WriteString(`<div class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar>`)
+	b.WriteString(`<div class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar`)
+	if cfg.Variant == SidebarCollapsible {
+		key := cfg.CollapseStorageKey
+		if key == "" {
+			key = "gofastr.sidebar." + cfg.DrawerName + ".collapsed"
+		}
+		b.WriteString(` data-fui-sidebar-storage="` + escAttr(key) + `"`)
+	}
+	b.WriteString(`>`)
 
 	if !cfg.SuppressDrawerTrigger {
 		b.WriteString(`<button class="ui-sidebar__hamburger" type="button" ` +
@@ -207,7 +223,13 @@ func (s sidebarComponent) render() render.HTML {
 			`<span aria-hidden="true">☰</span></button>`)
 	}
 
-	b.WriteString(`<div class="ui-sidebar__inline">`)
+	inlineID := cfg.DrawerName + "-inline"
+	b.WriteString(`<div class="ui-sidebar__inline" id="` + escAttr(inlineID) + `">`)
+	if cfg.Variant == SidebarCollapsible {
+		b.WriteString(`<button type="button" class="ui-sidebar__collapse" data-fui-sidebar-collapse ` +
+			`aria-controls="` + escAttr(inlineID) + `" aria-expanded="true" aria-label="Collapse navigation">` +
+			`<span aria-hidden="true">‹</span></button>`)
+	}
 	b.WriteString(string(sidebarBody(cfg)))
 	b.WriteString(`</div></div>`)
 	return sidebarStyle.WrapHTML(render.HTML(b.String()))
@@ -228,7 +250,11 @@ func sidebarBody(cfg SidebarConfig) render.HTML {
 	if cfg.Title != "" {
 		b.WriteString(`<h2 class="ui-sidebar__title">` + escText(cfg.Title) + `</h2>`)
 	}
-	b.WriteString(`<nav class="ui-sidebar__nav" aria-label="Primary">`)
+	label := cfg.NavLabel
+	if label == "" {
+		label = "Primary"
+	}
+	b.WriteString(`<nav class="ui-sidebar__nav" aria-label="` + escAttr(label) + `">`)
 	b.WriteString(`<ul class="ui-sidebar__list">`)
 	for _, it := range cfg.Items {
 		writeSidebarItem(&b, it, cfg.CurrentPath, 0)
@@ -270,6 +296,8 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		b.WriteString(`<summary class="ui-sidebar__link">`)
 		if it.Icon != "" {
 			b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
+		} else {
+			b.WriteString(sidebarFallbackIcon(it.Label))
 		}
 		b.WriteString(`<span class="ui-sidebar__label">` + escText(it.Label) + `</span></summary>`)
 		b.WriteString(`<ul class="ui-sidebar__sublist">`)
@@ -294,10 +322,22 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		b.WriteString(`<a href="` + escAttr(href) + `"` + linkAttrs + `>`)
 		if it.Icon != "" {
 			b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
+		} else {
+			b.WriteString(sidebarFallbackIcon(it.Label))
 		}
 		b.WriteString(`<span class="ui-sidebar__label">` + escText(it.Label) + `</span></a>`)
 	}
 	b.WriteString(`</li>`)
+}
+
+func sidebarFallbackIcon(label string) string {
+	runes := []rune(strings.TrimSpace(label))
+	initial := "•"
+	if len(runes) > 0 {
+		initial = strings.ToUpper(string(runes[0]))
+	}
+	return `<span class="ui-sidebar__icon ui-sidebar__icon--fallback" aria-hidden="true">` +
+		escText(initial) + `</span>`
 }
 
 // sidebarDrawerSlot renders the drawer's body — same content as the
@@ -411,6 +451,27 @@ func sidebarCSS(_ style.Theme) string {
   font-size: var(--text-xl, 1.25rem);
   line-height: 1;
 }
+[data-fui-comp="ui-sidebar"] .ui-sidebar__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  width: var(--spacing-touch-target, 44px);
+  height: var(--spacing-touch-target, 44px);
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-sm, 4px);
+  background: var(--color-surface, #FFF);
+  color: var(--color-text, #18181B);
+  cursor: pointer;
+  font-size: var(--text-xl, 1.25rem);
+}
+[data-fui-comp="ui-sidebar"] .ui-sidebar__collapse:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
+}
+[data-fui-comp="ui-sidebar"] .ui-sidebar__icon--fallback {
+  display: none;
+}
 [data-fui-comp="ui-sidebar"] .ui-sidebar__inline {
   display: grid;
   gap: var(--spacing-md, 8px);
@@ -478,6 +539,31 @@ func sidebarCSS(_ style.Theme) string {
   margin-top: auto;
   padding-top: var(--spacing-md, 12px);
   border-top: 1px solid var(--color-border, #E4E4E7);
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__inline {
+  min-width: 64px;
+  width: 64px;
+  padding-inline: var(--spacing-sm, 8px);
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__collapse {
+  justify-self: center;
+  transform: rotate(180deg);
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__title,
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__label,
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__footer,
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__sublist {
+  display: none;
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__link {
+  justify-content: center;
+  padding-inline: var(--spacing-sm, 8px);
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__icon--fallback {
+  display: inline-flex;
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--off-canvas .ui-sidebar__inline {
+  display: none;
 }
 /* Viewport behaviour: < md collapses to the hamburger; ≥ md the
    inline column appears and the hamburger hides. OffCanvas keeps the

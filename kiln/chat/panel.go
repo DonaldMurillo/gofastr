@@ -59,6 +59,9 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		Signal("world_snapshot", widget.SignalFunc(func() (any, error) {
 			return pe.worldSnapshotText(), nil
 		})).
+		Signal("build_status", widget.SignalFunc(func() (any, error) {
+			return pe.buildStatusHTML(), nil
+		})).
 		// All three signals render server-side from the live session /
 		// world, so a 2s poll of /state keeps the whole panel fresh —
 		// chat log, agent chip, and world-snapshot pill alike. This
@@ -207,6 +210,9 @@ func (pe *panelEnv) agentListHTML() string {
 	available, _ := state["available"].([]map[string]any)
 
 	var b strings.Builder
+	if inFlight, _ := state["in_flight"].(bool); inFlight {
+		b.WriteString(`<p class="kiln-modal-tip">A turn is running. Changing the agent applies to the next turn.</p>`)
+	}
 
 	// If zero adapters are installed, prepend an install hint —
 	// otherwise the modal looks like a list of broken options.
@@ -284,6 +290,11 @@ func writeAdapterRow(b *strings.Builder, name, display string, installed, isCurr
 func (pe *panelEnv) skeleton(slots map[string]render.HTML) render.HTML {
 	var b strings.Builder
 	b.WriteString(`<div class="fui-widget fui-pos-bottom-right kiln-widget kiln-corner-bottom-right" data-fui-widget="kiln-panel">`)
+	b.WriteString(`<div id="kiln-build-banner" class="kiln-build-banner" role="status" aria-live="polite">`)
+	b.WriteString(`<span class="kiln-build-spinner" aria-hidden="true"></span>`)
+	b.WriteString(`<span id="kiln-build-label" data-fui-signal="build_status" data-fui-signal-mode="html" data-fui-flash-on-update data-fui-flash-duration-ms="1500">`)
+	b.WriteString(pe.buildStatusHTML())
+	b.WriteString(`</span></div>`)
 	b.WriteString(`<section class="kiln-panel kiln-open" role="dialog" aria-label="Kiln agent">`)
 	if h, ok := slots["header"]; ok {
 		b.WriteString(string(h))
@@ -353,6 +364,25 @@ func (pe *panelEnv) worldSnapshotText() string {
 	var out string
 	pe.live.ReadSession(func(sess *journal.Session) { out = worldSnapshotTextLocked(sess.World) })
 	return out
+}
+
+// buildStatusHTML changes whenever a world edit is journaled. Binding it to
+// the top-of-page status banner lets the shared widget runtime flash visible
+// feedback even when the panel itself is collapsed. The hidden timestamp makes
+// consecutive edits of the same kind distinct without leaking noise into UI.
+func (pe *panelEnv) buildStatusHTML() string {
+	entries, err := pe.live.Journal().Read()
+	if err != nil {
+		return "agent is building…"
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Kind == journal.KindWorldEdit {
+			return "applying " + escHTML(string(entries[i].Op)) + "…" +
+				`<span class="kiln-build-revision" aria-hidden="true">` +
+				escHTML(entries[i].Timestamp.Format(time.RFC3339Nano)) + `</span>`
+		}
+	}
+	return "agent is building…"
 }
 
 // worldSnapshotTextLocked is the body of worldSnapshotText, run under
@@ -605,11 +635,12 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 	b.WriteString(`<ol class="kiln-log">`)
 
 	type item struct {
-		ts   time.Time
-		kind string // "chat" | "plan" | "world_edit"
-		chat *journal.ChatEvent
-		plan *journal.Plan
-		op   journal.Op
+		ts      time.Time
+		kind    string // "chat" | "plan" | "world_edit"
+		chat    *journal.ChatEvent
+		plan    *journal.Plan
+		op      journal.Op
+		payload json.RawMessage
 	}
 	items := make([]item, 0, len(sess.Chat)+len(sess.Plans))
 	// Index tool_results by their call_id so each tool_call row can
@@ -635,7 +666,7 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 	if entries, err := pe.live.Journal().Read(); err == nil {
 		for _, e := range entries {
 			if e.Kind == journal.KindWorldEdit {
-				items = append(items, item{ts: e.Timestamp, kind: "world_edit", op: e.Op})
+				items = append(items, item{ts: e.Timestamp, kind: "world_edit", op: e.Op, payload: e.Payload})
 			}
 		}
 	}
@@ -675,7 +706,8 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 		case "plan":
 			renderPlanCard(&b, it.plan, it.plan.PlanID == latestUnresolvedID)
 		case "world_edit":
-			fmt.Fprintf(&b, `<li class="kiln-msg kiln-msg-tool">✦ %s</li>`, escHTML(string(it.op)))
+			fmt.Fprintf(&b, `<li class="kiln-msg kiln-msg-tool" data-tool="%s">✦ %s %s</li>`,
+				escAttr(string(it.op)), escHTML(string(it.op)), escHTML(summarizeWorldEdit(it.payload)))
 		}
 		prevWasUser = it.kind == "chat" && it.chat != nil && it.chat.Kind == journal.KindChatUser
 	}
@@ -1078,6 +1110,17 @@ func summarizeArgs(args map[string]any) string {
 		s = s[:80] + "…"
 	}
 	return s
+}
+
+func summarizeWorldEdit(payload json.RawMessage) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	var args map[string]any
+	if err := json.Unmarshal(payload, &args); err != nil {
+		return ""
+	}
+	return summarizeArgs(args)
 }
 
 func stripPagePrefix(s string) string {

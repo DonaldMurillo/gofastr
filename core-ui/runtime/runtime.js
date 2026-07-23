@@ -111,27 +111,6 @@
   // -----------------------------------------------------------------------
   const state = {};
 
-  // parseCombo turns a string like "Mod+Shift+k" into a normalized
-  // shortcut spec the keydown handlers compare against. Mod is the
-  // OS-appropriate primary modifier (Cmd on Mac, Ctrl elsewhere).
-  // Exposed on the namespace so the widgets module (which reads
-  // shortcut combos inside mountWidget) can share the same impl
-  // without duplicating logic.
-  function parseCombo(s) {
-    const out = { key: '', mod: false, shift: false, alt: false };
-    s.split('+').forEach((p) => {
-      const t = p.trim().toLowerCase();
-      if (t === 'mod' || t === 'cmd' || t === 'ctrl') out.mod = true;
-      else if (t === 'shift') out.shift = true;
-      else if (t === 'alt' || t === 'option') out.alt = true;
-      else out.key = t;
-    });
-    return out;
-  }
-  // Hoist onto the namespace once it exists so widgets.js can use it.
-  // The window.__gofastr = { ... } assignment below picks it up via
-  // a property bag — see _parseCombo.
-
   // -----------------------------------------------------------------------
   // Router: known routes from screen registration
   // -----------------------------------------------------------------------
@@ -164,6 +143,12 @@
   // pagination spam-click protection needs: 10 clicks ending on page
   // 1 must settle on page 1, not whichever response landed last.
   const _rpcInFlight = new Map(); // signal name → AbortController
+
+  function _csrf(headers) {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (token) headers['X-CSRF-Token'] = token;
+    return headers;
+  }
 
   async function dispatchRPC(node) {
     if (_staticMode) {
@@ -216,7 +201,7 @@
       }
     }
     const widgetEl = node.closest('[data-fui-widget]');
-    const headers = {};
+    const headers = _csrf({});
     if (widgetEl) headers['X-FUI-Widget'] = widgetEl.getAttribute('data-fui-widget') || '';
     if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
     // CSRF: forward the page's <meta name="csrf-token"> via the
@@ -224,11 +209,6 @@
     // urlencoded `_csrf` field the auth.CSRF middleware parses, so the
     // header is the only channel that works for these requests. Mirrors
     // toggleaction.js / optimisticaction.js — see core-ui/ARCHITECTURE.md.
-    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-    if (csrfMeta) {
-      const tok = csrfMeta.getAttribute('content');
-      if (tok) headers['X-CSRF-Token'] = tok;
-    }
     // Optional pre-flight confirm — useful for destructive RPCs
     // (delete, revoke, drop). The user gets a native browser confirm
     // dialog with the supplied message; cancel aborts the dispatch.
@@ -353,7 +333,7 @@
   }
 
   // Per-form debounce timers for data-fui-rpc-trigger="input".
-  const inputDebounceTimers = new WeakMap();
+  const _idt = new WeakMap();
 
   // Global click+submit dispatcher — installed once at module load.
   // Catches data-fui-rpc on any element NOT inside a widget. Widget
@@ -423,7 +403,7 @@
     const _kilnPost = (el, body) =>
       fetch('/kiln/tool/' + el.getAttribute('data-kiln-tool'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: _csrf({ 'Content-Type': 'application/json' }),
         body,
       }).catch(() => {});
     document.addEventListener('submit', async (e) => {
@@ -533,10 +513,10 @@
       // ones for char-count, autogrow, etc.), so the skip stranded any
       // combobox / typeahead inside a widget surface (e.g. CommandPalette).
       const ms = parseInt(form.getAttribute('data-fui-rpc-debounce-ms') || '250', 10) || 250;
-      const prev = inputDebounceTimers.get(form);
+      const prev = _idt.get(form);
       if (prev) clearTimeout(prev);
-      inputDebounceTimers.set(form, setTimeout(() => {
-        inputDebounceTimers.delete(form);
+      _idt.set(form, setTimeout(() => {
+		_idt.delete(form);
         dispatchRPC(form);
       }, ms));
     });
@@ -619,8 +599,8 @@
   // is assigned further down) can settle it. Stash on the IIFE-local
   // bag below; the namespace assignment at __gofastr = { … } would
   // otherwise wipe direct assignments here.
-  let _widgetCatalogResolve;
-  const _widgetCatalogReady = new Promise((resolve) => { _widgetCatalogResolve = resolve; });
+  let _wcr;
+  const _wready = new Promise((resolve) => { _wcr = resolve; });
 
   // Serverless export: the exporter dumps every widget's metadata to
   // __gofastr/widgets.json (the live endpoint is session-gated and absent
@@ -631,7 +611,7 @@
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     .then((r) => (r.ok ? r.json() : null))
     .then(async (list) => {
-      if (!Array.isArray(list)) { _widgetCatalogResolve(); return; }
+      if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime now ships as a split module. Make sure it's
       // loaded before iterating mounts — covers the case where no
       // [data-fui-widget] marker is present in initial HTML (the
@@ -682,11 +662,11 @@
         // Eager click delegator (installed at boot, see below) is
         // awaiting this Promise — resolve so queued clicks unblock now
         // that the catalog is populated.
-        _widgetCatalogResolve();
+        _wcr();
       };
       tryMount();
     })
-    .catch(() => { _widgetCatalogResolve(); });
+    .catch(() => { _wcr(); });
 
   // -----------------------------------------------------------------------
   // Screen cache — stores rendered screens for instant back-navigation.
@@ -994,10 +974,6 @@
         modal opened from inside another modal traps Tab to itself
         rather than to the outer one. */
     _modalStack: [],
-
-    /** parseCombo helper used by the widgets module's keyboard-shortcut
-        scanners (data-fui-shortcut-click, data-fui-shortcut-focus). */
-    _parseCombo: parseCombo,
 
     /** Tracks split runtime modules already loaded. The loader checks
         this map before injecting a <script>; modules set their own
@@ -1921,7 +1897,7 @@
   })();
   const _modulePromises = {};
   function loadModule(name) {
-    if (window.__gofastr.loadedModules && window.__gofastr.loadedModules[name]) {
+    if (window.__gofastr.loadedModules?.[name]) {
       return Promise.resolve();
     }
     if (_modulePromises[name]) return _modulePromises[name];
@@ -1935,7 +1911,7 @@
       s.onerror = () => {
         // Drop the cached promise so a retry fires a fresh request.
         delete _modulePromises[name];
-        reject(new Error('failed to load runtime module: ' + name));
+        reject(new Error('module failed'));
       };
       document.head.appendChild(s);
     });
@@ -2011,7 +1987,7 @@
         // click responsive even on a cold-cache page where the user
         // clicked faster than /__gofastr/widgets returned.
         await window.__gofastr.loadModule('widgets').catch(() => {});
-        await _widgetCatalogReady;
+        await _wready;
         await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
         if (anchorPref !== null) {
           await window.__gofastr.loadModule('popover');
@@ -2041,10 +2017,8 @@
   }
 
   // === DEMAND-LOAD SCANNERS ===========================================
-  // Each split module has a marker attribute that, when found in the
-  // DOM, triggers a load. Scanners run after DOMContentLoaded + after
-  // every SPA-nav swap (`gofastr:navigate`) + when the MutationObserver
-  // sees newly inserted DOM.
+  // Marker-driven modules are rescanned after boot, SPA navigation,
+  // and DOM insertion.
   const _moduleMarkers = [
     // Copy-to-clipboard delegated handler. Loaded when any
     // [data-fui-copy-text-from] button is on the page (or arrives via
@@ -2124,15 +2098,11 @@
     { name: 'networkretrybanner', selector: '[data-fui-comp="ui-network-retry-banner"]' },
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
     { name: 'sortablelist',    selector: '[data-fui-sortable]' },
-    // Shortcut: page-level (non-widget) data-fui-shortcut-focus +
-    // data-fui-shortcut-click bindings.
     { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
-    // Lightbox: arrow-nav across gallery siblings + image preloading.
     { name: 'lightbox',        selector: '[data-fui-comp="ui-lightbox"][data-fui-lightbox]' },
-    // Carousel: prev/next, dots, ArrowLeft/Right, optional AutoRotate.
     { name: 'carousel',        selector: '[data-fui-carousel]' },
-    // ThemeToggle: dark/light/auto cycle button + pill sync.
     { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
+    { name: 'sidebar', selector: '[data-fui-sidebar-collapse]' },
     // BackToTop: scroll-past-threshold reveal + smooth scroll.
     { name: 'backtotop',       selector: '[data-fui-back-to-top]' },
     // ConditionalField: show/hide content based on another field's value.
@@ -2166,7 +2136,7 @@
       const { name, selector, idle } = m;
       // Skip if the module is already loaded — its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
-      if (window.__gofastr.loadedModules && window.__gofastr.loadedModules[name]) continue;
+      if (window.__gofastr.loadedModules?.[name]) continue;
       // Test the scope node ITSELF as well as its descendants: a
       // lazily-mounted widget root appended to <body> carries root
       // markers (data-fui-drag-dismiss) on the node handed to us.

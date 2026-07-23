@@ -1026,7 +1026,7 @@ func widgetCSS() string {
 		).
 		End()
 
-	ss.Rule(".kiln-build-banner.kiln-build-banner-on").
+	ss.Rule(".kiln-build-banner:has(#kiln-build-label.fui-flash)").
 		Set("transform", "translateY(0)", "opacity", "1").
 		End()
 
@@ -1041,6 +1041,8 @@ func widgetCSS() string {
 			"display", "inline-block",
 		).
 		End()
+
+	ss.Rule(".kiln-build-revision").Set("display", "none").End()
 
 	ss.Keyframes("kilnSpin",
 		style.Step("0%", "transform", "rotate(0deg)"),

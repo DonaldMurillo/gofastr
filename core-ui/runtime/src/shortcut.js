@@ -1,10 +1,8 @@
-// Shortcut runtime module — page-level (non-widget) bindings for
-// data-fui-shortcut-focus + data-fui-shortcut-click.
-//
-// widgets.js already binds these INSIDE widgets; this module covers
-// the same markers outside widgets so app chrome (GlobalSearch in a
-// page header, ⌘K hint in a marketing nav, etc.) can use the
-// declarative shortcut syntax without being wrapped in a widget.
+// Shortcut runtime module — bindings for data-fui-shortcut-focus +
+// data-fui-shortcut-click, inside widgets and out. This module is the
+// sole owner of shortcut wiring (widgets.js demand-loads it via the
+// marker scan; app chrome — GlobalSearch in a page header, ⌘K hint in
+// a marketing nav — uses the same declarative syntax).
 //
 // Extra wrinkle: data-fui-shortcut-target lets a non-focusable
 // wrapper carry the chord while focus lands on a descendant — the
@@ -90,8 +88,13 @@
   }
 
   scan(document);
-  document.addEventListener('gofastr:navigate', function () { scan(document); });
 
+  // Standard module self-registration: the runtime's MutationObserver
+  // and gofastr:navigate loops call the scanner for inserted/swapped
+  // DOM, but only for modules marked loaded.
   window.__gofastr = window.__gofastr || {};
+  (window.__gofastr._moduleScanners ||= {}).shortcut = scan;
+  (window.__gofastr.loadedModules ||= {}).shortcut = true;
+  // Legacy hook preserved for external callers.
   window.__gofastr.shortcut = { rescan: scan };
 })();

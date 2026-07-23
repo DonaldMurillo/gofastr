@@ -108,7 +108,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **tabs-signal** — `framework/ui.Tabs` — signal-driven tab strip (click sets the signal; CSS shows the panel)
 - **breadcrumbs** — `core-ui/patterns/breadcrumbs` — `<nav aria-label=Breadcrumb>` trail
 - **pagination** — `core-ui/patterns/pagination` — numeric page navigation
-- **sidebar** — `framework/ui.Sidebar` — responsive primary nav (inline ≥ md, drawer < md)
+- **sidebar** — `framework/ui.Sidebar` — responsive primary nav with persistent, collapsible (local-storage persisted), and off-canvas variants; set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
 - **menu** — `framework/ui.Menu` — keyboard-driven dropdown built on `<details>`
 - **tabs** — `core-ui/patterns/tabs` — `<details>`-based tab strip, zero JS
 - **tree** — `core-ui/patterns/tree` — recursive tree with roving tabindex + lazy-load

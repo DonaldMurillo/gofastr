@@ -568,7 +568,6 @@ func min(a, b int) int {
 //   - the panel tool-call rows render a glanceable summary
 //     (name=foo fields=N) instead of raw JSON.
 func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
-	t.Skip("build banner is being reimplemented as a core-ui/widget Banner preset; restore this test once that lands")
 	urlBase, tools := startKiln(t)
 	ctx, cancel := newChrome(t)
 	defer cancel()
@@ -597,7 +596,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	var hasBanner, bannerOn bool
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`!!document.getElementById("kiln-build-banner")`, &hasBanner),
-		chromedp.Evaluate(`document.getElementById("kiln-build-banner").classList.contains("kiln-build-banner-on")`, &bannerOn),
+		chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.fui-flash")`, &bannerOn),
 	); err != nil {
 		t.Fatalf("read initial banner state: %v", err)
 	}
@@ -627,7 +626,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	for {
 		var on bool
 		_ = chromedp.Run(flashCtx,
-			chromedp.Evaluate(`document.getElementById("kiln-build-banner").classList.contains("kiln-build-banner-on")`, &on),
+			chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.fui-flash")`, &on),
 			chromedp.Evaluate(`document.getElementById("kiln-build-label").textContent || ""`, &label),
 		)
 		if on {
@@ -677,7 +676,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	for {
 		var on bool
 		_ = chromedp.Run(clearCtx,
-			chromedp.Evaluate(`document.getElementById("kiln-build-banner").classList.contains("kiln-build-banner-on")`, &on),
+			chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.fui-flash")`, &on),
 		)
 		if !on {
 			break
@@ -920,42 +919,20 @@ func TestBrowser_ResetSessionButton(t *testing.T) {
 // /kiln/agent is in cmd/kiln tests. This catches the click-handler →
 // modal-render → buttons-present chain.
 func TestBrowser_AgentConfigModalOpens(t *testing.T) {
-	t.Skip("config modal is being reimplemented as a core-ui/widget Modal preset; restore once that lands")
 	urlBase, _ := startKiln(t)
+	testInFlight.Store(true)
 	ctx, cancel := newChrome(t)
 	defer cancel()
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`#kiln-config`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
 
-	// /kiln/agent isn't mounted in startKiln (no adapter store), so the
-	// modal would error out talking to it. We stub the JSON fetcher in
-	// the page so the modal can still render — this test checks the
-	// click-handler + DOM assembly path, not the backend round-trip.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`(()=>{
-			window.__origFetch = window.fetch;
-			window.fetch = function(u, opts) {
-				if (typeof u === "string" && u.indexOf("/kiln/agent") === 0) {
-					return Promise.resolve(new Response(JSON.stringify({
-						current: { name: "claude-code", display: "claude --print …" },
-						available: [
-							{ name: "claude-code", display: "claude", installed: true },
-							{ name: "pi", display: "pi -p …", installed: false },
-							{ name: "codex", display: "codex exec", installed: false },
-						],
-						order: ["claude-code","pi","codex"],
-						in_flight: true,
-					}), { status: 200, headers: {"Content-Type":"application/json"} }));
-				}
-				return window.__origFetch(u, opts);
-			};
-		})()`, nil),
-		chromedp.Click(`#kiln-config`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-modal`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("open modal: %v", err)
@@ -971,8 +948,8 @@ func TestBrowser_AgentConfigModalOpens(t *testing.T) {
 	for _, want := range []string{
 		"Agent settings",
 		"claude-code", "pi", "codex",
-		"none", "custom",
-		"Apply", "Cancel",
+		"none",
+		"Apply", "Close",
 		"A turn is running", // in_flight warning
 	} {
 		if !strings.Contains(html, want) {

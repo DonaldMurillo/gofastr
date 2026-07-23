@@ -57,9 +57,13 @@ func TestSidebarNestedItemsUseDisclosure(t *testing.T) {
 
 func TestSidebarBodyExposesSharedContent(t *testing.T) {
 	cfg := ui.SidebarConfig{
-		Items: []ui.SidebarItem{{Label: "Home", Href: "/"}},
+		NavLabel: "Workspace",
+		Items:    []ui.SidebarItem{{Label: "Home", Href: "/"}},
 	}
 	body := string(ui.SidebarBody(cfg))
+	if !strings.Contains(body, `aria-label="Workspace"`) {
+		t.Errorf("SidebarBody should use the configured landmark label: %s", body)
+	}
 	if !strings.Contains(body, `class="ui-sidebar__nav"`) {
 		t.Errorf("SidebarBody should render the nav: %s", body)
 	}
@@ -76,5 +80,49 @@ func TestSidebarSuppressDrawerTrigger(t *testing.T) {
 	out := string(c.Render())
 	if strings.Contains(out, `data-fui-open=`) {
 		t.Errorf("SuppressDrawerTrigger should hide hamburger: %s", out)
+	}
+}
+
+func TestSidebarCollapsibleEmitsPersistedToggleContract(t *testing.T) {
+	c := ui.Sidebar(ui.SidebarConfig{
+		Variant:            ui.SidebarCollapsible,
+		DrawerName:         "workspace-nav",
+		CollapseStorageKey: "app.sidebar.collapsed",
+		Items:              []ui.SidebarItem{{Label: "Dashboard", Href: "/"}},
+	})
+	out := string(c.Render())
+	for _, want := range []string{
+		`ui-sidebar--collapsible`,
+		`data-fui-sidebar-storage="app.sidebar.collapsed"`,
+		`data-fui-sidebar-collapse`,
+		`aria-controls="workspace-nav-inline"`,
+		`aria-expanded="true"`,
+		`aria-label="Collapse navigation"`,
+		`ui-sidebar__icon--fallback`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("collapsible sidebar missing %q\n--\n%s", want, out)
+		}
+	}
+}
+
+func TestSidebarOffCanvasEmitsDrawerOnlyVariant(t *testing.T) {
+	c := ui.Sidebar(ui.SidebarConfig{
+		Variant:    ui.SidebarOffCanvas,
+		DrawerName: "workspace-nav",
+		Items:      []ui.SidebarItem{{Label: "Dashboard", Href: "/"}},
+	})
+	out := string(c.Render())
+	for _, want := range []string{
+		`ui-sidebar--off-canvas`,
+		`data-fui-open="workspace-nav"`,
+		`id="workspace-nav-inline"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("off-canvas sidebar missing %q\n--\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `data-fui-sidebar-collapse`) {
+		t.Errorf("off-canvas sidebar should not emit a collapse control: %s", out)
 	}
 }

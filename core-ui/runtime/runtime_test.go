@@ -237,19 +237,10 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"data-fui-backdrop",
 		"data-fui-widget",
 		"data-fui-rpc",
-		"data-fui-autogrow",
-		"data-fui-persist-storage",
-		"data-fui-charcount-source",
-		"data-fui-clear-on-esc",
-		"data-fui-submit-on-enter",
-		"data-fui-disable-when-invalid",
-		"data-fui-fill-input",
-		"data-fui-shortcut-click",
-		"data-fui-shortcut-focus",
-		"data-fui-tick-elapsed",
+		"widgethelpers",
+		"widgetfocus",
+		"widgetlinks",
 		"X-Gofastr-Toast", // header path awaits toasts
-		"__fuiModalEsc",   // installed once at module load
-		"__fuiModalTab",
 		"loadedModules",
 		// `data-fui-copy-text-from` was previously checked here but
 		// only lives in a comment now (the delegated handler moved
@@ -259,12 +250,29 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 			t.Errorf("widgets module missing %q", want)
 		}
 	}
-	// Widgets is the biggest demand-loaded module. Budget is generous
-	// because it carries the entire mountWidget chrome + dispatch +
-	// every primitive scanner. Final target is ~30 KB after the
-	// per-widget primitives split into a forms module.
-	if size := ModuleSize("widgets"); size > 32000 {
-		t.Errorf("widgets module is %d bytes — budget is 32000", size)
+	moduleMarkers := map[string][]string{
+		"widgethelpers": {"data-fui-persist-storage", "data-fui-charcount-source", "data-fui-clear-on-esc", "data-fui-submit-on-enter", "data-fui-disable-when-invalid", "data-fui-fill-input", "data-fui-tick-elapsed"},
+		"widgetfocus":   {"__fuiModalEsc", "__fuiModalTab"},
+		"widgetlinks":   {"G._deepLinkPushUrl", "G._deepLinkStripUrl"},
+		"textarea":      {"data-fui-autogrow"},
+		"shortcut":      {"data-fui-shortcut-click", "data-fui-shortcut-focus"},
+	}
+	for module, markers := range moduleMarkers {
+		moduleSrc, ok := Module(module)
+		if !ok {
+			t.Errorf("%s module not embedded", module)
+			continue
+		}
+		for _, marker := range markers {
+			if !strings.Contains(moduleSrc, marker) {
+				t.Errorf("%s module missing %q", module, marker)
+			}
+		}
+	}
+	// Keep the raw source bounded as well as the gzip budget: widgets owns
+	// mount/open/close orchestration, while optional scanners live elsewhere.
+	if size := ModuleSize("widgets"); size > 20000 {
+		t.Errorf("widgets module is %d bytes — budget is 20000", size)
 	}
 }
 
@@ -339,6 +347,28 @@ func TestRuntimeModule_NetworkRetryBanner(t *testing.T) {
 	// not a goal — tighten down if the module shrinks.
 	if size := ModuleSize("networkretrybanner"); size > 4000 {
 		t.Errorf("networkretrybanner module is %d bytes — budget is 4000", size)
+	}
+}
+
+func TestRuntimeModule_Sidebar(t *testing.T) {
+	src, ok := Module("sidebar")
+	if !ok {
+		t.Fatal("sidebar module not embedded")
+	}
+	for _, want := range []string{
+		"data-fui-sidebar-collapse",
+		"data-fui-sidebar-storage",
+		"localStorage.setItem",
+		"aria-expanded",
+		"gofastr:navigate",
+		"MutationObserver",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("sidebar module missing %q", want)
+		}
+	}
+	if size := ModuleSize("sidebar"); size > 3000 {
+		t.Errorf("sidebar module is %d bytes — budget is 3000", size)
 	}
 }
 
