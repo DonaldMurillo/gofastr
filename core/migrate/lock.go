@@ -109,6 +109,8 @@ func WithAdvisoryLockKey(ctx context.Context, db *sql.DB, dialect Dialect, key i
 	// ctx (the common "shutdown mid-migration" case) still unlocks rather than
 	// leaving the lock dangling until the session is reaped.
 	defer func() {
+		// best-effort: closing the dedicated connection also releases the
+		// session advisory lock; this explicit unlock shortens that window.
 		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", key)
 	}()
 

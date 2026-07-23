@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -301,14 +302,17 @@ func (o *Outbox) purgeExpired(ctx context.Context) error {
 // complete with some deliveries dead/abandoned; dead ones await Replay.
 func (o *Outbox) completeParent(ctx context.Context, rowID string) {
 	now := o.now().UTC()
-	_, _ = o.db.ExecContext(ctx,
+	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s SET status='dispatched', dispatched_at=$1
 			WHERE id=$2 AND status='pending'
 			  AND created_at <= $3
 			  AND NOT EXISTS (
 			      SELECT 1 FROM %s WHERE row_id=$2 AND status='pending'
 			  )`, o.qt(), o.qd()),
-		now, rowID, now.Add(-o.handlerGrace))
+		now, rowID, now.Add(-o.handlerGrace)); err != nil {
+		slog.Default().Error("outbox: complete parent failed; relay will retry the pending row",
+			"row_id", rowID, "error", err)
+	}
 }
 
 // claimedDelivery carries what the relay needs to invoke a consumer's
@@ -464,11 +468,14 @@ func scanClaimedDelivery(row interface {
 // keeps a settled delivery sticky: if this delivery raced a lease-expiry
 // reclaim that already dispatched it, don't clobber that.
 func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) {
-	_, _ = o.db.ExecContext(ctx,
+	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='dispatched', dispatched_at=$1, claimed_until=NULL, next_attempt_at=NULL, last_error=''
 			WHERE row_id=$2 AND consumer=$3 AND status<>'dispatched'`, o.qd()),
-		o.now().UTC(), d.RowID, d.Consumer)
+		o.now().UTC(), d.RowID, d.Consumer); err != nil {
+		slog.Default().Error("outbox: mark delivery dispatched failed; lease recovery will retry",
+			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
+	}
 }
 
 // markDeliveryFailure records a delivery failure on the delivery row. If
@@ -479,19 +486,25 @@ func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) 
 func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cause error) {
 	newAttempts := d.Attempts + 1
 	if newAttempts >= o.maxAttempts {
-		_, _ = o.db.ExecContext(ctx,
+		if _, err := o.db.ExecContext(ctx,
 			fmt.Sprintf(`UPDATE %s
 				SET status='dead', attempts=$1, last_error=$2, claimed_until=NULL, next_attempt_at=NULL
 				WHERE row_id=$3 AND consumer=$4 AND status<>'dispatched'`, o.qd()),
-			newAttempts, truncateError(cause), d.RowID, d.Consumer)
+			newAttempts, truncateError(cause), d.RowID, d.Consumer); err != nil {
+			slog.Default().Error("outbox: mark delivery dead failed; lease recovery will retry",
+				"row_id", d.RowID, "consumer", d.Consumer, "error", err)
+		}
 		return
 	}
 	next := o.now().UTC().Add(o.backoffFor(newAttempts))
-	_, _ = o.db.ExecContext(ctx,
+	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='pending', attempts=$1, last_error=$2, next_attempt_at=$3, claimed_until=NULL
 			WHERE row_id=$4 AND consumer=$5 AND status<>'dispatched'`, o.qd()),
-		newAttempts, truncateError(cause), next, d.RowID, d.Consumer)
+		newAttempts, truncateError(cause), next, d.RowID, d.Consumer); err != nil {
+		slog.Default().Error("outbox: requeue failed delivery failed; lease recovery will retry",
+			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
+	}
 }
 
 // requeueNoHandler handles a delivery whose consumer has no handler on THIS
@@ -523,11 +536,14 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 	// re-claim it every poll and both amplify writes and crowd out real work.
 	// A coarse retry still picks it up within backoffMax once a handler lands.
 	next := now.Add(o.backoffMax)
-	_, _ = o.db.ExecContext(ctx,
+	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='pending', next_attempt_at=$1, claimed_until=NULL
 			WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
-		next, d.RowID, d.Consumer)
+		next, d.RowID, d.Consumer); err != nil {
+		slog.Default().Error("outbox: requeue unhandled delivery failed; lease recovery will retry",
+			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
+	}
 }
 
 // invokeHandler calls h with a deferred recover that converts a panic into
