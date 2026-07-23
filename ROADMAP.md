@@ -37,67 +37,7 @@ RPC handler + an e2e test proving the interaction round-trips.
 
 ---
 
-## 3. Framework DX — remaining gaps
-
-From the first real third-party app build-out; the rest of the batch
-(post-migrate `WithSeed`, `WithAPIPrefix`, entity-first collision
-diagnostics) shipped.
-
-### 3a. Entity↔page collision — screen-registered-second diagnostic
-
-`App.Entity`/`App.GroupEntity` detect a route that already owns the
-entity URL space and name `WithAPIPrefix` in the error. The reverse
-order — registering a screen after the entity — still falls back to the
-router's generic conflict diagnostic. Make both orders produce the same
-actionable message (colliding entity name, claimed path, recommended
-fix). Covered by `framework/collision_test.go` for the shipped
-direction.
-
-### 3b. Typed form-field wrappers — `ui.TextField`, `ui.NumberField`, `ui.DateField`
-
-`html.InputConfig` is the low-level primitive; common attrs flow through
-`ExtraAttrs` literals at every form call site. Add opinionated wrappers
-in `framework/ui/` that compose `FormField + html.Input`, lift
-`Required`/`Placeholder`/`Min`/`Max`/`Value`/`Error` into typed config,
-and do the ARIA wiring (`aria-describedby`, `aria-invalid`).
-`PasswordInput`/`SearchInput`/`NumberInput`/`InputGroup` exist; the
-FormField-composing text/number/date trio does not. Acceptance: a form
-built with the wrappers has zero `html.Attrs` literals at the call site.
-
----
-
-## 4. `EntityConfig` sub-config refactor
-
-**Status:** not started (captured 2026-05-24). `EntityConfig` is 17+
-flat fields — the semantic relationships between toggles aren't visible
-in the type. Group them into `Scope` (MultiTenant/OwnerField/SoftDelete),
-`Pagination`, and `Exposure` sub-structs. Deferred because it breaks
-every `EntityConfig{...}` literal in user repos: needs its own PR with a
-one-release compatibility window (flat fields still compile with
-deprecation comments, declaration loader accepts both shapes with a WARN
-on flat). Full sketch in git history (pre-2026-07-15 ROADMAP §10).
-
-**No further work** until the deprecation window is scheduled.
-
----
-
-## 5. BFF posture preset (`framework.WithBFFPosture()`)
-
-**Status:** not started (captured 2026-05-24). The framework has all the
-BFF pieces (HttpOnly+Secure session cookies, SessionMiddleware, CSRF,
-SkipBearerAuth) but secure wiring is opt-in per piece. A preset flips
-them on in one line: cookie-only auth (no JWT in the login body), strict
-Origin allowlist on `/api/*`, auto-mounted CSRF + SessionMiddleware.
-Must stay an explicit opt-in — each piece would break a class of
-existing app (SPA token readers, native clients with `Origin: null`,
-un-CSRF'd mutating routes) if defaulted silently. Full option/file
-sketch in git history (pre-2026-07-15 ROADMAP §11).
-
-**No further work** until prioritised.
-
----
-
-## 6. Validation & adoption — proving the thesis
+## 3. Validation & adoption — proving the thesis
 
 **Status:** in progress — the declaration→surfaces proof shipped;
 external adoption is open.
@@ -115,23 +55,15 @@ without hand-writing the glue.*
 3. **Dogfooding.** ✓ Kiln and `examples/site` are built on the framework.
    Deepen by porting more internal tooling onto blueprints.
 4. **External adoption — the genuinely open item.** No outside
-   production users yet. This is the part the code cannot prove for
-   itself; named here so the project doesn't pretend otherwise.
+   production users yet. Recruit and evaluate one through the
+   [external pilot program](docs/pilot-program.md); this is the part the code
+   cannot prove for itself.
 
 **`v1.0.0` gate** (what must be true to drop `v0.x`)
 
-- The public `framework.X` + battery interfaces are frozen, with a
-  documented deprecation policy replacing ad-hoc breaking changes.
+- The public `framework.X` + battery interfaces are frozen. The documented
+  [deprecation policy](framework/docs/content/stability.md) is already in
+  force; the remaining work is completing the freeze.
 - The declaration→surfaces proof (#2) stays green in CI, and the
-  follow-ups below are closed or consciously scoped out.
+  remaining roadmap items are closed or consciously scoped out.
 - At least one non-author app runs on GoFastr in a real setting (#4).
-
-**Declaration-first follow-ups** (still open; the seed auto-wire and
-the `gofastr.yml` discovery question from the original list are
-resolved — blueprints emit `app.WithSeed(...)` now, and auto-discovery
-of `gofastr.yml` was deliberately rejected in favor of explicit
-`--from`, see `cmd/gofastr/generate.go`)
-
-- **`public_openapi` blueprint key.** The raw `/openapi.json` is
-  auth-gated by secure-by-default; `AppConfig.PublicOpenAPI` exists but
-  the blueprint can't opt into it. Add the key.

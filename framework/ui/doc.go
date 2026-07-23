@@ -59,6 +59,7 @@
 //	CopyButton           — clipboard button with SR-announced confirmation
 //	Counter              — signal-driven counter with +/− buttons
 //	DataTable            — sortable/paginated table (island-friendly)
+//	DateField            — typed labelled native date field with bounds
 //	DetailList           — label/value description list for record detail
 //	DiffViewer           — unified or split diff renderer
 //	Divider              — <hr> for plain horizontal; role="separator" otherwise
@@ -92,6 +93,7 @@
 //	Notification         — toast-styled inline notification (variant + dismiss)
 //	NotificationBell     — bell + unread badge + popover dropdown
 //	NumberInput          — number field with explicit +/− step buttons
+//	NumberField          — typed labelled native number field with bounds
 //	OptimisticAction     — instant-flip button with rollback on error
 //	OptimizedImage       — responsive <picture> with srcset + lazy + Width/Height
 //	PageHeader           — top-of-page header with title/eyebrow/subtitle/actions
@@ -142,6 +144,7 @@
 //	TagInput             — free-form chips, Enter/comma to commit
 //	TerminalBlock        — terminal transcript with a labelled header
 //	TextArea             — multi-line input with typed Autogrow
+//	TextField            — typed labelled native text field
 //	Themed               — wraps a subtree in a registered theme override
 //	ThemeToggle          — dark/light/auto toggle persisting color-scheme
 //	Timeline             — vertical event rail
