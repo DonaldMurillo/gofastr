@@ -438,8 +438,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				mna.ServeHTTP(w, req)
 				return
 			}
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed),
-				http.StatusMethodNotAllowed)
+			// The default 405 runs through the middleware chain just like
+			// a custom handler (cachedRoute) would — CORS middleware must
+			// see preflights whose path has no OPTIONS route. Cold path,
+			// so the per-request wrap is fine.
+			r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed),
+					http.StatusMethodNotAllowed)
+			})).ServeHTTP(w, req)
 			return
 		}
 		// No non-gated methods match → 404. Use the custom NotFound
@@ -451,7 +457,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			nf.ServeHTTP(w, req)
 			return
 		}
-		http.NotFound(w, req)
+		// Default 404 also runs the chain, matching the custom-handler path.
+		r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			http.NotFound(w, req)
+		})).ServeHTTP(w, req)
 		return
 	}
 

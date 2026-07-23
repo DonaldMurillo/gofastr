@@ -128,3 +128,32 @@ func TestMethodNotAllowedSeesLateMiddleware(t *testing.T) {
 		t.Fatalf("late middleware did not wrap MethodNotAllowed; X-405-Late=%q", got)
 	}
 }
+
+// TestDefaultFallbacksRunMiddleware verifies the DEFAULT 405/404
+// responses (no custom handler installed) still pass through the
+// middleware chain — CORS preflights on method-mismatched paths are the
+// canonical consumer.
+func TestDefaultFallbacksRunMiddleware(t *testing.T) {
+	r := New()
+	r.Get("/only-get", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Chain", "yes")
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	post := httptest.NewRequest(http.MethodPost, "/only-get", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, post)
+	if w.Code != http.StatusMethodNotAllowed || w.Header().Get("X-Chain") != "yes" {
+		t.Fatalf("default 405: code=%d X-Chain=%q, want 405 with chain", w.Code, w.Header().Get("X-Chain"))
+	}
+
+	miss := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, miss)
+	if w.Code != http.StatusNotFound || w.Header().Get("X-Chain") != "yes" {
+		t.Fatalf("default 404: code=%d X-Chain=%q, want 404 with chain", w.Code, w.Header().Get("X-Chain"))
+	}
+}
