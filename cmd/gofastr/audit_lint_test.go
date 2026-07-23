@@ -263,3 +263,36 @@ func mustNotHaveRule(t *testing.T, got []LintFinding, rule string) {
 		}
 	}
 }
+
+// SQLite/MySQL INSERT variants (OR IGNORE / OR REPLACE / IGNORE) must
+// stay inside the SQL-keyword anchor.
+func TestLintSQLSprintfInsertOrIgnoreFlagged(t *testing.T) {
+	got := lintRules(t, `package x
+func q(userInput string) {
+	_ = fmt.Sprintf("INSERT OR IGNORE INTO notes (body) VALUES (%s)", userInput)
+}`)
+	mustHaveRule(t, got, "sql-concat-user-input")
+}
+
+// Quote-adjacent interpolation is intrinsically a value position —
+// identifiers are never quoted — so it flags regardless of the
+// variable's name.
+func TestLintSQLQuotedConcatFlagsOrdinaryNames(t *testing.T) {
+	got := lintRules(t, `package x
+func q(name string) { db.Query("SELECT * FROM users WHERE name='" + name + "'") }`)
+	mustHaveRule(t, got, "sql-concat-user-input")
+}
+
+func TestLintSQLQuotedSprintfFlagsOrdinaryNames(t *testing.T) {
+	got := lintRules(t, `package x
+func q(id string) { _ = fmt.Sprintf("DELETE FROM sessions WHERE id='%s'", id) }`)
+	mustHaveRule(t, got, "sql-concat-user-input")
+}
+
+// A raw _csrf mention inside a comment must not count as protection.
+func TestLintFormPOSTRawCSRFInCommentDoesNotCount(t *testing.T) {
+	got := lintRules(t, `package x
+// TODO: add name="_csrf" once wired.
+const tmpl = `+"`"+`<form method="POST"><button>Save</button></form>`+"`")
+	mustHaveRule(t, got, "form-without-csrf")
+}

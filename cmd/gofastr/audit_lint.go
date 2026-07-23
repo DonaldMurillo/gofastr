@@ -184,11 +184,14 @@ func ruleFormWithoutCSRF(rel string, body []byte) []LintFinding {
 	if strings.HasSuffix(rel, "_test.go") {
 		return nil
 	}
-	// Strip line + block comments before counting CSRF call sites so a
-	// "// TODO: wire CSRFInputFromCtx" doesn't count as protection.
+	// Strip line + block comments before counting CSRF call sites and raw
+	// _csrf fields so a "// TODO: wire CSRFInputFromCtx" or a commented
+	// name="_csrf" doesn't count as protection. The csrf-exempt:
+	// annotation is counted on the RAW body — it lives in a comment by
+	// design.
 	stripped := stripGoComments(body)
 	csrfCalls := len(reCSRFCallNon.FindAllIndex(stripped, -1)) +
-		len(reCSRFField.FindAllIndex(body, -1)) +
+		len(reCSRFField.FindAllIndex(stripped, -1)) +
 		len(reCSRFExempt.FindAllIndex(body, -1))
 
 	var formLines []int
@@ -278,9 +281,16 @@ func ruleRenderHTMLConcat(rel string, body []byte) []LintFinding {
 // ----------------------------------------------------------------------------
 
 var (
-	reSQLConcatLiteral = regexp.MustCompile(`(?i)"[^"]*\b(?:SELECT\s|INSERT\s+INTO\s|UPDATE\s|DELETE\s+FROM\s)[^"]*"\s*\+\s*\w+`)
-	reSQLSprintf       = regexp.MustCompile(`(?i)fmt\.S?(?:print|printf)\(\s*"[^"]*\b(?:SELECT\s|INSERT\s+INTO\s|UPDATE\s|DELETE\s+FROM\s|WHERE\s|HAVING\s)[^"]*%[sv]`)
+	// The INSERT anchor accepts SQLite's INSERT OR IGNORE/REPLACE INTO
+	// and MySQL's INSERT IGNORE INTO — all real statement forms.
+	reSQLConcatLiteral = regexp.MustCompile(`(?i)"[^"]*\b(?:SELECT\s|INSERT\s+(?:(?:OR\s+\w+|IGNORE)\s+)?INTO\s|UPDATE\s|DELETE\s+FROM\s)[^"]*"\s*\+\s*\w+`)
+	reSQLSprintf       = regexp.MustCompile(`(?i)fmt\.S?(?:print|printf)\(\s*"[^"]*\b(?:SELECT\s|INSERT\s+(?:(?:OR\s+\w+|IGNORE)\s+)?INTO\s|UPDATE\s|DELETE\s+FROM\s|WHERE\s|HAVING\s)[^"]*%[sv]`)
 	reSQLBuilderConcat = regexp.MustCompile(`\.(?:Where|Having|OrderBy|GroupBy)\(\s*"[^"]*"\s*\+\s*\w+`)
+	// Quote-adjacent interpolation: the variable or format directive sits
+	// inside SQL single-quotes ('" + name, '%s'). That is a VALUE
+	// position — dynamic identifiers are never quoted — so it is
+	// suspicious regardless of the variable's name.
+	reSQLQuotedInterp = regexp.MustCompile(`'"\s*\+\s*\w+|'%[sv]|%[sv]'`)
 )
 
 func ruleSQLConcatUserInput(rel string, body []byte) []LintFinding {
@@ -295,11 +305,12 @@ func ruleSQLConcatUserInput(rel string, body []byte) []LintFinding {
 		if !hit {
 			continue
 		}
-		// This lightweight rule is deliberately taint-name based. Dynamic
+		// Quoted-value interpolation is flagged unconditionally; for
+		// unquoted interpolation the rule is taint-name based. Dynamic
 		// table/column identifiers are common and cannot use SQL placeholders;
 		// flag only lines whose variables advertise request-derived input.
 		lower := strings.ToLower(line)
-		suspicious := false
+		suspicious := reSQLQuotedInterp.MatchString(line)
 		for _, marker := range []string{
 			"userinput", "user_input", "request.", "req.", "form.",
 			"params", "queryparam", "query_param", "filtervalue",
