@@ -342,7 +342,13 @@ func TestE2E_SidebarVariantsAdaptAndPersist(t *testing.T) {
 		chromedp.Click(`[data-fui-sidebar-collapse]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar]')?.dataset.collapsed === 'true'`, &collapsed),
 		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar-collapse]')?.getAttribute('aria-expanded') ?? ''`, &expanded),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-sidebar] .ui-sidebar__label')).display === 'none'`, &labelHidden),
+		// Labels are clipped (visually-hidden pattern), NOT display:none —
+		// focusable links must keep their accessible names when collapsed.
+		chromedp.Evaluate(`(() => {
+			const l = document.querySelector('[data-fui-sidebar] .ui-sidebar__label');
+			const cs = getComputedStyle(l);
+			return cs.position === 'absolute' && l.getBoundingClientRect().width <= 1 && cs.display !== 'none';
+		})()`, &labelHidden),
 		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar] .ui-sidebar__inline').getBoundingClientRect().width`, &inlineWidth),
 		chromedp.Reload(),
 		pageReady(),
