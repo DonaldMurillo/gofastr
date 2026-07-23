@@ -1917,6 +1917,19 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.MethodNotAllowed(http.HandlerFunc(ds.serveMethodNotAllowed))
 }
 
+// RoutePatterns returns the concrete screen paths the host will serve.
+// framework.App uses this optional preflight surface to diagnose an entity
+// CRUD/screen collision before Mount reaches net/http's opaque duplicate-route
+// panic. Infrastructure and catch-all routes are intentionally excluded.
+func (ds *UIHost) RoutePatterns() []string {
+	routes := ds.App.Routes()
+	patterns := make([]string, 0, len(routes))
+	for _, route := range routes {
+		patterns = append(patterns, route.Path)
+	}
+	return patterns
+}
+
 // methodNotAllowed is registered alongside POST-only endpoints so a wrong-
 // method request gets a clear 405 instead of falling through to the UI
 // page handler and getting a misleading 404.

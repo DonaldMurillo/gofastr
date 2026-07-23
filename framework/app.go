@@ -837,6 +837,24 @@ func DefaultMiddleware(a *App) []router.Middleware {
 // catch-all itself, it shadows any user routes added after Mount but
 // before InitPlugins. Mount last unless you know what you're doing.
 func (a *App) Mount(m Mountable) *App {
+	// UI hosts can expose their concrete screen paths before mounting. Check
+	// those paths against already-registered entity CRUD so registration
+	// order never determines whether callers get the actionable collision
+	// diagnostic or an opaque ServeMux panic.
+	if provider, ok := m.(interface{ RoutePatterns() []string }); ok {
+		for _, ent := range a.Registry.AllSorted() {
+			crudEnabled := a.DB != nil && (ent.Config.CRUD == nil || *ent.Config.CRUD)
+			if !crudEnabled {
+				continue
+			}
+			mountPath := a.entityMountPath(ent.GetTable())
+			for _, pattern := range provider.RoutePatterns() {
+				if strings.TrimRight(pattern, "/") == strings.TrimRight(mountPath, "/") {
+					panic("framework: " + entityScreenCollisionMessage(ent.Config.Name, mountPath, pattern))
+				}
+			}
+		}
+	}
 	a.mountables = append(a.mountables, m)
 	m.Mount(a.router)
 	// Wire the mountable into the cross-replica fanout (WithFanout) when it
@@ -1508,16 +1526,20 @@ func (a *App) entityRouteCollision(name, mountPath string) string {
 	}
 	for _, rt := range a.router.Routes() {
 		if claimed[rt.Pattern] {
-			return fmt.Sprintf(
-				"entity %q would mount CRUD routes at %s (REST + %s/llm.md), "+
-					"but a screen/route is already registered at %q. "+
-					"Choose a different page path (e.g. /library, /library/{slug}), "+
-					"rename the entity table, or move entity CRUD under an APIPrefix "+
-					"(framework.WithAPIPrefix(\"/api\")) so the URL spaces don't collide.",
-				name, mountPath, mountPath, rt.Pattern)
+			return entityScreenCollisionMessage(name, mountPath, rt.Pattern)
 		}
 	}
 	return ""
+}
+
+func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
+	return fmt.Sprintf(
+		"entity %q would mount CRUD routes at %s (REST + %s/llm.md), "+
+			"but a screen/route is already registered at %q. "+
+			"Choose a different page path (e.g. /library, /library/{slug}), "+
+			"rename the entity table, or move entity CRUD under an APIPrefix "+
+			"(framework.WithAPIPrefix(\"/api\")) so the URL spaces don't collide.",
+		name, mountPath, mountPath, screenPath)
 }
 
 func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.Endpoint) error {
