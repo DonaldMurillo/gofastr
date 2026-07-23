@@ -197,7 +197,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **callout** — `framework/ui.Callout` — persistent inline info / warning / danger / neutral block
 - **notification** — `framework/ui.Notification` — toast-styled inline notification (variant + dismiss)
 - **emptystate** — `framework/ui.EmptyState` — centered title + description + optional CTA for no-data screens
-- **signout** — `framework/ui.SignOut` — logout control: minimal form POSTing to the auth sign-out endpoint
+- **signout** — `framework/ui.SignOut` — logout control: minimal form POSTing to the auth sign-out endpoint; compatible with `auth.WithBFFPosture`, whose logout handler enforces same-origin submission
 - **pollingindicator** — `framework/ui.PollingIndicator` — pulsing dot + label confirming a polling RPC is firing
 - **seo** — `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema` — per-page SEO + sitewide sitemap.xml / robots.txt
 - **seo-bundle** — `ScreenSEO()` returning an `SEO` struct — per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above

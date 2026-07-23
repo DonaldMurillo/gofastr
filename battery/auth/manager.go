@@ -27,6 +27,12 @@ type AuthConfig struct {
 	// Defaults to 1 hour if zero.
 	JWTExpiry time.Duration
 
+	// CookieOnly suppresses JWTs in login responses. Session cookies remain
+	// HttpOnly, Secure in production, and SameSite=Strict. Prefer enabling this
+	// through WithBFFPosture so session hydration, CSRF, and Origin enforcement
+	// are installed together instead of creating a partial posture.
+	CookieOnly bool
+
 	// SessionCookie is the cookie name for session-based auth.
 	// Defaults to "session_id".
 	SessionCookie string

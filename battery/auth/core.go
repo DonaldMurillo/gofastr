@@ -299,7 +299,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// login. The JWT is stateless: handing it out here would let a
 		// password-only caller skip the second factor entirely on any
 		// JWT-authenticated route.
-		if c.mgr.JWT() != nil && !pendingTwoFA {
+		if c.mgr.JWT() != nil && !pendingTwoFA && !cfg.CookieOnly {
 			token, err := c.mgr.JWT().GenerateToken(user)
 			if err == nil {
 				resp["token"] = token
