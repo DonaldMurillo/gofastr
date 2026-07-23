@@ -53,7 +53,7 @@ func TestBuildAndServeWithPkgKeepsProjectRootAsCwd(t *testing.T) {
 	var cmd *exec.Cmd
 	var ok bool
 	covT_capStdout(t, func() {
-		ok = buildAndServe(dir, "./cmd/app", "localhost:0", rt, &mu, &cmd)
+		ok = buildAndServe(dir, "./cmd/app", "localhost:0", rt, &mu, &cmd, false)
 	})
 	defer killServer(&mu, &cmd)
 
@@ -105,7 +105,7 @@ func TestBuildAndServePkgDefaultsToDir(t *testing.T) {
 	var cmd *exec.Cmd
 	var ok bool
 	covT_capStdout(t, func() {
-		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd)
+		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd, false)
 	})
 	defer killServer(&mu, &cmd)
 	if !ok {

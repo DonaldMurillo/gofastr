@@ -57,11 +57,14 @@ Checked elements: `Image` (Alt), `Button` (Label), `Link`/`LinkHTML`
 ## The build gate
 
 `gofastr build` runs the same lint between `go vet` and compilation and
-**fails the build** on findings, printing the guided report. The rules
-are cheap (pure static analysis, no browser) and every finding has a
-concrete fix, so the default is enforcement. `--no-a11y` skips the gate
-when you genuinely need a build anyway — treat it like `//nolint`, not
-like a setting.
+**fails the build** on findings, printing the guided report. `gofastr
+dev` applies the identical gate to every rebuild — a finding stops the
+server from starting, the watcher keeps running, and fixing + saving
+retries — so dev and build enforce the same floor. The rules are cheap
+(pure static analysis, no browser) and every finding has a concrete
+fix, so the default is enforcement. `--no-a11y` (on either command)
+skips the gate when you genuinely need a build anyway — treat it like
+`//nolint`, not like a setting.
 
 ## `gofastr audit a11y --url` — the full runtime audit
 

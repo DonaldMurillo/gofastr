@@ -47,6 +47,7 @@ func runDev(args []string) {
 	// project root — otherwise the watcher misses internal/ and relative paths
 	// (sqlite db_url, static dirs) resolve against the command dir instead.
 	pkg := "."
+	noA11y := false
 	for i, a := range args {
 		if a == "--addr" && i+1 < len(args) {
 			addr = args[i+1]
@@ -59,6 +60,9 @@ func runDev(args []string) {
 		}
 		if a == "--pkg" && i+1 < len(args) {
 			pkg = args[i+1]
+		}
+		if a == "--no-a11y" {
+			noA11y = true
 		}
 	}
 
@@ -91,7 +95,7 @@ func runDev(args []string) {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	// Build and start the server initially
-	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server) {
+	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y) {
 		fail("Initial build failed — fixing and saving will retry")
 	}
 
@@ -133,7 +137,7 @@ func runDev(args []string) {
 			fmt.Println()
 			info("Change detected — rebuilding...")
 			killServer(&mu, &server)
-			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server) {
+			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y) {
 				success("Reloaded!")
 			} else {
 				fail("Build failed — fixing and saving will retry")
@@ -169,8 +173,29 @@ func devServerBinaryPath(runtimeIsolation *isolation.Runtime) string {
 	return filepath.Join(os.TempDir(), tmpName)
 }
 
+// devA11yGate runs the same static accessibility lint `gofastr build`
+// enforces, against the dev watch root. Kept as its own decision func so
+// the skip semantics are testable without compiling a project.
+func devA11yGate(dir string, noA11y bool) bool {
+	if noA11y {
+		return true
+	}
+	if !buildA11yGate(dir) {
+		fail("Accessibility lint failed — fix the findings above (guided), or run with --no-a11y")
+		return false
+	}
+	return true
+}
+
 // buildAndServe builds and starts the server process.
-func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
+func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool) bool {
+	// Same posture as `gofastr build`: the static a11y lint gates the
+	// rebuild by default. Failing here is a build failure — the watch
+	// loop keeps running and the next save retries.
+	if !devA11yGate(dir, noA11y) {
+		return false
+	}
+
 	// Build binary to temp file. pkg is relative to dir ("." unless --pkg moved
 	// the build target to a command under cmd/), so the build resolves against
 	// the project module while the watch root and cwd below stay at dir.
