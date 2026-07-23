@@ -11,13 +11,16 @@ import (
 // blueprint loader decodes entities into before converting them to
 // EntityConfig. It mirrors EntityConfig while keeping field types readable.
 type EntityDeclaration struct {
-	Name        string             `json:"name"`
-	Table       string             `json:"table,omitempty"`
-	Fields      []FieldDeclaration `json:"fields"`
-	Relations   []Relation         `json:"relations,omitempty"`
-	Endpoints   []Endpoint         `json:"endpoints,omitempty"`
-	SoftDelete  bool               `json:"soft_delete,omitempty"`
-	MultiTenant bool               `json:"multi_tenant,omitempty"`
+	Name        string                 `json:"name"`
+	Table       string                 `json:"table,omitempty"`
+	Fields      []FieldDeclaration     `json:"fields"`
+	Relations   []Relation             `json:"relations,omitempty"`
+	Endpoints   []Endpoint             `json:"endpoints,omitempty"`
+	Scope       *ScopeDeclaration      `json:"scope,omitempty"`
+	Pagination  *PaginationDeclaration `json:"pagination,omitempty"`
+	Exposure    *ExposureDeclaration   `json:"exposure,omitempty"`
+	SoftDelete  bool                   `json:"soft_delete,omitempty"`
+	MultiTenant bool                   `json:"multi_tenant,omitempty"`
 	// OwnerField names the DB column that holds the row's owner id
 	// (e.g. "user_id"). When set AND an owner extractor is registered
 	// by a battery, auto-CRUD scopes List/Get/Update/Delete by the
@@ -50,6 +53,30 @@ type EntityDeclaration struct {
 	CursorFields []string       `json:"cursor_fields,omitempty"`
 	Indices      []Index        `json:"indices,omitempty"`
 	Properties   map[string]any `json:"properties,omitempty"`
+}
+
+// ScopeDeclaration is the JSON/YAML-friendly shape of ScopeConfig.
+type ScopeDeclaration struct {
+	SoftDelete     bool   `json:"soft_delete,omitempty"`
+	MultiTenant    bool   `json:"multi_tenant,omitempty"`
+	TenantField    string `json:"tenant_field,omitempty"`
+	OwnerField     string `json:"owner_field,omitempty"`
+	CrossOwnerRead string `json:"cross_owner_read,omitempty"`
+}
+
+// PaginationDeclaration is the JSON/YAML-friendly shape of PaginationConfig.
+type PaginationDeclaration struct {
+	CursorField  string   `json:"cursor_field,omitempty"`
+	CursorFields []string `json:"cursor_fields,omitempty"`
+	MaxListLimit int      `json:"max_list_limit,omitempty"`
+}
+
+// ExposureDeclaration is the JSON/YAML-friendly shape of ExposureConfig.
+type ExposureDeclaration struct {
+	CRUD   *bool              `json:"crud,omitempty"`
+	MCP    bool               `json:"mcp,omitempty"`
+	Public bool               `json:"public,omitempty"`
+	Access *AccessDeclaration `json:"access,omitempty"`
 }
 
 // AccessDeclaration is the JSON/YAML-friendly mirror of AccessControl —
@@ -112,6 +139,29 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		CursorFields:   d.CursorFields,
 		Indices:        d.Indices,
 		Properties:     d.Properties,
+	}
+	if d.Scope != nil {
+		cfg.Scope = &ScopeConfig{
+			SoftDelete: d.Scope.SoftDelete, MultiTenant: d.Scope.MultiTenant,
+			TenantField: d.Scope.TenantField, OwnerField: d.Scope.OwnerField,
+			CrossOwnerRead: d.Scope.CrossOwnerRead,
+		}
+	}
+	if d.Pagination != nil {
+		cfg.Pagination = &PaginationConfig{
+			CursorField: d.Pagination.CursorField, CursorFields: d.Pagination.CursorFields,
+			MaxListLimit: d.Pagination.MaxListLimit,
+		}
+	}
+	if d.Exposure != nil {
+		exposure := &ExposureConfig{CRUD: d.Exposure.CRUD, MCP: d.Exposure.MCP, Public: d.Exposure.Public}
+		if d.Exposure.Access != nil {
+			exposure.Access = AccessControl{
+				Read: d.Exposure.Access.Read, Create: d.Exposure.Access.Create,
+				Update: d.Exposure.Access.Update, Delete: d.Exposure.Access.Delete,
+			}
+		}
+		cfg.Exposure = exposure
 	}
 	if d.Access != nil {
 		cfg.Access = AccessControl{

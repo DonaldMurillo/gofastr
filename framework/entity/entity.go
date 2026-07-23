@@ -17,29 +17,41 @@ import (
 // Name is set via Define(); Fields declare the schema.
 // Timestamps defaults to true — use WithTimestamps(false) to disable.
 type EntityConfig struct {
-	Name         string         // entity name (e.g. "users")
-	Table        string         // DB table name (defaults to snake_case of Name)
-	Fields       []schema.Field // typed field definitions
-	Relations    []Relation     // entity relationships
-	Endpoints    []Endpoint     // custom HTTP endpoints for this entity
-	SoftDelete   bool           // enable soft-delete (deleted_at column)
-	MultiTenant  bool           // scope queries by the tenant column (see TenantField)
-	TenantField  string         // tenant-scoping column name when MultiTenant; defaults to "tenant_id"
-	Timestamps   bool           // add created_at / updated_at columns
-	CRUD         *bool          // auto-generate CRUD routes. nil=auto(true when DB set), &true=always, &false=never
-	MCP          bool           // auto-generate MCP tools
-	CursorField  string         // optional: single-field keyset cursor; defaults to PrimaryKey
-	CursorFields []string       // optional: composite cursor — ORDER BY each field in order with tuple-compared keyset. Wins over CursorField when non-empty.
+	Name       string            // entity name (e.g. "users")
+	Table      string            // DB table name (defaults to snake_case of Name)
+	Fields     []schema.Field    // typed field definitions
+	Relations  []Relation        // entity relationships
+	Endpoints  []Endpoint        // custom HTTP endpoints for this entity
+	Scope      *ScopeConfig      // ownership, tenancy, and soft-delete behavior
+	Pagination *PaginationConfig // list limits and keyset cursor shape
+	Exposure   *ExposureConfig   // generated HTTP/MCP and access posture
+	// Deprecated: use Scope.SoftDelete. Supported through the v0.40 line.
+	SoftDelete bool
+	// Deprecated: use Scope.MultiTenant. Supported through the v0.40 line.
+	MultiTenant bool
+	// Deprecated: use Scope.TenantField. Supported through the v0.40 line.
+	TenantField string
+	Timestamps  bool // add created_at / updated_at columns
+	// Deprecated: use Exposure.CRUD. Supported through the v0.40 line.
+	CRUD *bool
+	// Deprecated: use Exposure.MCP. Supported through the v0.40 line.
+	MCP bool
+	// Deprecated: use Pagination.CursorField. Supported through the v0.40 line.
+	CursorField string
+	// Deprecated: use Pagination.CursorFields. Supported through the v0.40 line.
+	CursorFields []string
 	Indices      []Index        // additional CREATE INDEX statements emitted by AutoMigrate
 	Unmanaged    bool           // when true, the migration system never emits DDL for this object (it is created elsewhere — e.g. a view, an FTS virtual table, or a legacy/external table). The ORM still queries it.
 	Properties   map[string]any // caller-owned metadata for generators, plugins, and app conventions
-	MaxListLimit int            // opt-in cap for ?limit and the streaming list path. 0 = use default (100); negative = no streaming cap above default.
+	// Deprecated: use Pagination.MaxListLimit. Supported through the v0.40 line.
+	MaxListLimit int
 
 	// OwnerField names the DB column that holds the row's owner id (e.g.
 	// "user_id"). When set AND an owner extractor is registered (typically
 	// by battery/auth), auto-CRUD scopes List/Get/Update/Delete by the
 	// current request's owner and auto-stamps Create. Leave empty to keep
 	// pre-existing behaviour.
+	// Deprecated: use Scope.OwnerField. Supported through the v0.40 line.
 	OwnerField string
 
 	// CrossOwnerRead names an RBAC permission (e.g. "tickets:read:all")
@@ -51,6 +63,7 @@ type EntityConfig struct {
 	// in the context the scope stays ON (the secure-by-default answer). The
 	// admin battery's wildcard grant passes any permission, so an entity
 	// opted in here is fully visible in the back office.
+	// Deprecated: use Scope.CrossOwnerRead. Supported through the v0.40 line.
 	CrossOwnerRead string
 
 	// Access declares the RBAC permission required for each CRUD operation.
@@ -59,6 +72,7 @@ type EntityConfig struct {
 	// whose context lacks the permission with 403. Roles + policy must be
 	// present in the request context — wire them once with access.Middleware
 	// (or battery/auth). See framework/docs/content/access-control.md.
+	// Deprecated: use Exposure.Access. Supported through the v0.40 line.
 	Access AccessControl
 
 	// Public opts an entity OUT of the framework's secure-by-default
@@ -74,6 +88,7 @@ type EntityConfig struct {
 	// Has no effect when OwnerField or Access is set; those mechanisms
 	// already govern the entity. Default false: every operation requires
 	// a session, matching the blueprint's default (no `public: true`).
+	// Deprecated: use Exposure.Public. Supported through the v0.40 line.
 	Public bool
 
 	// SearchFields names the DB columns that ?q= free-text search operates
@@ -140,6 +155,34 @@ type EntityConfig struct {
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.
 	timestampsSet bool
+}
+
+// ScopeConfig groups entity behavior that constrains which rows a request can
+// see or mutate. When EntityConfig.Scope is non-nil it is authoritative over
+// the compatibility flat fields.
+type ScopeConfig struct {
+	SoftDelete     bool
+	MultiTenant    bool
+	TenantField    string
+	OwnerField     string
+	CrossOwnerRead string
+}
+
+// PaginationConfig groups list limits and keyset cursor configuration. A
+// non-empty CursorFields composite takes precedence over CursorField.
+type PaginationConfig struct {
+	CursorField  string
+	CursorFields []string
+	MaxListLimit int
+}
+
+// ExposureConfig groups generated surfaces and their access posture. CRUD is a
+// pointer so nil retains auto mode, while false explicitly disables routes.
+type ExposureConfig struct {
+	CRUD   *bool
+	MCP    bool
+	Public bool
+	Access AccessControl
 }
 
 // AccessControl declares the RBAC permission required for each CRUD operation
@@ -247,6 +290,7 @@ type Entity struct {
 // It also injects system fields (id, timestamps) with AutoGenerate flags
 // unless the user has already defined them.
 func Define(name string, config EntityConfig) *Entity {
+	config = config.normalizeSubConfigs()
 	config.Name = name
 
 	// Apply default table name
@@ -427,6 +471,28 @@ func Define(name string, config EntityConfig) *Entity {
 		e.PrimaryKey = "id"
 	}
 	return e
+}
+
+func (c EntityConfig) normalizeSubConfigs() EntityConfig {
+	if c.Scope != nil {
+		c.SoftDelete = c.Scope.SoftDelete
+		c.MultiTenant = c.Scope.MultiTenant
+		c.TenantField = c.Scope.TenantField
+		c.OwnerField = c.Scope.OwnerField
+		c.CrossOwnerRead = c.Scope.CrossOwnerRead
+	}
+	if c.Pagination != nil {
+		c.CursorField = c.Pagination.CursorField
+		c.CursorFields = append([]string(nil), c.Pagination.CursorFields...)
+		c.MaxListLimit = c.Pagination.MaxListLimit
+	}
+	if c.Exposure != nil {
+		c.CRUD = c.Exposure.CRUD
+		c.MCP = c.Exposure.MCP
+		c.Public = c.Exposure.Public
+		c.Access = c.Exposure.Access
+	}
+	return c
 }
 
 // SetDB sets the database connection for this entity.

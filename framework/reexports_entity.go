@@ -7,26 +7,32 @@ import "github.com/DonaldMurillo/gofastr/framework/entity"
 // extraction.
 
 type (
-	Entity             = entity.Entity
-	EntityConfig       = entity.EntityConfig
-	AccessControl      = entity.AccessControl
-	Index              = entity.Index
-	Endpoint           = entity.Endpoint
-	EntityDeclaration  = entity.EntityDeclaration
-	AccessDeclaration  = entity.AccessDeclaration
-	FieldDeclaration   = entity.FieldDeclaration
-	Relation           = entity.Relation
-	RelationType       = entity.RelationType
-	Condition          = entity.Condition
-	Order              = entity.Order
-	StringColumn       = entity.StringColumn
-	IntColumn          = entity.IntColumn
-	FloatColumn        = entity.FloatColumn
-	BoolColumn         = entity.BoolColumn
-	TimestampColumn    = entity.TimestampColumn
-	UUIDColumn         = entity.UUIDColumn
-	ValidatorFunc      = entity.ValidatorFunc
-	ValidationRegistry = entity.ValidationRegistry
+	Entity                = entity.Entity
+	EntityConfig          = entity.EntityConfig
+	ScopeConfig           = entity.ScopeConfig
+	PaginationConfig      = entity.PaginationConfig
+	ExposureConfig        = entity.ExposureConfig
+	AccessControl         = entity.AccessControl
+	Index                 = entity.Index
+	Endpoint              = entity.Endpoint
+	EntityDeclaration     = entity.EntityDeclaration
+	ScopeDeclaration      = entity.ScopeDeclaration
+	PaginationDeclaration = entity.PaginationDeclaration
+	ExposureDeclaration   = entity.ExposureDeclaration
+	AccessDeclaration     = entity.AccessDeclaration
+	FieldDeclaration      = entity.FieldDeclaration
+	Relation              = entity.Relation
+	RelationType          = entity.RelationType
+	Condition             = entity.Condition
+	Order                 = entity.Order
+	StringColumn          = entity.StringColumn
+	IntColumn             = entity.IntColumn
+	FloatColumn           = entity.FloatColumn
+	BoolColumn            = entity.BoolColumn
+	TimestampColumn       = entity.TimestampColumn
+	UUIDColumn            = entity.UUIDColumn
+	ValidatorFunc         = entity.ValidatorFunc
+	ValidationRegistry    = entity.ValidationRegistry
 )
 
 const (
