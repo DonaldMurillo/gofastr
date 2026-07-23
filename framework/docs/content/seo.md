@@ -148,6 +148,15 @@ icon-less apps never 404 on every page load.
 method (re-read after `Load`, so dynamic routes can title themselves
 from data). The app name is appended: `Pricing — Freightline`.
 
+## Enforcing all of this
+
+None of the surfaces above error when missing — SEO emission is
+silently skipped for anything you didn't declare. `uihost.WithStrict()`
+flips that for apps that want the launch bar enforced: boot fails
+listing every page screen without a title/description and any missing
+site-level surface (description, icon, sitemap, robots). See
+`gofastr docs strict-mode`.
+
 ## Common mistakes
 
 - **Sitewide `WithCanonicalURL`.** A fixed canonical on every page

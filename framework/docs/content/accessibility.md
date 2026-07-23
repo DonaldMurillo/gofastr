@@ -57,11 +57,14 @@ Checked elements: `Image` (Alt), `Button` (Label), `Link`/`LinkHTML`
 ## The build gate
 
 `gofastr build` runs the same lint between `go vet` and compilation and
-**fails the build** on findings, printing the guided report. The rules
-are cheap (pure static analysis, no browser) and every finding has a
-concrete fix, so the default is enforcement. `--no-a11y` skips the gate
-when you genuinely need a build anyway — treat it like `//nolint`, not
-like a setting.
+**fails the build** on findings, printing the guided report. `gofastr
+dev` applies the identical gate to every rebuild — a finding stops the
+server from starting, the watcher keeps running, and fixing + saving
+retries — so dev and build enforce the same floor. The rules are cheap
+(pure static analysis, no browser) and every finding has a concrete
+fix, so the default is enforcement. `--no-a11y` (on either command)
+skips the gate when you genuinely need a build anyway — treat it like
+`//nolint`, not like a setting.
 
 ## `gofastr audit a11y --url` — the full runtime audit
 
@@ -108,6 +111,49 @@ are clean.
 
 Requires a Chrome/Chromium install (headless). Run it against `gofastr
 dev`'s server during development, or against a staging deploy in CI.
+
+## The axe test harness — pin the gate as a test
+
+`framework/testkit/axetest` is the same harness the audit command and
+the framework's own example gates use, exported so a host app can pin
+the runtime audit into its own suite:
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
+
+func TestAxeAllPagesClean(t *testing.T) {
+    browser := axetest.NewBrowser(t)
+    for _, page := range pages { // derive from your screen catalog
+        for _, scheme := range axetest.Schemes {
+            tab, done := axetest.NewTab(t, browser)
+            // navigate tab to the page, then:
+            chromedp.Run(tab, axetest.Prepare(scheme))
+            violations, err := axetest.Scan(tab, scheme, allowlist)
+            // fail on violations…
+            done()
+        }
+    }
+}
+```
+
+Derive the page list from the same source your screens register from
+(a catalog, `app.Routes()`) so a new screen is scanned automatically —
+a hand-maintained list drifts. `examples/site/axe_test.go` is the full
+reference pattern (per-page allowlists with justifications, mobile
+target-size pass).
+
+Every successful `Scan` also records the scanned path into
+`.gofastr/axe-coverage.json` (the axe-coverage manifest,
+`framework/axecov`) under the canonical coverage root —
+`GOFASTR_AXE_COVERAGE_DIR` when set, else the module root — a
+per-project record of which pages the axe suite actually exercised.
+The manifest is a local build artifact — gitignored, wiped by
+`make clean`, never shipped. `GOFASTR_AXE_COVERAGE=0` disables
+recording. Note the recorded path is the browser's FINAL location:
+a scan that got redirected records the destination, never the page you
+asked for. Apps that opt into `uihost.WithStrict()` fail dev boot for
+any page route the manifest doesn't cover — every screen must have an
+axe test (`gofastr docs strict-mode`).
 
 ## Recommended loop
 

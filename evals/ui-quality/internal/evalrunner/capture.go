@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/internal/axetest"
+	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/fetch"

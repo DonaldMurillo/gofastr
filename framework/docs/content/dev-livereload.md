@@ -66,6 +66,14 @@ polling.
 environment when it launches the rebuilt server. The host app doesn't
 need to forward, set, or check the flag — it's transparent.
 
+Every rebuild (the initial one and each change-triggered one) first
+runs the same static accessibility lint `gofastr build` enforces —
+findings are printed with fix hints and the rebuild is treated exactly
+like a compile failure: the server doesn't start, the watcher keeps
+running, fixing and saving retries. `gofastr dev --no-a11y` skips the
+gate with the same "escape hatch, not a setting" caveat as build's
+flag (see the accessibility doc).
+
 ## The dev loop is also livereload for agents
 
 The same `GOFASTR_DEV` gate turns on MCP for agents: `framework.NewApp`

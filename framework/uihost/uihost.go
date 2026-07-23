@@ -79,26 +79,29 @@ type UIHost struct {
 	// restart exactly like the map did); framework.App.Mount overwrites it
 	// via SetSessionKey with a key derived from the app secret
 	// (WithSecret / GOFASTR_SECRET).
-	sessionKey     []byte
-	actionJS       map[string]string                    // componentID → compiled JS
-	actionHandlers map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
-	customCSS      string                               // extra CSS to inject (e.g. demo.css)
-	extraScripts   []string                             // extra <script src="…"> URLs to inject before </body>
-	staticDir      string                               // directory to serve static files from
-	staticFS       fs.FS                                // embedded filesystem for static files
-	llmMDPublic    bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
-	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
-	headTags       []string                             // typed head tags built from convenience options
-	faviconURL     string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
-	appIcons       map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
-	notFoundScreen component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
-	sitemapConfig  *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
-	robotsConfig   *RobotsConfig                        // when set, /robots.txt is served from this config
-	agentReady     *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
-	pwaConfig      *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
-	pwaSWOnce      sync.Once                            // guards the memoized service-worker body below
-	pwaSW          string                               // deployment-constant service worker, computed on first request
-	pwaSWErr       error                                // paired with pwaSW
+	sessionKey      []byte
+	actionJS        map[string]string                    // componentID → compiled JS
+	actionHandlers  map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
+	customCSS       string                               // extra CSS to inject (e.g. demo.css)
+	extraScripts    []string                             // extra <script src="…"> URLs to inject before </body>
+	staticDir       string                               // directory to serve static files from
+	staticFS        fs.FS                                // embedded filesystem for static files
+	llmMDPublic     bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
+	headHTML        string                               // raw HTML to inject into <head> (escape hatch)
+	headTags        []string                             // typed head tags built from convenience options
+	faviconURL      string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
+	appIcons        map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
+	notFoundScreen  component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
+	sitemapConfig   *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
+	robotsConfig    *RobotsConfig                        // when set, /robots.txt is served from this config
+	agentReady      *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
+	pwaConfig       *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
+	pwaSWOnce       sync.Once                            // guards the memoized service-worker body below
+	pwaSW           string                               // deployment-constant service worker, computed on first request
+	pwaSWErr        error                                // paired with pwaSW
+	strict          bool                                 // WithStrict — Mount refuses to serve an app that fails the strict checks (strict.go)
+	strictConfig    StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
+	siteDescription bool                                 // set by WithDescription; read by the strict site-surface check
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -321,6 +324,7 @@ func WithThemeColor(color string) Option {
 func WithDescription(desc string) Option {
 	return func(ds *UIHost) {
 		ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="description" content="%s">`, stdhtml.EscapeString(desc)))
+		ds.siteDescription = desc != ""
 	}
 }
 
@@ -1821,6 +1825,7 @@ func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 // routes (entity CRUD, custom endpoints) so the page handler only takes
 // requests that nothing else claimed.
 func (ds *UIHost) Mount(r *router.Router) {
+	ds.enforceStrict()
 	ds.AutoCompileActions()
 
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))

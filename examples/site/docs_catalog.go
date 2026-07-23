@@ -115,6 +115,7 @@ var docIntents = []docIntent{
 			{"pwa", "PWA", "uihost.WithPWA: installable manifest, versioned offline shell, and a safe service worker."},
 			{"seo", "SEO", "Meta tags, Open Graph, JSON-LD, sitemap, robots, and the one-image icon surface."},
 			{"accessibility", "Accessibility", "Built-in ARIA guarantees, the guided audit command, and the build gate."},
+			{"strict-mode", "Strict mode", "WithStrict: missing SEO and missing per-screen axe tests fail boot instead of shipping."},
 			{"reactivity", "Reactivity model", "The four-rung ladder — client signals, RPC, polling, SSE push — and the stateless-interactive-layer contract."},
 			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions, polling."},
 			{"optimistic-ui", "Optimistic UI", "The mutation lifecycle, rollback vs authoritative refresh, and seven composed recipes — toggle, inline edit, create, delete, kanban, group mutex, and slow/failure."},

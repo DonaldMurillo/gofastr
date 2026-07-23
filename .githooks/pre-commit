@@ -88,7 +88,12 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
 
     for pattern in $secret_patterns; do
       [ -z "$pattern" ] && continue
-      matches=$(grep -n -i -E "$pattern" "$file" 2>/dev/null || true)
+      # A line carrying "not-a-secret: <why>" is a reviewed false
+      # positive (e.g. code that RENDERS an env template, test
+      # fixtures). The annotation lives in the diff, so every
+      # exemption is visible to review — unlike --no-verify, which
+      # skips every check invisibly and is banned.
+      matches=$(grep -n -i -E "$pattern" "$file" 2>/dev/null | grep -v "not-a-secret:" || true)
       if [ -n "$matches" ]; then
         found_secrets="$found_secrets\n  $file:\n$matches"
       fi
@@ -100,8 +105,10 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
     fail "POTENTIAL SECRETS DETECTED!"
     printf "$found_secrets\n"
     echo ""
-    echo "  If this is a false positive, use:"
-    echo "    git commit --no-verify"
+    echo "  Real secret → move it to the environment / .env (gitignored)."
+    echo "  False positive → annotate the flagged line with a comment:"
+    echo "    // not-a-secret: <why this line is safe>"
+    echo "  Do NOT use --no-verify."
     echo ""
     exit 1
   fi

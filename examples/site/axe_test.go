@@ -26,7 +26,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 
-	"github.com/DonaldMurillo/gofastr/internal/axetest"
+	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 )
 
 // axeComponentsAllowlist names axe-core rule IDs skipped ONLY on

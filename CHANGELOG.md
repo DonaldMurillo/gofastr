@@ -5,7 +5,73 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [0.39.0] - 2026-07-21
+## [0.40.0] - 2026-07-23
+
+Strict mode: missing launch hygiene becomes errors instead of silently
+shipping. An opt-in `uihost.WithStrict()` refuses to serve an app whose
+screens lack SEO or — in dev — an accessibility test, every check
+individually tunable; `gofastr dev` now enforces the same static a11y
+gate `gofastr build` always had; and generated apps ship the whole bar
+turned on with a surface that passes it honestly. Hardened by a
+two-round review (Claude + GLM ×2 + Sol, then a Sol verification pass
+over the fixes): 12 findings, all closed.
+
+### Added
+
+- **`uihost.WithStrict` — launch hygiene as boot failures.** At Mount
+  the host validates its declared surface and panics listing every
+  finding at once, each with its remedy: page-screen titles and
+  descriptions (a zero-value `ScreenSEO` return stays the documented
+  per-page opt-out), site description, icon, sitemap (with a validated
+  bare-origin `BaseURL`), robots — and, under `gofastr dev` only, an
+  axe scan on record for every page route. Battery-registered screens
+  (admin back-office) sit outside the checks by architecture. See
+  `gofastr docs strict-mode`.
+- **`uihost.StrictConfig` — every check individually tunable.**
+  Per-check `StrictEnforce`/`StrictWarn`/`StrictOff` levels,
+  `ExemptScreens` route patterns (exact or `/prefix/*`), and a
+  dedicated posture for the missing-manifest case (default: warn, so
+  `gofastr generate` → `gofastr dev` is never walled behind a Chrome
+  run). The zero value of every field is the strictest setting —
+  configuration only ever relaxes, visibly. Composition is last-wins
+  and total: a later bare `WithStrict()` restores full enforcement.
+- **`framework/testkit/axetest` — the axe harness is public.** The
+  vendored axe-core harness (browser/tab factories, the color-scheme
+  freeze, `Scan`) moved out of `internal/` so host apps can pin the
+  runtime audit as their own test. Every successful `Scan` records the
+  scanned page into the axe-coverage manifest
+  (`.gofastr/axe-coverage.json`, new `framework/axecov` package,
+  `GOFASTR_AXE_COVERAGE=0` opts out) under a canonical root shared
+  with strict mode — Go's own discovery rule (nearest `go.work`, else
+  nearest `go.mod`), `GOFASTR_AXE_COVERAGE_DIR` to override. Coverage
+  resolves through the router: one scanned `/docs/install` covers
+  `/docs/:slug`, and strict only demands dynamic routes whose
+  `StaticPaths` returns real instances.
+- **Generated apps ship strict.** `gofastr generate` emits
+  `WithStrict()` plus the surface that passes it: a site description
+  (`app.description`, or derived honestly from the app name +
+  entities), a sitemap rooted at `APP_BASE_URL` (fallback
+  `app.base_url`), robots + sitemap excluding the admin back-office,
+  title fallbacks, `ScreenSEO` opt-outs instead of empty describers —
+  and an `axe_test.go` that boots the built binary and scans every
+  sitemap page under both color schemes in two passes: an anonymous
+  browser for public/guest pages and a separately-authenticated one
+  (HTTP login through the auth battery, prefix-aware cookie
+  transplant, so `__Host-` production cookies work) for gated screens,
+  with a redirect assertion so a bounced scan can never cover the
+  wrong page. The generated `.gitignore` now always ships and covers
+  `.gofastr/`.
+- **`dev.Enabled()`** — the base `GOFASTR_DEV` predicate the
+  per-feature dev gates refine.
+
+### Changed
+
+- **`gofastr dev` enforces the static accessibility lint on every
+  rebuild** — the same gate `gofastr build` has always run, with the
+  same `--no-a11y` escape hatch. An app with standing findings now
+  stops at the dev rebuild (watcher keeps running; fixing and saving
+  retries) instead of surfacing them at build/CI time. Fix the
+  findings or run `gofastr dev --no-a11y` while you do.
 
 A first-contact pass over the README and the product site (gofastr.dev):
 lead with what the framework does, in plain words, before the origin

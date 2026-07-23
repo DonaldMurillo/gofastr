@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/internal/axetest"
+	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 	"github.com/chromedp/chromedp"
 )
 

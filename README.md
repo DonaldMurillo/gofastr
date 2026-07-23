@@ -371,6 +371,7 @@ connected to a running app.
 - [Observability](framework/docs/content/observability.md) — metrics and tracing
 - [PWA](framework/docs/content/pwa.md) — installable app manifest + versioned offline shell via `uihost.WithPWA`
 - [Agent-ready](framework/docs/content/agent-ready.md) — the discovery endpoints for AI agents (llms.txt, agent card, MCP)
+- [Strict mode](framework/docs/content/strict-mode.md) — `uihost.WithStrict` turns missing SEO and missing per-screen axe tests into boot failures
 
 The full, per-topic index lives in the docs site catalogue (`gofastr docs --list`, or `examples/site/docs_catalog.go`), which a parity test keeps in sync with every embedded page. The list above is a curated subset.
 

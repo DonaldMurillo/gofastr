@@ -30,7 +30,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 
-	"github.com/DonaldMurillo/gofastr/internal/axetest"
+	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 )
 
 // axeAllowlist names axe-core rule IDs deliberately skipped, with a
