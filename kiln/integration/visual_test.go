@@ -2,7 +2,7 @@ package integration_test
 
 import (
 	"context"
-	"github.com/DonaldMurillo/gofastr/internal/axetest"
+	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 	"os"
 	"path/filepath"
 	"strings"

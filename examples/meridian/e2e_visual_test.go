@@ -13,7 +13,7 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 
-	"github.com/DonaldMurillo/gofastr/internal/axetest"
+	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 )
 
 type visualViewportMetrics struct {

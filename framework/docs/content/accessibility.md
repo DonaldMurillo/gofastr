@@ -109,6 +109,43 @@ are clean.
 Requires a Chrome/Chromium install (headless). Run it against `gofastr
 dev`'s server during development, or against a staging deploy in CI.
 
+## The axe test harness — pin the gate as a test
+
+`framework/testkit/axetest` is the same harness the audit command and
+the framework's own example gates use, exported so a host app can pin
+the runtime audit into its own suite:
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
+
+func TestAxeAllPagesClean(t *testing.T) {
+    browser := axetest.NewBrowser(t)
+    for _, page := range pages { // derive from your screen catalog
+        for _, scheme := range axetest.Schemes {
+            tab, done := axetest.NewTab(t, browser)
+            // navigate tab to the page, then:
+            chromedp.Run(tab, axetest.Prepare(scheme))
+            violations, err := axetest.Scan(tab, scheme, allowlist)
+            // fail on violations…
+            done()
+        }
+    }
+}
+```
+
+Derive the page list from the same source your screens register from
+(a catalog, `app.Routes()`) so a new screen is scanned automatically —
+a hand-maintained list drifts. `examples/site/axe_test.go` is the full
+reference pattern (per-page allowlists with justifications, mobile
+target-size pass).
+
+Every successful `Scan` also records the scanned path into
+`.gofastr/axe-coverage.json` (the axe-coverage manifest,
+`framework/axecov`) — a per-project record of which pages the axe suite
+actually exercised. The manifest is a local build artifact — gitignored,
+wiped by `make clean`, never shipped. `GOFASTR_AXE_COVERAGE=0` disables
+recording.
+
 ## Recommended loop
 
 1. Compose `framework/ui` components; reach for `core-ui/html` only for

@@ -189,6 +189,10 @@ mode: live IR mutation that graduates to a blueprint, then to Go.
 framework/
 ├── access/          Permission / Policy / RolePolicy / RBAC helpers
 ├── agentsinv/       Process-wide registry of agent-onboarding (agents.md) snippets
+├── axecov/          Axe-coverage manifest (.gofastr/axe-coverage.json) —
+│                    written by testkit/axetest scans, read by uihost strict
+│                    mode. Deliberately chromedp-free so production code can
+│                    read it without linking a browser.
 ├── cron/            CronJob / Scheduler — minimal in-process tick loop
 ├── crud/            HTTP CRUD layer, eager loading, includes, nested
 │                    filters, typed query, MCP tool generator,

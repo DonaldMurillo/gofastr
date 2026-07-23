@@ -1,5 +1,6 @@
-// Package axetest is a shared axe-core accessibility-testing harness for
-// GoFastr example apps and the framework's own chromedp suites.
+// Package axetest is the axe-core accessibility-testing harness for
+// GoFastr apps — host applications and the framework's own chromedp
+// suites alike.
 //
 // It vendors the axe-core engine (testdata/axe.min.js, embedded) and exposes
 // the primitives every a11y gate needs:
@@ -11,7 +12,14 @@
 //     caller can open a modal first and then scan).
 //
 // Each app keeps its own page list, allowlist, and gate Test function — only
-// the reusable machinery lives here.
+// the reusable machinery lives here. Derive the page list from the same
+// source your screens register from (a catalog, app.Routes()) so new
+// screens are scanned automatically instead of drifting out of the gate.
+//
+// Every successful [Scan] also records the scanned path into the
+// axe-coverage manifest (framework/axecov, .gofastr/axe-coverage.json),
+// which uihost strict mode reads in dev to enforce that every page route
+// has an axe test. GOFASTR_AXE_COVERAGE=0 disables recording.
 package axetest
 
 import (
@@ -20,12 +28,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/framework/axecov"
 )
 
 // axeMinJS is the vendored axe-core engine, embedded so the gate is hermetic
@@ -288,7 +299,29 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 		v.Scheme = scheme
 		kept = append(kept, v)
 	}
+	recordCoverage(ctx, scheme)
 	return kept, nil
+}
+
+// recordCoverage appends the just-scanned page to the axe-coverage
+// manifest (.gofastr/axe-coverage.json in the working directory — the
+// project root for a normal `go test ./...` run). uihost strict mode
+// reads the manifest in dev to enforce that every page route has an axe
+// test. Recording is best-effort: a manifest problem must never fail the
+// scan itself, so failures are logged and swallowed. Set
+// GOFASTR_AXE_COVERAGE=0 to disable recording entirely.
+func recordCoverage(ctx context.Context, scheme string) {
+	if os.Getenv("GOFASTR_AXE_COVERAGE") == "0" {
+		return
+	}
+	var loc string
+	if err := chromedp.Run(ctx, chromedp.Location(&loc)); err != nil {
+		log.Printf("axetest: coverage: read page location: %v", err)
+		return
+	}
+	if err := axecov.Record(".", loc, scheme); err != nil {
+		log.Printf("axetest: coverage: %v", err)
+	}
 }
 
 // minBodyElements is the floor below which a page is treated as blank / not
