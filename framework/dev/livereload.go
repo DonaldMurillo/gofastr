@@ -56,6 +56,17 @@ func LiveReloadEnabled() bool {
 	return true
 }
 
+// Enabled reports whether this process is running under `gofastr dev`:
+// GOFASTR_DEV is ParseBool-truthy and GOFASTR_ENV does not name a
+// production-like environment. This is the base predicate the per-feature
+// gates (LiveReloadEnabled, DevMCPEnabled) refine with their own opt-outs;
+// use it for behavior that should exist in dev and simply not exist in
+// production (e.g. uihost strict mode's axe-coverage check, whose input
+// is a local test artifact that never ships).
+func Enabled() bool {
+	return !isNonDevEnv(os.Getenv("GOFASTR_ENV")) && envBool("GOFASTR_DEV")
+}
+
 // isNonDevEnv returns true for any env value that names a production
 // or production-like environment. Compared case-insensitively against
 // a small allow-list to defeat "GOFASTR_ENV=prod" / "PRODUCTION" /
