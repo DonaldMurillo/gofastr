@@ -5,6 +5,70 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.41.0] - 2026-07-23
+
+Readiness and UI contracts: the long-deferred DX roadmap items ship
+together — a one-option secure browser-auth posture, grouped entity
+sub-configs, typed form fields, both-order collision diagnostics — plus
+a widget-runtime module split that deletes every size-budget override,
+and the docs that make the v1 gate concrete (stability policy, external
+pilot program).
+
+### Added
+
+- **`auth.WithBFFPosture(mgr, cfg)` — cookie-only browser auth in one
+  option.** Cookie-only login (no JWT in the body), `__Host-session`
+  upgrade of the dev cookie name, exact-origin allowlist + credentialed
+  CORS on the API prefix (composes with `WithAPIPrefix` in either
+  order), bearer JWTs rejected on the BFF surface while `gfsk_`
+  automation tokens pass, and global CSRF with exactly the auth logout
+  route exempt (that handler enforces same-origin submission itself, so
+  the static `ui.SignOut` form keeps working). See `gofastr docs auth`.
+- **Grouped `EntityConfig` sub-configs** — `Scope`, `Pagination`, and
+  `Exposure` pointer groups (plus declaration mirrors and blueprint
+  `scope:`/`pagination:`/`exposure:` keys) make the semantic
+  relationships between the 17+ flat fields visible. Grouped values are
+  authoritative — including at the App layer, so `Exposure.CRUD=&false`
+  really skips route mounting. Flat fields keep compiling through the
+  documented compatibility window.
+- **Typed form-field wrappers** — `ui.TextField`, `ui.NumberField`,
+  `ui.DateField` compose `FormField` + `html.Input` with typed
+  Required/Placeholder/bounds/Error config and the ARIA wiring; a form
+  built with them has zero `html.Attrs` literals at the call site.
+- **Collapsible sidebar variants** — persistent, collapsible
+  (local-storage persisted via `data-fui-sidebar-storage`), and
+  off-canvas; the toggle demand-loads the sidebar runtime module and
+  keeps `aria-expanded` synchronized.
+- **`app.public_openapi` blueprint key** → `framework.WithPublicOpenAPI()`,
+  closing the last declaration-first follow-up.
+- **`gofastr init` pins the generated `go.mod`** to the CLI's own
+  framework release; `init`/`generate`/`validate` answer `--help` with
+  their own usage.
+- **API stability policy** (`gofastr docs stability`) and the
+  **external pilot program** (`docs/pilot-program.md`) — the v1 gate's
+  paperwork, written down and linked from the roadmap.
+
+### Changed
+
+- **Widget runtime split into demand-loaded modules** — widgethelpers /
+  widgetfocus / widgetlinks carry the optional behaviors, so a basic
+  modal stops paying for every form helper. Every gzip-budget override
+  is deleted; core is back under 12KB. All split modules follow the
+  full self-registration contract (scanner + loaded flag), so remounted
+  widgets and poll-swapped content re-wire correctly.
+- **Entity/screen collision diagnostics fire in both registration
+  orders** — mountables expose `RoutePatterns()` and `Mount` pre-checks
+  them against entity CRUD space, so screen-mounted-second gets the
+  same actionable message as entity-registered-second.
+- **`gofastr audit lint` precision** — AST-based `t.Skip` detection,
+  statement-anchored SQL rule, `csrf-exempt:`/`safe-html:` annotations;
+  zero findings on both repo examples.
+- **Composed-page a11y on the example site** — one main landmark,
+  heading order, unique nav labels; banner/status-pill/terminal-block
+  drop decorative stripes and glows for token-driven outlines.
+- Idempotency table setup and expired-claim eviction fail closed on DB
+  errors; outbox delivery logs previously ignored exec errors.
+
 ## [0.40.0] - 2026-07-23
 
 Strict mode: missing launch hygiene becomes errors instead of silently
