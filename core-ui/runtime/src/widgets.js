@@ -44,8 +44,9 @@
     }
     const o = opts || {};
     const params = o.params || {};
+    const cfg = entry.cfg;
     await NS._mountByName(name);
-    const declared = entry.cfg.deepLinkParams || [];
+    const declared = cfg.deepLinkParams || [];
     if (declared.length) {
       const url = new URL(window.location.href);
       for (const k of declared) {
@@ -53,9 +54,11 @@
         if (v != null) NS.setSignal(k, v);
       }
     }
-    if (o.pushUrl && entry.cfg.deepLinkKey && entry.cfg.deepLinkValue) {
+    if (o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
       if (!NS._deepLinkPushUrl) await NS.loadModule('widgetlinks');
-      NS._deepLinkPushUrl(entry.cfg, params);
+      // Skip if dismissed while the module loaded (cold cache).
+      if (!NS._widgets[name]) return;
+      NS._deepLinkPushUrl(cfg, params);
     }
   };
 
@@ -145,9 +148,10 @@
       delete NS._widgets[cfg.name];
       return;
     }
-    NS._widgets[cfg.name].root = w;
-    NS._widgets[cfg.name].backdrop = backdrop;
-    NS._widgets[cfg.name].hydrated = !!existing;
+    const reg = NS._widgets[cfg.name];
+    reg.root = w;
+    reg.backdrop = backdrop;
+    reg.hydrated = !!existing;
     NS.scanAndLoadCSS(w);
     if (w.querySelector('[data-fui-fill-input],[data-fui-tick-elapsed],[data-fui-persist-storage],[data-fui-charcount-source],[data-fui-clear-on-esc],form[data-fui-submit-on-enter],form[data-fui-disable-when-invalid]')) NS.loadModule('widgethelpers');
     if (cfg.closeOnEscape || cfg.backdrop) NS.loadModule('widgetfocus');
@@ -192,12 +196,13 @@
     }
 
     function dismiss() {
-      const hydrated = NS._widgets[cfg.name]?.hydrated;
-      const oh = NS._widgets[cfg.name]?.outsideHandler;
-      const ar = NS._widgets[cfg.name]?.anchorResize;
-      const as = NS._widgets[cfg.name]?.anchorScroll;
-      const at = NS._widgets[cfg.name]?.anchorTrigger;
-      const stop = NS._widgets[cfg.name]?.pollStop;
+      const st = NS._widgets[cfg.name] || {};
+      const hydrated = st.hydrated;
+      const oh = st.outsideHandler;
+      const ar = st.anchorResize;
+      const as = st.anchorScroll;
+      const at = st.anchorTrigger;
+      const stop = st.pollStop;
       if (oh) document.removeEventListener('click', oh);
       if (ar) window.removeEventListener('resize', ar);
       if (as) window.removeEventListener('scroll', as, { capture: true });
@@ -238,9 +243,14 @@
           try { pf.focus({ preventScroll: true }); } catch (_) {}
         }
       }
+      // mountWidget starts the widgetlinks load for every deep-linkable
+      // widget, so the strip helper is only absent inside the module's
+      // initial in-flight window (milliseconds after an auto-open) —
+      // an accepted race; the URL then simply keeps the deep link the
+      // user navigated to.
       if (cfg.deepLinkKey && cfg.deepLinkValue && NS._deepLinkStripUrl) NS._deepLinkStripUrl(cfg);
     }
-    NS._widgets[cfg.name].dismiss = dismiss;
+    reg.dismiss = dismiss;
 
     // Initial state hydration — only when the widget declared signals.
     if (cfg.statePath) {
@@ -393,11 +403,11 @@
     });
 
     if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss);
-    if (isModal) NS._widgets[cfg.name].closeOnEscape = !!cfg.closeOnEscape;
+    if (isModal) reg.closeOnEscape = !!cfg.closeOnEscape;
 
     if (!isModal && (cfg.closeOnEscape || cfg.closeOnClick)) {
-      NS._widgets[cfg.name].closeOnEscape = !!cfg.closeOnEscape;
-      NS._widgets[cfg.name].closeOnClickOutside = !!cfg.closeOnClick;
+      reg.closeOnEscape = !!cfg.closeOnEscape;
+      reg.closeOnClickOutside = !!cfg.closeOnClick;
       (NS._popoverStack ||= []).push(cfg.name);
       if (cfg.closeOnClick) {
         const oh = (e) => {

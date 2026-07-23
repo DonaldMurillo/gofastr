@@ -4,6 +4,11 @@
 // marker scan; app chrome — GlobalSearch in a page header, ⌘K hint in
 // a marketing nav — uses the same declarative syntax).
 //
+// One document-level keydown listener queries the LIVE DOM per press.
+// No per-element listeners: remounted widgets (close → reopen builds
+// fresh DOM) need no rebinding, and detached first-mount elements can
+// never fire or accumulate handlers.
+//
 // Extra wrinkle: data-fui-shortcut-target lets a non-focusable
 // wrapper carry the chord while focus lands on a descendant — the
 // runtime queries the wrapper for the target selector and focuses
@@ -26,75 +31,62 @@
     return { key: key, mod: mod, shift: shift, alt: alt };
   }
 
-  function bindFocus(el) {
-    if (el.dataset.fuiShortcutFocusBound === '1') return;
-    el.dataset.fuiShortcutFocusBound = '1';
-    const combo = el.getAttribute('data-fui-shortcut-focus') || '';
-    if (!combo) return;
+  function matches(e, combo) {
     const m = parseCombo(combo);
-    document.addEventListener('keydown', function (e) {
-      if (!m.key) return;
-      if (e.key.toLowerCase() !== m.key) return;
-      if (m.mod && !(e.metaKey || e.ctrlKey)) return;
-      if (m.shift && !e.shiftKey) return;
-      if (m.alt && !e.altKey) return;
-      if (e.isComposing) return;
-      // Don't intercept while typing into a text-like input — except
-      // when the chord includes a modifier (then it's an intentional
-      // hotkey, not a typed character).
-      const inField = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-      if (inField && !m.mod && !m.alt) return;
-      e.preventDefault();
-      const target = resolveTarget(el);
-      if (target) {
-        try { target.focus(); target.select && target.select(); } catch (_) {}
-      }
-    });
-  }
-
-  function bindClick(el) {
-    if (el.dataset.fuiShortcutClickBound === '1') return;
-    el.dataset.fuiShortcutClickBound = '1';
-    const combo = el.getAttribute('data-fui-shortcut-click') || '';
-    if (!combo) return;
-    const m = parseCombo(combo);
-    document.addEventListener('keydown', function (e) {
-      if (!m.key) return;
-      if (e.key.toLowerCase() !== m.key) return;
-      if (m.mod && !(e.metaKey || e.ctrlKey)) return;
-      if (m.shift && !e.shiftKey) return;
-      if (m.alt && !e.altKey) return;
-      if (e.isComposing) return;
-      const inField = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-      if (inField && !m.mod && !m.alt) return;
-      e.preventDefault();
-      el.click();
-    });
+    if (!m.key) return false;
+    if (e.key.toLowerCase() !== m.key) return false;
+    if (m.mod && !(e.metaKey || e.ctrlKey)) return false;
+    if (m.shift && !e.shiftKey) return false;
+    if (m.alt && !e.altKey) return false;
+    // Don't intercept while typing into a text-like input — except
+    // when the chord includes a modifier (then it's an intentional
+    // hotkey, not a typed character).
+    const inField = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (inField && !m.mod && !m.alt) return false;
+    return true;
   }
 
   function resolveTarget(el) {
     const sel = el.getAttribute('data-fui-shortcut-target');
     if (sel) {
-      const t = document.querySelector(sel);
+      const t = el.querySelector(sel) || document.querySelector(sel);
       if (t) return t;
     }
     return el;
   }
 
-  function scan(root) {
-    const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('[data-fui-shortcut-focus]').forEach(bindFocus);
-    scope.querySelectorAll('[data-fui-shortcut-click]').forEach(bindClick);
+  if (!document.__fuiShortcutDoc) {
+    document.__fuiShortcutDoc = true;
+    document.addEventListener('keydown', function (e) {
+      if (e.isComposing) return;
+      // First connected match wins — deterministic when a chord is
+      // declared on more than one element (e.g. a stale SSR duplicate).
+      const els = document.querySelectorAll('[data-fui-shortcut-focus],[data-fui-shortcut-click]');
+      for (const el of els) {
+        if (!el.isConnected) continue;
+        const focusCombo = el.getAttribute('data-fui-shortcut-focus');
+        if (focusCombo && matches(e, focusCombo)) {
+          e.preventDefault();
+          const target = resolveTarget(el);
+          try { target.focus(); target.select && target.select(); } catch (_) {}
+          return;
+        }
+        const clickCombo = el.getAttribute('data-fui-shortcut-click');
+        if (clickCombo && matches(e, clickCombo)) {
+          e.preventDefault();
+          el.click();
+          return;
+        }
+      }
+    });
   }
 
-  scan(document);
-
-  // Standard module self-registration: the runtime's MutationObserver
-  // and gofastr:navigate loops call the scanner for inserted/swapped
-  // DOM, but only for modules marked loaded.
+  // Standard module self-registration. The live-DOM listener needs no
+  // per-element wiring, so the scanner is a no-op kept for the loop
+  // contract; the loaded flag stops _scanForModules re-fetching.
   window.__gofastr = window.__gofastr || {};
-  (window.__gofastr._moduleScanners ||= {}).shortcut = scan;
+  (window.__gofastr._moduleScanners ||= {}).shortcut = function () {};
   (window.__gofastr.loadedModules ||= {}).shortcut = true;
   // Legacy hook preserved for external callers.
-  window.__gofastr.shortcut = { rescan: scan };
+  window.__gofastr.shortcut = { rescan: function () {} };
 })();
