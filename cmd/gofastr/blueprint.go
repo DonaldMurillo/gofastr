@@ -2553,17 +2553,28 @@ func blueprintE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updat
 // entity through its CRUD API + screens, and anonymous writes to an
 // access-gated entity are refused.
 // renderBlueprintAxeTest emits the generated app's runtime accessibility
-// gate: boot the built binary, discover every page from /sitemap.xml
-// (login first when the blueprint seeds an admin, so gated screens render
-// instead of bouncing), and run the vendored axe-core engine under both
-// color schemes. Every successful scan records into
-// .gofastr/axe-coverage.json — the manifest uihost strict mode (which
-// generated apps ship with) verifies on dev boot, so this test IS the
-// strict axe gate. It shares the e2eFreeAddr / e2eWaitReady /
-// e2ePostgresDSN helpers emitted in e2e_test.go.
+// gate: boot the built binary, discover public pages from /sitemap.xml,
+// scan them with an ANONYMOUS browser, then scan access-gated screens
+// (baked at generate time) with a separately-authenticated browser —
+// one shared login state would make guest-only pages (login) redirect
+// and record the wrong screen. Every scan asserts it landed on the
+// intended route before running axe, so an unexpected redirect fails
+// loudly instead of silently covering a different page. Scans record
+// the axe-coverage manifest uihost strict mode (which generated apps
+// ship with) verifies on dev boot, so this test IS the strict axe gate.
+// It shares the e2eFreeAddr / e2eWaitReady / e2ePostgresDSN helpers
+// emitted in e2e_test.go.
 func renderBlueprintAxeTest(bp Blueprint) string {
-	_, gated := blueprintE2EScreenRoutes(bp)
-	login := len(gated) > 0 && bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != ""
+	_, gatedAll := blueprintE2EScreenRoutes(bp)
+	// Only static gated routes are scannable without a concrete
+	// instance; dynamic gated patterns go through axeExtraPages.
+	var gated []string
+	for _, r := range gatedAll {
+		if !isBlueprintDynamicRoute(r) {
+			gated = append(gated, r)
+		}
+	}
+	login := bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != ""
 	dbDriver := strings.ToLower(strings.TrimSpace(bp.App.DBDriver))
 	isPostgres := dbDriver == "postgres" || dbDriver == "postgresql"
 
@@ -2574,19 +2585,46 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	for _, imp := range []string{"context", "io", "net/http", "net/url", "os", "os/exec", "path/filepath", "regexp", "runtime", "strings", "testing", "time"} {
 		b.WriteString("\t\"" + imp + "\"\n")
 	}
-	b.WriteString("\n\t\"github.com/chromedp/chromedp\"\n\n")
+	if login {
+		b.WriteString("\t\"net/http/cookiejar\"\n")
+	}
+	b.WriteString("\n")
+	if login {
+		b.WriteString("\t\"github.com/chromedp/cdproto/network\"\n")
+	}
+	b.WriteString("\t\"github.com/chromedp/chromedp\"\n\n")
 	if login {
 		b.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/dotenv\"\n")
 	}
 	b.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/testkit/axetest\"\n")
 	b.WriteString(")\n\n")
 
+	b.WriteString("// axeExtraPages lists concrete URLs the sitemap cannot discover —\n")
+	b.WriteString("// instances of dynamic routes (\"/orders/42\"). Owned: append entries as\n")
+	b.WriteString("// you add dynamic screens; they are scanned with the authenticated\n")
+	b.WriteString("// browser when one exists, so gated instances work too.\n")
+	b.WriteString("var axeExtraPages []string\n\n")
+	if len(gated) > 0 {
+		b.WriteString("// axeGatedPages are the access-gated screen routes; they are scanned\n")
+		b.WriteString("// with an authenticated browser — an anonymous scan would only ever\n")
+		b.WriteString("// cover the login redirect, never the real screen.\n")
+		b.WriteString("var axeGatedPages = []string{\n")
+		for _, r := range gated {
+			b.WriteString(fmt.Sprintf("\t%q,\n", r))
+		}
+		b.WriteString("}\n\n")
+	} else {
+		b.WriteString("// axeGatedPages: none declared in the blueprint. If you gate a screen\n")
+		b.WriteString("// later, add its route here so the authenticated pass covers it.\n")
+		b.WriteString("var axeGatedPages []string\n\n")
+	}
+
 	b.WriteString("// TestAxeEveryScreen is the runtime accessibility gate AND the strict-mode\n")
-	b.WriteString("// axe-coverage source: every page it scans is recorded into\n")
-	b.WriteString("// .gofastr/axe-coverage.json, which uihost.WithStrict checks on dev boot.\n")
-	b.WriteString("// A new screen fails dev boot until this gate has scanned it — the page\n")
-	b.WriteString("// list comes from /sitemap.xml, so a registered screen is picked up\n")
-	b.WriteString("// automatically on the next `go test` run.\n")
+	b.WriteString("// axe-coverage source: every page it scans is recorded into the\n")
+	b.WriteString("// axe-coverage manifest, which uihost.WithStrict checks on dev boot.\n")
+	b.WriteString("// Public pages come from /sitemap.xml, so a new static screen is picked\n")
+	b.WriteString("// up automatically on the next run; dynamic screens need an entry in\n")
+	b.WriteString("// axeExtraPages (and StaticPaths to be demanded by strict mode).\n")
 	b.WriteString("func TestAxeEveryScreen(t *testing.T) {\n")
 	b.WriteString("\t// allow-skip: chromedp suite — boots the app + headless Chrome; runs in the full (non-short) pass.\n")
 	b.WriteString("\tif testing.Short() { t.Skip(\"boots the app + headless Chrome\") }\n")
@@ -2618,27 +2656,62 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\tt.Cleanup(func() { _ = srv.Process.Kill(); _, _ = srv.Process.Wait() })\n")
 	b.WriteString("\tbase := \"http://\" + addr\n")
 	b.WriteString("\te2eWaitReady(t, base)\n\n")
-	b.WriteString("\tpages := axePagesFromSitemap(t, base)\n")
-	b.WriteString("\tbrowser := axetest.NewBrowser(t)\n")
-	if login {
-		b.WriteString(fmt.Sprintf("\taxeLogin(t, browser, base, %q, adminPass)\n", bp.App.Admin.SeedEmail))
-	}
-	b.WriteString("\tfor _, page := range pages {\n")
+	b.WriteString("\tgated := map[string]bool{}\n")
+	b.WriteString("\tfor _, p := range axeGatedPages {\n\t\tgated[p] = true\n\t}\n\n")
+	b.WriteString("\t// Anonymous pass: every public (and guest-only) page. The browser\n")
+	b.WriteString("\t// carries no session, so guest-only screens like /login render\n")
+	b.WriteString("\t// instead of redirecting.\n")
+	b.WriteString("\tanon := axetest.NewBrowser(t)\n")
+	b.WriteString("\tfor _, page := range axePagesFromSitemap(t, base) {\n")
+	b.WriteString("\t\tif gated[page] {\n\t\t\tcontinue // scanned in the authenticated pass\n\t\t}\n")
 	b.WriteString("\t\tfor _, scheme := range axetest.Schemes {\n")
-	b.WriteString("\t\t\taxeScanOne(t, browser, base, page, scheme)\n")
+	b.WriteString("\t\t\taxeScanOne(t, anon, base, page, scheme)\n")
 	b.WriteString("\t\t}\n")
-	b.WriteString("\t}\n")
+	b.WriteString("\t}\n\n")
+	if login {
+		b.WriteString("\t// Authenticated pass: gated screens + owned extras, in a SEPARATE\n")
+		b.WriteString("\t// browser so the anonymous pass above stays honest.\n")
+		b.WriteString("\tif len(axeGatedPages)+len(axeExtraPages) > 0 {\n")
+		b.WriteString("\t\tauthed := axetest.NewBrowser(t)\n")
+		b.WriteString(fmt.Sprintf("\t\taxeLogin(t, authed, base, %q, adminPass)\n", bp.App.Admin.SeedEmail))
+		b.WriteString("\t\tfor _, page := range append(append([]string{}, axeGatedPages...), axeExtraPages...) {\n")
+		b.WriteString("\t\t\tfor _, scheme := range axetest.Schemes {\n")
+		b.WriteString("\t\t\t\taxeScanOne(t, authed, base, page, scheme)\n")
+		b.WriteString("\t\t\t}\n")
+		b.WriteString("\t\t}\n")
+		b.WriteString("\t}\n")
+	} else {
+		b.WriteString("\tif len(axeGatedPages) > 0 {\n")
+		b.WriteString("\t\tt.Errorf(\"gated screens %v cannot be scanned: no seeded admin — set app.admin.seed_email/seed_password (or extend this test with your own login) so the gate can cover them; unscanned gated screens fail strict dev boot\", axeGatedPages)\n")
+		b.WriteString("\t}\n")
+		b.WriteString("\tfor _, page := range axeExtraPages {\n")
+		b.WriteString("\t\tfor _, scheme := range axetest.Schemes {\n")
+		b.WriteString("\t\t\taxeScanOne(t, anon, base, page, scheme)\n")
+		b.WriteString("\t\t}\n")
+		b.WriteString("\t}\n")
+	}
 	b.WriteString("}\n\n")
 
 	b.WriteString("func axeScanOne(t *testing.T, browser context.Context, base, page, scheme string) {\n")
 	b.WriteString("\tt.Helper()\n")
 	b.WriteString("\ttab, done := axetest.NewTab(t, browser)\n")
 	b.WriteString("\tdefer done()\n")
+	b.WriteString("\tvar loc string\n")
 	b.WriteString("\tif err := chromedp.Run(tab,\n")
 	b.WriteString("\t\tchromedp.Navigate(base+page),\n")
 	b.WriteString("\t\tchromedp.Sleep(400*time.Millisecond), // hydration settle\n")
-	b.WriteString("\t\taxetest.Prepare(scheme),\n")
+	b.WriteString("\t\tchromedp.Location(&loc),\n")
 	b.WriteString("\t); err != nil {\n\t\tt.Fatalf(\"navigate %s (%s): %v\", page, scheme, err)\n\t}\n")
+	b.WriteString("\t// A redirect means axe would audit — and the coverage manifest would\n")
+	b.WriteString("\t// record — a DIFFERENT screen. Fail loudly instead of silently\n")
+	b.WriteString("\t// covering the wrong page: the page either needs the authenticated\n")
+	b.WriteString("\t// pass (axeGatedPages) or the route changed.\n")
+	b.WriteString("\tif u, err := url.Parse(loc); err != nil || u.Path != page {\n")
+	b.WriteString("\t\tt.Errorf(\"%s redirected to %s — page not scanned\", page, loc)\n")
+	b.WriteString("\t\treturn\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\tif err := chromedp.Run(tab, axetest.Prepare(scheme)); err != nil {\n")
+	b.WriteString("\t\tt.Fatalf(\"prepare %s (%s): %v\", page, scheme, err)\n\t}\n")
 	b.WriteString("\tviolations, err := axetest.Scan(tab, scheme, nil)\n")
 	b.WriteString("\tif err != nil {\n\t\tt.Fatalf(\"axe scan %s (%s): %v\", page, scheme, err)\n\t}\n")
 	b.WriteString("\tfor _, v := range violations {\n")
@@ -2646,9 +2719,9 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\t}\n")
 	b.WriteString("}\n\n")
 
-	b.WriteString("// axePagesFromSitemap derives the scan list from the app's own sitemap —\n")
-	b.WriteString("// the same registry the router serves — so a new screen can never drift\n")
-	b.WriteString("// out of the gate.\n")
+	b.WriteString("// axePagesFromSitemap derives the public scan list from the app's own\n")
+	b.WriteString("// sitemap — the same registry the router serves — so a new static\n")
+	b.WriteString("// screen can never drift out of the gate.\n")
 	b.WriteString("func axePagesFromSitemap(t *testing.T, base string) []string {\n")
 	b.WriteString("\tt.Helper()\n")
 	b.WriteString("\tresp, err := http.Get(base + \"/sitemap.xml\")\n")
@@ -2671,31 +2744,52 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("}\n")
 
 	if login {
-		b.WriteString("\n// axeLogin authenticates the shared browser as the seeded admin so\n")
+		authBase := strings.TrimRight(bp.App.Auth.BasePath, "/")
+		if authBase == "" {
+			authBase = "/auth"
+		}
+		b.WriteString("\n// axeLogin authenticates the given browser as the seeded admin so\n")
 		b.WriteString("// access-gated screens render their real content instead of bouncing\n")
-		b.WriteString("// to /login (a bounced scan would only ever cover the login page).\n")
+		b.WriteString("// (a bounced scan would cover the wrong page). Login goes through the\n")
+		b.WriteString("// auth battery's HTTP endpoint — it exists whether or not the app has\n")
+		b.WriteString("// a login screen — and the session cookies are transplanted into the\n")
+		b.WriteString("// browser.\n")
 		b.WriteString("func axeLogin(t *testing.T, browser context.Context, base, email, password string) {\n")
 		b.WriteString("\tt.Helper()\n")
+		b.WriteString("\tjar, _ := cookiejar.New(nil)\n")
+		b.WriteString("\tclient := &http.Client{Jar: jar}\n")
+		b.WriteString(fmt.Sprintf("\tresp, err := client.PostForm(base+%q, url.Values{\"email\": {email}, \"password\": {password}})\n", authBase+"/login"))
+		b.WriteString("\tif err != nil {\n\t\tt.Fatalf(\"login: %v\", err)\n\t}\n")
+		b.WriteString("\tresp.Body.Close()\n")
+		b.WriteString("\tu, err := url.Parse(base)\n")
+		b.WriteString("\tif err != nil {\n\t\tt.Fatalf(\"login: parse base: %v\", err)\n\t}\n")
+		b.WriteString("\tcookies := jar.Cookies(u)\n")
+		b.WriteString("\tif len(cookies) == 0 {\n")
+		b.WriteString("\t\tt.Fatal(\"login set no cookies — wrong seeded credentials, or the auth battery is not mounted\")\n")
+		b.WriteString("\t}\n")
 		b.WriteString("\ttab, done := axetest.NewTab(t, browser)\n")
 		b.WriteString("\tdefer done()\n")
-		b.WriteString("\tvar finalURL string\n")
-		b.WriteString("\tif err := chromedp.Run(tab,\n")
-		b.WriteString("\t\tchromedp.Navigate(base+\"/login\"),\n")
-		b.WriteString("\t\tchromedp.WaitVisible(`input[name=\"email\"]`, chromedp.ByQuery),\n")
-		b.WriteString("\t\tchromedp.SetValue(`input[name=\"email\"]`, email, chromedp.ByQuery),\n")
-		b.WriteString("\t\tchromedp.SetValue(`input[name=\"password\"]`, password, chromedp.ByQuery),\n")
-		b.WriteString("\t\t// Click, not Submit: Submit skips the form's submit event, and the\n")
-		b.WriteString("\t\t// real button preserves cookie + redirect behavior.\n")
-		b.WriteString("\t\tchromedp.Click(`button[type=\"submit\"], input[type=\"submit\"]`, chromedp.ByQuery),\n")
-		b.WriteString("\t\tchromedp.Sleep(750*time.Millisecond),\n")
-		b.WriteString("\t\tchromedp.Location(&finalURL),\n")
-		b.WriteString("\t); err != nil {\n\t\tt.Fatalf(\"login: %v\", err)\n\t}\n")
-		b.WriteString("\tif u, err := url.Parse(finalURL); err == nil && u.Path == \"/login\" {\n")
-		b.WriteString("\t\tt.Fatal(\"login did not authenticate — gated screens would scan as the login page\")\n")
+		b.WriteString("\t// Cookies attach to an origin; open it once before setting them.\n")
+		b.WriteString("\tif err := chromedp.Run(tab, chromedp.Navigate(base+\"/\")); err != nil {\n")
+		b.WriteString("\t\tt.Fatalf(\"login: open origin: %v\", err)\n\t}\n")
+		b.WriteString("\tfor _, c := range cookies {\n")
+		b.WriteString("\t\tck := c\n")
+		b.WriteString("\t\tif err := chromedp.Run(tab, chromedp.ActionFunc(func(ctx context.Context) error {\n")
+		b.WriteString("\t\t\treturn network.SetCookie(ck.Name, ck.Value).WithDomain(u.Hostname()).WithPath(\"/\").Do(ctx)\n")
+		b.WriteString("\t\t})); err != nil {\n")
+		b.WriteString("\t\t\tt.Fatalf(\"login: set cookie %s: %v\", ck.Name, err)\n")
+		b.WriteString("\t\t}\n")
 		b.WriteString("\t}\n")
 		b.WriteString("}\n")
 	}
 	return b.String()
+}
+
+// isBlueprintDynamicRoute reports whether a route pattern has a
+// parameter segment and therefore cannot be scanned without a concrete
+// instance.
+func isBlueprintDynamicRoute(route string) bool {
+	return strings.Contains(route, ":") || strings.Contains(route, "{")
 }
 
 func renderBlueprintE2ETest(bp Blueprint) string {
@@ -4125,7 +4219,10 @@ func renderBlueprintMain(bp Blueprint) string {
 	sitemapExclude := ""
 	robotsDisallow := `"/__gofastr/"`
 	if bp.App.Admin.Enabled {
-		adminPath := bp.App.Admin.Path
+		// TrimRight matches the admin battery's own normalization
+		// (admin.New trims the PathPrefix), so "/admin/" in the
+		// blueprint excludes the same routes the battery mounts.
+		adminPath := strings.TrimRight(bp.App.Admin.Path, "/")
 		if adminPath == "" {
 			adminPath = "/admin"
 		}

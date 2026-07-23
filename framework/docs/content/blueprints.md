@@ -842,12 +842,18 @@ every strict check (see `gofastr docs strict-mode`):
   screen without a blueprint `description` emits the documented
   zero-value `ScreenSEO` opt-out instead of empty filler. Fill the
   description field for pages that should rank.
-- **Axe gate** (`axe_test.go`) — boots the built binary, logs in as
-  the seeded admin when one exists, and runs axe-core over every
-  sitemap page under both color schemes. Its scans record the
-  axe-coverage manifest strict dev boots verify, so a hand-added
-  screen without a scan fails `gofastr dev` with a guided finding
-  (first boot before any test run warns instead of failing).
+- **Axe gate** (`axe_test.go`) — boots the built binary and runs
+  axe-core over every sitemap page under both color schemes, in two
+  passes: an anonymous browser for public and guest-only pages, and a
+  separately-authenticated browser (seeded admin) for gated screens —
+  one shared login would make guest pages redirect and cover the wrong
+  screen. Every scan asserts it landed on the intended route before
+  auditing. Its scans record the axe-coverage manifest strict dev
+  boots verify, so a hand-added screen without a scan fails
+  `gofastr dev` with a guided finding (first boot before any test run
+  warns instead of failing). Dynamic screens (`/orders/:id`) need a
+  concrete URL in the owned `axeExtraPages` slice — and `StaticPaths`
+  on the screen for strict mode to demand them.
 
 The consequence to know: after adding a screen by hand, run
 `go test ./...` once (needs Chrome) so the manifest covers it —

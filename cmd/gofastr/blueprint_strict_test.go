@@ -108,6 +108,60 @@ func TestBlueprintEmitsAxeTest(t *testing.T) {
 	assertContains(t, got, `/sitemap.xml`)
 	assertContains(t, got, `allow-skip`)
 	assertContains(t, got, `axetest.Schemes`)
+	// The redirect assertion keeps a bounced navigation from silently
+	// covering the wrong screen.
+	assertContains(t, got, `redirected to`)
+	// Owned seam for concrete dynamic-route URLs.
+	assertContains(t, got, `var axeExtraPages []string`)
+}
+
+func TestBlueprintAxeTestScansGatedWithSeparateAuthedBrowser(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{
+			Name: "Demo", Module: "example.com/demo",
+			Auth:  BlueprintAuth{Enabled: true},
+			Admin: BlueprintAdmin{Enabled: true, SeedEmail: "a@x.io", SeedPassword: "pw123456"}, // not-a-secret: test fixture exercising the seeded-admin template branch
+		},
+		Screens: []BlueprintScreen{
+			{Name: "home", Route: "/", Title: "Home"},
+			{Name: "board", Route: "/board", Title: "Board", Access: BlueprintAccess{Auth: true}},
+		},
+	}
+	got := renderBlueprintAxeTest(bp)
+	assertContains(t, got, `"/board",`)                    // baked gated list
+	assertContains(t, got, `authed := axetest.NewBrowser`) // separate context
+	assertContains(t, got, `func axeLogin(`)
+	if !strings.Contains(got, "gated[page]") {
+		t.Fatal("anonymous pass must skip gated pages")
+	}
+}
+
+func TestBlueprintAxeTestFailsLoudlyOnGatedWithoutCreds(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{
+			Name: "Demo", Module: "example.com/demo",
+			Auth: BlueprintAuth{Enabled: true},
+		},
+		Screens: []BlueprintScreen{
+			{Name: "home", Route: "/", Title: "Home"},
+			{Name: "board", Route: "/board", Title: "Board", Access: BlueprintAccess{Auth: true}},
+		},
+	}
+	got := renderBlueprintAxeTest(bp)
+	assertContains(t, got, `cannot be scanned: no seeded admin`)
+	if strings.Contains(got, "func axeLogin(") {
+		t.Fatal("no-creds template must not emit the login helper")
+	}
+}
+
+func TestBlueprintMainTrimsAdminPathTrailingSlash(t *testing.T) {
+	bp := Blueprint{App: BlueprintApp{
+		Name: "Demo", Module: "example.com/demo",
+		Admin: BlueprintAdmin{Enabled: true, Path: "/admin/"},
+	}}
+	got := renderBlueprintMain(bp)
+	assertContains(t, got, `ExcludePaths: []string{"/admin"}`)
+	assertContains(t, got, `Disallow: []string{"/__gofastr/", "/admin"}`)
 }
 
 func TestBlueprintGitignoreCoversManifestDir(t *testing.T) {
