@@ -1,8 +1,11 @@
 package uihost
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -163,11 +166,19 @@ func (c StrictConfig) exempt(route string) bool {
 // value of every field is the strictest setting, so configuration only
 // ever relaxes, visibly.
 func WithStrict(cfg ...StrictConfig) Option {
+	if len(cfg) > 1 {
+		panic("uihost.WithStrict: pass at most one StrictConfig")
+	}
+	conf := StrictConfig{}
+	if len(cfg) == 1 {
+		conf = cfg[0]
+	}
 	return func(ds *UIHost) {
 		ds.strict = true
-		if len(cfg) > 0 {
-			ds.strictConfig = cfg[len(cfg)-1]
-		}
+		// Always assign, so a later bare WithStrict() restores the
+		// documented all-enforced posture (last option wins) instead of
+		// silently keeping an earlier relaxed config.
+		ds.strictConfig = conf
 	}
 }
 
@@ -250,8 +261,14 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 	if ds.faviconURL == "" && len(ds.appIcons) == 0 {
 		out = append(out, strictFinding{strictCheckSiteIcon, "site: no icon — add uihost.WithAppIcon (one source image) or uihost.WithFavicon"})
 	}
-	if ds.sitemapConfig == nil {
+	switch {
+	case ds.sitemapConfig == nil:
 		out = append(out, strictFinding{strictCheckSitemap, "site: no sitemap — add uihost.WithSitemap so crawlers and the a11y audit can discover every route"})
+	default:
+		if reason := invalidSitemapBaseURL(ds.sitemapConfig.BaseURL); reason != "" {
+			out = append(out, strictFinding{strictCheckSitemap, fmt.Sprintf(
+				"site: sitemap BaseURL %q %s — <loc> entries must be absolute URLs (scheme + host), e.g. https://example.com", ds.sitemapConfig.BaseURL, reason)})
+		}
 	}
 	if ds.robotsConfig == nil {
 		out = append(out, strictFinding{strictCheckRobots, "site: no robots directives — add uihost.WithRobots"})
@@ -259,19 +276,73 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 	return out
 }
 
+// invalidSitemapBaseURL reports why base cannot serve as the sitemap's
+// canonical origin ("" when it can). The sitemap protocol requires
+// absolute <loc> URLs, so strict mode refuses a configured-but-broken
+// sitemap the same way it refuses a missing one. A path prefix is
+// allowed (subpath deploys); userinfo, query, and fragment are not.
+func invalidSitemapBaseURL(base string) string {
+	u, err := url.Parse(base)
+	switch {
+	case base == "":
+		return "is empty"
+	case err != nil:
+		return fmt.Sprintf("does not parse (%v)", err)
+	case u.Scheme != "http" && u.Scheme != "https":
+		return "needs an http or https scheme"
+	case u.Host == "":
+		return "has no host"
+	case u.User != nil:
+		return "must not carry userinfo"
+	case u.RawQuery != "" || u.Fragment != "":
+		return "must not carry a query or fragment"
+	}
+	return ""
+}
+
+// isDynamicRoute reports whether a route pattern contains a parameter
+// or wildcard segment (":id", "{path...}").
+func isDynamicRoute(pattern string) bool {
+	for _, seg := range strings.Split(pattern, "/") {
+		if strings.HasPrefix(seg, ":") || strings.HasPrefix(seg, "{") {
+			return true
+		}
+	}
+	return false
+}
+
 // strictAxeCoverageFindings diffs the app's page routes against the
 // axe-coverage manifest the test suite recorded. A manifest entry covers
 // a route when the concrete scanned path resolves to it, so one scanned
 // "/docs/install" covers the "/docs/:slug" pattern.
+//
+// The demand surface mirrors the sitemap's discovery surface: a dynamic
+// route whose screen does not implement [app.StaticPathsProvider] is
+// invisible to the sitemap, hence unreachable by a sitemap-driven axe
+// gate, hence structurally uncoverable — strict skips it and screams
+// instead of demanding the impossible.
 func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	if cfg.level(strictCheckAxeCoverage) == StrictOff {
 		return nil
 	}
-	var pageRoutes []string
+	var pageRoutes, invisible []string
 	for _, path := range ds.App.Router.Paths() {
-		if screen, _, ok := ds.App.Router.Resolve(path); ok && screen.Type == app.ScreenPage && !cfg.exempt(screen.Path) {
-			pageRoutes = append(pageRoutes, screen.Path)
+		screen, _, ok := ds.App.Router.Resolve(path)
+		if !ok || screen.Type != app.ScreenPage || cfg.exempt(screen.Path) {
+			continue
 		}
+		if isDynamicRoute(screen.Path) {
+			if _, declares := screen.Component.(app.StaticPathsProvider); !declares {
+				invisible = append(invisible, screen.Path)
+				continue
+			}
+		}
+		pageRoutes = append(pageRoutes, screen.Path)
+	}
+	if len(invisible) > 0 {
+		sort.Strings(invisible)
+		slog.Warn("uihost strict: dynamic screens without StaticPaths are invisible to the sitemap and the axe gate — implement StaticPaths(ctx) on them to bring them under coverage",
+			"routes", strings.Join(invisible, ", "))
 	}
 	// No page screens → nothing an axe test could scan; requiring a
 	// manifest would fail every screen-less (API-only) app for a file
@@ -279,10 +350,18 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	if len(pageRoutes) == 0 {
 		return nil
 	}
-	m, err := axecov.Read(".")
+	m, err := axecov.Read(axecov.DefaultDir())
 	if err != nil {
-		return []strictFinding{{strictCheckAxeManifest, fmt.Sprintf(
-			"axe coverage unverified — no manifest at %s; run the axe suite (go test) so every screen's scan is recorded (%v)", axecov.FileName, err)}}
+		if errors.Is(err, fs.ErrNotExist) {
+			return []strictFinding{{strictCheckAxeManifest, fmt.Sprintf(
+				"axe coverage unverified — no manifest at %s; run the axe suite (go test) so every screen's scan is recorded (%v)", axecov.FileName, err)}}
+		}
+		// A manifest that exists but cannot be read is NOT absence:
+		// treating corruption as absence would relax enforcement exactly
+		// when the coverage record is untrustworthy. Routed through the
+		// AxeCoverage level (enforced by default).
+		return []strictFinding{{strictCheckAxeCoverage, fmt.Sprintf(
+			"axe coverage manifest unreadable (%v) — delete %s and re-run the axe suite", err, axecov.FileName)}}
 	}
 	covered := map[string]bool{}
 	for scanned := range m.Pages {

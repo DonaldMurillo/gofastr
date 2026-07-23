@@ -2,7 +2,10 @@ package uihost
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -322,7 +325,7 @@ func TestStrictAxeCoverageResolvesDynamicRoutes(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "1")
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
-	a.Register("/docs/:slug", &describedScreen{}, nil)
+	a.Register("/docs/:slug", &staticPathsScreen{}, nil)
 	// The manifest holds concrete scanned URLs; a concrete path must
 	// count as coverage for the dynamic pattern it resolves to.
 	for _, p := range []string{"/", "/docs/install"} {
@@ -333,5 +336,119 @@ func TestStrictAxeCoverageResolvesDynamicRoutes(t *testing.T) {
 	ds := New(a, strictSiteOptions()...)
 	if msg := mountPanic(t, ds); msg != "" {
 		t.Fatalf("concrete scan did not cover its dynamic route:\n%s", msg)
+	}
+}
+
+// staticPathsScreen is a dynamic-route screen that declares concrete
+// instances — the mechanism that makes a dynamic route visible to the
+// sitemap and therefore demandable by the axe-coverage check.
+type staticPathsScreen struct{ describedScreen }
+
+func (s *staticPathsScreen) StaticPaths(ctx context.Context) []map[string]string {
+	return []map[string]string{{"slug": "install"}}
+}
+
+func TestWithStrictBareCallResetsRelaxedConfig(t *testing.T) {
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	ds := New(a,
+		WithStrict(StrictConfig{SiteDescription: StrictOff, SiteIcon: StrictOff, Sitemap: StrictOff, Robots: StrictOff}),
+		WithStrict(), // documented: bare call enforces everything — must reset
+	)
+	msg := mountPanic(t, ds)
+	if !strings.Contains(msg, "robots") {
+		t.Fatalf("bare WithStrict after a relaxed config did not restore enforcement:\n%s", msg)
+	}
+}
+
+func TestWithStrictRejectsMultipleConfigs(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("WithStrict with two configs did not panic")
+		}
+	}()
+	WithStrict(StrictConfig{}, StrictConfig{})
+}
+
+func TestStrictFlagsInvalidSitemapBaseURL(t *testing.T) {
+	newHost := func(base string) *UIHost {
+		a := app.NewApp("demo")
+		a.Register("/", &describedScreen{}, nil)
+		return New(a,
+			WithStrict(),
+			WithDescription("A demo app."),
+			WithFavicon("/favicon.svg"),
+			WithSitemap(SitemapConfig{BaseURL: base}),
+			WithRobots(RobotsConfig{}),
+		)
+	}
+	for _, bad := range []string{"", "example.com", "ftp://example.com", "https://user:pw@example.com", "https://example.com?x=1"} {
+		if msg := mountPanic(t, newHost(bad)); !strings.Contains(msg, "BaseURL") {
+			t.Fatalf("invalid sitemap BaseURL %q not flagged:\n%s", bad, msg)
+		}
+	}
+	if msg := mountPanic(t, newHost("https://example.com/app")); msg != "" {
+		t.Fatalf("valid BaseURL with path prefix flagged:\n%s", msg)
+	}
+}
+
+func TestStrictCorruptManifestFailsBoot(t *testing.T) {
+	// A missing manifest warns (fresh checkout); a CORRUPT one must not
+	// be mistaken for absence — that would relax enforcement exactly
+	// when the coverage record is untrustworthy.
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("GOFASTR_DEV", "1")
+	if err := os.MkdirAll(filepath.Join(dir, ".gofastr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, axecov.FileName), []byte("{corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	ds := New(a, strictSiteOptions()...)
+	msg := mountPanic(t, ds)
+	if !strings.Contains(msg, "manifest") {
+		t.Fatalf("corrupt manifest did not fail boot:\n%s", msg)
+	}
+}
+
+func TestStrictDynamicRouteWithoutStaticPathsWarnsNotDemands(t *testing.T) {
+	// A dynamic route with no StaticPaths is invisible to the sitemap,
+	// so a sitemap-driven axe gate can never cover it. Strict must not
+	// demand what the gate cannot discover — it screams instead.
+	t.Chdir(t.TempDir())
+	t.Setenv("GOFASTR_DEV", "1")
+	if err := axecov.Record(".", "/", "dark"); err != nil {
+		t.Fatal(err)
+	}
+	buf := captureLog(t)
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	a.Register("/orders/:id", &describedScreen{}, nil)
+	ds := New(a, strictSiteOptions()...)
+	if msg := mountPanic(t, ds); msg != "" {
+		t.Fatalf("undiscoverable dynamic route was demanded:\n%s", msg)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "/orders/:id") || !strings.Contains(logged, "StaticPaths") {
+		t.Fatalf("invisible dynamic route not warned about; log was:\n%s", logged)
+	}
+}
+
+func TestStrictDynamicRouteWithStaticPathsIsDemanded(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("GOFASTR_DEV", "1")
+	if err := axecov.Record(".", "/", "dark"); err != nil {
+		t.Fatal(err)
+	}
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	a.Register("/docs/:slug", &staticPathsScreen{}, nil)
+	ds := New(a, strictSiteOptions()...)
+	msg := mountPanic(t, ds)
+	if !strings.Contains(msg, "/docs/:slug") {
+		t.Fatalf("uncovered StaticPaths-bearing dynamic route not demanded:\n%s", msg)
 	}
 }

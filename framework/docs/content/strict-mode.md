@@ -30,7 +30,7 @@ host := uihost.New(ui,
 | Screen description | every page screen | `Screen.Description` is set (`ScreenDescriber`), or the component implements `ScreenSEO` — a zero-value return is the documented "deliberately naked" opt-out |
 | Site description | the host | `WithDescription` with a non-empty value |
 | Site icon | the host | `WithAppIcon` (preferred — one source image derives the whole icon surface) or `WithFavicon` |
-| Sitemap | the host | `WithSitemap` |
+| Sitemap | the host | `WithSitemap` with a valid absolute `BaseURL` (http/https + host; no userinfo/query/fragment — a path prefix is fine) |
 | Robots | the host | `WithRobots` |
 | Axe coverage | every page screen, **dev only** | the axe-coverage manifest records at least one scan that resolves to the route |
 
@@ -43,11 +43,24 @@ exactly the surface the app itself declared.
 ## The axe-coverage check
 
 Every successful `framework/testkit/axetest.Scan` records the page it
-scanned into `.gofastr/axe-coverage.json` (see `framework/axecov` and
-the accessibility doc). Under `gofastr dev`, strict mode diffs that
-manifest against the app's page routes and fails boot for any route no
-axe test covered. Coverage follows the router, not string equality: a
-recorded scan of `/docs/install` covers the `/docs/:slug` pattern.
+scanned into `.gofastr/axe-coverage.json` under the canonical coverage
+root — `GOFASTR_AXE_COVERAGE_DIR` when set, else the module root, else
+the working directory (`axecov.DefaultDir`). Strict mode reads with the
+same resolution, so the loop holds even when tests live in
+`cmd/app/` while `gofastr dev --dir <root> --pkg ./cmd/app` serves from
+the root. Under `gofastr dev`, strict mode diffs that manifest against
+the app's page routes and fails boot for any route no axe test covered.
+Coverage follows the router, not string equality: a recorded scan of
+`/docs/install` covers the `/docs/:slug` pattern.
+
+The demand surface mirrors the sitemap's discovery surface: a dynamic
+route (`/orders/:id`) is only demanded when its screen implements
+`StaticPathsProvider` — then the sitemap lists concrete instances the
+gate scans. A dynamic route without `StaticPaths` is invisible to a
+sitemap-driven gate, so strict skips it and logs a loud warning naming
+the route instead of demanding the impossible. Implement `StaticPaths`
+(or scan a concrete instance and keep it in your gate's page list) to
+bring it under coverage.
 
 Production boots skip this check — the manifest is a local test
 artifact (gitignored, wiped by `make clean`) that never ships, so a
@@ -63,6 +76,10 @@ Absence and drift are treated differently, on purpose:
   `go test ./...` once and the manifest exists from then on.
 - **A manifest that exists but misses a route fails boot.** That is
   real drift — a screen was added without extending the axe gate.
+- **A manifest that exists but cannot be parsed fails boot too.**
+  Corruption is not absence: relaxing enforcement exactly when the
+  coverage record is untrustworthy would invert the guarantee. Delete
+  the file and re-run the axe suite.
 - **Deleting a screen never breaks the check.** Stale manifest entries
   that resolve to no route are ignored.
 
@@ -98,6 +115,10 @@ Levels are `StrictEnforce` (fail boot), `StrictWarn` (`slog.Warn`,
 serve), `StrictOff` (skip). `AxeManifestMissing` uses its own trio
 (`StrictAbsenceWarn`/`StrictAbsenceEnforce`/`StrictAbsenceOff`)
 because its default is warn — see above.
+
+Option composition is last-wins and total: a later bare `WithStrict()`
+resets an earlier relaxed config back to all-enforced, and passing more
+than one `StrictConfig` to a single call panics at construction.
 
 Prefer the declaration-level escape hatches before reaching for
 config, though — they carry more information:

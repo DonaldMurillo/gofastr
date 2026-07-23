@@ -144,10 +144,14 @@ target-size pass).
 
 Every successful `Scan` also records the scanned path into
 `.gofastr/axe-coverage.json` (the axe-coverage manifest,
-`framework/axecov`) — a per-project record of which pages the axe suite
-actually exercised. The manifest is a local build artifact — gitignored,
-wiped by `make clean`, never shipped. `GOFASTR_AXE_COVERAGE=0` disables
-recording. Apps that opt into `uihost.WithStrict()` fail dev boot for
+`framework/axecov`) under the canonical coverage root —
+`GOFASTR_AXE_COVERAGE_DIR` when set, else the module root — a
+per-project record of which pages the axe suite actually exercised.
+The manifest is a local build artifact — gitignored, wiped by
+`make clean`, never shipped. `GOFASTR_AXE_COVERAGE=0` disables
+recording. Note the recorded path is the browser's FINAL location:
+a scan that got redirected records the destination, never the page you
+asked for. Apps that opt into `uihost.WithStrict()` fail dev boot for
 any page route the manifest doesn't cover — every screen must have an
 axe test (`gofastr docs strict-mode`).
 
