@@ -167,3 +167,29 @@ func TestDefaultDirFallsBackToCwdWithoutModule(t *testing.T) {
 		t.Fatalf("DefaultDir without go.mod = %q, want cwd %q", got, wd)
 	}
 }
+
+func TestDefaultDirResolvesOutermostWorkspaceRoot(t *testing.T) {
+	// A workspace root (go.work) above a nested module (go.mod): the
+	// test binary in the nested module and a dev server at the
+	// workspace root must resolve the SAME directory — the outermost.
+	root := t.TempDir()
+	nested := filepath.Join(root, "apps", "shop", "cmd", "app")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.work"), []byte("go 1.26\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "apps", "shop", "go.mod"), []byte("module example.com/shop\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantRoot, _ := filepath.EvalSymlinks(root)
+	t.Chdir(nested)
+	if got, _ := filepath.EvalSymlinks(DefaultDir()); got != wantRoot {
+		t.Fatalf("from nested module: DefaultDir = %q, want workspace root %q", got, wantRoot)
+	}
+	t.Chdir(root)
+	if got, _ := filepath.EvalSymlinks(DefaultDir()); got != wantRoot {
+		t.Fatalf("from workspace root: DefaultDir = %q, want %q", got, wantRoot)
+	}
+}

@@ -128,7 +128,7 @@ func TestBlueprintAxeTestScansGatedWithSeparateAuthedBrowser(t *testing.T) {
 		},
 	}
 	got := renderBlueprintAxeTest(bp)
-	assertContains(t, got, `"/board",`)                    // baked gated list
+	assertContains(t, got, `"/board"`)                     // baked gated list
 	assertContains(t, got, `authed := axetest.NewBrowser`) // separate context
 	assertContains(t, got, `func axeLogin(`)
 	if !strings.Contains(got, "gated[page]") {

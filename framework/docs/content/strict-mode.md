@@ -30,7 +30,7 @@ host := uihost.New(ui,
 | Screen description | every page screen | `Screen.Description` is set (`ScreenDescriber`), or the component implements `ScreenSEO` — a zero-value return is the documented "deliberately naked" opt-out |
 | Site description | the host | `WithDescription` with a non-empty value |
 | Site icon | the host | `WithAppIcon` (preferred — one source image derives the whole icon surface) or `WithFavicon` |
-| Sitemap | the host | `WithSitemap` with a valid absolute `BaseURL` (http/https + host; no userinfo/query/fragment — a path prefix is fine) |
+| Sitemap | the host | `WithSitemap` with a valid `BaseURL` — a bare http/https origin (host, no userinfo/query/fragment/path; deployment path prefixes belong in the static Builder's `BasePath`) |
 | Robots | the host | `WithRobots` |
 | Axe coverage | every page screen, **dev only** | the axe-coverage manifest records at least one scan that resolves to the route |
 
@@ -44,23 +44,29 @@ exactly the surface the app itself declared.
 
 Every successful `framework/testkit/axetest.Scan` records the page it
 scanned into `.gofastr/axe-coverage.json` under the canonical coverage
-root — `GOFASTR_AXE_COVERAGE_DIR` when set, else the module root, else
-the working directory (`axecov.DefaultDir`). Strict mode reads with the
-same resolution, so the loop holds even when tests live in
-`cmd/app/` while `gofastr dev --dir <root> --pkg ./cmd/app` serves from
-the root. Under `gofastr dev`, strict mode diffs that manifest against
+root — `GOFASTR_AXE_COVERAGE_DIR` when set, else Go's own root rule
+(nearest `go.work` ancestor, else nearest `go.mod`, else the working
+directory — `axecov.DefaultDir`). Strict mode reads with the same
+resolution, so the loop holds even when tests live in `cmd/app/` while
+`gofastr dev --dir <root> --pkg ./cmd/app` serves from the root, and in
+`go.work` workspaces. Known limitation: several apps sharing one
+module/workspace share one manifest keyed by route path, so two strict
+apps with identical routes can satisfy each other's check — set
+`GOFASTR_AXE_COVERAGE_DIR` per app (for both its tests and its server)
+when that matters. Under `gofastr dev`, strict mode diffs that manifest against
 the app's page routes and fails boot for any route no axe test covered.
 Coverage follows the router, not string equality: a recorded scan of
 `/docs/install` covers the `/docs/:slug` pattern.
 
 The demand surface mirrors the sitemap's discovery surface: a dynamic
-route (`/orders/:id`) is only demanded when its screen implements
-`StaticPathsProvider` — then the sitemap lists concrete instances the
-gate scans. A dynamic route without `StaticPaths` is invisible to a
-sitemap-driven gate, so strict skips it and logs a loud warning naming
-the route instead of demanding the impossible. Implement `StaticPaths`
-(or scan a concrete instance and keep it in your gate's page list) to
-bring it under coverage.
+route (`/orders/:id`) is only demanded when its screen's
+`StaticPaths(ctx)` returns at least one concrete instance — then the
+sitemap lists those instances and the gate scans them. A dynamic route
+without `StaticPaths` (or whose `StaticPaths` returns nothing) is
+invisible to a sitemap-driven gate, so strict skips it and logs a loud
+warning naming the route instead of demanding the impossible. Return
+concrete instances (or scan one and keep it in your gate's page list)
+to bring it under coverage.
 
 Production boots skip this check — the manifest is a local test
 artifact (gitignored, wiped by `make clean`) that never ships, so a

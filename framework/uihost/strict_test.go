@@ -382,13 +382,15 @@ func TestStrictFlagsInvalidSitemapBaseURL(t *testing.T) {
 			WithRobots(RobotsConfig{}),
 		)
 	}
-	for _, bad := range []string{"", "example.com", "ftp://example.com", "https://user:pw@example.com", "https://example.com?x=1"} {
+	// Path-bearing bases are rejected too: the static exporter adds its
+	// own BasePath, so a path here gets prefixed twice.
+	for _, bad := range []string{"", "example.com", "ftp://example.com", "https://user:pw@example.com", "https://example.com?x=1", "https://example.com/app"} {
 		if msg := mountPanic(t, newHost(bad)); !strings.Contains(msg, "BaseURL") {
 			t.Fatalf("invalid sitemap BaseURL %q not flagged:\n%s", bad, msg)
 		}
 	}
-	if msg := mountPanic(t, newHost("https://example.com/app")); msg != "" {
-		t.Fatalf("valid BaseURL with path prefix flagged:\n%s", msg)
+	if msg := mountPanic(t, newHost("https://example.com/")); msg != "" {
+		t.Fatalf("bare origin with trailing slash flagged:\n%s", msg)
 	}
 }
 
@@ -434,6 +436,31 @@ func TestStrictDynamicRouteWithoutStaticPathsWarnsNotDemands(t *testing.T) {
 	logged := buf.String()
 	if !strings.Contains(logged, "/orders/:id") || !strings.Contains(logged, "StaticPaths") {
 		t.Fatalf("invisible dynamic route not warned about; log was:\n%s", logged)
+	}
+}
+
+// emptyPathsScreen declares StaticPaths but returns no instances — as
+// invisible to the sitemap as not implementing it at all.
+type emptyPathsScreen struct{ describedScreen }
+
+func (s *emptyPathsScreen) StaticPaths(ctx context.Context) []map[string]string { return nil }
+
+func TestStrictDynamicRouteWithEmptyStaticPathsWarnsNotDemands(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("GOFASTR_DEV", "1")
+	if err := axecov.Record(".", "/", "dark"); err != nil {
+		t.Fatal(err)
+	}
+	buf := captureLog(t)
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	a.Register("/orders/:id", &emptyPathsScreen{}, nil)
+	ds := New(a, strictSiteOptions()...)
+	if msg := mountPanic(t, ds); msg != "" {
+		t.Fatalf("undiscoverable (empty StaticPaths) dynamic route was demanded:\n%s", msg)
+	}
+	if !strings.Contains(buf.String(), "/orders/:id") {
+		t.Fatalf("empty-StaticPaths route not warned about; log was:\n%s", buf.String())
 	}
 }
 

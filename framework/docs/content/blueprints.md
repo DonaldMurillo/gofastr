@@ -845,10 +845,12 @@ every strict check (see `gofastr docs strict-mode`):
 - **Axe gate** (`axe_test.go`) — boots the built binary and runs
   axe-core over every sitemap page under both color schemes, in two
   passes: an anonymous browser for public and guest-only pages, and a
-  separately-authenticated browser (seeded admin) for gated screens —
-  one shared login would make guest pages redirect and cover the wrong
-  screen. Every scan asserts it landed on the intended route before
-  auditing. Its scans record the axe-coverage manifest strict dev
+  separately-authenticated browser (seeded admin, logged in through the
+  auth battery's HTTP endpoint so no login screen is required) for
+  gated screens — one shared login would make guest pages redirect and
+  cover the wrong screen. Concrete sitemap pages matching a gated
+  dynamic pattern are routed to the authenticated pass too. Every scan
+  asserts it landed on the intended route before auditing. Its scans record the axe-coverage manifest strict dev
   boots verify, so a hand-added screen without a scan fails
   `gofastr dev` with a guided finding (first boot before any test run
   warns instead of failing). Dynamic screens (`/orders/:id`) need a

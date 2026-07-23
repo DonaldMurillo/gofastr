@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -296,6 +297,8 @@ func invalidSitemapBaseURL(base string) string {
 		return "must not carry userinfo"
 	case u.RawQuery != "" || u.Fragment != "":
 		return "must not carry a query or fragment"
+	case u.Path != "" && u.Path != "/":
+		return "must be a bare origin — a deployment path prefix belongs in the static Builder's BasePath, not here (it would be prefixed twice)"
 	}
 	return ""
 }
@@ -332,7 +335,12 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 			continue
 		}
 		if isDynamicRoute(screen.Path) {
-			if _, declares := screen.Component.(app.StaticPathsProvider); !declares {
+			// Demand follows DISCOVERY, not the interface: a StaticPaths
+			// that returns no instances leaves the route just as
+			// invisible to the sitemap-driven gate as no StaticPaths at
+			// all.
+			provider, declares := screen.Component.(app.StaticPathsProvider)
+			if !declares || len(provider.StaticPaths(context.Background())) == 0 {
 				invisible = append(invisible, screen.Path)
 				continue
 			}
@@ -341,7 +349,7 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	}
 	if len(invisible) > 0 {
 		sort.Strings(invisible)
-		slog.Warn("uihost strict: dynamic screens without StaticPaths are invisible to the sitemap and the axe gate — implement StaticPaths(ctx) on them to bring them under coverage",
+		slog.Warn("uihost strict: dynamic screens whose StaticPaths returns no instances (or is not implemented) are invisible to the sitemap and the axe gate — return concrete instances to bring them under coverage",
 			"routes", strings.Join(invisible, ", "))
 	}
 	// No page screens → nothing an axe test could scan; requiring a

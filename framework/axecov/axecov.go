@@ -134,15 +134,20 @@ func normalizePath(raw string) string {
 // `gofastr dev --dir <root> --pkg ./cmd/app` layout):
 //
 //  1. GOFASTR_AXE_COVERAGE_DIR, when set — the explicit override.
-//  2. The nearest ancestor of the working directory containing go.mod
-//     (the module root).
-//  3. The working directory itself, when no module root is found.
+//  2. The nearest ancestor containing go.work — Go's own workspace
+//     rule. A test binary in a workspace's nested module
+//     (/repo/apps/shop) and a dev server at the workspace root
+//     (/repo) both find /repo/go.work, so they resolve the same
+//     directory.
+//  3. Else the nearest ancestor containing go.mod (the module root).
+//  4. Else the working directory itself.
 //
-// In a multi-app monorepo module every app shares the module-root
-// manifest; entries are harmless across apps (a foreign path that
-// resolves in this app's router counts as coverage only if the route
-// actually exists here). Set the env override per app when that
-// sharing is unwanted.
+// Known limitation: several apps sharing one module (or workspace)
+// share one manifest, and coverage is keyed by route path — two strict
+// apps with the same route ("/", "/login") can satisfy each other's
+// check. Set GOFASTR_AXE_COVERAGE_DIR per app (both when running its
+// tests and its server) when that matters; single-app modules — every
+// generated app — are unaffected.
 func DefaultDir() string {
 	if v := os.Getenv("GOFASTR_AXE_COVERAGE_DIR"); v != "" {
 		return v
@@ -151,14 +156,17 @@ func DefaultDir() string {
 	if err != nil {
 		return "."
 	}
-	for dir := wd; ; {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
+	for _, marker := range []string{"go.work", "go.mod"} {
+		for dir := wd; ; {
+			if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return wd
-		}
-		dir = parent
 	}
+	return wd
 }
