@@ -125,10 +125,12 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 	if _, err := s.db.Exec(stmt); err != nil {
 		return err
 	}
-	_, _ = s.db.Exec(fmt.Sprintf(
+	if _, err := s.db.Exec(fmt.Sprintf(
 		"CREATE INDEX IF NOT EXISTS %s_expires_idx ON %s (expires_at)",
 		s.table, s.table,
-	))
+	)); err != nil {
+		return fmt.Errorf("idempotency: create expiry index: %w", err)
+	}
 	return nil
 }
 
@@ -145,6 +147,8 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	// minute per store instance.
 	if last := s.lastReapUnix.Load(); now.Unix()-last > 60 {
 		if s.lastReapUnix.CompareAndSwap(last, now.Unix()) {
+			// best-effort: authoritative reads filter expired rows; this
+			// bounded reap only controls storage growth.
 			_, _ = s.db.ExecContext(ctx,
 				fmt.Sprintf("DELETE FROM %s WHERE expires_at <= %s", s.table, s.placeholder(1)),
 				now,
@@ -184,10 +188,12 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 		// Existing row was expired (or reaped between the failed insert
 		// and this read). Delete any stale row then retry the claim
 		// once — second insert wins now that the conflict is gone.
-		_, _ = s.db.ExecContext(ctx,
+		if _, deleteErr := s.db.ExecContext(ctx,
 			fmt.Sprintf("DELETE FROM %s WHERE key = %s", s.table, s.placeholder(1)),
 			key,
-		)
+		); deleteErr != nil {
+			return nil, false, fmt.Errorf("idempotency: delete expired claim: %w", deleteErr)
+		}
 		res, err = s.db.ExecContext(ctx, s.upsertClaimStmt(),
 			key, fingerprint, now.Add(s.inFlightTTL), now,
 		)

@@ -86,14 +86,19 @@ func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
 	if !isFormRequest(r) {
 		return false
 	}
-	// Primary: Fetch Metadata. Same-origin / same-site / none are safe; a
-	// cross-site form POST (the CSRF shape) is refused.
+	// Primary: Fetch Metadata. Same-origin / none are safe; a cross-site
+	// form POST (the CSRF shape) is refused outright. "same-site" is NOT
+	// sufficient — a form on a sibling subdomain (evil.example.com →
+	// app.example.com) is same-site yet still carries the SameSite
+	// cookie, so it falls through to the Origin-host comparison below.
 	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
-		if sfs == "cross-site" {
+		switch sfs {
+		case "cross-site":
 			writeFormAuthError(w, r, http.StatusForbidden, "cross_site_request")
 			return true
+		case "same-origin", "none":
+			return false
 		}
-		return false
 	}
 	// Fallback for clients without Fetch Metadata: compare Origin host to
 	// the request host. Absent or opaque ("null") Origin can't prove an
@@ -299,7 +304,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// login. The JWT is stateless: handing it out here would let a
 		// password-only caller skip the second factor entirely on any
 		// JWT-authenticated route.
-		if c.mgr.JWT() != nil && !pendingTwoFA {
+		if c.mgr.JWT() != nil && !pendingTwoFA && !cfg.CookieOnly {
 			token, err := c.mgr.JWT().GenerateToken(user)
 			if err == nil {
 				resp["token"] = token

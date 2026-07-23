@@ -16,6 +16,10 @@ import (
 )
 
 func runGenerate(args []string) {
+	if hasHelpFlag(args) && (len(args) == 1 || strings.HasPrefix(args[0], "-")) {
+		printGenerateHelp()
+		return
+	}
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
 		for _, a := range args {
 			if a == "--watch" {
@@ -48,6 +52,29 @@ func runGenerate(args []string) {
 		info("Supported: all, entity, screen, cli, sdk")
 		osExit(1)
 	}
+}
+
+func printGenerateHelp() {
+	fmt.Println(`gofastr generate — generate an app or add owned code
+
+Usage:
+  gofastr generate --from=<gofastr.yml> [--dry-run] [--force]
+  gofastr generate --config=<gofastr.codegen.yml>
+  gofastr generate entity <name> [--out=<dir>] [--dry-run]
+  gofastr generate screen <name> [--out=<dir>] [--dry-run]
+  gofastr generate cli [flags]
+  gofastr generate sdk [flags]
+
+Modes:
+  --from=<path>    Generate a deterministic application from a blueprint
+  --config=<path>  Run configured project generators and extensions
+  entity           Add an editable entity stub through the blueprint pipeline
+  screen           Add an editable server-rendered screen stub
+  cli              Generate a customer-facing CLI for the app API
+  sdk              Generate Go and JavaScript/TypeScript API clients
+
+Run "gofastr docs blueprints", "gofastr docs app-cli", or
+"gofastr docs sdk" for the complete contracts.`)
 }
 
 // generateScaffoldEntity is the `gofastr generate entity <name>` quick-stub
@@ -981,16 +1008,34 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 		}
 		sb.WriteString("\t\t},\n")
 	}
-	if decl.SoftDelete {
+	if decl.Scope != nil {
+		sb.WriteString("\t\tScope: &framework.ScopeConfig{\n")
+		if decl.Scope.SoftDelete {
+			sb.WriteString("\t\t\tSoftDelete: true,\n")
+		}
+		if decl.Scope.MultiTenant {
+			sb.WriteString("\t\t\tMultiTenant: true,\n")
+		}
+		if decl.Scope.TenantField != "" {
+			sb.WriteString(fmt.Sprintf("\t\t\tTenantField: %q,\n", decl.Scope.TenantField))
+		}
+		if decl.Scope.OwnerField != "" {
+			sb.WriteString(fmt.Sprintf("\t\t\tOwnerField: %q,\n", decl.Scope.OwnerField))
+		}
+		if decl.Scope.CrossOwnerRead != "" {
+			sb.WriteString(fmt.Sprintf("\t\t\tCrossOwnerRead: %q,\n", decl.Scope.CrossOwnerRead))
+		}
+		sb.WriteString("\t\t},\n")
+	} else if decl.SoftDelete {
 		sb.WriteString("\t\tSoftDelete: true,\n")
 	}
-	if decl.MultiTenant {
+	if decl.Scope == nil && decl.MultiTenant {
 		sb.WriteString("\t\tMultiTenant: true,\n")
 	}
-	if decl.OwnerField != "" {
+	if decl.Scope == nil && decl.OwnerField != "" {
 		sb.WriteString(fmt.Sprintf("\t\tOwnerField: %q,\n", decl.OwnerField))
 	}
-	if decl.CrossOwnerRead != "" {
+	if decl.Scope == nil && decl.CrossOwnerRead != "" {
 		sb.WriteString(fmt.Sprintf("\t\tCrossOwnerRead: %q,\n", decl.CrossOwnerRead))
 	}
 	if len(decl.SearchFields) > 0 {
@@ -1003,22 +1048,56 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 		}
 		sb.WriteString("},\n")
 	}
-	if literal := renderAccessLiteral(decl.Access); literal != "" {
+	if decl.Exposure != nil {
+		sb.WriteString("\t\tExposure: &framework.ExposureConfig{\n")
+		if decl.Exposure.CRUD != nil {
+			sb.WriteString(fmt.Sprintf("\t\t\tCRUD: boolPtr(%t),\n", *decl.Exposure.CRUD))
+		}
+		if decl.Exposure.MCP {
+			sb.WriteString("\t\t\tMCP: true,\n")
+		}
+		if decl.Exposure.Public {
+			sb.WriteString("\t\t\tPublic: true,\n")
+		}
+		if literal := renderAccessLiteral(decl.Exposure.Access); literal != "" {
+			sb.WriteString("\t\t\tAccess: " + literal + ",\n")
+		}
+		sb.WriteString("\t\t},\n")
+	} else if literal := renderAccessLiteral(decl.Access); literal != "" {
 		sb.WriteString("\t\tAccess: " + literal + ",\n")
 	}
-	if decl.Public {
+	if decl.Exposure == nil && decl.Public {
 		sb.WriteString("\t\tPublic: true,\n")
 	}
-	if decl.CRUD != nil {
+	if decl.Exposure == nil && decl.CRUD != nil {
 		sb.WriteString(fmt.Sprintf("\t\tCRUD: boolPtr(%t),\n", *decl.CRUD))
 	}
-	if decl.MCP {
+	if decl.Exposure == nil && decl.MCP {
 		sb.WriteString("\t\tMCP: true,\n")
 	}
-	if decl.CursorField != "" {
+	if decl.Pagination != nil {
+		sb.WriteString("\t\tPagination: &framework.PaginationConfig{\n")
+		if decl.Pagination.CursorField != "" {
+			sb.WriteString(fmt.Sprintf("\t\t\tCursorField: %q,\n", decl.Pagination.CursorField))
+		}
+		if len(decl.Pagination.CursorFields) > 0 {
+			sb.WriteString("\t\t\tCursorFields: []string{")
+			for i, field := range decl.Pagination.CursorFields {
+				if i > 0 {
+					sb.WriteString(", ")
+				}
+				sb.WriteString(fmt.Sprintf("%q", field))
+			}
+			sb.WriteString("},\n")
+		}
+		if decl.Pagination.MaxListLimit != 0 {
+			sb.WriteString(fmt.Sprintf("\t\t\tMaxListLimit: %d,\n", decl.Pagination.MaxListLimit))
+		}
+		sb.WriteString("\t\t},\n")
+	} else if decl.CursorField != "" {
 		sb.WriteString(fmt.Sprintf("\t\tCursorField: %q,\n", decl.CursorField))
 	}
-	if len(decl.CursorFields) > 0 {
+	if decl.Pagination == nil && len(decl.CursorFields) > 0 {
 		sb.WriteString("\t\tCursorFields: []string{")
 		for i, field := range decl.CursorFields {
 			if i > 0 {

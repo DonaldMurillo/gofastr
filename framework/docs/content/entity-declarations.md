@@ -24,6 +24,37 @@
 > blog's comments).
 
 An entity is registered in Go with `app.Entity(name, framework.EntityConfig{…})`.
+
+Related behavior is grouped so security and delivery choices are visible at a
+glance:
+
+```go
+crud := true
+app.Entity("tickets", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "title", Type: schema.String, Required: true},
+    },
+    Scope: &framework.ScopeConfig{
+        OwnerField: "user_id",
+        SoftDelete: true,
+    },
+    Pagination: &framework.PaginationConfig{
+        CursorFields: []string{"created_at", "id"},
+        MaxListLimit: 100,
+    },
+    Exposure: &framework.ExposureConfig{
+        CRUD: &crud,
+        MCP: true,
+        Access: framework.AccessControl{Read: "tickets:read"},
+    },
+})
+```
+
+Blueprint entities accept the same `scope:`, `pagination:`, and `exposure:`
+maps. The historical flat fields remain source-compatible through the v0.40
+line and are marked deprecated in Go docs; grouped values are authoritative
+when both forms are present. Flat fields are removable no earlier than v0.41,
+under the [stability policy](stability.md).
 This is the primary, fully-supported way to declare an entity:
 
 ```go

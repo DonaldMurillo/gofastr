@@ -77,6 +77,52 @@ func TestLoadBlueprintSupportsJSONInput(t *testing.T) {
 	}
 }
 
+func TestBlueprintGroupedEntityConfigsDecodeAndGenerate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, `
+app:
+  name: Grouped
+entities:
+  - name: notes
+    scope:
+      owner_field: user_id
+      soft_delete: true
+    pagination:
+      cursor_fields: [created_at, id]
+      max_list_limit: 50
+    exposure:
+      crud: false
+      mcp: true
+      access:
+        read: notes:read
+    fields:
+      - name: title
+        type: string
+`)
+	bp, err := loadBlueprint(path)
+	if err != nil {
+		t.Fatalf("loadBlueprint: %v", err)
+	}
+	decl := bp.Entities[0]
+	if decl.Scope == nil || decl.Pagination == nil || decl.Exposure == nil {
+		t.Fatalf("grouped declarations not decoded: %#v", decl)
+	}
+	generated, err := renderEntityRegistration(decl)
+	if err != nil {
+		t.Fatalf("renderEntityRegistration: %v", err)
+	}
+	for _, want := range []string{
+		"Scope: &framework.ScopeConfig{", `OwnerField: "user_id"`,
+		"Pagination: &framework.PaginationConfig{", "MaxListLimit: 50",
+		"Exposure: &framework.ExposureConfig{", "CRUD: boolPtr(false)",
+	} {
+		if !strings.Contains(generated, want) {
+			t.Errorf("generated entity missing %q:\n%s", want, generated)
+		}
+	}
+}
+
 func TestLoadBlueprintMergesDirectoryInStableOrder(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "01-app.yml"), `
@@ -701,6 +747,18 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName["main.go"], `runtimeIsolation, err := isolation.Resolve(".")`)
 	assertContains(t, byName["main.go"], `runtimeIsolation.Database(driver, dsn)`)
 	assertContains(t, byName["main.go"], `runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))`)
+}
+
+func TestBlueprintPublicOpenAPIEmitsExplicitFrameworkOption(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, "app:\n  name: Docs\n  module: example.com/docs\n  public_openapi: true\n")
+	bp, err := loadBlueprint(path)
+	if err != nil {
+		t.Fatalf("loadBlueprint: %v", err)
+	}
+	got := renderBlueprintMain(bp)
+	assertContains(t, got, `framework.WithPublicOpenAPI(),`)
 }
 
 func TestBlueprintAuthMountsSessionMW(t *testing.T) {

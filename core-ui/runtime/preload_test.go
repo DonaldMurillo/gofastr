@@ -27,6 +27,15 @@ func TestNeededModules_SingleMarker(t *testing.T) {
 	}
 }
 
+func TestNeededModules_SidebarCollapse(t *testing.T) {
+	html := `<button data-fui-sidebar-collapse>Collapse</button>`
+	got := NeededModules(html)
+	want := []string{"sidebar"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("NeededModules(%q) = %v, want %v", html, got, want)
+	}
+}
+
 func TestNeededModules_MultipleMarkersDedupSorted(t *testing.T) {
 	// popover, widgets (twice), toasts, lightbox
 	html := `

@@ -68,18 +68,19 @@ type BlueprintApp struct {
 	// BaseURL seeds the generated appBaseURL() fallback — the canonical
 	// origin for sitemap <loc> entries (app.base_url). The APP_BASE_URL
 	// env var always wins at runtime; empty falls back to localhost.
-	BaseURL   string
-	Module    string
-	DBDriver  string
-	DBURL     string
-	StaticDir string
-	OutputDir string
-	APIPrefix string
-	Theme     map[string]string
-	ThemeDark map[string]string // optional dark-scheme color overrides (app.theme.dark)
-	Auth      BlueprintAuth
-	Admin     BlueprintAdmin
-	PWA       BlueprintPWA
+	BaseURL       string
+	Module        string
+	DBDriver      string
+	DBURL         string
+	StaticDir     string
+	OutputDir     string
+	APIPrefix     string
+	PublicOpenAPI bool
+	Theme         map[string]string
+	ThemeDark     map[string]string // optional dark-scheme color overrides (app.theme.dark)
+	Auth          BlueprintAuth
+	Admin         BlueprintAdmin
+	PWA           BlueprintPWA
 	// LLMMD emits uihost.WithPublicLLMMD() so every registered screen
 	// serves its /llm.md document (plus the /llm-pages.md index).
 	// Independent of PWA — a screen inventory is schema disclosure, so
@@ -390,7 +391,7 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 	if err != nil {
 		return BlueprintApp{}, err
 	}
-	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true}
+	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true}
 	if err := rejectUnknownKeys(m, allowed, "app"); err != nil {
 		return BlueprintApp{}, err
 	}
@@ -408,6 +409,9 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 	}
 	if v, ok := m["api_prefix"]; ok {
 		app.APIPrefix = strings.Trim(stringValue(v), "/")
+	}
+	if v, ok := m["public_openapi"]; ok {
+		app.PublicOpenAPI = boolValue(v)
 	}
 	if dbNode := m["db"]; dbNode != nil {
 		db, err := expectMap(dbNode, "app.db")
@@ -574,7 +578,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		if err != nil {
 			return nil, nil, err
 		}
-		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "cross_owner_read": true, "search_fields": true, "access": true, "public": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
+		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "scope": true, "pagination": true, "exposure": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "cross_owner_read": true, "search_fields": true, "access": true, "public": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("entities[%d]", i)); err != nil {
 			return nil, nil, err
 		}
@@ -599,6 +603,23 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		if m["crud"] != nil {
 			v := boolValue(m["crud"])
 			decl.CRUD = &v
+		}
+		scope, err := decodeEntityScope(m["scope"], fmt.Sprintf("entities[%d].scope", i))
+		if err != nil {
+			return nil, nil, err
+		}
+		if scope != nil {
+			decl.Scope = scope
+			decl.SoftDelete, decl.MultiTenant = scope.SoftDelete, scope.MultiTenant
+			decl.OwnerField, decl.CrossOwnerRead = scope.OwnerField, scope.CrossOwnerRead
+		}
+		pagination, err := decodeEntityPagination(m["pagination"], fmt.Sprintf("entities[%d].pagination", i))
+		if err != nil {
+			return nil, nil, err
+		}
+		if pagination != nil {
+			decl.Pagination = pagination
+			decl.CursorField, decl.CursorFields = pagination.CursorField, pagination.CursorFields
 		}
 		fields, err := decodeFields(m["fields"])
 		if err != nil {
@@ -659,6 +680,14 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			return nil, nil, err
 		}
 		decl.Access = access
+		exposure, err := decodeEntityExposure(m["exposure"], fmt.Sprintf("entities[%d].exposure", i))
+		if err != nil {
+			return nil, nil, err
+		}
+		if exposure != nil {
+			decl.Exposure = exposure
+			decl.CRUD, decl.MCP, decl.Public, decl.Access = exposure.CRUD, exposure.MCP, exposure.Public, exposure.Access
+		}
 		endpoints, stubs, err := decodeEntityEndpoints(decl.Name, m["endpoints"])
 		if err != nil {
 			return nil, nil, err
@@ -668,6 +697,64 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		out = append(out, decl)
 	}
 	return out, endpointStubs, nil
+}
+
+func decodeEntityScope(node *coreyaml.Node, context string) (*fwentity.ScopeDeclaration, error) {
+	if node == nil {
+		return nil, nil
+	}
+	m, err := expectMap(node, context)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectUnknownKeys(m, map[string]bool{"soft_delete": true, "multi_tenant": true, "tenant_field": true, "owner_field": true, "cross_owner_read": true}, context); err != nil {
+		return nil, err
+	}
+	return &fwentity.ScopeDeclaration{
+		SoftDelete: boolValue(m["soft_delete"]), MultiTenant: boolValue(m["multi_tenant"]),
+		TenantField: stringValue(m["tenant_field"]), OwnerField: stringValue(m["owner_field"]),
+		CrossOwnerRead: stringValue(m["cross_owner_read"]),
+	}, nil
+}
+
+func decodeEntityPagination(node *coreyaml.Node, context string) (*fwentity.PaginationDeclaration, error) {
+	if node == nil {
+		return nil, nil
+	}
+	m, err := expectMap(node, context)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectUnknownKeys(m, map[string]bool{"cursor_field": true, "cursor_fields": true, "max_list_limit": true}, context); err != nil {
+		return nil, err
+	}
+	return &fwentity.PaginationDeclaration{
+		CursorField: stringValue(m["cursor_field"]), CursorFields: stringListValue(m["cursor_fields"]),
+		MaxListLimit: intValue(m["max_list_limit"]),
+	}, nil
+}
+
+func decodeEntityExposure(node *coreyaml.Node, context string) (*fwentity.ExposureDeclaration, error) {
+	if node == nil {
+		return nil, nil
+	}
+	m, err := expectMap(node, context)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectUnknownKeys(m, map[string]bool{"crud": true, "mcp": true, "public": true, "access": true}, context); err != nil {
+		return nil, err
+	}
+	var crud *bool
+	if m["crud"] != nil {
+		v := boolValue(m["crud"])
+		crud = &v
+	}
+	access, err := decodeEntityAccess(m["access"], context+".access")
+	if err != nil {
+		return nil, err
+	}
+	return &fwentity.ExposureDeclaration{CRUD: crud, MCP: boolValue(m["mcp"]), Public: boolValue(m["public"]), Access: access}, nil
 }
 
 // blueprintHasEntityAccess reports whether any entity declares an `access:`
@@ -4182,6 +4269,10 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\t\t// trusted production /mcp into runtime control.\n")
 	sb.WriteString("\t\tframework.WithMCP(),\n")
 	sb.WriteString("\t\tframework.WithMCPIntrospection(),\n")
+	if bp.App.PublicOpenAPI {
+		sb.WriteString("\t\t// Explicit schema disclosure requested by app.public_openapi.\n")
+		sb.WriteString("\t\tframework.WithPublicOpenAPI(),\n")
+	}
 	sb.WriteString("\t}\n")
 	sb.WriteString("\tif db != nil {\n\t\toptions = append(options, framework.WithDB(db))\n\t}\n")
 	sb.WriteString("\tfwApp := framework.NewApp(options...)\n")

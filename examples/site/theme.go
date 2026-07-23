@@ -53,8 +53,8 @@ func createTheme() style.Theme {
 		// framework's `default-src 'self'` CSP. Geist/JetBrains Mono in the
 		// prototype become the closest system equivalents. Design intent of
 		// "sans + mono only" survives the substitution.
-		FontBody:    "-apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', system-ui, sans-serif",
-		FontHeading: "-apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', system-ui, sans-serif",
+		FontBody:    "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+		FontHeading: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
 		FontMono:    "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace",
 
 		// Radii — v2 uses 4/6/10 in tightening order.

@@ -12,48 +12,22 @@ import (
 //
 //  1. Catch regressions: if a module grows past its current high-water
 //     mark, fail loudly. Cheaper than waiting for a Lighthouse drop.
-//  2. Surface known debt: the runtime-size goals (see
-//     runtime-minification.md) are tighter than today's
-//     sizes (core ≤ 12 KB gz, each demand module ≤ 3 KB gz). The
-//     overrides below name each module that's currently above target
-//     so the gap is visible in the test, not buried in a doc.
+//  2. Pin the runtime-size goals from runtime-minification.md:
+//     core ≤ 12 KB gz and every demand module ≤ 3 KB gz.
 //
-// When you shrink a module: tighten its override toward the
-// target. When you delete an override entirely: the module meets the
-// default budget. Never raise an override to silence a regression —
-// fix the module instead.
+// Never add or raise an override to silence a regression: split or shrink the
+// module instead.
 func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	const (
 		coreGoalGZ   = 12 * 1024
 		moduleGoalGZ = 3 * 1024
 	)
 
-	// Current high-water marks. Treat each override as a TODO to
-	// shrink toward the goal above. Update DOWN when a module
-	// shrinks; never update up.
-	//
-	// Post-minify the bundled runtime meets the 12 KB gz goal on its
-	// own; widgets is the only module that still needs further carving
-	// to hit the per-module 3 KB goal (lightbox cleared it).
-	moduleOverrides := map[string]int{
-		// goal 3 KB. Bulk: focus-trap + modal stack + dismiss machinery.
-		// Net DOWN from 5120: the widget-poll loop moved to the
-		// demand-loaded poll module (#112, −320 B), then the
-		// data-fui-rpc-refresh cross-widget target read added back +21 B.
-		"widgets": 4821,
-	}
-	// 12 KB (12288) is the goal; the extra bytes are (a) the
-	// screen-group-aware SPA nav fix (#89, +12 B gz after golfing) and
-	// (b) the #112 stateless-session rollover recovery (+86 B gz):
-	// partial navs rewire the SSE meta from X-Gofastr-Session, and
-	// cross-layout navs copy the freshly-fetched head's meta — without
-	// both, a restart/key-rotation strands SSE in a 401 reconnect loop
-	// until a hard reload. Golfed (shared sseMeta accessor, no
-	// encodeURIComponent on the base64url id); the remainder is
-	// irreducible recovery logic that must live in core (it runs during
-	// navigation, before any demand module is guaranteed loaded).
-	// TODO: reclaim toward the 12288 goal.
-	const coreOverride = 12406
+	// No overrides: optional widget form helpers and shortcut/autogrow
+	// behavior live in marker-driven demand modules, keeping both core and
+	// every feature module within their real budgets.
+	moduleOverrides := map[string]int{}
+	const coreOverride = 0
 
 	core, err := RuntimeJS()
 	if err != nil {

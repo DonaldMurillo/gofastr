@@ -19,6 +19,8 @@ results, the harness contract) are exempt — the exemption list lives in
   scoping + RBAC → customize in plain Go → deploy.
 - [Comparison](comparison.md) — vs PocketBase, Encore, Wasp, and
   hand-rolled Gin+sqlc; weaknesses stated honestly.
+- [API stability](stability.md) — compatibility windows, deprecation rules,
+  experimental exclusions, and the v1 semantic-versioning promise.
 
 ## Architecture & conventions
 

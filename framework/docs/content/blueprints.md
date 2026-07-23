@@ -134,6 +134,9 @@ app:
   description: Freight quotes in seconds.   # site meta description (derived from entities when omitted)
   base_url: https://demo.example            # sitemap origin fallback; APP_BASE_URL env wins
   module: example.com/demo
+  # Explicitly expose /openapi.json. Omit this to keep schema discovery
+  # authenticated by default.
+  public_openapi: false
   theme:
     background: "#101820"
     primary: "#F2AA4C"

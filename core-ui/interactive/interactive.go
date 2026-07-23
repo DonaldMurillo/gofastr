@@ -476,6 +476,8 @@ func injectAttr(html render.HTML, key, value string) render.HTML {
 	if idx == -1 {
 		return html
 	}
+	// safe-html: the source is already typed HTML and a is emitted by
+	// render.Attr, which validates the key and escapes the value.
 	return render.HTML(s[:idx] + " " + a + s[idx:])
 }
 
@@ -498,6 +500,7 @@ func injectAttrs(html render.HTML, attrs map[string]string) render.HTML {
 	if buf.Len() == 0 {
 		return html
 	}
+	// safe-html: every fragment in buf came from render.Attr.
 	return render.HTML(s[:idx] + buf.String() + s[idx:])
 }
 
@@ -527,6 +530,7 @@ func wrapWithAction(html render.HTML, action Action) render.HTML {
 		return html
 	}
 
+	// safe-html: every fragment in attrStr came from render.Attr.
 	return render.HTML(s[:idx] + attrStr.String() + s[idx:])
 }
 

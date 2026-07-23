@@ -1204,3 +1204,73 @@ func TestE2EInteractive_WorkspacePanes(t *testing.T) {
 		t.Errorf("customer detail did not load into the tertiary pane: %q", customer)
 	}
 }
+
+func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var tablet struct {
+		InlineNav string  `json:"inlineNav"`
+		Drawer    string  `json:"drawer"`
+		SearchH   float64 `json:"searchH"`
+		Overflow  float64 `json:"overflow"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(1024, 768),
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitReady("body"),
+		chromedp.Evaluate(`(() => {
+			const nav = document.querySelector('.ui-site-header__links');
+			const drawer = document.querySelector('.ui-site-header__mobile');
+			const search = document.querySelector('.site-cmd');
+			return {
+				inlineNav: getComputedStyle(nav).display,
+				drawer: getComputedStyle(drawer).display,
+				searchH: search.getBoundingClientRect().height,
+				overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
+			};
+		})()`, &tablet),
+	); err != nil {
+		t.Fatalf("tablet home: %v", err)
+	}
+	if tablet.InlineNav != "none" || tablet.Drawer == "none" {
+		t.Errorf("tablet header did not collapse: %+v", tablet)
+	}
+	if tablet.SearchH > 44 || tablet.Overflow > 0 {
+		t.Errorf("tablet header is cramped or overflowing: %+v", tablet)
+	}
+
+	var phone struct {
+		CTAEnd   float64 `json:"ctaEnd"`
+		Overflow float64 `json:"overflow"`
+		MinTouch float64 `json:"minTouch"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 844),
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitReady("body"),
+		chromedp.Evaluate(`(() => {
+			const cta = document.querySelector('.hero__ctas');
+			const headerTargets = [...document.querySelectorAll('.site-cmd, .site-icon, .ui-site-header__mobile-toggle')]
+				.map(el => el.getBoundingClientRect())
+				.filter(rect => rect.width > 0 && rect.height > 0)
+				.map(rect => Math.min(rect.width, rect.height));
+			return {
+				ctaEnd: cta.getBoundingClientRect().bottom,
+				overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+				minTouch: Math.min(...headerTargets)
+			};
+		})()`, &phone),
+	); err != nil {
+		t.Fatalf("phone home: %v", err)
+	}
+	if phone.CTAEnd > 844 {
+		t.Errorf("primary CTA falls below the first phone viewport: bottom=%.1f", phone.CTAEnd)
+	}
+	if phone.Overflow > 0 || phone.MinTouch < 44 {
+		t.Errorf("phone layout overflow or undersized header target: %+v", phone)
+	}
+}

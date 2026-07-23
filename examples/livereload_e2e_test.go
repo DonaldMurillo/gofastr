@@ -95,6 +95,12 @@ func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 		"GOFASTR_ISOLATION=off",
 		"PORT="+port,
 		"DATABASE_URL=file:"+filepath.Join(t.TempDir(), s.name+".db"),
+		// Isolate the axe-coverage root: this test asserts HMR READINESS,
+		// not a11y coverage. The repo-root manifest is shared across every
+		// example — when a parallel package's axe tests record into it
+		// first, strict mode flips from absence-warns to gap-fails for
+		// this app's screens and the boot panics, scheduling-dependent.
+		"GOFASTR_AXE_COVERAGE_DIR="+t.TempDir(),
 	)
 	cmd.Env = append(cmd.Env, s.env...)
 	var out syncBuffer

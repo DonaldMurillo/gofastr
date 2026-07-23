@@ -543,7 +543,8 @@ func (s *LiveDashboardScreen) ScreenType() app.ScreenType { return app.ScreenPag
 func (s *LiveDashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	snap := liveDash.snapshot()
 
-	return html.Main(html.MainConfig{Class: "livedash-page"},
+	// The site layout already owns the document's sole <main> landmark.
+	return html.Div(html.DivConfig{Class: "livedash-page"},
 		// Connection-health banner. Sits above the content. SSESilenceMs
 		// trips it if the ticker goes quiet (the runtime polls
 		// window.__gofastr.sseStatus.lastEventAt). The Retry button

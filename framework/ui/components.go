@@ -314,6 +314,8 @@ func injectAttrs(input render.HTML, attrs string) render.HTML {
 	if end > 0 && s[end-1] == '/' {
 		insertAt = end - 1
 	}
+	// safe-html: attrs is assembled exclusively by component-owned escaped
+	// attribute renderers before it reaches this splice helper.
 	return render.HTML(s[:insertAt] + attrs + s[insertAt:])
 }
 

@@ -90,6 +90,7 @@ func NewIsolatedDBWithName(t *testing.T, adminDSN string, migrate func(*sql.DB) 
 		defer dropCancel()
 		// Terminate any lingering connections before drop — Postgres
 		// rejects DROP DATABASE while sessions remain open.
+		// best-effort: the checked DROP below reports any remaining leak.
 		_, _ = admin.ExecContext(dropCtx,
 			`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, dbName)
 		if _, derr := admin.ExecContext(dropCtx, `DROP DATABASE IF EXISTS "`+dbName+`"`); derr != nil {
@@ -197,6 +198,7 @@ func dropCarvedDB(t *testing.T, admin *sql.DB, dbName string, _ error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// best-effort: the checked DROP below reports any remaining leak.
 	_, _ = admin.ExecContext(ctx,
 		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, dbName)
 	if _, derr := admin.ExecContext(ctx, `DROP DATABASE IF EXISTS "`+dbName+`"`); derr != nil {

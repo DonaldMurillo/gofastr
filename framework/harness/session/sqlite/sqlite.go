@@ -289,6 +289,8 @@ func (s *Store) RecordToolOutcome(ctx context.Context, outcome session.ToolOutco
 		outcome.ResultRef,
 	)
 	if err == nil {
+		// best-effort: the row is durable in WAL; a checkpoint only advances
+		// the main database file and can safely retry later.
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(FULL)`)
 	}
 	return err

@@ -24,6 +24,10 @@ import (
 // codeText — shared inline <code> span used by most pages.
 func codeText(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 
+// cardCopy keeps dense index-card summaries scannable. Canonical docs may use
+// em dashes for long-form prose; the index uses lighter sentence punctuation.
+func cardCopy(s string) string { return strings.ReplaceAll(s, " — ", ": ") }
+
 // boolPtr returns a pointer to b — used for *bool config fields like
 // ui.CalloutConfig.Landmark where nil means "default" and false must be
 // distinguishable from unset.
@@ -86,7 +90,7 @@ func gsHero() render.HTML {
 			render.Text("From cold machine to a running app in four minutes."),
 		),
 		html.Paragraph(html.TextConfig{Class: "lede"},
-			render.Text("Install the CLI, scaffold an app, declare an entity, run it. Every command in this guide is real — paste it into a terminal and it works."),
+			render.Text("Install the CLI, scaffold an app, declare an entity, run it. Every command in this guide is real. Paste it into a terminal and it works."),
 		),
 	)
 	return html.Section(html.SectionConfig{Class: "gs-hero", Label: "Get started"},
@@ -146,7 +150,7 @@ func gsBody() render.HTML {
 	step1 := step("s1", "01", "Install", "~30s",
 		html.Paragraph(html.TextConfig{}, render.Text("One binary covers scaffold, migrate, dev, build, test, and the doc browser. Get it from GitHub:")),
 		termBlock("$ install",
-			render.Text("$ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest\n"),
+			render.Text("$ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@"+siteInstallTarget()+"\n"),
 			o("$ gofastr --version\n"),
 			ok("gofastr v"+siteVersion+"\n"),
 		),
@@ -154,17 +158,17 @@ func gsBody() render.HTML {
 	)
 
 	step2 := step("s2", "02", "Scaffold", "~45s",
-		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/, a home screen in screens/, a versioned migration, DESIGN.md, a gofastr.yml project config, and the agent onboarding files (AGENTS.md + agents/, CLAUDE.md) — then initializes git.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/, a home screen in screens/, a versioned migration, DESIGN.md, a gofastr.yml project config, and the agent onboarding files (AGENTS.md + agents/, CLAUDE.md), then initializes git.")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
-			ok("→ created blog/ — main.go, entities/, screens/, gofastr.yml, DESIGN.md, AGENTS.md, CLAUDE.md\n"),
+			ok("→ created blog/: main.go, entities/, screens/, gofastr.yml, DESIGN.md, AGENTS.md, CLAUDE.md\n"),
 			ok("→ next: cd blog && go mod tidy && gofastr dev\n"),
 		),
-		html.Paragraph(html.TextConfig{}, render.Text("Open the scaffolded "), codeText("main.go"), render.Text(" — it's short, it's yours, and every registration in it is plain Go. Read it.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Open the scaffolded "), codeText("main.go"), render.Text(". It's short, it's yours, and every registration in it is plain Go. Read it.")),
 	)
 
 	step3 := step("s3", "03", "The entity", "~60s",
-		html.Paragraph(html.TextConfig{}, render.Text("The scaffold already declared one. Open "), codeText("entities/entities.go"), render.Text(" — one declaration is the table, REST CRUD, validation, an OpenAPI spec, and a typed query builder:")),
+		html.Paragraph(html.TextConfig{}, render.Text("The scaffold already declared one. Open "), codeText("entities/entities.go"), render.Text(". One declaration is the table, REST CRUD, validation, an OpenAPI spec, and a typed query builder:")),
 		codeBlock("blog/entities/entities.go", []render.HTML{
 			ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" entity."), ty("EntityConfig"), pn("{")),
 			ln(render.Text("  Fields"), pn(":"), render.Text(" []schema."), ty("Field"), pn("{")),
@@ -175,27 +179,27 @@ func gsBody() render.HTML {
 			ln(render.Text("  CRUD"), pn(":"), render.Text(" boolPtr("), kw("true"), pn("),")),
 			ln(pn("})")),
 		}),
-		html.Paragraph(html.TextConfig{}, render.Text("The matching versioned migration is next to it in the same file — "), codeText("gofastr docs migrations"), render.Text(" covers how those run.")),
+		html.Paragraph(html.TextConfig{}, render.Text("The matching versioned migration is next to it in the same file. "), codeText("gofastr docs migrations"), render.Text(" covers how those run.")),
 	)
 
 	step4 := step("s4", "04", "Run it", "~60s",
-		html.Paragraph(html.TextConfig{}, render.Text("Resolve dependencies once, then start the dev server — it rebuilds on save, reloads the browser, and hands your coding agent the app over MCP.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Resolve dependencies once, then start the dev server. It rebuilds on save, reloads the browser, and hands your coding agent the app over MCP.")),
 		termBlock("$ run",
 			render.Text("$ go mod tidy\n"),
 			render.Text("$ gofastr dev\n"),
 			ok("→ Watching . for changes (.go, .js, .css, .html, .md)...\n"),
-			ok("→ blog server ready — http://localhost:8080\n"),
+			ok("→ blog server ready: http://localhost:8080\n"),
 		),
-		html.Paragraph(html.TextConfig{}, render.Text("Open "), codeText("localhost:8080"), render.Text(" — the scaffolded home screen renders. Then hit the API from a second terminal:")),
+		html.Paragraph(html.TextConfig{}, render.Text("Open "), codeText("localhost:8080"), render.Text(". The scaffolded home screen renders. Then hit the API from a second terminal:")),
 		termBlock("$ probe",
 			o("$ curl -s http://localhost:8080/posts\n"),
 			ok("{\"error\":\"authentication required\",\"success\":false,…}   # 401\n"),
 		),
-		html.Paragraph(html.TextConfig{}, render.Text("That 401 is the point: auto-CRUD refuses anonymous requests unless you opt out. Add "), codeText("Public: true"), render.Text(" to the entity, save, and the dev server rebuilds — the same curl now answers "), codeText("{\"data\":[]}"), render.Text(". Wiring real login instead is the auth battery ("), codeText("gofastr docs auth"), render.Text(").")),
+		html.Paragraph(html.TextConfig{}, render.Text("That 401 is the point: auto-CRUD refuses anonymous requests unless you opt out. Add "), codeText("Public: true"), render.Text(" to the entity, save, and the dev server rebuilds. The same curl now answers "), codeText("{\"data\":[]}"), render.Text(". Wiring real login instead is the auth battery ("), codeText("gofastr docs auth"), render.Text(").")),
 	)
 
 	step5 := step("s5", "05", "First page", "~60s",
-		html.Paragraph(html.TextConfig{}, render.Text("Add a second server-rendered page. A screen is a Go struct whose Render returns the markup — the scaffolded home screen in "), codeText("screens/home.go"), render.Text(" is the pattern:")),
+		html.Paragraph(html.TextConfig{}, render.Text("Add a second server-rendered page. A screen is a Go struct whose Render returns the markup. The scaffolded home screen in "), codeText("screens/home.go"), render.Text(" is the pattern:")),
 		codeBlock("blog/screens/about.go", []render.HTML{
 			ln(kw("type"), render.Text(" "), ty("AboutScreen"), render.Text(" "), kw("struct"), pn("{}")),
 			ln(render.Text("")),
@@ -204,8 +208,8 @@ func gsBody() render.HTML {
 			ln(render.Text("  "), kw("return"), render.Text(" ui."), fn_("PageHeader"), pn("("), render.Text("ui."), ty("PageHeaderConfig"), pn("{"), render.Text("Title"), pn(":"), render.Text(" "), str_(`"About"`), pn("})")),
 			ln(pn("}")),
 		}),
-		html.Paragraph(html.TextConfig{}, render.Text("Register it in "), codeText("main.go"), render.Text(" next to the home screen — "), codeText(`site.Register("/about", &screens.AboutScreen{}, nil)`), render.Text(" — save, and the dev server serves it.")),
-		callout("Tip", "Run `gofastr docs` to browse the embedded docs offline — entity-declarations, query-dsl, hooks, all of it."),
+		html.Paragraph(html.TextConfig{}, render.Text("Register it in "), codeText("main.go"), render.Text(" next to the home screen: "), codeText(`site.Register("/about", &screens.AboutScreen{}, nil)`), render.Text(". Save, and the dev server serves it.")),
+		callout("Tip", "Run `gofastr docs` to browse all embedded docs offline, including entity-declarations, query-dsl, and hooks."),
 	)
 
 	step6 := step("s6", "06", "What you have", "now",
@@ -217,7 +221,7 @@ func gsBody() render.HTML {
 				html.ListItem(html.ListItemConfig{}, render.Text("A posts entity: REST CRUD, session-gated by default")),
 				html.ListItem(html.ListItemConfig{}, render.Text("A versioned SQL migration, already applied")),
 				html.ListItem(html.ListItemConfig{}, render.Text("An OpenAPI 3 spec (auth-gated; Swagger UI at /api/docs/)")),
-				html.ListItem(html.ListItemConfig{}, render.Text("MCP under gofastr dev: posts_list/posts_create plus app_routes, framework_docs_search — your coding agent reads the running app")),
+				html.ListItem(html.ListItemConfig{}, render.Text("MCP under gofastr dev: posts_list/posts_create plus app_routes and framework_docs_search, so your coding agent reads the running app")),
 				html.ListItem(html.ListItemConfig{}, render.Text("AGENTS.md + agents/ + DESIGN.md, generated for the agent you build with")),
 			),
 		),
@@ -263,7 +267,7 @@ type ConceptsIndexScreen struct{}
 
 func (s *ConceptsIndexScreen) ScreenTitle() string { return "Docs" }
 func (s *ConceptsIndexScreen) ScreenDescription() string {
-	return "Every feature, grouped by what you're trying to do — not alphabetically."
+	return "Every feature, grouped by what you're trying to do, not alphabetically."
 }
 func (s *ConceptsIndexScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -339,7 +343,7 @@ func intentSection(it docIntent) render.HTML {
 			Class: "doc",
 			Content: render.Join(
 				html.Div(html.DivConfig{Class: "doc__title"}, render.Text(d.Title)),
-				html.Div(html.DivConfig{Class: "doc__desc"}, render.Text(d.Desc)),
+				html.Div(html.DivConfig{Class: "doc__desc"}, render.Text(cardCopy(d.Desc))),
 				html.Div(html.DivConfig{Class: "doc__meta"}, render.Text("/docs/"+d.Slug)),
 			),
 		}))
@@ -357,7 +361,7 @@ func intentSection(it docIntent) render.HTML {
 			html.Heading(html.HeadingConfig{Level: 2, Class: "intent__title"}, render.Text(it.Title)),
 			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(fmt.Sprintf("%d docs", len(it.Docs)))),
 		),
-		html.Paragraph(html.TextConfig{Class: "intent__lede"}, render.Text(it.Lede)),
+		html.Paragraph(html.TextConfig{Class: "intent__lede"}, render.Text(cardCopy(it.Lede))),
 		html.Div(html.DivConfig{Class: "docs"}, cards...),
 		html.Div(html.DivConfig{Class: "path-strip"}, stripChildren...),
 	)

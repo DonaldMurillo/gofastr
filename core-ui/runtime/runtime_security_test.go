@@ -86,7 +86,7 @@ func TestSchemeGuardStripsInteriorControls(t *testing.T) {
 // Surfaces: core dispatchRPC (runtime.js), widget-scoped dispatchRPC
 // (src/widgets.js), infinite-scroll fetch (src/infinitescroll.js),
 // sortablelist reorder POST (src/sortablelist.js), and the kiln-tool
-// POST (src/widgets.js) — every state-changing fetch() in the runtime.
+// POST (runtime.js) — every state-changing fetch() in the runtime.
 func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 	surfaces := []string{
 		"runtime.js",
@@ -108,14 +108,12 @@ func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 		}
 	}
 
-	// The kiln-tool POST in widgets.js is a distinct fetch() site from the
-	// widget dispatchRPC; widgets.js reads the csrf meta for dispatchRPC,
-	// so the file-level check above passes even while the kiln-tool POST
-	// omits the header. Pin that the kiln-tool POST itself forwards CSRF.
-	w := readSrc(t, filepath.Join("src", "widgets.js"))
-	tIdx := strings.Index(w, "/kiln/tool/")
+	// The kiln-tool POST is a distinct fetch site from dispatchRPC. Pin the
+	// call-site window so a file-level CSRF match elsewhere cannot mask it.
+	w := readSrc(t, "runtime.js")
+	tIdx := strings.Index(w, "fetch('/kiln/tool/")
 	if tIdx < 0 {
-		t.Fatal("could not locate kiln-tool POST in src/widgets.js")
+		t.Fatal("could not locate kiln-tool POST in runtime.js")
 	}
 	// The headers block sits just before/around the URL in the kiln-tool
 	// handler; scan a window spanning both sides of the call site.
@@ -127,8 +125,8 @@ func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 	if end > len(w) {
 		end = len(w)
 	}
-	if !strings.Contains(w[start:end], "X-CSRF-Token") {
-		t.Error("SECURITY: [csrf] src/widgets.js kiln-tool POST (/kiln/tool/) omits X-CSRF-Token — the auth.CSRF middleware rejects the state-changing tool invocation")
+	if !strings.Contains(w[start:end], "_csrf") {
+		t.Error("SECURITY: [csrf] runtime.js kiln-tool POST (/kiln/tool/) does not use _csrf — auth.CSRF middleware rejects the JSON RPC")
 	}
 }
 

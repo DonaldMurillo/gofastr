@@ -76,6 +76,19 @@ const tmpl = `+"`"+`<form method="POST" action="/save"></form>`+"`")
 	mustNotHaveRule(t, got, "form-without-csrf")
 }
 
+func TestLintFormPOSTWithRawCSRFFieldAllowed(t *testing.T) {
+	got := lintRules(t, `package x
+const tmpl = `+"`"+`<form method="POST"><input type="hidden" name="_csrf" value="token"></form>`+"`")
+	mustNotHaveRule(t, got, "form-without-csrf")
+}
+
+func TestLintFormPOSTWithDocumentedExemptionAllowed(t *testing.T) {
+	got := lintRules(t, `package x
+// csrf-exempt: handler rejects cross-origin form posts before mutation.
+const tmpl = `+"`"+`<form method="POST"></form>`+"`")
+	mustNotHaveRule(t, got, "form-without-csrf")
+}
+
 // File-level grep of "CSRFInputFromCtx" is too coarse: a file with
 // FIVE forms and one CSRF call only protects one form. The remaining
 // four must be flagged. Compare counts, not presence.
@@ -122,8 +135,23 @@ func render(u string) any { return render.HTML("<p>"+u+"</p>") // safe-html: u i
 
 func TestLintSQLConcatFlagged(t *testing.T) {
 	got := lintRules(t, `package x
-func q(name string) { db.Query("SELECT * FROM users WHERE name='"+name+"'") }`)
+func q(userInput string) { db.Query("SELECT * FROM users WHERE name='"+userInput+"'") }`)
 	mustHaveRule(t, got, "sql-concat-user-input")
+}
+
+func TestLintSQLConcatIgnoredInTestFixtures(t *testing.T) {
+	got := lintRulesNamed(t, "query_test.go", `package x
+func q(userInput string) { db.Query("SELECT * FROM users WHERE name='"+userInput+"'") }`)
+	mustNotHaveRule(t, got, "sql-concat-user-input")
+}
+
+func TestLintSQLConcatDoesNotFlagURLOrDOMIdentifiers(t *testing.T) {
+	got := lintRules(t, `package x
+func links(id string) {
+	_ = "opt-delete-" + id
+	_ = "/items/delete?id=" + id
+}`)
+	mustNotHaveRule(t, got, "sql-concat-user-input")
 }
 
 func TestLintTSkipFlaggedInTestFile(t *testing.T) {
@@ -143,11 +171,29 @@ func TestX(t *testing.T) {
 	mustNotHaveRule(t, got, "test-skip")
 }
 
+func TestLintTSkipAllowedInsideTestingShortGuard(t *testing.T) {
+	got := lintRulesNamed(t, "smoke_test.go", `package x
+import "testing"
+func TestX(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser e2e: -short")
+	}
+}`)
+	mustNotHaveRule(t, got, "test-skip")
+}
+
+func TestLintTSkipAllowedForUnavailableEnvironment(t *testing.T) {
+	got := lintRulesNamed(t, "smoke_test.go", `package x
+import "testing"
+func TestX(t *testing.T) { t.Skip("Postgres unavailable: connection refused") }`)
+	mustNotHaveRule(t, got, "test-skip")
+}
+
 // New: SQL-via-fmt.Sprintf with user input
 func TestLintSQLSprintfFlagged(t *testing.T) {
 	got := lintRules(t, `package x
 import "fmt"
-func q(name string) { db.Query(fmt.Sprintf("SELECT * FROM users WHERE name=%s", name)) }`)
+func q(userInput string) { db.Query(fmt.Sprintf("SELECT * FROM users WHERE name=%s", userInput)) }`)
 	mustHaveRule(t, got, "sql-concat-user-input")
 }
 
@@ -156,7 +202,7 @@ func q(name string) { db.Query(fmt.Sprintf("SELECT * FROM users WHERE name=%s", 
 // keyword in the literal.
 func TestLintQueryBuilderWhereConcatFlagged(t *testing.T) {
 	got := lintRules(t, `package x
-func q(userID string) { qb.Where("user_id = " + userID) }`)
+func q(userInput string) { qb.Where("user_id = " + userInput) }`)
 	mustHaveRule(t, got, "sql-concat-user-input")
 }
 
@@ -216,4 +262,37 @@ func mustNotHaveRule(t *testing.T, got []LintFinding, rule string) {
 			t.Fatalf("rule %q unexpectedly fired: %+v", rule, f)
 		}
 	}
+}
+
+// SQLite/MySQL INSERT variants (OR IGNORE / OR REPLACE / IGNORE) must
+// stay inside the SQL-keyword anchor.
+func TestLintSQLSprintfInsertOrIgnoreFlagged(t *testing.T) {
+	got := lintRules(t, `package x
+func q(userInput string) {
+	_ = fmt.Sprintf("INSERT OR IGNORE INTO notes (body) VALUES (%s)", userInput)
+}`)
+	mustHaveRule(t, got, "sql-concat-user-input")
+}
+
+// Quote-adjacent interpolation is intrinsically a value position —
+// identifiers are never quoted — so it flags regardless of the
+// variable's name.
+func TestLintSQLQuotedConcatFlagsOrdinaryNames(t *testing.T) {
+	got := lintRules(t, `package x
+func q(name string) { db.Query("SELECT * FROM users WHERE name='" + name + "'") }`)
+	mustHaveRule(t, got, "sql-concat-user-input")
+}
+
+func TestLintSQLQuotedSprintfFlagsOrdinaryNames(t *testing.T) {
+	got := lintRules(t, `package x
+func q(id string) { _ = fmt.Sprintf("DELETE FROM sessions WHERE id='%s'", id) }`)
+	mustHaveRule(t, got, "sql-concat-user-input")
+}
+
+// A raw _csrf mention inside a comment must not count as protection.
+func TestLintFormPOSTRawCSRFInCommentDoesNotCount(t *testing.T) {
+	got := lintRules(t, `package x
+// TODO: add name="_csrf" once wired.
+const tmpl = `+"`"+`<form method="POST"><button>Save</button></form>`+"`")
+	mustHaveRule(t, got, "form-without-csrf")
 }

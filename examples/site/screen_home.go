@@ -46,7 +46,7 @@ type HomeScreen struct{}
 // (the app name) to form the <title>, so it must NOT be repeated here.
 func (s *HomeScreen) ScreenTitle() string { return "Full-stack Go that doesn't get in your way" }
 func (s *HomeScreen) ScreenDescription() string {
-	return "An early (v0.x) full-stack Go framework that stays out of your way. Declare your domain in Go and get server-rendered screens, a REST API, MCP tools, migrations, and a typed query builder — plain Go you and your agents can read, edit, and own."
+	return "An early (v0.x) full-stack Go framework that stays out of your way. Declare your domain in Go and get server-rendered screens, a REST API, MCP tools, migrations, and a typed query builder. It stays plain Go that you and your agents can read, edit, and own."
 }
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -74,7 +74,7 @@ func container(children ...render.HTML) render.HTML {
 func heroSection() render.HTML {
 	preAlphaTag := html.Div(
 		html.DivConfig{Class: "mb-lg"},
-		ui.StatusPill(ui.StatusPillConfig{Label: "early · v" + siteVersion, Tone: ui.StatusPillAccent, Dot: true}),
+		ui.StatusPill(ui.StatusPillConfig{Label: "early · " + versionLabel(), Tone: ui.StatusPillAccent, Dot: true}),
 	)
 
 	title := html.Heading(html.HeadingConfig{Level: 1, Class: "hero__title"},
@@ -87,12 +87,12 @@ func heroSection() render.HTML {
 		html.Strong(html.TextConfig{}, render.Text("GoFastr")),
 		render.Text(" is a full-stack Go framework. Declare your domain in Go and get "),
 		html.Strong(html.TextConfig{}, render.Text("server-rendered screens")),
-		render.Text(", REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder — all as plain Go on disk that you own."),
+		render.Text(", REST endpoints, MCP tools, migrations, and typed queries. It stays plain Go on disk that you own."),
 	)
 	lede2 := html.Paragraph(html.TextConfig{Class: "hero__lede"},
-		render.Text("GoFastr is built for both the agentic web and AI-assisted development. The app you ship joins the agentic web: the agents your users bring call your data over MCP, with the same login and permissions your users have. While you build, "),
+		render.Text("During development, "),
 		html.Code(html.TextConfig{}, render.Text("gofastr dev")),
-		render.Text(" hands your coding agent — Claude Code or Codex — the app's routes, config, and logs over MCP, to help build and debug it."),
+		render.Text(" gives Claude Code or Codex the app's routes, config, and logs over MCP. In production, user agents call the same data under the same permissions."),
 	)
 
 	ctas := html.Div(html.DivConfig{Class: "hero__ctas"},
@@ -102,10 +102,12 @@ func heroSection() render.HTML {
 
 	install := html.Div(html.DivConfig{Class: "hero__install", ExtraAttrs: html.Attrs{"tabindex": "0"}},
 		html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
-		render.Text(" go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest"),
+		render.Text(" go install github.com/DonaldMurillo/gofastr/cmd/gofastr@"+siteInstallTarget()),
 	)
 
-	copy := render.Join(preAlphaTag, title, lede1, lede2, ctas, install)
+	// Keep the primary path before the deeper agent story. On phones the CTA
+	// now lands in the first viewport; desktop readers still get the detail.
+	copy := render.Join(preAlphaTag, title, lede1, ctas, install, lede2)
 
 	return html.Section(html.SectionConfig{Class: "hero", Label: "Hero"},
 		container(ui.HeroSplit(ui.HeroSplitConfig{
@@ -252,7 +254,7 @@ func heroCodeTabs() render.HTML {
 		ui.CodeTabsConfig{Name: "hero-examples", Label: "Example apps", LineNumbers: true},
 		ui.CodeSample{Label: "core only", Language: "go", Filename: "main.go", Code: heroCoreSrc},
 		ui.CodeSample{Label: "framework", Language: "go", Filename: "main.go", Code: heroFrameworkSrc},
-		ui.CodeSample{Label: "Donald's Way", Language: "go", Filename: "main.go", Code: heroDonaldSrc},
+		ui.CodeSample{Label: "full-stack app", Language: "go", Filename: "main.go", Code: heroDonaldSrc},
 	)
 }
 
@@ -318,7 +320,7 @@ func numbersSection() render.HTML {
 		stat(embeddedDocCount(), "docs embedded in every binary",
 			"gofastr docs reads them offline. This site serves the same files under /docs and /llms.txt; agents query them over MCP."),
 		stat("5", "MCP tools per entity",
-			"list, get, create, update, delete — each dispatches through the app router, so the caller's login and permissions apply."),
+			"list, get, create, update, delete. Each dispatches through the app router, so the caller's login and permissions apply."),
 		stat("2", "databases",
 			"SQLite and Postgres. No MySQL, no Mongo."),
 		stat("1", "binary to deploy",
@@ -329,7 +331,7 @@ func numbersSection() render.HTML {
 
 	head := sectionHead(
 		"Numbers you can check.",
-		render.Text("Each value is measured by this running binary or enforced by a test in the repo — nothing here is an adjective."),
+		render.Text("Each value is measured by this running binary or enforced by a test in the repo. Nothing here is an adjective."),
 	)
 
 	return sectionWrap("01 / the numbers", "The numbers", head, grid)
@@ -348,12 +350,12 @@ func realAppSection() render.HTML {
 
 	left := html.Div(html.DivConfig{Class: "realapp__left"},
 		html.Paragraph(html.TextConfig{},
-			render.Text("Most Go frameworks stop at the API. GoFastr renders the pages too — on the server, in Go, with no React or Vue on the client."),
+			render.Text("Most Go frameworks stop at the API. GoFastr renders the pages too: on the server, in Go, with no React or Vue on the client."),
 		),
 		html.UnorderedList(html.ListConfig{},
-			li(render.Text("Every page is full HTML on first load — fast, and readable by crawlers and agents.")),
-			li(render.Text("A small JS runtime hydrates that HTML in place — no re-render. Cross-page nav swaps content client-side with a route cache; you never write the router.")),
-			li(render.Text("In-page changes — sort, paginate, add a row — are island calls: the server returns new HTML and the runtime swaps one part.")),
+			li(render.Text("Every page is full HTML on first load: fast and readable by crawlers and agents.")),
+			li(render.Text("A small JS runtime hydrates that HTML in place with no re-render. Cross-page nav swaps content client-side with a route cache; you never write the router.")),
+			li(render.Text("In-page changes such as sort, paginate, or add a row are island calls. The server returns new HTML and the runtime swaps one part.")),
 			li(render.Text("You write screens in Go, composed from framework/ui components.")),
 		),
 	)
@@ -362,7 +364,7 @@ func realAppSection() render.HTML {
 
 	head := sectionHead(
 		"Server-rendered screens, not just an API.",
-		render.Text("Below is the shape of a server-rendered screen — a data table with status badges and a create button, built from framework/ui components and served as plain HTML."),
+		render.Text("Below is the shape of a server-rendered screen: a data table with status badges and a create button, built from framework/ui components and served as plain HTML."),
 	)
 
 	return sectionWrap("02 / server-rendered UI", "Server-rendered UI", head, grid)
@@ -416,7 +418,7 @@ func screenMock() render.HTML {
 			table,
 		),
 		html.Paragraph(html.TextConfig{Class: "screen-mock__cap"},
-			render.Text("/customers — a server-rendered screen from framework/ui, plain Go you own."),
+			render.Text("/customers: a server-rendered screen from framework/ui, in plain Go you own."),
 		),
 	)
 }
@@ -444,28 +446,28 @@ func exploreSection() render.HTML {
 
 	grid := html.Div(html.DivConfig{Class: "ex__grid"},
 		card("/primitives", "core · core-ui", "The primitives",
-			render.Join(render.Text("Router, query builder, schema, "), codeText("render"), render.Text(", the MCP server, HTML primitives, and signals — stdlib-first Go you can use on their own.")),
+			render.Join(render.Text("Router, query builder, schema, "), codeText("render"), render.Text(", the MCP server, HTML primitives, and signals. These are stdlib-first Go packages you can use on their own.")),
 		),
 		card("/framework", "framework · framework/ui", "Framework",
-			render.Text("The opinionated layer: entities and CRUD, auth, access control, migrations — plus the framework/ui components and theming."),
+			render.Text("The opinionated layer: entities and CRUD, auth, access control, migrations, framework/ui components, and theming."),
 		),
 		card("/agents", "mcp · llm.md · well-known", "Agent-ready",
 			render.Join(render.Text("Per-entity MCP tools, auto "), codeText("llm.md"), render.Text(", tools that read the running app, and the agent-discovery endpoints your app serves.")),
 		),
 		card("/interactivity", "ssr · islands · signals", "Interactivity",
-			render.Text("The server-driven model: full SSR, island RPC, optimistic UI, and signals + SSE — no client framework to ship."),
+			render.Text("The server-driven model: full SSR, island RPC, optimistic UI, and signals + SSE. There is no client framework to ship."),
 		),
 		card("/generator", "generate", "The code generator",
 			render.Text("Scaffold a Go app from a declaration when you want a head start. It writes plain Go you own and edit."),
 		),
 		card("/examples", "examples/", "The example apps",
-			render.Text("Runnable reference apps — a blog, a SaaS console, an API tour, semantic search, and this site — each in one command."),
+			render.Text("Runnable reference apps include a blog, a SaaS console, an API tour, semantic search, and this site. Each starts with one command."),
 		),
 	)
 
 	head := sectionHead(
 		"Explore the framework.",
-		render.Text("Six ways in — pick the one that matches what you're building."),
+		render.Text("Six ways in. Pick the one that matches what you're building."),
 	)
 
 	return sectionWrap("03 / explore", "Explore the framework", head, grid)
@@ -497,9 +499,9 @@ func builtWithSection() render.HTML {
 
 	grid := html.Div(html.DivConfig{Class: "ex__grid"},
 		card("https://barcode.donaldmurillo.com/", "in production", "Barcode & QR Code Maker",
-			render.Text("A live tool, no signup required, to generate and read barcodes and QR codes as PNG, SVG, or PDF — with CSV/Excel batch export, a REST API, and an MCP server."), true),
-		card("/examples#meridian", "examples/meridian", "Meridian — SaaS console",
-			render.Text("The flagship: a billing console with customers, subscriptions, invoices, MRR, and charts — plus its marketing site, auth, and admin — generated from one gofastr.yml."), false),
+			render.Text("A live tool, no signup required, to generate and read barcodes and QR codes as PNG, SVG, or PDF, with CSV/Excel batch export, a REST API, and an MCP server."), true),
+		card("/examples#meridian", "examples/meridian", "Meridian: SaaS console",
+			render.Text("The flagship is a billing console with customers, subscriptions, invoices, MRR, and charts, plus its marketing site, auth, and admin. It is generated from one gofastr.yml."), false),
 	)
 
 	head := sectionHead(

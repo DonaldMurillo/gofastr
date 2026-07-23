@@ -40,6 +40,15 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 | FormSection | `ui.FormSection(FormSectionConfig)` | Fieldset grouping with heading |
 | FormField | `ui.FormField(FormFieldConfig)` | Label + input + help/error wrapper |
 | FormFieldFor | `ui.FormFieldFor(errs, name, config)` | FormField with per-field error from FieldErrors |
+| TextField | `ui.TextField(TextFieldConfig)` | Self-labelled native text input with typed common attributes |
+| NumberField | `ui.NumberField(NumberFieldConfig)` | Self-labelled native number input; use `NumberInput` for +/- controls |
+| DateField | `ui.DateField(DateFieldConfig)` | Self-labelled native date input with typed min/max bounds |
+
+The typed field wrappers compose `FormField + html.Input` and own the
+`for`/`id`, `aria-describedby`, and `aria-invalid` wiring. Prefer them for
+ordinary forms so `Required`, `Placeholder`, bounds, value, help, and error
+states stay visible in the Go type instead of being repeated through
+`html.Attrs` literals at each call site.
 
 ## Validation
 

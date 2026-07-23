@@ -4,6 +4,10 @@ Issues and PRs are welcome, but expect strong opinions about scope: the goal
 is a framework an AI agent can drive end-to-end, not a kitchen-sink CMS. If
 you're unsure whether a change fits, open an issue first.
 
+Want to validate GoFastr in a real non-author application? Use the
+[external pilot checklist](docs/pilot-program.md) so the result produces
+comparable evidence for the v1 adoption gate.
+
 Security bugs: see [SECURITY.md](SECURITY.md) — do not open a public issue.
 
 ## Prerequisites (the honest list)

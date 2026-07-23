@@ -97,6 +97,5 @@ func statusPillCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-status-pill"].ui-status-pill--accent .ui-status-pill__dot {
   background: var(--color-primary, currentColor);
-  box-shadow: 0 0 6px var(--color-primary, currentColor);
 }`
 }

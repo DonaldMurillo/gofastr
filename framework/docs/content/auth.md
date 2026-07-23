@@ -591,6 +591,46 @@ posts are exempt (a cross-site JSON POST needs a CORS preflight these
 routes never answer), and requests with no `Origin` (curl, native apps)
 pass. This is on by default; no configuration required.
 
+## Browser-backend (BFF) posture
+
+For an application whose browser talks directly to the same GoFastr backend,
+use the explicit auth preset instead of wiring the session, CSRF, and Origin
+controls independently:
+
+```go
+mgr := auth.New(auth.AuthConfig{
+    JWTSecret: os.Getenv("AUTH_JWT_SECRET"),
+    UserStore: users,
+    SessionStore: sessions,
+})
+
+app := framework.NewApp(
+    framework.WithAPIPrefix("/api"),
+    auth.WithBFFPosture(mgr, auth.BFFPostureConfig{
+        AllowedOrigins: []string{"https://app.example.com"},
+    }),
+)
+app.RegisterBattery(mgr)
+```
+
+The preset makes login cookie-only (no JWT in the JSON response), forces the
+session and CSRF cookies to `Secure`, installs `SessionMiddleware` and CSRF,
+and rejects non-allowlisted `Origin` values under `/api`. Browser preflights
+receive credentialed CORS headers only for an exact allowed origin. Bearer JWTs
+are rejected on that API surface; `gfsk_` API tokens remain available for
+explicit non-browser automation.
+
+`AllowedOrigins` requires exact `http://` or `https://` origins and rejects
+wildcards. The protected prefix comes from `framework.AppConfig.APIPrefix`
+(default `/api`), so `WithAPIPrefix` and `WithBFFPosture` may appear in either
+option order without duplicating configuration. Because cookies are always
+`Secure`, run this posture behind HTTPS—even if `AuthConfig.DevMode` is true.
+
+`framework/ui.SignOut` remains compatible with this preset. Its static logout
+form is exempt from the generic CSRF token check only at the configured auth
+logout path; the auth handler still rejects cross-origin form submissions.
+All other cookie-authenticated mutations require a CSRF token.
+
 ## Naming conventions — DB columns vs. wire JSON
 
 Mixing DB-column casing with wire-JSON casing trips up most first-time

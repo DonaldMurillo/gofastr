@@ -161,7 +161,7 @@ func OpenCostLedger(path string) (*CostLedger, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _ = db.Exec(`
+	if _, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS cost_rows (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     session       TEXT NOT NULL,
@@ -176,7 +176,10 @@ CREATE TABLE IF NOT EXISTS cost_rows (
 
 CREATE INDEX IF NOT EXISTS idx_cost_session_ts ON cost_rows (session, ts);
 CREATE INDEX IF NOT EXISTS idx_cost_provider   ON cost_rows (provider);
-`)
+`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("cost ledger schema: %w", err)
+	}
 	return &CostLedger{db: db, path: path}, nil
 }
 

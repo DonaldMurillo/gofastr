@@ -112,6 +112,7 @@ func DB(t *testing.T) *sql.DB {
 		t.Fatalf("create schema %s: %v", schema, err)
 	}
 	t.Cleanup(func() {
+		// best-effort: test cleanup must not replace the original assertion.
 		_, _ = db.Exec("DROP SCHEMA " + schema + " CASCADE")
 		db.Close()
 	})
@@ -158,6 +159,7 @@ func FreshDatabaseDSN(t *testing.T) string {
 		t.Fatalf("create database %s: %v", name, err)
 	}
 	t.Cleanup(func() {
+		// best-effort: cleanup only; the test already completed its contract.
 		_, _ = admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)")
 		admin.Close()
 	})
@@ -184,6 +186,7 @@ func UnusedDSN(t *testing.T) (string, func()) {
 			return
 		}
 		defer admin.Close()
+		// best-effort: returned cleanup cannot report after its caller exits.
 		_, _ = admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)")
 	}
 	return u.String(), drop

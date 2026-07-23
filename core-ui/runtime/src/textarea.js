@@ -1,7 +1,7 @@
 // TextArea runtime module — applies the data-fui-autogrow handler to
-// any textarea on the page (not just inside widgets). Inside widgets
-// the same handler runs from widgets.js on every widget mount; this
-// module catches the rest (plain forms, standalone fields).
+// any textarea on the page, inside widgets and out. This module is the
+// sole owner of autogrow wiring (widgets.js demand-loads it and relies
+// on the rescan loops for widget-mounted textareas).
 //
 // Loaded on-demand when a [data-fui-autogrow] textarea is on the page.
 (function () {
@@ -32,9 +32,13 @@
     scope.querySelectorAll('textarea[data-fui-autogrow]').forEach(wire);
   }
   scan(document);
-  document.addEventListener('gofastr:navigate', function () { scan(document); });
 
-  // Expose for the runtime's per-module rescan loop on partial swaps.
+  // Standard module self-registration: the runtime's MutationObserver
+  // and gofastr:navigate loops call the scanner for inserted/swapped
+  // DOM, but only for modules marked loaded.
   window.__gofastr = window.__gofastr || {};
+  (window.__gofastr._moduleScanners ||= {}).textarea = scan;
+  (window.__gofastr.loadedModules ||= {}).textarea = true;
+  // Legacy hook preserved for external callers.
   window.__gofastr.textarea = { rescan: scan };
 })();

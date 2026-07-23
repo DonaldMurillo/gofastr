@@ -1,13 +1,15 @@
 // GoFastr runtime module — Widgets
 //
-// The widget runtime: mountWidget (chrome + dismiss + modal stack +
-// focus trap), openWidget / closeWidget / _mountByName / chrome cache,
-// deep-link push/strip/sync, and the modal-stack Escape + Tab focus
-// trap handlers. All the per-widget data-fui-* primitive scanners
-// (autogrow, charcount, persist-storage, fill-input, clear-on-esc,
-// submit-on-enter, disable-when-invalid, copy-text-from, shortcuts,
-// tick-elapsed) move with mountWidget too — they were scoped inside
-// the mountWidget closure and stay that way.
+// The widget runtime: mountWidget (chrome + dismiss + modal stack),
+// openWidget / closeWidget / _mountByName / chrome cache. The
+// per-widget data-fui-* primitives now live in demand-loaded sibling
+// modules: widgethelpers (charcount, persist-storage, fill-input,
+// clear-on-esc, submit-on-enter, disable-when-invalid, tick-elapsed),
+// widgetfocus (Escape + Tab focus trap), widgetlinks (deep-link
+// push/strip), textarea (autogrow), shortcut (chords). mountWidget
+// demand-loads them; re-wiring on remount/poll-swap happens through
+// the core rescan loops (each module registers a _moduleScanners entry
+// and sets loadedModules).
 //
 // Loads on demand:
 //   - core's marker scanner picks up [data-fui-widget] (SSR-inlined
@@ -42,8 +44,9 @@
     }
     const o = opts || {};
     const params = o.params || {};
+    const cfg = entry.cfg;
     await NS._mountByName(name);
-    const declared = entry.cfg.deepLinkParams || [];
+    const declared = cfg.deepLinkParams || [];
     if (declared.length) {
       const url = new URL(window.location.href);
       for (const k of declared) {
@@ -51,8 +54,11 @@
         if (v != null) NS.setSignal(k, v);
       }
     }
-    if (o.pushUrl && entry.cfg.deepLinkKey && entry.cfg.deepLinkValue) {
-      NS._deepLinkPushUrl(entry.cfg, params);
+    if (o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
+      if (!NS._deepLinkPushUrl) await NS.loadModule('widgetlinks');
+      // Skip if dismissed while the module loaded (cold cache).
+      if (!NS._widgets[name]) return;
+      NS._deepLinkPushUrl(cfg, params);
     }
   };
 
@@ -89,33 +95,6 @@
     if (w && typeof w.dismiss === 'function') w.dismiss();
   };
 
-  NS._deepLinkPushUrl = function (cfg, params) {
-    const url = new URL(window.location.href);
-    url.searchParams.set(cfg.deepLinkKey, cfg.deepLinkValue);
-    for (const k of cfg.deepLinkParams || []) {
-      if (k in params) url.searchParams.set(k, params[k]);
-    }
-    if (url.href !== window.location.href) {
-      history.pushState(null, '', url.pathname + url.search + url.hash);
-    }
-  };
-
-  NS._deepLinkStripUrl = function (cfg) {
-    const url = new URL(window.location.href);
-    let touched = false;
-    if (url.searchParams.get(cfg.deepLinkKey) === cfg.deepLinkValue) {
-      url.searchParams.delete(cfg.deepLinkKey);
-      touched = true;
-    }
-    for (const k of cfg.deepLinkParams || []) {
-      if (url.searchParams.has(k)) { url.searchParams.delete(k); touched = true; }
-    }
-    if (touched) {
-      const s = url.searchParams.toString();
-      history.pushState(null, '', url.pathname + (s ? '?' + s : '') + url.hash);
-    }
-  };
-
   NS._syncDeepLinks = function () {
     const idx = NS._widgetDeepLinks || {};
     const url = new URL(window.location.href);
@@ -132,7 +111,7 @@
     }
   };
 
-  NS.mountWidget = function (cfg, chromeHTML, existingEl) {
+  NS.mountWidget = function (cfg, html, existing) {
     if (NS._widgets[cfg.name]) return; // already mounted
     NS._widgets[cfg.name] = { cfg };
 
@@ -156,26 +135,30 @@
         NS.doc.appendBody(backdrop);
       }
     }
-    let widgetEl;
-    if (existingEl) {
-      widgetEl = existingEl;
-      widgetEl.removeAttribute('hidden');
-    } else if (chromeHTML) {
+    let w;
+    if (existing) {
+      w = existing;
+      w.removeAttribute('hidden');
+    } else if (html) {
       const tmp = document.createElement('div');
-      tmp.innerHTML = chromeHTML;
-      widgetEl = tmp.firstElementChild;
-      NS.doc.appendBody(widgetEl);
+      tmp.innerHTML = html;
+      w = tmp.firstElementChild;
+      NS.doc.appendBody(w);
     } else {
       delete NS._widgets[cfg.name];
       return;
     }
-    NS._widgets[cfg.name].root = widgetEl;
-    NS._widgets[cfg.name].backdrop = backdrop;
-    NS._widgets[cfg.name].hydrated = !!existingEl;
-    NS.scanAndLoadCSS(widgetEl);
+    const reg = NS._widgets[cfg.name];
+    reg.root = w;
+    reg.backdrop = backdrop;
+    reg.hydrated = !!existing;
+    NS.scanAndLoadCSS(w);
+    if (w.querySelector('[data-fui-fill-input],[data-fui-tick-elapsed],[data-fui-persist-storage],[data-fui-charcount-source],[data-fui-clear-on-esc],form[data-fui-submit-on-enter],form[data-fui-disable-when-invalid]')) NS.loadModule('widgethelpers');
+    if (cfg.closeOnEscape || cfg.backdrop) NS.loadModule('widgetfocus');
+    if (cfg.deepLinkKey) NS.loadModule('widgetlinks');
 
     const isModal = !!cfg.backdrop;
-    const previousFocus = isModal ? document.activeElement : null;
+    const pf = isModal ? document.activeElement : null;
     if (isModal) {
       // Owner-refcounted viewport lock (NS.doc) — the lock releases only
       // when the LAST owner unlocks, so a second locker (lightbox,
@@ -201,46 +184,47 @@
         // Without this, focus races the demand-loaded position:fixed CSS and
         // scrolls the page to the element's transient in-flow position
         // (a tall drawer jumps the page by its own height on open).
-        const explicit = widgetEl.querySelector('[autofocus]');
+        const explicit = w.querySelector('[autofocus]');
         if (explicit) {
           explicit.removeAttribute('autofocus');
           explicit.focus({ preventScroll: true });
           return;
         }
-        const focusables = widgetEl.querySelectorAll(NS._focusSel);
+        const focusables = w.querySelectorAll(NS._focusSel);
         if (focusables.length > 0) focusables[0].focus({ preventScroll: true });
       });
     }
 
     function dismiss() {
-      const wasHydrated = NS._widgets[cfg.name]?.hydrated;
-      const outsideHandler = NS._widgets[cfg.name]?.outsideHandler;
-      const anchorResize = NS._widgets[cfg.name]?.anchorResize;
-      const anchorScroll = NS._widgets[cfg.name]?.anchorScroll;
-      const anchorTrigger = NS._widgets[cfg.name]?.anchorTrigger;
-      const pollStop = NS._widgets[cfg.name]?.pollStop;
-      if (outsideHandler) document.removeEventListener('click', outsideHandler);
-      if (anchorResize) window.removeEventListener('resize', anchorResize);
-      if (anchorScroll) window.removeEventListener('scroll', anchorScroll, { capture: true });
-      if (anchorTrigger) {
-        anchorTrigger.classList.remove('is-popover-trigger-active');
-        anchorTrigger.removeAttribute('data-fui-popover-trigger');
+      const st = NS._widgets[cfg.name] || {};
+      const hydrated = st.hydrated;
+      const oh = st.outsideHandler;
+      const ar = st.anchorResize;
+      const as = st.anchorScroll;
+      const at = st.anchorTrigger;
+      const stop = st.pollStop;
+      if (oh) document.removeEventListener('click', oh);
+      if (ar) window.removeEventListener('resize', ar);
+      if (as) window.removeEventListener('scroll', as, { capture: true });
+      if (at) {
+        at.classList.remove('is-popover-trigger-active');
+        at.removeAttribute('data-fui-popover-trigger');
       }
-      if (pollStop) pollStop();
-      if (widgetEl && widgetEl.style) {
-        widgetEl.style.left = '';
-        widgetEl.style.top = '';
-        widgetEl.style.right = '';
-        widgetEl.style.bottom = '';
-        widgetEl.style.position = '';
-        widgetEl.style.removeProperty('--ui-popover-arrow-x');
-        widgetEl.style.removeProperty('--ui-popover-arrow-y');
-        widgetEl.removeAttribute('data-fui-popover-side');
+      if (stop) stop();
+      if (w && w.style) {
+        w.style.left = '';
+        w.style.top = '';
+        w.style.right = '';
+        w.style.bottom = '';
+        w.style.position = '';
+        w.style.removeProperty('--ui-popover-arrow-x');
+        w.style.removeProperty('--ui-popover-arrow-y');
+        w.removeAttribute('data-fui-popover-side');
       }
-      if (wasHydrated && widgetEl) {
-        widgetEl.setAttribute('hidden', '');
-      } else if (widgetEl?.parentNode) {
-        widgetEl.parentNode.removeChild(widgetEl);
+      if (hydrated && w) {
+        w.setAttribute('hidden', '');
+      } else if (w?.parentNode) {
+        w.parentNode.removeChild(w);
       }
       if (backdrop?.parentNode) backdrop.parentNode.removeChild(backdrop);
       delete NS._widgets[cfg.name];
@@ -255,13 +239,18 @@
         // preventScroll: restoring focus to the trigger on close must not
         // scroll the page to it (the trigger may be off-screen after the
         // user scrolled), which otherwise jumps the page on dismiss.
-        if (previousFocus && typeof previousFocus.focus === 'function') {
-          try { previousFocus.focus({ preventScroll: true }); } catch (_) {}
+        if (pf && typeof pf.focus === 'function') {
+          try { pf.focus({ preventScroll: true }); } catch (_) {}
         }
       }
-      if (cfg.deepLinkKey && cfg.deepLinkValue) NS._deepLinkStripUrl(cfg);
+      // mountWidget starts the widgetlinks load for every deep-linkable
+      // widget, so the strip helper is only absent inside the module's
+      // initial in-flight window (milliseconds after an auto-open) —
+      // an accepted race; the URL then simply keeps the deep link the
+      // user navigated to.
+      if (cfg.deepLinkKey && cfg.deepLinkValue && NS._deepLinkStripUrl) NS._deepLinkStripUrl(cfg);
     }
-    NS._widgets[cfg.name].dismiss = dismiss;
+    reg.dismiss = dismiss;
 
     // Initial state hydration — only when the widget declared signals.
     if (cfg.statePath) {
@@ -305,23 +294,23 @@
     async function dispatchRPC(node) {
       const path = node.getAttribute('data-fui-rpc');
       const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
-      const responseSignal = node.getAttribute('data-fui-rpc-signal');
-      const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
-      const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
+      const sig = node.getAttribute('data-fui-rpc-signal');
+      const close = node.hasAttribute('data-fui-rpc-close');
+      const reset = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
       let body = node.getAttribute('data-fui-rpc-body');
-      let bodyIsFormData = false;
+      let formData = false;
       if (!body && node.tagName === 'FORM') {
         const fd = new FormData(node);
         if (node.enctype === 'multipart/form-data' || node.querySelector('input[type="file"]')) {
           body = fd;
-          bodyIsFormData = true;
+          formData = true;
         } else {
           const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
           body = JSON.stringify(obj);
         }
       }
       const headers = { 'X-FUI-Widget': cfg.name };
-      if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
+      if (body && !formData) headers['Content-Type'] = 'application/json';
       // CSRF: forward the page's <meta name="csrf-token"> via the
       // X-CSRF-Token header. JSON/multipart RPC bodies can't carry the
       // urlencoded `_csrf` field the auth.CSRF middleware parses, so the
@@ -339,14 +328,14 @@
         const r = await fetch(path, { method, headers, body: body || undefined, credentials: 'same-origin' });
         if (!r.ok) {
           const txt = await r.text();
-          if (responseSignal) NS.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
+          if (sig) NS.setSignal(sig, { ok: false, status: r.status, text: txt });
           return;
         }
-        const toastHeader = r.headers.get('X-Gofastr-Toast');
-        if (toastHeader) {
+        const toast = r.headers.get('X-Gofastr-Toast');
+        if (toast) {
           NS.loadModule('toasts').then(() => {
             try {
-              const parsed = JSON.parse(toastHeader);
+              const parsed = JSON.parse(toast);
               const arr = Array.isArray(parsed) ? parsed : [parsed];
               for (const cfg of arr) NS.toast(cfg);
             } catch (_) {}
@@ -354,7 +343,7 @@
         }
         const ct = r.headers.get('content-type') || '';
         const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
-        if (responseSignal) NS.setSignal(responseSignal, data);
+        if (sig) NS.setSignal(sig, data);
         // Mutation → authoritative refresh: a successful RPC likely
         // changed server state a polling widget renders, so re-fetch
         // /state now instead of waiting out the cadence. Default target
@@ -362,26 +351,26 @@
         // a DIFFERENT widget — e.g. a Reset button inside a confirm
         // modal (kiln-reset-confirm) refreshing the chat panel
         // (kiln-panel), which its own closure would never reach.
-        const refreshName = node.getAttribute('data-fui-rpc-refresh') || cfg.name;
-        const wentry = NS._widgets[refreshName];
+        const refresh = node.getAttribute('data-fui-rpc-refresh') || cfg.name;
+        const wentry = NS._widgets[refresh];
         if (wentry && wentry.pollNow) wentry.pollNow();
-        if (closeOnSuccess) dismiss();
-        if (resetOnSuccess) node.reset();
+        if (close) dismiss();
+        if (reset) node.reset();
         // Open a widget on success (e.g. "save in drawer → open results sheet").
-        const openWidgetName = node.getAttribute('data-fui-rpc-open');
-        if (openWidgetName) NS.openWidget(openWidgetName);
+        const open = node.getAttribute('data-fui-rpc-open');
+        if (open) NS.openWidget(open);
         // SPA navigate on success. force: the RPC mutated server state,
         // so bypass the screen cache and re-render even when the
         // destination is the page the widget floats over (quick-add
         // modal on the list it inserts into).
-        const navigatePath = node.getAttribute('data-fui-rpc-navigate');
-        if (navigatePath) {
-          NS.navigate(navigatePath, { force: true });
+        const nav = node.getAttribute('data-fui-rpc-navigate');
+        if (nav) {
+          NS.navigate(nav, { force: true });
         }
       } catch (err) {
         // Network error: write human-readable feedback to the signal.
-        if (responseSignal) {
-          NS.setSignal(responseSignal, { ok: false, status: 0, text: 'Network error \u2014 please try again' });
+        if (sig) {
+          NS.setSignal(sig, { ok: false, status: 0, text: 'Network error \u2014 please try again' });
         }
       } finally {
         if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
@@ -391,317 +380,48 @@
       }
     }
 
-    // data-fui-fill-input click delegator.
-    widgetEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-fui-fill-input]');
-      if (!btn || !widgetEl.contains(btn)) return;
-      const sel = btn.getAttribute('data-fui-fill-input');
-      if (!sel) return;
-      const target = widgetEl.querySelector(sel) || document.querySelector(sel);
-      if (!target) return;
-      e.preventDefault();
-      const explicit = btn.getAttribute('data-fui-fill-text');
-      target.value = explicit !== null ? explicit : btn.textContent.trim();
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-      try { target.focus(); target.select?.(); } catch (_) {}
-    });
-
-    // data-fui-shortcut-click document-level delegator (idempotent).
-    if (!document.__fuiShortcutClick) {
-      document.__fuiShortcutClick = true;
-      document.addEventListener('keydown', (e) => {
-        const a = document.activeElement;
-        if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
-        if (e.isComposing) return;
-        const targets = document.querySelectorAll('[data-fui-shortcut-click]');
-        for (const el of targets) {
-          const combo = el.getAttribute('data-fui-shortcut-click') || '';
-          if (!combo) continue;
-          const match = NS._parseCombo(combo);
-          if (!match.key) continue;
-          if (e.key.toLowerCase() !== match.key) continue;
-          if (match.mod && !(e.metaKey || e.ctrlKey)) continue;
-          if (match.shift && !e.shiftKey) continue;
-          if (match.alt && !e.altKey) continue;
-          e.preventDefault();
-          try { el.click(); } catch (_) {}
-          return;
-        }
-      });
-    }
-
-    // data-fui-shortcut-focus per-element bind.
-    widgetEl.querySelectorAll('[data-fui-shortcut-focus]').forEach((el) => {
-      const combo = el.getAttribute('data-fui-shortcut-focus') || '';
-      if (!combo) return;
-      const match = NS._parseCombo(combo);
-      document.addEventListener('keydown', (e) => {
-        if (!match.key) return;
-        if (e.key.toLowerCase() !== match.key) return;
-        if (match.mod && !(e.metaKey || e.ctrlKey)) return;
-        if (match.shift && !e.shiftKey) return;
-        if (match.alt && !e.altKey) return;
-        if (e.isComposing) return;
-        e.preventDefault();
-        try { el.focus(); el.select?.(); } catch (_) {}
-      });
-    });
-
-    // data-fui-tick-elapsed setInterval (rounds the count up by 200ms).
-    const tickElapsed = () => {
-      widgetEl.querySelectorAll('[data-fui-tick-elapsed]').forEach((el) => {
-        const start = parseInt(el.getAttribute('data-fui-tick-elapsed'), 10);
-        if (!start) return;
-        const ms = Date.now() - start;
-        let txt;
-        if (ms < 1000) txt = ms + 'ms';
-        else if (ms < 10000) txt = (ms / 1000).toFixed(1) + 's';
-        else txt = Math.round(ms / 1000) + 's';
-        el.textContent = txt;
-      });
-    };
-    tickElapsed();
-    setInterval(tickElapsed, 200);
-
-    // textarea[data-fui-autogrow].
-    widgetEl.querySelectorAll('textarea[data-fui-autogrow]').forEach((ta) => {
-      const grow = () => {
-        ta.style.height = 'auto';
-        ta.style.height = ta.scrollHeight + 'px';
-      };
-      ta.addEventListener('input', grow);
-      const form = ta.form;
-      if (form) form.addEventListener('reset', () => requestAnimationFrame(grow));
-      Promise.resolve().then(grow);
-    });
-
-    // data-fui-persist-storage.
-    widgetEl.querySelectorAll('[data-fui-persist-storage]').forEach((el) => {
-      const key = el.getAttribute('data-fui-persist-storage');
-      if (!key) return;
-      try {
-        const saved = window.localStorage.getItem(key);
-        if (saved && !el.value) {
-          el.value = saved;
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-      } catch (_) {}
-      el.addEventListener('input', () => {
-        try { window.localStorage.setItem(key, el.value); } catch (_) {}
-      });
-      const form = el.form;
-      if (form) form.addEventListener('reset', () => {
-        try { window.localStorage.removeItem(key); } catch (_) {}
-      });
-    });
-
-    // (data-fui-copy-text-from is now globally delegated in core
-    // runtime.js — see _installGlobalCopyHandler. The previous
-    // widget-scoped listener only fired for copy buttons inside a
-    // mounted widget, which stranded standalone framework/ui.CopyButton
-    // instances anywhere else on the page.)
-
-    // data-fui-charcount-source.
-    widgetEl.querySelectorAll('[data-fui-charcount-source]').forEach((el) => {
-      const sel = el.getAttribute('data-fui-charcount-source');
-      if (!sel) return;
-      const src = widgetEl.querySelector(sel) || document.querySelector(sel);
-      if (!src) return;
-      const sync = () => { el.textContent = src.value.length + ' chars'; };
-      src.addEventListener('input', sync);
-      const form = src.form;
-      if (form) form.addEventListener('reset', () => requestAnimationFrame(sync));
-      sync();
-    });
-
-    // data-fui-clear-on-esc.
-    widgetEl.querySelectorAll('[data-fui-clear-on-esc]').forEach((el) => {
-      el.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape' || !el.value) return;
-        e.preventDefault();
-        e.stopPropagation();
-        el.value = '';
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-    });
-
-    // form[data-fui-submit-on-enter].
-    const enterForms = widgetEl.querySelectorAll('form[data-fui-submit-on-enter]');
-    const isEnter = (e) => (e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13);
-    enterForms.forEach((form) => {
-      form.querySelectorAll('textarea').forEach((ta) => {
-        ta.addEventListener('keydown', (e) => {
-          if (!isEnter(e) || e.shiftKey || e.isComposing) return;
-          e.preventDefault();
-          e.stopPropagation();
-          if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit();
-          } else {
-            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-          }
-        });
-        ta.addEventListener('keypress', (e) => {
-          if (!isEnter(e) || e.shiftKey) return;
-          e.preventDefault();
-          e.stopPropagation();
-        });
-      });
-    });
-
-    // form[data-fui-disable-when-invalid].
-    const validityForms = widgetEl.querySelectorAll('form[data-fui-disable-when-invalid]');
-    validityForms.forEach((form) => {
-      const sync = () => {
-        const ok = form.checkValidity();
-        form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach((btn) => {
-          btn.disabled = !ok;
-        });
-      };
-      form.addEventListener('input', sync);
-      form.addEventListener('change', sync);
-      form.addEventListener('reset', () => { requestAnimationFrame(sync); });
-      Promise.resolve().then(sync);
-    });
-
     // Widget-scoped click + submit.
-    widgetEl.addEventListener('click', async (e) => {
+    w.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-fui-rpc]');
-      if (btn && widgetEl.contains(btn) && btn.tagName !== 'FORM') {
+      if (btn && w.contains(btn) && btn.tagName !== 'FORM') {
         e.preventDefault();
         await dispatchRPC(btn);
         return;
       }
       const closeBtn = e.target.closest('[data-fui-action="close"]');
-      if (closeBtn && widgetEl.contains(closeBtn)) {
+      if (closeBtn && w.contains(closeBtn)) {
         e.preventDefault();
         dismiss();
       }
     });
-    widgetEl.addEventListener('submit', async (e) => {
+    w.addEventListener('submit', async (e) => {
       const form = e.target.closest('form[data-fui-rpc]');
-      if (form && widgetEl.contains(form)) {
+      if (form && w.contains(form)) {
         e.preventDefault();
         await dispatchRPC(form);
       }
     });
 
     if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss);
-    if (isModal) NS._widgets[cfg.name].closeOnEscape = !!cfg.closeOnEscape;
+    if (isModal) reg.closeOnEscape = !!cfg.closeOnEscape;
 
     if (!isModal && (cfg.closeOnEscape || cfg.closeOnClick)) {
-      NS._widgets[cfg.name].closeOnEscape = !!cfg.closeOnEscape;
-      NS._widgets[cfg.name].closeOnClickOutside = !!cfg.closeOnClick;
+      reg.closeOnEscape = !!cfg.closeOnEscape;
+      reg.closeOnClickOutside = !!cfg.closeOnClick;
       (NS._popoverStack ||= []).push(cfg.name);
       if (cfg.closeOnClick) {
-        const outsideHandler = (e) => {
-          if (widgetEl.contains(e.target)) return;
+        const oh = (e) => {
+          if (w.contains(e.target)) return;
           const trigger = e.target.closest('[data-fui-open="' + cfg.name + '"]');
           if (trigger) return;
           dismiss();
         };
-        NS._widgets[cfg.name].outsideHandler = outsideHandler;
-        setTimeout(() => document.addEventListener('click', outsideHandler), 0);
+        NS._widgets[cfg.name].outsideHandler = oh;
+        setTimeout(() => document.addEventListener('click', oh), 0);
       }
     }
 
-    // Global click+submit dispatcher (idempotent across widgets +
-    // mount calls). Handles legacy data-kiln-tool + plain forms.
-    if (!document.__fuiGlobalDispatch) {
-      document.__fuiGlobalDispatch = true;
-      document.addEventListener('click', async (e) => {
-        if (e.target.closest('[data-fui-widget]')) return;
-        const fuiBtn = e.target.closest('[data-fui-rpc]');
-        if (fuiBtn && fuiBtn.tagName !== 'FORM') { e.preventDefault(); await dispatchRPC(fuiBtn); return; }
-        // Scoped to kiln-rendered pages (body.kiln-app) or trusted
-        // subtrees — see runtime.js for the threat model.
-        const legacy = e.target.closest('[data-kiln-tool]');
-        if (legacy && (document.body.classList.contains('kiln-app') ||
-                       legacy.closest('[data-fui-trusted]'))) {
-          e.preventDefault();
-          const tool = legacy.getAttribute('data-kiln-tool');
-          const args = legacy.getAttribute('data-kiln-args') || '';
-          // CSRF: forward <meta name="csrf-token"> so the auth.CSRF
-          // middleware accepts this state-changing tool invocation. The
-          // JSON body can't carry the urlencoded `_csrf` field the
-          // middleware parses, so the header channel is required.
-          const ktHeaders = { 'Content-Type': 'application/json' };
-          const ktMeta = document.querySelector('meta[name="csrf-token"]');
-          if (ktMeta) {
-            const ktTok = ktMeta.getAttribute('content');
-            if (ktTok) ktHeaders['X-CSRF-Token'] = ktTok;
-          }
-          try {
-            await fetch('/kiln/tool/' + tool, {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers: ktHeaders,
-              body: args,
-            });
-          } catch (_) {}
-        }
-      });
-      // Note: the document-level `submit` dispatcher previously lived
-      // here AND in runtime.js. Two installations of the same handler
-      // drifted in this very PR (bare `navigate()` vs `window.__gofastr?.navigate()`).
-      // The dispatcher now lives ONLY in runtime.js — both files share
-      // the `document.__fuiGlobalDispatch` guard so whichever loads
-      // first wins, and the click handler above remains here for the
-      // widget-loading-without-runtime case. See forms_dedup_test.go.
-    }
   };
-
-  // Modal-stack Escape close. Modals take priority over non-modal
-  // popovers; both stacks are LIFO so nested surfaces unwind in
-  // order. Installed once at module load — idempotent flag prevents
-  // double-binding if widgets.js gets re-loaded for any reason.
-  if (!document.__fuiModalEsc) {
-    document.__fuiModalEsc = true;
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      const G = window.__gofastr;
-      if (G._modalStack && G._modalStack.length > 0) {
-        const topName = G._modalStack[G._modalStack.length - 1];
-        const top = G._widgets[topName];
-        if (top && top.closeOnEscape) {
-          e.stopPropagation();
-          G.closeWidget(topName);
-          return;
-        }
-      }
-      if (G._popoverStack && G._popoverStack.length > 0) {
-        const topName = G._popoverStack[G._popoverStack.length - 1];
-        const top = G._widgets[topName];
-        if (top && top.closeOnEscape) {
-          e.stopPropagation();
-          G.closeWidget(topName);
-        }
-      }
-    });
-  }
-
-  // Modal Tab focus trap. Cycles focus within the topmost modal.
-  if (!document.__fuiModalTab) {
-    document.__fuiModalTab = true;
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Tab') return;
-      const G = window.__gofastr;
-      if (!G._modalStack || G._modalStack.length === 0) return;
-      const topName = G._modalStack[G._modalStack.length - 1];
-      const root = G._widgets[topName]?.root;
-      if (!root) return;
-      const focusables = Array.from(root.querySelectorAll(G._focusSel))
-        .filter((el) => el.offsetParent !== null || el === document.activeElement);
-      if (focusables.length === 0) return;
-      const first = focusables[0], last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault(); last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault(); first.focus();
-      } else if (!root.contains(document.activeElement)) {
-        e.preventDefault(); first.focus();
-      }
-    }, true);
-  }
 
   (NS.loadedModules ||= {}).widgets = true;
 })();

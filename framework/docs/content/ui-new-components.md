@@ -77,6 +77,9 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **multiselect** — `core-ui/patterns/multiselect` — checkbox group with chip display above
 - **form** — `framework/ui.Form` — opinionated `<form>` wrapper with submit + error summary
 - **formfield** — `framework/ui.FormField` — labelled input with required + help + error states
+- **textfield** — `framework/ui.TextField` — typed labelled native text field with required, help, error, autocomplete, and length attributes
+- **numberfield** — `framework/ui.NumberField` — typed labelled native number field with explicit min/max/step bounds
+- **datefield** — `framework/ui.DateField` — typed labelled native date field with HTML-date min/max bounds
 - **formsection** — `framework/ui.FormSection` — grouped fields with a shared heading + description
 - **validationsummary** — `framework/ui.ValidationSummary` — inline summary of form validation errors
 - **conditionalfield** — `framework/ui.ConditionalField` (+ `ConditionalFieldVisible` inverse) — form section shown/hidden by another field's value
@@ -105,7 +108,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **tabs-signal** — `framework/ui.Tabs` — signal-driven tab strip (click sets the signal; CSS shows the panel)
 - **breadcrumbs** — `core-ui/patterns/breadcrumbs` — `<nav aria-label=Breadcrumb>` trail
 - **pagination** — `core-ui/patterns/pagination` — numeric page navigation
-- **sidebar** — `framework/ui.Sidebar` — responsive primary nav (inline ≥ md, drawer < md)
+- **sidebar** — `framework/ui.Sidebar` — responsive primary nav with persistent, collapsible (local-storage persisted), and off-canvas variants; set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
 - **menu** — `framework/ui.Menu` — keyboard-driven dropdown built on `<details>`
 - **tabs** — `core-ui/patterns/tabs` — `<details>`-based tab strip, zero JS
 - **tree** — `core-ui/patterns/tree` — recursive tree with roving tabindex + lazy-load
@@ -197,7 +200,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **callout** — `framework/ui.Callout` — persistent inline info / warning / danger / neutral block
 - **notification** — `framework/ui.Notification` — toast-styled inline notification (variant + dismiss)
 - **emptystate** — `framework/ui.EmptyState` — centered title + description + optional CTA for no-data screens
-- **signout** — `framework/ui.SignOut` — logout control: minimal form POSTing to the auth sign-out endpoint
+- **signout** — `framework/ui.SignOut` — logout control: minimal form POSTing to the auth sign-out endpoint; compatible with `auth.WithBFFPosture`, whose logout handler enforces same-origin submission
 - **pollingindicator** — `framework/ui.PollingIndicator` — pulsing dot + label confirming a polling RPC is firing
 - **seo** — `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema` — per-page SEO + sitewide sitemap.xml / robots.txt
 - **seo-bundle** — `ScreenSEO()` returning an `SEO` struct — per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above

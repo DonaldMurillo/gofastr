@@ -180,8 +180,7 @@ func bannerCSS(_ style.Theme) string {
   gap: var(--spacing-md, 12px);
   align-items: flex-start;
   padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-left: 4px solid var(--color-info, #3B82F6);
+  border: 1px solid var(--ui-banner-accent, var(--color-info, #3B82F6));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
@@ -238,12 +237,12 @@ func bannerCSS(_ style.Theme) string {
   outline-offset: 2px;
 }
 
-/* Variants — recolor border-left + icon. */
-.ui-banner--success { border-left-color: var(--color-success, #16A34A); }
+/* Variants — use the full outline + icon, avoiding a decorative side stripe. */
+.ui-banner--success { --ui-banner-accent: var(--color-success, #16A34A); }
 .ui-banner--success .ui-banner__icon { color: var(--color-success, #16A34A); }
-.ui-banner--warn { border-left-color: var(--color-warning, #D97706); }
+.ui-banner--warn { --ui-banner-accent: var(--color-warning, #D97706); }
 .ui-banner--warn .ui-banner__icon { color: var(--color-warning, #D97706); }
-.ui-banner--danger { border-left-color: var(--color-danger, #DC2626); }
+.ui-banner--danger { --ui-banner-accent: var(--color-danger, #DC2626); }
 .ui-banner--danger .ui-banner__icon { color: var(--color-danger, #DC2626); }
 
 /* Hidden state for runtime dismiss. */

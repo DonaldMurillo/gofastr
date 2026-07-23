@@ -1,7 +1,7 @@
 # The gofastr CLI
 
 ```bash
-go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest
+go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 ```
 
 One binary. `gofastr <command> --help` prints every flag; this page maps
@@ -12,7 +12,9 @@ each command to the doc that covers it.
 - `gofastr init <name>` — a new project: framework UI, `DESIGN.md`, a
   sample entity (`--no-entity` to skip), git, and the agent onboarding
   files. `--module=<path>` sets the Go module; `--db=sqlite|postgres`
-  picks the driver.
+  picks the driver. A released CLI pins the generated `go.mod` to its
+  matching GoFastr version. A local development build prints the exact
+  `go get …@vX.Y.Z` step because it cannot infer a release safely.
 - `gofastr new handler <name>` / `gofastr new route <path>` — scaffold
   one handler or route registration into an existing app.
 - `gofastr agents init|sync|skill` — generate or refresh `AGENTS.md`
