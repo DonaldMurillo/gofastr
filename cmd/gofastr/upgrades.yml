@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.39.0
+through: v0.40.0
 
 releases:
   - version: v0.3.0
@@ -226,3 +226,10 @@ releases:
         breaking: true
         guidance: "Builder.SSE / SSERefetch / SSERefresh / SSEReload and the SSEBinding type are removed — each widget opened a private EventSource, contradicting the one-bus contract. Passive freshness is Builder.Poll(interval) (re-fetches /state, re-applies changed signals) or page-level data-fui-poll + data-fui-poll-src; genuinely push-shaped surfaces use the shared /__gofastr/sse bus. See `gofastr docs reactivity` for the ladder."
         detect: '\.SSE\(|SSERefetch\(|SSERefresh\(|SSEReload\(|SSEBinding\{'
+
+  - version: v0.40.0
+    title: Strict mode + dev a11y gate
+    notes:
+      - change: gofastr dev now runs the static accessibility lint on every rebuild, exactly like gofastr build
+        breaking: false
+        guidance: "Apps with standing a11y findings stop at the dev rebuild instead of at build/CI. Fix the findings (each prints a guided hint) or run gofastr dev --no-a11y while you do; the flag is an escape hatch, not a setting."
