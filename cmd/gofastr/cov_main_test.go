@@ -21,6 +21,25 @@ func TestDispatchHelpFlag(t *testing.T) {
 	}
 }
 
+func TestCommandSpecificHelp(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		want    string
+	}{
+		{"init", "generated go.mod pins"},
+		{"generate", "Generate a deterministic application"},
+		{"validate", "validate a blueprint without writing files"},
+	} {
+		out := covT_capStdout(t, func() { dispatch([]string{tc.command, "--help"}) })
+		if !strings.Contains(out, tc.want) {
+			t.Errorf("%s --help missing %q:\n%s", tc.command, tc.want, out)
+		}
+		if strings.Contains(out, "Start dev server with auto-restart") {
+			t.Errorf("%s --help fell back to global help:\n%s", tc.command, out)
+		}
+	}
+}
+
 func TestDispatchVersionFlag(t *testing.T) {
 	for _, flag := range []string{"--version", "-v", "version"} {
 		out := covT_capStdout(t, func() { dispatch([]string{flag}) })

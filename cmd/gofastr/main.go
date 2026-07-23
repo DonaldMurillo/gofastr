@@ -181,10 +181,24 @@ func main() {
 // it actually handles the flags (otherwise `<cmd> --help` would run
 // the command).
 var ownsHelp = map[string]bool{
-	"audit":   true,
-	"upgrade": true,
-	"docs":    true,
-	"doc":     true,
+	"audit":    true,
+	"upgrade":  true,
+	"docs":     true,
+	"doc":      true,
+	"init":     true,
+	"generate": true,
+	"gen":      true,
+	"g":        true,
+	"validate": true,
+}
+
+func hasHelpFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			return true
+		}
+	}
+	return false
 }
 
 // dispatch routes a parsed argument vector (os.Args[1:]) to the matching

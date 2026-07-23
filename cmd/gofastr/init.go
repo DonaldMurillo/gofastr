@@ -6,10 +6,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 )
 
 func runInit(args []string) {
+	if hasHelpFlag(args) {
+		printInitHelp()
+		return
+	}
 	if len(args) == 0 {
 		fail("Project name is required.")
 		info("Usage: gofastr init <project-name>")
@@ -205,6 +210,19 @@ bin/
 		info("Could not run 'go mod init': %v", err)
 		info("You may need to run 'go mod init %s' manually.", modulePath)
 	}
+	pinnedVersion := installedFrameworkVersion()
+	if pinnedVersion != "" {
+		edit := exec.Command("go", "mod", "edit", "-require="+gofastrModule+"@"+pinnedVersion)
+		edit.Dir = name
+		if out, err := edit.CombinedOutput(); err != nil {
+			fail("Could not pin GoFastr %s in go.mod: %v", pinnedVersion, err)
+			if msg := strings.TrimSpace(string(out)); msg != "" {
+				info("%s", msg)
+			}
+			osExit(1)
+			return
+		}
+	}
 
 	// Run git init so the project starts with a clean repo.
 	gitCmd := exec.Command("git", "init", name)
@@ -244,10 +262,65 @@ bin/
 	info("    gofastr theme init    — Scaffold a typed theme.go")
 	info("    gofastr build         — Build production binary")
 	fmt.Println()
-	fmt.Println("  Note: `go mod tidy` resolves gofastr from the Go module proxy;")
-	fmt.Println("  pin a tagged release. Only add a `replace` directive pointing at")
-	fmt.Println("  a local clone if you are hacking on the framework itself.")
+	if pinnedVersion != "" {
+		fmt.Printf("  GoFastr is pinned to %s, matching this CLI. `go mod tidy` will\n", pinnedVersion)
+		fmt.Println("  resolve that release. Use `gofastr upgrade` when you want to move.")
+	} else {
+		fmt.Println("  This development CLI has no release version to pin. Before `go mod tidy`, run:")
+		fmt.Printf("    go get %s@vX.Y.Z\n", gofastrModule)
+		fmt.Println("  Release-installed CLIs pin their matching framework automatically.")
+	}
+	fmt.Println("  Only use a local `replace` directive while hacking on GoFastr itself.")
 	fmt.Println()
+}
+
+func printInitHelp() {
+	fmt.Println(`gofastr init — scaffold a new GoFastr project
+
+Usage:
+  gofastr init <name> [flags]
+  gofastr init . --reinit [--force]
+
+Flags:
+  --module=<path>  Go module path (default: local/<name>)
+  --db=<driver>    sqlite (default) or postgres
+  --no-entity      Omit the sample entity and database wiring
+  --reinit         Refresh AI onboarding files in an existing project
+  --force          With --reinit, overwrite customized onboarding files
+
+The generated go.mod pins the GoFastr release matching this CLI.
+Local development builds cannot infer a release and print the exact
+go get command that must be run before go mod tidy.`)
+}
+
+// installedFrameworkVersion returns the exact module version represented by
+// this CLI. Release binaries may inject version via ldflags; `go install
+// module/cmd/gofastr@vX.Y.Z` records it in build info without ldflags. Local
+// development builds deliberately return empty rather than pretending
+// `@latest` is reproducible.
+func installedFrameworkVersion() string {
+	if v := normalizeFrameworkVersion(version); v != "" {
+		return v
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok || (info.Main.Path != gofastrModule && !strings.HasPrefix(info.Main.Path, gofastrModule+"/cmd/")) {
+		return ""
+	}
+	return normalizeFrameworkVersion(info.Main.Version)
+}
+
+func normalizeFrameworkVersion(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" || v == "dev" || v == "(devel)" {
+		return ""
+	}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	if _, err := parseSemver(v); err != nil {
+		return ""
+	}
+	return v
 }
 
 // writeMainGo generates the application entry point.

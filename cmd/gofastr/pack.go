@@ -176,25 +176,63 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 	m := map[string]any{}
 	putStr(m, "name", e.Name)
 	putStr(m, "table", e.Table)
-	if e.CRUD != nil {
-		m["crud"] = *e.CRUD
+	if e.Scope != nil {
+		scope := map[string]any{}
+		putBool(scope, "soft_delete", e.Scope.SoftDelete)
+		putBool(scope, "multi_tenant", e.Scope.MultiTenant)
+		putStr(scope, "tenant_field", e.Scope.TenantField)
+		putStr(scope, "owner_field", e.Scope.OwnerField)
+		putStr(scope, "cross_owner_read", e.Scope.CrossOwnerRead)
+		m["scope"] = scope
+	} else {
+		putBool(m, "soft_delete", e.SoftDelete)
+		putBool(m, "multi_tenant", e.MultiTenant)
+		putStr(m, "owner_field", e.OwnerField)
+		putStr(m, "cross_owner_read", e.CrossOwnerRead)
 	}
-	putBool(m, "mcp", e.MCP)
-	putBool(m, "soft_delete", e.SoftDelete)
-	putBool(m, "multi_tenant", e.MultiTenant)
-	putBool(m, "public", e.Public)
-	putStr(m, "owner_field", e.OwnerField)
-	putStr(m, "cross_owner_read", e.CrossOwnerRead)
+	if e.Exposure != nil {
+		exposure := map[string]any{}
+		if e.Exposure.CRUD != nil {
+			exposure["crud"] = *e.Exposure.CRUD
+		}
+		putBool(exposure, "mcp", e.Exposure.MCP)
+		putBool(exposure, "public", e.Exposure.Public)
+		if e.Exposure.Access != nil {
+			acc := map[string]any{}
+			putStr(acc, "read", e.Exposure.Access.Read)
+			putStr(acc, "create", e.Exposure.Access.Create)
+			putStr(acc, "update", e.Exposure.Access.Update)
+			putStr(acc, "delete", e.Exposure.Access.Delete)
+			exposure["access"] = acc
+		}
+		m["exposure"] = exposure
+	} else {
+		if e.CRUD != nil {
+			m["crud"] = *e.CRUD
+		}
+		putBool(m, "mcp", e.MCP)
+		putBool(m, "public", e.Public)
+	}
 	putStrs(m, "search_fields", e.SearchFields)
 	if e.Timestamps != nil {
 		m["timestamps"] = *e.Timestamps
 	}
-	putStr(m, "cursor_field", e.CursorField)
-	putStrs(m, "cursor_fields", e.CursorFields)
+	if e.Pagination != nil {
+		pagination := map[string]any{}
+		putStr(pagination, "cursor_field", e.Pagination.CursorField)
+		putStrs(pagination, "cursor_fields", e.Pagination.CursorFields)
+		if e.Pagination.MaxListLimit != 0 {
+			pagination["max_list_limit"] = e.Pagination.MaxListLimit
+		}
+		m["pagination"] = pagination
+	} else {
+		putStr(m, "cursor_field", e.CursorField)
+		putStrs(m, "cursor_fields", e.CursorFields)
+	}
 	if len(e.Properties) > 0 {
 		m["properties"] = anyMap(e.Properties)
 	}
-	if e.Access != nil {
+	if e.Exposure == nil && e.Access != nil {
 		acc := map[string]any{}
 		putStr(acc, "read", e.Access.Read)
 		putStr(acc, "create", e.Access.Create)
@@ -838,6 +876,9 @@ func unwrapBuilderCalls(e ast.Expr) (ast.Expr, map[string][]ast.Expr) {
 func fieldVals(e ast.Expr) map[string]ast.Expr {
 	out := map[string]ast.Expr{}
 	e, _ = unwrapBuilderCalls(e)
+	if ptr, ok := e.(*ast.UnaryExpr); ok && ptr.Op == token.AND {
+		e = ptr.X
+	}
 	cl, ok := e.(*ast.CompositeLit)
 	if !ok {
 		return out
@@ -1011,6 +1052,42 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 	cfg := fieldVals(call.Args[1])
 	if v, ok := cfg["Table"]; ok {
 		decl.Table = astString(v)
+	}
+	if v, ok := cfg["Scope"]; ok {
+		s := fieldVals(v)
+		decl.Scope = &framework.ScopeDeclaration{
+			SoftDelete: astBool(s["SoftDelete"]), MultiTenant: astBool(s["MultiTenant"]),
+			TenantField: astString(s["TenantField"]), OwnerField: astString(s["OwnerField"]),
+			CrossOwnerRead: astString(s["CrossOwnerRead"]),
+		}
+		decl.SoftDelete, decl.MultiTenant = decl.Scope.SoftDelete, decl.Scope.MultiTenant
+		decl.OwnerField, decl.CrossOwnerRead = decl.Scope.OwnerField, decl.Scope.CrossOwnerRead
+	}
+	if v, ok := cfg["Pagination"]; ok {
+		p := fieldVals(v)
+		decl.Pagination = &framework.PaginationDeclaration{
+			CursorField: astString(p["CursorField"]), CursorFields: astStringSlice(p["CursorFields"]),
+		}
+		if limit, ok := astInt(p["MaxListLimit"]); ok {
+			decl.Pagination.MaxListLimit = limit
+		}
+		decl.CursorField, decl.CursorFields = decl.Pagination.CursorField, decl.Pagination.CursorFields
+	}
+	if v, ok := cfg["Exposure"]; ok {
+		x := fieldVals(v)
+		exposure := &framework.ExposureDeclaration{MCP: astBool(x["MCP"]), Public: astBool(x["Public"])}
+		if b, ok := astPtrCallBool(x["CRUD"]); ok {
+			exposure.CRUD = &b
+		}
+		if accessExpr, ok := x["Access"]; ok {
+			a := fieldVals(accessExpr)
+			exposure.Access = &framework.AccessDeclaration{
+				Read: astString(a["Read"]), Create: astString(a["Create"]),
+				Update: astString(a["Update"]), Delete: astString(a["Delete"]),
+			}
+		}
+		decl.Exposure = exposure
+		decl.CRUD, decl.MCP, decl.Public, decl.Access = exposure.CRUD, exposure.MCP, exposure.Public, exposure.Access
 	}
 	if v, ok := cfg["SoftDelete"]; ok {
 		decl.SoftDelete = astBool(v)

@@ -13,6 +13,10 @@ import (
 // written for agents iterating on a blueprint: each names the file (and line
 // where the parser provides one), what is wrong, and the remedy.
 func runValidate(args []string) {
+	if hasHelpFlag(args) {
+		printValidateHelp()
+		return
+	}
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
 		fail("Usage: gofastr validate <blueprint.yml|blueprint-dir>")
 		info("Parses the blueprint and runs every generate-time validation. Exit 0 = valid.")
@@ -54,6 +58,21 @@ func runValidate(args []string) {
 		return
 	}
 	success("Blueprint %s is valid: %d entity(ies), %d screen(s), %d endpoint(s)", path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints))
+}
+
+func printValidateHelp() {
+	fmt.Println(`gofastr validate — validate a blueprint without writing files
+
+Usage:
+  gofastr validate <blueprint.yml|blueprint-dir>
+
+Checks:
+  YAML decoding and unknown keys
+  entity, screen, endpoint, and module consistency
+  unscoped PII exposure
+  a complete in-memory render of generated files
+
+Exit status is 0 when valid and 1 when any check fails.`)
 }
 
 // failBlueprintValidation prints a validation failure prefixed with the

@@ -310,6 +310,43 @@ func TestPack_TimestampsEntityRoundTrips(t *testing.T) {
 	}
 }
 
+func TestPack_GroupedEntityConfigsRoundTrip(t *testing.T) {
+	crud := false
+	bp := Blueprint{
+		App: BlueprintApp{Name: "Grouped", Module: "example.com/grouped", DBDriver: "sqlite", DBURL: "file:x.db"},
+		Entities: []framework.EntityDeclaration{{
+			Name: "notes", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+			Scope:      &framework.ScopeDeclaration{OwnerField: "user_id", SoftDelete: true},
+			Pagination: &framework.PaginationDeclaration{CursorFields: []string{"created_at", "id"}, MaxListLimit: 50},
+			Exposure:   &framework.ExposureDeclaration{CRUD: &crud, MCP: true, Access: &framework.AccessDeclaration{Read: "notes:read"}},
+		}},
+	}
+	dir := materializeBlueprint(t, bp)
+	got, err := packReadEntities(dir)
+	if err != nil {
+		t.Fatalf("packReadEntities: %v", err)
+	}
+	if len(got) != 1 || got[0].Scope == nil || got[0].Pagination == nil || got[0].Exposure == nil {
+		t.Fatalf("grouped configs lost: %#v", got)
+	}
+	if got[0].Scope.OwnerField != "user_id" || !got[0].Scope.SoftDelete || got[0].Pagination.MaxListLimit != 50 {
+		t.Fatalf("grouped values changed: %#v", got[0])
+	}
+	if got[0].Exposure.CRUD == nil || *got[0].Exposure.CRUD || !got[0].Exposure.MCP || got[0].Exposure.Access.Read != "notes:read" {
+		t.Fatalf("grouped exposure changed: %#v", got[0].Exposure)
+	}
+	m := entityToMap(got[0])
+	if _, ok := m["scope"]; !ok {
+		t.Fatalf("packed YAML map flattened scope: %#v", m)
+	}
+	if _, ok := m["pagination"]; !ok {
+		t.Fatalf("packed YAML map flattened pagination: %#v", m)
+	}
+	if _, ok := m["exposure"]; !ok {
+		t.Fatalf("packed YAML map flattened exposure: %#v", m)
+	}
+}
+
 // TestPack_PublicEntityRoundTrips guards that an entity declared with
 // public: true survives generate→pack. The generator emits EntityConfig
 // {Public: true}; pack must read it back AND re-emit public: true into the

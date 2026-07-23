@@ -37,6 +37,42 @@ func TestRunInitFullProject(t *testing.T) {
 	}
 }
 
+func TestRunInitPinsFrameworkToCLIRelease(t *testing.T) {
+	oldVersion := version
+	version = "0.39.1"
+	t.Cleanup(func() { version = oldVersion })
+
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	out := covT_capStdout(t, func() { runInit([]string{"pinned"}) })
+	mod, err := os.ReadFile(filepath.Join(dir, "pinned", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mod), "github.com/DonaldMurillo/gofastr v0.39.1") {
+		t.Fatalf("scaffold did not pin the CLI release:\n%s", mod)
+	}
+	if !strings.Contains(out, "matching this CLI") {
+		t.Fatalf("scaffold did not explain the pin:\n%s", out)
+	}
+}
+
+func TestNormalizeFrameworkVersion(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+	}{
+		{"0.39.1", "v0.39.1"},
+		{"v0.39.1", "v0.39.1"},
+		{"dev", ""},
+		{"(devel)", ""},
+		{"not-a-version", ""},
+	} {
+		if got := normalizeFrameworkVersion(tc.in); got != tc.want {
+			t.Errorf("normalizeFrameworkVersion(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestRunInitNoEntityPostgres(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
