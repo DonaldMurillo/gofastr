@@ -1,6 +1,8 @@
 package uihost
 
 import (
+	"bytes"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -145,12 +147,21 @@ func TestStrictAxeCoverageEnforcedInDevOnly(t *testing.T) {
 		}
 	})
 
-	t.Run("dev with no manifest fails", func(t *testing.T) {
+	t.Run("dev with no manifest warns and serves", func(t *testing.T) {
+		// A fresh clone / fresh generate has never run the axe suite —
+		// blocking boot there would wall first contact behind a Chrome
+		// run. Absence warns (scream but serve); gaps fail (below).
 		t.Chdir(t.TempDir())
 		t.Setenv("GOFASTR_DEV", "1")
-		msg := mountPanic(t, newHost(t))
-		if !strings.Contains(msg, "axe") {
-			t.Fatalf("missing manifest not flagged in dev:\n%s", msg)
+		var buf bytes.Buffer
+		prev := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prev)
+		if msg := mountPanic(t, newHost(t)); msg != "" {
+			t.Fatalf("missing manifest must warn, not fail boot:\n%s", msg)
+		}
+		if !strings.Contains(buf.String(), "axe coverage unverified") {
+			t.Fatalf("missing manifest produced no warning; log was:\n%s", buf.String())
 		}
 	})
 
@@ -181,6 +192,19 @@ func TestStrictAxeCoverageEnforcedInDevOnly(t *testing.T) {
 			t.Fatalf("full coverage still flagged:\n%s", msg)
 		}
 	})
+}
+
+func TestStrictAxeCoverageSkipsScreenlessApp(t *testing.T) {
+	// An app with no page screens (API-only, or dialogs/drawers only) has
+	// nothing an axe test could scan — dev boot must not demand a manifest.
+	t.Chdir(t.TempDir())
+	t.Setenv("GOFASTR_DEV", "1")
+	a := app.NewApp("demo")
+	a.RegisterScreen(app.NewDialog("/confirm", &bareScreen{}), nil)
+	ds := New(a, strictSiteOptions()...)
+	if msg := mountPanic(t, ds); msg != "" {
+		t.Fatalf("screen-less app failed the axe-coverage check:\n%s", msg)
+	}
 }
 
 func TestStrictAxeCoverageResolvesDynamicRoutes(t *testing.T) {

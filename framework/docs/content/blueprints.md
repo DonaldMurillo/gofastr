@@ -131,6 +131,8 @@ every map must be written with indented `key: value` lines:
 ```yaml
 app:
   name: Demo
+  description: Freight quotes in seconds.   # site meta description (derived from entities when omitted)
+  base_url: https://demo.example            # sitemap origin fallback; APP_BASE_URL env wins
   module: example.com/demo
   theme:
     background: "#101820"
@@ -822,6 +824,34 @@ you declare are emitted into `main.go`; the framework applies defaults
 at serve time. A custom `api_prefix` or auth `base_path` is emitted as
 `DenyPaths` so the service worker's never-precache/never-intercept
 guarantee follows the app's real mounts.
+
+### Strict SEO + a11y defaults (always on)
+
+Generated apps ship `uihost.WithStrict()` plus a surface that passes
+every strict check (see `gofastr docs strict-mode`):
+
+- **Site description** — `app.description` when set, otherwise derived
+  from the app name and entities ("Demo — manage products and
+  orders."). Write a real one; the derivation is a floor, not copy.
+- **Sitemap + robots** — `/sitemap.xml` rooted at the `APP_BASE_URL`
+  env var (fallback: `app.base_url`, then `http://localhost:8080` —
+  set the env when deploying), `/robots.txt` keeping `/__gofastr/` and
+  the admin back-office (when enabled) out of the index. The sitemap
+  excludes the admin path too.
+- **Per-screen SEO** — every screen's title falls back to its name; a
+  screen without a blueprint `description` emits the documented
+  zero-value `ScreenSEO` opt-out instead of empty filler. Fill the
+  description field for pages that should rank.
+- **Axe gate** (`axe_test.go`) — boots the built binary, logs in as
+  the seeded admin when one exists, and runs axe-core over every
+  sitemap page under both color schemes. Its scans record the
+  axe-coverage manifest strict dev boots verify, so a hand-added
+  screen without a scan fails `gofastr dev` with a guided finding
+  (first boot before any test run warns instead of failing).
+
+The consequence to know: after adding a screen by hand, run
+`go test ./...` once (needs Chrome) so the manifest covers it —
+`gofastr dev` names the missing screen until then.
 
 ### Public LLM markdown (`app.llm_md`)
 

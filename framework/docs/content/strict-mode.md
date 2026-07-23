@@ -8,7 +8,9 @@ every screen. All findings are reported at once, each with its remedy,
 as a boot panic at Mount time: a strict app either passes every check
 or never takes traffic.
 
-Strict mode is opt-in — one option:
+Strict mode is opt-in. Apps scaffolded by `gofastr generate` ship with
+it on (and with a surface that passes every check); existing apps add
+one option:
 
 ```go
 host := uihost.New(ui,
@@ -33,7 +35,10 @@ host := uihost.New(ui,
 | Axe coverage | every page screen, **dev only** | the axe-coverage manifest records at least one scan that resolves to the route |
 
 Drawers, sheets, and dialogs are exempt from the screen checks — they
-render inside a page and own no `<head>`.
+render inside a page and own no `<head>`. Screens a battery registers
+(the admin back-office, for example) are also outside the checks:
+batteries Init at `App.Start`, after Mount, so strict mode covers
+exactly the surface the app itself declared.
 
 ## The axe-coverage check
 
@@ -50,11 +55,14 @@ deploy can't fail on its absence. The enforcement point for axe
 coverage is the dev loop and CI, where the tests that write the
 manifest actually run.
 
-Two consequences worth knowing:
+Absence and drift are treated differently, on purpose:
 
-- **A fresh clone fails strict dev boot until the axe suite has run
-  once.** That is by design — run `go test ./...` (or just the axe
-  gate) and the manifest regenerates.
+- **No manifest at all** (fresh clone, fresh `gofastr generate` — the
+  axe suite has simply never run in this checkout) **warns loudly and
+  serves.** First boot is never walled off behind a Chrome run; run
+  `go test ./...` once and the manifest exists from then on.
+- **A manifest that exists but misses a route fails boot.** That is
+  real drift — a screen was added without extending the axe gate.
 - **Deleting a screen never breaks the check.** Stale manifest entries
   that resolve to no route are ignored.
 
