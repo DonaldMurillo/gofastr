@@ -102,3 +102,68 @@ func TestManifestLandsAtDocumentedLocation(t *testing.T) {
 		t.Fatalf("manifest not at %s: %v", FileName, err)
 	}
 }
+
+func TestNormalizePathDropsBareHost(t *testing.T) {
+	dir := t.TempDir()
+	// A scan of the bare origin (no trailing slash) is a scan of "/".
+	if err := Record(dir, "http://localhost:8080", "dark"); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	m, err := Read(dir)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if _, ok := m.Pages["/"]; !ok {
+		t.Fatalf("bare-host URL not normalized to /: %v", m.Pages)
+	}
+}
+
+func TestReadCorruptManifestIsNotNotExist(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gofastr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte("{corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Read(dir)
+	if err == nil {
+		t.Fatal("corrupt manifest read did not error")
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("corrupt manifest must not read as absent — absence relaxes enforcement, corruption must not")
+	}
+}
+
+func TestDefaultDirPrefersEnvThenModuleRoot(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "cmd", "app")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(sub)
+	// macOS tempdirs live behind /private symlinks; compare resolved paths.
+	wantRoot, _ := filepath.EvalSymlinks(root)
+	if got, _ := filepath.EvalSymlinks(DefaultDir()); got != wantRoot {
+		t.Fatalf("DefaultDir from %s = %q, want module root %q", sub, got, wantRoot)
+	}
+	override := t.TempDir()
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", override)
+	if got := DefaultDir(); got != override {
+		t.Fatalf("env override ignored: got %q want %q", got, override)
+	}
+}
+
+func TestDefaultDirFallsBackToCwdWithoutModule(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	got := DefaultDir()
+	// macOS tempdirs resolve through /private symlinks — compare resolved.
+	wd, _ := os.Getwd()
+	if got != wd && got != dir {
+		t.Fatalf("DefaultDir without go.mod = %q, want cwd %q", got, wd)
+	}
+}

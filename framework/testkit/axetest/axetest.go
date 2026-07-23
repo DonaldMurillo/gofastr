@@ -319,7 +319,11 @@ func recordCoverage(ctx context.Context, scheme string) {
 		log.Printf("axetest: coverage: read page location: %v", err)
 		return
 	}
-	if err := axecov.Record(".", loc, scheme); err != nil {
+	// DefaultDir (module root / GOFASTR_AXE_COVERAGE_DIR) — the same
+	// resolution strict mode reads with, so the manifest lands where
+	// enforcement looks even when the test package dir and the server
+	// working directory differ (gofastr dev --dir <root> --pkg ./cmd/app).
+	if err := axecov.Record(axecov.DefaultDir(), loc, scheme); err != nil {
 		log.Printf("axetest: coverage: %v", err)
 	}
 }

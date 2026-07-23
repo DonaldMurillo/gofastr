@@ -5,12 +5,13 @@
 // the result with [Read] and refuses to serve a page route no axe test
 // covers.
 //
-// The manifest lives at .gofastr/axe-coverage.json relative to the
-// directory the axe tests run in — for a normal app that is the project
-// root, the same directory the app serves from. `.gofastr/` is a local
-// build-artifact directory (gitignored, wiped by `make clean`), so the
-// manifest never ships: strict mode only enforces axe coverage in dev,
-// where the file exists.
+// The manifest lives at .gofastr/axe-coverage.json under the canonical
+// coverage root ([DefaultDir]: GOFASTR_AXE_COVERAGE_DIR, else the module
+// root, else the working directory) so the writer (tests) and the
+// readers (strict mode) agree even when their working directories
+// differ. `.gofastr/` is a local build-artifact directory (gitignored,
+// wiped by `make clean`), so the manifest never ships: strict mode only
+// enforces axe coverage in dev, where the file exists.
 //
 // This package is deliberately dependency-free (no chromedp) so
 // production code can read manifests without linking a headless browser.
@@ -109,13 +110,55 @@ func readLocked(dir string) (*Manifest, error) {
 }
 
 // normalizePath reduces a scanned URL to its screen path: scheme, host,
-// query, and fragment are dropped; empty becomes "/".
+// query, and fragment are dropped; empty (including a bare origin with
+// no path, "http://host:port") becomes "/".
 func normalizePath(raw string) string {
-	if u, err := url.Parse(raw); err == nil && u.Path != "" {
-		return u.Path
+	if u, err := url.Parse(raw); err == nil {
+		if u.Path != "" {
+			return u.Path
+		}
+		if u.Host != "" {
+			return "/"
+		}
 	}
 	if raw == "" {
 		return "/"
 	}
 	return raw
+}
+
+// DefaultDir is the canonical coverage-root both the writer (the axe
+// test harness) and the readers (uihost strict mode, tooling) resolve,
+// so the manifest lands where enforcement looks for it even when the
+// test package dir and the server working directory differ (the
+// `gofastr dev --dir <root> --pkg ./cmd/app` layout):
+//
+//  1. GOFASTR_AXE_COVERAGE_DIR, when set — the explicit override.
+//  2. The nearest ancestor of the working directory containing go.mod
+//     (the module root).
+//  3. The working directory itself, when no module root is found.
+//
+// In a multi-app monorepo module every app shares the module-root
+// manifest; entries are harmless across apps (a foreign path that
+// resolves in this app's router counts as coverage only if the route
+// actually exists here). Set the env override per app when that
+// sharing is unwanted.
+func DefaultDir() string {
+	if v := os.Getenv("GOFASTR_AXE_COVERAGE_DIR"); v != "" {
+		return v
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	for dir := wd; ; {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return wd
+		}
+		dir = parent
+	}
 }
