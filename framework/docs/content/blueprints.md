@@ -22,7 +22,25 @@ package (set `--out=<dir>` or `app.output_dir` to scaffold into a subpackage
 instead). `generate` is one-shot: it refuses to overwrite an existing project
 (pass `--force`), because the emitted code is yours to own. `--add` is the
 additive alternative: it writes only the new files from a partial yml, never
-overwriting — see [Additive generation](#additive-generation---add). At runtime your app
+overwriting — see [Additive generation](#additive-generation---add).
+
+`--force` overwrites everything, so it tells you what it is destroying: before
+writing, it compares each target against the bytes it is about to emit and
+names every file that differs, since a difference means someone edited that
+file after scaffolding.
+
+```
+⚠ --force is overwriting 2 file(s) that no longer match generator output — hand edits in them are being discarded:
+    app.go
+    resource.go
+  If this app is maintained by hand, recover with `git checkout -- <file>` and do not regenerate it.
+```
+
+It warns rather than stops — you asked to overwrite. Regenerating an app you
+have edited by hand is almost always a mistake; reach for `--add` instead, or
+keep the blueprint as a record and leave the code alone.
+
+At runtime your app
 registers the **generated** entity package (`entities.RegisterAll(app)`) — there
 is no file-based runtime loader. The blueprint's `entities:` list uses the same
 entity shape and field types documented in
@@ -448,6 +466,16 @@ pieces — `app`, `entities`, `screens`, `nav`, and `seed` — so the invariant
 constructs (modulo comments + formatting); the Meridian example round-trips
 exactly, gated by a test. When you add a new construct to that set, teach
 **both** the generator and pack, or that test fails.
+
+Note what that invariant does and does not say. It is about the
+**declarations**: pack reads `examples/meridian`'s Go and recovers the same
+entities, screens, nav, and seed the blueprint declares. It is *not* a claim
+that re-running `gofastr generate` reproduces that app's source. Meridian has
+been hand-edited since it was scaffolded, so regenerating it would overwrite
+code the generator never wrote; `examples/meridian/doc.go` says so, and
+`--force` there is a mistake, not a refresh. Only `examples/ecommerce`
+regenerates in place, because its blueprint sets `output_dir: app` and the
+generator owns that directory outright.
 
 `endpoints`, `middleware`, `plugins`, and `helpers` are **not** recovered by
 pack: the generator emits them as `stubs.go` signatures you fill with your own
