@@ -16,6 +16,13 @@ package main
 //     (backdrop, focus trap, ESC), handled entirely by the pane-host
 //     runtime module.
 //
+// The ticket pane round-trips through the URL: opening one writes
+// ?pane=secondary:<id>, refreshing or sharing that link renders the pane
+// open and filled from the SERVER (RenderCtx below), and Back closes it.
+// The customer pane deliberately does NOT — its trigger carries no pane
+// key, so it opens without touching the URL. That is the intended split:
+// address the state worth sharing, leave the rest as in-page state.
+//
 // PaneHost owns only the pane lifecycle; the content-fill is the
 // ordinary data-fui-rpc + data-fui-rpc-signal rail (see
 // framework/docs/content/pane-host.md). The GET handlers live in
@@ -31,6 +38,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+// wsPaneParam is the query parameter the workspace's pane state rides
+// on. Shared by the PaneHost config (which tells the runtime what to
+// write) and RenderCtx (which reads it back for first paint), so the two
+// halves can never disagree.
+const wsPaneParam = "pane"
 
 // wsTicket / wsCustomer are the in-memory demo records. Package-level
 // slices, read both at render time (to build the list) and in the RPC
@@ -80,7 +93,19 @@ func (s *WorkspaceScreen) ScreenDescription() string {
 }
 func (s *WorkspaceScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
-func (s *WorkspaceScreen) RenderCtx(_ context.Context) render.HTML {
+func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
+	// ?pane=secondary:<ticket-id> — the deep link the pane host writes
+	// when a row is clicked. The server owns first paint, so resolve it
+	// here: a shared or refreshed link must arrive with the pane already
+	// open AND already filled, not open-then-flash.
+	slot, key, linked := ui.PaneDeepLink(app.QueryFromContext(ctx), wsPaneParam)
+	openTicket, ticketLinked := wsTicket{}, false
+	if linked && slot == "secondary" {
+		// key is untrusted URL input — look it up, never reflect it. An
+		// unknown id just renders the ordinary empty state.
+		openTicket, ticketLinked = wsTicketByID(key)
+	}
+
 	// Primary pane: the support queue.
 	rows := make([]render.HTML, 0, len(wsTickets)+1)
 	rows = append(rows, html.Heading(html.HeadingConfig{Level: 2, Class: "ws-title"},
@@ -90,14 +115,19 @@ func (s *WorkspaceScreen) RenderCtx(_ context.Context) render.HTML {
 	}
 	primary := html.Div(html.DivConfig{Class: "ws-list"}, rows...)
 
-	// Secondary pane: a header + the RPC-filled ticket region.
+	// Secondary pane: a header + the ticket region. Filled server-side
+	// when the URL names a ticket; otherwise the RPC fills it on click.
+	ticketRegion := ui.EmptyState(ui.EmptyStateConfig{
+		Title:        "Select a ticket",
+		Description:  "Choose a row on the left to load its detail here.",
+		HeadingLevel: 3,
+	})
+	if ticketLinked {
+		ticketRegion = renderTicketDetail(openTicket)
+	}
 	secondary := html.Div(html.DivConfig{},
 		paneHeader("Ticket", "secondary"),
-		interactive.BindHTML(render.Tag("div", nil, ui.EmptyState(ui.EmptyStateConfig{
-			Title:        "Select a ticket",
-			Description:  "Choose a row on the left to load its detail here.",
-			HeadingLevel: 3,
-		})), "ws-ticket"),
+		interactive.BindHTML(render.Tag("div", nil, ticketRegion), "ws-ticket"),
 	)
 
 	// Tertiary pane: the RPC-filled customer region.
@@ -126,6 +156,8 @@ func (s *WorkspaceScreen) RenderCtx(_ context.Context) render.HTML {
 			Tertiary:       tertiary,
 			SecondaryLabel: "Ticket detail",
 			TertiaryLabel:  "Customer detail",
+			DeepLinkParam:  wsPaneParam,
+			SecondaryOpen:  ticketLinked,
 		}),
 	)
 }
@@ -134,9 +166,12 @@ func (s *WorkspaceScreen) RenderCtx(_ context.Context) render.HTML {
 // <a>, so there's no navigation to intercept) carrying two independent
 // delegated behaviors: data-fui-pane-open reveals the secondary pane and
 // data-fui-rpc GETs the detail into the ws-ticket signal region.
+// The ticket pane is addressable, so its rows carry a pane key: clicking
+// one writes ?pane=secondary:<id>, and Back replays it by re-clicking
+// this same button — which re-runs the RPC and refills the region.
 func workspaceRow(t wsTicket) render.HTML {
 	action := interactive.Get("/__site/workspace/ticket?id=" + t.ID).OnSuccess(interactive.SetSignal("ws-ticket"))
-	return render.Tag("button", html.MergeAttrs(map[string]string{
+	return interactive.PaneKey(render.Tag("button", html.MergeAttrs(map[string]string{
 		"type":               "button",
 		"class":              "ws-row",
 		"aria-label":         "Open ticket " + t.ID + ": " + t.Subject,
@@ -145,7 +180,7 @@ func workspaceRow(t wsTicket) render.HTML {
 		render.Tag("span", map[string]string{"class": "ws-row__id"}, render.Text("#"+t.ID)),
 		render.Tag("span", map[string]string{"class": "ws-row__subject"}, render.Text(t.Subject)),
 		ui.StatusBadge(ui.StatusBadgeConfig{Label: t.StatusLabel, Variant: t.Status}),
-	)
+	), t.ID)
 }
 
 // paneHeader is the title + Close button strip at the top of a side pane.

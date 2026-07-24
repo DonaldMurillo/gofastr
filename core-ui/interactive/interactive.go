@@ -697,6 +697,31 @@ func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 	return injectAttr(html, "data-fui-pane-close", pane)
 }
 
+// PaneKey labels a pane trigger with the identity of what it opens —
+// the ticket id, the record slug, whatever the pane will show. Maps to
+// data-fui-pane-key="<key>".
+//
+// It is only read on hosts that opted into URL round-tripping with
+// ui.PaneHostConfig.DeepLinkParam: opening through a keyed trigger
+// writes `?<param>=<pane>:<key>`, so refreshing or sharing that URL
+// reproduces the open pane, and Back closes it. Compose it with
+// OpenPaneOnClick (or a manual data-fui-pane-open) on the same element:
+//
+//	interactive.PaneKey(
+//	    interactive.OpenPaneOnClick(row, "secondary"), ticket.ID)
+//
+// An unkeyed trigger still opens its pane; it just leaves the URL
+// unchanged, which is the right behavior for a pane whose contents have
+// no addressable identity. On a host without DeepLinkParam the
+// attribute is inert.
+//
+// The key lands in the URL verbatim, so keep it to record identifiers.
+// The server must look it up rather than trusting it — see
+// ui.PaneDeepLink.
+func PaneKey(html render.HTML, key string) render.HTML {
+	return injectAttr(html, "data-fui-pane-key", key)
+}
+
 // ─── Signal display bindings ───────────────────────────────────────
 //
 // These wrap an island content region so its text/HTML/attribute is
