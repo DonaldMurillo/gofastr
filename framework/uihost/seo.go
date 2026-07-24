@@ -111,6 +111,9 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
 
 	for _, route := range ds.App.Routes() {
+		if route.RedirectTo != "" {
+			continue // redirects have no page to list
+		}
 		if shouldExcludePath(route.Path, cfg.ExcludePaths) {
 			continue
 		}
@@ -215,7 +218,7 @@ func expandRouteForSitemap(a *app.App, pattern string) []string {
 	if !strings.Contains(pattern, ":") {
 		return []string{pattern}
 	}
-	screen, _, ok := a.Router.Resolve(pattern)
+	screen, ok := a.Router.ScreenByPattern(pattern)
 	if !ok {
 		return nil
 	}
@@ -233,11 +236,11 @@ func expandRouteForSitemap(a *app.App, pattern string) []string {
 func applyParams(pattern string, params map[string]string) string {
 	parts := strings.Split(pattern, "/")
 	for i, part := range parts {
-		if strings.HasPrefix(part, ":") && len(part) > 1 {
-			key := strings.TrimPrefix(part, ":")
-			if v, ok := params[key]; ok {
-				parts[i] = v
-			}
+		if !strings.HasPrefix(part, ":") || len(part) <= 1 {
+			continue
+		}
+		if v, ok := params[app.ParamName(part)]; ok {
+			parts[i] = v
 		}
 	}
 	return strings.Join(parts, "/")

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -72,6 +73,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	// Pages.
 	for _, route := range b.Host.App.Routes() {
+		if route.RedirectTo != "" {
+			continue // redirects render no page
+		}
 		paths, err := expandRoute(ctx, b.Host.App, route.Path)
 		if err != nil {
 			return res, fmt.Errorf("static: expand %q: %w", route.Path, err)
@@ -97,7 +101,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// LLM documentation — per-page llm.md and top-level index.
 	if !b.Host.App.NoLLMMD {
 		for _, route := range b.Host.App.Routes() {
-			screen, _, ok := b.Host.App.Router.Resolve(route.Path)
+			if route.RedirectTo != "" {
+				continue
+			}
+			screen, ok := b.Host.App.Router.ScreenByPattern(route.Path)
 			if !ok {
 				continue
 			}
@@ -108,8 +115,26 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			if err != nil {
 				return res, fmt.Errorf("static: expand llm.md %q: %w", route.Path, err)
 			}
-			md := coreapp.ScreenLLMMD(screen)
 			for _, p := range paths {
+				// Per-URL doc: a dynamic route expands to N pages, each
+				// with its own loaded title + content — the pattern-level
+				// ScreenLLMMD would stamp every page with one generic doc
+				// (a placeholder, for ScreenLoader screens). Fall back to
+				// the pattern doc if the concrete path doesn't resolve.
+				var md string
+				if doc, ok := coreapp.ScreenLLMMDForPath(ctx, b.Host.App, p); ok {
+					md = doc.MD
+				} else {
+					// The expanded URL doesn't resolve (e.g. a StaticPaths
+					// value that violates the route's constraint). The
+					// WITHHELD doc, not the pattern doc: the pattern doc
+					// carries the screen's title and rendered content with
+					// NO policy evaluation, so falling back to it would
+					// write a gated screen's content to disk ungated.
+					md = coreapp.ScreenLLMMDWithheld(screen)
+					slog.Warn("static: expanded llm.md path does not resolve — writing withheld doc; check StaticPaths values against the route's constraints",
+						"route", route.Path, "path", p)
+				}
 				dst := filepath.Join(b.OutDir, pathToLLMFile(p))
 				if err := b.ensureContained(dst); err != nil {
 					return res, err
@@ -122,7 +147,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			}
 		}
 		// Top-level page index
-		indexMD := coreapp.AppLLMMD(b.Host.App)
+		// Build-context policy evaluation: gated screens appear in the
+		// exported index metadata-free (no auth at build time).
+		indexMD := coreapp.AppLLMMDCtx(ctx, b.Host.App)
 		if err := writeFile(filepath.Join(b.OutDir, "llm-pages.md"), []byte(indexMD)); err != nil {
 			return res, err
 		}
@@ -277,23 +304,33 @@ func (b *Builder) log(format string, args ...any) {
 
 // expandRoute returns the concrete URLs to build for a registered route.
 // Static routes return themselves. Dynamic routes (with ":param") look up
-// their screen, ask for StaticPaths, and substitute each param map. If a
-// dynamic route's screen does not implement StaticPathsProvider, the route
-// is skipped at build time.
+// their screen, ask for StaticPaths, and substitute each param map. A
+// dynamic route whose screen does not implement StaticPathsProvider (or
+// returns zero paths) is skipped at build time, but the builder now warns
+// — naming the route and the fix — instead of failing silently. The route
+// remains reachable via SSR if the server is running.
 func expandRoute(ctx context.Context, app *coreapp.App, pattern string) ([]string, error) {
 	if !strings.Contains(pattern, ":") {
 		return []string{pattern}, nil
 	}
-	screen, _, ok := app.Router.Resolve(pattern)
+	screen, ok := app.Router.ScreenByPattern(pattern)
 	if !ok {
 		// Pattern is registered but unresolvable — odd, skip safely.
 		return nil, nil
 	}
-	provider, ok := screen.Component.(coreapp.StaticPathsProvider)
-	if !ok {
+	provider, hasPaths := screen.Component.(coreapp.StaticPathsProvider)
+	if !hasPaths {
+		slog.Warn("static: dynamic route has no StaticPaths — skipping; implement StaticPaths on the screen to export its pages",
+			"route", pattern)
 		return nil, nil
 	}
-	return expandParams(ctx, pattern, provider.StaticPaths(ctx))
+	paths := provider.StaticPaths(ctx)
+	if len(paths) == 0 {
+		slog.Warn("static: dynamic route's StaticPaths returned no paths — skipping; return at least one concrete path to export its pages",
+			"route", pattern)
+		return nil, nil
+	}
+	return expandParams(ctx, pattern, paths)
 }
 
 // expandParams substitutes each StaticPaths param map into the route pattern.
@@ -316,15 +353,27 @@ func expandParams(_ context.Context, pattern string, sets []map[string]string) (
 func applyParams(pattern string, params map[string]string) (string, error) {
 	parts := strings.Split(pattern, "/")
 	for i, part := range parts {
-		if strings.HasPrefix(part, ":") && len(part) > 1 {
-			key := strings.TrimPrefix(part, ":")
-			if v, ok := params[key]; ok {
-				if err := validateParamValue(key, v); err != nil {
-					return "", err
-				}
-				parts[i] = v
+		if !strings.HasPrefix(part, ":") || len(part) <= 1 {
+			continue
+		}
+		key := coreapp.ParamName(part)
+		v, ok := params[key]
+		if !ok {
+			continue
+		}
+		// A catch-all segment (":name*") may legitimately carry a
+		// multi-segment remainder; any other param fills exactly one
+		// path component and is validated as such.
+		if strings.HasSuffix(part, "*") {
+			if err := validateCatchAllValue(key, v); err != nil {
+				return "", err
+			}
+		} else {
+			if err := validateParamValue(key, v); err != nil {
+				return "", err
 			}
 		}
+		parts[i] = v
 	}
 	return strings.Join(parts, "/"), nil
 }
@@ -343,6 +392,24 @@ func validateParamValue(key, v string) error {
 	}
 	if v == "." || v == ".." {
 		return fmt.Errorf("static: StaticPaths value for %q is a traversal component: %q", key, v)
+	}
+	return nil
+}
+
+// validateCatchAllValue validates a catch-all ("name*") StaticPaths value,
+// which may span several path components joined by "/". Each component must
+// still be non-empty and free of "." / ".." traversal and NUL.
+func validateCatchAllValue(key, v string) error {
+	if v == "" {
+		return fmt.Errorf("static: empty StaticPaths value for %q", key)
+	}
+	if strings.ContainsRune(v, '\x00') {
+		return fmt.Errorf("static: catch-all StaticPaths value for %q contains NUL: %q", key, v)
+	}
+	for _, comp := range strings.Split(v, "/") {
+		if comp == "" || comp == "." || comp == ".." {
+			return fmt.Errorf("static: catch-all StaticPaths value for %q has an empty or traversal component: %q", key, v)
+		}
 	}
 	return nil
 }

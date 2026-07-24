@@ -29,8 +29,9 @@ type describedScreen struct{}
 func (s *describedScreen) Render() render.HTML {
 	return html.Div(html.DivConfig{}, render.HTML("hi"))
 }
-func (s *describedScreen) ScreenTitle() string       { return "Pricing" }
-func (s *describedScreen) ScreenDescription() string { return "Plans and prices." }
+func (s *describedScreen) SetParams(map[string]string) {}
+func (s *describedScreen) ScreenTitle() string         { return "Pricing" }
+func (s *describedScreen) ScreenDescription() string   { return "Plans and prices." }
 
 // optedOutScreen has a title but opts out of per-page SEO via the
 // documented zero-value ScreenSEO return.

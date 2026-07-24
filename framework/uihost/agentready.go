@@ -635,14 +635,36 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 		return false
 	}
 	screen, _, ok := ds.App.Router.Resolve(r.URL.Path)
+	if !ok || screen.NoLLMMD {
+		return false
+	}
+	// Per-instance doc (SetParams → DI → Load) so a dynamic route's
+	// negotiated markdown carries the page's real title + content —
+	// and, critically, the policy chain is evaluated with the live
+	// request: a non-Allow decision degrades to the metadata-free
+	// withheld doc instead of leaking the screen's rendered content,
+	// title, or SEO bundle.
+	ctx := app.WithRequest(r.Context(), r)
+	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, r.URL.Path)
 	if !ok {
 		return false
 	}
+	md := res.MD
+	if res.Allowed {
+		title := res.Title
+		if title == "" {
+			title = screen.Title
+		}
+		// SEO resolved against the LOADED instance so the negotiated
+		// markdown's front matter matches the HTML head (llmmd_seo.go's
+		// lockstep contract), not the zero-value registration template.
+		seo := resolveScreenSEOFor(screen, res.Component)
+		if fm := screenSEOFrontMatter(title, seo); fm != "" {
+			md = fm + "\n" + md
+		}
+	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	seo := resolveScreenSEO(screen)
-	fm := screenSEOFrontMatter(screen.Title, seo)
-	md := app.ScreenLLMMDWithMeta(screen, fm)
 	w.Write([]byte(md))
 	return true
 }

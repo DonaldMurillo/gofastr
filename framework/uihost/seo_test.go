@@ -26,7 +26,8 @@ func (p *productPagesComp) StaticPaths(ctx context.Context) []map[string]string 
 
 type plainComp struct{}
 
-func (plainComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (plainComp) Render() render.HTML         { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (plainComp) SetParams(map[string]string) {}
 
 func TestSitemap404WithoutOption(t *testing.T) {
 	a := app.NewApp("x")
