@@ -95,18 +95,24 @@
     if (w && typeof w.dismiss === 'function') w.dismiss();
   };
 
+  // Open/close widgets to match the URL's query. Derived straight from
+  // the catalog: core used to maintain a parallel key -> entries index,
+  // built once at boot and again after every SPA navigation, purely to
+  // save a walk over an object the runtime already has. Deriving it here
+  // deletes both copies from the core bundle, which is where bytes are
+  // scarce, and removes the class of bug where the two disagree.
   NS._syncDeepLinks = function () {
-    const idx = NS._widgetDeepLinks || {};
+    const cat = NS._widgetCatalog || {};
     const url = new URL(window.location.href);
-    for (const key in idx) {
-      const got = url.searchParams.get(key);
-      for (const entry of idx[key]) {
-        const mounted = !!NS._widgets[entry.name];
-        if (got === entry.value && !mounted) {
-          NS.openWidget(entry.name, { pushUrl: false });
-        } else if (got !== entry.value && mounted) {
-          NS.closeWidget(entry.name);
-        }
+    for (const name in cat) {
+      const cfg = cat[name].cfg;
+      if (!cfg.deepLinkKey || !cfg.deepLinkValue) continue;
+      // openWidget's pushUrl defaults to falsy, so syncing FROM the URL
+      // cannot write back to it — no explicit opt-out needed.
+      const hit = url.searchParams.get(cfg.deepLinkKey) === cfg.deepLinkValue;
+      if (hit !== !!NS._widgets[name]) {
+        if (hit) NS.openWidget(name);
+        else NS.closeWidget(name);
       }
     }
   };
