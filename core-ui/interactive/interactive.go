@@ -15,6 +15,8 @@
 package interactive
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -33,6 +35,7 @@ type Action struct {
 	method  string // GET, POST, PUT, DELETE, PATCH
 	path    string // URL path
 	confirm string // pre-flight window.confirm message (empty = none)
+	body    string // static JSON body for non-form RPCs (data-fui-rpc-body); empty = none
 	effects []Effect
 }
 
@@ -94,6 +97,23 @@ func (a Action) OnSuccess(effects ...Effect) Action {
 // Maps to data-fui-confirm="message".
 func (a Action) WithConfirm(message string) Action {
 	a.confirm = message
+	return a
+}
+
+// WithBody attaches a static JSON body to the action — the payload sent
+// for a non-form RPC (a button click that isn't inside a <form>).
+// Maps to data-fui-rpc-body="<json>". The runtime sends it verbatim as
+// the request body with Content-Type: application/json.
+//
+// Panics if json is not valid JSON (json.Valid), so a malformed body
+// fails loudly at build/render time rather than producing a runtime
+// request the server rejects. For form-backed RPCs the runtime
+// serializes the form fields itself — do not call WithBody there.
+func (a Action) WithBody(body string) Action {
+	if !json.Valid([]byte(body)) {
+		panic(fmt.Sprintf("interactive: WithBody requires valid JSON, got %q", body))
+	}
+	a.body = body
 	return a
 }
 
@@ -570,10 +590,156 @@ func (a Action) attrs() map[string]string {
 	if a.confirm != "" {
 		m["data-fui-confirm"] = a.confirm
 	}
+	if a.body != "" {
+		m["data-fui-rpc-body"] = a.body
+	}
 	for _, e := range a.effects {
 		for k, v := range e.rpcAttrs() {
 			m[k] = v
 		}
 	}
 	return m
+}
+
+// Attrs returns the data-fui-* attributes this Action would inject, as a
+// plain map[string]string. It is the same map [OnClick]/[OnSubmit] splice
+// into the opening tag — exported so a call site can merge it into an
+// existing attribute map (an [render.Tag] attrs map or a ui.*Config
+// ExtraAttrs) and let render.Tag's sorted writer place every attribute in
+// the same order a hand-written map would. Prefer this over the wrapper
+// functions whenever byte-identical attribute ordering matters (the
+// wrappers append at the tag's first '>', which can reorder attributes
+// relative to a sorted map render).
+//
+// The returned map is a fresh copy; mutating it does not affect the Action.
+// It is assignable directly to html.Attrs (a map[string]string alias) and
+// to render.Tag's attrs argument.
+func (a Action) Attrs() map[string]string {
+	return a.attrs()
+}
+
+// ─── Widget open triggers ───────────────────────────────────────────
+
+// OpenOnClick wraps an HTML element so clicking it opens a registered
+// widget surface. Maps to data-fui-open="<widget>". This is the
+// click-to-open trigger — distinct from [OpenWidget], which opens a
+// widget only after a successful RPC (data-fui-rpc-open).
+func OpenOnClick(html render.HTML, widget string) render.HTML {
+	return injectAttr(html, "data-fui-open", widget)
+}
+
+// ─── Toasts ─────────────────────────────────────────────────────────
+
+// Toast is the config for a click-fired toast notification. Zero fields
+// are omitted from the emitted JSON, so a Toast{Variant, Title, Body,
+// TTLMs} marshals to exactly {"variant":…,"title":…,"body":…,"ttl":…} —
+// the shape call sites hand-write. The runtime's toast module
+// (core-ui/runtime/src/toasts.js __gofastr.toast) reads these keys:
+// variant, title, body, ttl, stack.
+type Toast struct {
+	Variant string `json:"variant,omitempty"` // "success" | "warning" | "danger" | "info" | "neutral"; defaults to "info"
+	Title   string `json:"title,omitempty"`   // required by the runtime — a toast with no title is dropped
+	Body    string `json:"body,omitempty"`    // optional supporting copy
+	Stack   string `json:"stack,omitempty"`   // named [data-fui-toast-stack] container; empty → the auto stack
+	TTLMs   int    `json:"ttl,omitempty"`     // auto-dismiss delay in ms; 0 → persistent (manual dismiss only)
+}
+
+// ToastOnClick wraps an HTML element so clicking it fires a toast with
+// the given config. Maps to data-fui-toast="<json>". The JSON is
+// compact (no whitespace) with HTML escaping disabled, matching what
+// call sites hand-write today; render.Attr then escapes the value for
+// the attribute context.
+func ToastOnClick(html render.HTML, t Toast) render.HTML {
+	return injectAttr(html, "data-fui-toast", marshalToast(t))
+}
+
+// marshalToast encodes a Toast as compact JSON with HTML escaping off
+// (so a body containing '<' round-trips through render.Attr identically
+// to a hand-written literal, instead of arriving as \u003c).
+func marshalToast(t Toast) string {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(t); err != nil {
+		// Toast only holds strings and an int — Encode cannot fail in
+		// practice. Surface it loudly rather than emitting nothing.
+		panic(fmt.Sprintf("interactive: failed to marshal toast: %v", err))
+	}
+	return strings.TrimSpace(buf.String())
+}
+
+// ─── Pane open/close triggers ───────────────────────────────────────
+
+// validPanes are the side-pane slots a PaneHost renders. The empty
+// string is a valid ClosePaneOnClick target (close the topmost pane) but
+// never a valid OpenPaneOnClick target.
+var validPanes = map[string]bool{"secondary": true, "tertiary": true}
+
+// OpenPaneOnClick wraps an HTML element so clicking it opens the named
+// side pane. Maps to data-fui-pane-open="<pane>". Panics unless pane is
+// "secondary" or "tertiary".
+func OpenPaneOnClick(html render.HTML, pane string) render.HTML {
+	if !validPanes[pane] {
+		panic(fmt.Sprintf("interactive: OpenPaneOnClick pane must be \"secondary\" or \"tertiary\", got %q", pane))
+	}
+	return injectAttr(html, "data-fui-pane-open", pane)
+}
+
+// ClosePaneOnClick wraps an HTML element so clicking it closes a side
+// pane. Maps to data-fui-pane-close="<pane>". A non-empty pane
+// ("secondary" or "tertiary") closes that specific pane; an empty pane
+// emits data-fui-pane-close="" and closes the topmost open pane. Any
+// other value panics.
+func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
+	if pane != "" && !validPanes[pane] {
+		panic(fmt.Sprintf("interactive: ClosePaneOnClick pane must be \"secondary\", \"tertiary\", or \"\" (topmost), got %q", pane))
+	}
+	return injectAttr(html, "data-fui-pane-close", pane)
+}
+
+// ─── Signal display bindings ───────────────────────────────────────
+//
+// These wrap an island content region so its text/HTML/attribute is
+// driven by a named client signal. They inject data-fui-signal plus a
+// data-fui-signal-mode. The names mirror core-ui/store's Slice.Bind*
+// methods (the typed, seeded-signal counterpart): reach for a store
+// Slice when the signal is seeded server-side and read by other typed
+// code; reach for these wrappers when you are binding an island's HTML
+// region to a signal an RPC writes (typically via [SetSignal]).
+
+// BindHTML wraps an HTML region whose innerHTML is replaced with the
+// signal value (the trusted-HTML path). Injects data-fui-signal and
+// data-fui-signal-mode="html". Use for an island slot an RPC re-renders
+// server-side and returns as a fragment.
+func BindHTML(html render.HTML, signal string) render.HTML {
+	return bindSignal(html, signal, "html", "")
+}
+
+// BindText wraps an HTML element whose textContent tracks a signal
+// (HTML-escaped). Injects data-fui-signal and data-fui-signal-mode="text".
+// This is the default mode — a bare data-fui-signal with no mode behaves
+// identically — but emitting the mode explicitly documents intent.
+func BindText(html render.HTML, signal string) render.HTML {
+	return bindSignal(html, signal, "text", "")
+}
+
+// BindAttr wraps an HTML element whose attribute tracks a signal.
+// Injects data-fui-signal, data-fui-signal-mode="attr", and
+// data-fui-signal-attr="<attr>". Use when a signal should drive a single
+// attribute (e.g. aria-expanded, data-active) rather than text content.
+func BindAttr(html render.HTML, signal, attr string) render.HTML {
+	return bindSignal(html, signal, "attr", attr)
+}
+
+// bindSignal injects the signal attribute pair (plus the attr name for
+// mode="attr") in sorted order: data-fui-signal, then data-fui-signal-attr,
+// then data-fui-signal-mode. Appending in that order keeps the output
+// byte-identical to a sorted render.Tag attrs map.
+func bindSignal(html render.HTML, signal, mode, attr string) render.HTML {
+	out := injectAttr(html, "data-fui-signal", signal)
+	if attr != "" {
+		out = injectAttr(out, "data-fui-signal-attr", attr)
+	}
+	out = injectAttr(out, "data-fui-signal-mode", mode)
+	return out
 }

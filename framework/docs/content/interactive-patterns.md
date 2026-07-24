@@ -670,6 +670,69 @@ search := interactive.LiveSearch(
 )
 ```
 
+### Action body and attribute maps
+
+`.WithBody(json)` attaches a static JSON body to a non-form RPC (a button
+click with no surrounding `<form>`). It validates the JSON at build time.
+Attributes injected: `data-fui-rpc-body`.
+
+```go
+interactive.OnClick(btn,
+    interactive.Post("/api/transition/42").WithBody(`{"status":"shipped"}`))
+```
+
+`.Attrs()` returns the `data-fui-*` attributes an `Action` would inject, as a
+`map[string]string`. Use it to merge RPC wiring into an existing attribute map
+(a `render.Tag`/`ExtraAttrs` map) so the renderer's sorted output stays
+byte-identical — prefer it over the `OnClick`/`OnSubmit` wrappers whenever the
+element already carries other attributes, since the wrappers splice at the
+tag's first `>` and can reorder attributes relative to a sorted map.
+
+```go
+del := ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger,
+    ExtraAttrs: interactive.Delete("/api/items/42").
+        WithConfirm("Delete this item?").
+        OnSuccess(interactive.SetSignal("items")).Attrs()})
+```
+
+### Click-to-open triggers and toasts
+
+`OpenOnClick` opens a registered widget on click (no RPC). Attributes
+injected: `data-fui-open`. Distinct from the `OpenWidget` effect, which opens
+a widget only after a successful RPC (`data-fui-rpc-open`).
+
+`ToastOnClick` fires a toast on click. Attributes injected:
+`data-fui-toast` (compact JSON of the non-zero `Toast` fields: `variant`,
+`title`, `body`, `stack`, `ttl`).
+
+```go
+interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit"}), "edit-drawer")
+interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Saved!"}),
+    interactive.Toast{Variant: "success", Title: "Saved", TTLMs: 5000})
+```
+
+### Pane triggers
+
+`OpenPaneOnClick` / `ClosePaneOnClick` drive a `PaneHost` side pane on click.
+Both validate the pane name (`"secondary"` / `"tertiary"`; `ClosePaneOnClick`
+also accepts `""` to close the topmost pane, emitting `data-fui-pane-close=""`).
+Attributes injected: `data-fui-pane-open` / `data-fui-pane-close`.
+
+### Signal display bindings
+
+`BindHTML`, `BindText`, and `BindAttr` wrap an island content region so its
+content is driven by a named client signal (the value an RPC writes via
+`SetSignal`). They inject `data-fui-signal` plus `data-fui-signal-mode`
+(`html` / `text` / `attr`); `BindAttr` also injects `data-fui-signal-attr`.
+The names mirror `core-ui/store`'s typed `Slice.Bind*` methods: reach for a
+`store.Slice` when the signal is seeded server-side and read by typed code;
+reach for these wrappers when binding an island HTML region to an RPC signal.
+
+```go
+// An island slot an RPC re-renders and returns as a fragment.
+listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
+```
+
 ---
 
 ## See also
