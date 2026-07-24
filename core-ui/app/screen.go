@@ -135,6 +135,12 @@ type Screen struct {
 	// NoLLMMD disables auto-generated /path/llm.md for this screen.
 	NoLLMMD bool
 
+	// Intercept, when set, makes this screen present as an overlay for
+	// a soft navigation that started on the declared origin route. Nil
+	// (the default) means the screen always renders as itself. See
+	// intercept.go.
+	Intercept *Intercept
+
 	// group is the innermost ScreenGroup this screen belongs to, when
 	// registered via group.Screen. Nil for screens registered directly
 	// on the router. When set, the renderer composes all parent group

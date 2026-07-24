@@ -1356,3 +1356,63 @@ func pageWorkspace(ss *style.StyleSheet) {
 			"font-size", "var(--t-sm)",
 			"line-height", "1.55").End()
 }
+
+// -----------------------------------------------------------------------------
+// /examples/catalog — the intercepting-route demo. The overlay chrome
+// (scrim, drawer docking, reduced-motion entrance) belongs to the
+// framework: app.InterceptOverlayCSS ships it whenever a route declares
+// an intercept. These rules style only the list and the detail body, so
+// the SAME markup reads correctly as a standalone page and inside the
+// drawer.
+// -----------------------------------------------------------------------------
+
+func pageCatalog(ss *style.StyleSheet) {
+	ss.Rule(".cat-page").Set("padding", "var(--s-8) 0 {spacing.xxl}").End()
+	ss.Rule(".cat-list").
+		Set("display", "flex", "flex-direction", "column", "gap", "{spacing.sm}",
+			"margin-top", "{spacing.xl}").End()
+
+	ss.Rule(".cat-row").
+		Set("display", "flex",
+			"align-items", "baseline",
+			"justify-content", "space-between",
+			"gap", "{spacing.md}",
+			"padding", "{spacing.md}",
+			"border", "1px solid var(--line-faint)",
+			"border-radius", "{radii.md}",
+			"background", "var(--color-surface, #fff)",
+			"color", "{colors.text}",
+			"text-decoration", "none",
+			"transition", "border-color 0.12s, background 0.12s").End()
+	ss.Rule(".cat-row:hover").
+		Set("border-color", "{colors.primary}",
+			"background", "var(--color-surface-soft, #f6f6f7)").End()
+	ss.Rule(".cat-row:focus-visible").
+		Set("outline", "2px solid {colors.primary}", "outline-offset", "2px").End()
+	ss.Rule(".cat-row__name").Set("font-weight", "600").End()
+	ss.Rule(".cat-row__meta").
+		Set("font-family", "{fonts.mono}",
+			"font-size", "var(--t-sm)",
+			"color", "{colors.text-subtle}",
+			"flex-shrink", "0").End()
+
+	// Detail body. Sized in ch so it reads well at full-page width and
+	// inside the narrower drawer without a second set of rules.
+	ss.Rule(".cat-detail").
+		Set("display", "flex", "flex-direction", "column", "gap", "{spacing.lg}",
+			"align-items", "flex-start",
+			"max-width", "60ch",
+			"padding", "var(--s-8) 0 {spacing.xxl}").End()
+	// Inside the drawer the framework already pads the overlay child
+	// (app.InterceptOverlayCSS), so drop the page padding rather than
+	// stacking the two. Same markup, two contexts, one rule.
+	ss.Rule("[data-fui-intercept-overlay] .cat-detail").
+		Set("padding", "0", "max-width", "none").End()
+	ss.Rule(".cat-detail__name").
+		Set("font-size", "clamp(24px, 2.6vw, 34px)",
+			"line-height", "1.15",
+			"letter-spacing", "-0.02em",
+			"margin", "0").End()
+	ss.Rule(".cat-detail__blurb").
+		Set("color", "{colors.text-muted}", "line-height", "1.6", "margin", "0").End()
+}

@@ -249,6 +249,9 @@ server side and the runtime does the work.
 | `data-fui-pane-mode="overlay"` | Written by the `panehost` runtime module onto the host when `matchMedia('(max-width: 768px)')` matches AND a pane is open. CSS flips the open pane to a fixed overlay drawer (backdrop scrim via `::before`, right edge, full height) and the module applies a focus trap + scroll lock + ESC/backdrop-to-close. Cleared when the viewport widens or the pane closes. |
 | `data-fui-pane-deeplink="<param>"` | Emitted by `PaneHost` when `PaneHostConfig.DeepLinkParam` is set — opt-in URL round-tripping, naming the query parameter that records pane state. Opening through a keyed trigger writes `?<param>=<pane>:<key>`, closing strips it, and `popstate` replays the state by re-clicking the matching `[data-fui-pane-key]`. Pane state stays in-page state (Hard Rule 1); the parameter only records it so refresh/share/Back reproduce what is on screen, the same contract widget deep links give modals. The SERVER renders first paint from the same parameter via `ui.PaneDeepLink` — without that a shared link paints the pane closed and opens it after hydration. Absent on every host that does not opt in, so the popstate listener is inert for them. |
 | `data-fui-pane-key="<key>"` | On a pane-open/swap trigger (`interactive.PaneKey`): the identity of what the pane will show — a record id or slug. Read only on hosts carrying `data-fui-pane-deeplink`; it supplies the `<key>` half of the query value and is the selector `popstate` uses to find the trigger to replay. An unkeyed trigger still opens its pane but leaves the URL alone. The value lands in the URL verbatim, so the server must look it up, never reflect it. |
+| `data-fui-intercept-overlay` | Written by the demand-loaded `intercept` module on the container it appends to `<body>` for an intercepted route. Holds the screen render the server returned as an overlay variant; the scrim and docking come from `app.InterceptOverlayCSS()`, which the host injects only when some route declares an intercept. Removed on close. |
+| `data-fui-intercept-as="drawer\|sheet"` | On the same container: which presentation the SERVER chose, mirrored from the `X-Gofastr-Overlay` response header (itself derived from the registered `app.InterceptFrom` ScreenType). CSS keys the docking edge off it. The client never picks its own chrome — a forged request can change the wrapper element and nothing else, since policy, params, Load, and content are identical on the canonical and overlay paths. |
+| `data-fui-intercept-close` | On a button inside intercepted overlay content: click closes the overlay. Closing routes through `history.back()`, so the button, ESC, and the backdrop all resolve to the same history move and the page underneath is never refetched. |
 | `data-fui-repeater="<name>"` | On the items container of a `Repeater` component. The runtime uses `data-min-items` and `data-max-items` attributes to enforce item count limits during dynamic add/remove. |
 | `data-wizard-steps="<n>"` | On the `<form>` wrapper of a `Wizard` component. The runtime uses this to know the total number of steps for navigation. |
 | `data-fui-drag-dismiss="true"` | On a widget root whose Definition has `DragDismiss=true` (e.g. `preset.BottomSheet`). Driven by the demand-loaded `runtime/src/dragdismiss.js` module (the marker itself is the load trigger — present at boot for SSR-inlined sheets; dynamically-opened chrome is caught by the MutationObserver scan). Drag starts only from the `data-fui-drag-handle` bar; the module follows pointer Y movement with `transform: translateY` and closes the widget on `pointerup` when distance > 80px or downward velocity > 0.5 px/ms. Snaps back otherwise. While dragging, `data-fui-dragging` is set on the root (used by CSS to suppress conflicting animations). |
@@ -394,6 +397,43 @@ links do for modals. Because the server owns first paint, read the
 parameter with `ui.PaneDeepLink` and set `SecondaryOpen`/`TertiaryOpen`
 plus the pane's content from it; skip that and a shared link paints the
 pane closed, then pops it open after hydration.
+
+### Intercepting routes (`app.InterceptFrom`)
+
+One detail screen, two presentations. `/products/42` is an ordinary
+page registration and stays the canonical render — hard load, refresh,
+external link, and any soft navigation from elsewhere all render it in
+full. A soft navigation that started on the declared origin route
+presents the same render as a drawer or sheet over that page, which
+stays mounted underneath.
+
+The split is decided on the SERVER. The runtime sends
+`X-Gofastr-Intercept: 1` plus `X-Gofastr-From: <current location>`;
+`Router.InterceptFor` re-resolves that origin against the route table
+and agrees only when the target screen declared it. Agreement is
+signalled by `X-Gofastr-Overlay: drawer|sheet`, and no header means the
+client falls back to the ordinary `<main>` swap. `X-Gofastr-From` is
+client-controlled and never trusted as an instruction — a forged value
+can change the wrapper element and nothing else, because routing,
+policy, params, `Load`, and content are identical on both paths.
+
+Costs stay off pages that don't use it. The route manifest carries
+`intercept: {from, as}` per route; core loads the `intercept` demand
+module only when some entry has one, and the UI host injects
+`app.InterceptOverlayCSS()` under the same condition.
+
+Intercepted HTML never enters the screen cache — the cache is keyed by
+path and holds canonical page renders, so storing an overlay variant
+would poison a later direct visit. Closing routes through
+`history.back()`, so Back, Escape, the backdrop, and any
+`data-fui-intercept-close` button are one code path and the page
+underneath is never refetched.
+
+Choosing between the three overlay tools: an intercept is for a detail
+with its own canonical page; a widget deep link
+(`?modal=…`) is for an overlay that is the only view of that content;
+pane-host `DeepLinkParam` is for a region of the current page that
+should survive a refresh.
 
 Responsive collapse: when `matchMedia('(max-width: 768px)')` matches
 AND a pane is open, the `panehost` demand module sets

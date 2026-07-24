@@ -1721,6 +1721,10 @@
     // pushState must carry the fragment.
     let navHash = '';
     try { navHash = new URL(href, location.href).hash; } catch (_) { /* malformed href */ }
+    // An intercepting route presents as an overlay when reached from its
+    // declared origin. The module owns the URL and the fetch in that
+    // case; returning true means it took the navigation.
+    if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
     history.pushState(null, '', fullPath + navHash);
     loadPage(fullPath);
   });
@@ -2389,6 +2393,10 @@
     updateActiveLink(location.pathname);
     _bootstrapComponentCSS();
     _scanForModules(document);
+    // Intercepting routes are rare, so their module is demand-loaded off
+    // the manifest: no intercepting route, no bytes, no listeners.
+    if (Array.isArray(window.__gofastr_routes) &&
+        window.__gofastr_routes.some((r) => r.intercept)) loadModule('intercept');
     _injectSignalAria();
     for (const d of document.querySelectorAll('details[data-fui-disclosure]')) {
       _mirrorDisclosure(d);

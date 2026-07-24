@@ -260,6 +260,19 @@ type routeInfoJSON struct {
 	// Empty for screens. The client-side router rewrites a navigation to
 	// this entry's path to Redirect without a server round-trip.
 	Redirect string `json:"redirect,omitempty"`
+	// Intercept marks a screen that presents as an overlay when reached
+	// by a soft navigation from the named origin route. Absent for
+	// ordinary screens, so its presence anywhere in the manifest is also
+	// the trigger that loads the intercept runtime module.
+	Intercept *interceptJSON `json:"intercept,omitempty"`
+}
+
+// interceptJSON mirrors app.Intercept for the browser. `as` is the
+// string form ("drawer"/"sheet"), not the Go enum's number — the
+// manifest is a wire format and must not encode iota positions.
+type interceptJSON struct {
+	From string `json:"from"`
+	As   string `json:"as"`
 }
 
 // Option configures a UIHost.
@@ -478,6 +491,11 @@ func (ds *UIHost) AppCSS() string {
 	// the sidebar row, the WithContainer centered column). Owned by core-ui/app
 	// next to its markup; injected once here so no app or generator ships it.
 	out += app.LayoutBaseCSS() + "\n"
+	// Overlay chrome for intercepting routes — only when a route declares
+	// one, so an app that never intercepts ships none of it.
+	if ds.hasInterceptingRoute() {
+		out += app.InterceptOverlayCSS() + "\n"
+	}
 	if overrides := style.AllThemeOverridesCSS(); overrides != "" {
 		out += overrides + "\n"
 	}
@@ -750,6 +768,12 @@ func (ds *UIHost) buildRouteScript() string {
 			Layout:      r.Layout,
 			Redirect:    r.RedirectTo,
 		}
+		if r.Intercept != nil {
+			infos[i].Intercept = &interceptJSON{
+				From: r.Intercept.From,
+				As:   r.Intercept.As.String(),
+			}
+		}
 	}
 	rgJSON, _ := json.Marshal(infos)
 	// JS body only — no <script> wrapper. The body is served as an
@@ -757,6 +781,18 @@ func (ds *UIHost) buildRouteScript() string {
 	// default-src 'self'); injectChrome references it with
 	// <script src="…">. SSG writes the same body to disk.
 	return fmt.Sprintf("window.__gofastr_routes = %s;", string(rgJSON))
+}
+
+// hasInterceptingRoute reports whether any registered screen presents as
+// an overlay for soft navigations from a declared origin. Gates both the
+// overlay CSS and, via the route manifest, the intercept runtime module.
+func (ds *UIHost) hasInterceptingRoute() bool {
+	for _, r := range ds.App.Routes() {
+		if r.Intercept != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // pathToChunkName derives a CSS chunk filename from a route path.
@@ -1542,7 +1578,29 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// query (sort, page, filters) just like full-render screens do.
 	ctx := app.WithRequest(r.Context(), r)
 	ctx = store.WithValues(ctx) // capture producer-seeded values for the partial seed
-	res, err := ds.App.RenderPartialResult(ctx, path)
+
+	// Intercepting routes (#130 slice 5): the client ASKS for an overlay
+	// by sending X-Gofastr-Intercept plus the location it is navigating
+	// FROM; the server decides. X-Gofastr-From is attacker-controllable,
+	// so it is never trusted as an instruction — InterceptFor re-resolves
+	// it against the route table and only agrees when the target screen
+	// actually declared that origin. A forged header can therefore change
+	// nothing but the wrapper element: policy, params, Load, and content
+	// are identical on both paths, so there is nothing to escalate to.
+	// No agreement, no X-Gofastr-Overlay, and the client falls back to
+	// the ordinary <main> swap.
+	var overlay *app.Intercept
+	if r.Header.Get("X-Gofastr-Intercept") == "1" {
+		overlay, _ = ds.App.Router.InterceptFor(path, r.Header.Get("X-Gofastr-From"))
+	}
+
+	var res app.RenderResult
+	var err error
+	if overlay != nil {
+		res, err = ds.App.RenderOverlayResult(ctx, path, overlay.As)
+	} else {
+		res, err = ds.App.RenderPartialResult(ctx, path)
+	}
 	if err != nil {
 		ds.serveNotFound(w, path)
 		return
@@ -1599,6 +1657,10 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Gofastr-Partial", "true")
+	if overlay != nil {
+		// The client mounts overlay chrome only when the SERVER says so.
+		w.Header().Set("X-Gofastr-Overlay", overlay.As.String())
+	}
 	// no-store, unconditionally: a partial is per-user rendered HTML, and
 	// on the re-mint path this response carries Set-Cookie (a signed
 	// session token) + X-Gofastr-Session. A shared cache replaying that
