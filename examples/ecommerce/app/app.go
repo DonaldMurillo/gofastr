@@ -43,7 +43,7 @@ func appTheme() style.Theme {
 	theme.Colors.Success.Value = "#10B981"
 	theme.Colors.Surface.Value = "#FFFFFF"
 	theme.Colors.Text.Value = "#0F172A"
-	theme.Colors.TextMuted.Value = "#64748B"
+	theme.Colors.TextMuted.Value = "#475569"
 	theme.Colors.Warning.Value = "#F59E0B"
 	return theme
 }

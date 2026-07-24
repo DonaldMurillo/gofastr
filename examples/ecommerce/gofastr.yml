@@ -19,7 +19,7 @@ app:
     background: "#F8FAFC"
     surface: "#FFFFFF"
     text: "#0F172A"
-    text-muted: "#64748B"
+    text-muted: "#475569"
     border: "#E2E8F0"
     success: "#10B981"
     warning: "#F59E0B"

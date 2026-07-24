@@ -87,7 +87,7 @@ func main() {
 		}
 		return nil
 	})
-	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()), uihost.WithAppIcon(appIconPNG()), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}})))
+	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()), uihost.WithDescription("ShopFront — manage categories, products, orders, order_items, and reviews."), uihost.WithAppIcon(appIconPNG()), uihost.WithSitemap(uihost.SitemapConfig{BaseURL: appBaseURL()}), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}), uihost.WithStrict()))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)
@@ -147,6 +147,13 @@ func appIconPNG() []byte {
 		return nil
 	}
 	return b
+}
+
+// appBaseURL is the canonical origin used in sitemap.xml <loc> entries
+// (they must be absolute URLs). Set APP_BASE_URL when deploying; the
+// fallback keeps local dev and tests working out of the box.
+func appBaseURL() string {
+	return getEnv("APP_BASE_URL", "http://localhost:8080")
 }
 
 // resolveSeedRefs rewrites "@entity.field=value" reference strings in a

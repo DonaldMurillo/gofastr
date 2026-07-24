@@ -13,6 +13,7 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -274,7 +275,7 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
 		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
 		SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
-		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText)},
+		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText), HeadingLevel: 2},
 	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
 		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
@@ -351,7 +352,7 @@ func resRelFacetOptions(m map[string]string) []ui.FacetOption {
 func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 	row, err := c.Crud.GetOne(ctx, id, nil)
 	if err != nil || row == nil {
-		return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist."})
+		return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
 	}
 	rel := c.relationLabels(ctx)
 	title := resCell(resGet(row, "name"))
@@ -372,22 +373,16 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 			body += ",\"" + t.Stamp + "\":\"" + resToday() + "\""
 		}
 		body += "}"
-		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: html.Attrs{
-			"data-fui-rpc":          c.APIPath + "/" + id,
-			"data-fui-rpc-method":   "PUT",
-			"data-fui-rpc-body":     body,
-			"data-fui-rpc-navigate": c.BasePath + "/" + id,
-		}}))
+		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: interactive.Put(c.APIPath + "/" + id).
+			WithBody(body).
+			OnSuccess(interactive.Navigate(c.BasePath + "/" + id)).Attrs()}))
 	}
 	if c.CanEdit {
 		actions = append(actions,
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
-			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: html.Attrs{
-				"data-fui-rpc":          c.APIPath + "/" + id,
-				"data-fui-rpc-method":   "DELETE",
-				"data-fui-rpc-navigate": c.BasePath,
-				"data-fui-confirm":      "Delete this " + c.Singular + "? This cannot be undone.",
-			}}),
+			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: interactive.Delete(c.APIPath + "/" + id).
+				WithConfirm("Delete this " + c.Singular + "? This cannot be undone.").
+				OnSuccess(interactive.Navigate(c.BasePath)).Attrs()}),
 		)
 	}
 	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))
@@ -413,7 +408,7 @@ func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id stri
 		return render.Join(head, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger, Title: "Couldn't load " + rl.Title}, render.Text("See server logs.")))
 	}
 	if len(rows) == 0 {
-		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added."}))
+		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added.", HeadingLevel: 2}))
 	}
 	relLabels := relatedRelationLabels(ctx, rl.Relations)
 	cols := make([]ui.Column, 0, len(rl.Fields)+1)
@@ -480,23 +475,23 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
 	if edit {
 		r, err := c.Crud.GetOne(ctx, id, nil)
 		if err != nil || r == nil {
-			return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist."})
+			return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
 		}
 		row = r
 	}
 	rel := c.relationLabels(ctx)
 
 	title, submit := "New "+c.Singular, "Create "+c.Singular
-	rpc, method, back := c.APIPath, "POST", c.BasePath
+	rpc, back := c.APIPath, c.BasePath
+	var action interactive.Action
 	if edit {
 		title, submit = "Edit "+c.Singular, "Save changes"
-		rpc, method, back = c.APIPath+"/"+id, "PUT", c.BasePath+"/"+id
+		rpc, back = c.APIPath+"/"+id, c.BasePath+"/"+id
+		action = interactive.Put(rpc)
+	} else {
+		action = interactive.Post(rpc)
 	}
-	attrs := html.Attrs{
-		"data-fui-rpc":          rpc,
-		"data-fui-rpc-method":   method,
-		"data-fui-rpc-navigate": back,
-	}
+	attrs := action.OnSuccess(interactive.Navigate(back)).Attrs()
 
 	fields := make([]render.HTML, 0, len(c.Fields))
 	for _, f := range c.Fields {
