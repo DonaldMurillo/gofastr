@@ -213,6 +213,99 @@ unprefixed namespace for UI: set `framework.AppConfig{APIPrefix: "/api"}` (or
 the `framework.WithAPIPrefix("/api")` option) — see
 [entity-declarations](entity-declarations.md) → "Mounting under a prefix".
 
+### Dynamic routes and parameters
+
+A route segment written as `:name` or `{name}` is dynamic — it matches any
+single path segment and arrives in the screen through `SetParams`:
+
+```go
+site.Register("/products/:slug", &ProductScreen{}, nil)
+
+type ProductScreen struct{ slug string }
+
+func (s *ProductScreen) SetParams(p map[string]string) { s.slug = p["slug"] }
+```
+
+Both `:slug` and `{slug}` are the same route; the framework normalizes the
+brace form to the colon form at registration. If a dynamic route's screen
+does **not** implement `SetParams`, the app panics at startup — the
+parameters would otherwise be silently dropped. The contract is enforced at
+boot, never at request time.
+
+**Catch-all segments.** A trailing `{path...}` (or `:path*`) matches one or
+more remaining segments, joined with `/`:
+
+```go
+site.Register("/docs/{path...}", &DocScreen{}, nil)
+// /docs/a       -> path = "a"
+// /docs/a/b/c   -> path = "a/b/c"
+// /docs         -> no match (a catch-all needs at least one segment)
+```
+
+A catch-all must be the final segment; anything else panics at registration.
+Among dynamic routes, registration order decides which one wins (first match
+wins) — there is no specificity ranking, so register the more specific
+pattern first.
+
+**Typed constraints.** Append `:int`, `:uuid`, `:alpha`, or `:alnum` to a
+segment to restrict what it matches. A value that fails the constraint makes
+the route not match, so it falls through to the next route (and 404s if
+nothing matches):
+
+```go
+site.Register("/orders/{id:int}", &OrderScreen{}, nil)   // ASCII digits
+site.Register("/u/{id:uuid}", &UserScreen{}, nil)        // canonical UUID
+site.Register("/u/{handle:alnum}", &ProfileScreen{}, nil) // letters + digits
+```
+
+`alpha` is ASCII letters only; `alnum` adds digits — useful for handles and
+slugs so a segment with punctuation (`avatar.png`) falls through instead of
+reaching the screen. There is deliberately no `string` constraint: every
+param is a string already, so it would be an unconstrained no-op under a
+misleading name.
+
+The constraint suffix is stripped from the parameter name — `SetParams`
+receives `id`, not `id:int`. A constraint on a catch-all segment, or an
+unknown constraint name, panics at registration.
+
+**Optional segments — register twice.** There is no optional-segment syntax.
+To serve both `/{locale}/pricing` and `/pricing` from one component, register
+it on both routes:
+
+```go
+site.Register("/{locale}/pricing", &PricingScreen{}, nil)
+site.Register("/pricing", &PricingScreen{}, nil)
+```
+
+The component is shared; on the bare `/pricing` route `SetParams` simply will
+not receive a `locale` key, so handle the missing key inside `SetParams`.
+
+**Redirects.** `Redirect` and `RedirectPattern` declare permanent (308)
+redirects at registration:
+
+```go
+site.Redirect("/old-pricing", "/pricing")            // exact path
+site.RedirectPattern("/legacy/{id}", "/orders/{id}") // param passthrough
+```
+
+A hard GET of the `from` path is 308-redirected to the resolved `to` path;
+on client-side navigation the runtime follows the redirect. Chains
+(`/a → /b → /c`) collapse to one hop; a cycle fails closed to a 404. The
+target must be a relative same-app path (an absolute URL panics —
+open-redirect guard), and every parameter referenced in `to` must be
+declared in `from`. The `from` pattern obeys the same grammar as a route
+(constraints, trailing catch-all).
+
+Because redirects are consulted **before** screen resolution, a redirect
+whose `from` **overlaps** a registered dynamic screen — shares even one
+matching URL — panics at registration (and vice versa): param names are
+irrelevant, so `/users/{n:int}` overlaps `/users/{id}`, while genuinely
+disjoint constraints (`{n:int}` vs `{h:alpha}`) coexist. An *exact*
+redirect may still shadow one concrete path of a dynamic screen — the
+router's normal exact-first rule. Redirect entries appear in `Routes()`
+with a non-empty `RedirectTo`; they render no page, so static export,
+sitemap, and llm.md skip them.
+
 ### Accessing the database from a screen
 
 A screen's `Render(ctx)` / `Load(ctx)` needs a way to reach the same `*sql.DB`
