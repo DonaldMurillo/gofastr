@@ -293,7 +293,8 @@ func (c *renderComp) Render() render.HTML { return render.HTML(c.html) }
 
 type basicComp struct{}
 
-func (c *basicComp) Render() render.HTML { return render.HTML("<div>basic</div>") }
+func (c *basicComp) Render() render.HTML         { return render.HTML("<div>basic</div>") }
+func (c *basicComp) SetParams(map[string]string) {}
 
 // Ensure basicComp satisfies component.Component
 var _ component.Component = (*basicComp)(nil)
@@ -437,5 +438,156 @@ func TestScreenLLMMDWithMeta_InsertsPrefixBeforeTitle(t *testing.T) {
 	// Existing body must still be present.
 	if !strings.Contains(md, "## Route") {
 		t.Errorf("expected '## Route' section to remain; got:\n%s", md)
+	}
+}
+
+// --- ScreenLLMMDForPath: per-instance docs for concrete URLs ---
+
+type loadedDocComp struct {
+	slug  string
+	title string
+}
+
+func (c *loadedDocComp) SetParams(m map[string]string) { c.slug = m["path"] }
+func (c *loadedDocComp) Load(ctx context.Context) error {
+	c.title = "Doc " + c.slug
+	return nil
+}
+func (c *loadedDocComp) ScreenTitle() string { return c.title }
+func (c *loadedDocComp) Render() render.HTML {
+	return render.HTML("<h1>Doc " + c.slug + "</h1><p>Body of " + c.slug + ".</p>")
+}
+
+func TestScreenLLMMDForPathLoadsInstance(t *testing.T) {
+	a := NewApp("t")
+	a.Register("/docs/{path...}", &loadedDocComp{}, nil)
+
+	doc, ok := ScreenLLMMDForPath(context.Background(), a, "/docs/getting-started")
+	if !ok {
+		t.Fatal("concrete path should resolve")
+	}
+	md, title := doc.MD, doc.Title
+	if title != "Doc getting-started" {
+		t.Errorf("title = %q, want the loaded title", title)
+	}
+	if !doc.Allowed || doc.Component == nil {
+		t.Error("allowed render must report Allowed + the loaded Component")
+	}
+	if !strings.Contains(md, "Body of getting-started.") {
+		t.Errorf("md must carry loaded content, not the ScreenLoader placeholder:\n%s", md)
+	}
+	if strings.Contains(md, "not available in static context") {
+		t.Errorf("loaded doc must not contain the placeholder:\n%s", md)
+	}
+	// Two URLs of the same route produce distinct docs.
+	doc2, _ := ScreenLLMMDForPath(context.Background(), a, "/docs/other")
+	if md == doc2.MD {
+		t.Error("distinct URLs must produce distinct docs")
+	}
+}
+
+func TestScreenLLMMDForPathUnknown(t *testing.T) {
+	a := NewApp("t")
+	a.Register("/x", &basicComp{}, nil)
+	if _, ok := ScreenLLMMDForPath(context.Background(), a, "/nope"); ok {
+		t.Error("unresolvable path must return ok=false")
+	}
+}
+
+func TestScreenLLMMDForPathHonorsPolicy(t *testing.T) {
+	a := NewApp("t")
+	deny := PolicyFunc(func(ctx context.Context) Decision {
+		return Decision{Kind: DecisionRedirect, URL: "/login"}
+	})
+	a.RegisterScreen(NewScreen("/secret/{path}", &loadedDocComp{}).WithPolicy(deny), nil)
+
+	doc, ok := ScreenLLMMDForPath(context.Background(), a, "/secret/42")
+	if !ok {
+		t.Fatal("gated path still resolves — it degrades, not vanishes")
+	}
+	md := doc.MD
+	if doc.Allowed || doc.Component != nil {
+		t.Error("gated render must not report Allowed or carry an instance")
+	}
+	if strings.Contains(md, "Body of 42.") {
+		t.Errorf("policy-gated screen leaked loaded content via llm.md:\n%s", md)
+	}
+}
+
+func TestLLMMDPolicyWithholdsNonLoaderContent(t *testing.T) {
+	// A NON-ScreenLoader gated screen: the pattern-doc fallback renders
+	// registration-instance content, so the withheld doc must be served
+	// instead.
+	a := NewApp("t")
+	deny := PolicyFunc(func(ctx context.Context) Decision {
+		return Decision{Kind: DecisionBlock, Status: 403}
+	})
+	a.RegisterScreen(NewScreen("/secret/{id}", &secretNonLoaderComp{body: "internal instructions"}).WithPolicy(deny), nil)
+
+	doc, ok := ScreenLLMMDForPath(context.Background(), a, "/secret/42")
+	if !ok {
+		t.Fatal("gated path should degrade, not vanish")
+	}
+	md := doc.MD
+	if strings.Contains(md, "internal instructions") {
+		t.Errorf("non-loader gated screen leaked registration content:\n%s", md)
+	}
+	if !strings.Contains(md, "withheld") {
+		t.Errorf("expected withheld marker:\n%s", md)
+	}
+}
+
+type secretNonLoaderComp struct{ body string }
+
+func (c *secretNonLoaderComp) SetParams(map[string]string) {}
+func (c *secretNonLoaderComp) Render() render.HTML {
+	return render.HTML("<p>" + c.body + "</p>")
+}
+
+// Sol round-2 finding 1: the withheld doc must be METADATA-free — the
+// screen's title, description, and SEO bundle are component-supplied and
+// protected by the same policy as the content.
+func TestWithheldDocLeaksNoMetadata(t *testing.T) {
+	a := NewApp("t")
+	deny := PolicyFunc(func(ctx context.Context) Decision {
+		return Decision{Kind: DecisionBlock, Status: 403}
+	})
+	scr := NewScreen("/secret", &secretNonLoaderComp{body: "internal instructions"}).WithPolicy(deny)
+	scr.Title = "Project NIGHTFALL"
+	scr.Description = "Acquisition target: Example Corp"
+	a.RegisterScreen(scr, nil)
+
+	doc, ok := ScreenLLMMDForPath(context.Background(), a, "/secret")
+	if !ok {
+		t.Fatal("gated path should degrade, not vanish")
+	}
+	for _, leak := range []string{"NIGHTFALL", "Acquisition", "internal instructions"} {
+		if strings.Contains(doc.MD, leak) {
+			t.Errorf("withheld doc leaked %q:\n%s", leak, doc.MD)
+		}
+	}
+	if !strings.Contains(doc.MD, "/secret") {
+		t.Errorf("withheld doc should still document the route path:\n%s", doc.MD)
+	}
+}
+
+// The page index lists policy-gated screens metadata-free.
+func TestAppLLMMDCtxGatesMetadata(t *testing.T) {
+	a := NewApp("t")
+	a.Register("/", &basicComp{}, nil)
+	deny := PolicyFunc(func(ctx context.Context) Decision {
+		return Decision{Kind: DecisionBlock, Status: 403}
+	})
+	scr := NewScreen("/secret", &basicComp{}).WithPolicy(deny)
+	scr.Title = "Project NIGHTFALL"
+	scr.Description = "Acquisition target: Example Corp"
+	a.RegisterScreen(scr, nil)
+
+	md := AppLLMMDCtx(context.Background(), a)
+	if strings.Contains(md, "NIGHTFALL") || strings.Contains(md, "Acquisition") {
+		t.Errorf("index leaked gated metadata:\n%s", md)
+	}
+	if !strings.Contains(md, "/secret") {
+		t.Errorf("index should still list the gated route's path:\n%s", md)
 	}
 }

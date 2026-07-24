@@ -290,12 +290,7 @@ func optimisticCreateDemo(ctx context.Context) render.HTML {
 	// The list region is bound to a signal in mode=html. On 2xx the runtime
 	// swaps its innerHTML with the response — the fresh authoritative list
 	// (with the new row's real server-assigned id).
-	listRegion := html.Div(html.DivConfig{
-		ExtraAttrs: html.Attrs{
-			"data-fui-signal":      "opt-create-list",
-			"data-fui-signal-mode": "html",
-		},
-	}, list)
+	listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "opt-create-list")
 	return html.Div(html.DivConfig{Class: "demo-stack"},
 		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
     ui.Button(ui.ButtonConfig{Label: "Add"}),
@@ -321,12 +316,7 @@ func optimisticDeleteDemo(ctx context.Context) render.HTML {
 	// ConfirmAction returns (trigger, modal). The trigger renders inline per
 	// row; main.go mounts the matching modals once at startup via
 	// optimisticDeleteModals().
-	listRegion := html.Div(html.DivConfig{
-		ExtraAttrs: html.Attrs{
-			"data-fui-signal":      "opt-delete-list",
-			"data-fui-signal-mode": "html",
-		},
-	}, list)
+	listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "opt-delete-list")
 	return html.Div(html.DivConfig{Class: "demo-stack"},
 		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
     Name:    "opt-delete-" + item.ID,
@@ -741,11 +731,10 @@ var componentCatalog = []componentEntry{
 	{"panehost", "PaneHost", "Layout", "Master-detail shell: a primary pane plus openable side panes that collapse to an overlay drawer on narrow screens.", func() render.HTML {
 		primary := html.Div(html.DivConfig{},
 			html.Div(html.DivConfig{Class: "demo-row"},
-				ui.Button(ui.ButtonConfig{
-					Label:      "Open details",
-					Variant:    ui.ButtonSecondary,
-					ExtraAttrs: html.Attrs{"data-fui-pane-open": "secondary"},
-				}),
+				interactive.OpenPaneOnClick(ui.Button(ui.ButtonConfig{
+					Label:   "Open details",
+					Variant: ui.ButtonSecondary,
+				}), "secondary"),
 			),
 			html.Paragraph(html.TextConfig{}, render.Text(
 				"Primary pane — the list or main view. Open the side pane to see the split layout; narrow the window and it becomes an overlay drawer.")),
@@ -755,11 +744,10 @@ var componentCatalog = []componentEntry{
 		secondary := html.Div(html.DivConfig{},
 			html.Div(html.DivConfig{Class: "demo-row"},
 				html.Heading(html.HeadingConfig{Level: 3}, render.Text("Details")),
-				ui.Button(ui.ButtonConfig{
-					Label:      "Close",
-					Variant:    ui.ButtonGhost,
-					ExtraAttrs: html.Attrs{"data-fui-pane-close": ""},
-				}),
+				interactive.ClosePaneOnClick(ui.Button(ui.ButtonConfig{
+					Label:   "Close",
+					Variant: ui.ButtonGhost,
+				}), ""),
 			),
 			html.Paragraph(html.TextConfig{}, render.Text("Secondary pane content.")),
 		)
@@ -1292,7 +1280,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"toggle", "Toggle Switch", "Inputs", "Boolean toggle — client-side signal flip, no RPC.", func() render.HTML {
 		row := html.Div(html.DivConfig{Class: "demo-row"},
 			ui.SignalToggle(ui.SignalToggleConfig{SignalName: "demo-toggle"}),
-			render.Tag("span", map[string]string{"data-fui-signal": "demo-toggle"}, render.Text("false")),
+			interactive.BindText(render.Tag("span", nil, render.Text("false")), "demo-toggle"),
 		)
 		return row
 	}},
@@ -1510,12 +1498,10 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 							),
 							html.Div(html.DivConfig{Class: "demo-row"},
 								btn,
-								render.Tag("span", map[string]string{
-									"data-fui-signal":          "demo-counter",
-									"data-fui-signal-mode":     "text",
+								interactive.BindText(render.Tag("span", map[string]string{
 									"data-fui-flash-on-update": "",
 									"class":                    "demo-signal-out",
-								}, render.Text("0")),
+								}, render.Text("0")), "demo-counter"),
 							),
 						),
 					),
@@ -1603,11 +1589,9 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 								render.Text("Type a message and press Send. The response appears below; the form clears."),
 							),
 							form,
-							render.Tag("div", map[string]string{
-								"data-fui-signal":      "demo-form-result",
-								"data-fui-signal-mode": "html",
-								"class":                "demo-signal-out",
-							}),
+							interactive.BindHTML(render.Tag("div", map[string]string{
+								"class": "demo-signal-out",
+							}), "demo-form-result"),
 						),
 					),
 				),
@@ -1786,28 +1770,21 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	}},
 	{"modal", "Modal", "Overlays", "Center-mounted dialog: backdrop, focus trap, Escape, URL deeplinking.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
-			ui.Button(ui.ButtonConfig{Label: "Open modal", Variant: ui.ButtonPrimary,
-				ExtraAttrs: html.Attrs{"data-fui-open": "site-demo-modal"}}),
-			ui.Button(ui.ButtonConfig{Label: "Edit user #42", Variant: ui.ButtonSecondary,
-				ExtraAttrs: html.Attrs{"data-fui-open": "site-demo-modal", "data-fui-deeplink": "user_id=42"}}),
+			interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open modal", Variant: ui.ButtonPrimary}), "site-demo-modal"),
+			interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit user #42", Variant: ui.ButtonSecondary, ExtraAttrs: html.Attrs{"data-fui-deeplink": "user_id=42"}}), "site-demo-modal"),
 		)
 	}},
 	{"drawer", "Drawer", "Overlays", "Edge-mounted sliding panel — same dismiss affordances as Modal, plus deeplinking.", func() render.HTML {
-		return ui.Button(ui.ButtonConfig{Label: "Open drawer", Variant: ui.ButtonPrimary,
-			ExtraAttrs: html.Attrs{"data-fui-open": "site-demo-drawer"}})
+		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open drawer", Variant: ui.ButtonPrimary}), "site-demo-drawer")
 	}},
 	{"bottomsheet", "BottomSheet", "Overlays", "Mobile-friendly bottom-anchored variant of Drawer with drag-to-dismiss.", func() render.HTML {
-		return ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary,
-			ExtraAttrs: html.Attrs{"data-fui-open": "site-demo-bottomsheet"}})
+		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary}), "site-demo-bottomsheet")
 	}},
 	{"toast", "Toast", "Feedback", "Stacked notifications — client (data-fui-toast) or server (X-Gofastr-Toast header).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
-			ui.Button(ui.ButtonConfig{Label: "Client: success", Variant: ui.ButtonPrimary,
-				ExtraAttrs: html.Attrs{"data-fui-toast": `{"variant":"success","title":"Saved","body":"Triggered from JS, no round-trip.","ttl":5000}`}}),
-			ui.Button(ui.ButtonConfig{Label: "Client: info", Variant: ui.ButtonSecondary,
-				ExtraAttrs: html.Attrs{"data-fui-toast": `{"variant":"info","title":"FYI","body":"Body text + five-second TTL.","ttl":5000}`}}),
-			ui.Button(ui.ButtonConfig{Label: "Server: header", Variant: ui.ButtonSecondary,
-				ExtraAttrs: html.Attrs{"data-fui-rpc": "/__site/toast/push", "data-fui-rpc-body": "{}"}}),
+			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: success", Variant: ui.ButtonPrimary}), interactive.Toast{Variant: "success", Title: "Saved", Body: "Triggered from JS, no round-trip.", TTLMs: 5000}),
+			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: info", Variant: ui.ButtonSecondary}), interactive.Toast{Variant: "info", Title: "FYI", Body: "Body text + five-second TTL.", TTLMs: 5000}),
+			ui.Button(ui.ButtonConfig{Label: "Server: header", Variant: ui.ButtonSecondary, ExtraAttrs: interactive.Post("/__site/toast/push").WithBody("{}").Attrs()}),
 		)
 	}},
 	{"scrollspy", "ScrollSpy", "Navigation", "IntersectionObserver active-section tracking for in-page anchor navs.", func() render.HTML {

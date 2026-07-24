@@ -160,6 +160,25 @@ so a crawler and an LLM see one consistent metadata set per route.
 Screens with no SEO declarations get no front-matter — the markdown is
 unchanged. See [SEO](/docs/seo) for the per-screen interfaces.
 
+### Dynamic routes get per-URL docs
+
+A dynamic route's concrete URLs serve real per-page docs, not one shared
+pattern doc: `GET /products/42/llm.md` (or `/docs/getting-started/llm.md`
+on a catch-all route) builds the same per-request instance the page render
+uses — `SetParams` → DI → `Load` — so the markdown carries that page's
+loaded title and rendered content. The static exporter does the same for
+every URL a screen's `StaticPaths` enumerates, and SPA partial responses
+carry the post-`Load` title in `X-Gofastr-Title`, so in-app navigation to
+a dynamic page updates the browser title correctly. All of it sits behind
+the same `WithPublicLLMMD` opt-in as the static per-screen handlers; a
+`Load` failure degrades to the pattern-level doc rather than erroring.
+
+Every markdown surface evaluates the screen's policy chain with the live
+request: a non-Allow decision serves a metadata-free "withheld" doc (route
+path and type only — no title, description, SEO front matter, or content),
+and the `/llm-pages.md` index lists policy-gated screens path-only. An
+authenticated agent whose request passes the policy sees the full docs.
+
 ### MCP auto-mount  (`framework.WithMCP`)
 
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST

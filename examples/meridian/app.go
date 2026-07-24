@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
@@ -210,7 +211,7 @@ func customersList() ResourceConfig {
 		WithHeading("Customers").
 		WithEmpty("No customers yet — add your first to get started.").
 		WithIsland("/api/tables/customers").
-		WithActions(ui.Button(ui.ButtonConfig{Label: "Quick add", Variant: ui.ButtonSecondary, ExtraAttrs: html.Attrs{"data-fui-open": "customer-quick-add"}}))
+		WithActions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Quick add", Variant: ui.ButtonSecondary}), "customer-quick-add"))
 }
 
 // quickAddCustomerModal is a plain preset.Modal: the centered slot paints
@@ -220,13 +221,8 @@ func customersList() ResourceConfig {
 // the fields, and SPA-navigates to the list so the new row appears.
 func quickAddCustomerModal() widget.Definition {
 	heading := html.Heading(html.HeadingConfig{Level: 2, ID: "customer-quick-add-title"}, render.Text("New customer"))
-	form := ui.Form(ui.FormConfig{Action: "/api/customers", Method: "POST", SubmitLabel: "Add customer", ExtraAttrs: html.Attrs{
-		"data-fui-rpc":          "/api/customers",
-		"data-fui-rpc-method":   "POST",
-		"data-fui-rpc-close":    "",
-		"data-fui-rpc-reset":    "",
-		"data-fui-rpc-navigate": "/app/customers",
-	}},
+	form := ui.Form(ui.FormConfig{Action: "/api/customers", Method: "POST", SubmitLabel: "Add customer", ExtraAttrs: interactive.Post("/api/customers").
+		OnSuccess(interactive.CloseWidget(), interactive.ResetForm(), interactive.Navigate("/app/customers")).Attrs()},
 		ui.FormField(ui.FormFieldConfig{Label: "Name", For: "qa-name", Required: true, Input: html.Input(html.InputConfig{Type: "text", Name: "name", ID: "qa-name", ExtraAttrs: html.Attrs{"required": "required"}})}),
 		ui.FormField(ui.FormFieldConfig{Label: "Email", For: "qa-email", Required: true, Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "qa-email", ExtraAttrs: html.Attrs{"required": "required"}})}),
 		ui.FormField(ui.FormFieldConfig{Label: "Company", For: "qa-company", Input: html.Input(html.InputConfig{Type: "text", Name: "company", ID: "qa-company"})}),

@@ -15,6 +15,9 @@
 package main
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
@@ -265,6 +268,39 @@ type DocPageScreen struct{ Entry docEntry }
 func (s *DocPageScreen) ScreenTitle() string        { return s.Entry.Title }
 func (s *DocPageScreen) ScreenDescription() string  { return s.Entry.Desc }
 func (s *DocPageScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+// SetParams resolves the doc entry from the catch-all remainder
+// (/docs/{path...}). A known slug loads its catalog entry; an unknown
+// slug leaves a placeholder so Load can reject it.
+func (s *DocPageScreen) SetParams(p map[string]string) {
+	slug := p["path"]
+	if _, entry, ok := findDocEntry(slug); ok {
+		s.Entry = entry
+	} else {
+		s.Entry = docEntry{Slug: slug}
+	}
+}
+
+// Load rejects unknown doc slugs so handlePage serves the site's 404
+// (NotFoundScreen) — the same UX the per-slug loop produced by simply
+// not registering unknown paths.
+func (s *DocPageScreen) Load(ctx context.Context) error {
+	if _, _, ok := findDocEntry(s.Entry.Slug); !ok {
+		return fmt.Errorf("docs: no catalog entry for %q", s.Entry.Slug)
+	}
+	return nil
+}
+
+// StaticPaths enumerates every catalog doc so static export, sitemap,
+// llm.md, and the strict coverage gate keep producing one page per doc
+// — the same URL set the per-slug registration loop emitted.
+func (s *DocPageScreen) StaticPaths(ctx context.Context) []map[string]string {
+	out := make([]map[string]string, 0, len(flatDocs()))
+	for _, e := range flatDocs() {
+		out = append(out, map[string]string{"path": e.Slug})
+	}
+	return out
+}
 
 func (s *DocPageScreen) Render() render.HTML {
 	intent, _, _ := findDocEntry(s.Entry.Slug)

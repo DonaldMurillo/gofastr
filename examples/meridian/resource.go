@@ -15,6 +15,7 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -459,22 +460,16 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 			body += ",\"" + t.Stamp + "\":\"" + resToday() + "\""
 		}
 		body += "}"
-		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: html.Attrs{
-			"data-fui-rpc":          c.APIPath + "/" + id,
-			"data-fui-rpc-method":   "PUT",
-			"data-fui-rpc-body":     body,
-			"data-fui-rpc-navigate": c.BasePath + "/" + id,
-		}}))
+		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: interactive.Put(c.APIPath + "/" + id).
+			WithBody(body).
+			OnSuccess(interactive.Navigate(c.BasePath + "/" + id)).Attrs()}))
 	}
 	if c.CanEdit {
 		actions = append(actions,
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
-			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: html.Attrs{
-				"data-fui-rpc":          c.APIPath + "/" + id,
-				"data-fui-rpc-method":   "DELETE",
-				"data-fui-rpc-navigate": c.BasePath,
-				"data-fui-confirm":      "Delete this " + c.Singular + "? This cannot be undone.",
-			}}),
+			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: interactive.Delete(c.APIPath + "/" + id).
+				WithConfirm("Delete this " + c.Singular + "? This cannot be undone.").
+				OnSuccess(interactive.Navigate(c.BasePath)).Attrs()}),
 		)
 	}
 	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))
@@ -574,16 +569,16 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
 	rel := c.relationLabels(ctx)
 
 	title, submit := "New "+c.Singular, "Create "+c.Singular
-	rpc, method, back := c.APIPath, "POST", c.BasePath
+	rpc, back := c.APIPath, c.BasePath
+	var action interactive.Action
 	if edit {
 		title, submit = "Edit "+c.Singular, "Save changes"
-		rpc, method, back = c.APIPath+"/"+id, "PUT", c.BasePath+"/"+id
+		rpc, back = c.APIPath+"/"+id, c.BasePath+"/"+id
+		action = interactive.Put(rpc)
+	} else {
+		action = interactive.Post(rpc)
 	}
-	attrs := html.Attrs{
-		"data-fui-rpc":          rpc,
-		"data-fui-rpc-method":   method,
-		"data-fui-rpc-navigate": back,
-	}
+	attrs := action.OnSuccess(interactive.Navigate(back)).Attrs()
 
 	fields := make([]render.HTML, 0, len(c.Fields))
 	for _, f := range c.Fields {

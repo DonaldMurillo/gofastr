@@ -16,7 +16,8 @@ type stubComponent struct {
 	html render.HTML
 }
 
-func (s *stubComponent) Render() render.HTML { return s.html }
+func (s *stubComponent) Render() render.HTML         { return s.html }
+func (s *stubComponent) SetParams(map[string]string) {}
 
 // stubService is a test helper for DI tests.
 type stubService struct {

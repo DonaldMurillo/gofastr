@@ -3222,6 +3222,7 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -3483,7 +3484,7 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
 		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
 		SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
-		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText)},
+		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText), HeadingLevel: 2},
 	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
 		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
@@ -3560,7 +3561,7 @@ func resRelFacetOptions(m map[string]string) []ui.FacetOption {
 func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 	row, err := c.Crud.GetOne(ctx, id, nil)
 	if err != nil || row == nil {
-		return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist."})
+		return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
 	}
 	rel := c.relationLabels(ctx)
 	title := resCell(resGet(row, "name"))
@@ -3581,22 +3582,16 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 			body += ",\"" + t.Stamp + "\":\"" + resToday() + "\""
 		}
 		body += "}"
-		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: html.Attrs{
-			"data-fui-rpc":          c.APIPath + "/" + id,
-			"data-fui-rpc-method":   "PUT",
-			"data-fui-rpc-body":     body,
-			"data-fui-rpc-navigate": c.BasePath + "/" + id,
-		}}))
+		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: interactive.Put(c.APIPath + "/" + id).
+			WithBody(body).
+			OnSuccess(interactive.Navigate(c.BasePath + "/" + id)).Attrs()}))
 	}
 	if c.CanEdit {
 		actions = append(actions,
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
-			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: html.Attrs{
-				"data-fui-rpc":          c.APIPath + "/" + id,
-				"data-fui-rpc-method":   "DELETE",
-				"data-fui-rpc-navigate": c.BasePath,
-				"data-fui-confirm":      "Delete this " + c.Singular + "? This cannot be undone.",
-			}}),
+			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: interactive.Delete(c.APIPath + "/" + id).
+				WithConfirm("Delete this " + c.Singular + "? This cannot be undone.").
+				OnSuccess(interactive.Navigate(c.BasePath)).Attrs()}),
 		)
 	}
 	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))
@@ -3622,7 +3617,7 @@ func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id stri
 		return render.Join(head, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger, Title: "Couldn't load " + rl.Title}, render.Text("See server logs.")))
 	}
 	if len(rows) == 0 {
-		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added."}))
+		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added.", HeadingLevel: 2}))
 	}
 	relLabels := relatedRelationLabels(ctx, rl.Relations)
 	cols := make([]ui.Column, 0, len(rl.Fields)+1)
@@ -3689,23 +3684,23 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
 	if edit {
 		r, err := c.Crud.GetOne(ctx, id, nil)
 		if err != nil || r == nil {
-			return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist."})
+			return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
 		}
 		row = r
 	}
 	rel := c.relationLabels(ctx)
 
 	title, submit := "New "+c.Singular, "Create "+c.Singular
-	rpc, method, back := c.APIPath, "POST", c.BasePath
+	rpc, back := c.APIPath, c.BasePath
+	var action interactive.Action
 	if edit {
 		title, submit = "Edit "+c.Singular, "Save changes"
-		rpc, method, back = c.APIPath+"/"+id, "PUT", c.BasePath+"/"+id
+		rpc, back = c.APIPath+"/"+id, c.BasePath+"/"+id
+		action = interactive.Put(rpc)
+	} else {
+		action = interactive.Post(rpc)
 	}
-	attrs := html.Attrs{
-		"data-fui-rpc":          rpc,
-		"data-fui-rpc-method":   method,
-		"data-fui-rpc-navigate": back,
-	}
+	attrs := action.OnSuccess(interactive.Navigate(back)).Attrs()
 
 	fields := make([]render.HTML, 0, len(c.Fields))
 	for _, f := range c.Fields {
@@ -4595,6 +4590,9 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	if hasScreens && needs.html {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/html\"\n")
 	}
+	if hasScreens && needs.interactive {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/interactive\"\n")
+	}
 	if hasScreens {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/render\"\n")
 	}
@@ -4630,10 +4628,16 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 	if ctxScreen {
 		if needParams {
 			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly; id string }\n\n", typeName))
-			sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[\"id\"] }\n", typeName))
+			sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[%q] }\n", typeName, screenParamName(screen)))
 		} else {
 			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly }\n\n", typeName))
 		}
+	} else if needParams {
+		// A dynamic route without context still MUST accept its params —
+		// the router fails loudly at registration for any dynamic screen
+		// lacking SetParams (silently dropped params were a bug class).
+		sb.WriteString(fmt.Sprintf("type %s struct{ id string }\n\n", typeName))
+		sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[%q] }\n", typeName, screenParamName(screen)))
 	} else {
 		sb.WriteString(fmt.Sprintf("type %s struct{}\n\n", typeName))
 	}
@@ -5293,9 +5297,54 @@ func blueprintSourceEntities(bp Blueprint) map[string]bool {
 	return out
 }
 
-// screenNeedsParams reports whether a screen reads a route {id} param.
+// routeParamNames parses the param names a route declares, accepting
+// both supported syntaxes — "{slug}" / "{path...}" / "{id:int}" and
+// ":slug" / ":path*" / ":id:int" — mirroring the router's
+// normalizeRoutePath + segParamName rules.
+func routeParamNames(route string) []string {
+	var names []string
+	for _, seg := range strings.Split(route, "/") {
+		var name string
+		switch {
+		case len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}':
+			name = strings.TrimSuffix(seg[1:len(seg)-1], "...")
+		case strings.HasPrefix(seg, ":") && len(seg) > 1:
+			name = strings.TrimSuffix(seg[1:], "*")
+		default:
+			continue
+		}
+		if i := strings.IndexByte(name, ':'); i >= 0 {
+			name = name[:i] // strip a typed constraint suffix
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// screenParamName returns the param key the generated SetParams reads:
+// a param literally named "id" when the route declares one (the
+// entity-record convention), else the LAST declared param — on a nested
+// route like /organizations/{organization_id}/users/{user_id} the final
+// segment identifies the record the screen shows. Falls back to "id"
+// for entity detail/edit screens whose {id} lives on a synthesized route.
+func screenParamName(screen BlueprintScreen) string {
+	names := routeParamNames(screen.Route)
+	for _, n := range names {
+		if n == "id" {
+			return n
+		}
+	}
+	if len(names) > 0 {
+		return names[len(names)-1]
+	}
+	return "id"
+}
+
+// screenNeedsParams reports whether a screen reads a route param
+// (either supported syntax), or renders an entity detail/edit block
+// whose synthesized route carries {id}.
 func screenNeedsParams(screen BlueprintScreen) bool {
-	if strings.Contains(screen.Route, "{") {
+	if len(routeParamNames(screen.Route)) > 0 {
 		return true
 	}
 	for _, b := range screen.Body {
@@ -5409,11 +5458,12 @@ func blueprintEntityListFiltersExpr(block BlueprintBlock, entityMap map[string]f
 }
 
 type screenImportNeeds struct {
-	component bool
-	island    bool
-	html      bool
-	node      bool
-	ui        bool
+	component   bool
+	island      bool
+	html        bool
+	interactive bool
+	node        bool
+	ui          bool
 	// uihost: any screen without a blueprint description emits the
 	// zero-value ScreenSEO opt-out, whose SEO type lives in uihost.
 	uihost bool
@@ -5484,9 +5534,11 @@ func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string
 					continue
 				}
 				if isEntityFormBlock(block) {
-					// Entity forms compose ui.Form + ui.FormField + html.Attrs.
+					// Entity forms compose ui.Form + ui.FormField, with the
+					// data-fui-rpc wiring built via interactive.*.Attrs().
 					needs.ui = true
 					needs.html = true
+					needs.interactive = true
 					continue
 				}
 				if isEntityListBlock(block) || isEntityDetailBlock(block) || isEntityCreateBlock(block) || isEntityEditBlock(block) {
@@ -6316,26 +6368,32 @@ func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path 
 		mode = "create"
 	}
 	rpcPath := apiBase + "/" + entity
-	rpcMethod := "POST"
 	submitLabel := "Create"
 	if mode == "edit" {
 		rpcPath = apiBase + "/" + entity + "/{id}"
-		rpcMethod = "PUT"
 		submitLabel = "Update"
 	}
-	attrParts := []string{
+	// The form carries entity-form markers (data-entity-form/mode, plus
+	// data-action-mount when relation selects need populating) alongside
+	// the RPC wiring. Build the RPC attrs via the typed interactive layer
+	// and merge them into the markers map so render.Tag's sorted writer
+	// places every attribute in one consistent order — byte-for-byte the
+	// same <form> the raw data-fui-rpc map produced before.
+	markerParts := []string{
 		fmt.Sprintf("\"data-entity-form\": %q", entity),
 		fmt.Sprintf("\"data-entity-mode\": %q", mode),
-		fmt.Sprintf("\"data-fui-rpc\": %q", rpcPath),
-		fmt.Sprintf("\"data-fui-rpc-method\": %q", rpcMethod),
-	}
-	if mode != "edit" {
-		attrParts = append(attrParts, "\"data-fui-rpc-reset\": \"true\"")
 	}
 	if blueprintFormHasRelation(block, entityMap) {
-		attrParts = append(attrParts, fmt.Sprintf("\"data-action-mount\": %q", blueprintEntityFormActionName(screen, block, path)))
+		markerParts = append(markerParts, fmt.Sprintf("\"data-action-mount\": %q", blueprintEntityFormActionName(screen, block, path)))
 	}
-	extraAttrs := "html.Attrs{" + strings.Join(attrParts, ", ") + "}"
+	markers := "html.Attrs{" + strings.Join(markerParts, ", ") + "}"
+	var actionExpr string
+	if mode == "edit" {
+		actionExpr = fmt.Sprintf("interactive.Put(%q)", rpcPath)
+	} else {
+		actionExpr = fmt.Sprintf("interactive.Post(%q).OnSuccess(interactive.ResetForm())", rpcPath)
+	}
+	extraAttrs := "html.MergeAttrs(" + markers + ", " + actionExpr + ".Attrs())"
 
 	e := htmlEscapeJSString
 	var fields []string
@@ -6370,209 +6428,6 @@ func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path 
 	}
 	form := fmt.Sprintf("ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q, ExtraAttrs: %s}, %s)", rpcPath, submitLabel, extraAttrs, strings.Join(fields, ", "))
 	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %q}), %s)", title, form)
-}
-
-// renderBlueprintEntityFormNode — DEAD, replaced by blueprintEntityFormExpr.
-func renderBlueprintEntityFormNode(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
-	entity := strings.Trim(block.Entity, "/")
-	decl, ok := entityMap[entity]
-	if !ok {
-		return fmt.Sprintf("uinode.Node{Kind: \"div\", Props: map[string]any{\"text\": %q}}", "entity_form: unknown entity "+entity)
-	}
-	actionName := blueprintEntityFormActionName(screen, block, path)
-	title := block.Text
-	if title == "" {
-		title = "New " + toDisplayName(entity)
-	}
-	mode := strings.ToLower(strings.TrimSpace(block.Mode))
-	if mode == "" {
-		mode = "create"
-	}
-	rpcPath := apiBase + "/" + entity
-	rpcMethod := "POST"
-	if mode == "edit" {
-		rpcPath = apiBase + "/" + entity + "/{id}"
-		rpcMethod = "PUT"
-	}
-	props := map[string]any{
-		"class":               "gofastr-entity-form",
-		"data-entity-form":    entity,
-		"data-entity-mode":    mode,
-		"data-fui-rpc":        rpcPath,
-		"data-fui-rpc-method": rpcMethod,
-	}
-	if mode != "edit" {
-		props["data-fui-rpc-reset"] = true
-	}
-	if blueprintFormHasRelation(block, entityMap) {
-		// Populate relation <select>s on hydration.
-		props["data-action-mount"] = actionName
-	}
-	var children []string
-	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-		Kind:  "heading",
-		Props: map[string]any{"level": int64(2), "text": title},
-	}))
-	// Generate form fields from entity definition
-	filterFields := block.Fields
-	for _, field := range decl.Fields {
-		if blueprintFormFieldSkipped(field, filterFields) {
-			continue
-		}
-		label := toDisplayName(field.Name)
-		inputType := "text"
-		switch field.Type {
-		case "int", "integer":
-			inputType = "number"
-		case "float", "decimal":
-			inputType = "number"
-		case "bool", "boolean":
-			inputType = "checkbox"
-		case "date":
-			inputType = "date"
-		case "timestamp", "datetime":
-			inputType = "datetime-local"
-		case "text":
-			inputType = "textarea"
-		case "image":
-			inputType = "file"
-		case "enum":
-			inputType = "select"
-		case "relation":
-			inputType = "relation"
-		}
-		if inputType == "select" {
-			// Enum: render <select> with an empty placeholder + one option
-			// per declared value.
-			optionChildren := []BlueprintBlock{{
-				Kind:  "option",
-				Props: map[string]any{"value": "", "text": "— Select —"},
-			}}
-			for _, v := range field.Values {
-				optionChildren = append(optionChildren, BlueprintBlock{
-					Kind:  "option",
-					Props: map[string]any{"value": v, "text": toDisplayName(v)},
-				})
-			}
-			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-				Kind:  "div",
-				Props: map[string]any{"class": "form-field", "text": label},
-				Children: []BlueprintBlock{{
-					Kind: "select",
-					Props: map[string]any{
-						"name":     field.Name,
-						"id":       "field-" + field.Name,
-						"required": field.Required,
-					},
-					Children: optionChildren,
-				}},
-			}))
-		} else if inputType == "relation" {
-			// Relation: <select> populated client-side from the related
-			// entity. data-rel-entity tells the mount handler what to fetch.
-			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-				Kind:  "div",
-				Props: map[string]any{"class": "form-field", "text": label},
-				Children: []BlueprintBlock{{
-					Kind: "select",
-					Props: map[string]any{
-						"name":            field.Name,
-						"id":              "field-" + field.Name,
-						"required":        field.Required,
-						"data-rel-entity": field.To,
-					},
-					Children: []BlueprintBlock{{
-						Kind:  "option",
-						Props: map[string]any{"value": "", "text": "— Select —"},
-					}},
-				}},
-			}))
-		} else if inputType == "textarea" {
-			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-				Kind: "div",
-				Props: map[string]any{
-					"class": "form-field",
-					"text":  label,
-				},
-				Children: []BlueprintBlock{
-					{
-						Kind: "textarea",
-						Props: map[string]any{
-							"name":     field.Name,
-							"id":       "field-" + field.Name,
-							"required": field.Required,
-						},
-					},
-				},
-			}))
-		} else if inputType == "checkbox" {
-			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-				Kind: "div",
-				Props: map[string]any{
-					"class": "form-field form-field-checkbox",
-				},
-				Children: []BlueprintBlock{
-					{
-						Kind: "input",
-						Props: map[string]any{
-							"type": "checkbox",
-							"name": field.Name,
-							"id":   "field-" + field.Name,
-						},
-					},
-					{
-						Kind: "label",
-						Props: map[string]any{
-							"for":  "field-" + field.Name,
-							"text": label,
-						},
-					},
-				},
-			}))
-		} else {
-			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-				Kind: "div",
-				Props: map[string]any{
-					"class": "form-field",
-				},
-				Children: []BlueprintBlock{
-					{
-						Kind: "label",
-						Props: map[string]any{
-							"for":  "field-" + field.Name,
-							"text": label,
-						},
-					},
-					{
-						Kind: "input",
-						Props: map[string]any{
-							"type":     inputType,
-							"name":     field.Name,
-							"id":       "field-" + field.Name,
-							"required": field.Required,
-						},
-					},
-				},
-			}))
-		}
-	}
-	// Submit button — submission is handled by the form's data-fui-rpc.
-	submitLabel := "Create"
-	if mode == "edit" {
-		submitLabel = "Update"
-	}
-	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-		Kind: "button",
-		Props: map[string]any{
-			"type": "submit",
-			"text": submitLabel,
-		},
-	}))
-	literal, err := renderGoLiteral(props)
-	if err != nil {
-		literal = "nil"
-	}
-	return "uinode.Node{Kind: \"form\", Props: " + literal + ", Children: []uinode.Node{" + strings.Join(children, ", ") + "}}"
 }
 
 // blueprintFormFieldSkipped reports whether a field is omitted from a

@@ -110,9 +110,13 @@ func TestBlueprint_NestedEntityListRenders(t *testing.T) {
 
 func TestBlueprint_FormEnumAndRelationFields(t *testing.T) {
 	screens := renderBlueprintScreens(websitesBlueprint())
-	// Form submits to the prefixed API via data-fui-rpc.
-	if !strings.Contains(screens, `"data-fui-rpc": "/api/items"`) {
-		t.Error("entity_form does not submit to the /api endpoint via data-fui-rpc")
+	// Form submits to the prefixed API via the typed interactive layer
+	// (interactive.Post), not a raw "data-fui-rpc" attribute map.
+	if !strings.Contains(screens, `interactive.Post("/api/items")`) {
+		t.Error("entity_form does not submit to the /api endpoint via interactive.Post")
+	}
+	if strings.Contains(screens, `"data-fui-rpc": "/api/items"`) {
+		t.Error("entity_form still emits a raw data-fui-rpc attribute map")
 	}
 	// Enum field renders <option> elements for its declared values.
 	if !strings.Contains(screens, `value=\"draft\"`) || !strings.Contains(screens, `value=\"published\"`) {
@@ -188,7 +192,7 @@ func TestBlueprint_LoginScreenAndAdminWiring(t *testing.T) {
 	bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}
 	bp.App.Admin = BlueprintAdmin{
 		Enabled: true, Path: "/admin", Role: "admin", LoginPath: "/login",
-		SeedEmail: "admin@example.com", SeedPassword: "secret-123",
+		SeedEmail: "admin@example.com", SeedPassword: "secret-123", // not-a-secret: test fixture exercising the admin-seed codegen path
 	}
 	bp.Screens = append(bp.Screens, BlueprintScreen{
 		Name: "login", Route: "/login", Body: []BlueprintBlock{
@@ -235,7 +239,7 @@ func TestBlueprint_AdminSeedAfterMigrate(t *testing.T) {
 	bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}
 	bp.App.Admin = BlueprintAdmin{
 		Enabled: true, Role: "admin", LoginPath: "/login",
-		SeedEmail: "admin@example.com", SeedPassword: "secret-123",
+		SeedEmail: "admin@example.com", SeedPassword: "secret-123", // not-a-secret: test fixture exercising the admin-seed codegen path
 	}
 	app := renderBlueprintApp(bp)
 	if !strings.Contains(app, "fwApp.WithSeed(func(ctx context.Context) error") {
@@ -324,5 +328,63 @@ func TestBlueprint_SeedOrderedAndDecimalCoerced(t *testing.T) {
 	// Decimal seed value coerced to a string literal for the validator.
 	if !strings.Contains(stubs, `"price": "9.99"`) {
 		t.Errorf("decimal seed value not coerced to string:\n%s", stubs)
+	}
+}
+
+func TestBlueprint_StaticDynamicScreenGetsSetParams(t *testing.T) {
+	// A dynamic route whose body needs no request context still MUST
+	// implement SetParams — the router panics at registration otherwise.
+	bp := websitesBlueprint()
+	bp.Screens = append(bp.Screens, BlueprintScreen{
+		Name: "article", Route: "/articles/{slug}",
+		Body: []BlueprintBlock{{Kind: "heading", Props: map[string]any{"level": int64(1), "text": "Article"}}},
+	})
+	screens := renderBlueprintScreens(bp)
+	if !strings.Contains(screens, "func (s *ArticleScreen) SetParams(") {
+		t.Errorf("static-body dynamic screen missing SetParams:\n%s", screens)
+	}
+	if !strings.Contains(screens, `p["slug"]`) {
+		t.Error("SetParams should read the route's declared param name, not a hardcoded id")
+	}
+}
+
+func TestBlueprint_ColonRouteGetsSetParams(t *testing.T) {
+	// Sol round-2: the framework accepts both {slug} and :slug — the
+	// generator must emit SetParams for either, or the app panics at boot.
+	bp := websitesBlueprint()
+	bp.Screens = append(bp.Screens, BlueprintScreen{
+		Name: "post", Route: "/posts/:slug",
+		Body: []BlueprintBlock{{Kind: "heading", Props: map[string]any{"level": int64(1), "text": "Post"}}},
+	})
+	screens := renderBlueprintScreens(bp)
+	if !strings.Contains(screens, "func (s *PostScreen) SetParams(") {
+		t.Errorf("colon-route dynamic screen missing SetParams:\n%s", screens)
+	}
+	if !strings.Contains(screens, `p["slug"]`) {
+		t.Error("SetParams should read the colon route's declared param")
+	}
+}
+
+func TestBlueprint_NestedRouteReadsRecordParam(t *testing.T) {
+	// Sol round-2: on /organizations/{organization_id}/users/{id} the
+	// record param is "id", not the first param.
+	bp := websitesBlueprint()
+	bp.Screens = append(bp.Screens, BlueprintScreen{
+		Name: "item_detail", Route: "/categories/{category_id}/items/{id}",
+		Body: []BlueprintBlock{{Kind: "entity_detail", Entity: "items"}},
+	})
+	screens := renderBlueprintScreens(bp)
+	if !strings.Contains(screens, `func (s *ItemDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }`) {
+		t.Errorf("nested detail screen must read the id param:\n%s", screens)
+	}
+	// And without an "id" param, the LAST param is the record key.
+	bp2 := websitesBlueprint()
+	bp2.Screens = append(bp2.Screens, BlueprintScreen{
+		Name: "member_detail", Route: "/orgs/{org_slug}/members/{member_slug}",
+		Body: []BlueprintBlock{{Kind: "heading", Props: map[string]any{"level": int64(1), "text": "Member"}}},
+	})
+	screens2 := renderBlueprintScreens(bp2)
+	if !strings.Contains(screens2, `p["member_slug"]`) {
+		t.Errorf("no-id nested route should read the LAST param:\n%s", screens2)
 	}
 }

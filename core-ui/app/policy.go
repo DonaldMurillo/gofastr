@@ -16,6 +16,18 @@ type RenderResult struct {
 	URL     string      // populated for DecisionRedirect
 	Status  int         // populated for DecisionBlock
 	Message string      // optional, for DecisionBlock
+	// Title is the screen's effective title, re-read from ScreenTitler on
+	// the per-request instance AFTER Load, so dynamic routes (whose
+	// registration-time title is empty or generic) report the loaded
+	// title. Empty when the component doesn't implement ScreenTitler.
+	// Hosts should prefer it over the registration-time Screen.Title.
+	Title string
+	// Component is the loaded per-request instance the HTML was rendered
+	// from (post SetParams → DI → Load). Host layers use it to resolve
+	// per-instance metadata — SEO description, og tags — that the shared
+	// registration instance cannot know for dynamic routes. Read-only;
+	// nil for Redirect/Block results.
+	Component component.Component
 }
 
 // DecisionKind classifies the outcome of evaluating a Policy.

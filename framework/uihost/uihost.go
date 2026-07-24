@@ -256,6 +256,10 @@ type routeInfoJSON struct {
 	Preload     bool   `json:"preload"`
 	CSSChunk    string `json:"cssChunk,omitempty"`
 	Layout      string `json:"layout,omitempty"`
+	// Redirect is the target path (or pattern) for a redirect entry.
+	// Empty for screens. The client-side router rewrites a navigation to
+	// this entry's path to Redirect without a server round-trip.
+	Redirect string `json:"redirect,omitempty"`
 }
 
 // Option configures a UIHost.
@@ -700,7 +704,7 @@ func (ds *UIHost) CompileActions(componentID string, comp component.Component) s
 // ScreenComponentID.ComponentID() if implemented, otherwise from the route path.
 func (ds *UIHost) AutoCompileActions() {
 	for _, route := range ds.App.Routes() {
-		screen, _, ok := ds.App.Router.Resolve(route.Path)
+		screen, ok := ds.App.Router.ScreenByPattern(route.Path)
 		if !ok {
 			continue
 		}
@@ -744,6 +748,7 @@ func (ds *UIHost) buildRouteScript() string {
 			Preload:     i == 0, // preload first route
 			CSSChunk:    pathToChunkName(r.Path),
 			Layout:      r.Layout,
+			Redirect:    r.RedirectTo,
 		}
 	}
 	rgJSON, _ := json.Marshal(infos)
@@ -922,6 +927,12 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		ds.handlePartialPage(w, r, path)
 		return
 	}
+	// Declarative redirects (Redirect / RedirectPattern): short-circuit
+	// before screen resolution with a permanent redirect to the target.
+	if target, ok := ds.App.ResolveRedirect(path); ok {
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+		return
+	}
 	// Agent content negotiation: when WithMarkdownNegotiation (or the
 	// bundle) is on and the request prefers markdown, render the page's
 	// markdown via the per-screen LLM doc instead of HTML.
@@ -983,7 +994,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 
-	page := ds.injectChrome(string(html), path, sessionID, boundedPresenceParam(r))
+	page := ds.injectChromeFor(string(html), path, sessionID, boundedPresenceParam(r), res.Component)
 	page = injectSignalSeed(ctx, page)
 
 	// SSR-inline registered widgets — open ones whose deep-link
@@ -1058,7 +1069,14 @@ func replaceChromeMarker(page, marker, replacement, what string) string {
 // injectChrome adds links and scripts pointing at the host's served
 // endpoints. pagePath is the route path used for SEOScreen resolution.
 func (ds *UIHost) injectChrome(page, pagePath, sessionID, presenceTopic string) string {
-	return ds.injectChromeMode(page, pagePath, sessionID, presenceTopic, true)
+	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, true, nil)
+}
+
+// injectChromeFor is injectChrome with the loaded per-request component,
+// so per-instance metadata (the meta description of a dynamic route)
+// lands in the head. comp may be nil.
+func (ds *UIHost) injectChromeFor(page, pagePath, sessionID, presenceTopic string, comp component.Component) string {
+	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, true, comp)
 }
 
 // screenHeadHTML returns per-screen head content. It composes from
@@ -1077,7 +1095,7 @@ func (ds *UIHost) injectChrome(page, pagePath, sessionID, presenceTopic string) 
 // The per-concern SEO fields are resolved first via resolveScreenSEO
 // (the shared resolution path also used to render the per-screen
 // llm.md front-matter), then rendered to HTML.
-func (ds *UIHost) screenHeadHTML(pagePath string) string {
+func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) string {
 	if ds.App == nil || pagePath == "" {
 		return ""
 	}
@@ -1085,7 +1103,7 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 	if !ok {
 		return ""
 	}
-	resolved := resolveScreenSEO(screen)
+	resolved := resolveScreenSEOFor(screen, comp)
 
 	var parts []string
 	if resolved.Description != "" {
@@ -1154,36 +1172,58 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 // the HTML head and the per-screen llm.md front-matter render from —
 // keeping the two surfaces in lockstep (#108).
 func resolveScreenSEO(screen *app.Screen) SEO {
+	return resolveScreenSEOFor(screen, nil)
+}
+
+// resolveScreenSEOFor resolves the screen's SEO bundle against the given
+// LOADED per-request component when non-nil, falling back to the shared
+// registration instance. Dynamic routes register a zero-value template —
+// only the loaded instance knows the per-URL description/og values (the
+// docs catch-all regression: registration-time description is empty for
+// every dynamic route).
+func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
+	src := component.Component(screen.Component)
+	if comp != nil {
+		src = comp
+	}
 	var bundle SEO
-	if b, ok := screen.Component.(ScreenSEO); ok {
+	if b, ok := src.(ScreenSEO); ok {
 		bundle = b.ScreenSEO()
 	}
 
 	desc := bundle.Description
 	if desc == "" {
+		// The loaded instance's describer beats the registration-time
+		// snapshot: screen.Description was read once at Register, before
+		// any params existed.
+		if d, ok := src.(app.ScreenDescriber); ok {
+			desc = d.ScreenDescription()
+		}
+	}
+	if desc == "" {
 		desc = screen.Description
 	}
 	robots := bundle.Robots
 	if robots == "" {
-		if r, ok := screen.Component.(ScreenRobots); ok {
+		if r, ok := src.(ScreenRobots); ok {
 			robots = r.ScreenRobots()
 		}
 	}
 	canonical := bundle.Canonical
 	if canonical == "" {
-		if c, ok := screen.Component.(ScreenCanonical); ok {
+		if c, ok := src.(ScreenCanonical); ok {
 			canonical = c.ScreenCanonical()
 		}
 	}
 	hreflangs := bundle.Hreflangs
 	if len(hreflangs) == 0 {
-		if h, ok := screen.Component.(ScreenHreflangs); ok {
+		if h, ok := src.(ScreenHreflangs); ok {
 			hreflangs = h.ScreenHreflangs()
 		}
 	}
 	schema := bundle.Schema
 	if len(schema) == 0 {
-		if s, ok := screen.Component.(ScreenSchema); ok {
+		if s, ok := src.(ScreenSchema); ok {
 			schema = s.ScreenSchema()
 		}
 	}
@@ -1257,6 +1297,10 @@ func twitterTags(tc TwitterCard) []string {
 // don't typically serve query-parameterized files. Live HTTP mode
 // always passes bundle=true. pagePath is used for SEOScreen resolution.
 func (ds *UIHost) injectChromeMode(page, pagePath, sessionID, presenceTopic string, bundle bool) string {
+	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, bundle, nil)
+}
+
+func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
 	headClose := borrowBuilder()
 	defer returnBuilder(headClose)
 	bodyClose := borrowBuilder()
@@ -1294,7 +1338,7 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID, presenceTopic stri
 	// time and serve as sitewide fallbacks. Per-screen SEOScreen data is
 	// per-request.
 	var headParts []string
-	if screenHead := ds.screenHeadHTML(pagePath); screenHead != "" {
+	if screenHead := ds.screenHeadHTML(pagePath, comp); screenHead != "" {
 		headParts = append(headParts, screenHead)
 	}
 	// Caller-supplied head HTML (WithHeadHTML) is scrubbed for <script>
@@ -1483,6 +1527,16 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 			w.Header().Set("Cache-Control", "no-store")
 		}
 	}
+	// Declarative redirect on the SPA path: hand the runtime the target
+	// via X-Gofastr-Location so it pushState's and loads the partial
+	// there (same mechanism as a policy redirect). The client manifest
+	// usually rewrites before the request; this covers first load and a
+	// stale manifest so a redirect never 404s.
+	if target, ok := ds.App.ResolveRedirect(path); ok && isSafePartialRedirect(target) {
+		w.Header().Set("X-Gofastr-Location", target)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	// Mirror handlePage: expose the live *http.Request to ScreenLoader
 	// via app.WithRequest so partial-fetched screens can still read URL
 	// query (sort, page, filters) just like full-render screens do.
@@ -1526,13 +1580,21 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		return
 	}
 
-	// Look up screen title from route info. Percent-encode it: a title
-	// with non-ASCII (e.g. the em-dash in "Docs — GoFastr") sent raw in an
-	// HTTP header is non-conformant and a reader decodes the UTF-8 bytes as
-	// Latin-1 ("Docs â GoFastr"). The runtime must decodeURIComponent it.
-	if scr, _, ok := ds.App.Router.Resolve(path); ok && scr.Title != "" {
-		title := scr.Title + " — " + ds.App.Name
-		w.Header().Set("X-Gofastr-Title", url.PathEscape(title))
+	// Screen title: prefer the post-Load effective title from the render
+	// (dynamic routes register with an empty/generic title — the loaded
+	// instance knows the real one), falling back to the registration-time
+	// title. Percent-encode it: a title with non-ASCII (e.g. the em-dash
+	// in "Docs — GoFastr") sent raw in an HTTP header is non-conformant
+	// and a reader decodes the UTF-8 bytes as Latin-1 ("Docs â GoFastr").
+	// The runtime must decodeURIComponent it.
+	title := res.Title
+	if title == "" {
+		if scr, _, ok := ds.App.Router.Resolve(path); ok {
+			title = scr.Title
+		}
+	}
+	if title != "" {
+		w.Header().Set("X-Gofastr-Title", url.PathEscape(title+" — "+ds.App.Name))
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1925,6 +1987,9 @@ func (ds *UIHost) RoutePatterns() []string {
 	routes := ds.App.Routes()
 	patterns := make([]string, 0, len(routes))
 	for _, route := range routes {
+		if route.RedirectTo != "" {
+			continue // redirects are not screens; exclude from entity-collision checks
+		}
 		patterns = append(patterns, route.Path)
 	}
 	return patterns
@@ -1957,13 +2022,15 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 	r.Get("/llm-pages.md", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		w.Write([]byte(app.AppLLMMD(coreApp)))
+		// Request-scoped: policy-gated screens list metadata-free for
+		// anonymous agents; an authenticated request sees the full index.
+		w.Write([]byte(app.AppLLMMDCtx(app.WithRequest(req.Context(), req), coreApp)))
 	}))
 
 	// Per-screen documentation
 	seen := make(map[string]bool)
 	for _, routePath := range coreApp.Router.Paths() {
-		screen, _, ok := coreApp.Router.Resolve(routePath)
+		screen, ok := coreApp.Router.ScreenByPattern(routePath)
 		if !ok {
 			continue
 		}
@@ -1976,9 +2043,19 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
-			seo := resolveScreenSEO(sc)
-			fm := screenSEOFrontMatter(sc.Title, seo)
-			md := app.ScreenLLMMDWithMeta(sc, fm)
+			// A screen whose policy chain doesn't Allow this request gets
+			// the metadata-free withheld doc — the pattern doc's title,
+			// description, SEO front matter, AND content are all
+			// component-supplied, which the policy protects on the page
+			// render too. No front matter on the withheld path.
+			var md string
+			if app.ResolvePolicy(app.WithRequest(req.Context(), req), sc).Kind != app.DecisionAllow {
+				md = app.ScreenLLMMDWithheld(sc)
+			} else {
+				seo := resolveScreenSEO(sc)
+				fm := screenSEOFrontMatter(sc.Title, seo)
+				md = app.ScreenLLMMDWithMeta(sc, fm)
+			}
 			w.Write([]byte(md))
 		})
 		// Clean trailing slash to avoid double-slash patterns
@@ -2045,6 +2122,18 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		// Trailing-slash canonical path.
 		if path != "/" && !strings.HasSuffix(path, "/") {
 			if _, _, ok := ds.App.Router.Resolve(path + "/"); ok {
+				return true
+			}
+		}
+		// Concrete-URL llm.md for a dynamic route (mirrors
+		// serveOrRender's dynamicPageLLMMD branch, incl. the
+		// WithPublicLLMMD opt-in gate).
+		if ds.llmMDPublic && !ds.App.NoLLMMD && strings.HasSuffix(path, "/llm.md") {
+			base := strings.TrimSuffix(path, "/llm.md")
+			if base == "" {
+				base = "/"
+			}
+			if scr, _, ok := ds.App.Router.Resolve(base); ok && !scr.NoLLMMD {
 				return true
 			}
 		}
@@ -2165,7 +2254,65 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// Concrete-URL llm.md for dynamic routes: static routes get explicit
+	// /<path>/llm.md handlers at mount time (mountPageLLMMD), but a
+	// dynamic route's concrete URLs (/docs/<slug>/llm.md,
+	// /products/42/llm.md) can't be pre-registered, so they land here.
+	// Serve the per-instance doc when the base path resolves to a screen.
+	// Mirrored in resolvesStaticOrScreen — keep the two in sync.
+	if md, ok := ds.dynamicPageLLMMD(r, path); ok {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write([]byte(md))
+		return
+	}
 	ds.handlePage(w, r)
+}
+
+// dynamicPageLLMMD serves the llm.md for a concrete URL of a dynamic
+// route. Returns ok=false unless path ends in "/llm.md", llm.md is
+// enabled, and the base path resolves to a screen that hasn't opted out.
+// Static routes never reach it — their explicit mountPageLLMMD handlers
+// match first, so this only fires for dynamic-route URLs (which fall
+// through to the NotFound catch-all).
+func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) {
+	// Same opt-in gate as mountPageLLMMD: per-screen docs are public
+	// only via WithPublicLLMMD (see the security suite's
+	// PageLLMScreenDocDisabledByDefault).
+	if ds.App == nil || !ds.llmMDPublic || ds.App.NoLLMMD || !strings.HasSuffix(path, "/llm.md") {
+		return "", false
+	}
+	base := strings.TrimSuffix(path, "/llm.md")
+	if base == "" {
+		base = "/"
+	}
+	scr, _, ok := ds.App.Router.Resolve(base)
+	if !ok || scr.NoLLMMD {
+		return "", false
+	}
+	// Same context the page render gets: policies and Load hooks read the
+	// live request (session, headers, query) through app.WithRequest.
+	ctx := app.WithRequest(r.Context(), r)
+	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, base)
+	if !ok {
+		return "", false
+	}
+	md := res.MD
+	// SEO front matter ONLY for an allowed render, resolved against the
+	// LOADED instance (the registration instance is a zero-value template
+	// for dynamic routes — and for a non-Allow decision, all
+	// component-supplied metadata is policy-protected).
+	if res.Allowed {
+		title := res.Title
+		if title == "" {
+			title = scr.Title
+		}
+		seo := resolveScreenSEOFor(scr, res.Component)
+		if fm := screenSEOFrontMatter(title, seo); fm != "" {
+			md = fm + "\n" + md
+		}
+	}
+	return md, true
 }
 
 // RenderStaticPage produces a fully-rendered page suitable for static-site
@@ -2177,14 +2324,24 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 	// Install the value bag so producer-seeded slice values are captured
 	// during the static render (matches the live handlePage path).
 	ctx = store.WithValues(ctx)
-	html, err := ds.App.RenderPage(ctx, path)
+	// RenderPageResult (not RenderPage) so the loaded per-request
+	// component reaches the chrome injection — a dynamic route's meta
+	// description only exists on the loaded instance.
+	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
 		return "", err
+	}
+	switch res.Kind {
+	case app.DecisionAllow, app.DecisionRenderAlt:
+	case app.DecisionRedirect:
+		return "", fmt.Errorf("uihost: static render %q: policy returned redirect to %q", path, res.URL)
+	default:
+		return "", fmt.Errorf("uihost: static render %q: policy returned block status %d", path, res.Status)
 	}
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
-	page := ds.injectChromeMode(string(html), path, "", "", false)
+	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
 	return injectSignalSeed(ctx, page), nil
 }
 

@@ -416,22 +416,26 @@ func statusBadgeCSS(t style.Theme) string {
 }
 [data-fui-comp="ui-badge"].ui-badge--success {
   background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
-  color: var(--color-success, #16A34A);
+  /* Text mixes the status hue toward --color-text so it darkens on a
+     light scheme and lightens on a dark one — AA contrast on the 15%
+     tinted background for any reasonable palette, not just the default
+     (raw status hues sit near 2.5–4:1 and fail axe). */
+  color: color-mix(in oklab, var(--color-success, #16A34A) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-success, #16A34A) 30%, var(--color-surface, #fff) 70%);
 }
 [data-fui-comp="ui-badge"].ui-badge--warning {
   background: color-mix(in oklab, var(--color-warning, #CA8A04) 15%, var(--color-surface, #fff) 85%);
-  color: var(--color-warning, #CA8A04);
+  color: color-mix(in oklab, var(--color-warning, #CA8A04) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-warning, #CA8A04) 30%, var(--color-surface, #fff) 70%);
 }
 [data-fui-comp="ui-badge"].ui-badge--danger {
   background: color-mix(in oklab, var(--color-danger, #DC2626) 15%, var(--color-surface, #fff) 85%);
-  color: var(--color-danger, #DC2626);
+  color: color-mix(in oklab, var(--color-danger, #DC2626) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-danger, #DC2626) 30%, var(--color-surface, #fff) 70%);
 }
 [data-fui-comp="ui-badge"].ui-badge--info {
   background: color-mix(in oklab, var(--color-info, #2563EB) 15%, var(--color-surface, #fff) 85%);
-  color: var(--color-info, #2563EB);
+  color: color-mix(in oklab, var(--color-info, #2563EB) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-info, #2563EB) 30%, var(--color-surface, #fff) 70%);
 }
 [data-fui-comp="ui-badge"].ui-badge--neutral {

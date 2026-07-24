@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/di"
@@ -107,13 +109,27 @@ type RouteEntry struct {
 	// where the chrome itself changes — and swap the whole shell instead of
 	// just the content. Empty when the route has no layout.
 	Layout string
+	// RedirectTo is non-empty when this entry is a redirect (Redirect /
+	// RedirectPattern) rather than a screen. Redirect entries render no
+	// page, so consumers that enumerate pages (static export, sitemap,
+	// llm.md, the strict coverage gate) MUST skip them. The route manifest
+	// carries it to the client so SPA navigation rewrites without a
+	// round-trip.
+	RedirectTo string
 }
 
-// Routes returns all registered screen paths as RouteEntry slices.
+// Routes returns every registered route — screens and redirects — as
+// RouteEntry slices. Redirect entries carry a non-empty RedirectTo and
+// have no screen; page-rendering consumers must skip them.
 func (a *App) Routes() []RouteEntry {
 	var entries []RouteEntry
 	for _, path := range a.Router.Paths() {
-		screen, _, ok := a.Router.Resolve(path)
+		// ScreenByPattern, NOT Resolve: path is a registered PATTERN, and
+		// a constrained pattern's own text fails its constraint at
+		// resolve time ("/admin/:id:int" is not numeric) — Resolve here
+		// silently dropped constrained routes from the manifest, export,
+		// sitemap, and llm.md.
+		screen, ok := a.Router.ScreenByPattern(path)
 		if !ok {
 			continue
 		}
@@ -130,6 +146,23 @@ func (a *App) Routes() []RouteEntry {
 			Title:       screen.Title,
 			Description: screen.Description,
 			Layout:      layoutName,
+		})
+	}
+	// Map iteration is randomized — sort exact redirects so Routes()
+	// (and everything derived from it: the route manifest JSON, the
+	// static export walk) is deterministic across processes.
+	exactFroms := make([]string, 0, len(a.Router.exactRedir))
+	for from := range a.Router.exactRedir {
+		exactFroms = append(exactFroms, from)
+	}
+	sort.Strings(exactFroms)
+	for _, from := range exactFroms {
+		entries = append(entries, RouteEntry{Path: from, RedirectTo: a.Router.exactRedir[from]})
+	}
+	for _, pr := range a.Router.patternRedir {
+		entries = append(entries, RouteEntry{
+			Path:       "/" + strings.Join(pr.segments, "/"),
+			RedirectTo: pr.to,
 		})
 	}
 	return entries
@@ -334,7 +367,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	doctype := render.Raw("<!DOCTYPE html>")
 	htmlDoc := render.Tag("html", map[string]string{"lang": "en"}, head, body)
 
-	out := RenderResult{HTML: render.Join(doctype, htmlDoc)}
+	out := RenderResult{HTML: render.Join(doctype, htmlDoc), Title: effectiveTitle, Component: comp}
 	if decision.Kind == DecisionRenderAlt {
 		out.Kind = DecisionRenderAlt
 	} else {
@@ -416,7 +449,13 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 		body = renderComponentInScreen(ctx, screen, comp)
 	}
 
-	out := RenderResult{HTML: body}
+	out := RenderResult{HTML: body, Component: comp}
+	// Effective title AFTER Load: dynamic routes register with an empty
+	// (or generic) title, so the partial path must re-read it from the
+	// loaded instance — same as the full-page path's <title> build.
+	if t, ok := comp.(ScreenTitler); ok {
+		out.Title = t.ScreenTitle()
+	}
 	if decision.Kind == DecisionRenderAlt {
 		out.Kind = DecisionRenderAlt
 	} else {

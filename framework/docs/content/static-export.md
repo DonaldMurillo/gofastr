@@ -85,18 +85,34 @@ go build -o site ./examples/site/
   precached or intercepted, and a user-supplied `manifest.webmanifest`
   or `service-worker.js` in the static dir wins over the generated one.
 
-Dynamic routes require the screen to implement `StaticPathsProvider`:
+Dynamic routes require the screen to implement `StaticPathsProvider`, the
+static-export analogue of Next.js's `generateStaticParams`. Each returned
+param map is substituted into the route pattern to produce one concrete
+`index.html`:
 
 ```go
 type StaticPathsProvider interface {
-    // StaticPaths returns one param map per concrete URL to emit.
+    // One param map per concrete URL to emit.
     // {"slug": "go"} → /posts/go/index.html
     StaticPaths(ctx context.Context) []map[string]string
 }
+
+// A docs catch-all emits one page per slug. The param key is the bare
+// catch-all name ("path"), matching the route pattern /docs/{path...}.
+func (s *DocScreen) StaticPaths(ctx context.Context) []map[string]string {
+    out := make([]map[string]string, 0, len(catalog))
+    for _, slug := range catalog {
+        out = append(out, map[string]string{"path": slug})
+    }
+    return out
+}
 ```
 
-Routes whose screen doesn't implement it (and have no `:param`) are
-emitted once; param routes without a provider are skipped at build time.
+Routes whose screen doesn't implement `StaticPathsProvider` (or returns an
+empty slice) are **skipped** at build time, but the builder now logs a
+`WARN` naming the route pattern and the fix (implement `StaticPaths`) rather
+than dropping it silently — the missing pages are a build-time signal, not a
+silent gap. The route is still reachable via SSR if the server is running.
 
 ## Static mode: what works, what's disabled
 
@@ -168,9 +184,9 @@ only match real markup.
   modules load and all client interactivity silently dies. Always use
   `ExportStatic`.
 - **Forgetting a `StaticPathsProvider` on a dynamic route.** A
-  `/posts/:slug` route with no provider emits nothing — the build silently
-  drops it. Implement `StaticPaths(ctx)` returning one param map per
-  concrete URL.
+  `/posts/:slug` route with no provider emits nothing — the build logs a
+  `WARN` and skips it. Implement `StaticPaths(ctx)` returning one param map
+  per concrete URL.
 - **Expecting server-backed islands to work.** RPC round-trips, the
   widget catalog, and SSE need the Go server. Static mode disables them on
   purpose (no-op, no 404). If a page's value *is* its live interactivity,

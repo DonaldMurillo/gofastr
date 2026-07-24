@@ -230,6 +230,7 @@ func TestBuildSkipsDynamicRoutesWithoutStaticPaths(t *testing.T) {
 type productScreenWithoutPaths struct{}
 
 func (productScreenWithoutPaths) Render() render.HTML            { return render.HTML("ignored") }
+func (productScreenWithoutPaths) SetParams(map[string]string)    {}
 func (productScreenWithoutPaths) ScreenTitle() string            { return "" }
 func (productScreenWithoutPaths) ScreenDescription() string      { return "" }
 func (productScreenWithoutPaths) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }

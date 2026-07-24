@@ -5,6 +5,105 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.42.0] - 2026-07-24
+
+The screen-router feature pack (#130) and the typed island-wiring
+migration (#129) ship together, plus the dynamic-route agent surface
+they exposed: per-URL llm.md, post-Load titles and SEO on SPA
+navigation, and policy-aware markdown everywhere.
+
+### Added
+
+- **Catch-all route segments** — `site.Register("/docs/{path...}", …)`
+  (or `:path*`) captures one or more trailing segments into a single
+  joined param delivered via `SetParams`. Must be the final segment; at
+  least one remainder segment is required; registration order remains
+  the only precedence rule. The Go resolver and the client-side route
+  matcher stay in sync. The example site's per-slug docs registration
+  loop is now a single catch-all with `StaticPaths` (same URL set for
+  export, sitemap, llm.md, and the strict axe-coverage manifest).
+- **Typed param constraints** — `{id:int}`, `{id:uuid}`,
+  `{handle:alpha}`, `{handle:alnum}` restrict what a segment matches;
+  a non-matching value falls through to the next route. There is
+  deliberately no `string` constraint (it would be an unconstrained
+  no-op). Constraints are enforced server-side; the client matcher
+  treats them as plain dynamic segments and lets the server 404.
+- **Declarative redirects** — `App.Redirect(from, to)` and
+  `App.RedirectPattern("/old/{id}", "/new/{id}")` with param
+  passthrough. Hard GETs get a permanent 308; SPA navigation follows
+  via `X-Gofastr-Location`; chains collapse to one hop and cycles fail
+  closed. Open-redirect hardening covers the registered target AND the
+  substituted result (backslash, `//host`, scheme forms). A redirect
+  whose pattern *overlaps* a dynamic screen (any shared URL — param
+  names are irrelevant) panics at registration in either order, because
+  redirects are consulted before screens. Redirect entries appear in
+  `Routes()` (`RedirectTo`) and the client route manifest (`redirect`);
+  static export, sitemap, and llm.md skip them.
+- **Fail-loud `SetParams` guard** — registering a dynamic route whose
+  component doesn't implement `SetParams` now panics at boot, naming
+  the path and component type. Params were previously dropped silently.
+- **Per-URL llm.md for dynamic routes** — `app.ScreenLLMMDForPath`
+  builds the same per-request instance the page render uses (SetParams
+  → DI → Load), so `/products/42/llm.md` (live, gated by
+  `WithPublicLLMMD`), the static export, and markdown content
+  negotiation all serve that page's real title, SEO front matter, and
+  content instead of one generic pattern doc.
+- **Post-Load titles and SEO on dynamic routes** — `RenderResult` now
+  carries the effective post-Load `Title` and the loaded `Component`;
+  SPA partials send the loaded title via `X-Gofastr-Title`, and the
+  HTML head's meta description / SEO bundle resolve against the loaded
+  instance (live and static export). Dynamic pages no longer show a
+  stale tab title on in-app navigation or a missing meta description.
+- **Typed interactive wiring (#129)** — `core-ui/interactive` gains
+  `Action.WithBody` (validated JSON body), `Action.Attrs()` (merge
+  typed wiring into an existing attrs map byte-identically),
+  `OpenOnClick`, `ToastOnClick` (+ typed `Toast`), `OpenPaneOnClick` /
+  `ClosePaneOnClick`, and `BindText` / `BindHTML` / `BindAttr` signal
+  region bindings. The blueprint generator, `battery/admin`, and the
+  examples now emit typed wiring — generated apps teach the typed form —
+  and a repolint gate bans raw `"data-fui-rpc"` literals in the
+  generator and batteries. Emitted HTML is byte-identical (documented
+  inert deltas only).
+
+### Fixed
+
+- **Policy-gated screens no longer leak through markdown surfaces.**
+  Every llm.md surface — per-screen handlers, the dynamic-route
+  fallback, markdown negotiation, the `/llm-pages.md` index, and the
+  static export — now evaluates the screen's policy chain with the
+  live request. A non-Allow decision serves a metadata-free withheld
+  doc (route path and type only); the index lists gated screens
+  path-only. Previously a gated screen's rendered content, title,
+  description, and SEO bundle could be read via its llm.md sibling.
+- **Generated apps pass their own accessibility gate.** Status-badge
+  text colors now mix toward `--color-text` (AA contrast in both
+  schemes for any reasonable palette), generated empty states declare
+  correct heading levels (h2 under a page h1; h1 when they are the
+  whole page), and the scaffolded example palette's `text-muted` was
+  corrected. The blueprint's axe gate is green on every page in both
+  color schemes.
+- **Generator emits `SetParams` for every dynamic screen** — including
+  static-body screens and `:colon`-syntax routes (both previously
+  panicked at boot under the new guard), reading the record param
+  (`id` when declared, else the last param) rather than the first.
+- **SSG no longer silently skips dynamic routes** — the static builder
+  warns, naming the route and the `StaticPaths` fix, when a dynamic
+  route can't be expanded.
+- **Route manifest ordering is deterministic** (redirect entries were
+  map-ordered), and llm.md for expanded static pages is written
+  per-URL instead of stamping one pattern doc.
+
+### Docs
+
+- `ui-getting-started`: dynamic params + guard, catch-all syntax,
+  twin-registration for optional segments, redirects (incl. overlap
+  rules), constraints. `static-export`: `StaticPaths` section.
+  `agent-ready`: dynamic-route docs + policy-withheld contract.
+  `interactive-patterns`: the new typed helpers.
+- #130 slices 4 (named outlets) and 5 (intercepting routes) have design
+  notes on the issue; slice 4 resolved into #132 (PaneHost
+  deep-linking), slice 5 remains open pending a runtime-budget carve.
+
 ## [0.41.0] - 2026-07-23
 
 Readiness and UI contracts: the long-deferred DX roadmap items ship
