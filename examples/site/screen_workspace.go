@@ -27,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -92,27 +93,21 @@ func (s *WorkspaceScreen) RenderCtx(_ context.Context) render.HTML {
 	// Secondary pane: a header + the RPC-filled ticket region.
 	secondary := html.Div(html.DivConfig{},
 		paneHeader("Ticket", "secondary"),
-		render.Tag("div", map[string]string{
-			"data-fui-signal":      "ws-ticket",
-			"data-fui-signal-mode": "html",
-		}, ui.EmptyState(ui.EmptyStateConfig{
+		interactive.BindHTML(render.Tag("div", nil, ui.EmptyState(ui.EmptyStateConfig{
 			Title:        "Select a ticket",
 			Description:  "Choose a row on the left to load its detail here.",
 			HeadingLevel: 3,
-		})),
+		})), "ws-ticket"),
 	)
 
 	// Tertiary pane: the RPC-filled customer region.
 	tertiary := html.Div(html.DivConfig{},
 		paneHeader("Customer", "tertiary"),
-		render.Tag("div", map[string]string{
-			"data-fui-signal":      "ws-customer",
-			"data-fui-signal-mode": "html",
-		}, ui.EmptyState(ui.EmptyStateConfig{
+		interactive.BindHTML(render.Tag("div", nil, ui.EmptyState(ui.EmptyStateConfig{
 			Title:        "No customer open",
 			Description:  "Open a ticket, then choose “View customer”.",
 			HeadingLevel: 3,
-		})),
+		})), "ws-customer"),
 	)
 
 	intro := html.Div(html.DivConfig{Class: "ws-intro"},
@@ -140,15 +135,13 @@ func (s *WorkspaceScreen) RenderCtx(_ context.Context) render.HTML {
 // delegated behaviors: data-fui-pane-open reveals the secondary pane and
 // data-fui-rpc GETs the detail into the ws-ticket signal region.
 func workspaceRow(t wsTicket) render.HTML {
-	return render.Tag("button", map[string]string{
-		"type":                "button",
-		"class":               "ws-row",
-		"aria-label":          "Open ticket " + t.ID + ": " + t.Subject,
-		"data-fui-rpc":        "/__site/workspace/ticket?id=" + t.ID,
-		"data-fui-rpc-method": "GET",
-		"data-fui-rpc-signal": "ws-ticket",
-		"data-fui-pane-open":  "secondary",
-	},
+	action := interactive.Get("/__site/workspace/ticket?id=" + t.ID).OnSuccess(interactive.SetSignal("ws-ticket"))
+	return render.Tag("button", html.MergeAttrs(map[string]string{
+		"type":               "button",
+		"class":              "ws-row",
+		"aria-label":         "Open ticket " + t.ID + ": " + t.Subject,
+		"data-fui-pane-open": "secondary",
+	}, action.Attrs()),
 		render.Tag("span", map[string]string{"class": "ws-row__id"}, render.Text("#"+t.ID)),
 		render.Tag("span", map[string]string{"class": "ws-row__subject"}, render.Text(t.Subject)),
 		ui.StatusBadge(ui.StatusBadgeConfig{Label: t.StatusLabel, Variant: t.Status}),
@@ -159,11 +152,10 @@ func workspaceRow(t wsTicket) render.HTML {
 func paneHeader(title, pane string) render.HTML {
 	return html.Div(html.DivConfig{Class: "ws-pane-head"},
 		html.Heading(html.HeadingConfig{Level: 2, Class: "ws-pane-title"}, render.Text(title)),
-		ui.Button(ui.ButtonConfig{
-			Label:      "Close",
-			Variant:    ui.ButtonGhost,
-			ExtraAttrs: html.Attrs{"data-fui-pane-close": pane},
-		}),
+		interactive.ClosePaneOnClick(ui.Button(ui.ButtonConfig{
+			Label:   "Close",
+			Variant: ui.ButtonGhost,
+		}), pane),
 	)
 }
 
@@ -185,12 +177,8 @@ func renderTicketDetail(t wsTicket) render.HTML {
 		ui.Button(ui.ButtonConfig{
 			Label:   "View customer",
 			Variant: ui.ButtonSecondary,
-			ExtraAttrs: html.Attrs{
-				"data-fui-rpc":        "/__site/workspace/customer?id=" + t.CustomerID,
-				"data-fui-rpc-method": "GET",
-				"data-fui-rpc-signal": "ws-customer",
-				"data-fui-pane-open":  "tertiary",
-			},
+			ExtraAttrs: html.MergeAttrs(html.Attrs{"data-fui-pane-open": "tertiary"},
+				interactive.Get("/__site/workspace/customer?id="+t.CustomerID).OnSuccess(interactive.SetSignal("ws-customer")).Attrs()),
 		}),
 	)
 }

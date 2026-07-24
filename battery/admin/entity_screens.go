@@ -23,6 +23,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -75,10 +76,9 @@ func (s *entityListScreen) RenderCtx(ctx context.Context) render.HTML {
 
 	// The DataTable lives inside its signal-bound wrapper; sort/pagination RPCs
 	// swap this wrapper's innerHTML with the fragment from _rows.
-	island := render.Tag("div", map[string]string{
-		"data-fui-signal":      signalName(s.ent),
-		"data-fui-signal-mode": "html",
-	}, s.b.renderTable(ctx, s.ent, q))
+	island := interactive.BindHTML(
+		render.Tag("div", nil, s.b.renderTable(ctx, s.ent, q)),
+		signalName(s.ent))
 	body = append(body, island)
 
 	return s.b.shell(ui.Container(ui.ContainerConfig{Class: "admin-entity"}, body...))
@@ -603,12 +603,9 @@ func (b *Battery) rowActions(ent *entity.Entity, id string, viewState url.Values
 		Label:   "Delete",
 		Variant: ui.ButtonDanger,
 		Size:    ui.ButtonSizeSmall,
-		ExtraAttrs: html.Attrs{
-			"data-fui-confirm":    "Delete this " + singular(ent.GetName()) + "?",
-			"data-fui-rpc":        rpc,
-			"data-fui-rpc-method": "DELETE",
-			"data-fui-rpc-signal": signalName(ent),
-		},
+		ExtraAttrs: interactive.Delete(rpc).
+			WithConfirm("Delete this " + singular(ent.GetName()) + "?").
+			OnSuccess(interactive.SetSignal(signalName(ent))).Attrs(),
 	})
 	return render.Tag("div", map[string]string{"class": "admin-row-actions"}, view, edit, del)
 }
