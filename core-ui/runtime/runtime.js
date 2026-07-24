@@ -529,6 +529,7 @@
         title: r.title ?? r.Title ?? '',
         preload: r.preload ?? r.Preload ?? false,
         layout: r.layout ?? r.Layout ?? '',
+        redirect: r.redirect ?? r.Redirect ?? '',
       });
     }
   };
@@ -1267,18 +1268,18 @@
     // canonical form via X-Gofastr-Location if a redirect happens.
     if (clean !== '/' && !clean.endsWith('/') && routes.has(clean + '/')) return true;
     if (clean !== '/' && clean.endsWith('/') && routes.has(clean.slice(0, -1))) return true;
-    // Try dynamic route patterns (e.g., /products/:slug)
+    // Try dynamic route patterns (e.g., /products/:slug, /docs/:path*)
     const parts = clean.split('/').filter(Boolean);
     for (const [pattern] of routes) {
       if (!pattern.includes(':')) continue;
-      const patParts = pattern.split('/').filter(Boolean);
-      if (patParts.length !== parts.length) continue;
-      let match = true;
-      for (let i = 0; i < patParts.length; i++) {
-        if (patParts[i].startsWith(':')) continue; // dynamic segment
-        if (patParts[i] !== parts[i]) { match = false; break; }
-      }
-      if (match) return true;
+      const pp = pattern.split('/').filter(Boolean);
+      // Catch-all patterns ("*") accept >= prefix length; others exact.
+      if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) continue;
+      // Each literal segment must align; dynamic segments (":name",
+      // incl. the catch-all ":name*") match anything. Typed constraints
+      // (":id:int" / ":id:uuid") are enforced server-side at resolve; a
+      // non-conforming value falls through to a normal request there.
+      if (pp.every((seg, i) => seg.startsWith(':') || seg === parts[i])) return true;
     }
     return false;
   };
