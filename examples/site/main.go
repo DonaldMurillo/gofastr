@@ -821,11 +821,12 @@ func registerScreens(site *app.App) {
 	registerHubs(site) // /primitives, /framework, /agents, /interactivity, /generator
 	site.Register("/get-started", &GetStartedScreen{}, nil)
 	site.Register("/docs/", &ConceptsIndexScreen{}, nil)
-	// One /docs/<slug> page per catalog entry, each rendering the embedded
-	// framework doc. Driven by docIntents so routes and cards stay in sync.
-	for _, dp := range flatDocs() {
-		site.Register("/docs/"+dp.Slug, &DocPageScreen{Entry: dp}, nil)
-	}
+	// One catch-all route serves every doc page. DocPageScreen resolves
+	// the entry from the slug (SetParams), 404s unknown slugs (Load),
+	// and enumerates every page via StaticPaths so export, sitemap,
+	// llm.md, and the strict coverage gate stay in sync with the
+	// catalog — the same URL set the old per-slug loop emitted.
+	site.Register("/docs/{path...}", &DocPageScreen{}, nil)
 	site.Register("/examples", &ExamplesScreen{}, nil)
 	// Advanced, full-page interactive example: a master-detail workspace
 	// on ui.PaneHost. Its /__site/workspace/* detail endpoints are mounted
