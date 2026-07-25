@@ -237,12 +237,23 @@ secret-scan:
 	@# os.Getenv("..._PASSWORD") reads, and prose mentioning "password"
 	@# don't false-positive — only an actual `key = "literal"` shape
 	@# with a non-trivial value matches.
+	@# File set: NOT just *.go. A credential committed in a .yml, .json,
+	@# .env*, Dockerfile or shell script is exactly as leaked as one in a
+	@# .go file, and the Go-only glob is why this gate could not have
+	@# caught it. Binary and vendored paths are excluded to keep the scan
+	@# fast and quiet.
 	@found=""; \
-	for file in $$(git ls-files '*.go'); do \
+	for file in $$(git ls-files \
+		'*.go' '*.yml' '*.yaml' '*.json' '*.toml' '*.env' '*.env.*' '.env*' \
+		'*.sh' '*.bash' '*.zsh' '*.ini' '*.conf' '*.cfg' '*.properties' \
+		'*.tf' '*.tfvars' '*.tpl' '*.template' '*.md' \
+		'Dockerfile' '*/Dockerfile' 'Dockerfile.*' '*/Dockerfile.*' \
+		'Makefile' '*/Makefile' \
+		| grep -v -E '(^|/)(node_modules|vendor|testdata/fixtures)/' || true); do \
 		for pattern in 'BEGIN RSA PRIVATE KEY' 'BEGIN PRIVATE KEY' 'BEGIN OPENSSH PRIVATE KEY' \
 			'(password|passwd|secret_key|api[-_]?key)["'"'"']?\s*={1,2}\s*["'"'"'][A-Za-z0-9+/_.-]{8,}["'"'"']' \
 			'sk_(live|test)_[A-Za-z0-9]{10,}' 'ghp_[A-Za-z0-9]{36}' 'AKIA[0-9A-Z]{16}' 'xoxb-[0-9A-Za-z-]{10,}'; do \
-			matches=$$(grep -n -i -E "$$pattern" "$$file" 2>/dev/null | grep -v 'nosecret:' || true); \
+			matches=$$(grep -n -i -E "$$pattern" "$$file" 2>/dev/null | grep -v -E "not-a-secret:|nosecret:|for pattern in" || true); \
 			if [ -n "$$matches" ]; then \
 				found="$$found\n  $$file: $$matches"; \
 			fi; \

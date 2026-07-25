@@ -18,6 +18,19 @@ import (
 // MemoryMagicLinkTokenStore tests
 // ============================================================================
 
+// magicConfirmReq builds the POST that actually signs a user in.
+// Following the emailed link (GET) now renders a confirmation page and
+// signs nobody in — the link is itself a credential, so an attacker
+// could otherwise mail their own link to a victim and land the victim's
+// browser in the attacker's account (TestMagicLinkVerifyNeedsConfirmation).
+func magicConfirmReq(token string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/verify",
+		strings.NewReader("token="+token))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	return req
+}
+
 func TestMemoryMagicLinkTokenStore_CreateAndRedeem(t *testing.T) {
 	store := NewMemoryMagicLinkTokenStore()
 	ctx := context.Background()
@@ -283,7 +296,7 @@ func TestMagicLink_Verify_ValidToken_SetsCookieAndRedirects(t *testing.T) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -337,7 +350,7 @@ func TestMagicLink_Verify_ExpiredToken_Returns401(t *testing.T) {
 
 	token, _ := plugin.tokenStore.CreateToken(context.Background(), "alice@example.com", -1*time.Second)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -375,7 +388,7 @@ func TestMagicLink_Verify_CreatesUserIfNotExists(t *testing.T) {
 
 	token, _ := plugin.tokenStore.CreateToken(context.Background(), email, 15*time.Minute)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -404,7 +417,7 @@ func TestMagicLink_Verify_FindsExistingUser(t *testing.T) {
 
 	token, _ := plugin.tokenStore.CreateToken(context.Background(), email, 15*time.Minute)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -447,7 +460,7 @@ func TestMagicLink_Verify_TokenConsumedAfterUse(t *testing.T) {
 	token, _ := plugin.tokenStore.CreateToken(context.Background(), "alice@example.com", 15*time.Minute)
 
 	// First verify succeeds
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusFound {
@@ -455,7 +468,7 @@ func TestMagicLink_Verify_TokenConsumedAfterUse(t *testing.T) {
 	}
 
 	// Second verify fails — token already consumed
-	req2 := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	req2 := magicConfirmReq(token)
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, req2)
 	if w2.Code != http.StatusUnauthorized {
@@ -506,7 +519,7 @@ func TestMagicLink_SendThenVerify_EndToEnd(t *testing.T) {
 	token := strings.TrimPrefix(sender.lastURL, "http://localhost:8080/auth/magic-link/verify?token=")
 
 	// 2. Verify with that token
-	verifyReq := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	verifyReq := magicConfirmReq(token)
 	verifyW := httptest.NewRecorder()
 	r.ServeHTTP(verifyW, verifyReq)
 
@@ -569,7 +582,7 @@ func TestMagicLinkVerify_NewUser_DoesNotRunBcryptPerSignup(t *testing.T) {
 
 	// Warm-up so init costs don't bias.
 	tok0, _ := plugin.tokenStore.CreateToken(context.Background(), "warm@example.com", time.Hour)
-	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+tok0, nil))
+	r.ServeHTTP(httptest.NewRecorder(), magicConfirmReq(tok0))
 
 	const samples = 5
 	var total time.Duration
@@ -579,7 +592,7 @@ func TestMagicLinkVerify_NewUser_DoesNotRunBcryptPerSignup(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateToken: %v", err)
 		}
-		req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+tok, nil)
+		req := magicConfirmReq(tok)
 		w := httptest.NewRecorder()
 		start := time.Now()
 		r.ServeHTTP(w, req)
@@ -694,7 +707,7 @@ func TestMagicLinkUsesConfiguredRoles(t *testing.T) {
 
 	email := "newuser@example.com"
 	token, _ := plugin.tokenStore.CreateToken(context.Background(), email, 15*time.Minute)
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

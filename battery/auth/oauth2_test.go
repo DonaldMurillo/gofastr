@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,6 +91,17 @@ func mountOAuth2Routes(mgr *AuthManager) *router.Router {
 	r := router.New()
 	mgr.RegisterRoutes(r)
 	return r
+}
+
+// oauthCallbackReq builds a callback request carrying the browser-binding
+// cookie the redirect handler plants. Synthesizing a callback without it
+// is the login-CSRF replay shape TestOAuthCallbackNeedsBrowserBinding
+// pins, so every test that means "a real browser finishing its own flow"
+// has to include it.
+func oauthCallbackReq(target, state string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.AddCookie(&http.Cookie{Name: oauthStateCookie, Value: state})
+	return req
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -286,7 +298,7 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 	mock := &mockProvider{
 		name: "mock",
 		tokenResp: &OAuth2Token{
-			AccessToken: "test-access-token",
+			AccessToken: "test-access-token", // not-a-secret: mock provider fixture
 			Expiry:      time.Now().Add(time.Hour),
 		},
 		userResp: &OAuth2UserInfo{
@@ -322,7 +334,7 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 
 	// Now hit the callback
 	callbackURL := "/auth/oauth/mock/callback?code=test-code&state=" + state
-	cbReq := httptest.NewRequest(http.MethodGet, callbackURL, nil)
+	cbReq := oauthCallbackReq(callbackURL, state)
 	cbW := httptest.NewRecorder()
 	r.ServeHTTP(cbW, cbReq)
 
@@ -371,7 +383,7 @@ func TestOAuth2Plugin_Callback_SuccessNewUser(t *testing.T) {
 	mock := &mockProvider{
 		name: "mock",
 		tokenResp: &OAuth2Token{
-			AccessToken: "test-access-token",
+			AccessToken: "test-access-token", // not-a-secret: mock provider fixture
 			Expiry:      time.Now().Add(time.Hour),
 		},
 		userResp: &OAuth2UserInfo{
@@ -395,7 +407,7 @@ func TestOAuth2Plugin_Callback_SuccessNewUser(t *testing.T) {
 
 	// Callback
 	callbackURL := "/auth/oauth/mock/callback?code=test-code&state=" + state
-	cbReq := httptest.NewRequest(http.MethodGet, callbackURL, nil)
+	cbReq := oauthCallbackReq(callbackURL, state)
 	cbW := httptest.NewRecorder()
 	r.ServeHTTP(cbW, cbReq)
 
@@ -423,7 +435,7 @@ func TestOAuth2Plugin_Callback_InvalidState(t *testing.T) {
 	r := mountOAuth2Routes(mgr)
 
 	cbURL := "/auth/oauth/mock/callback?code=test-code&state=bad-state"
-	req := httptest.NewRequest(http.MethodGet, cbURL, nil)
+	req := oauthCallbackReq(cbURL, "bad-state")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -450,7 +462,7 @@ func TestOAuth2Plugin_Callback_MissingCode(t *testing.T) {
 	p.RegisterRoutes(r, "/auth")
 
 	cbURL := "/auth/oauth/mock/callback?state=" + state
-	req := httptest.NewRequest(http.MethodGet, cbURL, nil)
+	req := oauthCallbackReq(cbURL, state)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -478,7 +490,7 @@ func TestOAuth2Plugin_Callback_ExchangeError(t *testing.T) {
 	state := strings.TrimPrefix(loc, "https://example.com/auth?state=")
 
 	cbURL := "/auth/oauth/mock/callback?code=bad-code&state=" + state
-	req := httptest.NewRequest(http.MethodGet, cbURL, nil)
+	req := oauthCallbackReq(cbURL, state)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -504,7 +516,7 @@ func TestOAuth2Plugin_Callback_UserInfoError(t *testing.T) {
 	state := strings.TrimPrefix(loc, "https://example.com/auth?state=")
 
 	cbURL := "/auth/oauth/mock/callback?code=test-code&state=" + state
-	req := httptest.NewRequest(http.MethodGet, cbURL, nil)
+	req := oauthCallbackReq(cbURL, state)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -518,7 +530,7 @@ func TestOAuth2Plugin_Callback_UnknownProvider(t *testing.T) {
 	r := mountOAuth2Routes(mgr)
 
 	cbURL := "/auth/oauth/unknown/callback?code=x&state=y"
-	req := httptest.NewRequest(http.MethodGet, cbURL, nil)
+	req := oauthCallbackReq(cbURL, "y")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -553,7 +565,7 @@ func TestOAuth2Plugin_Callback_NoUserStore(t *testing.T) {
 	state := strings.TrimPrefix(loc, "https://example.com/auth?state=")
 
 	cbURL := "/auth/oauth/mock/callback?code=test-code&state=" + state
-	req := httptest.NewRequest(http.MethodGet, cbURL, nil)
+	req := oauthCallbackReq(cbURL, state)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -828,8 +840,7 @@ func runCallback(t *testing.T, mgr *AuthManager, r *router.Router, providerName 
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodGet,
-		"/auth/oauth/"+providerName+"/callback?state="+state+"&code=fakecode", nil)
+	req := oauthCallbackReq("/auth/oauth/"+providerName+"/callback?state="+state+"&code=fakecode", state)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
@@ -928,5 +939,95 @@ func TestOAuth_RefusesEmailCollisionWithExistingAccount(t *testing.T) {
 	// 409 is the conventional response for "email already in use, link from settings".
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected 409 conflict, got %d (body=%s)", w.Code, w.Body.String())
+	}
+}
+
+// TestOAuthCallbackNeedsBrowserBinding pins that the OAuth callback is
+// tied to the browser that started the flow.
+//
+// Attack (login CSRF / account confusion): the state token is
+// unforgeable and single-use, but it is bound to nothing about the
+// caller. An attacker starts a flow in their own browser, captures the
+// resulting callback URL — state + code — and gets the victim to load
+// it. The callback is a GET, so rejectCrossSiteForm never sees it, and
+// the victim's browser silently ends up logged into the attacker's
+// account. Anything the victim then does happens in that account; the
+// /link flow turns it into a durable identity binding.
+//
+// The fix is a short-lived HttpOnly SameSite=Lax cookie planted when the
+// flow starts and required to match at the callback. SameSite=Lax still
+// rides the provider's top-level redirect back, so the legitimate flow is
+// unaffected — but a callback URL replayed into a different browser
+// carries no cookie.
+func TestOAuthCallbackNeedsBrowserBinding(t *testing.T) {
+	mgr, _ := newOAuth2Manager(t, &mockProvider{
+		name:      "mock",
+		tokenResp: &OAuth2Token{AccessToken: "tok"},
+		userResp:  &OAuth2UserInfo{ID: "attacker-1", Email: "attacker@evil.example"},
+	})
+	r := mountOAuth2Routes(mgr)
+
+	// Attacker's browser starts the flow and captures the state.
+	req := httptest.NewRequest(http.MethodGet, "/auth/oauth/mock", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("redirect: expected 302, got %d", w.Code)
+	}
+	loc, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse redirect: %v", err)
+	}
+	state := loc.Query().Get("state")
+	if state == "" {
+		t.Fatal("no state in the provider redirect")
+	}
+
+	// The victim's browser loads the captured callback URL. It carries
+	// none of the cookies the attacker's browser was handed.
+	cb := httptest.NewRequest(http.MethodGet, "/auth/oauth/mock/callback?state="+url.QueryEscape(state)+"&code=abc", nil)
+	cw := httptest.NewRecorder()
+	r.ServeHTTP(cw, cb)
+
+	for _, c := range cw.Result().Cookies() {
+		if c.Name == "session_id" && c.Value != "" {
+			t.Fatalf("SECURITY: [csrf] a replayed OAuth callback logged a different browser in as %s — the callback is not bound to the browser that started the flow", "attacker@evil.example")
+		}
+	}
+	if cw.Code == http.StatusFound || cw.Code == http.StatusOK {
+		t.Errorf("SECURITY: [csrf] OAuth callback accepted a state with no matching browser binding (status %d, body=%s)", cw.Code, cw.Body.String())
+	}
+}
+
+// The legitimate flow — same browser, cookie present — must still work.
+func TestOAuthCallbackSameBrowserSucceeds(t *testing.T) {
+	mgr, _ := newOAuth2Manager(t, &mockProvider{
+		name:      "mock",
+		tokenResp: &OAuth2Token{AccessToken: "tok"},
+		userResp:  &OAuth2UserInfo{ID: "u-1", Email: "alice@example.com"},
+	})
+	r := mountOAuth2Routes(mgr)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oauth/mock", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	loc, _ := url.Parse(w.Header().Get("Location"))
+	state := loc.Query().Get("state")
+
+	cb := httptest.NewRequest(http.MethodGet, "/auth/oauth/mock/callback?state="+url.QueryEscape(state)+"&code=abc", nil)
+	for _, c := range w.Result().Cookies() {
+		cb.AddCookie(c)
+	}
+	cw := httptest.NewRecorder()
+	r.ServeHTTP(cw, cb)
+
+	var got string
+	for _, c := range cw.Result().Cookies() {
+		if c.Name == "session_id" {
+			got = c.Value
+		}
+	}
+	if got == "" {
+		t.Fatalf("the same browser that started the flow was refused at the callback (status %d, body=%s)", cw.Code, cw.Body.String())
 	}
 }

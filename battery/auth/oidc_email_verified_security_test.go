@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -223,7 +222,7 @@ func TestOIDCSec_UnverifiedEmailCannotTakeoverPasswordAccount(t *testing.T) {
 		t.Fatalf("generateState: %v", err)
 	}
 	cbURL := "/auth/oauth/oidc/callback?state=" + state + "&code=fakecode"
-	req := httptest.NewRequest(http.MethodGet, cbURL, nil)
+	req := oauthCallbackReq(cbURL, state)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
