@@ -108,6 +108,51 @@ IS the record, and `git log -p` is the audit trail. A permanently
 `t.Skip`ped test is never acceptable — delete it and leave a comment
 where the contract is actually tested.
 
+## Not-yet-audited surfaces (as of 2026-07-25)
+
+The 2026-07-25 pass fixed 30 findings and published its own coverage
+gaps. These are **never-looked, not clean** — no pass has run all four
+signals over them, so the clean-gate above has nothing to say about
+them. Start the next pass here rather than re-sweeping what is already
+pinned.
+
+- **Auth:** `battery/auth/oidc.go` + `oidc_jwks.go` (1000+ lines — JWKS
+  fetch, `iss`/`aud`, nonce, `email_verified`; oidc allows `http` for a
+  localhost issuer, so check a host that merely *resolves* to loopback),
+  `entity_oauth_links.go`, `oauth_token_store.go`, `battery/admin`
+  entity-screen handler *bodies* (gating verified, internals not),
+  `framework/access/store.go` fanout/refresh race, the `decide` chain.
+- **Data:** `core/upload/`, `framework/{file,image,openapi,sdk,sdkdocs,
+  tx.go,hook,typed_hooks}`, `framework/{db,pagination,datexport}`,
+  `core/schema` beyond the Pattern note, `crud_batch/stream/events`. The
+  `sqlite/**` engine has ~25 unverified recon candidates on the
+  fileformat/varint readers — robustness bugs only unless the engine is
+  pointed at an untrusted `.db` (kiln/harness session stores), where
+  `-fuzz` is the right tool.
+- **Agent surface:** `framework/experimental`, `battery/experimental`,
+  `kiln/{expr,effect,render}` CSP, `cmd/gofastr/{pack,skill,docs}`,
+  `core/moduleproto/{peer,handshake,methods}.go`, `framework/agentsinv`.
+- **Browser:** most `core-ui/runtime/src/*.js` (lightbox, sortablelist,
+  panehost, carousel, combobox, tree, toasts, …), `core-ui/patterns/**`
+  beyond the few read, `core-ui/{seo,app,registry,di,compute,interactive}`,
+  `framework/ui` (100+ files, only the URL-guard sites were read),
+  `core/fuzzy`.
+- **Infra:** `framework/migrate` lock/checksum/dirty + tenant_id
+  injection internals, `framework/{cron,event,outbox,fanout,lifecycle}`
+  leasing SQL / relay state machine, `core/{router,config,featureflag,
+  i18n}` + `framework/i18n.go` (locale-tag → file lookup traversal),
+  `core/handler/{bind,respond,context}` deep pass, `battery/queue`
+  scheduler.
+
+Surfaces that pass CLEARED the same day — do not re-derive: kiln journal
+replay, `core/markdown` XSS, the service worker's `fetch(originalRequest)`
+(the shape the 2026 Angular-SW CVE class needs you to get wrong),
+sandbox `_other.go` failing closed, `QuoteIdent`/`SafeIdent`, webhook
+delivery + `harness/webfetch.go` dial-time `Control` re-check, `core/yaml`,
+`core/moduleproto` framing, CORS, the XFF rate-limit key, static path
+traversal, the `Timeout` middleware race, log injection, cache cross-user
+replay, kiln request→exec, and the codegen file-write sink.
+
 ## Ready-to-paste prompt for the next pass
 
 When you want to run another adversarial pass, paste this as the
