@@ -16,7 +16,12 @@ services:
     container_name: gofastr-ollama
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      # Bound to loopback: Ollama has no authentication, so the short
+      # form ("11434:11434") publishes an open model-inference endpoint
+      # on every interface — a free compute/exfil surface for anyone on
+      # the same network. This compose file is dev-only; nothing here
+      # needs to be reachable from off-box.
+      - "127.0.0.1:11434:11434"
     volumes:
       - ./.ollama:/root/.ollama
     healthcheck:
