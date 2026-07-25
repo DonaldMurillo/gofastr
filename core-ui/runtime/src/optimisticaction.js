@@ -70,6 +70,7 @@
         const token = tokenMeta.getAttribute('content');
         if (token) headers['X-CSRF-Token'] = token;
       }
+      if (!window.__gofastr?._originOK?.(url)) return;
       fetch(url, { method, credentials: 'same-origin', headers })
         .then((res) => {
           if (res.ok) {

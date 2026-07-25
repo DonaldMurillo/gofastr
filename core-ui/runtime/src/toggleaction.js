@@ -60,6 +60,7 @@
 
   const fireAndForget = (url, method) => {
     if (!url) return Promise.resolve(true);
+    if (!window.__gofastr?._originOK?.(url)) return Promise.resolve(false);
     return fetch(url, {
       method: (method || 'POST').toUpperCase(),
       credentials: 'same-origin',

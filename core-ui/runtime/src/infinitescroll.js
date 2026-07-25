@@ -62,6 +62,7 @@
             const tok = csrfMeta.getAttribute('content');
             if (tok) headers['X-CSRF-Token'] = tok;
           }
+          if (!window.__gofastr?._originOK?.(path)) return;
           const r = await fetch(path, {
             method: 'POST',
             headers,

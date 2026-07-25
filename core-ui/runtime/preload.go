@@ -63,6 +63,7 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-reveal", "reveal"},
 	{"data-fui-animate-signal", "animate"},
 	{"data-fui-drag-dismiss", "dragdismiss"},
+	{"data-fui-disclosure", "disclosure"},
 	{"data-fui-pane-host", "panehost"},
 	{"data-fui-poll", "poll"},
 }

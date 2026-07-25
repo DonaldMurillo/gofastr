@@ -118,6 +118,7 @@
       // poll forever. The pending fetch's finally keeps the cadence.
       if (s.inFlight) return;
       s.inFlight = true;
+      if (!NS._originOK?.(src)) { s.inFlight = false; return; }
       fetch(src, {
         headers: { 'Accept': 'text/html' },
         credentials: 'same-origin',
@@ -216,6 +217,7 @@
       // fetch is pending must not arm a second timer chain.
       if (inFlight) return;
       inFlight = true;
+      if (!NS._originOK?.(cfg.statePath)) { inFlight = false; return; }
       fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         .then((r) => {
           // HTTP errors must reach .catch so back-off applies.

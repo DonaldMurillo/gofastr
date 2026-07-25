@@ -15,6 +15,22 @@ import (
 // below. Real attributes never end in a dash.
 var attrPattern = regexp.MustCompile(`data-fui-[a-z0-9-]+`)
 
+// privilegedAttrs are runtime-read attributes that do NOT carry the
+// data-fui- prefix, so attrPattern cannot see them. Every one of them
+// changes what code runs — data-behavior is a <script src> sink,
+// data-widget/data-component select hydration behaviour, data-bind
+// writes into the state store — which makes them exactly the set Hard
+// rule 5 exists for. Naming them explicitly keeps the parity gate from
+// being satisfied in letter and defeated in spirit; a plain widening to
+// data-[a-z0-9-]+ would instead drag in every presentational data-*
+// attribute the runtime happens to touch.
+var privilegedAttrs = []string{
+	"data-behavior",
+	"data-widget",
+	"data-component",
+	"data-bind",
+}
+
 // runtimeJSAttrs returns every data-fui-* attribute literally referenced in
 // the bundled runtime.js and every on-demand src/*.js module. Comments are
 // intentionally included: several attributes (e.g. data-fui-rpc-after-done)
@@ -245,5 +261,41 @@ func TestRuntimeAttrsAreDocumented(t *testing.T) {
 			"from the core-ui/ARCHITECTURE.md attribute table (hard rule 5):\n  %s\n"+
 			"Add a row for each to the attribute table.",
 			len(missing), strings.Join(missing, "\n  "))
+	}
+}
+
+// TestPrivilegedAttrsAreDocumented extends hard rule 5 past the
+// data-fui- prefix.
+//
+// The parity gate matched only `data-fui-*`, so the runtime's single
+// most privileged attribute — `data-behavior`, which becomes a
+// `<script src>` — appeared zero times in ARCHITECTURE.md and nobody
+// noticed. Same for data-widget / data-component / data-bind. The rule
+// was satisfied in letter and defeated in spirit.
+func TestPrivilegedAttrsAreDocumented(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "ARCHITECTURE.md"))
+	if err != nil {
+		t.Fatalf("read ARCHITECTURE.md: %v", err)
+	}
+	arch := string(raw)
+	for _, a := range privilegedAttrs {
+		if !strings.Contains(arch, "`"+a) {
+			t.Errorf("privileged runtime attribute %q is not documented in core-ui/ARCHITECTURE.md (hard rule 5)", a)
+		}
+	}
+}
+
+// TestPrivilegedAttrsStillRead guards the other direction: if one of
+// these is renamed or dropped, the doc row and this list must follow.
+// A stale entry here would keep documenting an attribute nothing reads.
+func TestPrivilegedAttrsStillRead(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range privilegedAttrs {
+		if !strings.Contains(js, a) {
+			t.Errorf("privileged attribute %q is documented + listed but no longer read by runtime.js — drop it from both", a)
+		}
 	}
 }

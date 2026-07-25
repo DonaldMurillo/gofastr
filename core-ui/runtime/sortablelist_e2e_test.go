@@ -45,7 +45,20 @@ func startSortableServer(t *testing.T, pageHTML string, rpcHandler, conflictHand
 	if !ok || js == "" {
 		t.Fatal("sortablelist module not embedded")
 	}
+	// Serve the core runtime alongside the module. In production a
+	// module only ever arrives via core's loadModule, and the shared
+	// guards it relies on (same-origin gating on attribute-supplied RPC
+	// URLs) live in core — a module page without core is a shape that
+	// does not ship.
+	core, err := RuntimeJS()
+	if err != nil {
+		t.Fatalf("RuntimeJS: %v", err)
+	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(core))
+	})
 	mux.HandleFunc("/mod.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
@@ -58,7 +71,7 @@ func startSortableServer(t *testing.T, pageHTML string, rpcHandler, conflictHand
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintf(w, `<!doctype html><html><head><title>s</title></head><body>%s<script src="/mod.js"></script></body></html>`, pageHTML)
+		fmt.Fprintf(w, `<!doctype html><html><head><title>s</title></head><body>%s<script src="/__gofastr/runtime.js"></script><script src="/mod.js"></script></body></html>`, pageHTML)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

@@ -50,8 +50,12 @@
     if (declared.length) {
       const url = new URL(window.location.href);
       for (const k of declared) {
-        const v = (k in params) ? params[k] : url.searchParams.get(k);
-        if (v != null) NS.setSignal(k, v);
+        const fromCaller = (k in params);
+        const v = fromCaller ? params[k] : url.searchParams.get(k);
+        // Values read off the query string are attacker-supplied.
+        // Flagging them here is what lets setSignal's html render mode
+        // treat them as text instead of markup.
+        if (v != null) NS.setSignal(k, v, fromCaller ? undefined : { untrusted: true });
       }
     }
     if (o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
@@ -76,6 +80,7 @@
     if (!NS._chromeCache[name]) {
       NS._chromeCache[name] = (async () => {
         try {
+          if (!NS._originOK?.(path)) throw new Error('cross-origin chrome');
           const r = await fetch(path);
           if (!r.ok) throw new Error('chrome fetch ' + r.status);
           return await r.text();
@@ -260,6 +265,7 @@
 
     // Initial state hydration — only when the widget declared signals.
     if (cfg.statePath) {
+      if (!NS._originOK?.(cfg.statePath)) return;
       fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         .then((r) => (r.ok ? r.json() : {}))
         .then((state) => {
@@ -315,22 +321,19 @@
           body = JSON.stringify(obj);
         }
       }
-      const headers = { 'X-FUI-Widget': cfg.name };
-      if (body && !formData) headers['Content-Type'] = 'application/json';
       // CSRF: forward the page's <meta name="csrf-token"> via the
       // X-CSRF-Token header. JSON/multipart RPC bodies can't carry the
       // urlencoded `_csrf` field the auth.CSRF middleware parses, so the
-      // header is the only working channel. Mirrors the core dispatchRPC.
-      const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-      if (csrfMeta) {
-        const tok = csrfMeta.getAttribute('content');
-        if (tok) headers['X-CSRF-Token'] = tok;
-      }
+      // header is the only working channel. NS._csrf is core's — this
+      // module used to carry its own copy of the same six lines.
+      const headers = NS._csrf({ 'X-FUI-Widget': cfg.name });
+      if (body && !formData) headers['Content-Type'] = 'application/json';
       if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
       // Task C: add fui-loading CSS class and aria-busy for styling during in-flight RPC.
       node.classList.add('fui-loading');
       node.setAttribute('aria-busy', 'true');
       try {
+        if (!NS._originOK?.(path)) return;
         const r = await fetch(path, { method, headers, body: body || undefined, credentials: 'same-origin' });
         if (!r.ok) {
           const txt = await r.text();

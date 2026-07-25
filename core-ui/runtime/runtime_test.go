@@ -584,18 +584,22 @@ func TestRuntimeNavigateRejectsUnsafeSchemes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The navigate() body MUST call _isUnsafeSignalUrl (or the
-	// internal alias). Scan within ~400 chars after the function
-	// signature so we don't accept the guard living anywhere on the
-	// page.
+	// The navigate() body MUST gate the target before pushState. That
+	// gate is now _originOK, which subsumes the old _isUnsafeSignalUrl
+	// call: a javascript: / data: URL resolves to a null origin, so
+	// refusing anything not same-origin refuses those too — and also
+	// refuses a cross-origin target the scheme check accepted. Scan
+	// within ~800 chars of the signature so we don't accept a guard
+	// living anywhere else on the page.
 	idx := strings.Index(js, "navigate(path")
 	if idx == -1 {
 		t.Fatal("navigate() function not found in runtime.js")
 	}
 	body := js[idx:min(idx+800, len(js))]
-	if !strings.Contains(body, "_isUnsafeSignalUrl") &&
+	if !strings.Contains(body, "_originOK") &&
+		!strings.Contains(body, "_isUnsafeSignalUrl") &&
 		!strings.Contains(body, "javascript:") {
-		t.Errorf("navigate() must reject unsafe schemes before pushState; "+
+		t.Errorf("navigate() must reject unsafe and cross-origin targets before pushState; "+
 			"found body (truncated): %q", truncate(body, 400))
 	}
 }
@@ -651,21 +655,25 @@ func TestRuntimeDisclosureAndEscapeRunInBothBranches(t *testing.T) {
 
 // TestRuntimeDisclosureFocusTrapWiring — disclosures opting in via
 // data-fui-disclosure-trap (mobile drawers, full-sheet popovers) must
-// gain a focus-trap via `inert` on body siblings. Confirms the
-// runtime emits both the on-open and on-close branches so the
-// trap is symmetric.
+// gain a focus-trap via `inert` on body siblings, with both the
+// on-open and on-close branches so the trap is symmetric.
+//
+// The wiring moved out of core into the demand-loaded disclosure
+// module; core keeps only the close-on-navigate lines. The module is
+// registered in both marker tables (runtime.js's _moduleMarkers and
+// preload.go's), which TestDemandLoadMarkersMatchRuntimeJS pins.
 func TestRuntimeDisclosureFocusTrapWiring(t *testing.T) {
-	js, err := RuntimeJS()
-	if err != nil {
-		t.Fatal(err)
+	src, ok := Module("disclosure")
+	if !ok {
+		t.Fatal("disclosure module not embedded")
 	}
 	for _, want := range []string{
 		"data-fui-disclosure-trap",
 		"inert",
-		"_applyDisclosureTrap",
+		"applyTrap",
 	} {
-		if !strings.Contains(js, want) {
-			t.Errorf("runtime missing focus-trap wiring %q", want)
+		if !strings.Contains(src, want) {
+			t.Errorf("disclosure module missing focus-trap wiring %q", want)
 		}
 	}
 }
