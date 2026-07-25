@@ -36,9 +36,16 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
   This is intentional — SSE is for push notifications, not durable
   delivery. Use a real queue for that.
 - Clients that prefer delivery over emitter latency can opt in with
-  `?slow=block` or `X-SSE-Slow: block`. In that mode `Publish` waits
-  for buffer space for that subscriber. Use it only when a slow client is
-  allowed to backpressure the emitter.
+  `?slow=block` or `X-SSE-Slow: block` — but only on a broker whose host
+  set `SSEBrokerConfig.AllowClientSlowMode`. Without that, the parameter
+  is ignored and the subscriber gets oldest-drop. A blocking subscriber
+  stalls the publisher's goroutine and therefore every other subscriber,
+  so on a public endpoint a request-selected block mode is an
+  unauthenticated DoS. See "Default oldest-drop versus `?slow=block`" in
+  `live-dashboards.md`.
+- `subscriber_id` is honoured, but a reconnect only replaces an existing
+  subscriber when it comes from the same caller — one client cannot
+  evict another's stream by guessing its id.
 - The stream returns `503 Service Unavailable` if the entity has no
   event bus configured (the default `framework.NewApp` wires one).
 

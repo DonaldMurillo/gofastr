@@ -5,6 +5,85 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+Security audit remediation. A dual-model pass (breadth + depth) across
+the previously unaudited surfaces, plus the deterministic gates. Every
+fix ships with a `_security_test.go` that fails against the old code.
+
+### Security
+
+- **`/mcp` transport now validates `Origin` and `Host`.** The JSON-RPC
+  and SSE handlers had no origin check at all, and `gofastr dev`
+  auto-enables the mutating control tools plus every entity's write
+  tools with no auth in front of them. A DNS-rebound page could drive
+  the whole surface. `core/mcp.Server` gains `SetAllowedHosts`,
+  `SetAllowedOrigins` and `SetRequireLoopbackHost`; dev pins loopback.
+- **`kiln serve` no longer accepts request-borne agent commands.**
+  `POST /kiln/agent` with `name="custom"` supplied the entire argv of a
+  spawned process — unauthenticated code execution for anything that
+  could reach the tool API. Now behind `--allow-custom-agent`.
+  `originGuard` additionally pins `Host` to loopback on a loopback bind,
+  closing the rebinding path to the same surface.
+- **`gofastr harness` sidecar pins `Host`.** Its chat page serves the
+  bearer token in a meta tag on an unauthenticated route, so a rebound
+  page could read the token and then drive the agent and auto-approve
+  its own tool permissions.
+- **Harness quiet-mode allow-list no longer prefix-matches raw shell
+  text.** `git status; curl …| sh` was auto-allowed with no permission
+  prompt (`QuietMode` is on by default). Shell metacharacters now
+  disqualify a command and the allow-listed verb must end on a word
+  boundary, so `ls` no longer admits `lsof`.
+- **Approvals are stored literally, not as globs.** Approving
+  `git diff *` persisted a `filepath.Match` pattern that also matched
+  `git diff ; nc attacker 9`, written to disk under `ScopeAlways`.
+  `Rule.Glob` opts into pattern semantics for deliberately-authored
+  rules only.
+- **Blueprint spec strings can no longer escape emitted Go or CSS.** The
+  generated e2e test interpolated enum values and field names into a
+  backtick raw literal, which has no escape mechanism — the injected
+  code was valid Go, compiled, and ran at `go test` time. Sinks now use
+  `%q`, field names are validated, and font families are allow-listed
+  before reaching the emitted stylesheet.
+- **WebSocket handshake and frame parsing follow RFC 6455.** `Upgrade`
+  now requires `GET`, `Connection: Upgrade`, version 13 and a 16-byte
+  key (accepting looser shapes is an upgrade-desync primitive behind a
+  pooling proxy). Frame payloads are read incrementally with a deadline
+  instead of allocating the peer-declared length up front. Fragmented
+  messages are reassembled — previously a `FIN=0` text frame delivered
+  half a message as if whole — and reserved opcodes are rejected.
+- **`memory.Save` validates entry names**, which became filenames under
+  the store root.
+- **Harness `ws`/`rest` origin defaults flipped to deny.** An empty
+  `AllowedOrigins` admitted every browser `Origin`, contradicting the
+  convention `core/middleware/cors.go` already states.
+- Bumped `go.opentelemetry.io/otel` to v1.44.0 for **GO-2026-5158**
+  (unbounded `baggage` header parsing), which `middleware.Tracing`
+  reached on every request.
+
+### Changed
+
+- **BREAKING** — `?slow=block` / `X-SSE-Slow` is ignored unless the
+  broker sets `SSEBrokerConfig.AllowClientSlowMode`. `deliver` walks
+  subscribers on the publisher's goroutine, so a request-selected block
+  mode let one unauthenticated subscriber stall every other subscriber
+  and the calling handler. `BlockTimeout` (default 5s) bounds the stall
+  even when enabled; `MaxSubscribers` caps concurrency by rejecting
+  newcomers rather than evicting incumbents.
+- **BREAKING** — `subscriber_id` only replaces an existing SSE
+  subscriber when the reconnect comes from the same caller. Previously
+  `?subscriber_id=<victim>` dropped the victim's stream.
+- `widget.Definition.RequireSession` gates `/state` and `/chrome` for
+  widgets whose signals are not safe to expose anonymously; the gate
+  fails closed. The default remains unauthenticated, now documented.
+
+### Added
+
+- CI runs a blocking `security` job (`govulncheck` + secret scan +
+  `go mod verify`) on every PR **and** weekly on a schedule — an
+  advisory can land against a dependency nobody touched, which is
+  exactly how GO-2026-5158 went unnoticed.
+
 ## [0.42.0] - 2026-07-24
 
 The screen-router feature pack (#130) and the typed island-wiring

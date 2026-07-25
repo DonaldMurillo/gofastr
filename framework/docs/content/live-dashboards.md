@@ -211,9 +211,28 @@ correct for dashboards (a stale gauge is worse than a missed frame) and
 presence rosters (a stale roster is a bug).
 
 `?slow=block` (or the `X-SSE-Slow: block` header) opts into the opposite:
-the broker blocks the emitter until buffer space is available. Use it
-only when a slow subscriber is allowed to backpressure the emitter —
-never for fanout from a hot path. The default keeps emitters non-blocking.
+the broker waits for buffer space before moving on. Use it only when a
+slow subscriber is allowed to backpressure the emitter — never for
+fanout from a hot path. The default keeps emitters non-blocking.
+
+The broker must enable this before a request can select it:
+
+```go
+stream.NewSSEBroker(stream.SSEBrokerConfig{
+    Topic:               "dashboard",
+    AllowClientSlowMode: true,          // else ?slow=block is ignored
+    BlockTimeout:        2 * time.Second, // bound on one blocked send (default 5s)
+    MaxSubscribers:      500,             // reject past the cap (default unlimited)
+})
+```
+
+Block mode is off by default because `deliver` walks subscribers
+sequentially on the publisher's goroutine: a block-mode subscriber that
+stops reading stalls every *other* subscriber and whatever called
+`Publish` — usually a request handler. On a public endpoint that is an
+unauthenticated denial of service, so the decision belongs to the
+developer who knows whether the endpoint is trusted, not to the caller.
+`BlockTimeout` bounds the stall even when enabled.
 
 ### Fanout across replicas
 

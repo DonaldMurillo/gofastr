@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -34,6 +35,12 @@ type SSEBroker struct {
 	maxBuf            int
 	heartbeatInterval time.Duration
 
+	// allowClientSlowMode / blockTO / maxSubs mirror the config; see
+	// SSEBrokerConfig for why each defaults the way it does.
+	allowClientSlowMode bool
+	blockTO             time.Duration
+	maxSubs             int
+
 	// fanout, when non-nil, mirrors Publish to other replicas and
 	// re-delivers theirs locally. nodeID drops own-node echoes. fanoutSend
 	// is the non-blocking enqueue into the publish queue
@@ -51,10 +58,14 @@ type SSEBroker struct {
 }
 
 type subscriber struct {
-	ch       chan sseEvent
-	filter   string // optional event name filter
-	done     chan struct{}
-	slowMode sseSlowMode
+	// principal identifies the caller that registered this subscriber,
+	// so a client-supplied subscriber_id can only evict an entry the
+	// same caller created. See Subscribe.
+	principal string
+	ch        chan sseEvent
+	filter    string // optional event name filter
+	done      chan struct{}
+	slowMode  sseSlowMode
 }
 
 type sseEvent struct {
@@ -86,6 +97,27 @@ type SSEBrokerConfig struct {
 	// block-mode backpressure contract. Optional. Close cancels the
 	// subscription.
 	Fanout fanout.Fanout
+
+	// AllowClientSlowMode lets a REQUEST select block mode via
+	// ?slow=block / X-SSE-Slow. Off by default.
+	//
+	// deliver() walks subscribers sequentially on the publisher's
+	// goroutine, so a block-mode subscriber that stops reading stalls
+	// every other subscriber AND whatever called Publish — usually a
+	// request handler. On a public endpoint that is an unauthenticated
+	// denial of service, so the choice belongs to the developer who
+	// knows whether the endpoint is trusted, not to the caller.
+	AllowClientSlowMode bool
+
+	// BlockTimeout bounds how long a block-mode send may stall before
+	// the broker gives up on that subscriber and moves on. 0 = 5s.
+	// A blocking send with no timeout is unbounded backpressure.
+	BlockTimeout time.Duration
+
+	// MaxSubscribers caps concurrent subscribers; 0 = unlimited.
+	// Subscribe rejects past the cap rather than evicting, so an
+	// attacker cannot displace live subscribers by reconnecting.
+	MaxSubscribers int
 }
 
 // NewSSEBroker creates a new broker for fan-out SSE delivery.
@@ -112,6 +144,10 @@ func NewSSEBroker(cfg SSEBrokerConfig) *SSEBroker {
 		maxBuf:            maxBuf,
 		heartbeatInterval: hb,
 		fanoutTopic:       "gofastr.sse." + cfg.Topic,
+
+		allowClientSlowMode: cfg.AllowClientSlowMode,
+		blockTO:             cfg.BlockTimeout,
+		maxSubs:             cfg.MaxSubscribers,
 	}
 	b.attachFanout(cfg.Fanout)
 	return b
@@ -210,14 +246,38 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 		ch:       make(chan sseEvent, bufSize),
 		filter:   filter,
 		done:     make(chan struct{}),
-		slowMode: parseSlowMode(r),
+		slowMode: b.parseSlowMode(r),
 	}
 
 	// Register, evicting any prior subscriber with the same ID so it does
 	// not leak. Closing the prior sub.done signals its Subscribe loop to
 	// exit cleanly.
+	//
+	// Eviction is scoped to the SAME principal. subscriber_id exists so
+	// apps can pass a meaningful id (user, tab, device), but it is
+	// attacker-supplied, and evicting on a bare id match let
+	// `?subscriber_id=<victim>` close the victim's done channel and
+	// drop their stream — repeatably, for a permanent denial. A
+	// reconnect from the same principal still replaces its own entry,
+	// which is the case the eviction was written for.
+	sub.principal = ssePrincipal(r)
+
 	b.mu.Lock()
-	if prev, ok := b.subscribers[subID]; ok {
+	prev, collision := b.subscribers[subID]
+	if collision && prev.principal != sub.principal {
+		// Different caller, same requested id: leave the incumbent
+		// alone and give the newcomer an id of its own.
+		subID = generateSubscriberID()
+		prev, collision = nil, false
+	}
+	// Cap BEFORE evicting: rejecting the newcomer keeps live streams
+	// alive, whereas evicting would let a reconnect loop displace them.
+	if b.maxSubs > 0 && !collision && len(b.subscribers) >= b.maxSubs {
+		b.mu.Unlock()
+		http.Error(w, "too many subscribers", http.StatusServiceUnavailable)
+		return
+	}
+	if collision {
 		close(prev.done)
 	}
 	b.subscribers[subID] = sub
@@ -337,10 +397,16 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 
 	for _, sub := range subs {
 		if !fromFanout && sub.slowMode == sseSlowBlock {
+			// Bounded: an unbounded send lets one stalled subscriber
+			// wedge deliver() — and therefore every other subscriber
+			// and the calling handler — for as long as it likes.
+			timer := time.NewTimer(b.blockTimeout())
 			select {
 			case sub.ch <- evt:
 			case <-sub.done:
+			case <-timer.C:
 			}
+			timer.Stop()
 			continue
 		}
 		select {
@@ -389,11 +455,40 @@ func (b *SSEBroker) Close() {
 	})
 }
 
-func parseSlowMode(r *http.Request) sseSlowMode {
+// parseSlowMode reads the client's requested slow-consumer mode. The
+// request may only select block mode when the host opted in via
+// SSEBrokerConfig.AllowClientSlowMode — see that field for why.
+func (b *SSEBroker) parseSlowMode(r *http.Request) sseSlowMode {
+	if !b.allowClientSlowMode {
+		return sseSlowDropOldest
+	}
 	if r.URL.Query().Get("slow") == "block" || r.Header.Get("X-SSE-Slow") == "block" {
 		return sseSlowBlock
 	}
 	return sseSlowDropOldest
+}
+
+// ssePrincipal derives the caller identity used to namespace
+// subscriber ids. RemoteAddr's host is a coarse but honest default:
+// it is not spoofable by the request body or query string.
+func ssePrincipal(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// blockTimeout is the bound on a block-mode send. Never zero, so a
+// blocking send can always make progress.
+func (b *SSEBroker) blockTimeout() time.Duration {
+	if b.blockTO > 0 {
+		return b.blockTO
+	}
+	return 5 * time.Second
 }
 
 // SubscriberCount returns the number of active subscribers.
