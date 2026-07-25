@@ -326,20 +326,22 @@ built on the same `framework`, `core-ui`, and batteries a user app imports:
 - **`examples/site`**, the docs site and canonical component gallery, runs on
   `framework` + `framework/ui` + `framework/uihost` + the `core-ui` pattern
   presets + `battery/print`.
-- **`examples/meridian`**, the declaration-first flagship, *is* generated from a
-  `gofastr.yml` blueprint — a SaaS billing console (customers,
+- **`examples/meridian`** started from a `gofastr.yml` blueprint and has been
+  edited by hand ever since — a SaaS billing console (customers,
   subscriptions, invoices with status workflows, MRR + charts) *and* its public
   marketing site, auth, RBAC, and admin back-office, with writable app screens
-  (add/edit/delete) and the generated end-to-end test suite green.
-- **`examples/ecommerce`**, a second blueprint pipeline (five entities,
-  owner-scoped orders), is generated the same way and exercised by its own
-  end-to-end test.
+  (add/edit/delete). Read it to see what a blueprint grows into once you own
+  the code; see `examples/meridian/doc.go` for what is still checked against
+  the blueprint.
+- **`examples/ecommerce`** is the app the generator still owns outright. Its
+  blueprint sets `output_dir: app`, and `flagship_test.go` regenerates `app/`
+  with `--force` on every run, so a generator regression fails a test.
 
-Both blueprint apps are secure by default and carry a generated end-to-end
-test suite — every screen, the full create→edit→delete lifecycle, and RBAC
-asserted — the suite itself generated, not hand-written (each app is
-scaffolded from its `gofastr.yml` and then extended in owned Go, e.g.
-Meridian's `sdkdocs` mount and brand CSS).
+Both apps are secure by default and carry an end-to-end test suite — every
+screen, the full create→edit→delete lifecycle, and RBAC asserted. Ecommerce's
+suite is regenerated with the app; Meridian's has been extended by hand
+alongside its owned Go (the `sdkdocs` mount, the brand theme, the island
+table).
 
 The project uses these tools on itself. External production adopters are
 the part still ahead of us — see [Project status](#project-status).

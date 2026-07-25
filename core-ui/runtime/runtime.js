@@ -630,20 +630,8 @@
         // hidden one on demand. Also resolve _widgetCatalogReadyResolve
         // so the eager click delegator can proceed.
         window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
-        // Build a deep-link index: key -> [{value, name, params}, ...]
-        // so URL parsing on boot / popstate is O(1) per registered key.
-        window.__gofastr._widgetDeepLinks = window.__gofastr._widgetDeepLinks || {};
         for (const item of list) {
           window.__gofastr._widgetCatalog[item.cfg.name] = item;
-          const cfg = item.cfg;
-          if (cfg.deepLinkKey && cfg.deepLinkValue) {
-            const idx = window.__gofastr._widgetDeepLinks;
-            (idx[cfg.deepLinkKey] = idx[cfg.deepLinkKey] || []).push({
-              value: cfg.deepLinkValue,
-              name: cfg.name,
-              params: cfg.deepLinkParams || [],
-            });
-          }
           if (item.hidden) continue; // open later via openWidget(name)
           // Non-hidden widgets auto-mount at boot. Chrome HTML is
           // fetched lazily from cfg.chromePath so the registry stays
@@ -1733,6 +1721,10 @@
     // pushState must carry the fragment.
     let navHash = '';
     try { navHash = new URL(href, location.href).hash; } catch (_) { /* malformed href */ }
+    // An intercepting route presents as an overlay when reached from its
+    // declared origin. The module owns the URL and the fetch in that
+    // case; returning true means it took the navigation.
+    if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
     history.pushState(null, '', fullPath + navHash);
     loadPage(fullPath);
   });
@@ -1745,6 +1737,13 @@
     if (path !== currentPath && currentPath !== '') {
       loadPage(path);
     }
+    // Widget deep links ride the same event: a query-only change means
+    // a modal/drawer should open or close. Deferred a tick so it runs
+    // after any screen swap loadPage just started.
+    setTimeout(() => {
+      const G = window.__gofastr;
+      if (G && typeof G._syncDeepLinks === 'function') G._syncDeepLinks();
+    }, 0);
   });
 
   // Event delegation: [data-action]
@@ -2007,16 +2006,6 @@
   // load at boot; dynamically-opened chrome is caught by the
   // MutationObserver scan when it's appended to <body>).
 
-  if (!window.__fuiDeepLinkPopstate) {
-    window.__fuiDeepLinkPopstate = true;
-    window.addEventListener('popstate', () => {
-      setTimeout(() => {
-        const G = window.__gofastr;
-        if (G && typeof G._syncDeepLinks === 'function') G._syncDeepLinks();
-      }, 0);
-    });
-  }
-
   // === DEMAND-LOAD SCANNERS ===========================================
   // Marker-driven modules are rescanned after boot, SPA navigation,
   // and DOM insertion.
@@ -2226,19 +2215,9 @@
         // triggered and mountWidget isn't on the namespace yet.
         try { await G.loadModule('widgets'); } catch (_) { return; }
         G._widgetCatalog = G._widgetCatalog || {};
-        G._widgetDeepLinks = G._widgetDeepLinks || {};
         for (const item of list) {
           const cfg = item.cfg;
-          const prev = G._widgetCatalog[cfg.name];
           G._widgetCatalog[cfg.name] = item;
-          if (cfg.deepLinkKey && cfg.deepLinkValue && !prev) {
-            const idx = G._widgetDeepLinks;
-            (idx[cfg.deepLinkKey] = idx[cfg.deepLinkKey] || []).push({
-              value: cfg.deepLinkValue,
-              name: cfg.name,
-              params: cfg.deepLinkParams || [],
-            });
-          }
           // Auto-mount non-hidden widgets that aren't already on the
           // page. Hidden widgets (Modal / Drawer / Popover) stay
           // hidden until openWidget is called from a trigger.
@@ -2414,6 +2393,10 @@
     updateActiveLink(location.pathname);
     _bootstrapComponentCSS();
     _scanForModules(document);
+    // Intercepting routes are rare, so their module is demand-loaded off
+    // the manifest: no intercepting route, no bytes, no listeners.
+    if (Array.isArray(window.__gofastr_routes) &&
+        window.__gofastr_routes.some((r) => r.intercept)) loadModule('intercept');
     _injectSignalAria();
     for (const d of document.querySelectorAll('details[data-fui-disclosure]')) {
       _mirrorDisclosure(d);

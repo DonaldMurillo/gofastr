@@ -75,7 +75,7 @@ func (a *App) RegisterScreen(screen *Screen, layout *Layout) {
 // If the component does not implement ScreenTyper, it defaults to ScreenPage.
 // If it does not implement ScreenTitler, the title defaults to empty.
 // If it does not implement ScreenDescriber, the description defaults to empty.
-func (a *App) Register(path string, comp component.Component, layout *Layout) {
+func (a *App) Register(path string, comp component.Component, layout *Layout, opts ...ScreenOption) {
 	screen := &Screen{
 		Path:      path,
 		Name:      path,
@@ -94,6 +94,11 @@ func (a *App) Register(path string, comp component.Component, layout *Layout) {
 	}
 	if typer, ok := comp.(ScreenTyper); ok {
 		screen.Type = typer.ScreenType()
+	}
+	// Options last: an explicit registration option outranks whatever
+	// the component declared about itself.
+	for _, opt := range opts {
+		opt(screen)
 	}
 
 	a.Router.Screen(screen, layout)
@@ -116,6 +121,12 @@ type RouteEntry struct {
 	// carries it to the client so SPA navigation rewrites without a
 	// round-trip.
 	RedirectTo string
+	// Intercept is set when the screen presents as an overlay for soft
+	// navigations from a declared origin (see InterceptFrom). The route
+	// manifest carries it so the runtime knows, without asking, which
+	// links are worth diverting — and loads the intercept module only
+	// when at least one route wants it. Nil for ordinary screens.
+	Intercept *Intercept
 }
 
 // Routes returns every registered route — screens and redirects — as
@@ -146,6 +157,7 @@ func (a *App) Routes() []RouteEntry {
 			Title:       screen.Title,
 			Description: screen.Description,
 			Layout:      layoutName,
+			Intercept:   screen.Intercept,
 		})
 	}
 	// Map iteration is randomized — sort exact redirects so Routes()
@@ -403,6 +415,25 @@ func (a *App) RenderPartial(ctx context.Context, path string) (render.HTML, erro
 // Same semantics as RenderPageResult but returns just the content
 // fragment, suitable for client-side navigation swaps.
 func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResult, error) {
+	return a.renderPartial(ctx, path, nil)
+}
+
+// RenderOverlayResult renders the screen at path as an intercepted
+// overlay — the same component, the same Load, wrapped in `as` instead
+// of the screen's own type.
+//
+// Callers must have already asked Router.InterceptFor whether this
+// navigation is entitled to an overlay. This function does not
+// re-authorize; it renders what it is told.
+func (a *App) RenderOverlayResult(ctx context.Context, path string, as ScreenType) (RenderResult, error) {
+	return a.renderPartial(ctx, path, &as)
+}
+
+// renderPartial is the shared body. overlay, when non-nil, replaces the
+// screen's registered type for wrapping only — routing, policy, params,
+// DI, and Load are identical, so an intercepted render can never diverge
+// from the canonical one in anything but its outermost element.
+func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenType) (RenderResult, error) {
 	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
 		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)
@@ -438,15 +469,19 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 		}
 	}
 
+	effType := screen.Type
+	if overlay != nil {
+		effType = *overlay
+	}
 	var body render.HTML
-	if screen.Type == ScreenPage {
+	if effType == ScreenPage {
 		html, renderErr := component.SafeRenderCtx(ctx, comp)
 		if renderErr != nil {
 			return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 		}
 		body = html
 	} else {
-		body = renderComponentInScreen(ctx, screen, comp)
+		body = renderComponentAs(ctx, effType, screen.Title, comp)
 	}
 
 	out := RenderResult{HTML: body, Component: comp}
@@ -469,11 +504,18 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 // component (used for RenderAlt + no-layout fallback) without copying
 // the Screen struct (which embeds a sync.Mutex).
 func renderComponentInScreen(ctx context.Context, screen *Screen, comp component.Component) render.HTML {
+	return renderComponentAs(ctx, screen.Type, screen.Title, comp)
+}
+
+// renderComponentAs renders comp wrapped in the ARIA scaffolding for an
+// explicit screen type, which an intercepted render supplies instead of
+// the screen's registered one.
+func renderComponentAs(ctx context.Context, t ScreenType, title string, comp component.Component) render.HTML {
 	var content render.HTML
 	if cc, ok := comp.(component.ContextComponent); ok {
 		content = cc.RenderCtx(ctx)
 	} else {
 		content = comp.Render()
 	}
-	return wrapByScreenType(screen.Type, screen.Title, content)
+	return wrapByScreenType(t, title, content)
 }

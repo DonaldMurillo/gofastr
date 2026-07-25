@@ -96,9 +96,68 @@ A row trigger then both opens the pane and fires the fetch:
    data-fui-pane-open="secondary">View</a>
 ```
 
-Open/close is in-page state — never a URL route (Hard Rule 1). Optional
-URL round-tripping (sharing a deep link that re-opens a pane) is a
-future extension, out of scope for v1.
+Open/close is in-page state — never a URL route (Hard Rule 1).
+
+## Deep-linking a pane (`?pane=…`)
+
+Some pane state is worth sharing: send a colleague the workspace with
+ticket 4021 open and they should see ticket 4021 open. Set
+`DeepLinkParam` to opt the host in, and label each trigger with the
+identity of what it opens:
+
+```go
+ui.PaneHost(ui.PaneHostConfig{
+    Primary:       queue,
+    Secondary:     ticketPane,
+    DeepLinkParam: "pane",          // → ?pane=secondary:4021
+    SecondaryOpen: ticketLinked,    // first paint, see below
+})
+
+interactive.PaneKey(
+    interactive.OpenPaneOnClick(row, "secondary"), ticket.ID)
+```
+
+Opening through a keyed trigger writes `?pane=secondary:4021`; closing
+strips it; Back and Forward move between those states. Back does not
+just re-show the column — it re-clicks the matching trigger, so the RPC
+runs again and the pane comes back **filled**.
+
+This is not a route. The pane is still in-page state; the query
+parameter records it so refresh, share, and Back reproduce what is on
+screen — the same contract widget deep links give modals. Reach for a
+real route when the detail deserves its own page and its own title.
+
+**Render the first paint yourself.** The runtime can only act after
+hydration, so a shared link that the server renders closed shows a
+closed pane and then pops it open. Read the parameter with
+`ui.PaneDeepLink` and build the page from it:
+
+```go
+slot, key, ok := ui.PaneDeepLink(app.QueryFromContext(ctx), "pane")
+detail := emptyState
+open := false
+if ok && slot == "secondary" {
+    if t, found := ticketByID(key); found {   // look it up — never
+        detail, open = renderTicket(t), true  // reflect the raw key
+    }
+}
+```
+
+`ok` is false when the parameter is missing or names something that is
+not an openable side pane, so an edited URL degrades to the ordinary
+closed-pane page instead of erroring. The key arrives from the URL, so
+treat it as untrusted: look it up, and let an unknown one fall back to
+the empty state.
+
+A trigger with **no** `PaneKey` still opens its pane and leaves the URL
+alone. That is the right choice for a pane whose contents have no
+addressable identity — in `examples/site/screen_workspace.go` the ticket
+pane is keyed and the customer pane is not, so opening a customer never
+disturbs the ticket's link.
+
+Only one pane is addressed at a time, because one parameter holds one
+value. If two panes both need to survive a refresh, give them separate
+`PaneHost` hosts with different `DeepLinkParam`s.
 
 ## Responsive collapse
 
@@ -126,9 +185,13 @@ the `--ui-pane-host-secondary-w` / `--ui-pane-host-tertiary-w` /
 ## Common mistakes
 
 - **Treating pane state as a route.** Open/close/swap is in-page state
-  (Hard Rule 1). Wiring it into the URL needs the future deep-link
-  extension; for v1, render detail screens through the RPC→signal rail
-  or SSR the pane open (`SecondaryOpen: true`) on a detail route.
+  (Hard Rule 1) — don't register a route per pane. When the state should
+  survive a refresh or a share, use `DeepLinkParam` above; when the
+  detail really wants its own page and title, make it a real screen.
+- **Deep-linking without rendering it server-side.** Setting
+  `DeepLinkParam` and forgetting `PaneDeepLink` in the screen leaves
+  every shared link painting a closed pane that jumps open a moment
+  later. The parameter is only half the feature.
 - **Fetching pane content with a bespoke mechanism.** `PaneHost` is a
   layout shell, not a content loader. Use `data-fui-rpc` +
   `data-fui-rpc-signal` into a `data-fui-signal-mode="html"` region

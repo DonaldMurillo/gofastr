@@ -48,6 +48,7 @@ func createStyleSheet(t style.Theme) string {
 	pageExamples(ss)
 	pageKiln(ss)
 	pageWorkspace(ss)
+	pageCatalog(ss)
 	pagePhilosophy(ss)
 	pageNotFound(ss)
 	pageComponents(ss)

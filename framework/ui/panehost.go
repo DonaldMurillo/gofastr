@@ -11,8 +11,13 @@ package ui
 // uses the EXISTING rails: a trigger carries data-fui-rpc + a
 // data-fui-rpc-signal that broadcasts into a data-fui-signal +
 // data-fui-signal-mode="html" region inside the pane. Pane open/close
-// is in-page state — never a URL route (Hard Rule 1). Optional URL
-// round-tripping is a future extension, out of scope for v1.
+// is in-page state — never a URL route (Hard Rule 1).
+//
+// A host can still round-trip that state through the URL: set
+// DeepLinkParam and the runtime records the open pane in a query
+// parameter, so refresh, share, and Back reproduce it. That is a query
+// parameter describing in-page state, not a route — the same shape
+// widget deep links use for modals.
 //
 // Shape (mirrors DocLayout — a display:grid whose column count CSS
 // keys off open-state modifier classes on the root, so no inline style
@@ -30,6 +35,9 @@ package ui
 // (data-fui-pane-open / -close / -swap) and the drawer collapse.
 
 import (
+	"net/url"
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -60,6 +68,24 @@ type PaneHostConfig struct {
 	// "Tertiary".
 	SecondaryLabel string
 	TertiaryLabel  string
+
+	// DeepLinkParam opts this host into URL round-tripping, naming the
+	// query parameter that carries pane state — e.g. "pane" for
+	// `?pane=secondary:ticket-42`. Opening a pane whose trigger declares
+	// a key writes that parameter, closing strips it, and Back moves
+	// between those states. Empty (the default) leaves the URL alone.
+	//
+	// Pane open/close remains in-page state, not a route (Hard Rule 1):
+	// the parameter records which pane is showing so a refresh or a
+	// shared link reproduces it, exactly as widget deep links do for
+	// modals. The server still decides first paint — read the parameter
+	// with PaneDeepLink and set SecondaryOpen/TertiaryOpen plus the
+	// pane's content from it. Without that, a shared link renders the
+	// URL's pane closed and the runtime opens it after hydration.
+	//
+	// Triggers declare their key with interactive.PaneKey; a trigger
+	// with no key opens the pane without touching the URL.
+	DeepLinkParam string
 
 	ID    string
 	Class string
@@ -99,6 +125,9 @@ func PaneHost(cfg PaneHostConfig) render.HTML {
 	if cfg.ID != "" {
 		rootAttrs["id"] = cfg.ID
 	}
+	if cfg.DeepLinkParam != "" {
+		rootAttrs["data-fui-pane-deeplink"] = cfg.DeepLinkParam
+	}
 
 	children := []render.HTML{render.Tag("div", map[string]string{
 		"class":         "ui-pane-host__pane ui-pane-host__pane--primary",
@@ -113,6 +142,45 @@ func PaneHost(cfg PaneHostConfig) render.HTML {
 	}
 
 	return paneHostStyle.WrapHTML(render.Tag("div", rootAttrs, children...))
+}
+
+// PaneDeepLink reads a PaneHost deep link out of a request's query.
+//
+// The value is `<slot>` or `<slot>:<key>`, where slot is "secondary" or
+// "tertiary" and key identifies what the pane is showing. It is the
+// server half of PaneHostConfig.DeepLinkParam, and it parses exactly
+// what the runtime writes — keep the two in step:
+//
+//	q := appui.QueryFromContext(ctx)
+//	slot, key, ok := ui.PaneDeepLink(q, "pane")
+//	detail := emptyState
+//	if ok && slot == "secondary" {
+//	    if t, found := ticketByID(key); found {
+//	        detail = renderTicket(t)   // first paint already shows it
+//	    }
+//	}
+//
+// ok is false when the parameter is missing or names something that is
+// not an openable side pane, so an edited URL degrades to the ordinary
+// closed-pane render rather than an error. Callers must still treat key
+// as untrusted input and look it up rather than reflecting it.
+//
+// Only the first colon splits, so keys may contain colons.
+func PaneDeepLink(q url.Values, param string) (slot, key string, ok bool) {
+	if param == "" || q == nil {
+		return "", "", false
+	}
+	raw := q.Get(param)
+	if raw == "" {
+		return "", "", false
+	}
+	slot, key, _ = strings.Cut(raw, ":")
+	// "primary" is always visible and never openable, so it is not a
+	// valid deep-link target either.
+	if slot != "secondary" && slot != "tertiary" {
+		return "", "", false
+	}
+	return slot, key, true
 }
 
 // paneSlot renders one side pane: a labelled role="region" that is

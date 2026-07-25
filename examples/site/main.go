@@ -832,6 +832,13 @@ func registerScreens(site *app.App) {
 	// on ui.PaneHost. Its /__site/workspace/* detail endpoints are mounted
 	// in setupServer.
 	site.Register("/examples/workspace", &WorkspaceScreen{}, nil)
+	// Intercepting route: the detail is a normal page registration, and
+	// InterceptFrom only changes how a soft nav that STARTED on the list
+	// presents it. Hard load, refresh, or an external link still render
+	// the full page — the deep link stays the canonical render.
+	site.Register("/examples/catalog", &CatalogScreen{}, nil)
+	site.Register("/examples/catalog/:id", &CatalogItemScreen{}, nil,
+		app.InterceptFrom("/examples/catalog", app.ScreenDrawer))
 	// ── Presence demo (additive) ───────────────────────────────────
 	// /examples/presence?presence=presence-demo — a live avatar roster.
 	// The ?presence= param is threaded into the SSE <meta> tag by

@@ -306,6 +306,51 @@ router's normal exact-first rule. Redirect entries appear in `Routes()`
 with a non-empty `RedirectTo`; they render no page, so static export,
 sitemap, and llm.md skip them.
 
+**Intercepting routes — a detail that opens over its list.** Clicking a row
+should slide the detail over the list; the detail URL should still be a real
+page you can share, index, and refresh. `InterceptFrom` gives you both from
+one registration:
+
+```go
+site.Register("/products", &ProductList{}, nil)
+site.Register("/products/{id}", &ProductScreen{}, nil,
+    app.InterceptFrom("/products", app.ScreenDrawer))   // or ScreenSheet
+```
+
+`/products/42` stays an ordinary page. A hard load, a refresh, an external
+link, or a soft navigation from anywhere else renders it in full — the deep
+link remains the canonical render, and SSR-first is untouched. Only a
+soft navigation that **started on `/products`** presents it as a drawer over
+the list, which stays mounted underneath. Back, Escape, and the backdrop all
+close it through one history entry, so returning to the list costs no
+refetch and keeps its scroll position.
+
+One `RenderCtx` serves both presentations — the overlay is the same render
+with drawer scaffolding around it, so there is no second code path to keep in
+sync. Put `data-fui-intercept-close` on a button inside the screen and it
+closes the drawer when the render is an overlay, and does nothing on the
+standalone page.
+
+The **server decides**. The runtime asks for the overlay and reports where it
+navigated from; the framework re-resolves that origin against the route table
+and only agrees when the screen actually declared it. A forged header changes
+the wrapper element and nothing else, because policy, params, `Load`, and
+content are identical on both paths. The origin is compared by resolved
+screen, so `/products?page=2&sort=name` still counts as the list.
+
+Overlay chrome ships with the framework (`app.InterceptOverlayCSS`, injected
+only when some route declares an intercept), and the runtime module loads
+only when the route manifest contains one — an app with no intercepting
+routes carries neither.
+
+Reach for this only when the detail deserves its own page. When the overlay
+is the *only* way to see that content and the URL should stay on the list,
+you want a widget deep link instead (`?modal=user-edit&user_id=42` — see
+[Interactive patterns](interactive-patterns.md)); when a region of the page
+should survive a refresh, you want
+[pane-host deep-linking](pane-host.md#deep-linking-a-pane-pane). Working
+example: `examples/site/screen_catalog.go`.
+
 ### Accessing the database from a screen
 
 A screen's `Render(ctx)` / `Load(ctx)` needs a way to reach the same `*sql.DB`
