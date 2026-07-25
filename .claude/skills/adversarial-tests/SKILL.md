@@ -184,21 +184,35 @@ audit `find . -maxdepth 3 -type f -size +500k …` for stray binaries
 per `CLAUDE.md`; review the pass's commit messages for the
 keep/flip/delete rationale.
 
-## Dual-model protocol (MANDATORY)
+## Two-pass protocol (MANDATORY)
 
-A security pass is run by **two model tiers**, never one. This is not
-optional — single-model passes do not get to mark anything clean.
+A security pass is run by **two passes with different jobs**, never one.
+This is not optional — a single-pass audit does not get to mark
+anything clean.
 
-| Role | Profile | Tier | Job |
+**Both profiles run on Opus 5.** Recon used to run on Haiku; that was
+changed on 2026-07-25 because the cheap tier's *clean* verdicts proved
+worthless. On 2026-07-24 it returned "clean" on the scope holding that
+round's top finding; on 2026-07-25 it emitted 18 candidates, all 18 of
+which were refuted, while missing all 3 real findings in its scope. A
+breadth pass whose silence means nothing cannot be half of a clean-gate.
+
+| Role | Profile | Model | Job |
 |---|---|---|---|
-| breadth | `sec-recon` | Haiku (weak/cheap) | walk every file against the property×surface checklist, emit all candidates, no plausibility filter |
-| depth | `sec-auditor` | Opus (strong) | threat-intel anchor → deep discovery (authz/TOCTOU/state-machine) → refute + fix + rule on every candidate |
+| breadth | `sec-recon` | Opus 5 | walk every file against the property×surface checklist, emit all candidates, report coverage honestly |
+| depth | `sec-auditor` | Opus 5 | threat-intel anchor → deep discovery (authz/TOCTOU/state-machine) → refute + fix + rule on every candidate |
 
-**Why two tiers:** cheap exhaustive breadth and expensive deep
-reasoning are different jobs; one model doing both does neither well.
-Honest limit: Haiku and Opus share a lineage, so their blind spots
-overlap more than two vendors' would. The diversity that *doesn't*
-come from a model is therefore load-bearing:
+**Why two passes:** exhaustive breadth and deep reasoning are different
+jobs; one agent doing both drops coverage the moment a thread gets
+interesting. The split is job, not capability.
+
+**Honest limit — this got worse, not better.** With both halves on the
+same model, the two passes share a lineage *and* a tier: their blind
+spots now overlap almost completely. Agreement between them is weak
+evidence, and one confirming the other is **not** independent
+verification. Say so out loud rather than banking it. The diversity
+that does not come from a model is therefore load-bearing — it is now
+the *only* diversity in the pass:
 
 - **Web search** (`sec-auditor` job 1) injects vuln classes from the
   live CVE/advisory corpus that no Claude tier would spontaneously
@@ -212,16 +226,23 @@ come from a model is therefore load-bearing:
   `make vulncheck`, which fails closed with the install command if
   the binary is missing.
 
-**The clean-gate (the non-optional invariant):** a surface is
-**CLEARED** only when ALL of these are dry/clean on it — Opus deep pass,
-Haiku breadth pass, `go vet`, `govulncheck`. One signal's silence never
-clears a surface. A category nobody ran all four against is
-"never-looked", not "clean" — track the difference.
+- **Proof** — a failing test, a `curl`, a real browser. Evidence is not
+  a second opinion, it is the end of the argument. Prefer it to every
+  model judgment, including your own.
 
-**Cross-verify both directions:** Haiku finds → Opus refutes (kills
-false positives); Opus finds → Haiku re-derives from the code + the
-deterministic tools confirm where analyzable (catches Opus over-reads).
+**The clean-gate (the non-optional invariant):** a surface is
+**CLEARED** only when ALL of these are dry/clean on it — the deep pass,
+the breadth pass, `go vet`, `govulncheck`. One signal's silence never
+clears a surface. A category nobody ran all four against is
+"never-looked", not "clean" — track the difference, and publish the
+not-looked list alongside the findings.
+
+**Cross-verify both directions:** recon finds → auditor refutes (kills
+false positives); auditor finds → prove it, then run the deterministic
+tools where analyzable (catches over-reads). A same-model re-derivation
+is a sanity check, never a promotion.
 
 Spawn the two profiles with the Agent tool (`subagent_type: sec-recon`
 / `sec-auditor` — the `model:` is pinned in each profile's frontmatter)
-or drive them as stages of a Workflow.
+or drive them as stages of a Workflow. When running several scopes at
+once, give each its own scope boundary so the passes don't collide.
