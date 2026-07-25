@@ -280,10 +280,49 @@ var quietBashAllowed = []string{
 // `find . -name *.go`.
 const bashShellMetachars = ";&|`$<>()\n\r"
 
+// execArgFlags are the arguments that turn an allow-listed READER into a
+// launcher or a writer. They need no shell metacharacter, so the
+// metachar rule below never saw them:
+//
+//	find -exec / -execdir / -ok / -okdir → runs a command per match
+//	find -delete                         → removes files
+//	find -fprintf / -fls / -fprint       → writes an arbitrary path
+//	rg --pre / --hostname-bin            → runs a command per file
+//	git --output=                        → writes an arbitrary path
+//
+// The allow-list's implicit rule has always been "this cannot spawn a
+// process or write a file"; this is that rule made explicit. Matching is
+// per-argument and covers both `--flag value` and `--flag=value`.
+var execArgFlags = map[string]bool{
+	"-exec": true, "-execdir": true, "-ok": true, "-okdir": true,
+	"-delete": true, "-fprintf": true, "-fls": true, "-fprint": true,
+	"--pre": true, "--hostname-bin": true, "--output": true,
+	"-o": true,
+}
+
+// hasExecArg reports whether any whitespace-separated argument of cmd is
+// one of execArgFlags, including the `--flag=value` spelling.
+//
+// Splitting on whitespace is coarse — a quoted argument containing a
+// space is seen as several — but that only ever produces MORE tokens to
+// check, so it cannot miss a flag. Erring toward refusing is the correct
+// direction for an auto-allow with no human in the loop.
+func hasExecArg(cmd string) bool {
+	for _, tok := range strings.Fields(cmd) {
+		if name, _, ok := strings.Cut(tok, "="); ok {
+			tok = name
+		}
+		if execArgFlags[tok] {
+			return true
+		}
+	}
+	return false
+}
+
 // bashQuietAllow reports whether cmd is one of the known read-only
 // shapes quiet mode may run WITHOUT prompting the human.
 //
-// Two rules beyond the prefix list, both load-bearing:
+// Three rules beyond the prefix list, all load-bearing:
 //
 //   - Any shell metacharacter disqualifies the command outright.
 //     Prefix-matching the raw string previously auto-allowed
@@ -292,12 +331,18 @@ const bashShellMetachars = ";&|`$<>()\n\r"
 //     PermissionRequested was ever published.
 //   - The matched prefix must end at a word boundary, so "ls" does not
 //     admit "lsof -i" and "cat " does not admit "catt".
+//   - No argument may be one of execArgFlags. Three entries on the list
+//     — find, rg, git — carry their own exec/write primitives and need
+//     no metacharacter to reach them.
 func bashQuietAllow(cmd string) bool {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
 		return false
 	}
 	if strings.ContainsAny(cmd, bashShellMetachars) {
+		return false
+	}
+	if hasExecArg(cmd) {
 		return false
 	}
 	for _, p := range quietBashAllowed {

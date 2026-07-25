@@ -301,7 +301,18 @@ func discoverGenerateConfig(options generateOptions) (codegen.Discovery, error) 
 		}
 		return codegen.Discovery{Path: configPath, ProjectDir: filepath.Dir(configPath), Config: cfg, Found: true}, nil
 	}
-	return codegen.DiscoverConfig(".")
+	d, err := codegen.DiscoverConfig(".")
+	if err != nil {
+		return d, err
+	}
+	// A config nobody named on the command line may not silently run a
+	// `command` extension: that binary is chosen by whoever wrote the
+	// file, which may be a cloned repo or a teammate's branch, and
+	// generate executes it as the developer.
+	if err := codegen.CheckCommandExtensions(d); err != nil {
+		return codegen.Discovery{}, err
+	}
+	return d, nil
 }
 
 func applyGenerateOverrides(cfg *codegen.Config, options generateOptions) {

@@ -255,8 +255,17 @@ codegen:
 	}
 }
 
+// The upward walk is bounded at the project root, so the fixture needs a
+// root marker — every real project has one. Without any marker the walk
+// stops at the starting directory rather than climbing to `/`: an
+// unmarked tree gives no evidence about how far "the project" extends,
+// and a config found above it can name a command extension that runs as
+// the developer (TestGenerateConfigSearchStopsAtRepoRoot).
 func TestDiscoverConfigWalksUpward(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/x\n\ngo 1.26\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	writeConfigFile(t, filepath.Join(dir, "gofastr.codegen.yml"), "from-root")
 	child := filepath.Join(dir, "nested", "child")
 	if err := os.MkdirAll(child, 0o755); err != nil {

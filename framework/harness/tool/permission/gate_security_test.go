@@ -71,3 +71,59 @@ func TestApprovalDoesNotWiden(t *testing.T) {
 		t.Error("explicit Glob:true rule stopped matching")
 	}
 }
+
+// TestQuietAllowRejectsExecFlags pins the property the allow-list has
+// always implied but never enforced: an auto-allowed command cannot
+// spawn a process or write a file.
+//
+// The metachar and word-boundary rules above stop a SECOND command being
+// appended, but three entries on the list are launchers and writers in
+// their own right — they need no metacharacter at all:
+//
+//	find . -name x -exec CMD {} +      → arbitrary execution
+//	find . -delete / -fprintf F ...    → deletion / arbitrary file write
+//	rg --pre CMD pattern               → arbitrary execution per file
+//	git --output=PATH ...              → arbitrary file write
+//
+// A DecisionAllow publishes no PermissionRequested event, so none of
+// this surfaces to the human at all; two calls chain to code execution.
+// The `*` / `?` glob carve-out must survive — rejecting those would
+// break ordinary reads like `find . -name *.go`.
+func TestQuietAllowRejectsExecFlags(t *testing.T) {
+	execFlags := []string{
+		"find . -name x -exec sh -c id {} +",
+		"find . -name x -execdir sh -c id {} +",
+		"find . -name x -ok sh -c id {} ;",
+		"find . -name x -okdir sh -c id {} ;",
+		"find . -name '*.go' -delete",
+		"find . -fprintf /tmp/pwned %p",
+		"find . -fls /tmp/pwned",
+		"rg --pre /tmp/evil.sh pattern",
+		"rg --pre=/tmp/evil.sh pattern",
+		"rg --hostname-bin /tmp/evil.sh pattern",
+		"git --output=/tmp/pwned status",
+		"git diff --output=/tmp/pwned",
+	}
+	for _, cmd := range execFlags {
+		if bashQuietAllow(cmd) {
+			t.Errorf("SECURITY: [rce] quiet mode auto-allowed %q with no prompt — the allow-list's implicit rule is 'cannot spawn a process or write a file'", cmd)
+		}
+	}
+
+	// The reads the list exists for must still pass, globs included.
+	for _, cmd := range []string{
+		"find . -name *.go",
+		"find . -type f -name '*_test.go'",
+		"rg --files",
+		"rg -n TODO ./framework",
+		"git status",
+		"git diff HEAD",
+		"git log --oneline -20",
+		"ls -la",
+		"cat go.mod",
+	} {
+		if !bashQuietAllow(cmd) {
+			t.Errorf("quiet mode refused the ordinary read %q — the deny-list is too broad", cmd)
+		}
+	}
+}
