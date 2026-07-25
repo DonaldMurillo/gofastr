@@ -445,9 +445,13 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			})
 		}
 
-		// Create session
+		// Mint through the manager, not SessionStore().Create: MintSession
+		// is what applies the second-factor pending mark. Creating the
+		// session directly here left PendingTwoFactor=false for a
+		// 2FA-enrolled user, so an OAuth login alone produced a
+		// fully-privileged session that could then disable the factor.
 		cfg := p.mgr.Config()
-		sess, err := p.mgr.SessionStore().Create(r.Context(), user.GetID(), cfg.SessionTTL)
+		sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 		if err != nil {
 			writeAuthError(w, http.StatusInternalServerError, "session create failed")
 			return

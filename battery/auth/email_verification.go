@@ -107,8 +107,17 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-	if err != nil {
+	if err != nil || sess == nil {
 		writeAuthError(w, http.StatusUnauthorized, "invalid session")
+		return
+	}
+	// A pending-2FA session has proven the password and nothing else.
+	// Its four siblings (2fa enroll / verify / disable / backup-codes)
+	// all refuse one; this handler did not, leaving a half-authenticated
+	// session able to drive verification-email sends at someone else's
+	// address.
+	if sess.PendingTwoFactor {
+		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
 		return
 	}
 	store := p.mgr.UserStore()

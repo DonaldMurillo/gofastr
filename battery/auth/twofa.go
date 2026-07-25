@@ -253,16 +253,25 @@ func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
 // state — callers that mutate the second factor MUST refuse pending sessions
 // (see requireStepUpUser). A pending session proves only the password.
 func (p *TwoFAPlugin) getSessionUser(r *http.Request) (userID string, pending bool, err error) {
+	sess, err := p.sessionFrom(r)
+	if err != nil {
+		return "", false, err
+	}
+	return sess.UserID, sess.PendingTwoFactor, nil
+}
+
+// sessionFrom resolves the session behind the request's cookie.
+func (p *TwoFAPlugin) sessionFrom(r *http.Request) (*Session, error) {
 	cfg := p.mgr.Config()
 	cookie, err := r.Cookie(cfg.SessionCookie)
 	if err != nil {
-		return "", false, fmt.Errorf("no session cookie")
+		return nil, fmt.Errorf("no session cookie")
 	}
 	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-	if err != nil {
-		return "", false, fmt.Errorf("invalid session")
+	if err != nil || sess == nil {
+		return nil, fmt.Errorf("invalid session")
 	}
-	return sess.UserID, sess.PendingTwoFactor, nil
+	return sess, nil
 }
 
 // requireStepUpUser resolves the session user and refuses any session that
@@ -272,16 +281,33 @@ func (p *TwoFAPlugin) getSessionUser(r *http.Request) (userID string, pending bo
 // 2FA with the password alone. Writes the 401/403 response and returns ok=false
 // when the caller must abort.
 func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) (userID string, ok bool) {
-	uid, pending, err := p.getSessionUser(r)
+	sess, err := p.sessionFrom(r)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
 		return "", false
 	}
-	if pending {
+	if sess.PendingTwoFactor {
 		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
 		return "", false
 	}
-	return uid, true
+	// Positive check, not just the absence of the pending flag. A session
+	// minted BEFORE the user enrolled carries PendingTwoFactor=false
+	// forever, so the negative test alone left it "stepped up" for its
+	// whole lifetime — able to disable a factor it never proved. Only a
+	// session that actually passed the challenge (or the enrolling
+	// session, which verifyHandler marks) may mutate the factor.
+	state, err := p.store.GetTwoFA(r.Context(), sess.UserID)
+	if err != nil {
+		// Unreadable 2FA state is refused, never assumed absent —
+		// assuming it would hand exactly the bypass back.
+		writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
+		return "", false
+	}
+	if state != nil && state.Enabled && !sess.TwoFactorVerified {
+		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		return "", false
+	}
+	return sess.UserID, true
 }
 
 // ─── Route handlers ────────────────────────────────────────────────────
@@ -396,6 +422,20 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "failed to save 2FA state")
 		return
+	}
+
+	// The caller just proved the factor with a live TOTP code, so mark
+	// this session verified. Without it, requireStepUpUser's positive
+	// check would lock the enrolling user out of their own 2FA settings
+	// until they logged in again — the session that did the enrolling
+	// would have Enabled=true and TwoFactorVerified=false.
+	if marker, ok := p.mgr.SessionStore().(SessionTwoFAMarker); ok {
+		if sess, err := p.sessionFrom(r); err == nil {
+			if err := marker.MarkTwoFactorVerified(r.Context(), sess.Token); err != nil {
+				writeAuthError(w, http.StatusInternalServerError, "failed to record verification")
+				return
+			}
+		}
 	}
 
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
