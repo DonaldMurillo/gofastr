@@ -132,6 +132,13 @@ func renderShell(in shellInput) string {
 	b.WriteString("<!doctype html>\n<html lang=\"en\">\n<head>\n")
 	b.WriteString(`  <meta charset="utf-8">` + "\n")
 	b.WriteString(`  <meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
+	// The CSP is emitted IN the document, not only as a response header.
+	// The PDF path base64s this HTML into a `data:text/html` URL and
+	// navigates headless Chrome to it — a headerless document, so the
+	// route's Content-Security-Policy response header has no effect
+	// there at all. An in-document meta survives the transition, which
+	// is the only place it matters for PDFs.
+	fmt.Fprintf(&b, "  <meta http-equiv=\"Content-Security-Policy\" content=\"%s\">\n", render.Escape(printCSP))
 	fmt.Fprintf(&b, "  <title>%s</title>\n", render.Escape(in.Title))
 	if in.AppCSSHref != "" {
 		fmt.Fprintf(&b, "  <link rel=\"stylesheet\" href=\"%s\">\n", render.Escape(in.AppCSSHref))

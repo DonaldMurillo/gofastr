@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 	"io"
 	"net"
 	"net/http"
@@ -243,26 +244,10 @@ func assertPublicHost(host string) error {
 	return nil
 }
 
-// cgnatRange is the RFC 6598 carrier-grade NAT block (100.64.0.0/10),
-// which IsPrivate() does not cover but is non-routable internal space.
-var cgnatRange = net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
-
-// isInternalIP reports whether ip is loopback, link-local, private,
-// unspecified, multicast, or CGNAT (RFC 6598). IPv4-mapped IPv6
-// addresses (`::ffff:a.b.c.d`) are normalized to their v4 form first
-// so a mapped internal literal cannot slip past the v4 range checks.
+// isInternalIP defers to the shared predicate so this surface and
+// battery/webhook can never disagree about what "internal" means — the
+// drift between two hand-maintained copies is what let a CGNAT target
+// through on the webhook side.
 func isInternalIP(ip net.IP) bool {
-	// Normalize IPv4-mapped IPv6 to its 4-byte form so range checks
-	// (IsPrivate / CGNAT) that key off the v4 representation apply.
-	if v4 := ip.To4(); v4 != nil {
-		ip = v4
-	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
-		return true
-	}
-	if cgnatRange.Contains(ip) {
-		return true
-	}
-	return false
+	return netguard.IsInternal(ip)
 }

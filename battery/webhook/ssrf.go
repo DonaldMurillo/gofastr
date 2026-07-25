@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
 // validateSubscriberURL rejects URLs that obviously target internal
@@ -159,31 +161,13 @@ func (g *ssrfGuardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, er
 }
 
 func rejectInternalIP(ip net.IP) error {
-	if ip == nil {
-		return fmt.Errorf("webhook: nil IP")
-	}
-	// Cover loopback, link-local, multicast, unspecified, and the
-	// well-known private blocks. ip.IsPrivate covers RFC1918 + the
-	// IPv6 unique-local range.
-	if ip.IsUnspecified() {
-		return fmt.Errorf("webhook: unspecified IP %s not allowed", ip)
-	}
-	if ip.IsLoopback() {
-		return fmt.Errorf("webhook: loopback IP %s not allowed", ip)
-	}
-	if ip.IsPrivate() {
-		return fmt.Errorf("webhook: private IP %s not allowed", ip)
-	}
-	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return fmt.Errorf("webhook: link-local IP %s not allowed (covers cloud metadata)", ip)
-	}
-	if ip.IsMulticast() {
-		return fmt.Errorf("webhook: multicast IP %s not allowed", ip)
-	}
-	// Reject the AWS/GCP metadata IPv4 explicitly even outside the
-	// link-local range so a misconfigured proxy doesn't slip past.
-	if ip.Equal(net.IPv4(169, 254, 169, 254)) {
-		return fmt.Errorf("webhook: cloud metadata IP %s not allowed", ip)
+	// One predicate, shared with framework/harness's webfetch and
+	// battery/print's PDF renderer. This used to be a local copy that
+	// omitted RFC 6598 CGNAT (100.64.0.0/10) and did not normalize
+	// IPv4-mapped IPv6 before range-checking — both gaps the sibling
+	// copy had already closed.
+	if reason := netguard.Reason(ip); reason != "" {
+		return fmt.Errorf("webhook: %s %s not allowed", reason, ip)
 	}
 	return nil
 }

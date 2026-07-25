@@ -83,3 +83,46 @@ func TestSecCSPInlineStyleNotScript(t *testing.T) {
 		t.Errorf("script-src must stay 'self' (no unsafe-inline), got %q", csp)
 	}
 }
+
+// TestPDFBlocksInternalSubresource pins the half of the print CSP story
+// the PDF path depends on.
+//
+// Attack: chromepdf base64s the shelled print HTML into a
+// `data:text/html;base64,…` URL and navigates headless Chrome to it.
+// printCSP was applied only as an HTTP *response header* on the print
+// routes, and a `data:` document has no headers — so on the PDF path the
+// CSP had exactly zero effect. First-party components put caller strings
+// into URL attributes (ui.Avatar{Src} and friends), so a receipt PDF
+// rendering a user-stored avatar URL fetches whatever it names, and the
+// fetched bytes are rendered INTO the downloaded PDF: a readable exfil
+// channel for 169.254.169.254, loopback admin panels, and RFC1918.
+//
+// The document therefore has to carry its own policy. The browser half of
+// the block — Chrome refusing to resolve anything at all — is pinned by
+// the chromium-tagged test in battery/print/chromepdf.
+func TestPDFBlocksInternalSubresource(t *testing.T) {
+	out := renderShell(shellInput{Title: "receipt", BaseCSS: "x", PageCSS: "y"})
+
+	if !strings.Contains(out, `http-equiv="Content-Security-Policy"`) {
+		t.Fatalf("SECURITY: [ssrf] the print shell emits no in-document CSP; on the PDF path the response header does not apply. Shell:\n%s", out)
+	}
+	// Attribute-escaped in the markup; browsers decode entities before
+	// parsing the policy, so compare against the escaped form.
+	if !strings.Contains(out, render.Escape(printCSP)) {
+		t.Errorf("SECURITY: [ssrf] the in-document CSP differs from the route header policy — the PDF and HTML paths must not diverge. Shell:\n%s", out)
+	}
+	// default-src 'self' is what makes an absolute cross-origin
+	// subresource unreachable. On a data: URL the document origin is
+	// opaque, so 'self' matches nothing — which is the intent.
+	if !strings.Contains(printCSP, "default-src 'self'") {
+		t.Errorf("print CSP no longer restricts default-src: %q", printCSP)
+	}
+	// The meta must precede any element that can trigger a fetch,
+	// otherwise the policy installs too late to gate it.
+	metaIdx := strings.Index(out, "Content-Security-Policy")
+	for _, tag := range []string{"<link", "<script", "<img", "<body"} {
+		if i := strings.Index(out, tag); i >= 0 && i < metaIdx {
+			t.Errorf("SECURITY: [ssrf] %s appears before the CSP meta — the policy installs too late to gate it", tag)
+		}
+	}
+}
