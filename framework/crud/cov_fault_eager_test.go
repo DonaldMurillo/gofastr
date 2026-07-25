@@ -143,13 +143,13 @@ func TestFilteredHasMany_NextErr(t *testing.T) {
 }
 
 func belongsToAuthorNode() *IncludeNode {
-	return &IncludeNode{Relation: entity.BelongsTo("author", "users", "author_id")}
+	return &IncludeNode{Relation: entity.BelongsTo("author", "users", "author_id"), Target: guardTarget("users")}
 }
 
 func TestFilteredBelongsTo_SrcQueryErr(t *testing.T) {
 	_, db, _ := covFaultRelWorld(t)
 	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"posts\"" })
-	err := loadIncludeNode(context.Background(), db, "posts", "id", belongsToAuthorNode(), []string{"p1"}, newResult("p1"))
+	err := loadIncludeNode(context.Background(), db, "posts", "id", belongsToAuthorNode(), []string{"p1"}, newResult("p1"), newIncludeBudget())
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("filtered belongsTo src query = %v, want injected", err)
 	}
@@ -158,7 +158,7 @@ func TestFilteredBelongsTo_SrcQueryErr(t *testing.T) {
 func TestFilteredBelongsTo_SrcNextErr(t *testing.T) {
 	_, db, _ := covFaultRelWorld(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM \"posts\"" })
-	err := loadIncludeNode(context.Background(), db, "posts", "id", belongsToAuthorNode(), []string{"p1"}, newResult("p1"))
+	err := loadIncludeNode(context.Background(), db, "posts", "id", belongsToAuthorNode(), []string{"p1"}, newResult("p1"), newIncludeBudget())
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("filtered belongsTo src rows.Err = %v, want injected", err)
 	}

@@ -137,8 +137,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	}
 
 	if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
-		log.Printf("crud: cursor include failed: %v", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal server error")
+		writeIncludeError(w, "cursor", err)
 		return
 	}
 

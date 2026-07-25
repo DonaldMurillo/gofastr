@@ -53,9 +53,12 @@ func seedBlogDB(t *testing.T, db *sql.DB) {
 }
 
 // nestedBlogApp registers EVERY entity (users, profiles, posts, comments,
-// tags) so the registry has a complete graph for nested ?include= resolution.
-// (blogApp below is the older variant that omits profiles+tags from the
-// registry — kept for tests that exercise the no-target-registered path.)
+// tags) so the registry has a complete graph for ?include= resolution.
+// It replaced a second `blogApp` fixture that deliberately left profiles
+// and tags out of the registry: an include whose target is unregistered is
+// now refused outright rather than eager-loaded without its guards, so
+// there is no "no-target-registered" serving path left to exercise. See
+// framework/crud's TestIncludeUnregisteredTargetFails.
 func nestedBlogApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
@@ -106,51 +109,13 @@ func nestedBlogApp(t *testing.T, db *sql.DB) *App {
 	return app
 }
 
-// blogApp registers users, profiles, posts, comments, tags with relations.
-func blogApp(t *testing.T, db *sql.DB) *App {
-	t.Helper()
-	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("users", entity.EntityConfig{
-		Table: "users",
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true},
-		},
-		Relations: []entity.Relation{
-			entity.HasOne("profile", "profiles", "user_id"),
-		},
-	}.WithTimestamps(false))
-	app.Entity("posts", entity.EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "author_id", Type: schema.String},
-		},
-		Relations: []entity.Relation{
-			entity.HasMany("comments", "comments", "post_id"),
-			entity.BelongsTo("author", "users", "author_id"),
-			entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
-		},
-	}.WithTimestamps(false))
-	app.Entity("comments", entity.EntityConfig{
-		Table: "comments",
-		Fields: []schema.Field{
-			{Name: "body", Type: schema.String, Required: true},
-			{Name: "post_id", Type: schema.String, Required: true},
-		},
-		Relations: []entity.Relation{
-			entity.BelongsTo("post", "posts", "post_id"),
-		},
-	}.WithTimestamps(false))
-	return app
-}
-
 // runIncludeTest fans the body out across both dialects, seeding the blog
 // schema and wiring the entity registrations once per dialect.
 func runIncludeTest(t *testing.T, body func(t *testing.T, ta *TestApp)) {
 	t.Helper()
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
-		app := blogApp(t, db)
+		app := nestedBlogApp(t, db)
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		body(t, ta)
 	})
@@ -474,7 +439,8 @@ func TestInclude_Nested_OnList(t *testing.T) {
 
 // ============================================================================
 // Test: scoped include — ?include=comments(body_like=nice) attaches only the
-// matching subset.
+// matching subset. `_like` is a literal substring at every depth, so the
+// caller writes the text, not a pattern.
 // ============================================================================
 
 func TestInclude_Scoped_FilterChildren(t *testing.T) {
@@ -489,7 +455,7 @@ func TestInclude_Scoped_FilterChildren(t *testing.T) {
 		app := nestedBlogApp(t, db)
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
-		resp := ta.Get("/posts/p1?include=comments(body_like=%25nice%25)")
+		resp := ta.Get("/posts/p1?include=comments(body_like=nice)")
 		resp.AssertStatus(t, http.StatusOK)
 
 		var got map[string]any

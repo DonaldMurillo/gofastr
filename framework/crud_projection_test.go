@@ -149,7 +149,7 @@ func TestProjection_CamelCaseInput(t *testing.T) {
 func TestProjection_WithInclude(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
-		app := blogApp(t, db)
+		app := nestedBlogApp(t, db)
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		// Project to just "title" but still include "comments".

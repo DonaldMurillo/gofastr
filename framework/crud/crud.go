@@ -559,8 +559,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 
 		if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
-			log.Printf("crud: list include failed: %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			writeIncludeError(w, "list", err)
 			return
 		}
 
@@ -738,8 +737,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		}
 
 		if err := ch.applyIncludeTree(ctx, []map[string]any{result}, includes); err != nil {
-			log.Printf("crud: get include failed: %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			writeIncludeError(w, "get", err)
 			return
 		}
 

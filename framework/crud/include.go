@@ -2,9 +2,12 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -13,6 +16,65 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
+
+const (
+	// maxIncludeDepth bounds how many relation hops a single ?include= path
+	// may take. Every hop multiplies the loaded row set by that relation's
+	// fan-out, so an unbounded path is exponential in a request the client
+	// pays ~8 bytes per level for: `include=up.down.up.down.up.down` on a
+	// self-referencing entity turned 23 request bytes into 13.7 MB, and two
+	// more levels exhausted memory. Four hops covers every include the docs
+	// show and every one the blueprint emits.
+	maxIncludeDepth = 4
+
+	// maxIncludeRows bounds the total number of rows an eager-load may scan
+	// across every node of one request's include forest, and — separately —
+	// the number of row references the assembled response tree may carry.
+	// The depth cap alone does not bound breadth (`include=a.b,c.d,e.f,…`
+	// stays within depth while multiplying node count), and neither cap
+	// bounds a relation whose fan-out is large at every level. Counting
+	// references matters as much as counting scans: N parents sharing one
+	// eager-loaded row scan it once but serialise it N times, so a bound on
+	// scans alone still lets the response multiply. This is the backstop
+	// that makes the worst case a 400 instead of an OOM.
+	maxIncludeRows = 20000
+)
+
+// errIncludeBudget marks an include that exceeded maxIncludeRows. It is a
+// client-caused bound, so the HTTP surfaces render it as 400 (narrow the
+// include or paginate) rather than as a 500.
+var errIncludeBudget = errors.New("include exceeds the maximum number of related rows; narrow the include or reduce the page size")
+
+// includeBudget is the per-request row allowance, spent by every eager-load
+// as it scans. Threaded rather than stored on CrudHandler because a handler
+// is shared across concurrent requests.
+type includeBudget struct{ remaining int }
+
+func newIncludeBudget() *includeBudget { return &includeBudget{remaining: maxIncludeRows} }
+
+// spend charges n rows. Returns errIncludeBudget once the request has run
+// through its allowance so the caller can stop mid-scan or mid-walk rather
+// than materialising the rest.
+func (b *includeBudget) spend(n int) error {
+	if b == nil {
+		return nil
+	}
+	b.remaining -= n
+	if b.remaining < 0 {
+		return errIncludeBudget
+	}
+	return nil
+}
+
+// convertedSubtree is one memoised deep-conversion: the JSON-cased output
+// and the number of row references the subtree serialises to. The count is
+// what lets a shared subtree be converted once but charged to the budget
+// every time it is referenced — the conversion is shared, the bytes on the
+// wire are not.
+type convertedSubtree struct {
+	out   map[string]any
+	nodes int
+}
 
 // IncludeNode represents one segment of a (possibly nested) ?include=
 // expression. The tree is rooted at the request's entity; each node carries
@@ -49,9 +111,13 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 		return nil, nil
 	}
 	if registry == nil {
-		// Fall back gracefully: dotted paths require the registry, but flat
-		// paths can still be resolved against the request's entity directly.
-		return parseIncludesFlat(raw, ent)
+		// No registry means no schema for the target entity, and every
+		// eager-load guard is keyed off that schema: the Hidden-column
+		// scrub, owner scope, tenant scope, the soft-delete filter and the
+		// scoped-filter field allow-list. Serving the include anyway is a
+		// `SELECT *` of a table nobody vouched for — that is how a related
+		// auth table's password_hash reaches a caller. Refuse instead.
+		return nil, fmt.Errorf("include %q requires an entity registry: set CrudHandler.Registry (framework apps do this automatically)", raw)
 	}
 
 	var roots []*IncludeNode
@@ -62,27 +128,32 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 		if len(segments) == 0 {
 			continue
 		}
+		if len(segments) > maxIncludeDepth {
+			return nil, fmt.Errorf("include %q is %d relations deep; the maximum is %d", path, len(segments), maxIncludeDepth)
+		}
 
 		siblings := &roots
 		siblingMap := rootMap
 		currentEntity := ent
 
-		for i, segRaw := range segments {
+		for _, segRaw := range segments {
 			seg, filterClause := splitSegmentFilter(segRaw)
 			rel, ok := relationByName(currentEntity, seg)
 			if !ok {
 				return nil, fmt.Errorf("unknown include %q (segment %q has no relation on entity %q)", path, seg, currentEntity.GetName())
 			}
-			// Resolve the target entity. We only HARD-REQUIRE registration when
-			// there are deeper segments to walk (otherwise this segment is a
-			// leaf and EagerLoad just hits the relation's target table by
-			// name).
+			// Resolve the target entity. Registration is required for EVERY
+			// segment, leaf included. The leaf used to be exempt — "EagerLoad
+			// just hits the relation's target table by name" — but that
+			// dropped the entire guard set that hangs off Target: the
+			// Hidden-column scrub (eager_filtered.go), owner scope, tenant
+			// scope, the soft-delete filter and the scoped-filter field
+			// allow-list. A relation pointed at a self-migrated table
+			// (auth_users) then returned every column of any row the FK
+			// named. Unresolvable target = refuse, at every depth.
 			target, err := registry.Get(rel.Entity)
 			if err != nil {
-				if i < len(segments)-1 {
-					return nil, fmt.Errorf("include %q: target entity %q not registered (required for nested includes)", path, rel.Entity)
-				}
-				target = nil
+				return nil, fmt.Errorf("include %q: relation %q targets entity %q, which is not registered", path, seg, rel.Entity)
 			}
 			node, exists := siblingMap[seg]
 			if !exists {
@@ -96,15 +167,11 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 				*siblings = append(*siblings, node)
 			}
 			if filterClause != "" {
-				// Parse scoped filters against the TARGET entity's fields when
-				// known. With no target, we accept the field name as-is
-				// (unsafe to validate without a schema; the SQL will fail at
-				// query time if the column doesn't exist).
-				var targetFields []schema.Field
-				if target != nil {
-					targetFields = target.GetFields()
-				}
-				parsed, err := parseScopedFilters(filterClause, targetFields, path)
+				// Scoped filters are validated against the TARGET entity's
+				// fields — the allow-list that keeps `include=rel(col=v)`
+				// from naming an arbitrary column. Target is always resolved
+				// now, so this list is never empty.
+				parsed, err := parseScopedFilters(filterClause, target.GetFields(), path)
 				if err != nil {
 					return nil, err
 				}
@@ -112,9 +179,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			}
 			siblings = &node.Children
 			siblingMap = node.childMap
-			if target != nil {
-				currentEntity = target
-			}
+			currentEntity = target
 		}
 	}
 	return roots, nil
@@ -268,36 +333,6 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 // cheap DoS even before SQL parameter limits start refusing the query.
 const maxScopedINEntries = 256
 
-// parseIncludesFlat is the no-registry fallback: only top-level relation
-// names are supported (no dots). Dotted paths produce an error.
-func parseIncludesFlat(raw string, ent *entity.Entity) ([]*IncludeNode, error) {
-	var out []*IncludeNode
-	for _, p := range splitNonEmpty(raw, ",") {
-		if strings.Contains(p, ".") {
-			return nil, fmt.Errorf("nested include %q requires a registry", p)
-		}
-		rel, ok := relationByName(ent, p)
-		if !ok {
-			return nil, fmt.Errorf("unknown include %q", p)
-		}
-		out = append(out, &IncludeNode{Name: p, Relation: rel})
-	}
-	return out, nil
-}
-
-// splitNonEmpty splits and drops empty fragments after trimming.
-func splitNonEmpty(s, sep string) []string {
-	parts := strings.Split(s, sep)
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		t := strings.TrimSpace(p)
-		if t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
 // relationByName looks up a Relation on an entity by name.
 func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 	for _, rel := range ent.Config.Relations {
@@ -306,6 +341,19 @@ func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 		}
 	}
 	return entity.Relation{}, false
+}
+
+// writeIncludeError renders an eager-load failure. A blown row budget is
+// the client's doing — it asked for more related rows than one response may
+// carry — so it renders as 400 with an actionable message. Everything else
+// is a server fault and stays an opaque 500 with the detail in the log.
+func writeIncludeError(w http.ResponseWriter, surface string, err error) {
+	if errors.Is(err, errIncludeBudget) {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	log.Printf("crud: %s include failed: %v", surface, err)
+	writeJSONError(w, http.StatusInternalServerError, "internal server error")
 }
 
 // applyIncludeTree eager-loads the include forest onto the parent rows. Top-
@@ -334,10 +382,14 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 	for _, id := range ids {
 		loaded[id] = make(map[string]any)
 	}
+	budget := newIncludeBudget()
 	for _, node := range nodes {
 		applyRelatedOwnerScope(ctx, node)
 		applyRelatedTenantScope(ctx, node)
-		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), ch.PrimaryKey, node, ids, loaded); err != nil {
+		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), ch.PrimaryKey, node, ids, loaded, budget); err != nil {
+			if errors.Is(err, errIncludeBudget) {
+				return err
+			}
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
 	}
@@ -351,13 +403,17 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		if len(nestedRows) == 0 {
 			continue
 		}
-		if err := ch.recurseLoadOnRawRows(ctx, node.Target, node.Children, nestedRows); err != nil {
+		if err := ch.recurseLoadOnRawRows(ctx, node.Target, node.Children, nestedRows, budget); err != nil {
 			return err
 		}
 	}
 
 	// Attach to parent rows + deep-convert keys (top-level outer key uses
-	// JSON case, the entire nested subtree gets the same treatment).
+	// JSON case, the entire nested subtree gets the same treatment). The
+	// converted-map memo is per-response: a BelongsTo attaches the very same
+	// target map to every parent that names it, so without sharing the
+	// conversion the subtree is re-copied once per parent at every level.
+	converted := map[uintptr]*convertedSubtree{}
 	for _, row := range rows {
 		idVal, ok := row[pkKey]
 		if !ok || idVal == nil {
@@ -368,7 +424,11 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		for _, node := range nodes {
 			outKey := ch.convertKey(node.Relation.Name)
 			val, present := bucket[node.Relation.Name]
-			row[outKey] = ch.formatRelationValueDeep(node.Relation, val, present)
+			out, err := ch.formatRelationValueDeep(node.Relation, val, present, converted, budget)
+			if err != nil {
+				return err
+			}
+			row[outKey] = out
 		}
 	}
 	return nil
@@ -377,7 +437,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 // recurseLoadOnRawRows operates on rows that are still in raw DB casing — the
 // nested data EagerLoad produced. It re-runs EagerLoad with each child's
 // target relation against those rows, then recurses again.
-func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.Entity, children []*IncludeNode, rawRows []map[string]any) error {
+func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.Entity, children []*IncludeNode, rawRows []map[string]any, budget *includeBudget) error {
 	pk := target.PrimaryKey
 	if pk == "" {
 		pk = "id"
@@ -393,7 +453,10 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 	for _, node := range children {
 		applyRelatedOwnerScope(ctx, node)
 		applyRelatedTenantScope(ctx, node)
-		if err := loadIncludeNode(ctx, ch.DB, target.GetTable(), pk, node, ids, loaded); err != nil {
+		if err := loadIncludeNode(ctx, ch.DB, target.GetTable(), pk, node, ids, loaded, budget); err != nil {
+			if errors.Is(err, errIncludeBudget) {
+				return err
+			}
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
 	}
@@ -406,7 +469,7 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		if len(nestedRows) == 0 {
 			continue
 		}
-		if err := ch.recurseLoadOnRawRows(ctx, node.Target, node.Children, nestedRows); err != nil {
+		if err := ch.recurseLoadOnRawRows(ctx, node.Target, node.Children, nestedRows, budget); err != nil {
 			return err
 		}
 	}
@@ -429,8 +492,23 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 
 // gatherLoadedRows walks loaded[parentID][relName] entries and returns the
 // flat list of nested rows, regardless of HasOne/HasMany/etc. shape.
+//
+// Rows are deduplicated by map identity. A BelongsTo attaches the SAME
+// target map to every parent whose FK names it, so N parents pointing at
+// one row used to yield that row N times — the next level then re-loaded
+// and re-attached it N times, which is the per-level multiplication that
+// made a six-hop include exponential.
 func gatherLoadedRows(loaded map[string]map[string]any, relName string) []map[string]any {
 	var out []map[string]any
+	seen := map[uintptr]bool{}
+	add := func(m map[string]any) {
+		id := reflect.ValueOf(m).Pointer()
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, m)
+	}
 	for _, bucket := range loaded {
 		v, ok := bucket[relName]
 		if !ok {
@@ -438,9 +516,11 @@ func gatherLoadedRows(loaded map[string]map[string]any, relName string) []map[st
 		}
 		switch x := v.(type) {
 		case map[string]any:
-			out = append(out, x)
+			add(x)
 		case []map[string]any:
-			out = append(out, x...)
+			for _, m := range x {
+				add(m)
+			}
 		}
 	}
 	return out
@@ -486,58 +566,113 @@ func rawRelationValue(rel entity.Relation, val any, present bool) any {
 // formatRelationValueDeep is like formatRelationValue but recursively
 // converts every nested map's keys to JSON case, including any subtrees
 // previously attached during recurseLoadOnRawRows.
-func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, present bool) any {
+func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, present bool, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, error) {
 	switch rel.Type {
 	case entity.RelHasMany, entity.RelManyToMany:
 		if !present {
-			return []map[string]any{}
+			return []map[string]any{}, nil
 		}
 		slice, ok := val.([]map[string]any)
 		if !ok {
-			return []map[string]any{}
+			return []map[string]any{}, nil
 		}
 		out := make([]map[string]any, len(slice))
 		for i, m := range slice {
-			out[i] = ch.deepConvertMap(m).(map[string]any)
+			c, _, err := ch.deepConvertMap(m, converted, budget)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = c.(map[string]any)
 		}
-		return out
+		return out, nil
 	default:
 		if !present {
-			return nil
+			return nil, nil
 		}
 		m, ok := val.(map[string]any)
 		if !ok {
-			return nil
+			return nil, nil
 		}
-		return ch.deepConvertMap(m).(map[string]any)
+		c, _, err := ch.deepConvertMap(m, converted, budget)
+		if err != nil {
+			return nil, err
+		}
+		return c.(map[string]any), nil
 	}
 }
 
 // deepConvertMap walks a value tree, applying ch.convertKey to every map key
 // (including keys inside nested maps and slices). Non-map values pass through
 // unchanged.
-func (ch *CrudHandler) deepConvertMap(v any) any {
+//
+// converted memoises by source-map identity, so a subtree reached from many
+// parents is converted once and the result shared. Both the aliasing and the
+// memo matter: eager-loading attaches one BelongsTo target map to every
+// parent that names it, and copying that subtree per parent at every level
+// is what turned a 23-byte include into 13.7 MB. Recording the output map
+// before filling it also makes a self-referential row terminate instead of
+// recursing forever.
+// Returns the converted value plus the number of row references it
+// serialises to, so callers can charge a re-referenced subtree its full
+// weight without re-walking it.
+func (ch *CrudHandler) deepConvertMap(v any, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, int, error) {
 	switch x := v.(type) {
 	case map[string]any:
-		out := make(map[string]any, len(x))
-		for k, val := range x {
-			out[ch.convertKey(k)] = ch.deepConvertMap(val)
+		id := reflect.ValueOf(x).Pointer()
+		if prev, ok := converted[id]; ok {
+			// Already converted for another parent: reuse the output, but
+			// charge the whole subtree again — this reference costs the
+			// response the same bytes the first one did.
+			if err := budget.spend(prev.nodes); err != nil {
+				return nil, 0, err
+			}
+			return prev.out, prev.nodes, nil
 		}
-		return out
+		if err := budget.spend(1); err != nil {
+			return nil, 0, err
+		}
+		out := make(map[string]any, len(x))
+		// Recorded before the walk so a self-referential row terminates
+		// instead of recursing forever.
+		entry := &convertedSubtree{out: out, nodes: 1}
+		converted[id] = entry
+		total := 1
+		for k, val := range x {
+			c, n, err := ch.deepConvertMap(val, converted, budget)
+			if err != nil {
+				return nil, 0, err
+			}
+			total += n
+			out[ch.convertKey(k)] = c
+		}
+		entry.nodes = total
+		return out, total, nil
 	case []map[string]any:
 		out := make([]map[string]any, len(x))
+		total := 0
 		for i, m := range x {
-			out[i] = ch.deepConvertMap(m).(map[string]any)
+			c, n, err := ch.deepConvertMap(m, converted, budget)
+			if err != nil {
+				return nil, 0, err
+			}
+			total += n
+			out[i] = c.(map[string]any)
 		}
-		return out
+		return out, total, nil
 	case []any:
 		out := make([]any, len(x))
+		total := 0
 		for i, v := range x {
-			out[i] = ch.deepConvertMap(v)
+			c, n, err := ch.deepConvertMap(v, converted, budget)
+			if err != nil {
+				return nil, 0, err
+			}
+			total += n
+			out[i] = c
 		}
-		return out
+		return out, total, nil
 	default:
-		return v
+		return v, 0, nil
 	}
 }
 

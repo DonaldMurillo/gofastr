@@ -13,7 +13,11 @@ import (
 )
 
 // covMissingTargetWorld registers a posts entity whose relations point at
-// tables that don't exist, so each eager loader's QueryContext errors.
+// entities whose TABLES don't exist, so each eager loader's QueryContext
+// errors. The ghost entities are registered: an *unregistered* relation
+// target is refused at parse time with a 400 (see
+// TestIncludeUnregisteredTargetFails), which would short-circuit the loader
+// error paths these tests exist to cover.
 func covMissingTargetWorld(t *testing.T) (*CrudHandler, stubRegistry) {
 	t.Helper()
 	db := setupDB(t, `CREATE TABLE eposts (id TEXT PRIMARY KEY, title TEXT, author_id TEXT)`)
@@ -28,7 +32,16 @@ func covMissingTargetWorld(t *testing.T) (*CrudHandler, stubRegistry) {
 		},
 	}.WithTimestamps(false))
 	postsEnt.SetDB(db)
-	reg := stubRegistry{byName: map[string]*entity.Entity{"eposts": postsEnt}}
+	byName := map[string]*entity.Entity{"eposts": postsEnt}
+	for _, ghost := range []string{"ghost_users", "ghost_comments", "ghost_tags"} {
+		e := entity.Define(ghost, entity.EntityConfig{
+			Name: ghost, Table: ghost,
+			Fields: []schema.Field{{Name: "post_id", Type: schema.String}},
+		}.WithTimestamps(false))
+		e.SetDB(db)
+		byName[ghost] = e
+	}
+	reg := stubRegistry{byName: byName}
 	ch := NewCrudHandler(postsEnt, db).WithJSONCase(CaseSnake)
 	ch.Registry = reg
 	return ch, reg
