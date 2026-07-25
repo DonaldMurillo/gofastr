@@ -160,6 +160,14 @@ func (s *Server) SetAllowedHosts(hosts []string) {
 // authorities. Use it wherever the MCP surface is auto-enabled for
 // local development: dev implies the mutating control tools, so a
 // rebound Host must not reach the dispatcher.
+//
+// SCOPE — this is a browser control, not a network control. It stops DNS
+// rebinding because a browser cannot forge Host. It does nothing against
+// a direct TCP client, which sets Host to whatever it likes: a listener
+// on a routable interface stays reachable by anyone who can open a
+// socket to it. Pair the pin with a loopback BIND — the framework does
+// this in guardDevMCPBind, which withholds the dev-implied control tools
+// when the listen address is not loopback.
 func (s *Server) SetRequireLoopbackHost(v bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -325,7 +333,16 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // sseGetHandler sets up an SSE connection for streaming.
-func (s *Server) sseGetHandler(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
+	// Same gate as ssePostHandler. This handler used to discard the
+	// request entirely, so the origin/Host check simply did not run on
+	// the GET half of the pair — a guard hole rather than a disclosure
+	// today (the event below is static), but the next thing streamed
+	// from here would be a cross-origin read.
+	if !s.originOK(r) {
+		http.Error(w, "forbidden: cross-origin or unexpected Host", http.StatusForbidden)
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "keep-alive")

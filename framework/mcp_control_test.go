@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -15,6 +16,11 @@ import (
 // connected agent can toggle modules on the RUNNING app. Registered
 // separately from WithMCPIntrospection so read-only introspection can
 // ship to surfaces where mutation must stay off.
+//
+// The explicit opt-in gates its tools on an authenticated caller
+// (TestControlToolsGatedInProduction), so these calls carry a user on
+// the context — as a real /mcp request would, via the session
+// middleware on that route.
 func TestMCPControlTogglesModules(t *testing.T) {
 	app := NewApp(WithMCPControl())
 	app.RegisterModule(&modStub{name: "reports", manifest: ModuleManifest{}, init: noopInit})
@@ -22,7 +28,7 @@ func TestMCPControlTogglesModules(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	res, err := app.MCP.CallTool(context.Background(), "app_module_disable", map[string]any{"name": "reports"})
+	res, err := app.MCP.CallTool(mcpCallerCtx(), "app_module_disable", map[string]any{"name": "reports"})
 	if err != nil {
 		t.Fatalf("app_module_disable: %v", err)
 	}
@@ -34,7 +40,7 @@ func TestMCPControlTogglesModules(t *testing.T) {
 		t.Fatalf("unexpected disable payload: %#v", out)
 	}
 
-	if _, err := app.MCP.CallTool(context.Background(), "app_module_enable", map[string]any{"name": "reports"}); err != nil {
+	if _, err := app.MCP.CallTool(mcpCallerCtx(), "app_module_enable", map[string]any{"name": "reports"}); err != nil {
 		t.Fatalf("app_module_enable: %v", err)
 	}
 	if !app.Modules().Enabled("reports") {
@@ -47,11 +53,11 @@ func TestMCPControlUnknownModuleErrors(t *testing.T) {
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}
-	_, err := app.MCP.CallTool(context.Background(), "app_module_enable", map[string]any{"name": "ghost"})
+	_, err := app.MCP.CallTool(mcpCallerCtx(), "app_module_enable", map[string]any{"name": "ghost"})
 	if err == nil || !strings.Contains(err.Error(), "not registered") {
 		t.Fatalf("want not-registered error, got %v", err)
 	}
-	if _, err := app.MCP.CallTool(context.Background(), "app_module_disable", map[string]any{}); err == nil {
+	if _, err := app.MCP.CallTool(mcpCallerCtx(), "app_module_disable", map[string]any{}); err == nil {
 		t.Fatal("missing name must error, not toggle something")
 	}
 }
@@ -193,4 +199,10 @@ func TestIntrospectionAloneRegistersNoControlTools(t *testing.T) {
 			t.Fatalf("introspection-only app registered mutating tool %s", tool.Name)
 		}
 	}
+}
+
+// mcpCallerCtx is a context carrying an authenticated caller, matching
+// what the session middleware puts on a real /mcp request.
+func mcpCallerCtx() context.Context {
+	return handler.SetUser(context.Background(), struct{ ID string }{ID: "mcp-caller"})
 }

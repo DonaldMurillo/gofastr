@@ -1980,6 +1980,36 @@ func (a *App) ensureLifecycleContext() {
 	a.serverMu.Unlock()
 }
 
+// warnUnresolvableRelations names every declared relation whose target
+// entity is not in the registry. Such a relation cannot be eager-loaded:
+// ?include= refuses it at request time, because with no target entity
+// there is no schema to drive the Hidden-column scrub, owner scope,
+// tenant scope, soft-delete filter or scoped-filter allow-list — and a
+// `SELECT *` without them is how a related auth table's password_hash
+// reaches a caller.
+//
+// This is a boot diagnostic, not a gate: the refusal already happens at
+// the request, and an app that never includes the relation is still
+// correct. Warning moves the discovery from a 400 in production to the
+// startup log.
+func (a *App) warnUnresolvableRelations() {
+	if a.Registry == nil {
+		return
+	}
+	log := a.Logger()
+	for _, ent := range a.Registry.AllSorted() {
+		for _, rel := range ent.Config.Relations {
+			if _, err := a.Registry.Get(rel.Entity); err == nil {
+				continue
+			}
+			log.Warn("relation target is not a registered entity; ?include= on it will be refused",
+				"entity", ent.GetName(),
+				"relation", rel.Name,
+				"target", rel.Entity)
+		}
+	}
+}
+
 // Start starts the HTTP server on the given address.
 func (a *App) Start(addr string) error {
 	runtimeIsolation, err := isolation.Resolve(".")
@@ -1998,6 +2028,9 @@ func (a *App) Start(addr string) error {
 	// spawned. Without this, a startHook that spawns a worker before a
 	// later startHook fails would leak that worker past Start returning.
 	a.ensureLifecycleContext()
+
+	a.warnUnresolvableRelations()
+	a.guardDevMCPBind(addr)
 
 	abort := func(err error) error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

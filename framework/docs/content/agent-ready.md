@@ -197,6 +197,23 @@ both options wired.
 running app (persisted through the module store, dependency-checked). Keep
 it off any `/mcp` reachable by untrusted callers.
 
+When you opt in explicitly, both control tools require an
+**authenticated caller**: they run behind an `mcp.Gated` precondition
+that refuses a request with no identity on its context. Make sure the
+app's session/JWT middleware runs on the `/mcp` route, or every call
+comes back asking for a caller. The gate asks only for an identity —
+the framework layer cannot know your role vocabulary — so wrap your own
+handlers with `mcp.Gated(auth.MCPRole("admin"), …)` when you want more.
+
+The `gofastr dev` loop is exempt: it turns these tools on with no auth
+configured at all, so a gate would only lock the dev loop out of its own
+app. Its exposure is bounded on the other axis instead — dev **refuses
+to register the control tools when the listener is not loopback**. Bind
+to `localhost`, or set `GOFASTR_DEV_MCP_EXPOSE=1` to accept the risk.
+The transport's loopback `Host` pin is a browser control (it stops DNS
+rebinding); it does nothing against a direct TCP client, which sets
+`Host` freely — which is why the bind matters too.
+
 Auth splits by tool kind: entity CRUD tools re-dispatch
 through the router, so session/JWT auth, owner scoping, and RBAC apply
 exactly as they do over HTTP (the caller's Cookie/Authorization from the `/mcp`

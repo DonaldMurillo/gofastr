@@ -2,8 +2,12 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 )
 
 // WithMCPControl installs the MUTATING MCP tools that let a connected
@@ -67,12 +71,50 @@ func (a *App) registerControlTools() error {
 			handler: a.toolModuleDisable,
 		},
 	}
+	gate := controlToolGate(a.mcpControlDevImplied)
 	for _, t := range tools {
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler); err != nil {
+		h := t.handler
+		if gate != nil {
+			h = mcp.Gated(gate, h)
+		}
+		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, h); err != nil {
 			return fmt.Errorf("framework: register MCP control tool %q: %w", t.name, err)
 		}
 	}
 	return nil
+}
+
+// controlToolGate returns the precondition the MUTATING control tools
+// run behind, or nil for no gate.
+//
+// mcp.Gated and battery/auth's MCPUser/MCPRole existed but had zero
+// production call sites: every shipped tool was ungated. For the
+// read-only introspection tools that is a documented posture; for
+// app_module_enable / app_module_disable — which change what the running
+// app serves — it made a reachable /mcp a control plane for whoever
+// found it.
+//
+// The gate asks only for an identity, not a role, because the framework
+// layer cannot know the host's role vocabulary (and cannot import
+// battery/auth). A host wanting more wraps its own handlers with
+// mcp.Gated(auth.MCPRole("admin"), …).
+//
+// devImplied tools are NOT gated: `gofastr dev` turns them on with no
+// auth configured at all, so a gate would only lock the dev loop out of
+// its own app. Dev exposure is bounded on the other axis instead — the
+// listener must be loopback (guardDevMCPBind).
+func controlToolGate(devImplied bool) func(ctx context.Context) error {
+	if devImplied {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		if u, ok := handler.GetUser(ctx); !ok || u == nil {
+			return errors.New("this tool mutates the running app and requires an authenticated caller — " +
+				"send the session cookie or Authorization header on the /mcp request, " +
+				"and make sure the app's session middleware runs on the /mcp route")
+		}
+		return nil
+	}
 }
 
 // routerHasMCPRoute reports whether the host already mounted a POST
