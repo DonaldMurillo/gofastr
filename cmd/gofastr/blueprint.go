@@ -1594,6 +1594,20 @@ func validateBlueprint(bp Blueprint) error {
 		}
 		entityNames[decl.Name] = true
 		entitiesByName[decl.Name] = decl
+		// Field names and enum values are transcribed into emitted Go,
+		// SQL identifiers and CSS. Nothing downstream re-escapes them,
+		// so they are validated here, at the generate-time boundary,
+		// where the error can name the offending field.
+		for _, f := range decl.Fields {
+			if !isGoIdentifier(toCamelCase(f.Name)) {
+				return fmt.Errorf("blueprint: entity %q field %q does not produce a valid Go identifier — rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name)
+			}
+			for _, v := range f.Values {
+				if strings.ContainsAny(v, "`\"\\\n\r") {
+					return fmt.Errorf("blueprint: entity %q field %q enum value %q contains a quote, backtick, backslash or newline — these break the generated Go source", decl.Name, f.Name, v)
+				}
+			}
+		}
 		if _, err := decl.Config(); err != nil {
 			return fmt.Errorf("blueprint: entity %q: %w", decl.Name, err)
 		}
@@ -3084,7 +3098,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 
 	if crud {
 		b.WriteString(fmt.Sprintf("\n\t// Full CRUD lifecycle for %s through its API + form screens.\n", target.entity))
-		b.WriteString(fmt.Sprintf("\tcode, body := e2eDo(t, client, \"POST\", base+%q, `%s`)\n", target.apiPath, target.createJSON))
+		b.WriteString(fmt.Sprintf("\tcode, body := e2eDo(t, client, \"POST\", base+%q, %q)\n", target.apiPath, target.createJSON))
 		b.WriteString(fmt.Sprintf("\tif code != http.StatusCreated { t.Fatalf(\"create %s = %%d, want 201: %%s\", code, body) }\n", target.entity))
 		b.WriteString("\tid := e2eExtractID(body)\n")
 		b.WriteString(fmt.Sprintf("\tif id == \"\" { t.Fatalf(\"create %s: no id in response: %%s\", body) }\n", target.entity))
@@ -3105,7 +3119,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 				b.WriteString("\t}\n")
 			}
 		}
-		b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, client, \"PUT\", base+%q+\"/\"+id, `%s`); code/100 != 2 {\n", target.apiPath, target.updateJSON))
+		b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, client, \"PUT\", base+%q+\"/\"+id, %q); code/100 != 2 {\n", target.apiPath, target.updateJSON))
 		b.WriteString(fmt.Sprintf("\t\tt.Errorf(\"update %s = %%d: %%s\", code, body)\n", target.entity))
 		b.WriteString("\t}\n")
 		b.WriteString(fmt.Sprintf("\tif code, _ := e2eDo(t, client, \"DELETE\", base+%q+\"/\"+id, \"\"); code/100 != 2 {\n", target.apiPath))
@@ -3116,7 +3130,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 		b.WriteString("\t}\n")
 		if target.accessGated {
 			b.WriteString(fmt.Sprintf("\n\t// Scoping: an anonymous write to the access-/owner-scoped %s API is refused.\n", target.entity))
-			b.WriteString(fmt.Sprintf("\tif code, _ := e2eDo(t, http.DefaultClient, \"POST\", base+%q, `%s`); code != http.StatusUnauthorized && code != http.StatusForbidden {\n", target.apiPath, target.createJSON))
+			b.WriteString(fmt.Sprintf("\tif code, _ := e2eDo(t, http.DefaultClient, \"POST\", base+%q, %q); code != http.StatusUnauthorized && code != http.StatusForbidden {\n", target.apiPath, target.createJSON))
 			b.WriteString(fmt.Sprintf("\t\tt.Errorf(\"anonymous write to %s = %%d, want 401/403\", code)\n", target.entity))
 			b.WriteString("\t}\n")
 		}
@@ -7324,12 +7338,33 @@ func sortedStringMapKeys(m map[string]string) []string {
 // blueprintFontFamilyName extracts the primary family name from a theme font
 // value like "Hanken Grotesk" (or a full stack the author wrote), stripping
 // quotes and any trailing fallback so it can be turned into a Google Fonts query.
+// blueprintFontFamilyName extracts the first family from a font stack
+// and reduces it to characters that are safe inside the emitted CSS
+// string literal.
+//
+// Trimming quotes only at the edges was not enough: a comma-free value
+// whose quote sits in the INTERIOR passed through untouched and closed
+// the `font-family: '…'` literal, letting spec text append arbitrary
+// rules to the app-wide stylesheet (which is fed to both
+// uihost.WithCustomCSS and the admin battery). Real Google Fonts
+// families are exactly this character set, so the allow-list costs
+// nothing legitimate.
 func blueprintFontFamilyName(v string) string {
 	v = strings.TrimSpace(v)
 	if i := strings.IndexByte(v, ','); i >= 0 {
 		v = v[:i]
 	}
-	return strings.Trim(strings.TrimSpace(v), "'\"")
+	v = strings.Trim(strings.TrimSpace(v), "'\"")
+	var b strings.Builder
+	for _, r := range v {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ' || r == '-' || r == '_':
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // blueprintConfiguredFonts returns the heading + body family names declared in

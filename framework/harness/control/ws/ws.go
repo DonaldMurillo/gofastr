@@ -148,6 +148,16 @@ func (h *Handler) hostOK(r *http.Request) bool {
 	return false
 }
 
+// originOK reports whether the request's Origin is permitted.
+//
+// An originless request (curl, the CLI client, a Unix-socket caller)
+// passes: only browsers set Origin, so its absence can't prove an
+// attack. A browser-set Origin must be explicitly allow-listed —
+// an empty AllowedOrigins denies rather than admits, matching the
+// convention core/middleware/cors.go already states ("empty
+// AllowedOrigins means deny-all (not allow-all)"). The inverse
+// default let any web page open a WebSocket to a loopback-bound
+// harness, since WebSocket handshakes get no CORS preflight.
 func (h *Handler) originOK(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -158,7 +168,7 @@ func (h *Handler) originOK(r *http.Request) bool {
 			return true
 		}
 	}
-	return len(h.AllowedOrigins) == 0
+	return false
 }
 
 // completeHandshake writes the 101 Switching Protocols response.

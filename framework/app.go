@@ -1237,6 +1237,14 @@ func NewApp(opts ...AppOption) *App {
 		if !a.mcpAutoMount {
 			a.mcpAutoMount, a.mcpMountDevImplied = true, true
 		}
+		// Dev implies the MUTATING control tools plus every entity's
+		// write tools, with no auth in front of them. Pin the transport
+		// to loopback so a DNS-rebound page can't reach the dispatcher:
+		// after a rebind the attacker's page is same-origin, so Origin
+		// alone proves nothing — only the Host check breaks the chain.
+		if a.MCP != nil {
+			a.MCP.SetRequireLoopbackHost(true)
+		}
 		if !a.mcpIntrospection {
 			a.mcpIntrospection, a.mcpIntrospectionDevImplied = true, true
 		}

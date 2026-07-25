@@ -219,6 +219,51 @@ Each has a `*_test.go` you can read for the exact behaviour.
   background worker), or run Postgres. Full discussion in
   [migrations](migrations.md) §Concurrency model.
 
+## Local control planes and DNS rebinding
+
+Anything that binds loopback and accepts privileged requests needs a
+`Host` check, not just an `Origin` check. Origin alone cannot stop DNS
+rebinding: the attacker points their own domain at `127.0.0.1`, so the
+browser treats the request as same-origin and `Origin` matches `Host`.
+Comparing `Host` against the authority the server expects is what
+refuses it, because a rebound request still carries the attacker's name.
+
+This applies to three surfaces the framework ships:
+
+- **`/mcp`** — `core/mcp.Server` refuses a browser `Origin` that is not
+  same-origin with the request. Pin the authority with
+  `SetAllowedHosts` (or `SetRequireLoopbackHost(true)`) when the
+  transport is local; allow tunnels with `SetAllowedOrigins`.
+  `gofastr dev` pins to loopback automatically, because dev mode
+  implies the mutating control tools plus every entity's write tools
+  with no auth in front of them.
+- **`gofastr harness`** — the sidecar pins `Host` to the authority it
+  bound. Its chat page carries the bearer token in a meta tag, so an
+  unpinned `Host` would let a rebound page read the token and then
+  drive the agent.
+- **`kiln serve`** — pins `Host` to loopback whenever `--addr` bound a
+  loopback address. `kiln` also refuses request-borne agent commands
+  unless started with `--allow-custom-agent`: that form lets the
+  request body choose the argv of a spawned process.
+
+A deliberate non-loopback bind (`--addr 0.0.0.0:…`) skips the pin,
+since the framework cannot know the intended public name. That is the
+point at which the "unauthenticated" warning in the startup banner is
+the contract.
+
+## Widget signal exposure
+
+A widget's `/state` endpoint is **unauthenticated** by default, and
+`SignalSource.Read` takes no request context — so a signal value is
+process-global, identical for every caller, and cannot be scoped per
+user. Treat every signal as world-readable: counts, statuses, and other
+non-sensitive display data.
+
+Widgets whose signals should not be public set
+`Definition.RequireSession`, which gates `/state` and `/chrome`. The
+gate fails closed: if the host installed no session check, a widget
+that asked for one serves nothing rather than serving everyone.
+
 ## Owner isolation and `CrossOwnerRead`
 
 Entities with `OwnerField` scope every read/write to the requesting

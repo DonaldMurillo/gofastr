@@ -53,7 +53,7 @@ func TestStrictPermissionsAsksReadOnly(t *testing.T) {
 func TestSessionRuleApplies(t *testing.T) {
 	e := New(nil)
 	sess := ids.NewSessionID()
-	e.AddSessionRule(sess, Rule{Tool: "Bash", ArgvGlob: "git push *", Action: DecisionAllow})
+	e.AddSessionRule(sess, Rule{Tool: "Bash", ArgvGlob: "git push *", Glob: true, Action: DecisionAllow})
 	if got := e.Evaluate(sess, "Bash", "git push origin main", true); got != DecisionAllow {
 		t.Errorf("session rule did not apply: got %s", got)
 	}

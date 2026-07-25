@@ -82,6 +82,18 @@ type Server struct {
 	// result without invoking the tool. Framework code uses it to gate
 	// tools owned by a disabled module.
 	callGate func(toolName string) error
+
+	// allowedHosts pins the Host authorities this server answers on
+	// (the DNS-rebinding control). Empty = unpinned. See originOK.
+	allowedHosts []string
+	// allowedOrigins permits browser Origins that are not same-origin
+	// with the request — tunnels, split-origin dev clients.
+	allowedOrigins []string
+	// requireLoopbackHost restricts the transport to loopback Host
+	// authorities on any port. `gofastr dev` sets it because dev
+	// auto-enables the mutating control tools; it is the port-agnostic
+	// form of the allowedHosts pin.
+	requireLoopbackHost bool
 }
 
 // NewServer creates a new MCP server with an empty tool registry.

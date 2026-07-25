@@ -16,10 +16,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -104,11 +106,12 @@ Wire into Claude Code MCP settings:
 }
 
 type runOptions struct {
-	addr     string
-	journal  string
-	noHTTP   bool
-	keepDB   bool
-	agentCmd string
+	addr        string
+	journal     string
+	noHTTP      bool
+	keepDB      bool
+	agentCmd    string
+	allowCustom bool
 }
 
 func parseFlags(args []string) runOptions {
@@ -122,6 +125,7 @@ func parseFlags(args []string) runOptions {
 	journalPath := fs.String("journal", ".kiln.session.jsonl", "JSONL journal path (use :memory: to disable persistence)")
 	noHTTP := fs.Bool("no-http", false, "Skip the HTTP server in stdio modes")
 	keepDB := fs.Bool("keep-db", false, "Don't delete the ephemeral SQLite on exit")
+	allowCustom := fs.Bool("allow-custom-agent", false, "Permit POST /kiln/agent name=\"custom\" to choose the spawned command. Off by default: it is request-borne argv selection, i.e. remote code execution for anything that can reach the tool API.")
 	agentCmd := fs.String("agent", "", `Agent to spawn on each chat_user event. Accepts:
   omp | claude-code | pi | codex — built-in adapter (uses your existing CLI auth)
   auto                       — pick the first installed from the list above
@@ -129,7 +133,7 @@ func parseFlags(args []string) runOptions {
   "<freeform cmd>"           — custom: e.g. "omp -p --model glm-5.2"
 KILN_URL is injected into the env so the agent can drive the runtime.`)
 	_ = fs.Parse(args)
-	return runOptions{addr: *addr, journal: *journalPath, noHTTP: *noHTTP, keepDB: *keepDB, agentCmd: *agentCmd}
+	return runOptions{addr: *addr, journal: *journalPath, noHTTP: *noHTTP, keepDB: *keepDB, agentCmd: *agentCmd, allowCustom: *allowCustom}
 }
 
 // run boots the runtime once (Live + Tools + Chat) and then drives a
@@ -138,6 +142,12 @@ KILN_URL is injected into the env so the agent can drive the runtime.`)
 func run(args []string, mcpStdio, acpStdio bool) int {
 	opts := parseFlags(args)
 	stdioMode := mcpStdio || acpStdio
+
+	// Record the security posture the flags selected before anything
+	// serves: originGuard Host-pins only a loopback bind, and the
+	// request-borne custom-adapter form stays off unless opted in.
+	kilnLoopbackBound = isLoopbackBindAddr(opts.addr)
+	allowCustomAgent = opts.allowCustom
 
 	// Logging goes to stderr in stdio modes so stdout stays clean for
 	// JSON-RPC framing.
@@ -293,6 +303,25 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 // cross-origin Origin on an unsafe method is refused with 403.
 func originGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Host pinning comes first and applies to EVERY method,
+		// including GET.
+		//
+		// sameOrigin below compares Origin to r.Host — but under DNS
+		// rebinding the attacker controls both sides, so they match and
+		// the check passes. A page on evil.test whose DNS flips to
+		// 127.0.0.1 reaches this listener with Host: evil.test:8765;
+		// only comparing Host against a literal loopback name refuses
+		// it. GET is included because /kiln/world and /kiln/status
+		// disclose the whole in-memory app.
+		//
+		// When the operator deliberately exposed kiln with a non-
+		// loopback -addr, we cannot know the intended public name, so
+		// the pin is skipped and the banner's "unauthenticated" warning
+		// is the contract.
+		if kilnLoopbackBound && !isLoopbackAuthority(r.Host) {
+			http.Error(w, "forbidden: unexpected Host (DNS-rebinding guard)", http.StatusForbidden)
+			return
+		}
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 			next.ServeHTTP(w, r)
@@ -304,6 +333,48 @@ func originGuard(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isLoopbackBindAddr reports whether a -addr flag value binds only the
+// loopback interface. A bare ":8765" or "0.0.0.0:8765" binds every
+// interface and is therefore NOT loopback-only.
+func isLoopbackBindAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	if host == "" {
+		return false // ":8765" — all interfaces
+	}
+	return isLoopbackAuthority(host)
+}
+
+// kilnLoopbackBound records whether the listener bound a loopback
+// address, so originGuard knows whether Host-pinning is meaningful.
+var kilnLoopbackBound bool
+
+// allowCustomAgent gates the request-borne custom-adapter form. A POST
+// to /kiln/agent with name="custom" supplies the ENTIRE argv of a
+// spawned process, so leaving it on by default turns any request that
+// reaches the tool API into arbitrary command execution. Operators who
+// want it opt in with --allow-custom-agent.
+var allowCustomAgent bool
+
+// isLoopbackAuthority reports whether authority ("host" or "host:port")
+// names the loopback interface.
+func isLoopbackAuthority(authority string) bool {
+	host := authority
+	if h, _, err := net.SplitHostPort(authority); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // sameOrigin reports whether an Origin header's host matches the request Host.

@@ -85,7 +85,7 @@ func TestPersistentRulesScopedByTool(t *testing.T) {
 	e := New(nil)
 	e.PersistencePath = path
 	if err := e.AddPersistentRule(Rule{
-		Tool: "Bash", ArgvGlob: "*", Action: DecisionAllow,
+		Tool: "Bash", ArgvGlob: "*", Glob: true, Action: DecisionAllow,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestAddPersistentRule_RoundTrip(t *testing.T) {
 	for _, r := range []Rule{
 		{Tool: "Bash", ArgvGlob: "git status", Action: DecisionAllow},
 		{Tool: "Read", ArgvGlob: "", Action: DecisionAllow},
-		{Tool: "Write", ArgvGlob: "/tmp/*", Action: DecisionDeny},
+		{Tool: "Write", ArgvGlob: "/tmp/*", Glob: true, Action: DecisionDeny},
 	} {
 		if err := e1.AddPersistentRule(r); err != nil {
 			t.Fatal(err)

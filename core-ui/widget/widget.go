@@ -88,8 +88,25 @@ type Definition struct {
 	Position  Position
 	Bootstrap BootstrapMode
 	Slots     []Slot
-	Signals   map[string]SignalSource
-	RPCs      []RPCEndpoint
+
+	// Signals are served by the widget's /state endpoint.
+	//
+	// SECURITY: /state is UNAUTHENTICATED unless RequireSession is set,
+	// and SignalSource.Read takes no context — so a signal value is
+	// process-global, identical for every caller, and cannot be scoped
+	// per user. Treat every signal as world-readable: put counts,
+	// statuses and other non-sensitive display data here, never
+	// per-user or secret values. Set RequireSession to restrict /state
+	// and /chrome to callers holding a valid framework session.
+	Signals map[string]SignalSource
+	RPCs    []RPCEndpoint
+
+	// RequireSession gates the /state and /chrome endpoints behind a
+	// valid session, for widgets whose signals are not safe to expose
+	// anonymously. The host supplies the check via SetSessionCheck;
+	// when no check is installed, a widget that asks for one fails
+	// closed (the endpoints 403 rather than serving).
+	RequireSession bool
 
 	// Skeleton is the host's chrome wrapper. If nil, the framework
 	// uses a sensible default for the chosen Position (FloatingPanel
@@ -484,6 +501,35 @@ func (b *Builder) Build() Definition { return b.def }
 
 // --- Mount ------------------------------------------------------------
 
+// sessionCheck is the host-installed predicate used by widgets that set
+// Definition.RequireSession. nil means no host installed one, in which
+// case a widget asking for a session fails closed.
+var sessionCheck func(*http.Request) bool
+
+// SetSessionCheck installs the predicate that Definition.RequireSession
+// consults. Hosts (framework/uihost) call this once at wiring time.
+func SetSessionCheck(fn func(*http.Request) bool) { sessionCheck = fn }
+
+// SessionCheck returns the installed predicate, or nil when no host
+// installed one. Lets a host assert its own wiring.
+func SessionCheck() func(*http.Request) bool { return sessionCheck }
+
+// gateSession wraps h so it only runs for callers with a valid session
+// when required. Fails closed: a widget that asked for a session but
+// runs in a host that installed no check serves nothing.
+func gateSession(required bool, h http.Handler) http.Handler {
+	if !required {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sessionCheck == nil || !sessionCheck(r) {
+			http.Error(w, "forbidden: widget requires a session", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // Mount registers the widget's HTTP routes on r and adds it to the
 // process-global registry the framework runtime auto-discovers. Hosts
 // don't embed a per-widget script tag — they embed ONE shared runtime
@@ -508,11 +554,11 @@ func Mount(r *router.Router, def *Definition) {
 
 	srv := &server{def: *def}
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
-	r.Get(def.StatePath, http.HandlerFunc(srv.serveState))
+	r.Get(def.StatePath, gateSession(def.RequireSession, http.HandlerFunc(srv.serveState)))
 	// Chrome endpoint — runtime fetches HTML lazily on first open
 	// instead of receiving it inline in the /widgets catalog. Keeps
 	// the registry small and lets browsers cache by URL.
-	r.Get(chromePathFor(def), http.HandlerFunc(srv.serveChrome))
+	r.Get(chromePathFor(def), gateSession(def.RequireSession, http.HandlerFunc(srv.serveChrome)))
 
 	for _, rpc := range def.RPCs {
 		method := rpc.Method

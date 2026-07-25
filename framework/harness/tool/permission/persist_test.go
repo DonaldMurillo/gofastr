@@ -26,7 +26,7 @@ func TestPromoteSessionRuleToPreset(t *testing.T) {
 
 	e := New(nil)
 	sess := ids.NewSessionID()
-	e.AddSessionRule(sess, Rule{Tool: "Bash", ArgvGlob: "git push *", Action: DecisionAllow})
+	e.AddSessionRule(sess, Rule{Tool: "Bash", ArgvGlob: "git push *", Glob: true, Action: DecisionAllow})
 
 	promoted, err := e.Promote(presetPath, sess, 0)
 	if err != nil {
@@ -74,12 +74,12 @@ func TestPromoteDeduplicates(t *testing.T) {
 	presetPath := filepath.Join(dir, "preset.json")
 	_ = SavePreset(presetPath, &PresetFile{
 		SchemaVersion: 1,
-		Rules:         []Rule{{Tool: "Bash", ArgvGlob: "git status*"}},
+		Rules:         []Rule{{Tool: "Bash", ArgvGlob: "git status*", Glob: true}},
 	})
 
 	e := New(nil)
 	sess := ids.NewSessionID()
-	e.AddSessionRule(sess, Rule{Tool: "Bash", ArgvGlob: "git status*", Action: DecisionAllow})
+	e.AddSessionRule(sess, Rule{Tool: "Bash", ArgvGlob: "git status*", Glob: true, Action: DecisionAllow})
 	if _, err := e.Promote(presetPath, sess, 0); err != nil {
 		t.Fatal(err)
 	}

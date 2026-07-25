@@ -176,19 +176,39 @@ func TestSSEBrokerSlowBlockWaitsForBufferSpace(t *testing.T) {
 	}
 }
 
+// Block mode is opt-in per broker. This test previously asserted that
+// ANY request could select it; that contract was withdrawn because a
+// block-mode subscriber stalls deliver() — and so every other
+// subscriber plus the calling handler — which made it an
+// unauthenticated DoS on a public endpoint. The request still chooses,
+// but only within a broker whose host enabled AllowClientSlowMode.
 func TestSSEBrokerSlowBlockParsedFromRequest(t *testing.T) {
+	opted := NewSSEBroker(SSEBrokerConfig{Topic: "t", AllowClientSlowMode: true})
+
 	req := httptest.NewRequest("GET", "/events?slow=block", nil)
-	if got := parseSlowMode(req); got != sseSlowBlock {
+	if got := opted.parseSlowMode(req); got != sseSlowBlock {
 		t.Fatalf("query slow mode = %v, want block", got)
 	}
 	req = httptest.NewRequest("GET", "/events", nil)
 	req.Header.Set("X-SSE-Slow", "block")
-	if got := parseSlowMode(req); got != sseSlowBlock {
+	if got := opted.parseSlowMode(req); got != sseSlowBlock {
 		t.Fatalf("header slow mode = %v, want block", got)
 	}
 	req = httptest.NewRequest("GET", "/events", nil)
-	if got := parseSlowMode(req); got != sseSlowDropOldest {
+	if got := opted.parseSlowMode(req); got != sseSlowDropOldest {
 		t.Fatalf("default slow mode = %v, want drop-oldest", got)
+	}
+}
+
+// A broker that did not opt in ignores the client's request entirely.
+func TestSSESlowModeIgnoredWhenNotOptedIn(t *testing.T) {
+	b := NewSSEBroker(SSEBrokerConfig{Topic: "t"})
+	for _, target := range []string{"/events?slow=block", "/events"} {
+		req := httptest.NewRequest("GET", target, nil)
+		req.Header.Set("X-SSE-Slow", "block")
+		if got := b.parseSlowMode(req); got != sseSlowDropOldest {
+			t.Errorf("%s: got %v, want drop-oldest (client must not pick block mode)", target, got)
+		}
 	}
 }
 

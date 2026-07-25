@@ -52,6 +52,13 @@ func TestAgentHTTPSetAcceptsCustomAndCancelsInflight(t *testing.T) {
 		t.Fatal("expected in_flight=true after SetTurnCancel")
 	}
 
+	// The custom form is request-borne argv selection, so it is off by
+	// default now; the operator opts in with --allow-custom-agent. This
+	// test exercises the opted-in path.
+	prevAllow := allowCustomAgent
+	allowCustomAgent = true
+	defer func() { allowCustomAgent = prevAllow }()
+
 	body := bytes.NewBufferString(`{"name":"custom","custom":"echo hi"}`)
 	req := httptest.NewRequest(http.MethodPost, "/kiln/agent", body)
 	rec := httptest.NewRecorder()

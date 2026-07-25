@@ -113,20 +113,45 @@ type WSConfig struct {
 // Upgrade upgrades an HTTP connection to a simple WebSocket.
 // Performs the HTTP upgrade handshake and returns a managed connection.
 func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketConn, error) {
-	// Validate WebSocket upgrade request
+	// Validate the handshake per RFC 6455 §4.2.1.
+	//
+	// Accepting a looser definition of "upgrade" than an intermediary
+	// uses is an upgrade-desync primitive: a proxy that does not
+	// recognise the request as an upgrade forwards it as an ordinary
+	// request on a pooled backend connection and waits for an ordinary
+	// response. If we hijack and start writing frames, those bytes can
+	// surface as the response to a DIFFERENT user's queued request —
+	// and the peer partly controls them, since ping payloads are
+	// echoed verbatim. So every condition below must be checked before
+	// the 101 is written.
+	if r.Method != http.MethodGet {
+		return nil, errors.New("stream: websocket upgrade must be GET")
+	}
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		return nil, errors.New("stream: not a websocket upgrade request")
+	}
+
+	// Origin check — block CSWSH by default. Caller may opt in to
+	// cross-origin via cfg.CheckOrigin. Runs before the remaining
+	// shape checks so a cross-origin attempt reports the security
+	// reason rather than whichever header it also happened to omit.
+	if !checkOrigin(r, cfg.CheckOrigin) {
+		return nil, errors.New("stream: cross-origin websocket upgrade rejected (set WSConfig.CheckOrigin to allow)")
+	}
+	if !headerHasToken(r.Header.Get("Connection"), "upgrade") {
+		return nil, errors.New("stream: missing Connection: Upgrade")
+	}
+	if v := r.Header.Get("Sec-WebSocket-Version"); v != "13" {
+		return nil, fmt.Errorf("stream: unsupported websocket version %q (want 13)", v)
 	}
 
 	key := r.Header.Get("Sec-WebSocket-Key")
 	if key == "" {
 		return nil, errors.New("stream: missing Sec-WebSocket-Key")
 	}
-
-	// Origin check — block CSWSH by default. Caller may opt in to
-	// cross-origin via cfg.CheckOrigin.
-	if !checkOrigin(r, cfg.CheckOrigin) {
-		return nil, errors.New("stream: cross-origin websocket upgrade rejected (set WSConfig.CheckOrigin to allow)")
+	// §4.2.1: the key is base64 of exactly 16 random bytes.
+	if kb, err := base64.StdEncoding.DecodeString(key); err != nil || len(kb) != 16 {
+		return nil, errors.New("stream: malformed Sec-WebSocket-Key")
 	}
 
 	// Compute accept key (SHA-1 of key + magic GUID)
@@ -443,11 +468,12 @@ func (c *WebSocketConn) writePump() {
 
 // WebSocket frame opcodes
 const (
-	wsopcodeText   = 0x1
-	wsopcodeBinary = 0x2
-	wsopcodeClose  = 0x8
-	wsopcodePing   = 0x9
-	wsopcodePong   = 0xA
+	wsopcodeContinuation = 0x0
+	wsopcodeText         = 0x1
+	wsopcodeBinary       = 0x2
+	wsopcodeClose        = 0x8
+	wsopcodePing         = 0x9
+	wsopcodePong         = 0xA
 )
 
 // wsFrame represents a parsed WebSocket frame.
@@ -505,6 +531,10 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 	if readLimit <= 0 {
 		readLimit = 1 << 20
 	}
+
+	// Fragmented-message accumulator (RFC 6455 §5.4).
+	var fragOpcode byte
+	var fragBuf []byte
 
 	for {
 		// Read first 2 bytes
@@ -573,12 +603,32 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 			}
 		}
 
-		// Payload
-		payload := make([]byte, length)
+		// Payload.
+		//
+		// Do NOT allocate `length` up front: the peer declares it in a
+		// handful of header bytes, so an eager make() lets 12 bytes on
+		// the wire pin ReadLimit (1 MiB by default) of heap per socket.
+		// Grow while reading instead, so memory tracks bytes actually
+		// delivered. A read deadline bounds the stall — net/http no
+		// longer manages this connection after Hijack, and
+		// lastReadActivity only advances on a COMPLETE frame, so
+		// without one a half-sent frame holds its buffer until the
+		// keepalive ping eventually tears the connection down.
+		var payload []byte
 		if length > 0 {
-			if _, err := io.ReadFull(c.conn, payload); err != nil {
-				return nil, err
+			c.setReadDeadline(c.config.ReadIdleTimeout)
+			payload = make([]byte, 0, minInt(int(length), wsPayloadChunk))
+			buf := make([]byte, minInt(int(length), wsPayloadChunk))
+			for uint64(len(payload)) < length {
+				want := minInt(int(length-uint64(len(payload))), len(buf))
+				n, err := io.ReadFull(c.conn, buf[:want])
+				if err != nil {
+					c.clearReadDeadline()
+					return nil, err
+				}
+				payload = append(payload, buf[:n]...)
 			}
+			c.clearReadDeadline()
 		}
 
 		// Unmask
@@ -618,8 +668,83 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 			continue
 		}
 
-		return &wsFrame{opcode: opcode, payload: payload}, nil
+		// RFC 6455 §5.4 message assembly. `fin` was previously read and
+		// then used only for the control-frame check, so a TEXT frame
+		// with FIN=0 returned HALF A MESSAGE to the application as if
+		// it were whole — and browsers fragment large sends, so that
+		// fired on legitimate traffic. ReadLimit is also documented as
+		// a *message* bound, which only holds once fragments accumulate.
+		switch opcode {
+		case wsopcodeContinuation:
+			if fragOpcode == 0 {
+				return nil, errors.New("stream: protocol error: continuation frame with nothing to continue")
+			}
+			if uint64(len(fragBuf))+uint64(len(payload)) > uint64(readLimit) {
+				return nil, fmt.Errorf("stream: message too large (> %d)", readLimit)
+			}
+			fragBuf = append(fragBuf, payload...)
+			if !fin {
+				continue
+			}
+			op, msg := fragOpcode, fragBuf
+			fragOpcode, fragBuf = 0, nil
+			return &wsFrame{opcode: op, payload: msg}, nil
+		case wsopcodeText, wsopcodeBinary:
+			if fragOpcode != 0 {
+				return nil, errors.New("stream: protocol error: new data frame while a fragmented message is open")
+			}
+			if !fin {
+				fragOpcode, fragBuf = opcode, append([]byte(nil), payload...)
+				continue
+			}
+			return &wsFrame{opcode: opcode, payload: payload}, nil
+		default:
+			// Reserved opcodes (0x3-0x7, 0xB-0xF) were previously
+			// delivered to the application as ordinary data frames.
+			return nil, fmt.Errorf("stream: protocol error: reserved opcode 0x%X", opcode)
+		}
 	}
+}
+
+// setReadDeadline bounds a single frame-payload read. c.conn is an
+// io.ReadWriteCloser so tests can inject fakes, so the deadline is
+// best-effort: a fake without SetReadDeadline simply gets none.
+func (c *WebSocketConn) setReadDeadline(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	if nc, ok := c.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+		_ = nc.SetReadDeadline(time.Now().Add(d))
+	}
+}
+
+// clearReadDeadline removes a deadline set by setReadDeadline.
+func (c *WebSocketConn) clearReadDeadline() {
+	if nc, ok := c.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+		_ = nc.SetReadDeadline(time.Time{})
+	}
+}
+
+// wsPayloadChunk bounds how much is allocated per read pass, so a
+// declared length cannot commit memory ahead of delivered bytes.
+const wsPayloadChunk = 32 << 10
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// headerHasToken reports whether a comma-separated header value
+// contains token (case-insensitive) — e.g. "keep-alive, Upgrade".
+func headerHasToken(value, token string) bool {
+	for _, part := range strings.Split(value, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), token) {
+			return true
+		}
+	}
+	return false
 }
 
 // computeAcceptKey computes the Sec-WebSocket-Accept value per RFC 6455.
