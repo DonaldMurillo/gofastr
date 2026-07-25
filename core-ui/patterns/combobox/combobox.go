@@ -2,9 +2,9 @@ package combobox
 
 import (
 	"strconv"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -145,7 +145,7 @@ func staticOptionRows(listboxID string, opts []Option) []render.HTML {
 		// javascript: Href is DOM XSS on pick. Same allow-list as
 		// framework/ui's safeURL; unsafe values drop the nav affordance
 		// entirely (the option still fills the input on pick).
-		if href := safePushHref(o.Href); href != "" {
+		if href := urlsafe.Clean(o.Href, urlsafe.Anchor); href != "" {
 			attrs["data-fui-push-state"] = href
 		}
 		children := []render.HTML{
@@ -157,49 +157,4 @@ func staticOptionRows(listboxID string, opts []Option) []render.HTML {
 		rows = append(rows, render.Tag("li", attrs, render.Join(children...)))
 	}
 	return rows
-}
-
-// safePushHref returns u if it is safe to hand to the SPA navigator /
-// location.href, and "" otherwise. Mirrors framework/ui's safeURL
-// allow-list: http(s), mailto, tel, relative paths, fragment/query
-// references. javascript:, data:, vbscript:, file:, blob:,
-// protocol-relative URLs, control bytes, and encoded CR/LF are dropped.
-func safePushHref(u string) string {
-	if u == "" {
-		return ""
-	}
-	for i := 0; i < len(u); i++ {
-		c := u[i]
-		if c < 0x20 || c == 0x7f {
-			return ""
-		}
-	}
-	trimmed := strings.TrimLeft(u, " \t")
-	low := strings.ToLower(trimmed)
-	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
-		return ""
-	}
-	if strings.HasPrefix(trimmed, "//") {
-		return ""
-	}
-	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "#") ||
-		strings.HasPrefix(trimmed, "?") || strings.HasPrefix(trimmed, "./") ||
-		strings.HasPrefix(trimmed, "../") {
-		return u
-	}
-	for i := 0; i < len(trimmed); i++ {
-		c := trimmed[i]
-		if c == ':' {
-			switch strings.ToLower(trimmed[:i]) {
-			case "http", "https", "mailto", "tel":
-				return u
-			default:
-				return ""
-			}
-		}
-		if c == '/' || c == '?' || c == '#' {
-			return u // no scheme — relative reference
-		}
-	}
-	return u // bare relative reference
 }

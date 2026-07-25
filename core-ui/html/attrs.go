@@ -3,6 +3,7 @@ package html
 import (
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -141,6 +142,23 @@ func setAttr(attrs Attrs, key, value string) Attrs {
 	}
 	attrs[key] = value
 	return attrs
+}
+
+// setURLAttr sets a URL-valued attribute after running it through the
+// shared scheme allow-list, and OMITS the attribute when the value is
+// refused. Omitting rather than blanking matters: `src=""` re-requests the
+// current document in several browsers, and `href=""` is a live link back
+// to the page. A dropped attribute is inert.
+//
+// This is the lowest layer that renders a caller-supplied URL, so it is
+// where the guard belongs — core-ui/noderender explicitly documents its IR
+// as untrusted and renders through here, and framework/ui's own safeURL
+// sits above it.
+func setURLAttr(attrs Attrs, key, value string, policy urlsafe.Policy) Attrs {
+	if !urlsafe.OK(value, policy) {
+		return attrs
+	}
+	return setAttr(attrs, key, value)
 }
 
 // renderChildren is a helper that joins children into a single HTML fragment.

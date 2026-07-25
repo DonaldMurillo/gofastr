@@ -3,6 +3,7 @@ package html
 import (
 	"strconv"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -147,7 +148,7 @@ func Link(cfg LinkConfig) render.HTML {
 		panic("html: Link requires Text")
 	}
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	setAttr(attrs, "href", cfg.Href)
+	attrs = setURLAttr(attrs, "href", cfg.Href, urlsafe.Anchor)
 	return render.Tag("a", attrs, render.Text(cfg.Text))
 }
 
@@ -158,7 +159,7 @@ func LinkHTML(cfg LinkHTMLConfig) render.HTML {
 		panic("html: LinkHTML requires Href")
 	}
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	setAttr(attrs, "href", cfg.Href)
+	attrs = setURLAttr(attrs, "href", cfg.Href, urlsafe.Anchor)
 	return render.Tag("a", attrs, cfg.Content)
 }
 
@@ -171,7 +172,7 @@ func Form(cfg FormConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "method", cfg.Method)
 	if cfg.Action != "" {
-		setAttr(attrs, "action", cfg.Action)
+		attrs = setURLAttr(attrs, "action", cfg.Action, urlsafe.Anchor)
 	}
 	return render.Tag("form", attrs, children...)
 }

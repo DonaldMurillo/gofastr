@@ -99,6 +99,14 @@ func (sl *Slice[T]) applyComputed(a map[string]string) {
 // influenced URL into a URL-bound slice.
 func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs map[string]string) render.HTML {
 	a := cloneAttrs(attrs)
+	if !interactive.SignalAttrAllowed(htmlAttr) {
+		// The binding is refused outright rather than rendered with a
+		// sanitised value: the attributes below the allow-list execute
+		// regardless of what their value looks like, so there is no
+		// "safe" value to stamp. Emitting the element without the
+		// binding degrades to static markup.
+		return renderEl(tag, a)
+	}
 	a["data-fui-signal"] = sl.name
 	a["data-fui-signal-mode"] = "attr"
 	a["data-fui-signal-attr"] = htmlAttr

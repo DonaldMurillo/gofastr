@@ -753,6 +753,13 @@ func BindText(html render.HTML, signal string) render.HTML {
 // data-fui-signal-attr="<attr>". Use when a signal should drive a single
 // attribute (e.g. aria-expanded, data-active) rather than text content.
 func BindAttr(html render.HTML, signal, attr string) render.HTML {
+	// An attribute outside the allow-list executes regardless of the
+	// value bound to it (srcdoc, style, data-behavior, on*, the
+	// privileged data-fui-* family), so the binding is refused rather
+	// than emitted — see SignalAttrAllowed.
+	if !SignalAttrAllowed(attr) {
+		return html
+	}
 	return bindSignal(html, signal, "attr", attr)
 }
 
