@@ -427,6 +427,15 @@ func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx in
 			parts = append(parts, fmt.Sprintf("%s IN (%s)", col(f.Field), strings.Join(phs, ", ")))
 			continue
 		}
+		if f.Op == filter.OpLike {
+			// Same rule as every other depth: `_like` is a literal
+			// substring with the caller's wildcards escaped. See
+			// nested_filter.go's LIKE branch.
+			parts = append(parts, fmt.Sprintf("%s LIKE $%d"+filter.LikeEscapeSuffix, col(f.Field), idx))
+			args = append(args, filter.EscapeLikePattern(fmt.Sprintf("%v", f.Value)))
+			idx++
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s %s $%d", col(f.Field), opToSQL(f.Op), idx))
 		args = append(args, f.Value)
 		idx++

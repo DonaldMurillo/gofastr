@@ -32,13 +32,26 @@ const maxSortFields = 16
 // is the ESCAPE char appended to the LIKE fragment), then the wildcards.
 var likeEscapeReplacer = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
-// escapeLikePattern escapes v's LIKE metacharacters and wraps it in the
+// EscapeLikePattern escapes v's LIKE metacharacters and wraps it in the
 // leading/trailing wildcards that implement "contains". Pair it with an
 // `ESCAPE '\'` clause on the LIKE fragment so the wildcards a caller
 // supplies are matched literally, not interpreted as patterns.
-func escapeLikePattern(v string) string {
+//
+// Exported so relation-scoped filters (framework/crud's nested `?rel.f_like=`
+// and `?include=rel(f_like=…)`) build the identical clause. They used to
+// pass the caller's value through raw, which made the same query
+// parameter mean "literal substring" at the top level and "wildcard
+// pattern" one level down.
+func EscapeLikePattern(v string) string {
 	return "%" + likeEscapeReplacer.Replace(v) + "%"
 }
+
+// escapeLikePattern is the package-internal spelling.
+func escapeLikePattern(v string) string { return EscapeLikePattern(v) }
+
+// LikeEscapeSuffix is the SQL that must follow a LIKE placeholder for
+// EscapeLikePattern's escaping to take effect.
+const LikeEscapeSuffix = ` ESCAPE '\'`
 
 // FilterOp represents a comparison operator for query filtering.
 type FilterOp string

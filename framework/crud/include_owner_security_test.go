@@ -453,3 +453,87 @@ func (r *testRegistry) Get(name string) (*entity.Entity, error) {
 	}
 	return nil, fmt.Errorf("entity %q not registered", name)
 }
+
+// TestNestedLikeIsLiteralSubstring pins that `?rel.field_like=` means the
+// same thing at every depth.
+//
+// Nested `_like` used to pass the caller's value through as a RAW LIKE
+// pattern while top-level `_like` escaped it and wrapped it in wildcards
+// — the same query parameter spelled the same way meaning two different
+// things depending on whether a dot appeared in it. That is a footgun
+// before it is a vulnerability: a caller filtering on a value that
+// happens to contain `%` or `_` (an email, a path, a SQL-ish string)
+// silently matched far more rows than they asked for, and an unescaped
+// `%` is a full-table-scan primitive.
+//
+// One operator, one meaning: literal substring, wildcards escaped.
+func TestNestedLikeIsLiteralSubstring(t *testing.T) {
+	ddl := `
+CREATE TABLE nl_posts (
+	id        TEXT PRIMARY KEY,
+	user_id   TEXT NOT NULL,
+	author_id TEXT,
+	title     TEXT
+);
+CREATE TABLE nl_users (
+	id   TEXT PRIMARY KEY,
+	name TEXT
+);
+`
+	postCfg := makeEntityConfig("nl_posts", "nl_posts", "user_id",
+		[]schema.Field{
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "author_id", Type: schema.String},
+			{Name: "title", Type: schema.String},
+		},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{
+				{Name: "author", Type: entity.RelManyToOne, Entity: "nl_users", ForeignKey: "author_id"},
+			}
+		},
+	)
+	userCfg := makeEntityConfig("nl_users", "nl_users", "",
+		[]schema.Field{{Name: "name", Type: schema.String}},
+	)
+
+	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
+	userEnt := entity.Define(userCfg.Name, userCfg)
+	userEnt.SetDB(db)
+	reg := newTestRegistry(t)
+	reg.addByName(ch.Entity)
+	reg.addByName(userEnt)
+	ch.Registry = reg
+
+	seedRows(t, db, "nl_users", []map[string]any{
+		{"id": "u1", "name": "100% cotton"},
+		{"id": "u2", "name": "alice"},
+	})
+	seedRows(t, db, "nl_posts", []map[string]any{
+		{"id": "p1", "user_id": "alice", "author_id": "u1", "title": "literal-match"},
+		{"id": "p2", "user_id": "alice", "author_id": "u2", "title": "wildcard-match"},
+	})
+
+	// "100%" must match the user literally named "100% cotton" and NOT
+	// act as a prefix wildcard.
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/nl_posts?author.name_like=100%25", UserID: "alice"})
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("nested like returned %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "literal-match") {
+		t.Errorf("nested _like did not match the literal substring %q. Body: %s", "100%", body)
+	}
+	if strings.Contains(body, "wildcard-match") {
+		t.Errorf("SECURITY: [dos] nested _like treated %q as a wildcard pattern and matched every row — top-level _like escapes it. Body: %s", "100%", body)
+	}
+
+	// A bare "%" must match nothing rather than every row.
+	req = makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/nl_posts?author.name_like=%25", UserID: "alice"})
+	rr = httptest.NewRecorder()
+	ch.List()(rr, req)
+	if strings.Contains(rr.Body.String(), "wildcard-match") {
+		t.Errorf("SECURITY: [dos] a bare %q matched every row — the wildcard was not escaped. Body: %s", "%", rr.Body.String())
+	}
+}
