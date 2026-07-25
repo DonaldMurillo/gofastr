@@ -433,7 +433,7 @@ func TestAudit_MagicLinkFlow(t *testing.T) {
 		t.Fatalf("no token in magic link URL: %q", f.mlSender.lastURL)
 	}
 	// The verify endpoint is a GET with the token as a query param.
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+tok, nil)
+	req := magicConfirmReq(tok)
 	rec := httptest.NewRecorder()
 	f.router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusFound {

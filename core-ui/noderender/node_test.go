@@ -26,17 +26,28 @@ func TestRenderNodeUnknownKindLeavesTrace(t *testing.T) {
 	}
 }
 
+// Attribute pass-through is an allow-list outside the data- namespace and
+// a deny-list inside it: an inert host marker passes, anything the
+// RUNTIME acts on does not. This test used to assert only that style and
+// onclick were dropped, which said nothing about the privileged data-*
+// attributes. See TestIRDropsScriptAndURLGadgets in
+// noderender_security_test.go for the full policy.
 func TestRenderNodeDropsDangerousAttrs(t *testing.T) {
 	got := string(RenderNode(node.Node{Kind: "div", Props: map[string]any{
-		"style":   "color:red",
-		"onclick": "alert(1)",
-		"data-ok": "yes",
+		"style":         "color:red",
+		"onclick":       "alert(1)",
+		"data-behavior": "/evil.js",
+		"data-fui-rpc":  "/evil",
+		"data-testid":   "ok",
 	}}))
 	if strings.Contains(got, "style=") || strings.Contains(got, "onclick") {
 		t.Errorf("dangerous attrs leaked: %q", got)
 	}
-	if !strings.Contains(got, "data-ok") {
-		t.Errorf("safe data attr dropped: %q", got)
+	if strings.Contains(got, "data-behavior") || strings.Contains(got, "data-fui-rpc") {
+		t.Errorf("runtime-privileged data attr leaked: %q", got)
+	}
+	if !strings.Contains(got, "data-testid") {
+		t.Errorf("inert host marker dropped: %q", got)
 	}
 }
 

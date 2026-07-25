@@ -67,8 +67,7 @@ func linkCallbackReq(t *testing.T, plugin *OAuth2Plugin, r *router.Router, linkU
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodGet,
-		"/auth/oauth/stub/callback?state="+state+"&code=fakecode", nil)
+	req := oauthCallbackReq("/auth/oauth/stub/callback?state="+state+"&code=fakecode", state)
 	if sessionToken != "" {
 		req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionToken})
 	}

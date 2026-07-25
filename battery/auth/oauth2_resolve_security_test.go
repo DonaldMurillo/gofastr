@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
@@ -366,8 +365,7 @@ func TestResolveOAuth_HTTP_EmailCollisionMapsTo409(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodGet,
-		"/auth/oauth/stub/callback?state="+state+"&code=fakecode", nil)
+	req := oauthCallbackReq("/auth/oauth/stub/callback?state="+state+"&code=fakecode", state)
 	rec := httptest.NewRecorder()
 	_ = ctx
 	r.ServeHTTP(rec, req)

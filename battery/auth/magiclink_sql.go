@@ -86,6 +86,25 @@ func (s *SQLMagicLinkTokenStore) RedeemToken(ctx context.Context, token string) 
 	return email, nil
 }
 
+// PeekToken reads a token's email without consuming it. Implements
+// [MagicLinkTokenPeeker] for the confirmation page.
+func (s *SQLMagicLinkTokenStore) PeekToken(ctx context.Context, token string) (string, error) {
+	q := fmt.Sprintf(`SELECT email, expires_at FROM %s WHERE token = $1`, query.QuoteIdent(s.table))
+	var email string
+	var exp int64
+	err := s.db.QueryRowContext(ctx, q, token).Scan(&email, &exp)
+	if err == sql.ErrNoRows {
+		return "", ErrTokenNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if time.Now().Unix() > exp {
+		return "", ErrTokenNotFound
+	}
+	return email, nil
+}
+
 // Cleanup deletes expired tokens and returns the count removed.
 func (s *SQLMagicLinkTokenStore) Cleanup(ctx context.Context) (int, error) {
 	q := fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteIdent(s.table))

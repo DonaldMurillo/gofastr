@@ -114,6 +114,7 @@
 
     const underPath = location.pathname + location.search;
     const trigger = document.activeElement;
+    if (!NS._originOK?.(path)) return false;
     fetch(path, {
       headers: {
         'X-Gofastr-Navigate': '1',

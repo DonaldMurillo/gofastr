@@ -34,6 +34,12 @@ func runBuild(args []string) {
 			fail("Failed to load codegen config: %v", err)
 			osExit(1)
 		}
+		// Same gate as `gofastr generate`: a discovered config's command
+		// extension runs a binary this build never asked for.
+		if err := codegen.CheckCommandExtensions(discovery); err != nil {
+			fail("%v", err)
+			osExit(1)
+		}
 		if discovery.Found {
 			info("Generating code...")
 			generateProject(nil)

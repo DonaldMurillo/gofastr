@@ -353,7 +353,11 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	s.live.ReadSession(func(sess *journal.Session) {
 		resp := map[string]any{
-			"world": sess.World,
+			// Redacted copy: the world carries App.Auth.JWTSecret (a
+			// session-forging key) and App.Admin.SeedPassword, and the
+			// chat panel links this endpoint from every page. The rest
+			// of the IR is the point of the endpoint and passes through.
+			"world": redactedWorld(sess.World),
 			"session": map[string]any{
 				"chat":  sess.Chat,
 				"plans": sess.Plans,
@@ -598,4 +602,27 @@ func (s *Server) dispatch(ctx context.Context, name string, body interface {
 		return s.tools.Chat(ctx, args), nil
 	}
 	return protocol.Result{}, fmt.Errorf("unknown tool %q", name)
+}
+
+// redactedSecret is what a credential renders as in any world the server
+// hands out. A fixed marker rather than an empty string, so a reader can
+// tell "configured, withheld" from "not set".
+const redactedSecret = "[redacted]"
+
+// redactedWorld returns a shallow copy of w with credential fields
+// masked. The copy is shallow on purpose: only the two scalar fields
+// change, and cloning the entity/page maps would be wasted work on every
+// request to a read-only endpoint.
+func redactedWorld(w *world.World) *world.World {
+	if w == nil {
+		return nil
+	}
+	out := *w
+	if out.App.Auth.JWTSecret != "" {
+		out.App.Auth.JWTSecret = redactedSecret
+	}
+	if out.App.Admin.SeedPassword != "" {
+		out.App.Admin.SeedPassword = redactedSecret
+	}
+	return &out
 }

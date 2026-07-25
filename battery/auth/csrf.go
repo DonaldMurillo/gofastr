@@ -47,13 +47,20 @@ func CSRF(opts ...CSRFOption) middleware.Middleware {
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	// Promote default cookie name to __Host-* when running secure.
+	// Promote the default cookie name to __Host-* when running secure.
 	// The __Host- prefix gives the browser a hard guarantee against
 	// sibling-subdomain cookie injection (Path=/, Secure, no Domain
-	// required, which we satisfy). A host that overrode CookieName
-	// via WithCSRFCookieName explicitly keeps their override.
-	if cfg.CookieSecure && cfg.CookieName == CSRFCookieName {
-		cfg.CookieName = "__Host-" + CSRFCookieName
+	// required, which we satisfy).
+	//
+	// The promotion is resolved PER REQUEST by the middleware, not here:
+	// deciding it at construction from cfg.CookieSecure missed the
+	// standard TLS-terminating-proxy deployment, where the host never
+	// calls WithCSRFCookieSecure(true) and the request-time signal is
+	// X-Forwarded-Proto. The cookie was Secure and plainly named — the
+	// two halves of the same decision disagreeing. A host that overrode
+	// CookieName via WithCSRFCookieName keeps their override verbatim.
+	if cfg.CookieName == CSRFCookieName {
+		cfg.HostPrefixWhenSecure = true
 	}
 	return middleware.CSRF(cfg)
 }

@@ -2,8 +2,8 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -230,22 +230,19 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			return
 		}
 
-		// Create session
-		sess, err := c.mgr.SessionStore().Create(r.Context(), user.GetID(), c.mgr.Config().SessionTTL)
-		if err != nil {
+		// Mint the session through the manager so the second-factor
+		// pending mark is applied by construction. Until /2fa/challenge
+		// succeeds, only that endpoint accepts the cookie — meHandler
+		// and any RequireAuth-protected route will refuse it. If the
+		// pending mark can't be established, MintSession destroys the
+		// session and we reject the login rather than issue a
+		// password-only one.
+		sess, pendingTwoFA, err := c.mgr.MintSession(r.Context(), user.GetID(), c.mgr.Config().SessionTTL)
+		if err != nil && !errors.Is(err, ErrTwoFactorEnforcement) {
 			writeAuthError(w, http.StatusInternalServerError, "session create failed")
 			return
 		}
-
-		// If any plugin gates logins on a second factor and the user has
-		// it enabled, mark this session as pending. Until /2fa/challenge
-		// succeeds, only that endpoint accepts the cookie — meHandler
-		// and any RequireAuth-protected route will refuse it. If the
-		// pending mark can't be established, destroy the session and
-		// reject the login rather than issue a password-only session.
-		pendingTwoFA, err := c.markPendingIfTwoFactorEnabled(r, sess.Token, user.GetID())
 		if err != nil {
-			_ = c.mgr.SessionStore().Delete(r.Context(), sess.Token)
 			c.mgr.emitSecurity(r.Context(), SecurityEvent{
 				Kind:   "login.failed",
 				UserID: user.GetID(),
@@ -363,47 +360,6 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
-}
-
-// markPendingIfTwoFactorEnabled queries any registered TwoFactorChecker
-// plugins and, if any reports the user has 2FA enabled, marks the new
-// session as pending — a default-deny posture so missing the
-// /2fa/challenge call doesn't leave the session fully privileged.
-//
-// Fail-closed contract: if 2FA state can't be determined (checker error)
-// or the pending mark can't be established (store doesn't implement
-// SessionPendingMarker, or the mark call fails), it returns an error and
-// the caller must reject the login. Anything else silently downgrades
-// 2FA-enrolled accounts to password-only auth.
-func (c *CorePlugin) markPendingIfTwoFactorEnabled(r *http.Request, sessionToken, userID string) (pending bool, err error) {
-	for _, name := range c.mgr.order {
-		checker, ok := c.mgr.plugins[name].(TwoFactorChecker)
-		if !ok {
-			continue
-		}
-		enabled, err := checker.HasTwoFactorEnabled(r.Context(), userID)
-		if err != nil {
-			slog.Default().Warn("auth: two-factor state lookup failed; rejecting login (fail-closed)",
-				"plugin", name, "error", err)
-			return false, fmt.Errorf("two-factor state lookup (%s): %w", name, err)
-		}
-		if !enabled {
-			continue
-		}
-		marker, ok := c.mgr.SessionStore().(SessionPendingMarker)
-		if !ok {
-			slog.Default().Warn("auth: user has two-factor enabled but the session store does not implement SessionPendingMarker; rejecting login (fail-closed)",
-				"plugin", name, "store", fmt.Sprintf("%T", c.mgr.SessionStore()))
-			return false, fmt.Errorf("session store %T cannot mark a session pending two-factor", c.mgr.SessionStore())
-		}
-		if err := marker.MarkPendingTwoFactor(r.Context(), sessionToken); err != nil {
-			slog.Default().Warn("auth: marking session pending two-factor failed; rejecting login (fail-closed)",
-				"plugin", name, "error", err)
-			return false, fmt.Errorf("mark pending two-factor: %w", err)
-		}
-		return true, nil
-	}
-	return false, nil
 }
 
 // meHandler handles GET /auth/me — returns the current user.
@@ -543,7 +499,13 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 
 		// Form path: auto-login + cookie + 303 redirect.
 		if isForm {
-			sess, err := c.mgr.SessionStore().Create(r.Context(), user.GetID(), c.mgr.Config().SessionTTL)
+			// Same rule as every other minting path: go through
+			// MintSession so the second-factor pending mark is applied.
+			// A freshly-registered user has no factor today, but the
+			// invariant is "no path creates a session the enforcement
+			// layer never sees" — the exceptions are what this audit
+			// found.
+			sess, _, err := c.mgr.MintSession(r.Context(), user.GetID(), c.mgr.Config().SessionTTL)
 			if err != nil {
 				writeAuthError(w, http.StatusInternalServerError, "session create failed")
 				return

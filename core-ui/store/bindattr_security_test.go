@@ -73,3 +73,42 @@ func TestBindAttrLeavesNonURLAttrsAlone(t *testing.T) {
 		t.Errorf("non-URL attr alt should keep its literal value: %s", html)
 	}
 }
+
+// TestSignalAttrModeDeniesSrcdoc pins the attribute-NAME allow-list.
+//
+// The URL-scheme guard above only covers href/src/action/xlink:href/
+// formaction, so it never sees the other attributes a signal binding can
+// write — and several of them execute regardless of their value's
+// scheme: `srcdoc` on an iframe is a whole document, `style` reaches CSS,
+// `data-behavior` is the runtime's <script src> sink, and any `on*` is
+// inline JS. A signal bound to one of those is a live-updating
+// script-injection point.
+//
+// The allow-list lives here rather than in the browser because the
+// attribute name is developer-supplied and server-rendered: refusing to
+// emit the binding beats warning about it after it shipped, and it costs
+// the runtime no bytes.
+func TestSignalAttrModeDeniesSrcdoc(t *testing.T) {
+	denied := []string{"srcdoc", "style", "data-behavior", "onclick", "OnClick", "data-fui-rpc", "sandbox"}
+	for _, attr := range denied {
+		resetForTest()
+		s := New("t").String("u", "PAYLOAD")
+		html := string(s.BindAttr(context.Background(), "iframe", attr, nil))
+		if strings.Contains(strings.ToLower(html), strings.ToLower(attr)) {
+			t.Errorf("SECURITY: [xss] BindAttr bound a signal to the executing attribute %q: %s", attr, html)
+		}
+		if strings.Contains(html, "PAYLOAD") {
+			t.Errorf("SECURITY: [xss] BindAttr stamped a signal value into %q: %s", attr, html)
+		}
+	}
+
+	// The attributes real bindings use must still work.
+	for _, attr := range []string{"value", "href", "src", "alt", "class", "data-active", "aria-checked"} {
+		resetForTest()
+		s := New("t").String("u", "ok")
+		html := string(s.BindAttr(context.Background(), "a", attr, nil))
+		if !strings.Contains(html, `data-fui-signal-attr="`+attr+`"`) {
+			t.Errorf("BindAttr refused the legitimate attribute %q: %s", attr, html)
+		}
+	}
+}

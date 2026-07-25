@@ -320,20 +320,22 @@ func TestSplitHelpers(t *testing.T) {
 	}
 }
 
-func TestParseIncludesFlat_NoRegistry(t *testing.T) {
+// A handler with no Registry cannot resolve any relation target, so it
+// cannot scrub Hidden columns, apply owner/tenant scope, filter soft-
+// deleted rows, or validate a scoped filter's field. Every include is
+// refused. This replaces the old flat-fallback behaviour, where a
+// dot-free include was served as a bare `SELECT *` on the relation's
+// target table — the same shape that leaked an unregistered auth table's
+// password_hash (TestIncludeUnregisteredTargetFails).
+func TestIncludeNoRegistryRefused(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	ch.Registry = nil
-	req := withTestUser(httptest.NewRequest("GET", "/posts?include=comments", nil), "u1")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("flat include status = %d, body=%s", rec.Code, rec.Body.String())
-	}
-	// Dotted include without registry → 400.
-	req = withTestUser(httptest.NewRequest("GET", "/posts?include=author.profile", nil), "u1")
-	rec = httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("dotted include without registry = %d, want 400", rec.Code)
+	for _, include := range []string{"comments", "author.profile"} {
+		req := withTestUser(httptest.NewRequest("GET", "/posts?include="+include, nil), "u1")
+		rec := httptest.NewRecorder()
+		ch.List()(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("include=%s without a registry = %d, want 400 (body=%s)", include, rec.Code, rec.Body.String())
+		}
 	}
 }

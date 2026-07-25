@@ -551,6 +551,13 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	if ds.sitemapConfig != nil && ds.sitemapConfig.BaseURL != "" {
 		return strings.TrimRight(ds.sitemapConfig.BaseURL, "/")
 	}
+	// X-Forwarded-Host is NOT honored: it is a plain request header any
+	// client can set, and this value is reflected into absolute URLs
+	// (sitemap entries, the Link: rel="service" header naming the MCP
+	// endpoint). Trusting it makes those a cache-poisoning primitive.
+	// A host that terminates TLS at a proxy which rewrites Host should
+	// set the sitemap BaseURL above, which takes precedence and is
+	// server-controlled — the same shape battery/print documents.
 	scheme := "http"
 	if req.TLS != nil {
 		scheme = "https"
@@ -558,11 +565,7 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	if u := req.Header.Get("X-Forwarded-Proto"); u != "" {
 		scheme = u
 	}
-	host := req.Host
-	if h := req.Header.Get("X-Forwarded-Host"); h != "" {
-		host = h
-	}
-	return scheme + "://" + host
+	return scheme + "://" + req.Host
 }
 
 // acceptsMarkdown reports whether the request's Accept header asks for

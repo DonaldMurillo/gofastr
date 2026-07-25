@@ -60,6 +60,7 @@
     if (!url) return Promise.resolve(false);
     s.healthInFlight = true;
     banner.setAttribute('data-state', 'checking');
+    if (!window.__gofastr?._originOK?.(url)) { s.healthInFlight = false; return Promise.resolve(false); }
     return fetch(url, { method: 'GET', credentials: 'same-origin' })
       .then((res) => {
         s.healthInFlight = false;

@@ -156,7 +156,7 @@ func TestRecurseLoadOnRawRows_BlankPK(t *testing.T) {
 		Target:   reg.byName["profiles"],
 	}
 	rawRows := []map[string]any{{"id": "u1", "name": "alice"}}
-	err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows)
+	err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows, newIncludeBudget())
 	if err != nil {
 		t.Fatalf("recurseLoadOnRawRows blank-pk: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestRecurseLoadOnRawRows_NoIDs(t *testing.T) {
 	}
 	// rawRows with no usable id → collectStringIDs returns empty → early nil.
 	rawRows := []map[string]any{{"name": "no-id"}}
-	if err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows); err != nil {
+	if err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows, newIncludeBudget()); err != nil {
 		t.Fatalf("recurseLoadOnRawRows no-ids: %v", err)
 	}
 }
@@ -203,7 +203,7 @@ func TestRecurseLoadOnRawRows_GrandchildBranches(t *testing.T) {
 		{"id": "u1", "name": "alice"},
 		{"id": nil, "name": "ghost"}, // nil id in attach loop → line 396 skip
 	}
-	if err := ch.recurseLoadOnRawRows(context.Background(), usersEnt, []*IncludeNode{child}, rawRows); err != nil {
+	if err := ch.recurseLoadOnRawRows(context.Background(), usersEnt, []*IncludeNode{child}, rawRows, newIncludeBudget()); err != nil {
 		t.Fatalf("recurseLoadOnRawRows grandchild: %v", err)
 	}
 }
@@ -220,7 +220,7 @@ func TestRecurseLoadOnRawRows_ChildLoadError(t *testing.T) {
 	}
 	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"profiles\"" })
 	rawRows := []map[string]any{{"id": "u1", "name": "alice"}}
-	err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows)
+	err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows, newIncludeBudget())
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("recurse child-load err = %v, want injected", err)
 	}
@@ -267,7 +267,7 @@ func TestRecurseLoadOnRawRows_GrandchildLoadError(t *testing.T) {
 	// grandchild comments query faults during the grandchild recursion.
 	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"comments\"" })
 	rawRows := []map[string]any{{"id": "p1", "name": "alice"}}
-	err := ch.recurseLoadOnRawRows(context.Background(), reg.byName["users"], []*IncludeNode{child}, rawRows)
+	err := ch.recurseLoadOnRawRows(context.Background(), reg.byName["users"], []*IncludeNode{child}, rawRows, newIncludeBudget())
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("recurse grandchild-load err = %v, want injected", err)
 	}

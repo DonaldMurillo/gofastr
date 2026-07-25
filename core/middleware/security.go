@@ -50,10 +50,20 @@ type SecurityHeadersConfig struct {
 // and scripts as external resources under /__gofastr/* so they comply
 // out of the box. img-src additionally allows data: so embedded
 // data-URI images (icons, base64 placeholders) work.
+//
+// form-action and object-src are named explicitly because default-src
+// does NOT cover them: CSP never let form-action fall back, and
+// object-src's fallback was dropped in CSP3. Both are load-bearing here,
+// since this policy is the single mitigation standing behind the browser
+// runtime's gadget surface — without form-action an injected <form>
+// posts the page's data to any origin, and without object-src
+// <object>/<embed> is a script-execution path a framework-rendered page
+// never needs.
 func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 	csp := cfg.ContentSecurityPolicy
 	if csp == "" {
-		csp = "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'"
+		csp = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
+			"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
 	}
 	referrer := cfg.ReferrerPolicy
 	if referrer == "" {

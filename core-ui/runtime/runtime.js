@@ -228,6 +228,7 @@
     node.classList.add('fui-loading');
     node.setAttribute('aria-busy', 'true');
     try {
+      if (!window.__gofastr._originOK(resolvedPath)) return;
       const r = await fetch(resolvedPath, { method, headers, body: body || undefined, signal: ctl.signal, credentials: 'same-origin' });
       if (!r.ok) {
         const txt = await r.text();
@@ -425,7 +426,10 @@
         return;
       }
       const action = form.getAttribute('action');
-      if (!action || action.match(/^https?:\/\//)) return;
+      // Resolve-and-compare, never a prefix match: the old
+      // /^https?:\/\// test let `//evil.example/steal` through, and the
+      // form body was then fetched cross-origin.
+      if (!action || !window.__gofastr._sameOrigin(action)) return;
       const enctype = (form.getAttribute('enctype') || '').toLowerCase();
       const wantsJSON = enctype === 'application/json';
       const explicitSPA = form.hasAttribute('data-fui-spa');
@@ -567,6 +571,7 @@
   // seed-merge loops (boot seed + mergeSeedFromDOM page/global).
   const isReservedSignalKey = (k) =>
     k === '__proto__' || k === 'constructor' || k === 'prototype';
+
 
   // Signal store seed — server-provided initial values for the signal
   // bus (core-ui/store). Stashed now; applied to _signals right after
@@ -734,6 +739,29 @@
       return false;
     },
 
+    /*  _sameOrigin(u) resolves u against the current page and compares
+        origins. _originOK is the refuse-and-warn wrapper every runtime
+        fetch uses when its URL came from a DOM attribute or a widget
+        config.
+
+        Those attributes ARE the trust boundary: dispatchRPC attaches the
+        page's CSRF token to whatever host data-fui-rpc names, and the
+        response frequently lands in innerHTML. The runtime already
+        treated this class as real for data-kiln-tool (gated behind
+        _kilnOK); this applies the same reasoning to the rest. Same shape
+        as navigate(): warn on the console, then do nothing. */
+    _csrf,
+
+    _sameOrigin(u) {
+      try { return new URL(String(u ?? ''), location.href).origin === location.origin; }
+      catch (_) { return false; }
+    },
+    _originOK(u) {
+      if (this._sameOrigin(u)) return true;
+      console.warn('[gofastr] refused cross-origin fetch:', u);
+      return false;
+    },
+
     /** Register event handlers for a component */
     register(id, events) {
       handlers[id] = events;
@@ -759,10 +787,7 @@
       // hrefs are the trust boundary; navigate() is the choke point
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as Lightbox AllowDownload etc.
-      if (this._isUnsafeSignalUrl('href', path)) {
-        console.warn('[gofastr] navigate refused unsafe URL:', path);
-        return;
-      }
+      if (!this._originOK(path)) return;
       if (replace || path === currentPath) {
         history.replaceState(null, '', path);
       } else {
@@ -834,6 +859,7 @@
 
     /** Fetch partial HTML from server and inject into selector */
     async fetchPage(url, selector) {
+      if (!this._originOK(url)) return '';
       const r = await fetch(url, { headers: { 'X-Gofastr-Partial': '1' } });
       const html = await r.text();
       if (selector) {
@@ -983,9 +1009,25 @@
         [data-fui-signal="<name>"] DOM nodes. Mode is read from the
         node's data-fui-signal-mode attr ("text" default, "html",
         "attr"+data-fui-signal-attr). */
-    setSignal(name, value) {
+    setSignal(name, value, opts) {
+      // Prototype pollution: the reserved-key guard used to live only in
+      // the three seed-merge loops, but attribute-controlled keys enter
+      // HERE — data-fui-signal-set/-inc/-toggle, and fetched-JSON keys
+      // from poll.js and widgets.js. `__proto__:POLLUTED` re-parents the
+      // store, and because getSignal is `s ? s.value : undefined` EVERY
+      // unset signal then reads back the attacker's value. Pure data
+      // corruption, so no CSP stops it; the guard belongs at the write.
+      if (isReservedSignalKey(name)) {
+        console.warn('[gofastr] refused reserved signal name:', name);
+        return;
+      }
       let s = this._signals[name];
       if (!s) { s = this._signals[name] = { value: undefined, listeners: [] }; }
+      // opts.untrusted marks a value that came from the URL (the
+      // deep-link seed in widgets.js). Recorded on the signal so the
+      // html render mode below refuses to treat it as markup, and reset
+      // whenever the same signal is next set from a trusted source.
+      s.untrusted = !!(opts && opts.untrusted);
       s.value = value;
       for (const fn of s.listeners) {
         try { fn(value); } catch (_) {}
@@ -1005,6 +1047,11 @@
           // Text-mode nodes below still render a human-readable
           // "Error: …" string, so failure feedback is not lost.
           if (typeof value !== 'string') return;
+          // A value seeded from location.search is attacker-supplied by
+          // construction — `?x=<img onerror=…>` on any page carrying an
+          // html-mode binding of `x`. Render it as text instead. The
+          // value still reaches the node; it just stops being markup.
+          if (s.untrusted) { node.textContent = value; return; }
           node.innerHTML = value;
           window.__gofastr.scanAndLoadCSS(node);
           // Wire any toast items the freshly-swapped HTML brought in.
@@ -1018,6 +1065,13 @@
           }
         } else if (mode === 'attr') {
           const attr = node.getAttribute('data-fui-signal-attr') || 'value';
+          // The attribute NAME is developer-supplied and server-
+          // rendered, so the allow-list that keeps a signal out of
+          // `srcdoc` / `style` / `on*` lives in Go, at the emitters
+          // (core-ui/store.SignalAttrAllowed) — refusing to render the
+          // binding beats warning about it after it shipped, and costs
+          // the runtime no bytes. The value guard below still runs on
+          // every client-side update.
           let v = String(value ?? '');
           // URL-bearing attrs (href / src / action / xlink:href /
           // formaction): reject dangerous schemes (javascript:,
@@ -1364,6 +1418,12 @@
 
   /** Fetch page, swap <main>. Caches for instant back-nav. */
   const loadPage = async (path, { bypassCache = false } = {}) => {
+    // Single gate for every branch below: the SPA navigator's target
+    // comes from an href / a data-fui-* attribute / a server header,
+    // and a cross-origin one must never be fetched with the page's
+    // credentials and swapped into <main>. A javascript: or data: URL
+    // resolves to a null origin, so this subsumes the scheme check too.
+    if (!window.__gofastr._originOK(path)) return;
     // Drop redundant in-flight nav to the same URL (10 clicks → 1 fetch).
     if (_pendingNav.has(path)) return;
     _pendingNav.add(path);
@@ -1801,11 +1861,20 @@
       ?? document.querySelector(`[data-component="${componentId}"]`);
     if (!el) return;
 
+    // data-behavior is the most privileged attribute the runtime reads:
+    // it becomes a <script src>. Only the one shape the framework emits
+    // is honoured — /__gofastr/widget/<id>.js, written by
+    // core-ui/component/component.go — because any other value turns
+    // attribute injection into script execution. CSP is not the answer
+    // here: a SAME-origin JS route (an upload store, a generated SDK
+    // .js, a plugin asset) executes under `default-src 'self'`.
     const scriptSrc = el.getAttribute('data-behavior');
-    if (scriptSrc) {
+    if (scriptSrc && /^\/__gofastr\/widget\/[A-Za-z0-9_-]+\.js(\?[^"'<>]*)?$/.test(scriptSrc)) {
       const script = document.createElement('script');
       script.src = scriptSrc;
       document.head.appendChild(script);
+    } else if (scriptSrc) {
+      console.warn('[gofastr] refused data-behavior src:', scriptSrc);
     }
   };
 
@@ -2025,6 +2094,9 @@
     { name: 'fileupload', selector: '[data-fui-fileupload]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     { name: 'menu',       selector: '[data-fui-menu]' },
+    // Disclosure: aria-expanded mirroring, Escape-to-close, menu
+    // focus-on-open, and the opt-in inert focus trap for drawers.
+    { name: 'disclosure', selector: 'details[data-fui-disclosure]' },
     { name: 'toasts',     selector: '[data-fui-toast-stack],[data-fui-toast]' },
     // SSE: background event stream. Idle-loaded — never blocks first
     // interaction; the channel only carries push updates, not user
@@ -2245,103 +2317,19 @@
     G.scheduleIdleLoads();
   };
 
-  // Mirror details.open → summary aria-expanded for screen readers.
-  // Native <summary> reports as "button" without an expanded state.
-  // Helper hoisted out of any branch so both the initial-pass and
-  // the toggle-listener forms can use it.
-  const _mirrorDisclosure = (d) => {
-    const s = d.querySelector(':scope > summary');
-    if (s) s.setAttribute('aria-expanded', d.open ? 'true' : 'false');
-  };
+  // Event listeners attach unconditionally — they fire only when the
+  // matching event happens, so installing them before the DOM is parsed
+  // is safe. An earlier arrangement gated them inside
+  // `if (document.readyState === 'loading')`, which silently disabled
+  // them when runtime.js loaded after DOMContentLoaded (late injection,
+  // fast parse, dynamic re-init).
 
-  // Event listeners attach unconditionally — they fire only when
-  // the matching event happens, so installing them before DOM is
-  // parsed is safe. The previous arrangement gated these inside
-  // `if (document.readyState === 'loading')`, which silently
-  // disabled them when runtime.js loaded after DOMContentLoaded
-  // (late injection, fast parse, dynamic re-init). Esc-to-close,
-  // aria-expanded mirroring, and menu-focus-on-open are all
-  // load-bearing for keyboard + AT users; they must run regardless
-  // of script-load timing.
-
-  // Focus trap via `inert`: when a disclosure opts in with
-  // data-fui-disclosure-trap (used for mobile drawer / full-sheet
-  // popovers), set `inert` on every body child that's NOT the
-  // ancestor chain of the drawer. Tab walking is naturally confined
-  // because inert removes elements from the focus order + the AT
-  // tree. Cleared on close, so the rest of the page returns to life.
-  //
-  // _inertNeighbors records what we toggled so removal is exact —
-  // we can't just "remove inert from everything" because some
-  // hosts ship their own inert state.
-  const _inertNeighbors = new WeakMap();
-  const _applyDisclosureTrap = (d, open) => {
-    if (open) {
-      // Find body-level ancestor of d; we make every OTHER body
-      // child inert.
-      let bodyChild = d;
-      while (bodyChild.parentElement && bodyChild.parentElement !== document.body) {
-        bodyChild = bodyChild.parentElement;
-      }
-      if (bodyChild.parentElement !== document.body) return; // not in body
-      const made = [];
-      for (const sib of document.body.children) {
-        if (sib === bodyChild) continue;
-        if (sib.hasAttribute('inert')) continue; // don't touch existing
-        sib.setAttribute('inert', '');
-        made.push(sib);
-      }
-      _inertNeighbors.set(d, made);
-    } else {
-      const made = _inertNeighbors.get(d);
-      if (!made) return;
-      for (const sib of made) sib.removeAttribute('inert');
-      _inertNeighbors.delete(d);
-    }
-  };
-
-  // 'toggle' fires on every open/close. Delegate at document level
-  // so dynamically-inserted disclosures are covered.
-  document.addEventListener('toggle', (e) => {
-    const d = e.target;
-    if (d && d.tagName === 'DETAILS' && d.hasAttribute('data-fui-disclosure')) {
-      _mirrorDisclosure(d);
-      // Menu disclosure (data-fui-menu): on open, focus the first
-      // menuitem so keyboard users land inside the panel without an
-      // extra Tab. The native <summary> retains visible focus until
-      // the user moves it with ArrowDown.
-      if (d.open && d.hasAttribute('data-fui-menu')) {
-        const first = d.querySelector('[role="menuitem"]:not([aria-disabled="true"])');
-        if (first) first.focus();
-      }
-      // Focus-trap opt-in: confine focus to the drawer subtree via
-      // `inert` on siblings. Wired both ways so the trap clears on
-      // close (including auto-close on SPA nav).
-      if (d.hasAttribute('data-fui-disclosure-trap')) {
-        _applyDisclosureTrap(d, d.open);
-      }
-    }
-  }, true); // capture phase — toggle doesn't bubble
-
-  // Escape closes any open <details data-fui-disclosure>. Native
-  // <details> only handles Escape when the summary itself has
-  // focus; this extends it to "Escape anywhere on the page". An
-  // open modal widget takes precedence — its own CloseOnEscape
-  // handler runs and we defer so a single Escape doesn't close
-  // both.
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    const G = window.__gofastr;
-    if (G && G._modalStack && G._modalStack.length > 0) return;
-    for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
-      // Only refocus the summary if focus is already inside this
-      // disclosure — otherwise we'd yank focus away from whatever
-      // the user was actually doing in main content.
-      const wasInside = d.contains(document.activeElement);
-      d.removeAttribute('open');
-      if (wasInside) d.querySelector('summary')?.focus();
-    }
-  });
+  // Disclosure keyboard/AT behaviour — aria-expanded mirroring,
+  // Escape-to-close, menu focus-on-open, and the opt-in focus trap —
+  // lives in the split-runtime module at core-ui/runtime/src/disclosure.js,
+  // demand-loaded via the details[data-fui-disclosure] scanner below.
+  // Core keeps only the close-on-navigate lines; the `toggle` event they
+  // raise is what the module reacts to.
 
   // Task A: auto-inject aria-live onto signal nodes so screen readers
   // announce dynamic updates. Restricted to TEXT-mode nodes (the default
@@ -2366,8 +2354,8 @@
   // to wait until the document is at least parsed. updateActiveLink
   // marks server-rendered nav links; _bootstrapComponentCSS scans
   // existing markers; _scanForModules dispatches demand-load
-  // modules; the disclosure pass syncs aria-expanded on every
-  // server-rendered <details data-fui-disclosure>.
+  // modules (the disclosure module is one of them, and does its own
+  // aria-expanded sync for server-rendered <details>).
   // _runMountActions fires component actions marked data-action-mount once,
   // right after hydration. Component clientJS handlers (data-action) only run
   // on user events (click/input/change/submit); a server-rendered island that
@@ -2398,9 +2386,6 @@
     if (Array.isArray(window.__gofastr_routes) &&
         window.__gofastr_routes.some((r) => r.intercept)) loadModule('intercept');
     _injectSignalAria();
-    for (const d of document.querySelectorAll('details[data-fui-disclosure]')) {
-      _mirrorDisclosure(d);
-    }
     _runMountActions(document);
   };
   if (document.readyState === 'loading') {

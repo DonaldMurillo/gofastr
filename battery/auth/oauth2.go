@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -201,6 +202,58 @@ func (p *OAuth2Plugin) RegisterRoutes(r *router.Router, basePath string) {
 
 // ─── Redirect handler ──────────────────────────────────────────────────────
 
+// oauthStateCookie is the browser-binding cookie planted when an OAuth
+// flow starts and required to match at the callback.
+//
+// The signed state token is unforgeable and single-use, but on its own it
+// binds the callback to nothing about the caller: an attacker can start a
+// flow in their own browser, capture the resulting callback URL, and get
+// a victim to load it — the victim's browser then silently holds a
+// session for the attacker's account (login CSRF / account confusion),
+// and the /link flow turns that into a durable identity binding. The
+// callback is a GET, so the form-level cross-site rejection never sees
+// it.
+//
+// SameSite=Lax is what makes this work rather than break: a Lax cookie
+// still rides the provider's top-level redirect back to the callback, so
+// the legitimate flow is unaffected, while a callback URL replayed into
+// any other browser carries no cookie at all.
+const oauthStateCookie = "gofastr_oauth_state"
+
+// bindStateToBrowser plants the state token in a short-lived HttpOnly
+// cookie alongside issuing it in the redirect URL.
+func (p *OAuth2Plugin) bindStateToBrowser(w http.ResponseWriter, state string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthStateCookie,
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   p.mgr.Config().SessionSecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(stateTTL / time.Second),
+	})
+}
+
+// requireBoundBrowser checks the callback's state against the cookie and
+// clears the cookie either way — the flow is over, and a stale value must
+// not authorise a later replay.
+func (p *OAuth2Plugin) requireBoundBrowser(w http.ResponseWriter, r *http.Request, state string) bool {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthStateCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   p.mgr.Config().SessionSecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+	c, err := r.Cookie(oauthStateCookie)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(state)) == 1
+}
+
 func (p *OAuth2Plugin) redirectHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		providerName := router.Param(r, "provider")
@@ -215,6 +268,7 @@ func (p *OAuth2Plugin) redirectHandler() http.HandlerFunc {
 			writeAuthError(w, http.StatusInternalServerError, "state generation failed")
 			return
 		}
+		p.bindStateToBrowser(w, state)
 
 		http.Redirect(w, r, provider.AuthURL(state), http.StatusFound)
 	}
@@ -244,6 +298,7 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 			writeAuthError(w, http.StatusInternalServerError, "state generation failed")
 			return
 		}
+		p.bindStateToBrowser(w, state)
 		http.Redirect(w, r, provider.AuthURL(state), http.StatusFound)
 	}
 }
@@ -289,6 +344,14 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// Validate state. linkUserID is non-empty only for the authenticated
 		// link-account flow (linkHandler bound it into the signed state).
 		stateParam := r.URL.Query().Get("state")
+		// Browser binding first: a callback URL replayed into another
+		// browser carries no cookie, and refusing before
+		// validateAndConsumeState means the replay cannot burn the
+		// legitimate flow's single-use nonce either.
+		if !p.requireBoundBrowser(w, r, stateParam) {
+			writeAuthError(w, http.StatusBadRequest, "oauth flow was not started in this browser")
+			return
+		}
 		linkUserID, ok := p.validateAndConsumeState(stateParam, providerName)
 		if !ok {
 			writeAuthError(w, http.StatusBadRequest, "invalid or expired state")
@@ -445,9 +508,13 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			})
 		}
 
-		// Create session
+		// Mint through the manager, not SessionStore().Create: MintSession
+		// is what applies the second-factor pending mark. Creating the
+		// session directly here left PendingTwoFactor=false for a
+		// 2FA-enrolled user, so an OAuth login alone produced a
+		// fully-privileged session that could then disable the factor.
 		cfg := p.mgr.Config()
-		sess, err := p.mgr.SessionStore().Create(r.Context(), user.GetID(), cfg.SessionTTL)
+		sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 		if err != nil {
 			writeAuthError(w, http.StatusInternalServerError, "session create failed")
 			return

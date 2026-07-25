@@ -45,6 +45,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/openapi"
 	"github.com/DonaldMurillo/gofastr/framework/outbox"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
 
@@ -641,12 +642,36 @@ func WithLogger(l *slog.Logger) AppOption {
 // option is otherwise idiomatic-Go composition over the existing
 // middleware.Idempotency primitive.
 //
+// Defaults Principal to the request's owner (the framework's owner
+// extractor, i.e. the authenticated user). The middleware caches nothing
+// without a Principal — one shared key namespace would replay one
+// caller's response body to another — and the framework layer is where
+// "who is this" is knowable, so IdempotencyConfig{} still means "all
+// defaults" here. Set Principal explicitly to key on something else
+// (a tenant, an API-token id).
+//
 // Has no effect when WithoutDefaultMiddleware is also set — wire your
 // own chain explicitly in that case.
 func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
+	if cfg.Principal == nil {
+		cfg.Principal = ownerPrincipal
+	}
 	return func(a *App) {
 		a.idempotency = &cfg
 	}
+}
+
+// ownerPrincipal keys idempotency entries by the request's owner. An
+// unauthenticated request yields "anon", which shares a namespace among
+// anonymous callers — acceptable because an anonymous response carries
+// no per-user data by construction, and the alternative (no caching at
+// all for anonymous traffic) drops the retry protection exactly where
+// duplicate submits are most common.
+func ownerPrincipal(r *http.Request) string {
+	if id, ok := owner.Get(r.Context()); ok && id != nil {
+		return fmt.Sprintf("%v", id)
+	}
+	return "anon"
 }
 
 // WithMetrics enables HTTP request metrics (per-route counts, status classes,
@@ -1980,6 +2005,36 @@ func (a *App) ensureLifecycleContext() {
 	a.serverMu.Unlock()
 }
 
+// warnUnresolvableRelations names every declared relation whose target
+// entity is not in the registry. Such a relation cannot be eager-loaded:
+// ?include= refuses it at request time, because with no target entity
+// there is no schema to drive the Hidden-column scrub, owner scope,
+// tenant scope, soft-delete filter or scoped-filter allow-list — and a
+// `SELECT *` without them is how a related auth table's password_hash
+// reaches a caller.
+//
+// This is a boot diagnostic, not a gate: the refusal already happens at
+// the request, and an app that never includes the relation is still
+// correct. Warning moves the discovery from a 400 in production to the
+// startup log.
+func (a *App) warnUnresolvableRelations() {
+	if a.Registry == nil {
+		return
+	}
+	log := a.Logger()
+	for _, ent := range a.Registry.AllSorted() {
+		for _, rel := range ent.Config.Relations {
+			if _, err := a.Registry.Get(rel.Entity); err == nil {
+				continue
+			}
+			log.Warn("relation target is not a registered entity; ?include= on it will be refused",
+				"entity", ent.GetName(),
+				"relation", rel.Name,
+				"target", rel.Entity)
+		}
+	}
+}
+
 // Start starts the HTTP server on the given address.
 func (a *App) Start(addr string) error {
 	runtimeIsolation, err := isolation.Resolve(".")
@@ -1998,6 +2053,9 @@ func (a *App) Start(addr string) error {
 	// spawned. Without this, a startHook that spawns a worker before a
 	// later startHook fails would leak that worker past Start returning.
 	a.ensureLifecycleContext()
+
+	a.warnUnresolvableRelations()
+	a.guardDevMCPBind(addr)
 
 	abort := func(err error) error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

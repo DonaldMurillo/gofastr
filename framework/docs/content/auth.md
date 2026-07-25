@@ -785,6 +785,34 @@ any route that needs step-up authentication. The middleware is a
 no-op for users who haven't enrolled in 2FA — only enrolled users are
 gated.
 
+### Every login path mints through `MintSession`
+
+`AuthManager.MintSession(ctx, userID, ttl)` creates the session **and**
+applies the pending-2FA mark. Every built-in login path — password,
+magic link, OAuth callback, and the form-register auto-login — goes
+through it, and a host-added plugin that mints its own sessions must
+too. Calling `SessionStore().Create` directly produces a session the
+2FA enforcement never learns about: `PendingTwoFactor` stays false, so
+the session reads as fully authenticated and can even disable the
+factor it skipped.
+
+It returns `(session, pending, error)`. A failure to apply the pending
+mark is wrapped in `auth.ErrTwoFactorEnforcement`, the session is
+destroyed, and the caller must reject the login.
+
+### Step-up is checked positively
+
+The 2FA self-service endpoints (`enroll`, `verify`, `disable`,
+`backup-codes`) require `Session.TwoFactorVerified` when the user has an
+enabled factor — not merely the absence of `PendingTwoFactor`. A session
+minted **before** the user enrolled carries `PendingTwoFactor=false`
+forever, so a negative-only test would leave it able to disable a factor
+it never proved. `/auth/2fa/verify` marks the enrolling session verified,
+so enrolment does not lock you out of your own settings.
+
+`POST /auth/send-verification` applies the same pending check as those
+four.
+
 ## Account linking
 
 ```
@@ -822,6 +850,65 @@ provider (the OAuth round-trip), so this is the ONLY path that may link a
 provider whose email matches a password account. A forged or altered
 `state` fails the HMAC; a mismatched session is rejected (`403`); no
 session is rejected (`401`).
+
+### Following a magic link does not sign you in — confirming does
+
+`GET {basePath}/magic-link/verify?token=…` renders a confirmation
+screen ("Continue to sign in as x@y?") and redeems nothing. A
+same-origin `POST` from that page, carrying the token in a `token`
+field, is what actually signs the user in.
+
+The link IS the credential, so without a confirmation step an attacker
+could request a link for **their own** account and get a victim to open
+it: the victim's browser would silently hold a session for the
+attacker's account, and everything typed next would land there. The GET
+is invisible to the cross-site form rejection, and the usual fixes do
+not fit — a browser-binding cookie breaks cross-device links (request on
+a laptop, open on a phone) and refusing `Sec-Fetch-Site: cross-site`
+breaks every webmail client. A confirmation keeps both working.
+
+Set `MagicLinkConfig.ConfirmPage` to render the screen with your own
+design system:
+
+```go
+auth.MagicLinkConfig{
+    ConfirmPage: func(d auth.ConfirmPageData) []byte {
+        return render(ui.AuthCard(ui.AuthCardConfig{
+            Title: "Confirm sign-in",
+            Body:  "Continue as " + d.Email + "?",
+            // form posts `token` back to d.Action
+        }))
+    },
+}
+```
+
+Leave it nil and you get an unstyled but correct fallback. The battery
+does not import `framework/ui` itself — API-only apps use auth too and
+should not pay for the design system.
+
+The screen names the account when the token store implements
+`MagicLinkTokenPeeker` (both shipped stores do). Naming it is the point:
+it is how someone recognises the link was not meant for them.
+
+### The callback is bound to the browser that started the flow
+
+Starting an OAuth flow (`GET /auth/oauth/{provider}` or
+`.../{provider}/link`) plants a short-lived `HttpOnly`, `SameSite=Lax`
+`gofastr_oauth_state` cookie holding the same signed state token that
+goes into the redirect URL. The callback requires the two to match and
+clears the cookie either way.
+
+Without it the state token — unforgeable and single-use though it is —
+binds the callback to nothing about the caller: an attacker could start
+a flow in their own browser, capture the resulting callback URL, and
+get a victim to load it, leaving the victim's browser holding a session
+for the attacker's account. The callback is a `GET`, so the form-level
+cross-site rejection never sees it.
+
+`SameSite=Lax` is the reason this does not break the flow: a Lax cookie
+still rides the provider's top-level redirect back. A callback URL
+replayed into any other browser carries no cookie and is refused with
+`400 oauth flow was not started in this browser`.
 
 ## OAuth identity linking
 

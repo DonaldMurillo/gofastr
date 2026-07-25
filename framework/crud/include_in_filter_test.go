@@ -121,7 +121,7 @@ func TestInclude_MultiValueINNode(t *testing.T) {
 	node.Filters = parsed
 
 	result := map[string]map[string]any{"p1": {}}
-	if err := loadIncludeNode(context.Background(), db, "posts", "id", node, []string{"p1"}, result); err != nil {
+	if err := loadIncludeNode(context.Background(), db, "posts", "id", node, []string{"p1"}, result, newIncludeBudget()); err != nil {
 		t.Fatalf("loadIncludeNode: %v", err)
 	}
 	got, _ := result["p1"]["comments"].([]map[string]any)

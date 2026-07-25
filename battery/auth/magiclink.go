@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -57,6 +58,20 @@ type MagicLinkConfig struct {
 	// recipient address. nil disables (not recommended).
 	RateLimit *RateLimiterConfig
 
+	// ConfirmPage renders the confirmation screen shown when a user
+	// follows a magic link. Return the full HTML document; the plugin
+	// serves it as-is.
+	//
+	// nil ships an unstyled, semantic fallback — correct but plain. A
+	// UIHost app should supply one built from framework/ui (ui.AuthCard)
+	// so the screen matches the rest of the app; the battery does not
+	// import the design system itself, because API-only apps use auth
+	// too and should not pay for it.
+	//
+	// The form MUST POST `token` back to the same path. See
+	// ConfirmPageData.
+	ConfirmPage func(ConfirmPageData) []byte
+
 	// DevMode permits the plugin to operate without an EmailSender by
 	// logging the magic-link URL to stdout. Without this flag, a nil
 	// EmailSender causes /auth/magic-link/send to return 503 — refusing
@@ -89,6 +104,18 @@ type MagicLinkTokenStore interface {
 
 	// Cleanup removes expired tokens and returns the count purged.
 	Cleanup(ctx context.Context) (int, error)
+}
+
+// MagicLinkTokenPeeker is the optional MagicLinkTokenStore extension
+// that reads a token's email WITHOUT consuming it.
+//
+// The confirmation page needs it: following a magic link renders "sign
+// in as x@y?" before anything is redeemed, and naming the account is the
+// whole point — it is how a victim recognises that the link they were
+// sent belongs to someone else. A store that does not implement this
+// still gets a confirmation step, just an unnamed one.
+type MagicLinkTokenPeeker interface {
+	PeekToken(ctx context.Context, token string) (email string, err error)
 }
 
 // ErrTokenNotFound is returned when a token is unknown, already consumed, or expired.
@@ -149,6 +176,18 @@ func (m *MemoryMagicLinkTokenStore) RedeemToken(_ context.Context, token string)
 	return entry.email, nil
 }
 
+// PeekToken reads a token's email without consuming it. Implements
+// [MagicLinkTokenPeeker] for the confirmation page.
+func (m *MemoryMagicLinkTokenStore) PeekToken(_ context.Context, token string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entry, ok := m.tokens[token]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return "", ErrTokenNotFound
+	}
+	return entry.email, nil
+}
+
 // Cleanup removes all expired tokens and returns the count purged.
 func (m *MemoryMagicLinkTokenStore) Cleanup(_ context.Context) (int, error) {
 	now := time.Now()
@@ -172,6 +211,9 @@ type MagicLinkPlugin struct {
 	mgr        *AuthManager
 	tokenStore MagicLinkTokenStore
 	sendLimit  *RateLimiter
+	// basePath is captured at RegisterRoutes so the confirmation page's
+	// form can post back to the same path the link was mounted under.
+	basePath string
 }
 
 // NewMagicLinkPlugin creates a new magic-link plugin with the given config.
@@ -202,8 +244,13 @@ func (p *MagicLinkPlugin) Init(mgr *AuthManager) error {
 
 // RegisterRoutes mounts the magic-link send and verify endpoints.
 func (p *MagicLinkPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	p.basePath = basePath
 	r.Post(basePath+"/magic-link/send", http.HandlerFunc(p.sendHandler))
-	r.Get(basePath+"/magic-link/verify", http.HandlerFunc(p.verifyHandler))
+	// GET renders the confirmation screen; POST is what actually signs
+	// in. Splitting them is what stops a link the attacker generated
+	// from signing a victim into the attacker's account on click.
+	r.Get(basePath+"/magic-link/verify", http.HandlerFunc(p.confirmHandler))
+	r.Post(basePath+"/magic-link/verify", http.HandlerFunc(p.verifyHandler))
 }
 
 // sendHandler handles POST {basePath}/magic-link/send.
@@ -281,11 +328,115 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// verifyHandler handles GET {basePath}/magic-link/verify?token=xxx.
-// Redeems the token, finds or creates the user, creates a session,
-// sets the session cookie, and redirects to OnSuccessURL.
-func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
+// ConfirmPageData is what MagicLinkConfig.ConfirmPage renders.
+type ConfirmPageData struct {
+	// Email is the account the link signs into, or "" when the token
+	// store cannot peek without consuming. Showing it is the point: it
+	// is how a user notices the link was not meant for them.
+	Email string
+
+	// Token must be POSTed back to Action in a field named "token".
+	Token string
+
+	// Action is the path the confirmation form submits to.
+	Action string
+}
+
+// confirmHandler handles GET {basePath}/magic-link/verify?token=xxx.
+//
+// It renders a confirmation screen and DOES NOT sign anyone in. The link
+// is itself the credential, so an attacker can request one for their own
+// account and get a victim to open it — a GET that minted a session put
+// the victim's browser into the attacker's account silently, and
+// everything they did next landed there. A GET is also invisible to
+// rejectCrossSiteForm.
+//
+// The usual browser-binding fixes do not fit this flow: a binding cookie
+// breaks cross-device links (request on a laptop, open on a phone), and
+// refusing Sec-Fetch-Site: cross-site breaks every webmail client. A
+// confirmation step keeps both working and still makes signing in a
+// deliberate act.
+func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
+	if token == "" {
+		writeAuthError(w, http.StatusUnauthorized, "token is required")
+		return
+	}
+	// Peek, never redeem: the token has to survive for the POST, and a
+	// GET that consumed it would let a prefetcher or a link-scanner burn
+	// the user's link before they ever saw the page.
+	email := ""
+	if peeker, ok := p.tokenStore.(MagicLinkTokenPeeker); ok {
+		got, err := peeker.PeekToken(r.Context(), token)
+		if err != nil {
+			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+		email = got
+	}
+
+	data := ConfirmPageData{Email: email, Token: token, Action: p.basePath + "/magic-link/verify"}
+	var body []byte
+	if p.config.ConfirmPage != nil {
+		body = p.config.ConfirmPage(data)
+	} else {
+		body = defaultConfirmPage(data)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	// The page carries a live credential in a hidden field; keep it out
+	// of any referrer sent to a third-party asset.
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
+// defaultConfirmPage is the unstyled fallback. It ships no CSS and no
+// class names: styling belongs to the app, which supplies
+// MagicLinkConfig.ConfirmPage built from the design system.
+func defaultConfirmPage(d ConfirmPageData) []byte {
+	who := "this account"
+	if d.Email != "" {
+		who = html.EscapeString(d.Email)
+	}
+	return []byte(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Confirm sign-in</title>
+</head>
+<body>
+<main>
+<h1>Confirm sign-in</h1>
+<p>Continue to sign in as <strong>` + who + `</strong>?</p>
+<p>If you did not request this link, close this page — someone else may be trying to sign you into their account.</p>
+<form method="post" action="` + html.EscapeString(d.Action) + `">
+<input type="hidden" name="token" value="` + html.EscapeString(d.Token) + `">
+<button type="submit">Sign in</button>
+</form>
+</main>
+</body>
+</html>`)
+}
+
+// verifyHandler handles POST {basePath}/magic-link/verify.
+//
+// Redeems the token, finds or creates the user, mints a session, sets
+// the session cookie, and redirects to OnSuccessURL. Reached only from
+// the confirmation page confirmHandler renders.
+func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
+	// The attacker holds the token, so they could auto-submit this form
+	// from their own page and skip the confirmation entirely. Same
+	// Fetch-Metadata gate the password form uses.
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
+	token := r.FormValue("token")
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
 	if token == "" {
 		writeAuthError(w, http.StatusUnauthorized, "token is required")
 		return
@@ -331,9 +482,13 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Create session
+	// Mint through the manager, not SessionStore().Create: MintSession is
+	// what applies the second-factor pending mark. Creating the session
+	// directly here left PendingTwoFactor=false for a 2FA-enrolled user,
+	// so a magic link alone produced a fully-privileged session that
+	// could then disable the factor.
 	cfg := p.mgr.Config()
-	sess, err := p.mgr.SessionStore().Create(r.Context(), user.GetID(), cfg.SessionTTL)
+	sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "session create failed")
 		return

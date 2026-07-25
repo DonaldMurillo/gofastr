@@ -98,7 +98,7 @@ func TestOAuthTokenStore_StoredOpaque(t *testing.T) {
 		t.Fatalf("NewSQLOAuthTokenStore: %v", err)
 	}
 	ctx := context.Background()
-	if err := s.Save(ctx, OAuthTokenRecord{UserID: "u1", Provider: "google", AccessToken: "super-secret-access", RefreshToken: "super-secret-refresh", Expiry: time.Now().Add(time.Hour)}); err != nil {
+	if err := s.Save(ctx, OAuthTokenRecord{UserID: "u1", Provider: "google", AccessToken: "super-secret-access", RefreshToken: "super-secret-refresh", Expiry: time.Now().Add(time.Hour)}); err != nil { // not-a-secret: store round-trip fixture
 		t.Fatal(err)
 	}
 	var rawAccess, rawRefresh string
@@ -153,8 +153,8 @@ func TestRefresh_ExpiredTokenRefreshed(t *testing.T) {
 	if err := store.Save(ctx, OAuthTokenRecord{
 		UserID:       "u1",
 		Provider:     "google",
-		AccessToken:  "stale-access",
-		RefreshToken: "rt-valid",
+		AccessToken:  "stale-access", // not-a-secret: refresh-path fixture
+		RefreshToken: "rt-valid",     // not-a-secret: refresh-path fixture
 		Expiry:       time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)
@@ -210,7 +210,7 @@ func TestValidToken_RefreshesNearExpiry(t *testing.T) {
 	store := newSQLOAuthTokenStore(t)
 	ctx := context.Background()
 	// Expires in 10s — inside the default skew window, so ValidToken refreshes.
-	_ = store.Save(ctx, OAuthTokenRecord{UserID: "u1", Provider: "google", AccessToken: "almost-dead", RefreshToken: "rt", Expiry: time.Now().Add(10 * time.Second)})
+	_ = store.Save(ctx, OAuthTokenRecord{UserID: "u1", Provider: "google", AccessToken: "almost-dead", RefreshToken: "rt", Expiry: time.Now().Add(10 * time.Second)}) // not-a-secret: expiry fixture
 	at, err := ValidOAuthToken(ctx, store, prov, "u1")
 	if err != nil {
 		t.Fatal(err)
@@ -245,8 +245,8 @@ func TestLogin_PersistsRefreshToken(t *testing.T) {
 	mock := &mockProvider{
 		name: "mock",
 		tokenResp: &OAuth2Token{
-			AccessToken:  "access-1",
-			RefreshToken: "refresh-1",
+			AccessToken:  "access-1",  // not-a-secret: listing fixture
+			RefreshToken: "refresh-1", // not-a-secret: listing fixture
 			Expiry:       time.Now().Add(time.Hour),
 		},
 		userResp: &OAuth2UserInfo{ID: "ext-1", Email: "bob@example.com", Name: "Bob", Provider: "mock"},
@@ -280,7 +280,7 @@ func TestLogin_PersistsRefreshToken(t *testing.T) {
 	state := strings.TrimPrefix(rw.Header().Get("Location"), "https://example.com/auth?state=")
 
 	cbW := httptest.NewRecorder()
-	r.ServeHTTP(cbW, httptest.NewRequest(http.MethodGet, "/auth/oauth/mock/callback?code=c&state="+state, nil))
+	r.ServeHTTP(cbW, oauthCallbackReq("/auth/oauth/mock/callback?code=c&state="+state, state))
 	if cbW.Code != http.StatusFound {
 		t.Fatalf("callback code = %d: %s", cbW.Code, cbW.Body.String())
 	}

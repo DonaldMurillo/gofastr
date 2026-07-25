@@ -216,3 +216,36 @@ func TestSSRF_DialTimeHonorsAllowPrivate(t *testing.T) {
 		_ = conn.Close()
 	}
 }
+
+// TestWebhookRejectsCGNATTarget pins that the webhook SSRF predicate
+// covers every internal range its sibling does.
+//
+// The two predicates had drifted: framework/harness's webfetch rejects
+// the RFC 6598 carrier-grade NAT block (100.64.0.0/10) and normalizes
+// IPv4-mapped IPv6 before range-checking; the webhook predicate did
+// neither. net.IP.IsPrivate() does not cover 100.64/10, and CGNAT is
+// exactly where a cloud provider's internal services and a customer's
+// own LAN live behind NAT — so a subscriber URL pointed there was
+// accepted and delivered to, with the signed payload.
+//
+// The property is "one predicate decides what 'internal' means", so the
+// fix is a shared package rather than a second patch. The case shapes
+// below are the ranges that differed, plus a public control.
+func TestWebhookRejectsCGNATTarget(t *testing.T) {
+	internal := []string{
+		"http://100.64.0.1/hook",        // CGNAT, low edge
+		"http://100.127.255.254/hook",   // CGNAT, high edge
+		"http://[::ffff:10.0.0.5]/hook", // IPv4-mapped RFC1918
+		"http://[::ffff:127.0.0.1]/hook",
+	}
+	for _, raw := range internal {
+		if err := validateSubscriberURL(raw, false); err == nil {
+			t.Errorf("SECURITY: [ssrf] webhook accepted the internal target %q — the predicate is narrower than framework/harness's", raw)
+		}
+	}
+	// 100.128.0.0 is the first address ABOVE the /10 — a public address
+	// that must not be caught by an over-broad mask.
+	if err := validateSubscriberURL("http://100.128.0.1/hook", false); err != nil {
+		t.Errorf("webhook rejected the public address just above the CGNAT block: %v", err)
+	}
+}

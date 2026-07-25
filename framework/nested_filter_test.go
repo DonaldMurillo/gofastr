@@ -45,12 +45,26 @@ func TestNestedFilter_BelongsTo_Like(t *testing.T) {
 		app := nestedBlogApp(t, db)
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
-		resp := ta.Get("/posts?author.name_like=" + url.QueryEscape("A%"))
+		// `_like` is a literal substring at every depth now — the value
+		// is escaped and wrapped in wildcards by the framework, so a
+		// caller-supplied "%" matches a literal percent sign rather than
+		// acting as a pattern. "Alice" is found by naming part of it.
+		resp := ta.Get("/posts?author.name_like=" + url.QueryEscape("Ali"))
 		resp.AssertStatus(t, http.StatusOK)
 		var env crud.ListResponse
 		json.Unmarshal([]byte(resp.Body()), &env)
 		if env.Total != 1 {
-			t.Fatalf("expected 1 post for like A%%, got %d", env.Total)
+			t.Fatalf("expected 1 post for like Ali, got %d", env.Total)
+		}
+
+		// The old raw-pattern spelling must now match nothing: there is
+		// no author whose name literally contains "A%".
+		raw := ta.Get("/posts?author.name_like=" + url.QueryEscape("A%"))
+		raw.AssertStatus(t, http.StatusOK)
+		var rawEnv crud.ListResponse
+		json.Unmarshal([]byte(raw.Body()), &rawEnv)
+		if rawEnv.Total != 0 {
+			t.Fatalf("nested _like still treats %% as a wildcard: got %d posts", rawEnv.Total)
 		}
 	})
 }
@@ -73,7 +87,8 @@ func TestNestedFilter_HasMany_NoDuplication(t *testing.T) {
 		app := nestedBlogApp(t, db)
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
-		resp := ta.Get("/posts?comments.body_like=" + url.QueryEscape("%nice%"))
+		// Literal substring: no wildcards needed (or honoured).
+		resp := ta.Get("/posts?comments.body_like=" + url.QueryEscape("nice"))
 		resp.AssertStatus(t, http.StatusOK)
 		var env crud.ListResponse
 		json.Unmarshal([]byte(resp.Body()), &env)

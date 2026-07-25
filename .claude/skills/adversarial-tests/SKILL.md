@@ -108,6 +108,51 @@ IS the record, and `git log -p` is the audit trail. A permanently
 `t.Skip`ped test is never acceptable — delete it and leave a comment
 where the contract is actually tested.
 
+## Not-yet-audited surfaces (as of 2026-07-25)
+
+The 2026-07-25 pass fixed 30 findings and published its own coverage
+gaps. These are **never-looked, not clean** — no pass has run all four
+signals over them, so the clean-gate above has nothing to say about
+them. Start the next pass here rather than re-sweeping what is already
+pinned.
+
+- **Auth:** `battery/auth/oidc.go` + `oidc_jwks.go` (1000+ lines — JWKS
+  fetch, `iss`/`aud`, nonce, `email_verified`; oidc allows `http` for a
+  localhost issuer, so check a host that merely *resolves* to loopback),
+  `entity_oauth_links.go`, `oauth_token_store.go`, `battery/admin`
+  entity-screen handler *bodies* (gating verified, internals not),
+  `framework/access/store.go` fanout/refresh race, the `decide` chain.
+- **Data:** `core/upload/`, `framework/{file,image,openapi,sdk,sdkdocs,
+  tx.go,hook,typed_hooks}`, `framework/{db,pagination,datexport}`,
+  `core/schema` beyond the Pattern note, `crud_batch/stream/events`. The
+  `sqlite/**` engine has ~25 unverified recon candidates on the
+  fileformat/varint readers — robustness bugs only unless the engine is
+  pointed at an untrusted `.db` (kiln/harness session stores), where
+  `-fuzz` is the right tool.
+- **Agent surface:** `framework/experimental`, `battery/experimental`,
+  `kiln/{expr,effect,render}` CSP, `cmd/gofastr/{pack,skill,docs}`,
+  `core/moduleproto/{peer,handshake,methods}.go`, `framework/agentsinv`.
+- **Browser:** most `core-ui/runtime/src/*.js` (lightbox, sortablelist,
+  panehost, carousel, combobox, tree, toasts, …), `core-ui/patterns/**`
+  beyond the few read, `core-ui/{seo,app,registry,di,compute,interactive}`,
+  `framework/ui` (100+ files, only the URL-guard sites were read),
+  `core/fuzzy`.
+- **Infra:** `framework/migrate` lock/checksum/dirty + tenant_id
+  injection internals, `framework/{cron,event,outbox,fanout,lifecycle}`
+  leasing SQL / relay state machine, `core/{router,config,featureflag,
+  i18n}` + `framework/i18n.go` (locale-tag → file lookup traversal),
+  `core/handler/{bind,respond,context}` deep pass, `battery/queue`
+  scheduler.
+
+Surfaces that pass CLEARED the same day — do not re-derive: kiln journal
+replay, `core/markdown` XSS, the service worker's `fetch(originalRequest)`
+(the shape the 2026 Angular-SW CVE class needs you to get wrong),
+sandbox `_other.go` failing closed, `QuoteIdent`/`SafeIdent`, webhook
+delivery + `harness/webfetch.go` dial-time `Control` re-check, `core/yaml`,
+`core/moduleproto` framing, CORS, the XFF rate-limit key, static path
+traversal, the `Timeout` middleware race, log injection, cache cross-user
+replay, kiln request→exec, and the codegen file-write sink.
+
 ## Ready-to-paste prompt for the next pass
 
 When you want to run another adversarial pass, paste this as the
@@ -184,21 +229,35 @@ audit `find . -maxdepth 3 -type f -size +500k …` for stray binaries
 per `CLAUDE.md`; review the pass's commit messages for the
 keep/flip/delete rationale.
 
-## Dual-model protocol (MANDATORY)
+## Two-pass protocol (MANDATORY)
 
-A security pass is run by **two model tiers**, never one. This is not
-optional — single-model passes do not get to mark anything clean.
+A security pass is run by **two passes with different jobs**, never one.
+This is not optional — a single-pass audit does not get to mark
+anything clean.
 
-| Role | Profile | Tier | Job |
+**Both profiles run on Opus 5.** Recon used to run on Haiku; that was
+changed on 2026-07-25 because the cheap tier's *clean* verdicts proved
+worthless. On 2026-07-24 it returned "clean" on the scope holding that
+round's top finding; on 2026-07-25 it emitted 18 candidates, all 18 of
+which were refuted, while missing all 3 real findings in its scope. A
+breadth pass whose silence means nothing cannot be half of a clean-gate.
+
+| Role | Profile | Model | Job |
 |---|---|---|---|
-| breadth | `sec-recon` | Haiku (weak/cheap) | walk every file against the property×surface checklist, emit all candidates, no plausibility filter |
-| depth | `sec-auditor` | Opus (strong) | threat-intel anchor → deep discovery (authz/TOCTOU/state-machine) → refute + fix + rule on every candidate |
+| breadth | `sec-recon` | Opus 5 | walk every file against the property×surface checklist, emit all candidates, report coverage honestly |
+| depth | `sec-auditor` | Opus 5 | threat-intel anchor → deep discovery (authz/TOCTOU/state-machine) → refute + fix + rule on every candidate |
 
-**Why two tiers:** cheap exhaustive breadth and expensive deep
-reasoning are different jobs; one model doing both does neither well.
-Honest limit: Haiku and Opus share a lineage, so their blind spots
-overlap more than two vendors' would. The diversity that *doesn't*
-come from a model is therefore load-bearing:
+**Why two passes:** exhaustive breadth and deep reasoning are different
+jobs; one agent doing both drops coverage the moment a thread gets
+interesting. The split is job, not capability.
+
+**Honest limit — this got worse, not better.** With both halves on the
+same model, the two passes share a lineage *and* a tier: their blind
+spots now overlap almost completely. Agreement between them is weak
+evidence, and one confirming the other is **not** independent
+verification. Say so out loud rather than banking it. The diversity
+that does not come from a model is therefore load-bearing — it is now
+the *only* diversity in the pass:
 
 - **Web search** (`sec-auditor` job 1) injects vuln classes from the
   live CVE/advisory corpus that no Claude tier would spontaneously
@@ -212,16 +271,23 @@ come from a model is therefore load-bearing:
   `make vulncheck`, which fails closed with the install command if
   the binary is missing.
 
-**The clean-gate (the non-optional invariant):** a surface is
-**CLEARED** only when ALL of these are dry/clean on it — Opus deep pass,
-Haiku breadth pass, `go vet`, `govulncheck`. One signal's silence never
-clears a surface. A category nobody ran all four against is
-"never-looked", not "clean" — track the difference.
+- **Proof** — a failing test, a `curl`, a real browser. Evidence is not
+  a second opinion, it is the end of the argument. Prefer it to every
+  model judgment, including your own.
 
-**Cross-verify both directions:** Haiku finds → Opus refutes (kills
-false positives); Opus finds → Haiku re-derives from the code + the
-deterministic tools confirm where analyzable (catches Opus over-reads).
+**The clean-gate (the non-optional invariant):** a surface is
+**CLEARED** only when ALL of these are dry/clean on it — the deep pass,
+the breadth pass, `go vet`, `govulncheck`. One signal's silence never
+clears a surface. A category nobody ran all four against is
+"never-looked", not "clean" — track the difference, and publish the
+not-looked list alongside the findings.
+
+**Cross-verify both directions:** recon finds → auditor refutes (kills
+false positives); auditor finds → prove it, then run the deterministic
+tools where analyzable (catches over-reads). A same-model re-derivation
+is a sanity check, never a promotion.
 
 Spawn the two profiles with the Agent tool (`subagent_type: sec-recon`
 / `sec-auditor` — the `model:` is pinned in each profile's frontmatter)
-or drive them as stages of a Workflow.
+or drive them as stages of a Workflow. When running several scopes at
+once, give each its own scope boundary so the passes don't collide.

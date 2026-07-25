@@ -59,9 +59,17 @@ filter   := field ("_gt"|"_gte"|"_lt"|"_lte"|"_like"|"_in")? "=" value
 - `ManyToMany` — attaches an array via the join table declared in the
   relation.
 
-Nested includes (`author.profile`) require **both** sides registered
-with the framework's `Registry`. Top-level includes work as long as
-the parent's relation declaration names a real table.
+Every relation named in an `?include=` — nested or top-level — must
+resolve to an entity registered with the framework's `Registry`. The
+target's declaration is what drives the Hidden-column scrub, owner and
+tenant scoping, the soft-delete filter, and the scoped-filter field
+allow-list, so a target the registry cannot resolve is refused with
+**400** rather than loaded without those guards.
+
+`Relation.Entity` is the target's **entity name** (the registry key),
+which is not necessarily its table name. An entity declared with
+`Name` different from `Table` is reached by its `Name`; the eager-load
+query targets its `Table`.
 
 ## Filter scope
 
@@ -74,7 +82,7 @@ filters:
 | `_gte`   | `>=`            |
 | `_lt`    | `<`             |
 | `_lte`   | `<=`            |
-| `_like`  | literal `contains` — `LIKE '%value%' ESCAPE '\'` with the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator) |
+| `_like`  | literal `contains` — `LIKE '%value%' ESCAPE '\'` with the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator). **Identical at every depth**: top-level, `?rel.field_like=`, and `include=rel(field_like=…)` all mean literal substring. Nested filters used to pass the value through as a raw pattern, so the same parameter meant two different things depending on whether a dot appeared in it |
 | `_in`    | `IN (...)` (pipe-separated values)  |
 
 Filters validate against the **target** entity's fields, not the
@@ -91,6 +99,11 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
   child are tenant-scoped, the child query filters on the same tenant.
 - Result key casing matches the entity's `JSONCase` setting
   (`camel` or `snake`); nested rows are deep-converted.
+- Includes are bounded. A single path may take at most **4** relation
+  hops, and one request's includes may materialise at most **20,000**
+  related-row references in total. Either limit is a **400** — narrow
+  the include or reduce the page size. Without them a short path over a
+  self-referencing relation multiplies at every hop.
 - Nullable foreign keys (optional relations) are supported: a parent
   whose FK column is `NULL` comes back with that relation **absent**
   (`null`), not an error. `BelongsTo`/`HasOne` relations over columns
@@ -122,8 +135,16 @@ the buffered path so includes still resolve — only the explicit
   entity at that depth.
 - `streaming list does not support include` — `?stream=true` was
   combined with `?include=`.
-- `target entity "y" not registered (required for nested includes)`
-  — a path of length > 1 hit an unregistered target.
+- `relation "y" targets entity "z", which is not registered` — a
+  segment named a relation whose target is not in the registry.
+- `include "x" requires an entity registry` — the handler has no
+  `Registry` set, so no target can be resolved. Framework apps wire
+  this automatically; a hand-built `crud.NewCrudHandler` must set
+  `.Registry`.
+- `include "x" is N relations deep; the maximum is 4` — the path
+  exceeded the depth cap.
+- `include exceeds the maximum number of related rows` — the assembled
+  response would carry more than 20,000 related-row references.
 - `scoped field "x" not on target entity` — the filter referenced a
   field that does not exist on the target's schema.
 
@@ -133,8 +154,10 @@ the buffered path so includes still resolve — only the explicit
   scoped; `comments,status=draft` is two unrelated query parameters.
 - **Filtering with the wrong field name.** Scoped filters validate
   against the target, not the parent. Use the target's column names.
-- **Nesting through unregistered entities.** Register every entity in
-  the registry; otherwise nested includes fail at parse time.
+- **Including through unregistered entities.** Register every entity
+  the relations point at — including tables a battery self-migrates,
+  such as the auth battery's user table. An unregistered target is
+  refused, not loaded unscrubbed.
 - **Expecting `?include=` to control SELECT projection.** It does
   not — use field projections separately. Includes only attach
   related data.

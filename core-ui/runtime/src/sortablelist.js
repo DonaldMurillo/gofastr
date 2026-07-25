@@ -82,7 +82,7 @@
 
   function postOrder(list) {
     let rpc = attr(list, 'data-fui-sortable-rpc');
-    if (!rpc) return Promise.resolve();
+    if (!rpc || !window.__gofastr?._originOK?.(rpc)) return Promise.resolve();
     return fetch(rpc, {
       method: 'POST', credentials: 'same-origin', headers: csrfHeaders(),
       body: 'order=' + encodeURIComponent(keysOf(list).join(',')) + versionField(list) + containerField(list),
@@ -91,7 +91,7 @@
 
   function postCross(dest, movedKey) {
     let rpc = attr(dest, 'data-fui-sortable-rpc');
-    if (!rpc) return Promise.resolve();
+    if (!rpc || !window.__gofastr?._originOK?.(rpc)) return Promise.resolve();
     let body = 'order=' + encodeURIComponent(keysOf(dest).join(','));
     body += '&moved=' + encodeURIComponent(movedKey);
     // Cross-container commits ALWAYS carry container= (empty when the
@@ -225,7 +225,7 @@
           // The authoritative conflict refresh still runs afterward.
           conflictMessage(res, function (msg) {
             let crpc = attr(dest, 'data-fui-sortable-conflict');
-            if (crpc) {
+            if (crpc && window.__gofastr?._originOK?.(crpc)) {
               fetch(crpc, { credentials: 'same-origin' })
                 .then(function (r) { return r.text(); })
                 .then(function (html) {

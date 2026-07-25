@@ -137,7 +137,7 @@ func TestDeepConvertMap_JSONArrayField(t *testing.T) {
 			"plain",
 		},
 	}
-	out := ch.deepConvertMap(in).(map[string]any)
+	out := mustDeepConvert(t, ch, in)
 	arr, ok := out["tagsList"].([]any)
 	if !ok {
 		t.Fatalf("array field not preserved: %+v", out)
@@ -170,14 +170,14 @@ func TestRawRelationValue_WrongTypes(t *testing.T) {
 func TestFormatRelationValueDeep_WrongTypes(t *testing.T) {
 	ch, _ := covNotesHandler(t)
 	hm := entity.HasMany("comments", "c", "post_id")
-	if got := ch.formatRelationValueDeep(hm, "bad", true); got == nil {
+	if got := mustFormatDeep(t, ch, hm, "bad", true); got == nil {
 		t.Error("HasMany wrong type should be empty slice")
 	}
 	bt := entity.BelongsTo("author", "u", "author_id")
-	if got := ch.formatRelationValueDeep(bt, "bad", true); got != nil {
+	if got := mustFormatDeep(t, ch, bt, "bad", true); got != nil {
 		t.Errorf("BelongsTo wrong type should be nil, got %v", got)
 	}
-	if got := ch.formatRelationValueDeep(bt, nil, false); got != nil {
+	if got := mustFormatDeep(t, ch, bt, nil, false); got != nil {
 		t.Errorf("BelongsTo not-present should be nil, got %v", got)
 	}
 }
@@ -191,3 +191,23 @@ func TestMarshalStructToRow_UnmarshalError(t *testing.T) {
 }
 
 var _ = context.Background
+
+// mustDeepConvert / mustFormatDeep unwrap the budget-aware signatures so
+// these key-casing tests stay about casing.
+func mustDeepConvert(t *testing.T, ch *CrudHandler, in map[string]any) map[string]any {
+	t.Helper()
+	out, _, err := ch.deepConvertMap(in, map[uintptr]*convertedSubtree{}, newIncludeBudget())
+	if err != nil {
+		t.Fatalf("deepConvertMap: %v", err)
+	}
+	return out.(map[string]any)
+}
+
+func mustFormatDeep(t *testing.T, ch *CrudHandler, rel entity.Relation, val any, present bool) any {
+	t.Helper()
+	out, err := ch.formatRelationValueDeep(rel, val, present, map[uintptr]*convertedSubtree{}, newIncludeBudget())
+	if err != nil {
+		t.Fatalf("formatRelationValueDeep: %v", err)
+	}
+	return out
+}

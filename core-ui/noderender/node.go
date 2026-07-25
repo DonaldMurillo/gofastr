@@ -2,6 +2,7 @@ package noderender
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/node"
@@ -416,28 +417,57 @@ func wrapAsListItems(children []render.HTML) []render.HTML {
 // extraAttrs collects any prop keys NOT in the well-known list. These
 // flow into html.X via Attrs so agent-supplied data-kiln-tool,
 // data-kiln-args, aria-*, role, target, rel, etc. all reach the DOM.
-// dangerousAttrs are HTML attributes the renderer drops unconditionally.
-// They violate strict CSP (default-src 'self' with no unsafe-inline) and
-// are the most common XSS vectors. The kiln runtime ships strict CSP, so
-// agents that try to set inline styles or event handlers will produce
-// non-functional pages with browser console errors. Drop them here so
-// the agent's mistake doesn't leak to the user.
-var dangerousAttrs = map[string]bool{
-	"style":   true, // → use class + theme tokens instead
-	"srcdoc":  true,
-	"sandbox": false, // OK on iframes; keep
+// allowedAttrs is the set of NON-data attribute names an untrusted IR may
+// emit. See attrAllowed for the full rule.
+var allowedAttrs = map[string]bool{
+	// identity + presentation
+	"id": true, "class": true, "title": true, "dir": true, "lang": true,
+	"role": true, "slot": true, "hidden": true, "tabindex": true,
+	// media / link semantics (the URL values themselves are scheme-checked
+	// by core-ui/html; these are the non-URL knobs beside them)
+	"alt": true, "target": true, "rel": true, "type": true, "loading": true,
+	"decoding": true, "width": true, "height": true, "download": true,
+	// form semantics
+	"name": true, "value": true, "placeholder": true, "for": true,
+	"method": true, "enctype": true, "autocomplete": true, "inputmode": true,
+	"required": true, "disabled": true, "readonly": true, "checked": true,
+	"selected": true, "multiple": true, "min": true, "max": true, "step": true,
+	"minlength": true, "maxlength": true, "pattern": true, "rows": true, "cols": true,
+	// table semantics
+	"colspan": true, "rowspan": true, "scope": true, "headers": true,
+	// details/dialog
+	"open": true,
+}
+
+// privilegedDataAttrs are the data-* attributes the RUNTIME itself acts
+// on, and therefore the ones an untrusted IR must never name:
+//
+//   - data-behavior becomes a <script src> — arbitrary code
+//   - data-widget / data-component are hydration identity: naming one
+//     makes the element impersonate a registered island
+//   - data-bind writes into the client state store
+//   - the whole data-fui-* family drives signals, RPC, polling and
+//     navigation
+//
+// Everything else in the data- namespace is an inert marker read only by
+// the host's own code (the blueprint's data-field / data-entity-list-*,
+// kiln's data-kiln-tool, test hooks), so it passes. That split is the
+// point: the IR may describe UI, it may not reach the runtime.
+var privilegedDataAttrs = map[string]bool{
+	"data-behavior": true, "data-widget": true,
+	"data-component": true, "data-bind": true,
 }
 
 // extraAttrs collects element props that should pass through as raw
 // HTML attributes. It:
 //   - skips the `known` list (props the caller already promoted to
 //     first-class element fields, like id/class/role)
-//   - drops dangerousAttrs (style, on*, srcdoc) — these violate CSP and
-//     can't be rescued; if the agent emits them, swallow silently
+//   - keeps only allowedAttrs plus `aria-*`
 //   - passes the rest through with fmt.Sprint
 //
-// The agent skill explicitly forbids `style`; this is a hard belt-and-
-// suspenders so a single bad turn doesn't poison the page.
+// Silently dropping (rather than erroring) is deliberate: the IR is
+// generated a turn at a time, and one bad turn should degrade the page,
+// not fail the render.
 func extraAttrs(props map[string]any, known ...string) html.Attrs {
 	if len(props) == 0 {
 		return nil
@@ -454,12 +484,7 @@ func extraAttrs(props map[string]any, known ...string) html.Attrs {
 		if v == nil {
 			continue
 		}
-		if dangerousAttrs[k] {
-			continue
-		}
-		// Inline event handlers — onclick, onload, onmouseover, … —
-		// are inline JS that the strict CSP rejects. Drop them.
-		if len(k) > 2 && k[0] == 'o' && k[1] == 'n' {
+		if !attrAllowed(k) {
 			continue
 		}
 		out[k] = fmt.Sprint(v)
@@ -468,6 +493,32 @@ func extraAttrs(props map[string]any, known ...string) html.Attrs {
 		return nil
 	}
 	return out
+}
+
+// attrAllowed reports whether an IR-supplied attribute name may be
+// emitted:
+//
+//	aria-*                       → yes
+//	data-*                       → yes, unless runtime-privileged
+//	a known presentational attr  → yes
+//	anything else                → no
+//
+// The last line is what closes the original hole: the previous rule was
+// a deny-list of three names, so `style`, every `on*` handler, `srcdoc`,
+// and every attribute nobody had thought of yet all passed.
+//
+// Matching is case-insensitive — HTML attribute names are
+// case-insensitive to the parser, so an `OnClick` prop is an event
+// handler no matter how the author cased it.
+func attrAllowed(name string) bool {
+	lower := strings.ToLower(name)
+	if strings.HasPrefix(lower, "aria-") {
+		return true
+	}
+	if strings.HasPrefix(lower, "data-") {
+		return !privilegedDataAttrs[lower] && !strings.HasPrefix(lower, "data-fui-")
+	}
+	return allowedAttrs[lower]
 }
 
 func mergeInto(dst, src map[string]string) {

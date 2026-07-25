@@ -96,14 +96,16 @@ func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 	}
 	for _, rel := range surfaces {
 		src := readSrc(t, rel)
-		// The reference fix (toggleaction.js / optimisticaction.js) reads
-		// meta[name="csrf-token"] and sets X-CSRF-Token. Every RPC surface
-		// must do the same so the documented CSRF middleware accepts the
-		// request.
-		if !strings.Contains(src, `meta[name="csrf-token"]`) {
-			t.Errorf("SECURITY: [csrf] %s never reads meta[name=\"csrf-token\"] — state-changing fetch is missing the CSRF token", rel)
+		// Two accepted shapes: read meta[name="csrf-token"] directly (the
+		// original fix in toggleaction.js / optimisticaction.js), or call
+		// core's _csrf helper, which is that same read hoisted into one
+		// place. widgets.js uses the helper — it already depends on core
+		// for the same-origin fetch gate, so its own copy of the six
+		// lines was pure duplication.
+		if !strings.Contains(src, `meta[name="csrf-token"]`) && !strings.Contains(src, "_csrf(") {
+			t.Errorf("SECURITY: [csrf] %s neither reads meta[name=\"csrf-token\"] nor calls _csrf — state-changing fetch is missing the CSRF token", rel)
 		}
-		if !strings.Contains(src, "X-CSRF-Token") {
+		if !strings.Contains(src, "X-CSRF-Token") && !strings.Contains(src, "_csrf(") {
 			t.Errorf("SECURITY: [csrf] %s never sets the X-CSRF-Token header — auth.CSRF middleware rejects the JSON RPC", rel)
 		}
 	}
@@ -141,7 +143,7 @@ func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 // Surface: the html-mode branch of setSignal in runtime.js.
 func TestHtmlSignalDoesNotInjectObjectMarkup(t *testing.T) {
 	src := readSrc(t, "runtime.js")
-	fnIdx := strings.Index(src, "setSignal(name, value)")
+	fnIdx := strings.Index(src, "setSignal(name, value, opts)")
 	if fnIdx < 0 {
 		t.Fatal("could not locate setSignal in runtime.js")
 	}
@@ -184,7 +186,7 @@ func TestHtmlSignalDoesNotInjectObjectMarkup(t *testing.T) {
 // Surface: the html-mode branch of setSignal in runtime.js.
 func TestHtmlSignalSkipsNonStringValues(t *testing.T) {
 	src := readSrc(t, "runtime.js")
-	fnIdx := strings.Index(src, "setSignal(name, value)")
+	fnIdx := strings.Index(src, "setSignal(name, value, opts)")
 	if fnIdx < 0 {
 		t.Fatal("could not locate setSignal in runtime.js")
 	}

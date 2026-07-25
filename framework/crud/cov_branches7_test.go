@@ -212,9 +212,13 @@ func TestEagerFiltered_InvalidFilterField(t *testing.T) {
 	node := &IncludeNode{
 		Name:     "comments",
 		Relation: entity.HasMany("comments", "efcomments", "post_id"),
-		Filters:  []filter.ParsedFilter{{Field: "bad field", Op: filter.OpEq, Value: "x"}},
+		// A resolved Target is mandatory now (an unresolved one is refused
+		// before the filter check), so give the node one and keep this test
+		// pointed at the unsafe-filter-field branch it exists for.
+		Target:  entity.Define("efcomments", entity.EntityConfig{Table: "efcomments", Fields: []schema.Field{{Name: "post_id", Type: schema.String}}}),
+		Filters: []filter.ParsedFilter{{Field: "bad field", Op: filter.OpEq, Value: "x"}},
 	}
-	err := loadIncludeNode(context.Background(), db, "efc", "id", node, []string{"1"}, map[string]map[string]any{"1": {}})
+	err := loadIncludeNode(context.Background(), db, "efc", "id", node, []string{"1"}, map[string]map[string]any{"1": {}}, newIncludeBudget())
 	if err == nil {
 		t.Error("unsafe filter field should error in loadIncludeNode")
 	}

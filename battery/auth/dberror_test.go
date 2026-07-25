@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -69,7 +68,7 @@ func TestMagicLinkVerify_DBErrorDoesNotAutoCreate(t *testing.T) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
+	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -116,7 +115,7 @@ func TestOAuth2Callback_DBErrorDoesNotAutoCreate(t *testing.T) {
 		t.Fatalf("generateState: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/oauth/stub/callback?state="+state+"&code=fakecode", nil)
+	req := oauthCallbackReq("/auth/oauth/stub/callback?state="+state+"&code=fakecode", state)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

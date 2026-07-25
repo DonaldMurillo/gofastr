@@ -41,7 +41,9 @@ jobs:
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      # SHA-pinned like every other action in this repo: a tag is mutable,
+      # so `@v4` executes whatever the tag points at on release day.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ steps.tag.outputs.tag }}
 

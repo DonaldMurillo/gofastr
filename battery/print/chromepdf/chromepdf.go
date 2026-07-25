@@ -42,6 +42,27 @@ type Options struct {
 
 	// Scale is the print scale (1 = 100%). Default 1.
 	Scale float64
+
+	// AllowedHosts names the hosts the print document may fetch
+	// subresources from. Empty — the default — means NO network at all:
+	// every hostname is resolved to NOTFOUND before Chrome can connect.
+	//
+	// This is the network half of the SSRF gate. The print document is
+	// navigated as a `data:` URL, which has no response headers, so the
+	// print route's Content-Security-Policy does not reach it (the shell
+	// now also emits the policy as an in-document meta). Without a
+	// resolver rule, a caller-supplied URL that reaches a URL attribute —
+	// ui.Avatar{Src} on a receipt, say — is fetched by a browser sitting
+	// inside the trust boundary, and the response is rendered into the
+	// downloaded PDF: a readable channel to 169.254.169.254, loopback
+	// admin panels, and RFC1918.
+	//
+	// A document whose CSS and images are inlined (what the shell
+	// produces) needs no network, so the default costs nothing. Name a
+	// host here only when a PDF genuinely must pull a remote asset — and
+	// note that an allowed host's DNS still decides which IP it reaches,
+	// so allow only hosts you control.
+	AllowedHosts []string
 }
 
 type renderer struct{ opts Options }
@@ -63,6 +84,9 @@ func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConf
 	if rd.opts.ExecPath != "" {
 		allocOpts = append(allocOpts, chromedp.ExecPath(rd.opts.ExecPath))
 	}
+	// Network gate, installed BEFORE ExtraFlags so a host can still
+	// override it deliberately if they must.
+	allocOpts = append(allocOpts, chromedp.Flag("host-resolver-rules", hostResolverRules(rd.opts.AllowedHosts)))
 	for _, f := range rd.opts.ExtraFlags {
 		name, val := parseFlag(f)
 		allocOpts = append(allocOpts, chromedp.Flag(name, val))
@@ -133,4 +157,25 @@ func paperInches(p print.PageConfig) (float64, float64) {
 		w, h = h, w
 	}
 	return w, h
+}
+
+// hostResolverRules builds Chrome's --host-resolver-rules value: map
+// every hostname to NOTFOUND, then EXCLUDE the allow-listed ones so they
+// resolve normally. With an empty allow-list the document cannot open a
+// connection to anything.
+//
+// A resolver rule rather than request interception because it fails
+// closed at the lowest layer: there is no request to intercept if the
+// name never resolves, so no code path — image, stylesheet, font, XHR,
+// navigation — can slip past by taking a different route.
+func hostResolverRules(allowed []string) string {
+	rules := []string{"MAP * ~NOTFOUND"}
+	for _, h := range allowed {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			continue
+		}
+		rules = append(rules, "EXCLUDE "+h)
+	}
+	return strings.Join(rules, ",")
 }

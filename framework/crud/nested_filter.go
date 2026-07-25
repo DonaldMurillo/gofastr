@@ -254,12 +254,15 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 			args = append(args, v)
 		}
 		predicate = fmt.Sprintf("%s.%s IN (%s)", rel.Entity, col, strings.Join(ph, ","))
+	} else if nf.Op == filter.OpLike {
+		// One operator, one meaning: `_like` is a literal substring at
+		// every depth. Nested filters used to pass the caller's value
+		// through as a raw LIKE pattern while the top level escaped and
+		// wrapped it, so `?author.name_like=100%` prefix-matched instead
+		// of finding "100% cotton" — and a bare `%` matched every row.
+		predicate = fmt.Sprintf("%s.%s LIKE $1"+filter.LikeEscapeSuffix, rel.Entity, col)
+		args = []any{filter.EscapeLikePattern(nf.Value)}
 	} else {
-		// Note: nested _like is intentionally a RAW LIKE pattern — the caller
-		// supplies the wildcards (?author.name_like=A%). The value is still
-		// parameterized via $1, so this is not an injection vector; the
-		// wildcards are the documented API. (Top-level _like differs: it
-		// treats the value as a literal substring and wraps/escapes it.)
 		predicate = fmt.Sprintf("%s.%s %s $1", rel.Entity, col, opToSQL(nf.Op))
 		args = []any{nf.Value}
 	}

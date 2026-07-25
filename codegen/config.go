@@ -1,9 +1,11 @@
 package codegen
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
@@ -15,6 +17,13 @@ type Discovery struct {
 	ProjectDir string
 	Config     Config
 	Found      bool
+
+	// Discovered marks a config found by walking the tree rather than
+	// named by the caller. A discovered config's `command` extensions
+	// name a binary chosen by whoever wrote that file — a cloned repo, a
+	// vendored tree, a teammate's branch — so running them takes an
+	// explicit opt-in. See CheckCommandExtensions.
+	Discovered bool
 }
 
 // DiscoverConfig finds the project codegen config. Dedicated codegen config
@@ -32,7 +41,7 @@ func DiscoverConfig(projectDir string) (Discovery, error) {
 				if err != nil {
 					return Discovery{}, err
 				}
-				return Discovery{Path: path, ProjectDir: dir, Config: cfg, Found: true}, nil
+				return Discovery{Path: path, ProjectDir: dir, Config: cfg, Found: true, Discovered: true}, nil
 			} else if err != nil && !os.IsNotExist(err) {
 				return Discovery{}, err
 			}
@@ -55,12 +64,27 @@ func DiscoverConfig(projectDir string) (Discovery, error) {
 			if err != nil {
 				return Discovery{}, err
 			}
-			return Discovery{Path: path, ProjectDir: dir, Config: cfg, Found: true}, nil
+			return Discovery{Path: path, ProjectDir: dir, Config: cfg, Found: true, Discovered: true}, nil
 		}
 	}
 	return Discovery{}, nil
 }
 
+// searchDirs lists the directories config discovery may look in: the
+// project directory and each ancestor UP TO AND INCLUDING the module or
+// repo root, never past it.
+//
+// The walk used to run to `/`. A discovered config may declare a
+// `command` extension that generate executes, so an unbounded walk meant
+// a file planted in any shared ancestor — a workspace parent, /tmp,
+// $HOME — ran as the developer on a bare `gofastr generate`, silently.
+// The module/repo root is where "the project" ends by every other
+// definition the framework uses (framework/isolation resolves the same
+// markers), and nothing above it is the project's to configure.
+//
+// When no marker is found anywhere the walk yields the starting
+// directory alone: fail closed, since an unmarked tree gives no evidence
+// about how far "the project" extends.
 func searchDirs(projectDir string) ([]string, error) {
 	start, err := filepath.Abs(projectDir)
 	if err != nil {
@@ -69,13 +93,67 @@ func searchDirs(projectDir string) ([]string, error) {
 	var dirs []string
 	for {
 		dirs = append(dirs, start)
+		if isProjectRoot(start) {
+			return dirs, nil
+		}
 		parent := filepath.Dir(start)
 		if parent == start {
 			break
 		}
 		start = parent
 	}
-	return dirs, nil
+	// No marker anywhere up the chain — trust only where we started.
+	return dirs[:1], nil
+}
+
+// projectRootMarkers are the files that mean "this directory is the top
+// of a project".
+var projectRootMarkers = []string{"go.work", "go.mod", ".git"}
+
+func isProjectRoot(dir string) bool {
+	for _, m := range projectRootMarkers {
+		if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// ErrCommandExtensionNotAllowed is returned by CheckCommandExtensions
+// for a discovered config that declares a command extension without the
+// opt-in.
+var ErrCommandExtensionNotAllowed = errors.New("codegen: discovered config declares a command extension")
+
+// commandOptInEnv is the explicit opt-in for running command extensions
+// from a config nobody named on the command line.
+const commandOptInEnv = "GOFASTR_CODEGEN_ALLOW_COMMANDS"
+
+// CheckCommandExtensions refuses to run `command` extensions that came
+// from a DISCOVERED config unless the operator opted in.
+//
+// A config passed with --config is an act of intent; one found by
+// walking the tree is not. Callers run this before executing any
+// generator and surface the error rather than the command.
+func CheckCommandExtensions(d Discovery) error {
+	if !d.Found || !d.Discovered {
+		return nil
+	}
+	var named []string
+	for _, ext := range d.Config.Codegen.Extensions {
+		if len(ext.Command) > 0 {
+			named = append(named, ext.Name+": "+strings.Join(ext.Command, " "))
+		}
+	}
+	if len(named) == 0 {
+		return nil
+	}
+	if v := os.Getenv(commandOptInEnv); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s runs\n  %s\nRun it with --config %s, or set %s=1 to allow commands from a discovered config",
+		ErrCommandExtensionNotAllowed, d.Path, strings.Join(named, "\n  "), d.Path, commandOptInEnv)
 }
 
 // HasCodegenSection reports whether path has a top-level codegen key.

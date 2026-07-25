@@ -88,12 +88,14 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
 
     for pattern in $secret_patterns; do
       [ -z "$pattern" ] && continue
-      # A line carrying "not-a-secret: <why>" is a reviewed false
+      # A line carrying "not-a-secret: <why>" (or the older
+      # "nosecret:" spelling — `make secret-scan` accepts both) is a
+      # reviewed false
       # positive (e.g. code that RENDERS an env template, test
       # fixtures). The annotation lives in the diff, so every
       # exemption is visible to review — unlike --no-verify, which
       # skips every check invisibly and is banned.
-      matches=$(grep -n -i -E "$pattern" "$file" 2>/dev/null | grep -v "not-a-secret:" || true)
+      matches=$(grep -n -i -E "$pattern" "$file" 2>/dev/null | grep -v -E "not-a-secret:|nosecret:" || true)
       if [ -n "$matches" ]; then
         found_secrets="$found_secrets\n  $file:\n$matches"
       fi

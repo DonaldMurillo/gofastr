@@ -1,5 +1,13 @@
 name: CI
 
+# Least privilege by default: without this block a workflow inherits the
+# repository default, which on many repos is write-all — so any action or
+# script in the run holds a token that can push to the repo. Jobs that
+# genuinely need more raise it for themselves.
+permissions:
+  contents: read
+
+
 # Two jobs, split by runtime profile (history: CI runs
 # 27100756725..27161715772, June 2026):
 #
@@ -153,7 +161,12 @@ jobs:
       - name: Install govulncheck
         # `make vulncheck` fails closed when the binary is absent, so this
         # install is what keeps the gate a gate rather than a skip.
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        #
+        # Pinned, not @latest: an unpinned install makes every CI run
+        # fetch and execute whatever is newest at that moment, which is a
+        # supply-chain dependency on a third party's release timing in
+        # the middle of the security gate itself. Bump deliberately.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: govulncheck (reachable advisories only)
         run: make vulncheck

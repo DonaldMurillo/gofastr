@@ -1,6 +1,9 @@
 package html
 
-import "github.com/DonaldMurillo/gofastr/core/render"
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/render"
+)
 
 // ImageConfig configures a void <img> element.
 // Required: Src and Alt (empty Alt = decorative, gets role="presentation").
@@ -44,8 +47,8 @@ func Image(cfg ImageConfig) render.HTML {
 		panic("html: Image requires Src")
 	}
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	setAttr(attrs, "src", cfg.Src)
-	setAttr(attrs, "alt", cfg.Alt)
+	attrs = setURLAttr(attrs, "src", cfg.Src, urlsafe.Resource)
+	attrs = setAttr(attrs, "alt", cfg.Alt)
 	if cfg.Alt == "" {
 		if _, ok := attrs["role"]; !ok {
 			setAttr(attrs, "role", "presentation")
@@ -76,8 +79,8 @@ func Source(cfg SourceConfig) render.HTML {
 		panic("html: Source requires Type")
 	}
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	setAttr(attrs, "src", cfg.Src)
-	setAttr(attrs, "type", cfg.Type)
+	attrs = setURLAttr(attrs, "src", cfg.Src, urlsafe.Resource)
+	attrs = setAttr(attrs, "type", cfg.Type)
 	return render.VoidTag("source", attrs)
 }
 
@@ -102,13 +105,10 @@ func Meta(name, content string) render.HTML {
 
 // StyleSheet produces a <link> element with rel="stylesheet".
 func StyleSheet(href string) render.HTML {
-	return render.VoidTag("link", Attrs{
-		"rel":  "stylesheet",
-		"href": href,
-	})
+	return render.VoidTag("link", setURLAttr(Attrs{"rel": "stylesheet"}, "href", href, urlsafe.Resource))
 }
 
 // Script produces a <script> element with the given src.
 func Script(src string) render.HTML {
-	return render.Tag("script", Attrs{"src": src})
+	return render.Tag("script", setURLAttr(nil, "src", src, urlsafe.Resource))
 }
