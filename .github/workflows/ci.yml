@@ -36,6 +36,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The `security` job needs a time trigger, not just a code trigger: an
+  # advisory can land against a dependency nobody touched. GO-2026-5158
+  # (otel baggage, reachable from core/middleware.Tracing) shipped in a
+  # release and sat unnoticed precisely because every gate was
+  # change-triggered. Mondays 06:00 UTC.
+  schedule:
+    - cron: "0 6 * * 1"
 
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
@@ -127,6 +134,35 @@ jobs:
         # fails if any drops below its floor (~2 points under the recorded
         # value). Floor table + exclusions live in the script.
         run: bash scripts/coverage-floors.sh
+
+  security:
+    name: "vulncheck · secrets · mod-verify (blocking)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install govulncheck
+        # `make vulncheck` fails closed when the binary is absent, so this
+        # install is what keeps the gate a gate rather than a skip.
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: govulncheck (reachable advisories only)
+        run: make vulncheck
+
+      - name: Secret scan
+        run: make secret-scan
+
+      - name: Module integrity
+        run: make mod-verify
 
   browser-e2e:
     name: "browser e2e (blocking)"
