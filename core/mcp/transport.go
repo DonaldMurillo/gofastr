@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -82,11 +84,122 @@ func errorAsMaxBytes(err error, target **http.MaxBytesError) bool {
 	return false
 }
 
+// originOK reports whether r may reach the JSON-RPC dispatcher.
+//
+// Two independent checks, because they stop different attacks:
+//
+//   - Origin: a browser sets it on every cross-origin fetch. If it is
+//     present and names a different authority than the request itself,
+//     this is a cross-site call and is refused. Absent Origin passes —
+//     curl, stdio bridges and native MCP clients never send one, and
+//     its absence cannot prove an attack.
+//   - Host: the anti-DNS-rebinding control. Origin alone cannot stop
+//     rebinding, because after the rebind the attacker's page IS
+//     same-origin with the listener. Comparing Host against the
+//     authority the server was told to expect breaks the chain, since
+//     a rebound request still carries the attacker's own name. Hosts
+//     are only pinned when the embedder calls SetAllowedHosts — an
+//     unpinned server can't know its own public name, so it stays
+//     permissive rather than breaking ordinary deployments.
+//
+// The content-type gate above already refuses form-shaped CSRF; this
+// closes the fetch/rebinding half. MCP's own security guidance makes
+// Origin validation a MUST for HTTP transports.
+func (s *Server) originOK(r *http.Request) bool {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
+			if !s.originAllowListed(origin) {
+				return false
+			}
+		}
+	}
+	s.mu.RLock()
+	hosts := s.allowedHosts
+	loopbackOnly := s.requireLoopbackHost
+	s.mu.RUnlock()
+	if loopbackOnly && !isLoopbackAuthority(r.Host) {
+		return false
+	}
+	if len(hosts) == 0 {
+		return true // unpinned: embedder never declared an authority
+	}
+	for _, h := range hosts {
+		if strings.EqualFold(r.Host, h) {
+			return true
+		}
+	}
+	return false
+}
+
+// originAllowListed reports whether origin was explicitly permitted via
+// SetAllowedOrigins — the escape hatch for tunnels (ngrok, Codespaces)
+// and browser clients served from a different authority.
+func (s *Server) originAllowListed(origin string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, o := range s.allowedOrigins {
+		if strings.EqualFold(origin, o) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetAllowedHosts pins the Host authorities this server answers on.
+// Pinning is what makes the transport DNS-rebinding-proof; an empty
+// list leaves the server unpinned (Host unchecked). `gofastr dev` pins
+// to loopback because dev auto-enables the mutating control tools.
+func (s *Server) SetAllowedHosts(hosts []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allowedHosts = append([]string(nil), hosts...)
+}
+
+// SetRequireLoopbackHost restricts this transport to loopback Host
+// authorities. Use it wherever the MCP surface is auto-enabled for
+// local development: dev implies the mutating control tools, so a
+// rebound Host must not reach the dispatcher.
+func (s *Server) SetRequireLoopbackHost(v bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requireLoopbackHost = v
+}
+
+// isLoopbackAuthority reports whether authority ("host" or "host:port")
+// names the loopback interface.
+func isLoopbackAuthority(authority string) bool {
+	host := authority
+	if h, _, err := net.SplitHostPort(authority); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// SetAllowedOrigins permits browser Origins that are not same-origin
+// with the request — tunnels and split-origin dev clients.
+func (s *Server) SetAllowedOrigins(origins []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allowedOrigins = append([]string(nil), origins...)
+}
+
 // ServeHTTP handles HTTP POST requests for MCP JSON-RPC calls.
 // It reads a JSON-RPC request from the body and writes the response.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.originOK(r) {
+		http.Error(w, "forbidden: cross-origin or unexpected Host", http.StatusForbidden)
 		return
 	}
 
@@ -175,6 +288,10 @@ func (s *Server) ServeSSE(path string) http.Handler {
 
 // ssePostHandler handles POST requests with optional SSE streaming.
 func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.originOK(r) {
+		http.Error(w, "forbidden: cross-origin or unexpected Host", http.StatusForbidden)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 
 	var req Request
