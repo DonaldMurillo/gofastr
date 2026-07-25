@@ -117,6 +117,10 @@ func (s *Server) hostOK(r *http.Request) bool {
 	return false
 }
 
+// originOK reports whether the request's Origin is permitted. See the
+// ws.Handler.originOK doc for the rationale — an empty AllowedOrigins
+// denies a browser-set Origin rather than admitting it, matching the
+// convention core/middleware/cors.go states.
 func (s *Server) originOK(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -128,7 +132,7 @@ func (s *Server) originOK(r *http.Request) bool {
 			return true
 		}
 	}
-	return len(s.AllowedOrigins) == 0
+	return false
 }
 
 // claimsKey is the context key under which verified token claims are

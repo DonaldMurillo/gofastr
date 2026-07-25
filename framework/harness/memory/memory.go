@@ -238,6 +238,14 @@ func validate(e *Entry) error {
 	if e.Name == "" {
 		return errors.New("memory: name required")
 	}
+	// Name becomes a filename under the store root, so it must not be
+	// able to walk out of it. Save writes <root>/<name>.md; without
+	// this an entry named "../../../.ssh/authorized_keys" would land
+	// outside the memory directory. Names are slugs by convention, so
+	// the allow-list costs nothing legitimate.
+	if !safeMemoryName(e.Name) {
+		return fmt.Errorf("memory: unsafe name %q (use letters, digits, - and _)", e.Name)
+	}
 	if e.Description == "" {
 		return errors.New("memory: description required")
 	}
@@ -247,6 +255,24 @@ func validate(e *Entry) error {
 		return fmt.Errorf("memory: invalid type %q", e.Type)
 	}
 	return nil
+}
+
+// safeMemoryName reports whether name is usable as a bare filename
+// stem: ASCII letters, digits, '-' and '_' only. That rejects path
+// separators, "..", NUL, and drive-relative Windows shapes in one go.
+func safeMemoryName(name string) bool {
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9':
+		case c == '-' || c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func serialize(e *Entry) string {

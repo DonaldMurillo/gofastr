@@ -51,6 +51,16 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	// callers can query it via /v1/sessions/<id>.
 	h.Catalog.RegisterEngine(h.Mux.EngineFor(sess))
 
+	// Bind first: the Host/Origin guards below must be pinned to the
+	// authority we actually got, which for the default "127.0.0.1:0"
+	// is only known after Listen picks the ephemeral port.
+	ln, lerr := net.Listen("tcp", bindAddr)
+	if lerr != nil {
+		return "", "", nil, fmt.Errorf("listen %s: %w", bindAddr, lerr)
+	}
+	addr := ln.Addr().String()
+	hosts, origins := loopbackGuards(addr)
+
 	restSrv := &rest.Server{
 		Mux:          h.Mux,
 		Catalog:      h.Catalog,
@@ -58,11 +68,17 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 		Revocations:  revs,
 		Features:     []string{"rest", "ws"},
 		SessionStore: h.Sessions, // enables ?past=true sidebar
+		AllowedHosts: hosts,
+		// A browser that sets Origin must be same-origin with the
+		// sidecar; curl/CLI callers send none and still pass.
+		AllowedOrigins: origins,
 	}
 	wsHandler := &ws.Handler{
-		Mux:         h.Mux,
-		Encoder:     enc,
-		Revocations: revs,
+		Mux:            h.Mux,
+		Encoder:        enc,
+		Revocations:    revs,
+		AllowedHosts:   hosts,
+		AllowedOrigins: origins,
 	}
 
 	// Token is generated before mux so we can hand it to the SSR
@@ -80,15 +96,18 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	mux := http.NewServeMux()
 	mux.Handle("/v1/ws", wsHandler)
 	mux.Handle("/v1/", restSrv.Handler())
+	// The chat page embeds the bearer token in a meta tag, so it is a
+	// credential-bearing response even though it takes no token to
+	// request. Host-pinning it is what stops a DNS-rebound page from
+	// reading the token out of a same-origin fetch.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !hostAllowed(r.Host, hosts) {
+			http.Error(w, "forbidden: unexpected Host", http.StatusForbidden)
+			return
+		}
 		chatPage(w, r, sess, token)
 	})
 
-	ln, lerr := net.Listen("tcp", bindAddr)
-	if lerr != nil {
-		return "", "", nil, fmt.Errorf("listen %s: %w", bindAddr, lerr)
-	}
-	addr := ln.Addr().String()
 	url = "http://" + addr
 	srv := &http.Server{
 		Handler:           mux,
@@ -102,6 +121,72 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 		_ = srv.Shutdown(ctx)
 	}
 	return url, token, shutdown, nil
+}
+
+// loopbackGuards returns the Host authorities and browser Origins the
+// sidecar accepts for a listener bound at addr.
+//
+// Host-pinning is the DNS-rebinding defence. Without it, an attacker
+// who points their own domain at 127.0.0.1 makes the victim's browser
+// treat the sidecar as same-origin, which lets their JS read response
+// bodies — including the chat page's harness-token meta tag — and then
+// drive /v1/sessions/<id>/input and .../permission as an authenticated
+// client. Comparing Host against the bound authority breaks that: a
+// rebound request still carries the attacker's own name.
+//
+// When the operator passes an explicit non-loopback -listen address we
+// pin to exactly that authority rather than widening to loopback
+// aliases, so an intentional LAN bind keeps working without also
+// admitting every other name that resolves to it.
+func loopbackGuards(addr string) (hosts, origins []string) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return []string{addr}, []string{"http://" + addr}
+	}
+	names := []string{host}
+	if isLoopbackHost(host) {
+		// Bound to loopback: accept the usual spellings of it, since
+		// the operator may click either the IP or the name.
+		names = []string{"127.0.0.1", "localhost", "::1", "[::1]"}
+	}
+	seen := make(map[string]bool, len(names))
+	for _, n := range names {
+		authority := net.JoinHostPort(n, port)
+		if strings.HasPrefix(n, "[") { // already bracketed
+			authority = n + ":" + port
+		}
+		if seen[authority] {
+			continue
+		}
+		seen[authority] = true
+		hosts = append(hosts, authority)
+		origins = append(origins, "http://"+authority)
+	}
+	return hosts, origins
+}
+
+// isLoopbackHost reports whether host names the loopback interface.
+func isLoopbackHost(host string) bool {
+	h := strings.Trim(host, "[]")
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// hostAllowed reports whether the request's Host matches one of the
+// pinned authorities. An empty list means nothing was pinned, which
+// only happens if the caller skipped loopbackGuards — fail closed.
+func hostAllowed(host string, allowed []string) bool {
+	for _, a := range allowed {
+		if strings.EqualFold(host, a) {
+			return true
+		}
+	}
+	return false
 }
 
 // deriveListenerSecret returns 32 bytes derived from the machine key
