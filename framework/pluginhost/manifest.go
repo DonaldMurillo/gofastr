@@ -109,16 +109,36 @@ func (m Manifest) SandboxString() string {
 	return sanitizeSandboxTokens(m.Sandbox)
 }
 
-// sameOriginCollapsingTokens are iframe sandbox tokens that would give the
-// framed document access back to the host's origin (DOM, cookies, storage),
-// collapsing the opaque-origin isolation. They are stripped unconditionally.
-var sameOriginCollapsingTokens = map[string]bool{
-	"allow-same-origin": true,
+// allowedSandboxTokens is the set of iframe sandbox capabilities a plugin
+// frame may be granted.
+//
+// An allow-list, because the deny-list shape has to enumerate every way
+// out of the box and loses the moment the HTML spec adds one. It already
+// had: stripping only allow-same-origin left
+// `allow-popups-to-escape-sandbox` (a popup the plugin opens is fully
+// unsandboxed AND same-origin — window.open('/admin/...') is then an
+// ordinary cookie-bearing document), `allow-top-navigation` (retarget the
+// whole tab) and `allow-downloads` (write to the user's disk) all
+// passing. The manifest ships with the third-party plugin, so it is
+// attacker-influenced by construction — this is not a wrong-layer check.
+//
+// What is here is what a UI plugin actually needs to render and interact.
+// Adding to this list is a deliberate act; drifting into it is not
+// possible.
+var allowedSandboxTokens = map[string]bool{
+	"allow-scripts":          true,
+	"allow-forms":            true,
+	"allow-modals":           true,
+	"allow-popups":           true, // a popup, still sandboxed — see the escape token below
+	"allow-pointer-lock":     true,
+	"allow-orientation-lock": true,
+	"allow-presentation":     true,
 }
 
-// sanitizeSandboxTokens returns a normalised sandbox token string: the
-// same-origin-collapsing tokens removed, "allow-scripts" guaranteed present,
-// duplicates dropped, order preserved. Empty input yields [DefaultSandbox].
+// sanitizeSandboxTokens returns a normalised sandbox token string:
+// anything outside [allowedSandboxTokens] removed, "allow-scripts"
+// guaranteed present, duplicates dropped, order preserved. Empty input
+// yields [DefaultSandbox].
 //
 // The HTML `sandbox` attribute is ASCII-case-insensitive and whitespace-
 // separated, so each input element is lowercased AND split on whitespace
@@ -131,7 +151,7 @@ func sanitizeSandboxTokens(tokens []string) string {
 	out := make([]string, 0, len(tokens)+1)
 	for _, raw := range tokens {
 		for _, tok := range strings.Fields(strings.ToLower(raw)) {
-			if sameOriginCollapsingTokens[tok] || seen[tok] {
+			if !allowedSandboxTokens[tok] || seen[tok] {
 				continue
 			}
 			seen[tok] = true

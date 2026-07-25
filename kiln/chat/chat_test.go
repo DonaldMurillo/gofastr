@@ -356,3 +356,45 @@ func TestSSEMountedOnAux(t *testing.T) {
 	}
 	cancel() // close the stream
 }
+
+// TestWorldDumpRedactsSecrets pins that the browsable world IR does not
+// serve credentials.
+//
+// /kiln/world marshals sess.World wholesale, and the world carries
+// App.Auth.JWTSecret and App.Admin.SeedPassword. The chat panel links
+// the endpoint from every page, so a session-forging secret and an
+// admin password sat one click away in a tab — the same class as the
+// v0.11.0 secrets-to-env fix, on a sibling that was missed.
+func TestWorldDumpRedactsSecrets(t *testing.T) {
+	l, tools := setup(t)
+	tools.AddEntity(t.Context(), protocol.AddEntityArgs{
+		Entity: &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}},
+	})
+	// Set the credential-bearing config directly on the live world —
+	// this is the state a `kiln` session reaches after configuring auth.
+	l.ReadSession(func(sess *journal.Session) {
+		sess.World.App.Auth.Enabled = true
+		sess.World.App.Auth.JWTSecret = "SUPER-SECRET-JWT-VALUE" // nosecret: test fixture
+		sess.World.App.Admin.Enabled = true
+		sess.World.App.Admin.SeedEmail = "admin@example.com"
+		sess.World.App.Admin.SeedPassword = "SUPER-SECRET-ADMIN-PW" // nosecret: test fixture
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/kiln/world", nil)
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, secret := range []string{"SUPER-SECRET-JWT-VALUE", "SUPER-SECRET-ADMIN-PW"} {
+		if strings.Contains(body, secret) {
+			t.Errorf("SECURITY: [disclosure] /kiln/world served %s verbatim", secret)
+		}
+	}
+	// Non-secret configuration must survive — a redaction that blanks
+	// the whole section makes the endpoint useless for its actual job.
+	if !strings.Contains(body, "admin@example.com") {
+		t.Errorf("redaction removed non-secret config too: %s", body)
+	}
+}

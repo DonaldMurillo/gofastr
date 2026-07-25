@@ -112,3 +112,74 @@ func TestBlueprintKeepsLegacyRelationTarget(t *testing.T) {
 		t.Fatalf("legacy relation target did not normalize to current blueprint shape:\n%s", yml)
 	}
 }
+
+// TestFreezeEmitsSecretEnvRefs pins that a frozen project does not carry
+// live credentials in a world-readable file.
+//
+// Freeze wrote the world's App.Auth.JWTSecret and App.Admin.SeedPassword
+// verbatim into gofastr.yml, and dropped world.json — the whole IR,
+// including those same values — at mode 0644. The v0.11.0 secrets-to-env
+// work covered the generated app; the kiln freeze path is its
+// unconverted sibling.
+//
+// The property: after Freeze, no file in the output tree contains a
+// secret's value, and world.json is not readable by anyone but the
+// owner.
+func TestFreezeEmitsSecretEnvRefs(t *testing.T) {
+	w := world.New()
+	w.App.Name = "blog"
+	w.App.Module = "example.com/blog"
+	w.App.Auth.Enabled = true
+	w.App.Auth.JWTSecret = "SUPER-SECRET-JWT-VALUE" // nosecret: test fixture
+	w.App.Admin.Enabled = true
+	w.App.Admin.SeedEmail = "admin@example.com"
+	w.App.Admin.SeedPassword = "SUPER-SECRET-ADMIN-PW" // nosecret: test fixture
+	w.Entities["posts"] = &world.Entity{
+		Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}},
+	}
+
+	dir := t.TempDir()
+	if err := freeze.Freeze(w, dir); err != nil {
+		t.Fatalf("Freeze: %v", err)
+	}
+
+	secrets := []string{"SUPER-SECRET-JWT-VALUE", "SUPER-SECRET-ADMIN-PW"}
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		buf, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		for _, s := range secrets {
+			if strings.Contains(string(buf), s) {
+				t.Errorf("SECURITY: [disclosure] frozen file %s contains the literal secret %q", path, s)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+
+	// The YAML must name the env var so the frozen app still boots.
+	yml, err := os.ReadFile(filepath.Join(dir, "gofastr.yml"))
+	if err != nil {
+		t.Fatalf("read gofastr.yml: %v", err)
+	}
+	for _, want := range []string{"${JWT_SECRET}", "${ADMIN_SEED_PASSWORD}"} {
+		if !strings.Contains(string(yml), want) {
+			t.Errorf("frozen gofastr.yml does not reference %s — the app cannot boot without it:\n%s", want, yml)
+		}
+	}
+
+	// world.json is the full IR; it must not be world-readable.
+	info, err := os.Stat(filepath.Join(dir, "world.json"))
+	if err != nil {
+		t.Fatalf("stat world.json: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("SECURITY: [disclosure] world.json is mode %#o — the IR must be owner-only", perm)
+	}
+}

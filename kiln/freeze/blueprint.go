@@ -137,14 +137,14 @@ func appMap(a world.AppConfig) map[string]any {
 	if a.Auth.Enabled || a.Auth.BasePath != "" || a.Auth.JWTSecret != "" || !a.Auth.DevMode {
 		m["auth"] = map[string]any{
 			"enabled": a.Auth.Enabled, "dev_mode": a.Auth.DevMode,
-			"base_path": a.Auth.BasePath, "jwt_secret": a.Auth.JWTSecret,
+			"base_path": a.Auth.BasePath, "jwt_secret": envRef(a.Auth.JWTSecret, "JWT_SECRET"),
 		}
 	}
 	if a.Admin.Enabled || a.Admin.Path != "" || a.Admin.Role != "" || a.Admin.LoginPath != "" || a.Admin.SeedEmail != "" || a.Admin.SeedPassword != "" {
 		m["admin"] = compact(map[string]any{
 			"enabled": a.Admin.Enabled, "path": a.Admin.Path, "role": a.Admin.Role,
 			"login_path": a.Admin.LoginPath, "seed_email": a.Admin.SeedEmail,
-			"seed_password": a.Admin.SeedPassword,
+			"seed_password": envRef(a.Admin.SeedPassword, "ADMIN_SEED_PASSWORD"),
 		})
 	}
 	if a.PWA.Enabled {
@@ -859,4 +859,19 @@ func orderFor(key string) []string {
 	default:
 		return nil
 	}
+}
+
+// envRef replaces a live credential with a "${NAME}" reference for the
+// frozen blueprint.
+//
+// Freeze writes gofastr.yml into a project directory that is about to be
+// committed, so the value must not be the secret itself — same rule the
+// generated app already follows. An empty value stays empty: there is
+// nothing to reference, and emitting "${JWT_SECRET}" for an unset secret
+// would turn "not configured" into "misconfigured".
+func envRef(value, name string) string {
+	if value == "" {
+		return ""
+	}
+	return "${" + name + "}"
 }

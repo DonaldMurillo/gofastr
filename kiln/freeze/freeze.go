@@ -48,9 +48,20 @@ func writeBlueprint(w *world.World, dir string) error {
 }
 
 func writeWorldSnapshot(w *world.World, dir string) error {
+	// Same substitution as gofastr.yml: the snapshot lands in a
+	// directory that is about to be committed, so it carries env
+	// references rather than the credentials themselves. Copy first —
+	// the caller's live world must not be mutated by freezing it.
+	snapshot := *w
+	snapshot.App.Auth.JWTSecret = envRef(w.App.Auth.JWTSecret, "JWT_SECRET")
+	snapshot.App.Admin.SeedPassword = envRef(w.App.Admin.SeedPassword, "ADMIN_SEED_PASSWORD")
+	w = &snapshot
 	buf, err := json.MarshalIndent(w, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "world.json"), append(buf, '\n'), 0o644)
+	// 0600: world.json is the complete IR, which includes whatever the
+	// session configured. gofastr.yml gets env references instead of
+	// values, but the snapshot is the raw world — owner-only.
+	return os.WriteFile(filepath.Join(dir, "world.json"), append(buf, '\n'), 0o600)
 }
