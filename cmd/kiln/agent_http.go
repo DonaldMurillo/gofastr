@@ -43,6 +43,17 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 		case "", "none", "auto":
 			// sentinels: pass through
 		case "custom":
+			// The custom form lets the request body choose the entire
+			// argv of a process kiln will spawn — request-borne code
+			// execution. It stays off unless the operator opted in.
+			if !allowCustomAgent {
+				writeJSON(w, map[string]any{
+					"ok": false,
+					"error": `name="custom" is disabled: it lets a request choose the command kiln executes. ` +
+						`Restart with --allow-custom-agent to enable it, or use a registered adapter name.`,
+				})
+				return
+			}
 			value = args.Custom
 			if value == "" {
 				writeJSON(w, map[string]any{
