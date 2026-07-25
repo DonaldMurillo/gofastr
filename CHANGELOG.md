@@ -5,6 +5,117 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.45.0] - 2026-07-25
+
+A full security pass — two-profile audit, 30 findings, every one fixed
+with a test that failed on the bug path first. The shape of the whole
+audit is **guard drift**: a check one code path has and its sibling
+skips. Fixing the shape mattered more than fixing each instance, so four
+duplicated guards collapsed into single definitions.
+
+Most entries below are BREAKING. That is deliberate — the framework is
+young enough that the right default is worth more than compatibility with
+a wrong one.
+
+### Security
+
+- **`?include=` requires a registered relation target.** A leaf segment
+  whose target was not in the registry set `Target = nil` and loaded
+  anyway, dropping every guard keyed off it: the Hidden-column scrub,
+  owner scope, tenant scope, the soft-delete filter, and the
+  scoped-filter field allow-list. The blueprint emits exactly the arming
+  config — `auth.NewEntityUserStore(db, "auth_users")` is a self-migrated
+  table holding `password_hash` that is never registered — so a generated
+  entity with a writable author FK let any caller read another user's
+  row and iterate the FK to dump the table.
+- **`?include=` is bounded.** No depth cap, node budget, or LIMIT
+  existed: 23 request bytes produced a 13.7 MB response, and two levels
+  deeper exhausted memory. Now 4 relation hops and 20,000 related-row
+  references, with shared subtrees converted once instead of once per
+  parent.
+- **Two-factor enforcement covers every login path.** It read the
+  negative flag `PendingTwoFactor`, set in exactly one place — the
+  password handler. Magic-link verify and the OAuth callback minted
+  sessions the enforcement never saw, so both yielded a fully-privileged
+  session for a 2FA-enrolled user, which could then disable the factor.
+  `AuthManager.MintSession` is now the only way a session is created.
+- **Step-up is checked positively.** A session minted *before* the user
+  enrolled kept `PendingTwoFactor=false` forever and stayed "stepped up"
+  for its whole life. The 2FA self-service endpoints now require
+  `TwoFactorVerified`.
+- **The OAuth callback is bound to the browser that started the flow**,
+  and **a magic link no longer signs you in on click** — it renders a
+  confirmation naming the account. Both were GETs minting a session from
+  a credential an attacker can hold, so an attacker could sign a victim
+  into the *attacker's* account.
+- **Five browser gadgets closed**, each proved in a real browser:
+  `data-behavior` as an unvalidated `<script src>` sink; a
+  protocol-relative form action defeating the cross-origin check; 13
+  runtime fetch sites taking their URL from a DOM attribute with no
+  origin check (and forwarding the CSRF token); a query-string-seeded
+  signal reaching `innerHTML`; and `__proto__` through `setSignal`, the
+  one gadget CSP cannot stop.
+- **The untrusted node IR emits a narrower attribute set.** Its
+  pass-through was a deny-list of three names, so `style`, every `on*`,
+  `srcdoc`, and every privileged `data-fui-*` went through.
+- **`gofastr dev` will not serve its mutating MCP surface off-loopback**,
+  and **`WithMCPControl` tools require an authenticated caller.** The
+  transport's loopback Host pin stops DNS rebinding but not a direct TCP
+  client, which sets Host freely.
+- **Harness quiet mode cannot auto-allow a command that spawns a process
+  or writes a file** (`find -exec`, `find -delete`, `rg --pre`,
+  `git --output=`) — an auto-allow publishes no permission request, so
+  none of it surfaced.
+- **`gofastr generate` stops looking for a config at the repo root**, and
+  a *discovered* config's `command` extension needs an explicit opt-in. A
+  config planted in any shared ancestor ran as the developer.
+- **The plugin iframe sandbox is an allow-list.** Stripping only
+  `allow-same-origin` left `allow-popups-to-escape-sandbox`, which yields
+  a fully unsandboxed same-origin popup.
+- **Kiln stops serving and freezing secrets.** `/kiln/world` returned
+  `jwt_secret` and `seed_password` verbatim, linked from every page;
+  freeze wrote them into `gofastr.yml` and dropped `world.json` at 0644.
+- **PDF rendering has a network gate**, and the print CSP is emitted
+  in-document. The renderer navigated a `data:` URL — which has no
+  headers, so the route's CSP never applied — with unrestricted network
+  access, and fetched bytes are rendered into the downloaded PDF.
+- **`_like` means literal substring at every depth.** Nested filters
+  passed the value through as a raw pattern while the top level escaped
+  it, so the same parameter meant two things.
+- **Request-layer defaults that looked configured and were not:** the
+  `__Host-` CSRF cookie never promoted behind a TLS-terminating proxy;
+  idempotency's nil `Principal` shared one key namespace across users and
+  replayed response bodies between them; the default CSP named neither
+  `form-action` nor `object-src`, neither of which falls back to
+  `default-src`; static exports shipped no CSP at all;
+  `X-Forwarded-Host` was trusted and reflected into the `Link:` header
+  naming the MCP endpoint.
+- **One shared guard replaces four drifted copies each:**
+  `core-ui/urlsafe` (URL schemes — `core-ui/html` had none at all),
+  `core/netguard` (internal addresses — the webhook copy missed CGNAT and
+  IPv4-mapped IPv6), `AuthManager.MintSession`, and the runtime's
+  `_originOK`.
+- **Supply chain:** `govulncheck` pinned, `actions/checkout` SHA-pinned
+  in release.yml, `permissions: contents: read` at the top of ci.yml, and
+  `make secret-scan` widened past `*.go` to yml/json/env/sh/Dockerfile —
+  a credential in any of those was never scanned. The two secret gates
+  also disagreed on their exemption marker, so a fixture annotated for
+  one tripped the other.
+
+### Changed
+
+- The **disclosure** feature (aria-expanded mirroring, Escape-to-close,
+  menu focus-on-open, the inert focus trap) moved from the core runtime
+  bundle into a demand-loaded module. The browser fixes pushed core past
+  its 12 KB gzip budget, and the budget's rule is to carve, never to
+  raise the line.
+
+### Upgrading
+
+Every breaking change and its upgrade action is listed in
+`cmd/gofastr/upgrades.yml`; `gofastr upgrade` prints the ones that apply
+to your project.
+
 ## [0.44.0] - 2026-07-25
 
 Closes the screen-router umbrella (#130) with its last open slice, adds

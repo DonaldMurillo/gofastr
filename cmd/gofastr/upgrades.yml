@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.44.0
+through: v0.45.0
 
 releases:
   - version: v0.3.0
@@ -260,3 +260,54 @@ releases:
       - change: Blueprint rejects field names and enum values that break generated source
         breaking: false
         guidance: "gofastr generate now fails when a field name is not a valid Go identifier, or an enum value contains a quote, backtick, backslash or newline — these previously escaped the emitted Go literal. The error names the entity and field; rename the field or drop the character."
+  - version: v0.45.0
+    title: Security pass — 30 findings, mostly fail-closed defaults
+    notes:
+      - change: "?include= requires every relation target to be a registered entity"
+        breaking: true
+        guidance: "A leaf include whose target was not registered loaded it with no Hidden-column scrub, owner scope, tenant scope or soft-delete filter. Register the entity (including tables a battery self-migrates, e.g. the auth user table) or drop the relation. A hand-built crud.NewCrudHandler must set .Registry."
+        detect: "NewCrudHandler\\("
+      - change: "?include= is capped at 4 relation hops and 20,000 related-row references"
+        breaking: true
+        guidance: "Deeper or wider includes return 400 with a message naming the limit. Narrow the include or reduce the page size."
+      - change: "_like is a literal substring at every depth"
+        breaking: true
+        guidance: "Nested filters passed the caller's value through as a raw LIKE pattern while top-level filters escaped it. Drop the wildcards: ?author.name_like=A%25 becomes ?author.name_like=A."
+        detect: "_like="
+      - change: Every login path mints its session through AuthManager.MintSession
+        breaking: true
+        guidance: "Magic-link and OAuth created sessions the 2FA enforcement never saw, so an enrolled user got a fully-privileged session. A custom plugin that mints sessions must call mgr.MintSession instead of SessionStore().Create."
+        detect: "SessionStore\\(\\)\\.Create\\("
+      - change: 2FA self-service endpoints require a verified session
+        breaking: true
+        guidance: "A session minted before the user enrolled could disable the factor it never proved. Sign in again to get a session that can change 2FA settings."
+      - change: The OAuth callback requires the cookie its redirect planted
+        breaking: true
+        guidance: "Starting a flow sets a short-lived SameSite=Lax gofastr_oauth_state cookie the callback must match, so a captured callback URL replayed in another browser is refused. No action for normal flows; a test that synthesises a callback must send the cookie."
+      - change: A magic link renders a confirmation instead of signing in
+        breaking: true
+        guidance: "GET .../magic-link/verify?token= now renders a confirm screen; a same-origin POST with the token completes sign-in. Clients that scripted the GET must POST. Set MagicLinkConfig.ConfirmPage to render the screen with your design system."
+        detect: "magic-link/verify"
+      - change: middleware.Idempotency caches nothing without a Principal
+        breaking: true
+        guidance: "A nil Principal shared one key namespace across users and replayed response bodies between them. framework.WithIdempotency defaults it to the request owner; direct users of the middleware must set IdempotencyConfig.Principal."
+        detect: "IdempotencyConfig\\{"
+      - change: WithMCPControl tools require an authenticated caller
+        breaking: true
+        guidance: "app_module_enable/app_module_disable now run behind an mcp.Gated identity check. Make sure the app's session middleware runs on the /mcp route."
+        detect: "WithMCPControl\\("
+      - change: gofastr dev refuses to expose MCP control tools on a non-loopback bind
+        breaking: true
+        guidance: "The loopback Host pin is a browser control; a direct TCP client forges Host. Bind to localhost, or set GOFASTR_DEV_MCP_EXPOSE=1 to accept the risk. Note that :8080 and a bare port bind every interface."
+      - change: A discovered codegen config cannot silently run command extensions
+        breaking: true
+        guidance: "gofastr generate/build refuse a `command` extension from a config found by walking the tree. Pass --config <path>, or set GOFASTR_CODEGEN_ALLOW_COMMANDS=1. Config discovery also stops at the module/repo root instead of walking to /."
+      - change: X-Forwarded-Host is no longer honored for well-known docs and sitemap URLs
+        breaking: true
+        guidance: "It is a client-settable header that was reflected into absolute URLs including the Link: rel=service MCP endpoint. Set the sitemap BaseURL if a proxy rewrites Host."
+      - change: The untrusted node IR emits a narrower attribute set
+        breaking: true
+        guidance: "core-ui/noderender refuses data-behavior, data-widget, data-component, data-bind and data-fui-*, plus style/srcdoc/on*. Inert data-* markers still pass. Only affects hosts rendering agent-authored IR (kiln, blueprint node screens)."
+      - change: Plugin iframe sandbox tokens are an allow-list
+        breaking: true
+        guidance: "framework/pluginhost drops any sandbox token outside allow-scripts/forms/modals/popups/pointer-lock/orientation-lock/presentation. A manifest asking for allow-popups-to-escape-sandbox, allow-top-navigation or allow-downloads no longer gets them."
