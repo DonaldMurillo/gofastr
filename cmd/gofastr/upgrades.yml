@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.42.0
+through: v0.43.0
 
 releases:
   - version: v0.3.0
@@ -233,3 +233,30 @@ releases:
       - change: gofastr dev now runs the static accessibility lint on every rebuild, exactly like gofastr build
         breaking: false
         guidance: "Apps with standing a11y findings stop at the dev rebuild instead of at build/CI. Fix the findings (each prints a guided hint) or run gofastr dev --no-a11y while you do; the flag is an escape hatch, not a setting."
+
+  - version: v0.43.0
+    title: Security audit remediation
+    notes:
+      - change: Client-selected SSE block mode is now a broker opt-in
+        breaking: true
+        guidance: "?slow=block / X-SSE-Slow is ignored unless the broker sets SSEBrokerConfig.AllowClientSlowMode. A block-mode subscriber stalls deliver() on the publisher's goroutine, so a request-selected block mode let one unauthenticated client stall every other subscriber and the calling handler. Set AllowClientSlowMode on trusted-only endpoints; BlockTimeout (default 5s) bounds the stall even then."
+        detect: 'slow=block|X-SSE-Slow'
+      - change: SSE subscriber_id only replaces a subscriber from the same caller
+        breaking: true
+        guidance: "?subscriber_id=<id> previously evicted whoever held that id, so one client could drop another's stream by guessing it. A reconnect now only replaces its own entry; a colliding id from a different caller gets a fresh generated id instead. Apps keying streams by user/tab/device are unaffected."
+      - change: Permission rules match literally unless Rule.Glob is set
+        breaking: true
+        guidance: "permission.Rule.ArgvGlob was matched with filepath.Match, so an approved command widened into a pattern (approving 'git diff *' also matched 'git diff ; nc host 9') and persisted that way. Rules are literal now; set Glob: true on any rule you deliberately authored as a pattern."
+        detect: 'ArgvGlob:'
+      - change: kiln custom agent commands are opt-in
+        breaking: true
+        guidance: "POST /kiln/agent with name=\"custom\" chose the argv of a spawned process, which made the unauthenticated tool API a code-execution surface. Restart kiln with --allow-custom-agent to keep using it; registered adapter names are unaffected."
+      - change: MCP transport validates Origin and Host
+        breaking: false
+        guidance: "A browser Origin that is not same-origin with the request is refused. Split-origin browser clients and tunnels call Server.SetAllowedOrigins; local transports pin authorities with SetAllowedHosts or SetRequireLoopbackHost. gofastr dev pins loopback automatically because dev implies the mutating control tools."
+      - change: WebSocket Upgrade enforces RFC 6455 handshake fields
+        breaking: false
+        guidance: "Upgrade now requires GET, Connection: Upgrade, Sec-WebSocket-Version: 13, and a key that base64-decodes to 16 bytes. Standard browser and library clients already send all four; hand-rolled clients that omitted them stop upgrading."
+      - change: Blueprint rejects field names and enum values that break generated source
+        breaking: false
+        guidance: "gofastr generate now fails when a field name is not a valid Go identifier, or an enum value contains a quote, backtick, backslash or newline — these previously escaped the emitted Go literal. The error names the entity and field; rename the field or drop the character."

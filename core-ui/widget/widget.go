@@ -510,6 +510,10 @@ var sessionCheck func(*http.Request) bool
 // consults. Hosts (framework/uihost) call this once at wiring time.
 func SetSessionCheck(fn func(*http.Request) bool) { sessionCheck = fn }
 
+// SessionCheck returns the installed predicate, or nil when no host
+// installed one. Lets a host assert its own wiring.
+func SessionCheck() func(*http.Request) bool { return sessionCheck }
+
 // gateSession wraps h so it only runs for callers with a valid session
 // when required. Fails closed: a widget that asked for a session but
 // runs in a host that installed no check serves nothing.

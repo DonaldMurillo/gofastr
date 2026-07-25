@@ -1924,6 +1924,16 @@ func (ds *UIHost) Mount(r *router.Router) {
 		widget.ServeWidgetList(w, req)
 	}))
 
+	// Install the predicate widget.Definition.RequireSession consults.
+	// Without this the gate has no way to say yes, so a widget that
+	// asked for a session would 403 forever — the gate fails closed by
+	// design, and this is what makes it usable. Same signature check as
+	// requireValidSession, minus the response write.
+	widget.SetSessionCheck(func(req *http.Request) bool {
+		_, ok := ds.verifySessionToken(readSessionCookie(req))
+		return ok
+	})
+
 	// Split runtime modules — /__gofastr/runtime/<name>.js. core.js's
 	// loader fetches them on demand (hover prefetch, idle, or click
 	// await). Delegated to core-ui/widget so back-compat for hosts that

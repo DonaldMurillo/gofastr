@@ -5,7 +5,7 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.43.0] - 2026-07-25
 
 Security audit remediation. A dual-model pass (breadth + depth) across
 the previously unaudited surfaces, plus the deterministic gates. Every
@@ -83,6 +83,21 @@ fix ships with a `_security_test.go` that fails against the old code.
   `go mod verify`) on every PR **and** weekly on a schedule — an
   advisory can land against a dependency nobody touched, which is
   exactly how GO-2026-5158 went unnoticed.
+- `core/mcp.Server.SetAllowedHosts` / `SetAllowedOrigins` /
+  `SetRequireLoopbackHost` — pin the authorities and browser origins the
+  MCP transport answers on. `SetRequireLoopbackHost` is the port-agnostic
+  form used by `gofastr dev`; `SetAllowedOrigins` is the escape hatch for
+  tunnels (ngrok, Codespaces).
+- `widget.Definition.RequireSession` plus `widget.SetSessionCheck` /
+  `widget.SessionCheck` — the host-installed predicate the gate
+  consults. `framework/uihost` installs it at `Mount`, so the gate works
+  out of the box; a host that mounts widgets itself must install one or
+  every gated widget stays closed.
+- `permission.Rule.Glob` — opts a rule into `filepath.Match` semantics.
+  Rules are matched literally without it.
+- `SSEBrokerConfig.AllowClientSlowMode`, `BlockTimeout`,
+  `MaxSubscribers`.
+- `kiln serve --allow-custom-agent`.
 
 ## [0.42.0] - 2026-07-24
 
