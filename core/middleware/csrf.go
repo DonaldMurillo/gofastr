@@ -54,6 +54,19 @@ type CSRFConfig struct {
 	// for local dev; set true in production.
 	CookieSecure bool
 
+	// HostPrefixWhenSecure promotes a caller-supplied CookieName to
+	// "__Host-"+CookieName on requests the middleware considers secure,
+	// resolved PER REQUEST — the same signal that decides the Secure
+	// flag (r.TLS or X-Forwarded-Proto), not construction-time
+	// CookieSecure.
+	//
+	// The two had drifted: with TLS terminated at a proxy and the host
+	// never setting CookieSecure, the cookie came back Secure but named
+	// plainly, so the __Host- guarantee — the thing stopping a sibling
+	// subdomain from planting a valid token — silently did not apply.
+	// A CookieName that already carries the prefix is left alone.
+	HostPrefixWhenSecure bool
+
 	// SecretKey is the HMAC key used to sign the CSRF token. Empty means
 	// the middleware autogenerates a per-process key on first use —
 	// fine for single-instance dev, NOT acceptable for production
@@ -158,6 +171,9 @@ func CSRF(cfg CSRFConfig) Middleware {
 	// accept a __Host- cookie set from a sibling subdomain.
 	resolveCookieName := func(secure bool) string {
 		if cfg.CookieName != "" {
+			if secure && cfg.HostPrefixWhenSecure && !strings.HasPrefix(cfg.CookieName, "__Host-") {
+				return "__Host-" + cfg.CookieName
+			}
 			return cfg.CookieName
 		}
 		if secure {

@@ -43,12 +43,28 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 
 | Header                    | Default                                                                          |
 |---------------------------|----------------------------------------------------------------------------------|
-| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'` |
+| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'` |
 | `X-Content-Type-Options`  | `nosniff` (always, not configurable)                                            |
 | `Referrer-Policy`         | `no-referrer`                                                                    |
 | `X-Frame-Options`         | `DENY`                                                                           |
 | `Permissions-Policy`      | `geolocation=(), microphone=(), camera=()`                                       |
 | `Strict-Transport-Security` | `max-age=31536000` (1 year) — **HTTPS responses only** |
+
+`object-src` and `form-action` are named explicitly because `default-src`
+does not cover them: CSP never let `form-action` fall back, and
+`object-src`'s fallback was removed in CSP3. A policy of just
+`default-src 'self'` therefore leaves an injected `<form>` free to post
+the page's data anywhere, and `<object>`/`<embed>` free to execute — so
+a custom `ContentSecurityPolicy` should keep both directives.
+
+### Static exports
+
+`gofastr export` writes the same policy into every page as an
+in-document `<meta http-equiv="Content-Security-Policy">` and emits a
+`_headers` file for hosts that read one (Netlify, Cloudflare Pages).
+Response headers are a server's job, and a static export has no server —
+without this the export would be the one deployment target shipping the
+runtime with no CSP at all.
 
 **HSTS is on by default.** `Strict-Transport-Security` is emitted with a
 one-year `max-age` whenever the request is HTTPS — direct TLS, or a

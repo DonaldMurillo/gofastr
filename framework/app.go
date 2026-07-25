@@ -45,6 +45,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/openapi"
 	"github.com/DonaldMurillo/gofastr/framework/outbox"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
 
@@ -641,12 +642,36 @@ func WithLogger(l *slog.Logger) AppOption {
 // option is otherwise idiomatic-Go composition over the existing
 // middleware.Idempotency primitive.
 //
+// Defaults Principal to the request's owner (the framework's owner
+// extractor, i.e. the authenticated user). The middleware caches nothing
+// without a Principal — one shared key namespace would replay one
+// caller's response body to another — and the framework layer is where
+// "who is this" is knowable, so IdempotencyConfig{} still means "all
+// defaults" here. Set Principal explicitly to key on something else
+// (a tenant, an API-token id).
+//
 // Has no effect when WithoutDefaultMiddleware is also set — wire your
 // own chain explicitly in that case.
 func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
+	if cfg.Principal == nil {
+		cfg.Principal = ownerPrincipal
+	}
 	return func(a *App) {
 		a.idempotency = &cfg
 	}
+}
+
+// ownerPrincipal keys idempotency entries by the request's owner. An
+// unauthenticated request yields "anon", which shares a namespace among
+// anonymous callers — acceptable because an anonymous response carries
+// no per-user data by construction, and the alternative (no caching at
+// all for anonymous traffic) drops the retry protection exactly where
+// duplicate submits are most common.
+func ownerPrincipal(r *http.Request) string {
+	if id, ok := owner.Get(r.Context()); ok && id != nil {
+		return fmt.Sprintf("%v", id)
+	}
+	return "anon"
 }
 
 // WithMetrics enables HTTP request metrics (per-route counts, status classes,

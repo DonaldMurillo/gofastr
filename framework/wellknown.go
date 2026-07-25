@@ -21,9 +21,24 @@ import (
 )
 
 // resolveWellKnownBase returns the canonical origin for absolute URLs in
-// well-known docs: the forwarded scheme + Host (X-Forwarded-Proto/Host
-// honored). These docs live at the framework layer, which has no sitemap
-// base to fall back on, so the request is the source of truth.
+// well-known docs. These docs live at the framework layer, which has no
+// sitemap base to fall back on, so the request is the source of truth.
+//
+// X-Forwarded-Host is NOT honored. It is a plain request header, so any
+// client sets it — and the value ends up in the `Link: rel="service"`
+// header naming the MCP endpoint. Reflecting an arbitrary origin there,
+// with no Vary, is a cache-poisoning primitive that redirects a later
+// visitor's agent at an attacker's server. That is the same reasoning
+// battery/print already documents for its BaseURL ("deliberately NOT
+// derived from the request Host header, which is client-controlled").
+//
+// r.Host is used instead: still client-supplied, but it is the authority
+// the request was actually addressed to, and varyWellKnown below keeps
+// caches from serving one caller's value to another.
+//
+// X-Forwarded-Proto IS honored — a TLS-terminating proxy is the normal
+// deployment, and the worst a forged value does is emit an https:// or
+// http:// prefix for the same host.
 func resolveWellKnownBase(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
@@ -32,14 +47,19 @@ func resolveWellKnownBase(r *http.Request) string {
 	if u := r.Header.Get("X-Forwarded-Proto"); u != "" {
 		scheme = u
 	}
-	host := r.Host
-	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-		host = h
-	}
-	return strings.TrimRight(scheme+"://"+host, "/")
+	return strings.TrimRight(scheme+"://"+r.Host, "/")
+}
+
+// varyWellKnown declares the request inputs the response body depends
+// on, so a shared cache keys on them instead of serving the first
+// caller's absolute URLs to everyone behind it.
+func varyWellKnown(w http.ResponseWriter) {
+	w.Header().Add("Vary", "Host")
+	w.Header().Add("Vary", "X-Forwarded-Proto")
 }
 
 func writeWellKnownJSON(w http.ResponseWriter, doc any) {
+	varyWellKnown(w)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	enc := json.NewEncoder(w)

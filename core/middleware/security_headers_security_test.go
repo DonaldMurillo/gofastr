@@ -114,3 +114,42 @@ func TestSecurityHeaders_COOPPresent(t *testing.T) {
 		t.Errorf("SECURITY: [headers] GET / returned no Cross-Origin-Opener-Policy header. Attack: missing COOP allows Spectre-class cross-origin window references.")
 	}
 }
+
+// TestDefaultCSPBoundsFormAndObject pins the two directives that
+// default-src does NOT cover.
+//
+// CSP does not let default-src fall back for form-action at all, and
+// object-src's fallback was removed in CSP3 — so a policy of
+// "default-src 'self'" leaves both unrestricted in practice. That
+// matters here because the default CSP is the single load-bearing
+// mitigation for the browser-runtime gadget class: without form-action,
+// an injected <form> posts the page's data to any origin; without
+// object-src, <object>/<embed> is a script-execution surface with no
+// legitimate use in a framework-rendered page.
+func TestDefaultCSPBoundsFormAndObject(t *testing.T) {
+	h := SecurityHeaders(SecurityHeadersConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	csp := rec.Header().Get("Content-Security-Policy")
+
+	for _, want := range []string{"form-action 'self'", "object-src 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("SECURITY: [xss] the default CSP omits %q — default-src does not cover it. Policy: %q", want, csp)
+		}
+	}
+	// The existing guarantees must survive.
+	for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'", "base-uri 'self'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("the default CSP lost %q: %q", want, csp)
+		}
+	}
+	// A host-supplied policy is still used verbatim — this is a default,
+	// not an override.
+	custom := SecurityHeaders(SecurityHeadersConfig{ContentSecurityPolicy: "default-src 'none'"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	crec := httptest.NewRecorder()
+	custom.ServeHTTP(crec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if got := crec.Header().Get("Content-Security-Policy"); got != "default-src 'none'" {
+		t.Errorf("host-supplied CSP was modified: %q", got)
+	}
+}

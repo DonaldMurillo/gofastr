@@ -134,6 +134,25 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 	for _, m := range cfg.Methods {
 		methods[m] = true
 	}
+	// No Principal means one shared key namespace for every caller: two
+	// users who pick the same Idempotency-Key value land on the same
+	// entry, and the second is served the first's cached response BODY.
+	// A UUID collision is unlikely, but a client library using a
+	// request-scoped counter, a retry helper hashing the payload, or a
+	// hand-written "order-1" are not.
+	//
+	// Degrade to a no-op rather than cache into a shared namespace: a
+	// host that never wired a Principal then behaves exactly as if the
+	// middleware were absent, which is the safe reading of "not
+	// configured". Everything else in this file already fails closed —
+	// FailOpen defaults false, credential headers are stripped from
+	// replays — and this default was the odd one out.
+	if cfg.Principal == nil {
+		logSlogWarnDefault("middleware: Idempotency has no Principal function — replay caching is DISABLED. " +
+			"Set IdempotencyConfig.Principal (e.g. the authenticated user or tenant id) to enable it; " +
+			"without one, two callers sharing an Idempotency-Key would receive each other's responses.")
+		return func(next http.Handler) http.Handler { return next }
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

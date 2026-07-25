@@ -16,7 +16,7 @@ import (
 // ----- Set-Cookie / Authorization stripped from cache -----------------------
 
 func TestIdempotency_StripsHandlerSetCookieFromReplay(t *testing.T) {
-	mw := Idempotency(IdempotencyConfig{})
+	mw := Idempotency(IdempotencyConfig{Principal: testPrincipal})
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "secret-token", Path: "/"})
 		w.Header().Set("Authorization", "Bearer first-call-token")
@@ -104,7 +104,7 @@ func (brokenStore) Finish(context.Context, string, *IdempotentResponse) error {
 
 func TestIdempotency_FailsClosedOnStoreError(t *testing.T) {
 	var calls int32
-	mw := Idempotency(IdempotencyConfig{Store: brokenStore{}})
+	mw := Idempotency(IdempotencyConfig{Store: brokenStore{}, Principal: testPrincipal})
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusOK)
@@ -125,7 +125,7 @@ func TestIdempotency_FailsClosedOnStoreError(t *testing.T) {
 
 func TestIdempotency_FailOpenOptionPreservesAvailability(t *testing.T) {
 	var calls int32
-	mw := Idempotency(IdempotencyConfig{Store: brokenStore{}, FailOpen: true})
+	mw := Idempotency(IdempotencyConfig{Store: brokenStore{}, FailOpen: true, Principal: testPrincipal})
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusOK)
@@ -195,7 +195,7 @@ func TestMemoryStore_MaxEntriesEvictsOldest(t *testing.T) {
 
 func TestIdempotency_FinishUsesUncancelledContext(t *testing.T) {
 	store := &recordingStore{}
-	mw := Idempotency(IdempotencyConfig{Store: store})
+	mw := Idempotency(IdempotencyConfig{Store: store, Principal: testPrincipal})
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

@@ -98,6 +98,13 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 	}
 
+	// Security headers for hosts that read a `_headers` file (Netlify,
+	// Cloudflare Pages). Pages also carry the policy as an in-document
+	// meta, so a host that ignores this file is still covered.
+	if err := writeHeadersFile(b.OutDir); err != nil {
+		return res, fmt.Errorf("static: write _headers: %w", err)
+	}
+
 	// LLM documentation — per-page llm.md and top-level index.
 	if !b.Host.App.NoLLMMD {
 		for _, route := range b.Host.App.Routes() {
@@ -430,6 +437,7 @@ func validateCatchAllValue(key, v string) error {
 //     under the mount path.
 func (b *Builder) applyStaticMode(page string) string {
 	page = stampStatic(page)
+	page = applyStaticCSP(page)
 	page = b.rewriteBaseURLs(page)
 	notice := string(ui.Banner(ui.BannerConfig{
 		Title:       "Static preview",
@@ -902,4 +910,51 @@ func copyFS(fsys fs.FS, dst string, res *Result, log func(string, ...any)) error
 		log("copied %s -> %s", path, out)
 		return nil
 	})
+}
+
+// staticExportCSP is the Content-Security-Policy a static export carries
+// with it.
+//
+// Every browser gadget the runtime can be pushed into — an injected
+// data-behavior <script src>, a signal-driven URL attribute, a fetch
+// aimed off-origin — is mitigated in production by the default
+// `default-src 'self'` that core/middleware.SecurityHeaders sets as a
+// response HEADER. A static export is a directory of files: S3, GitHub
+// Pages and friends set no such header, so the export was the one
+// deployment target where the mitigation simply was not there.
+//
+// It mirrors the served default and adds the two directives the audit
+// recommended for both: object-src 'none' (plugin content is a
+// script-execution surface with no legitimate use here) and form-action
+// 'self' (an injected form cannot post the page's data elsewhere).
+const staticExportCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
+	"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+
+// applyStaticCSP inserts the policy as an in-document meta, immediately
+// after <head> so it precedes anything that can trigger a fetch. A page
+// that already carries one (the print shell, say) is left alone.
+func applyStaticCSP(page string) string {
+	if strings.Contains(page, "http-equiv=\"Content-Security-Policy\"") {
+		return page
+	}
+	meta := "\n<meta http-equiv=\"Content-Security-Policy\" content=\"" + staticExportCSP + "\">"
+	if i := strings.Index(page, "<head"); i >= 0 {
+		if j := strings.IndexByte(page[i:], '>'); j >= 0 {
+			at := i + j + 1
+			return page[:at] + meta + page[at:]
+		}
+	}
+	return page
+}
+
+// writeHeadersFile emits a Netlify / Cloudflare Pages `_headers` file so
+// the policy arrives as a REAL header on hosts that read one. The meta
+// above covers every other host; both ship because neither alone covers
+// the field.
+func writeHeadersFile(outDir string) error {
+	body := "/*\n" +
+		"  Content-Security-Policy: " + staticExportCSP + "\n" +
+		"  X-Content-Type-Options: nosniff\n" +
+		"  Referrer-Policy: strict-origin-when-cross-origin\n"
+	return writeFile(filepath.Join(outDir, "_headers"), []byte(body))
 }

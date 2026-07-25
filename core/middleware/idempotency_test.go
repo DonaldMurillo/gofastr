@@ -14,9 +14,21 @@ import (
 	"time"
 )
 
+// testPrincipal is the Principal every fixture below wires. Idempotency
+// no-ops without one — caching into a namespace shared by every caller
+// would replay one user's response body to another
+// (TestIdempotencyRequiresPrincipal) — so a test that omits it exercises
+// the no-op, not the middleware.
+func testPrincipal(r *http.Request) string {
+	if c := r.Header.Get("X-Caller"); c != "" {
+		return c
+	}
+	return "test-principal"
+}
+
 func TestIdempotency_BypassesSafeMethods(t *testing.T) {
 	var calls int32
-	h := Idempotency(IdempotencyConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -38,7 +50,7 @@ func TestIdempotency_BypassesSafeMethods(t *testing.T) {
 
 func TestIdempotency_NoKey_OptionalPasses(t *testing.T) {
 	var calls int32
-	h := Idempotency(IdempotencyConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -55,7 +67,7 @@ func TestIdempotency_NoKey_OptionalPasses(t *testing.T) {
 }
 
 func TestIdempotency_NoKey_RequiredRejects(t *testing.T) {
-	h := Idempotency(IdempotencyConfig{Required: true})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Required: true, Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not have been invoked")
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`))
@@ -68,7 +80,7 @@ func TestIdempotency_NoKey_RequiredRejects(t *testing.T) {
 
 func TestIdempotency_ReplaysCachedResponse(t *testing.T) {
 	var calls int32
-	h := Idempotency(IdempotencyConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.Header().Set("X-Custom", "first")
 		w.WriteHeader(http.StatusCreated)
@@ -108,7 +120,7 @@ func TestIdempotency_ReplaysCachedResponse(t *testing.T) {
 }
 
 func TestIdempotency_FingerprintMismatchReturns422(t *testing.T) {
-	h := Idempotency(IdempotencyConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte("ok"))
 	}))
@@ -133,7 +145,7 @@ func TestIdempotency_FingerprintMismatchReturns422(t *testing.T) {
 
 func TestIdempotency_NonSuccessReleasesClaim(t *testing.T) {
 	var calls int32
-	h := Idempotency(IdempotencyConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt32(&calls, 1)
 		if n == 1 {
 			http.Error(w, "boom", http.StatusInternalServerError)
@@ -160,7 +172,7 @@ func TestIdempotency_NonSuccessReleasesClaim(t *testing.T) {
 }
 
 func TestIdempotency_TooLongKeyRejected(t *testing.T) {
-	h := Idempotency(IdempotencyConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("should not reach handler")
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}"))
@@ -175,7 +187,7 @@ func TestIdempotency_TooLongKeyRejected(t *testing.T) {
 func TestIdempotency_BodyTooLargeBypassesCleanly(t *testing.T) {
 	var calls int32
 	var captured []byte
-	h := Idempotency(IdempotencyConfig{MaxBodyBytes: 16})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{MaxBodyBytes: 16, Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		b, _ := io.ReadAll(r.Body)
 		captured = b
@@ -212,7 +224,7 @@ func TestIdempotency_ConcurrentReturnsInFlight(t *testing.T) {
 	start := make(chan struct{})
 	release := make(chan struct{})
 	var concurrent int32
-	h := Idempotency(IdempotencyConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&concurrent, 1)
 		start <- struct{}{}
 		<-release
@@ -250,7 +262,7 @@ func TestIdempotency_ConcurrentReturnsInFlight(t *testing.T) {
 func TestIdempotency_StoreFailureFailsClosedByDefault(t *testing.T) {
 	bad := failingStore{err: errors.New("backend down")}
 	var calls int32
-	h := Idempotency(IdempotencyConfig{Store: bad})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{Store: bad, Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -306,7 +318,7 @@ func TestIdempotency_ReplayDoesNotOverwriteUpstreamHeaders(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte("ok"))
 	})
-	chain := upstream(Idempotency(IdempotencyConfig{})(handler))
+	chain := upstream(Idempotency(IdempotencyConfig{Principal: testPrincipal})(handler))
 
 	send := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}"))
@@ -336,7 +348,7 @@ func TestIdempotency_OversizedResponseBypassesCache(t *testing.T) {
 	const cap = 64
 	bigBody := strings.Repeat("x", cap*2) // > cap
 	var calls int32
-	h := Idempotency(IdempotencyConfig{MaxResponseBytes: cap})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Idempotency(IdempotencyConfig{MaxResponseBytes: cap, Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(bigBody))
@@ -368,3 +380,70 @@ func (f failingStore) Begin(_ context.Context, _, _ string) (*IdempotentResponse
 	return nil, false, f.err
 }
 func (f failingStore) Finish(_ context.Context, _ string, _ *IdempotentResponse) error { return nil }
+
+// TestIdempotencyRequiresPrincipal pins that the middleware cannot be
+// wired into a shared key namespace by omission.
+//
+// Attack: Principal defaulted to nil, making the storage key
+// "\x00"+key for every caller. Two users who pick the same
+// Idempotency-Key value — a UUID collision is unlikely, but a client
+// library using a request-scoped counter, a retry helper hashing the
+// payload, or a hand-written "order-1" are not — land on the same entry,
+// and the second is served the FIRST user's cached response body. The
+// rest of this file already fails closed (FailOpen defaults false,
+// credential headers are stripped from replays); this default was the
+// odd one out.
+//
+// The property: without a Principal the middleware caches nothing.
+func TestIdempotencyRequiresPrincipal(t *testing.T) {
+	h := Idempotency(IdempotencyConfig{Store: NewMemoryIdempotencyStore(time.Minute)})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("body-for-" + r.Header.Get("X-Caller")))
+		}))
+
+	call := func(caller string) string {
+		req := httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(`{"n":1}`))
+		req.Header.Set("Idempotency-Key", "order-1")
+		req.Header.Set("X-Caller", caller)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+
+	if got := call("alice"); got != "body-for-alice" {
+		t.Fatalf("first call = %q", got)
+	}
+	if got := call("bob"); got != "body-for-bob" {
+		t.Errorf("SECURITY: [disclosure] with no Principal configured, bob received %q — alice's cached response replayed across users sharing an Idempotency-Key", got)
+	}
+}
+
+// With a Principal wired, replay is per-principal: the same caller gets
+// its cached response, a different caller does not.
+func TestIdempotencyPrincipalNamespacesReplay(t *testing.T) {
+	h := Idempotency(IdempotencyConfig{
+		Store:     NewMemoryIdempotencyStore(time.Minute),
+		Principal: testPrincipal,
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("body-for-" + r.Header.Get("X-Caller")))
+	}))
+
+	call := func(caller string) string {
+		req := httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(`{"n":1}`))
+		req.Header.Set("Idempotency-Key", "order-1")
+		req.Header.Set("X-Caller", caller)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+
+	_ = call("alice")
+	if got := call("bob"); got != "body-for-bob" {
+		t.Errorf("SECURITY: [disclosure] bob got %q — the principal namespace did not separate the two callers", got)
+	}
+	if got := call("alice"); !strings.Contains(got, "body-for-alice") {
+		t.Errorf("alice's own replay broke: %q", got)
+	}
+}
