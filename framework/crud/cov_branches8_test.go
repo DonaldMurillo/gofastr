@@ -196,7 +196,7 @@ var _ = context.Background
 // these key-casing tests stay about casing.
 func mustDeepConvert(t *testing.T, ch *CrudHandler, in map[string]any) map[string]any {
 	t.Helper()
-	out, _, err := ch.deepConvertMap(in, map[uintptr]*convertedSubtree{}, newIncludeBudget())
+	out, _, err := ch.deepConvertMap(in, nil, map[uintptr]*convertedSubtree{}, newIncludeBudget())
 	if err != nil {
 		t.Fatalf("deepConvertMap: %v", err)
 	}

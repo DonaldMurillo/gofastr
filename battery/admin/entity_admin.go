@@ -166,23 +166,39 @@ func (b *Battery) registerEntityRoutes(ent *entity.Entity) {
 // hidden). Neither set → nothing: an admin must name what it manages rather
 // than default every table to an editable back-office.
 func (b *Battery) entitiesToExpose() []*entity.Entity {
+	// Use All() which resolves one entity per name (unversioned, or sole
+	// version, or lex-first when multiple versions exist). This prevents
+	// duplicate admin screens for versioned entities that share a table.
+	byName := b.registry.All()
 	if len(b.cfg.Entities) > 0 {
 		out := make([]*entity.Entity, 0, len(b.cfg.Entities))
+		seenTable := make(map[string]bool)
 		for _, name := range b.cfg.Entities {
-			if ent, err := b.registry.Get(name); err == nil {
-				out = append(out, ent)
+			ent, ok := byName[name]
+			if !ok || seenTable[ent.GetTable()] {
+				continue
 			}
+			seenTable[ent.GetTable()] = true
+			out = append(out, ent)
 		}
 		return out
 	}
 	if !b.cfg.AllEntities {
 		return nil
 	}
+	// Deduplicate by table: one admin screen per table, not per version.
+	seenTable := make(map[string]bool)
 	var out []*entity.Entity
 	for _, ent := range b.registry.AllSorted() {
-		if crudEnabled(ent) {
-			out = append(out, ent)
+		if !crudEnabled(ent) {
+			continue
 		}
+		table := ent.GetTable()
+		if seenTable[table] {
+			continue
+		}
+		seenTable[table] = true
+		out = append(out, ent)
 	}
 	return out
 }
@@ -212,13 +228,17 @@ func (b *Battery) crudFor(ent *entity.Entity) *crud.CrudHandler {
 	// Start from App's canonical handler so audit/lifecycle hooks, events,
 	// storage, outbox, and registry wiring match the public JSON routes. A
 	// fresh crud.NewCrudHandler has Hooks=nil and silently bypasses all of it.
-	ch := b.app.MustCrudHandler(ent.GetName())
+	// CrudHandlerForEntity takes the entity directly — avoids the name-based
+	// Registry.Get lookup that fails for multi-version entities.
+	ch, err := b.app.CrudHandlerForEntity(ent)
+	if err != nil {
+		panic(fmt.Sprintf("admin: crudFor(%s): %v", ent.GetName(), err))
+	}
 	// Preserve Config.DB's documented override for admin entity operations.
 	ch.DB = b.db
 	return ch
 }
 
-// adminResponseKeys maps the canonical handler's response keys back to entity
 // field names at the admin boundary. Admin screens index rows by schema field
 // name; hooks and redactors must still observe the host's configured JSONCase.
 func adminResponseKeys(ent *entity.Entity, ch *crud.CrudHandler) map[string]string {

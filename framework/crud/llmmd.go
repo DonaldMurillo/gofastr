@@ -33,7 +33,11 @@ func EntityLLMMD(ent *entity.Entity) string {
 	fields := ent.GetFields()
 
 	fmt.Fprintf(&b, "# %s\n\n", name)
-	fmt.Fprintf(&b, "Resource: `/%s`\n\n", table)
+	resourcePath := "/" + table
+	if ent.Version != "" {
+		resourcePath = ent.Version + resourcePath
+	}
+	fmt.Fprintf(&b, "Resource: `%s`\n\n", resourcePath)
 
 	// --- Field reference ---
 	b.WriteString("## Fields\n\n")
@@ -106,7 +110,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("## Endpoints\n\n")
 
 	// GET /{table} — List
-	fmt.Fprintf(&b, "### GET /%s\n\n", table)
+	fmt.Fprintf(&b, "### GET %s\n\n", resourcePath)
 	b.WriteString("List records with optional filtering, sorting, and pagination.\n\n")
 	b.WriteString("**Query parameters:**\n\n")
 	b.WriteString("| Parameter | Type | Description |\n")
@@ -159,7 +163,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("}\n```\n\n")
 
 	// GET /{table}/{id}
-	fmt.Fprintf(&b, "### GET /%s/{id}\n\n", table)
+	fmt.Fprintf(&b, "### GET %s/{id}\n\n", resourcePath)
 	b.WriteString("Retrieve a single record by ID.\n\n")
 	b.WriteString("| Parameter | Location | Description |\n")
 	b.WriteString("|-----------|----------|-------------|\n")
@@ -170,7 +174,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("**Error:** `404` if not found.\n\n")
 
 	// POST /{table}
-	fmt.Fprintf(&b, "### POST /%s\n\n", table)
+	fmt.Fprintf(&b, "### POST %s\n\n", resourcePath)
 	b.WriteString("Create a new record.\n\n")
 	b.WriteString("**Request body:** JSON object with writable fields.\n```json\n")
 	b.WriteString("{\n")
@@ -190,21 +194,21 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("**Error:** `400` with validation errors.\n\n")
 
 	// PUT /{table}/{id}
-	fmt.Fprintf(&b, "### PUT /%s/{id}\n\n", table)
+	fmt.Fprintf(&b, "### PUT %s/{id}\n\n", resourcePath)
 	b.WriteString("Update an existing record.\n\n")
 	b.WriteString("**Request body:** JSON object with fields to update.\n")
 	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 	b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
 
 	// PATCH /{table}/{id}
-	fmt.Fprintf(&b, "### PATCH /%s/{id}\n\n", table)
+	fmt.Fprintf(&b, "### PATCH %s/{id}\n\n", resourcePath)
 	b.WriteString("Sparsely update an existing record. Only fields present in the JSON body are validated and changed.\n\n")
 	b.WriteString("**Request body:** JSON object with one or more fields to update.\n")
 	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 	b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
 
 	// DELETE /{table}/{id}
-	fmt.Fprintf(&b, "### DELETE /%s/{id}\n\n", table)
+	fmt.Fprintf(&b, "### DELETE %s/{id}\n\n", resourcePath)
 	b.WriteString("Delete a record.\n\n")
 	if ent.Config.SoftDelete {
 		b.WriteString("**Note:** This entity uses soft-delete — sets `deleted_at` instead of removing the row.\n\n")
@@ -213,16 +217,16 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("**Error:** `404` not found.\n\n")
 
 	// Batch endpoints
-	fmt.Fprintf(&b, "### POST /%s/_batch\n\n", table)
+	fmt.Fprintf(&b, "### POST %s/_batch\n\n", resourcePath)
 	b.WriteString("Batch create (atomic — all-or-nothing).\n\n")
 	b.WriteString("```json\n{\n  \"items\": [ { ... }, { ... } ]\n}\n```\n")
 	b.WriteString(fmt.Sprintf("Maximum %d items per batch.\n\n", MaxBatchSize))
 
-	fmt.Fprintf(&b, "### PATCH /%s/_batch\n\n", table)
+	fmt.Fprintf(&b, "### PATCH %s/_batch\n\n", resourcePath)
 	b.WriteString("Batch update (atomic). Each item must include `id` plus fields to update.\n\n")
 	b.WriteString("```json\n{\n  \"items\": [ {\"id\": \"...\", \"...\": \"...\"} ]\n}\n```\n\n")
 
-	fmt.Fprintf(&b, "### DELETE /%s/_batch\n\n", table)
+	fmt.Fprintf(&b, "### DELETE %s/_batch\n\n", resourcePath)
 	b.WriteString("Batch delete (atomic).\n\n")
 	b.WriteString("```json\n{\n  \"ids\": [ \"id1\", \"id2\" ]\n}\n```\n\n")
 
@@ -236,7 +240,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("}\n```\n\n")
 
 	// SSE
-	fmt.Fprintf(&b, "### GET /%s/_events\n\n", table)
+	fmt.Fprintf(&b, "### GET %s/_events\n\n", resourcePath)
 	b.WriteString("Server-Sent Events stream for real-time entity changes.\n\n")
 	b.WriteString("**Event types:** `entity.created`, `entity.updated`, `entity.deleted`\n\n")
 
@@ -283,6 +287,12 @@ func RegistryLLMMD(registry entity.Registry, appName string) string {
 	b.WriteString("|----------|-----------|-----------|-------------|\n")
 	for _, ent := range entities {
 		table := ent.GetTable()
+		basePath := "/" + table
+		llmLink := "/" + table + "/llm.md"
+		if ent.Version != "" {
+			basePath = ent.Version + basePath
+			llmLink = ent.Version + "/" + table + "/llm.md"
+		}
 		numEndpoints := 8 // standard CRUD + batch + events
 		numEndpoints += len(ent.Config.Endpoints)
 		desc := ""
@@ -295,7 +305,7 @@ func RegistryLLMMD(registry entity.Registry, appName string) string {
 			}
 			desc += "multi-tenant"
 		}
-		fmt.Fprintf(&b, "| [%s](/%s/llm.md) | `/%s` | %d | %s |\n", ent.GetName(), table, table, numEndpoints, desc)
+		fmt.Fprintf(&b, "| [%s](%s) | `%s` | %d | %s |\n", ent.GetName(), llmLink, basePath, numEndpoints, desc)
 	}
 	b.WriteString("\n")
 

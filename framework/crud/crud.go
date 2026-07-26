@@ -57,20 +57,28 @@ type DBExecutor = db.Executor
 
 // CrudHandler provides auto-generated CRUD HTTP handlers for an Entity.
 type CrudHandler struct {
-	Entity     *entity.Entity
-	DB         DBExecutor
-	PrimaryKey string             // defaults to "id"
-	JSONCase   JSONCase           // casing strategy for JSON keys
-	Hooks      *hook.HookRegistry // optional lifecycle hooks
-	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
-	Events     *event.EventBus    // optional; receives entity.created/updated/deleted on commit
-	Outbox     EventOutbox        // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
-	Registry   entity.Registry    // optional; required for nested ?include=author.profile resolution
-	BasePath   string             // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
+	Entity       *entity.Entity
+	DB           DBExecutor
+	PrimaryKey   string             // defaults to "id"
+	JSONCase     JSONCase           // casing strategy for JSON keys
+	Hooks        *hook.HookRegistry // optional lifecycle hooks
+	Storage      upload.Storage     // optional; enables multipart uploads for Image/File fields
+	Events       *event.EventBus    // optional; receives entity.created/updated/deleted on commit
+	Outbox       EventOutbox        // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
+	Registry     entity.Registry    // optional; required for nested ?include=author.profile resolution
+	BasePath     string             // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
+	MCPNamespace string             // optional; when set (e.g. "admin"), MCP tools are named "<ns>.<entity>.<action>" instead of the flat "<entity>_<action>". Empty preserves the historical flat tool names.
 
 	visibleFieldsCache []string
 	visibleJSONKeys    []string
 	visibleFieldSig    uint64
+
+	// wireKeyOf maps DB column name → JSON wire key (WireName if set, else
+	// case-converted Name). columnOfWire is the reverse. Both cover ALL fields
+	// (not just visible ones) so input deserialization can resolve WireNames
+	// for write-only fields too. Rebuilt by refreshFieldCache.
+	wireKeyOf    map[string]string
+	columnOfWire map[string]string
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
@@ -241,10 +249,30 @@ func (ch *CrudHandler) refreshFieldCache() {
 		ch.visibleFieldsCache = nil
 		ch.visibleJSONKeys = nil
 		ch.visibleFieldSig = 0
+		ch.wireKeyOf = nil
+		ch.columnOfWire = nil
 		return
 	}
-	names := make([]string, 0, len(ch.Entity.GetFields()))
-	for _, f := range ch.Entity.GetFields() {
+	fields := ch.Entity.GetFields()
+	names := make([]string, 0, len(fields))
+	ch.wireKeyOf = make(map[string]string, len(fields))
+	ch.columnOfWire = make(map[string]string, len(fields))
+	for _, f := range fields {
+		// Build the wire-key maps for ALL fields (visible or not) so input
+		// deserialization can resolve a WireName on a write-only field.
+		wk := ch.wireKeyOfField(f)
+		ch.wireKeyOf[f.Name] = wk
+		// First field wins on collision, but a collision cannot reach here:
+		// entity.Validate rejects two fields resolving to one wire key at
+		// registration, because the write path (this map) and the filter path
+		// (filter.ParseFiltersValues, which builds its own alias map) would
+		// otherwise disagree about which column the key means.
+		//
+		// The keep-first branch stays as a belt-and-braces guard for any
+		// caller constructing a CrudHandler without going through Validate.
+		if _, exists := ch.columnOfWire[wk]; !exists {
+			ch.columnOfWire[wk] = f.Name
+		}
 		if !f.Hidden {
 			names = append(names, f.Name)
 		}
@@ -252,6 +280,15 @@ func (ch *CrudHandler) refreshFieldCache() {
 	ch.visibleFieldsCache = names
 	ch.visibleJSONKeys = convertedKeys(names, ch.convertKey)
 	ch.visibleFieldSig = ch.fieldCacheSignature()
+}
+
+// wireKeyOfField returns the JSON wire key for a single field: WireName
+// verbatim when set, else the case-converted DB column name.
+func (ch *CrudHandler) wireKeyOfField(f schema.Field) string {
+	if f.WireName != "" {
+		return f.WireName
+	}
+	return ch.convertKeyRaw(f.Name)
 }
 
 func (ch *CrudHandler) jsonKeysFor(cols []string) []string {
@@ -282,13 +319,19 @@ func (ch *CrudHandler) fieldCacheSignature() uint64 {
 		prime64  = 1099511628211
 	)
 	h := uint64(offset64)
-	for i := 0; i < len(ch.JSONCase); i++ {
+	for i := range ch.JSONCase {
 		h ^= uint64(ch.JSONCase[i])
 		h *= prime64
 	}
 	for _, f := range ch.Entity.GetFields() {
-		for i := 0; i < len(f.Name); i++ {
+		for i := range f.Name {
 			h ^= uint64(f.Name[i])
+			h *= prime64
+		}
+		// WireName is part of the signature: two versions of the same entity
+		// that rename a field differently must not share a cached key set.
+		for i := range f.WireName {
+			h ^= uint64(f.WireName[i])
 			h *= prime64
 		}
 		if f.Hidden {
@@ -301,8 +344,24 @@ func (ch *CrudHandler) fieldCacheSignature() uint64 {
 	return h
 }
 
-// convertKey applies the configured JSON casing to a DB column name.
+// convertKey returns the JSON wire key for a DB column name. When the
+// column has a WireName override (ch.wireKeyOf), it is returned verbatim;
+// otherwise the configured JSONCase is applied. Callers that only want the
+// raw case conversion with no WireName lookup should use convertKeyRaw.
 func (ch *CrudHandler) convertKey(col string) string {
+	if ch.wireKeyOf != nil {
+		if wk, ok := ch.wireKeyOf[col]; ok {
+			return wk
+		}
+	}
+	return ch.convertKeyRaw(col)
+}
+
+// convertKeyRaw applies the configured JSON casing to a DB column name,
+// ignoring any WireName override. Used to seed the wire-key map itself
+// (WireName-empty fields) and by callers that explicitly want the derived
+// form.
+func (ch *CrudHandler) convertKeyRaw(col string) string {
 	switch ch.JSONCase {
 	case CaseSnake:
 		return col
@@ -311,23 +370,53 @@ func (ch *CrudHandler) convertKey(col string) string {
 	}
 }
 
-// convertMapKeys applies the configured JSON casing to all keys in a map.
+// convertMapKeys applies the configured JSON casing to all keys in a map,
+// honouring WireName overrides.
 func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
-	switch ch.JSONCase {
-	case CaseSnake:
-		return m
-	default: // CaseCamel
-		return casing.MapToCamel(m)
+	if ch.wireKeyOf == nil {
+		ch.refreshFieldCache()
 	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if wk, ok := ch.wireKeyOf[k]; ok {
+			out[wk] = v
+		} else {
+			out[ch.convertKeyRaw(k)] = v
+		}
+	}
+	return out
 }
 
-// unconvertMapKeys reverses the JSON casing back to DB column names (snake_case).
+// unconvertMapKeys reverses JSON wire keys back to DB column names. Each
+// input key is matched against the wire-key map first (so WireName overrides
+// and the standard case-derived keys both resolve); keys that don't match
+// any known wire key fall back to the raw case conversion for backward
+// compatibility with callers that send arbitrary keys.
 func (ch *CrudHandler) unconvertMapKeys(m map[string]any) map[string]any {
+	if ch.columnOfWire == nil {
+		ch.refreshFieldCache()
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if col, ok := ch.columnOfWire[k]; ok {
+			out[col] = v
+		} else {
+			// Fall back to raw case conversion for keys not in the wire map
+			// (e.g. relation params, future fields).
+			out[ch.unconvertKeyRaw(k)] = v
+		}
+	}
+	return out
+}
+
+// unconvertKeyRaw reverses the JSON casing back to snake_case, ignoring
+// WireName overrides.
+func (ch *CrudHandler) unconvertKeyRaw(key string) string {
 	switch ch.JSONCase {
 	case CaseSnake:
-		return m
+		return key
 	default: // CaseCamel
-		return casing.MapToSnake(m)
+		return casing.ToSnake(key)
 	}
 }
 
