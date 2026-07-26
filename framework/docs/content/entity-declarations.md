@@ -869,12 +869,29 @@ Endpoint paths can be absolute (`/posts/{id}/publish`) or relative to the
 entity table path (`{id}/publish`). Both `{id}` and `:id` parameter syntax are
 accepted.
 
+Under `WithAPIPrefix` a **relative** path resolves under the prefixed table
+path — `WithAPIPrefix("/api")` mounts `{id}/publish` on entity `posts` at
+`POST /api/posts/{id}/publish`, alongside that entity's CRUD routes. An
+absolute path bypasses the prefix; use it to mount outside the entity's API
+namespace.
+
 Note the auth asymmetry: the HTTP `Handler` runs behind the route
-middleware chain, but the `MCPHandler` twin is invoked directly — no
-route middleware, so no per-caller auth of its own. If the HTTP side is
-protected, gate the MCP side to match by wrapping it:
-`MCPHandler: mcp.Gated(auth.MCPRole("admin"), publishTool)` — see
-[plugins](plugins.md) → MCP tool gating.
+middleware chain, but the `MCPHandler` twin is invoked directly — no route
+middleware, so no per-caller auth of its own. **The twin therefore defaults
+to requiring an authenticated caller.** Declare something stricter with
+`MCPGate`, or opt out with `MCPPublic` for an endpoint that really is
+anonymous over HTTP too:
+
+```go
+entity.Endpoint{
+    Method: "POST", Path: "{id}/publish", MCP: true,
+    Handler:    publishHTTP,
+    MCPHandler: publishTool,
+    MCPGate:    auth.MCPRole("admin"), // default: any authenticated caller
+}
+```
+
+See [plugins](plugins.md) → MCP tool gating.
 
 ### Typed input/output schemas
 

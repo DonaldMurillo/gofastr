@@ -40,6 +40,11 @@ type Tool struct {
 	// compat alias "openai/outputTemplate").
 	Meta    map[string]any `json:"_meta,omitempty"`
 	Handler ToolHandler    `json:"-"`
+
+	// Gate, when set, is a per-caller precondition evaluated BEFORE the
+	// handler on tools/call, and again in tools/list to decide whether this
+	// tool is visible to the caller at all. See WithToolGate.
+	Gate func(ctx context.Context) error `json:"-"`
 }
 
 // ToolOption customizes a tool at registration time.
@@ -55,6 +60,25 @@ func WithOutputSchema(schema map[string]any) ToolOption {
 // WithResourceMeta on the resource side.
 func WithToolMeta(meta map[string]any) ToolOption {
 	return func(t *Tool) { t.Meta = meta }
+}
+
+// WithToolGate attaches a per-caller precondition to a tool. The gate runs on
+// every tools/call before the handler, and is also evaluated during tools/list
+// so a caller who cannot invoke the tool does not see it.
+//
+// That second half is the point. [Gated] wraps a HANDLER, so it only ever
+// affected tools/call: an unauthenticated tools/list still returned the tool's
+// full inputSchema, which for entity CRUD tools is built from live entity
+// definitions — every entity name, every non-Hidden field, its type and its
+// enum set. The call refused; the schema was already out.
+//
+// Prefer this over [Gated] for anything registered directly on the server.
+// battery/auth's MCPUser() / MCPRole("admin") are ready-made gates.
+func WithToolGate(gate func(ctx context.Context) error) ToolOption {
+	if gate == nil {
+		panic("mcp.WithToolGate: nil gate — a nil precondition would silently allow every caller")
+	}
+	return func(t *Tool) { t.Gate = gate }
 }
 
 // Server is an MCP server with a tool registry.
@@ -82,6 +106,17 @@ type Server struct {
 	// result without invoking the tool. Framework code uses it to gate
 	// tools owned by a disabled module.
 	callGate func(toolName string) error
+
+	// serverGate, when set, is a per-caller precondition covering the whole
+	// JSON-RPC DATA surface: tools/list, tools/call, resources/list and
+	// resources/read. It is the switch for a host whose /mcp is private
+	// wholesale, as opposed to per-tool WithToolGate.
+	//
+	// initialize and ping are deliberately NOT covered — they carry only the
+	// protocol version, capability booleans and the server name, and a client
+	// that cannot complete the handshake cannot present credentials in a way
+	// any MCP client implements.
+	serverGate func(ctx context.Context) error
 
 	// allowedHosts pins the Host authorities this server answers on
 	// (the DNS-rebinding control). Empty = unpinned. See originOK.
@@ -197,15 +232,31 @@ func (s *Server) getTool(name string) (Tool, bool) {
 
 // ListTools returns all registered tools whose call gate (if set)
 // allows them. Tools owned by a disabled module are excluded. Handlers
-// are nilled out for safety. This is the exported version of listTools.
+// are nilled out for safety.
+//
+// It does NOT apply per-tool caller gates ([WithToolGate]) — there is no
+// caller to evaluate them against. It is a Go-API introspection call for
+// in-process code that already holds the server. Never serve its output to a
+// remote caller: use [Server.ListToolsFor] with the request context, which is
+// what the JSON-RPC tools/list path does.
 func (s *Server) ListTools() []Tool {
-	return s.listTools()
+	return s.listToolsUnfiltered()
+}
+
+// ListToolsFor returns the tools visible to the caller ctx identifies:
+// per-tool gates and the server-wide gate are both applied. This is the
+// listing tools/list serves.
+func (s *Server) ListToolsFor(ctx context.Context) ([]Tool, error) {
+	if err := s.checkServerGate(ctx); err != nil {
+		return nil, err
+	}
+	return s.listTools(ctx), nil
 }
 
 // listTools returns all registered tools (without handlers), excluding
 // any whose call gate refuses them (e.g. tools owned by a disabled
 // module).
-func (s *Server) listTools() []Tool {
+func (s *Server) listTools(ctx context.Context) []Tool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -215,15 +266,67 @@ func (s *Server) listTools() []Tool {
 		if gate != nil && gate(t.Name) != nil {
 			continue // gated tool excluded from listing
 		}
+		// A tool the caller cannot invoke is not listed to them: the
+		// inputSchema is the disclosure, not the call.
+		if t.Gate != nil && t.Gate(ctx) != nil {
+			continue
+		}
 		tools = append(tools, t)
 	}
 	return tools
+}
+
+// listToolsUnfiltered applies only the name-based call gate (disabled
+// modules), not per-caller gates. See ListTools.
+func (s *Server) listToolsUnfiltered() []Tool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	gate := s.callGate
+	tools := make([]Tool, 0, len(s.tools))
+	for _, t := range s.tools {
+		if gate != nil && gate(t.Name) != nil {
+			continue
+		}
+		tools = append(tools, t)
+	}
+	return tools
+}
+
+// SetGate installs a server-wide precondition over the JSON-RPC data surface
+// (tools/list, tools/call, resources/list, resources/read). Pass nil to clear
+// it. See the serverGate field for why initialize and ping stay open.
+//
+// Use it when the whole /mcp endpoint is private. For a mixed surface —
+// public read tools, gated mutating ones — attach per-tool gates with
+// [WithToolGate] instead, which also filters the listing per caller.
+func (s *Server) SetGate(gate func(ctx context.Context) error) {
+	s.mu.Lock()
+	s.serverGate = gate
+	s.mu.Unlock()
+}
+
+// checkServerGate evaluates the server-wide gate, if any.
+func (s *Server) checkServerGate(ctx context.Context) error {
+	s.mu.RLock()
+	gate := s.serverGate
+	s.mu.RUnlock()
+	if gate == nil {
+		return nil
+	}
+	return gate(ctx)
 }
 
 // CallTool is the exported form of callTool: invokes a registered tool
 // by name with the given params. Use this when calling MCP tools
 // in-process (tests, server-side integrations) without going through
 // the JSON-RPC transport layer.
+//
+// It runs the tool's own gate ([WithToolGate]) against ctx, so an in-process
+// caller must carry the identity the gate expects. It does NOT run the
+// server-wide gate ([Server.SetGate]) — that one describes who may reach the
+// /mcp ENDPOINT, and an in-process caller is not coming through it. Every
+// remote transport dispatches via HandleRequest, which does apply it.
 func (s *Server) CallTool(ctx context.Context, name string, params map[string]any) (any, error) {
 	return s.callTool(ctx, name, params)
 }
@@ -251,6 +354,14 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 				Code:    ErrInternalError,
 				Message: "tool unavailable",
 			}
+		}
+	}
+
+	// Per-tool caller gate (WithToolGate). Runs before the handler; the
+	// same predicate decided whether this tool appeared in tools/list.
+	if t.Gate != nil {
+		if err := t.Gate(ctx); err != nil {
+			return nil, &RPCError{Code: ErrInvalidParams, Message: err.Error()}
 		}
 	}
 

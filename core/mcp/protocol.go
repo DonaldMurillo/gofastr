@@ -58,6 +58,15 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 	ctx = enrichContext(ctx)
 
 	switch req.Method {
+	case "tools/list", "tools/call", "resources/list", "resources/read":
+		// Server-wide gate over the DATA surface. initialize and ping fall
+		// through uncovered on purpose — see Server.serverGate.
+		if err := s.checkServerGate(ctx); err != nil {
+			return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
+		}
+	}
+
+	switch req.Method {
 	case "tools/list":
 		return s.handleToolsList(ctx, req)
 	case "tools/call":

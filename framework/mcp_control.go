@@ -39,6 +39,33 @@ func WithMCPControl() AppOption {
 	}
 }
 
+// WithMCPGate installs a server-wide precondition over the /mcp data surface:
+// tools/list, tools/call, resources/list and resources/read all run it first.
+// Use it when the endpoint is private wholesale.
+//
+// Without it, /mcp discloses every registered tool's inputSchema to anyone who
+// can reach the route — and for entity CRUD tools those schemas are built from
+// live entity definitions, naming every entity and every non-Hidden field.
+// Individual tools can be gated instead with mcp.WithToolGate, which filters
+// the listing per caller rather than closing it for everyone.
+//
+// The `initialize` handshake and `ping` stay open by design: they carry only
+// the protocol version, capability booleans and the server name, and a client
+// that cannot handshake cannot present credentials.
+//
+//	app := framework.NewApp(
+//	    framework.WithMCP(),
+//	    framework.WithMCPGate(framework.MCPRequireUser()),
+//	)
+func WithMCPGate(gate func(ctx context.Context) error) AppOption {
+	if gate == nil {
+		panic("framework.WithMCPGate: nil gate — a nil precondition would silently allow every caller")
+	}
+	return func(a *App) {
+		a.MCP.SetGate(gate)
+	}
+}
+
 func (a *App) registerControlTools() error {
 	tools := []struct {
 		name        string
@@ -73,13 +100,47 @@ func (a *App) registerControlTools() error {
 	}
 	gate := controlToolGate(a.mcpControlDevImplied)
 	for _, t := range tools {
-		h := t.handler
+		var opts []mcp.ToolOption
 		if gate != nil {
-			h = mcp.Gated(gate, h)
+			// WithToolGate, not mcp.Gated: the wrapper only ever reached
+			// tools/call, so an anonymous tools/list still returned these
+			// tools' schemas — telling a stranger the app can be
+			// reconfigured over MCP, and exactly how.
+			opts = append(opts, mcp.WithToolGate(gate))
 		}
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, h); err != nil {
+		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("framework: register MCP control tool %q: %w", t.name, err)
 		}
+	}
+	return nil
+}
+
+// MCPRequireUser is the precondition the framework ships for MCP tools that
+// register DIRECTLY on the server and so never see the router's middleware
+// chain: entity.Endpoint.MCPHandler twins, app.MCP.RegisterTool calls, and
+// battery-registered mutating tools.
+//
+// It asks only for an identity, not a role, because the framework layer
+// cannot know the host's role vocabulary (and cannot import battery/auth).
+// A host wanting more passes auth.MCPRole("admin") instead.
+//
+// Pair it with [mcp.WithToolGate] rather than [mcp.Gated] so the tool also
+// disappears from tools/list for callers who cannot invoke it — the
+// inputSchema is the disclosure, not the call.
+func MCPRequireUser() func(ctx context.Context) error {
+	return requireMCPUser
+}
+
+// errAuthRequired is the refusal MCPRequireUser returns. It names the fix
+// (send credentials, check the middleware runs on /mcp) without disclosing
+// anything about the tool or the app's state.
+var errAuthRequired = errors.New("this tool requires an authenticated caller — " +
+	"send the session cookie or Authorization header on the /mcp request, " +
+	"and make sure the app's session middleware runs on the /mcp route")
+
+func requireMCPUser(ctx context.Context) error {
+	if u, ok := handler.GetUser(ctx); !ok || u == nil {
+		return errAuthRequired
 	}
 	return nil
 }
@@ -107,14 +168,7 @@ func controlToolGate(devImplied bool) func(ctx context.Context) error {
 	if devImplied {
 		return nil
 	}
-	return func(ctx context.Context) error {
-		if u, ok := handler.GetUser(ctx); !ok || u == nil {
-			return errors.New("this tool mutates the running app and requires an authenticated caller — " +
-				"send the session cookie or Authorization header on the /mcp request, " +
-				"and make sure the app's session middleware runs on the /mcp route")
-		}
-		return nil
-	}
+	return requireMCPUser
 }
 
 // routerHasMCPRoute reports whether the host already mounted a POST
