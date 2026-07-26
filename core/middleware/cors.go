@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -57,7 +60,11 @@ func CORS(cfg CORSConfig) Middleware {
 				allowed = true
 			} else if origin != "" && originSet[origin] {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Vary", "Origin")
+				// Add, not Set: an upstream middleware may already have
+				// written Vary (compression writes Accept-Encoding), and
+				// clobbering it makes a shared cache serve one variant to
+				// clients that cannot read it.
+				w.Header().Add("Vary", "Origin")
 				allowed = true
 			}
 
@@ -94,7 +101,15 @@ func CORS(cfg CORSConfig) Middleware {
 }
 
 // stripCredsWriter prevents Access-Control-Allow-Credentials from being
-// emitted by a downstream handler when the configured ACAO is "*".
+// emitted by a downstream handler when the configured ACAO is "*". Browsers
+// reject that combination, and a handler that sets it is asking for a
+// credentialed cross-origin read.
+//
+// It forwards Flush and Hijack like every other wrapper in this package
+// (metrics, logging, tracing, timeout). It did not, so behind a wildcard CORS
+// policy the SSE bus lost its Flusher — and the framework's SSE constructor
+// type-asserts http.Flusher, making that a hard failure rather than degraded
+// buffering — while a WebSocket upgrade lost its Hijacker.
 type stripCredsWriter struct {
 	http.ResponseWriter
 }
@@ -108,6 +123,30 @@ func (s stripCredsWriter) Write(b []byte) (int, error) {
 	s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
 	return s.ResponseWriter.Write(b)
 }
+
+// Flush strips before flushing: a streaming handler that sets the header and
+// flushes before its first Write would otherwise commit it to the wire.
+func (s stripCredsWriter) Flush() {
+	s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack forwards to the underlying writer so a WebSocket upgrade behind a
+// wildcard CORS policy still works. Once hijacked the connection is raw and
+// this wrapper no longer mediates it — which is correct: there are no HTTP
+// response headers left to strip.
+func (s stripCredsWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := s.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("middleware: underlying ResponseWriter does not implement http.Hijacker")
+}
+
+// Unwrap lets http.ResponseController reach the original writer for
+// capabilities this wrapper does not name explicitly.
+func (s stripCredsWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // sanitizeCORSTokens strips bytes that could terminate the Allow-Methods
 // or Allow-Headers value and smuggle a second header line. The CORS
