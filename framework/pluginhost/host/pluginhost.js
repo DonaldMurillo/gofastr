@@ -167,10 +167,26 @@
     return DEFAULT_MIN_HEIGHT;
   }
 
-  // Same-origin-collapsing sandbox tokens: these hand the framed document
-  // access back to the host origin (DOM/cookies/storage) and are stripped
-  // UNCONDITIONALLY. Keep in sync with Go's sameOriginCollapsingTokens.
-  var SAME_ORIGIN_COLLAPSING = { "allow-same-origin": true };
+  // Sandbox capability ALLOW-LIST. Keep in sync with Go's
+  // allowedSandboxTokens (pinned by TestBrokerJSSandboxIsAllowList).
+  //
+  // It was a one-token deny-list that stripped only allow-same-origin, which
+  // let "allow-popups-to-escape-sandbox" through — a popup the plugin opens
+  // is then fully unsandboxed AND same-origin, so window.open('/admin/...')
+  // is an ordinary cookie-bearing document. "allow-top-navigation" (retarget
+  // the whole tab) and "allow-downloads" (write to the user's disk) passed
+  // too. A deny-list has to enumerate every way out of the box and loses the
+  // moment the HTML spec adds one; the manifest ships with the third-party
+  // plugin, so it is attacker-influenced by construction.
+  var ALLOWED_SANDBOX = {
+    "allow-scripts": true,
+    "allow-forms": true,
+    "allow-modals": true,
+    "allow-popups": true,          // a popup, still sandboxed — no escape token
+    "allow-pointer-lock": true,
+    "allow-orientation-lock": true,
+    "allow-presentation": true
+  };
 
   // sandboxFor is AUTHORITATIVE, not advisory: whatever the manifest carries,
   // the emitted sandbox always includes "allow-scripts" and never a
@@ -190,7 +206,7 @@
       var parts = String(tokens[i] || "").toLowerCase().split(/\s+/);
       for (var j = 0; j < parts.length; j++) {
         var tok = parts[j];
-        if (!tok || SAME_ORIGIN_COLLAPSING[tok] || seen[tok]) continue;
+        if (!tok || ALLOWED_SANDBOX[tok] !== true || seen[tok]) continue;
         seen[tok] = true;
         out.push(tok);
       }
@@ -203,9 +219,38 @@
     return (manifest && manifest.title) || DEFAULT_TITLE;
   }
 
+  // safeEntry requires the frame document URL to be a same-origin absolute
+  // path, returning "" for anything else. Mirrors Go's validateEntry.
+  //
+  // The opaque-origin guarantee has two carriers: this sandbox attribute, and
+  // the `Content-Security-Policy: sandbox allow-scripts` header AssetServer
+  // emits for the assets IT serves. A cross-origin or scheme-bearing entry
+  // escapes the second entirely — nothing the host controls emits headers for
+  // someone else's document. This is the sink that sets src, so the check
+  // lives HERE too, not only in a Go-side Validate() a plugin author may skip.
+  function safeEntry(raw) {
+    var entry = String(raw || "");
+    if (!entry) return "";
+    if (/[\u0000-\u001f\u007f]/.test(entry)) return "";
+    // Normalise backslashes the way a browser does before reading the
+    // authority: "/\\evil.example/x" is "//evil.example/x".
+    var norm = entry.replace(/\\/g, "/");
+    if (norm.charAt(0) !== "/") return "";   // scheme or relative path
+    if (norm.charAt(1) === "/") return "";   // protocol-relative
+    return entry;
+  }
+
   function createIframe(marker, manifest) {
-    var entry = (manifest && manifest.entry) || "";
+    var entry = safeEntry(manifest && manifest.entry);
     var frame = document.createElement("iframe");
+    if (!entry) {
+      // Fail closed: no src at all beats loading an off-origin document into
+      // a frame the host is about to hand a capability grant.
+      frame.setAttribute("sandbox", sandboxFor(manifest));
+      frame.setAttribute("title", titleFor(manifest));
+      marker.appendChild(frame);
+      return frame;
+    }
     frame.setAttribute("src", entry + (entry.indexOf("?") === -1 ? "?" : "&") + "v=" + cacheBust());
     // SECURITY: "allow-scripts" ONLY — the same-origin token is never added.
     frame.setAttribute("sandbox", sandboxFor(manifest));

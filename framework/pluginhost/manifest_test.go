@@ -155,8 +155,8 @@ func TestBrokerJS_SandboxForIsAuthoritative(t *testing.T) {
 	if strings.Contains(js, `manifest.sandbox.join(" ")`) {
 		t.Error("sandboxFor must not join manifest.sandbox verbatim — it must strip allow-same-origin and force allow-scripts")
 	}
-	if !strings.Contains(js, "SAME_ORIGIN_COLLAPSING") {
-		t.Error("sandboxFor must reference the same-origin-collapsing token filter")
+	if !strings.Contains(js, "ALLOWED_SANDBOX") {
+		t.Error("sandboxFor must filter through the sandbox capability allow-list")
 	}
 	if !strings.Contains(js, `unshift("allow-scripts")`) {
 		t.Error("sandboxFor must force-include allow-scripts")
