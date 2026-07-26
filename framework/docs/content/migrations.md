@@ -21,6 +21,14 @@ no-transaction escape hatch. The two paths are kept coherent — the
 entity schema is the single source of DDL type mapping, so a table
 auto-migrate creates diffs clean against the same entity declaration.
 
+When an entity has multiple API versions registered (via route groups —
+see [API prefix & versioning](api-versioning.md)), auto-migrate builds
+each table's schema from the **union of every version's declared
+columns**. A field only v2 declares is created at boot exactly as a new
+column on a single-version entity is; a field both versions declare must
+be physically identical or registration panics. Single-version entities
+are unchanged.
+
 ## PostgreSQL boolean columns
 
 `schema.Bool` is emitted as `BOOLEAN` on PostgreSQL. The auth durable

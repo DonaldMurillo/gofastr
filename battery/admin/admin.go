@@ -605,9 +605,10 @@ func (b *Battery) navHTML(current string) render.HTML {
 	}
 	links = append(links, link{"Audit log", b.cfg.PathPrefix + "/audit"})
 	if b.registry != nil {
+		byName := b.registry.All()
 		for _, name := range b.cfg.Entities {
-			ent, err := b.registry.Get(name)
-			if err != nil {
+			ent, ok := byName[name]
+			if !ok {
 				continue
 			}
 			links = append(links, link{ent.GetName(), b.cfg.PathPrefix + "/e/" + ent.GetTable()})

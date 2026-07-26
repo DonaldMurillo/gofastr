@@ -231,7 +231,9 @@ func TestUICompositionRecipeGalleryProofsResolve(t *testing.T) {
 	if got := strings.Count(string(body), "**Live proof:**"); got != 5 {
 		t.Fatalf("composition recipes have %d live proofs, want one for each of 5 recipes", got)
 	}
-	components, err := os.ReadFile(filepath.Join("..", "..", "examples", "site", "components.go"))
+	// The component catalog lives in framework/gallery so both examples/site
+	// and cmd/gofastr can render it; examples/site only re-exports it.
+	components, err := os.ReadFile(filepath.Join("..", "gallery", "catalog.go"))
 	if err != nil {
 		t.Fatal(err)
 	}

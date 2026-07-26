@@ -1,6 +1,16 @@
-// GoFastr Core-UI Runtime v0.4 — ES2020+
+// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: full = kernel+rpc+signals+nav+widgets-boot)
+// Assembled by the Go composer (core-ui/runtime/runtime.go composeFull) from
+// core-ui/runtime/frag/*.js. This file is the on-disk canonical form the gate
+// tests scan (attrdoc_test.go / integrity_test.go read it via os.ReadFile);
+// RuntimeJS() serves the minified composition produced by composeFull().
 (() => {
   'use strict';
+
+// kernel.js — always-present substrate (spec fragment `kernel`, boot class).
+// Owns: doc state (DOC_MANIFEST), module loader, the data-fui-comp CSS
+// scanner, window.__gofastr namespace CREATION (other fragments extend it
+// via Object.assign), manifest reads, component-action dispatch helpers.
+// Composed FIRST; every other fragment depends on it.
 
   // -----------------------------------------------------------------------
   // Global document state (`__gofastr.doc`)
@@ -92,15 +102,11 @@
     doc.setHtmlAttr('data-fui-os', /Mac|iPhone|iPad|iPod/.test(ua) ? 'mac' : 'other');
   } catch (_) { /* SSR / non-browser */ }
 
-  // Static-export mode: when the page is a serverless static export (no Go
-  // server behind it), the runtime adapts instead of 404'ing — it fetches
-  // the dumped widget catalog file (widgets.json) so data-fui-open overlays
-  // still work, and a data-fui-rpc click/submit surfaces a "Needs the Go
-  // server" notice (via _showNavToast) instead of firing a dead request.
-  // Client-only features (theme toggle, copy, signals) are untouched. The
-  // marker is injected ONLY by the static exporter (framework/static.Builder);
-  // live pages never carry it, so every guard below is a no-op live.
-  const _staticMode = docEl.hasAttribute('data-fui-static');
+  // data-fui-static on <html> is still written by the static exporter
+  // (framework/static.Builder) and read by the widgets demand module
+  // (src/widgets.js) for its missing-widget fallback toast. The runtime
+  // itself no longer branches on it — composition selects the `static`
+  // bundle at build time instead of testing the marker at request time.
   // -----------------------------------------------------------------------
   // Component handler registry
   // -----------------------------------------------------------------------
@@ -116,6 +122,438 @@
   // -----------------------------------------------------------------------
   const routes = new Map(); // path → { title, preload }
   let currentPath = location.pathname + location.search;
+
+  const registerRoutes = (routeList) => {
+    if (!Array.isArray(routeList)) return;
+    for (const r of routeList) {
+      routes.set(r.path ?? r.Path, {
+        title: r.title ?? r.Title ?? '',
+        preload: r.preload ?? r.Preload ?? false,
+        layout: r.layout ?? r.Layout ?? '',
+        redirect: r.redirect ?? r.Redirect ?? '',
+      });
+    }
+  };
+
+  // Hydrate routes + catalog from inline <script type="application/json">
+  // blocks the SSR emits. The browser treats them as inert data (not
+  // executable), so they pass strict CSP. Reading happens before
+  // first paint of any non-trivial component because runtime.js is
+  // injected at the end of <body>, after the JSON blocks in <head>.
+  const _readInlineJSON = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    try { return JSON.parse(el.textContent || 'null'); }
+    catch (_) { return null; }
+  };
+  if (!window.__gofastr_routes) {
+    const r = _readInlineJSON('gofastr-routes');
+    if (r) window.__gofastr_routes = r;
+  }
+  if (!window.__gofastr_catalog) {
+    const c = _readInlineJSON('gofastr-catalog');
+    if (c) window.__gofastr_catalog = c;
+  }
+
+  // Signal store seed — server-provided initial values for the signal
+  // bus (core-ui/store). Stashed now; applied to _signals right after
+  // the __gofastr namespace is built (below), BEFORE hydration, so
+  // getSignal returns the SSR value on first paint instead of undefined.
+  if (!window.__gofastr_signals_seed) {
+    const sg = _readInlineJSON('gofastr-signals');
+    if (sg) window.__gofastr_signals_seed = sg;
+  }
+
+  // Bootstrap routes from injected data
+  if (Array.isArray(window.__gofastr_routes)) {
+    registerRoutes(window.__gofastr_routes);
+  }
+
+  // -----------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------
+  const closestAttr = (el, attr) => {
+    const node = el.closest(`[${attr}]`);
+    return node?.getAttribute(attr) ?? null;
+  };
+
+  const collectParams = (el) => {
+    if (!el?.attributes) return {};
+    const params = {};
+    for (const a of el.attributes) {
+      if (a.name.startsWith('data-param-')) {
+        params[a.name.slice('data-param-'.length)] = a.value;
+      }
+    }
+    return params;
+  };
+
+  // -----------------------------------------------------------------------
+  // Public API — kernel members only. rpc/signals/nav each contribute their
+  // own namespace members below via Object.assign so a future composition
+  // that omits a fragment leaves no dangling references inside this literal.
+  // -----------------------------------------------------------------------
+  // Public API (what compiled JS calls)
+  // -----------------------------------------------------------------------
+  window.__gofastr = {
+    /** Global document state module — see the DOC_MANIFEST block at the
+        top of this file. Split modules (widgets, toasts, backtotop)
+        reach it via NS.doc for every persistent <html>/<body> write. */
+    doc,
+
+    /** Reject dangerous schemes when a signal value is about to be
+        written into a URL-bearing HTML attribute (href / src / action
+        / xlink:href / formaction). Returns true when the value MUST
+        be discarded. Allows http(s), mailto, tel, relative paths,
+        same-page anchors, and data:image/* (used for inline blob
+        previews). Rejects javascript:, vbscript:, and other data:
+        payloads.
+
+        This is the runtime-side guard against signal-bound `href` on
+        Lightbox AllowDownload + any other widget that mirrors an
+        attacker-controllable signal into a click-triggered attribute.
+    */
+    _isUnsafeSignalUrl(attr, value) {
+      if (!attr) return false;
+      const a = String(attr).toLowerCase();
+      if (a !== 'href' && a !== 'src' && a !== 'action' &&
+          a !== 'xlink:href' && a !== 'formaction') return false;
+      // Strip ALL ASCII whitespace + C0 control bytes (0x00-0x1f)
+      // anywhere in the value before resolving the scheme. Browsers
+      // remove these during URL parsing (WHATWG), so both leading
+      // ("  javascript:") AND interior ("java<TAB>script:",
+      // "<NUL>javascript:") control chars must go, or a startsWith()
+      // check is defeated by an embedded tab/newline/CR or leading C0.
+      const trimmed = String(value || '').replace(/[\s\x00-\x1f]+/g, '').toLowerCase();
+      if (trimmed.startsWith('javascript:')) return true;
+      if (trimmed.startsWith('vbscript:')) return true;
+      if (trimmed.startsWith('data:')) {
+        // Allow data:image/* only; everything else (data:text/html,
+        // data:application/javascript, etc.) is rejected. NOTE: this
+        // intentionally allows data:image/svg+xml — an SVG in an <img>
+        // src (the only sink signal-bound `src`/`href` reaches here)
+        // renders inertly and does NOT execute its scripts. SVG only runs
+        // script when loaded as a *document* (iframe/object/navigation),
+        // which is not a signal-URL sink. (Verified by the runtime security e2e suite.)
+        return !trimmed.startsWith('data:image/');
+      }
+      return false;
+    },
+
+
+    /** Register event handlers for a component */
+    register(id, events) {
+      handlers[id] = events;
+    },
+
+    /** Trigger an event on a component */
+    trigger(id, event, params) {
+      handlers[id]?.[event]?.(params);
+    },
+
+    handlers,
+
+
+    /** Register routes dynamically */
+    registerRoutes,
+
+    /** Get current path */
+    get currentPath() { return currentPath; },
+
+    // --- State helpers (compiled Go code uses these) ---
+
+    getState(key, defaultVal) {
+      return state[key] ?? defaultVal;
+    },
+
+    setState(key, val) {
+      state[key] = val;
+    },
+
+    // --- DOM helpers (compiled Go code uses these) ---
+
+    /** Update textContent of first element matching selector */
+    updateText(selector, text) {
+      const el = document.querySelector(selector);
+      if (el) el.textContent = text;
+    },
+
+    /** Update innerHTML of first element matching selector */
+    updateHTML(selector, html) {
+      const el = document.querySelector(selector);
+      if (el) el.innerHTML = html;
+    },
+
+    /** Set an attribute on first element matching selector */
+    setAttr(selector, attr, val) {
+      const el = document.querySelector(selector);
+      if (el) el.setAttribute(attr, val);
+    },
+
+    /** Get value from an input */
+    getValue(selector) {
+      return document.querySelector(selector)?.value ?? '';
+    },
+
+    /** Add a CSS class */
+    addClass(selector, cls) {
+      document.querySelector(selector)?.classList.add(cls);
+    },
+
+    /** Remove a CSS class */
+    removeClass(selector, cls) {
+      document.querySelector(selector)?.classList.remove(cls);
+    },
+
+    /** Toggle a CSS class */
+    toggleClass(selector, cls) {
+      document.querySelector(selector)?.classList.toggle(cls);
+    },
+
+    /** Legacy toast — kept as a forwarding shim so older callers
+        (string-only arg) continue to work. The real implementation
+        is the cfg-object version defined below; it owns the stack
+        widget + lifecycle. */
+
+    /** Fetch partial HTML from server and inject into selector */
+    async fetchPage(url, selector) {
+      if (!this._originOK(url)) return '';
+      const r = await fetch(url, { headers: { 'X-Gofastr-Partial': '1' } });
+      const html = await r.text();
+      if (selector) {
+        const el = document.querySelector(selector);
+        if (el) el.innerHTML = html;
+      }
+      return html;
+    },
+
+    /** Sync all [data-bind] elements from current state */
+    syncBindings() {
+      document.querySelectorAll('[data-bind]').forEach(el => {
+        const key = el.getAttribute('data-bind');
+        if (key && state[key] !== undefined) {
+          el.value = state[key];
+        }
+      });
+    },
+
+    /** Call a server action and handle the response */
+    async serverAction(action, params = {}) {
+      return this._serverActionFor('', action, params);
+    },
+
+    /** Call a server action for a specific component */
+    async _serverActionFor(componentId, action, params = {}) {
+      const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
+      const session = sessionCookie ? sessionCookie[1] : '';
+      const resp = await fetch('/__gofastr/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, params, session, componentId }),
+      });
+      if (resp.ok) {
+        const result = await resp.json();
+        if (result.message) {
+          window.__gofastr._toastOrFallback(result.message);
+        }
+        return result;
+      }
+      return null;
+    },
+
+    /** loadCSS is a no-op kept for external callers that still invoke
+     * window.__gofastr.loadCSS(path). The per-screen chunk endpoint
+     * (/__gofastr/css/<path>) now returns 410 GONE — declare CSS per
+     * component via registry.RegisterStyle and the runtime loads
+     * /__gofastr/comp/<name>.css from the SSR-emitted <link>. */
+    loadCSS(_screenPath) { /* no-op */ },
+
+    // Component CSS — three modes share _pendingLinks + data-fui-style dedup.
+    // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
+    _pendingLinks: new Set(),
+    loadComponentCSS(name) {
+      if (!name || this._pendingLinks.has(name)) return;
+      if (document.querySelector('link[data-fui-style="' + name + '"]')) return;
+      const e = (window.__gofastr_catalog || {})[name];
+      if (!e) return;
+      this._pendingLinks.add(name);
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = e.stylePath + (e.version ? '?v=' + e.version : '');
+      link.setAttribute('data-fui-style', name);
+      link.id = 'fui-css-' + name;
+      document.head.appendChild(link);
+    },
+    scanAndLoadCSS(root) {
+      if (!root) return;
+      const html = root.outerHTML || root.innerHTML;
+      if (typeof html === 'string' && html.indexOf('data-fui-comp') < 0) return;
+      if (!root.querySelectorAll) return;
+      root.querySelectorAll('[data-fui-comp]').forEach((el) => {
+        this.loadComponentCSS(el.getAttribute('data-fui-comp'));
+      });
+    },
+    _idleQueue: [],
+    _idleFlushing: false,
+    scheduleIdleLoads() {
+      const cat = window.__gofastr_catalog || {};
+      for (const name in cat) {
+        if (cat[name].loadMode === 'prewarm') this._idleQueue.push(name);
+      }
+      this._flushIdle();
+    },
+    _flushIdle() {
+      if (this._idleFlushing || !this._idleQueue.length) return;
+      this._idleFlushing = true;
+      const rIC = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+      const self = this;
+      rIC(() => {
+        try {
+          const n = self._idleQueue.shift();
+          if (n) self.loadComponentCSS(n);
+        } finally {
+          self._idleFlushing = false;
+          if (self._idleQueue.length) self._flushIdle();
+        }
+      });
+    },
+
+    formatInt: (n) => String(n),
+    formatFloat: (n, d) => Number(n).toFixed(d),
+
+    // -----------------------------------------------------------------
+    // Widgets (core-ui/widget) — overlay UIs that mount on top of any
+    // page. mountWidget is the runtime entrypoint used by per-widget
+    // bootstrap scripts. The host (Go) builds the WidgetDef → emits a
+    // tiny init script that calls __gofastr.mountWidget(cfg, chrome).
+    // All DOM/SSE/RPC plumbing lives here, in the framework runtime.
+    // -----------------------------------------------------------------
+
+    /** Internal widget-state registry. Idempotent: a widget mounted
+        twice with the same name is a no-op. */
+    _widgets: {},
+
+    /** Names of currently-mounted modal (backdrop'd) widgets, oldest
+        at index 0. Drives body-scroll lock + the Tab focus trap so a
+        modal opened from inside another modal traps Tab to itself
+        rather than to the outer one. */
+    _modalStack: [],
+
+    /** Tracks split runtime modules already loaded. The loader checks
+        this map before injecting a <script>; modules set their own
+        entry to true on load. */
+    loadedModules: {},
+
+    /** Load a split runtime module by name (e.g. "fileupload",
+        "popover"). Returns a cached Promise that resolves once the
+        module's IIFE has executed. Safe to call concurrently — the
+        first call wins, all callers await the same fetch. */
+    loadModule,
+
+    /** Selector for focusable elements inside a modal — used by the
+        initial-focus pass and the Tab focus trap. */
+    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+
+
+    // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
+    // _toastTimers, _toastSeq) lives in the split-runtime toasts module
+    // at core-ui/runtime/src/toasts.js. The module self-registers
+    // those on window.__gofastr when it loads. Core code that calls
+    // them (the click delegator for data-fui-toast, the X-Gofastr-Toast
+    // header dispatch in dispatchRPC) awaits loadModule('toasts')
+    // first so the very first toast on a cold cache still fires.
+
+    // Widget runtime (mountWidget, openWidget, closeWidget,
+    // _mountByName, _chromeCache, _deepLink{Push,Strip,Sync}, Modal
+    // Esc handler, Modal Tab focus trap) lives in the split-runtime
+    // widgets module at core-ui/runtime/src/widgets.js. The module
+    // self-registers those on window.__gofastr when loaded.
+    //
+    // State stays here on the namespace (_widgets, _modalStack,
+    // _popoverStack, _focusSel) so other modules (popover) can read
+    // it.
+    //
+    // Stub left below for the very few callers (mostly tests) that
+    // ask for openWidget before widgets has had a chance to load;
+    // the stub awaits loadModule then forwards.
+    async openWidget(name, opts) {
+      await this.loadModule('widgets');
+      return this.openWidget(name, opts);
+    },
+
+    // _dispatchToastHeader is the X-Gofastr-Toast response-header
+    // path. It tries the full toasts module first; on failure it
+    // falls back to a minimal inline renderer so the user never loses
+    // an important message (e.g. "Save failed") to a transient
+    // module-load 5xx or network hiccup.
+    _dispatchToastHeader(header) {
+      let arr;
+      try {
+        const parsed = JSON.parse(header);
+        arr = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (_) { return; }
+      for (const cfg of arr) this._toastOrFallback(cfg);
+    },
+
+    // _toastOrFallback dispatches a single toast cfg, falling back to
+    // the inline renderer if the toasts module isn't available.
+    _toastOrFallback(cfg) {
+      this.loadModule('toasts')
+        .then(() => { try { this.toast(cfg); } catch (_) {} })
+        .catch(() => { try { this._fallbackToast(cfg); } catch (_) {} });
+    },
+
+    // _fallbackToast renders an unstyled-but-visible toast notice when
+    // the toasts module can't load. No TTL, no animation, no hover
+    // pause — just a labelled live region the user can read and
+    // dismiss with the × button. Uses textContent throughout (no
+    // innerHTML) so a malicious title can't inject script.
+    _fallbackToast(cfg) {
+      if (!cfg || !cfg.title) return null;
+      // Body singleton (doc.MANIFEST) — distinct from the styled
+      // [data-fui-toast-stack] container the toasts module owns; the
+      // fallback stays deliberately unstyled + module-free.
+      const container = doc.singleton('fui-toast-fallback', () => {
+        const c = document.createElement('div');
+        c.setAttribute('data-fui-toast-fallback', '');
+        c.setAttribute('role', 'region');
+        c.setAttribute('aria-label', 'Notifications');
+        c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
+        return c;
+      });
+      const variant = cfg.variant || 'info';
+      const isAssertive = variant === 'warning' || variant === 'danger';
+      // mk: tiny element builder (tag, cssText, textContent) — inline
+      // styles + textContent only (no innerHTML) so a malicious title
+      // can't inject script.
+      const mk = (tag, css, txt) => {
+        const n = document.createElement(tag);
+        n.style.cssText = css;
+        if (txt != null) n.textContent = txt;
+        return n;
+      };
+      const item = mk('div', 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;');
+      item.setAttribute('role', isAssertive ? 'alert' : 'status');
+      item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
+      const text = mk('div', 'flex:1;');
+      text.appendChild(mk('strong', 'display:block;', cfg.title));
+      if (cfg.body) {
+        text.appendChild(mk('div', 'margin-top:0.25rem;opacity:0.9;', cfg.body));
+      }
+      const dismiss = mk('button', 'background:none;border:0;color:inherit;font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.25rem;', '×');
+      dismiss.type = 'button';
+      dismiss.setAttribute('aria-label', 'Dismiss notification');
+      dismiss.addEventListener('click', () => { item.remove(); });
+      item.appendChild(text);
+      item.appendChild(dismiss);
+      container.appendChild(item);
+      return item;
+    },
+  };
+
+// rpc.js — RPC dispatch (spec fragment `rpc`, marker class; deps: kernel).
+// Owns: dispatchRPC, the click+submit+input delegators, form encoding, CSRF
+// meta read, the rpc-* response-header handling, _originOK/_sameOrigin guards.
 
   // -----------------------------------------------------------------------
   // Module-level RPC dispatcher — installed ONCE at script load.
@@ -151,15 +589,6 @@
   }
 
   async function dispatchRPC(node) {
-    if (_staticMode) {
-      // Serverless export — no RPC endpoint exists. Instead of failing
-      // silently, surface a notice so the user knows the demo needs the
-      // Go server and how to run it live. _showNavToast is the synchronous
-      // CSP-clean mini toast; re-clicks just refresh the single element
-      // (it self-clears after 4s) so no throttle is needed.
-      _showNavToast('Needs the Go server.');
-      return;
-    }
     const path = node.getAttribute('data-fui-rpc');
     const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
     const responseSignal = node.getAttribute('data-fui-rpc-signal');
@@ -526,219 +955,10 @@
     });
   }
 
-  const registerRoutes = (routeList) => {
-    if (!Array.isArray(routeList)) return;
-    for (const r of routeList) {
-      routes.set(r.path ?? r.Path, {
-        title: r.title ?? r.Title ?? '',
-        preload: r.preload ?? r.Preload ?? false,
-        layout: r.layout ?? r.Layout ?? '',
-        redirect: r.redirect ?? r.Redirect ?? '',
-      });
-    }
-  };
-
-  // Hydrate routes + catalog from inline <script type="application/json">
-  // blocks the SSR emits. The browser treats them as inert data (not
-  // executable), so they pass strict CSP. Reading happens before
-  // first paint of any non-trivial component because runtime.js is
-  // injected at the end of <body>, after the JSON blocks in <head>.
-  const _readInlineJSON = (id) => {
-    const el = document.getElementById(id);
-    if (!el) return null;
-    try { return JSON.parse(el.textContent || 'null'); }
-    catch (_) { return null; }
-  };
-  if (!window.__gofastr_routes) {
-    const r = _readInlineJSON('gofastr-routes');
-    if (r) window.__gofastr_routes = r;
-  }
-  if (!window.__gofastr_catalog) {
-    const c = _readInlineJSON('gofastr-catalog');
-    if (c) window.__gofastr_catalog = c;
-  }
-  // isReservedSignalKey rejects the JS object keys that, when used as a
-  // dynamic property name on the _signals store, mutate the store's
-  // prototype chain instead of creating an own data property:
-  //   store["__proto__"] = {…}   // invokes the __proto__ setter
-  //   store["constructor"]/["prototype"] // shadow built-ins
-  // A seed (full-load or partial) carrying such a key would re-parent the
-  // _signals object — every not-yet-set signal name would then resolve
-  // through the attacker object (cross-signal confusion) and setSignal
-  // would mutate the shared prototype. Seed keys are server-controlled
-  // today; this is advisory-recommended defense-in-depth (strip
-  // __proto__/constructor/prototype before merging). Used by all three
-  // seed-merge loops (boot seed + mergeSeedFromDOM page/global).
-  const isReservedSignalKey = (k) =>
-    k === '__proto__' || k === 'constructor' || k === 'prototype';
-
-
-  // Signal store seed — server-provided initial values for the signal
-  // bus (core-ui/store). Stashed now; applied to _signals right after
-  // the __gofastr namespace is built (below), BEFORE hydration, so
-  // getSignal returns the SSR value on first paint instead of undefined.
-  if (!window.__gofastr_signals_seed) {
-    const sg = _readInlineJSON('gofastr-signals');
-    if (sg) window.__gofastr_signals_seed = sg;
-  }
-
-  // Bootstrap routes from injected data
-  if (Array.isArray(window.__gofastr_routes)) {
-    registerRoutes(window.__gofastr_routes);
-  }
-
-  // Auto-discover registered widgets. The framework runtime is loaded
-  // once per page (via /__gofastr/runtime.js); each Mount(r, def) on
-  // the server registers in a process-global map; this fetch picks the
-  // list up and mounts every widget. 404 means no widgets registered
-  // — silently skip (the runtime works for plain pages too).
-  // Per-page scoped widget discovery — apps that constrain widgets
-  // to specific routes via .Pages / .PagesPrefix / .PagesMatch get
-  // a filtered catalog. Widgets with no Routes declared appear on
-  // every page (the backwards-compatible default).
-  // The eager click delegator (installed below) awaits this readiness
-  // Promise before calling openWidget. openWidget reads
-  // _widgetCatalog[name] and silently bails if absent, so a click that
-  // arrives before the catalog returns must wait for entries to be
-  // populated. We set the Promise up immediately and stash the resolver
-  // so the .then() of the catalog fetch (which runs after the namespace
-  // is assigned further down) can settle it. Stash on the IIFE-local
-  // bag below; the namespace assignment at __gofastr = { … } would
-  // otherwise wipe direct assignments here.
-  let _wcr;
-  const _wready = new Promise((resolve) => { _wcr = resolve; });
-
-  // Serverless export: the exporter dumps every widget's metadata to
-  // __gofastr/widgets.json (the live endpoint is session-gated and absent
-  // on a static host). Fetch that file instead; the processing below is
-  // identical, so openWidget can resolve a hidden widget's chrome against
-  // the static tree instead of 404'ing against the server.
-  fetch('/__gofastr/widgets' + (_staticMode ? '.json' : '?page=' + encodeURIComponent(location.pathname)),
-        { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
-    .then((r) => (r.ok ? r.json() : null))
-    .then(async (list) => {
-      if (!Array.isArray(list)) { _wcr(); return; }
-      // The widget runtime now ships as a split module. Make sure it's
-      // loaded before iterating mounts — covers the case where no
-      // [data-fui-widget] marker is present in initial HTML (the
-      // marker scanner wouldn't have fired) but server-side
-      // registration says there are widgets to mount.
-      if (list.length > 0) {
-        try { await window.__gofastr.loadModule('widgets'); } catch (_) {}
-      }
-      const tryMount = () => {
-        if (!window.__gofastr || !window.__gofastr.mountWidget) {
-          setTimeout(tryMount, 0);
-          return;
-        }
-        // Stash every widget's payload so openWidget can retrieve a
-        // hidden one on demand. Also resolve _widgetCatalogReadyResolve
-        // so the eager click delegator can proceed.
-        window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
-        for (const item of list) {
-          window.__gofastr._widgetCatalog[item.cfg.name] = item;
-          if (item.hidden) continue; // open later via openWidget(name)
-          // Non-hidden widgets auto-mount at boot. Chrome HTML is
-          // fetched lazily from cfg.chromePath so the registry stays
-          // small; if the page already SSR-inlined this widget (root
-          // element exists in DOM), mountWidget short-circuits to a
-          // hydrate-only path. Either way, the result is a wired
-          // widget root.
-          window.__gofastr._mountByName(item.cfg.name);
-        }
-        // Open any widget whose deep link matches the current URL. Pure
-        // post-hydration — there's a single-frame window where the page
-        // paints without the modal. SSR pre-rendering is a future
-        // optimization; correctness (refresh / share / back-button) is
-        // already covered by this open-on-boot pass.
-        window.__gofastr._syncDeepLinks();
-
-        // Eager click delegator (installed at boot, see below) is
-        // awaiting this Promise — resolve so queued clicks unblock now
-        // that the catalog is populated.
-        _wcr();
-      };
-      tryMount();
-    })
-    .catch(() => { _wcr(); });
-
-  // -----------------------------------------------------------------------
-  // Screen cache — stores rendered screens for instant back-navigation.
-  // -----------------------------------------------------------------------
-  const screenCache = new Map(); // path → { html, title, timestamp }
-  // sseMeta reads the live stream-id carrier from a document (default:
-  // the live one). The SSE module re-reads it on every reconnect, so
-  // pointing it at a fresh session id is the whole recovery contract.
-  const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
-  const MAX_CACHE_SIZE = 20;
-
-  // True LRU: Map preserves insertion order, so delete+set on every
-  // write/read promotes the path to most-recently-used; oldest entry
-  // is always keys().next() when we exceed the cap.
-  const cacheScreen = (path, html, title) => {
-    if (screenCache.has(path)) screenCache.delete(path);
-    if (screenCache.size >= MAX_CACHE_SIZE) {
-      const oldest = screenCache.keys().next().value;
-      screenCache.delete(oldest);
-    }
-    screenCache.set(path, { html, title, timestamp: Date.now() });
-  };
-
-  // Cache the initial page so back-navigation to it works instantly.
-  // Route through cacheScreen() so the LRU cap is enforced uniformly.
-  const initialMain = document.querySelector('[role="main"]') ?? document.querySelector('main');
-  if (initialMain) {
-    cacheScreen(location.pathname, initialMain.innerHTML, document.title);
-  }
-
-  // -----------------------------------------------------------------------
-  // Public API (what compiled JS calls)
-  // -----------------------------------------------------------------------
-  window.__gofastr = {
-    /** Global document state module — see the DOC_MANIFEST block at the
-        top of this file. Split modules (widgets, toasts, backtotop)
-        reach it via NS.doc for every persistent <html>/<body> write. */
-    doc,
-
-    /** Reject dangerous schemes when a signal value is about to be
-        written into a URL-bearing HTML attribute (href / src / action
-        / xlink:href / formaction). Returns true when the value MUST
-        be discarded. Allows http(s), mailto, tel, relative paths,
-        same-page anchors, and data:image/* (used for inline blob
-        previews). Rejects javascript:, vbscript:, and other data:
-        payloads.
-
-        This is the runtime-side guard against signal-bound `href` on
-        Lightbox AllowDownload + any other widget that mirrors an
-        attacker-controllable signal into a click-triggered attribute.
-    */
-    _isUnsafeSignalUrl(attr, value) {
-      if (!attr) return false;
-      const a = String(attr).toLowerCase();
-      if (a !== 'href' && a !== 'src' && a !== 'action' &&
-          a !== 'xlink:href' && a !== 'formaction') return false;
-      // Strip ALL ASCII whitespace + C0 control bytes (0x00-0x1f)
-      // anywhere in the value before resolving the scheme. Browsers
-      // remove these during URL parsing (WHATWG), so both leading
-      // ("  javascript:") AND interior ("java<TAB>script:",
-      // "<NUL>javascript:") control chars must go, or a startsWith()
-      // check is defeated by an embedded tab/newline/CR or leading C0.
-      const trimmed = String(value || '').replace(/[\s\x00-\x1f]+/g, '').toLowerCase();
-      if (trimmed.startsWith('javascript:')) return true;
-      if (trimmed.startsWith('vbscript:')) return true;
-      if (trimmed.startsWith('data:')) {
-        // Allow data:image/* only; everything else (data:text/html,
-        // data:application/javascript, etc.) is rejected. NOTE: this
-        // intentionally allows data:image/svg+xml — an SVG in an <img>
-        // src (the only sink signal-bound `src`/`href` reaches here)
-        // renders inertly and does NOT execute its scripts. SVG only runs
-        // script when loaded as a *document* (iframe/object/navigation),
-        // which is not a signal-URL sink. (Verified by the runtime security e2e suite.)
-        return !trimmed.startsWith('data:image/');
-      }
-      return false;
-    },
-
+  // rpc namespace members (extracted from the kernel literal for incremental
+  // assembly). _csrf/_sameOrigin/_originOK are the origin + CSRF guards every
+  // runtime fetch funnels through; dispatchRPC lives in the rpc fragment body.
+  Object.assign(window.__gofastr, {
     /*  _sameOrigin(u) resolves u against the current page and compares
         origins. _originOK is the refuse-and-warn wrapper every runtime
         fetch uses when its URL came from a DOM attribute or a widget
@@ -761,219 +981,32 @@
       console.warn('[gofastr] refused cross-origin fetch:', u);
       return false;
     },
+  });
 
-    /** Register event handlers for a component */
-    register(id, events) {
-      handlers[id] = events;
-    },
+// signals.js — signal store + binding (spec fragment `signals`, marker class; deps: kernel).
+// Owns: setSignal, signal binding/broadcast, the SSR seed read + application,
+// the signal-set/inc/toggle read-modify-write path, aria injection.
+  // isReservedSignalKey rejects the JS object keys that, when used as a
+  // dynamic property name on the _signals store, mutate the store's
+  // prototype chain instead of creating an own data property:
+  //   store["__proto__"] = {…}   // invokes the __proto__ setter
+  //   store["constructor"]/["prototype"] // shadow built-ins
+  // A seed (full-load or partial) carrying such a key would re-parent the
+  // _signals object — every not-yet-set signal name would then resolve
+  // through the attacker object (cross-signal confusion) and setSignal
+  // would mutate the shared prototype. Seed keys are server-controlled
+  // today; this is advisory-recommended defense-in-depth (strip
+  // __proto__/constructor/prototype before merging). Used by all three
+  // seed-merge loops (boot seed + mergeSeedFromDOM page/global).
+  const isReservedSignalKey = (k) =>
+    k === '__proto__' || k === 'constructor' || k === 'prototype';
 
-    /** Trigger an event on a component */
-    trigger(id, event, params) {
-      handlers[id]?.[event]?.(params);
-    },
 
-    handlers,
-
-    // --- Router API ---
-
-    /** Programmatically navigate to a path. force re-fetches even when
-        the path is the current page and bypasses the screen cache —
-        use it after a mutation so the destination reflects new state. */
-    navigate(path, { replace = false, force = false } = {}) {
-      if (path === currentPath && !force) return;
-      // Security: reject attacker-controllable schemes BEFORE
-      // touching the URL bar. Server-rendered data-fui-push-state
-      // attributes (e.g. on a combobox option) and signal-bound
-      // hrefs are the trust boundary; navigate() is the choke point
-      // for all programmatic SPA navigation, so the guard lives
-      // here. Reuses the same gate as Lightbox AllowDownload etc.
-      if (!this._originOK(path)) return;
-      if (replace || path === currentPath) {
-        history.replaceState(null, '', path);
-      } else {
-        history.pushState(null, '', path);
-      }
-      loadPage(path, { bypassCache: force });
-    },
-
-    /** Register routes dynamically */
-    registerRoutes,
-
-    /** Get current path */
-    get currentPath() { return currentPath; },
-
-    // --- State helpers (compiled Go code uses these) ---
-
-    getState(key, defaultVal) {
-      return state[key] ?? defaultVal;
-    },
-
-    setState(key, val) {
-      state[key] = val;
-    },
-
-    // --- DOM helpers (compiled Go code uses these) ---
-
-    /** Update textContent of first element matching selector */
-    updateText(selector, text) {
-      const el = document.querySelector(selector);
-      if (el) el.textContent = text;
-    },
-
-    /** Update innerHTML of first element matching selector */
-    updateHTML(selector, html) {
-      const el = document.querySelector(selector);
-      if (el) el.innerHTML = html;
-    },
-
-    /** Set an attribute on first element matching selector */
-    setAttr(selector, attr, val) {
-      const el = document.querySelector(selector);
-      if (el) el.setAttribute(attr, val);
-    },
-
-    /** Get value from an input */
-    getValue(selector) {
-      return document.querySelector(selector)?.value ?? '';
-    },
-
-    /** Add a CSS class */
-    addClass(selector, cls) {
-      document.querySelector(selector)?.classList.add(cls);
-    },
-
-    /** Remove a CSS class */
-    removeClass(selector, cls) {
-      document.querySelector(selector)?.classList.remove(cls);
-    },
-
-    /** Toggle a CSS class */
-    toggleClass(selector, cls) {
-      document.querySelector(selector)?.classList.toggle(cls);
-    },
-
-    /** Legacy toast — kept as a forwarding shim so older callers
-        (string-only arg) continue to work. The real implementation
-        is the cfg-object version defined below; it owns the stack
-        widget + lifecycle. */
-
-    /** Fetch partial HTML from server and inject into selector */
-    async fetchPage(url, selector) {
-      if (!this._originOK(url)) return '';
-      const r = await fetch(url, { headers: { 'X-Gofastr-Partial': '1' } });
-      const html = await r.text();
-      if (selector) {
-        const el = document.querySelector(selector);
-        if (el) el.innerHTML = html;
-      }
-      return html;
-    },
-
-    /** Sync all [data-bind] elements from current state */
-    syncBindings() {
-      document.querySelectorAll('[data-bind]').forEach(el => {
-        const key = el.getAttribute('data-bind');
-        if (key && state[key] !== undefined) {
-          el.value = state[key];
-        }
-      });
-    },
-
-    /** Call a server action and handle the response */
-    async serverAction(action, params = {}) {
-      return this._serverActionFor('', action, params);
-    },
-
-    /** Call a server action for a specific component */
-    async _serverActionFor(componentId, action, params = {}) {
-      const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
-      const session = sessionCookie ? sessionCookie[1] : '';
-      const resp = await fetch('/__gofastr/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, params, session, componentId }),
-      });
-      if (resp.ok) {
-        const result = await resp.json();
-        if (result.message) {
-          window.__gofastr._toastOrFallback(result.message);
-        }
-        return result;
-      }
-      return null;
-    },
-
-    /** loadCSS is a no-op kept for external callers that still invoke
-     * window.__gofastr.loadCSS(path). The per-screen chunk endpoint
-     * (/__gofastr/css/<path>) now returns 410 GONE — declare CSS per
-     * component via registry.RegisterStyle and the runtime loads
-     * /__gofastr/comp/<name>.css from the SSR-emitted <link>. */
-    loadCSS(_screenPath) { /* no-op */ },
-
-    // Component CSS — three modes share _pendingLinks + data-fui-style dedup.
-    // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
-    _pendingLinks: new Set(),
-    loadComponentCSS(name) {
-      if (!name || this._pendingLinks.has(name)) return;
-      if (document.querySelector('link[data-fui-style="' + name + '"]')) return;
-      const e = (window.__gofastr_catalog || {})[name];
-      if (!e) return;
-      this._pendingLinks.add(name);
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = e.stylePath + (e.version ? '?v=' + e.version : '');
-      link.setAttribute('data-fui-style', name);
-      link.id = 'fui-css-' + name;
-      document.head.appendChild(link);
-    },
-    scanAndLoadCSS(root) {
-      if (!root) return;
-      const html = root.outerHTML || root.innerHTML;
-      if (typeof html === 'string' && html.indexOf('data-fui-comp') < 0) return;
-      if (!root.querySelectorAll) return;
-      root.querySelectorAll('[data-fui-comp]').forEach((el) => {
-        this.loadComponentCSS(el.getAttribute('data-fui-comp'));
-      });
-    },
-    _idleQueue: [],
-    _idleFlushing: false,
-    scheduleIdleLoads() {
-      const cat = window.__gofastr_catalog || {};
-      for (const name in cat) {
-        if (cat[name].loadMode === 'prewarm') this._idleQueue.push(name);
-      }
-      this._flushIdle();
-    },
-    _flushIdle() {
-      if (this._idleFlushing || !this._idleQueue.length) return;
-      this._idleFlushing = true;
-      const rIC = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
-      const self = this;
-      rIC(() => {
-        try {
-          const n = self._idleQueue.shift();
-          if (n) self.loadComponentCSS(n);
-        } finally {
-          self._idleFlushing = false;
-          if (self._idleQueue.length) self._flushIdle();
-        }
-      });
-    },
-
-    formatInt: (n) => String(n),
-    formatFloat: (n, d) => Number(n).toFixed(d),
-
-    // -----------------------------------------------------------------
-    // Widgets (core-ui/widget) — overlay UIs that mount on top of any
-    // page. mountWidget is the runtime entrypoint used by per-widget
-    // bootstrap scripts. The host (Go) builds the WidgetDef → emits a
-    // tiny init script that calls __gofastr.mountWidget(cfg, chrome).
-    // All DOM/SSE/RPC plumbing lives here, in the framework runtime.
-    // -----------------------------------------------------------------
-
-    /** Internal widget-state registry. Idempotent: a widget mounted
-        twice with the same name is a no-op. */
-    _widgets: {},
+  // signals namespace members. _signals is the signal store; setSignal is the
+  // write path every signal mutation flows through (prototype-pollution guard,
+  // html/attr/text render modes, after-update flash + scroll-to-bottom hooks).
+  // MUST run before the seed application below, which reads window.__gofastr._signals.
+  Object.assign(window.__gofastr, {
     _signals: {},
 
     /** Read the current value of a named signal. Returns undefined for
@@ -983,28 +1016,6 @@
       const s = this._signals[name];
       return s ? s.value : undefined;
     },
-
-    /** Names of currently-mounted modal (backdrop'd) widgets, oldest
-        at index 0. Drives body-scroll lock + the Tab focus trap so a
-        modal opened from inside another modal traps Tab to itself
-        rather than to the outer one. */
-    _modalStack: [],
-
-    /** Tracks split runtime modules already loaded. The loader checks
-        this map before injecting a <script>; modules set their own
-        entry to true on load. */
-    loadedModules: {},
-
-    /** Load a split runtime module by name (e.g. "fileupload",
-        "popover"). Returns a cached Promise that resolves once the
-        module's IIFE has executed. Safe to call concurrently — the
-        first call wins, all callers await the same fetch. */
-    loadModule,
-
-    /** Selector for focusable elements inside a modal — used by the
-        initial-focus pass and the Tab focus trap. */
-    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
-
     /** Push a value into a named signal and reflect it into all
         [data-fui-signal="<name>"] DOM nodes. Mode is read from the
         node's data-fui-signal-mode attr ("text" default, "html",
@@ -1141,102 +1152,8 @@
     signal(name) {
       return this._signals[name]?.value;
     },
+  });
 
-    // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
-    // _toastTimers, _toastSeq) lives in the split-runtime toasts module
-    // at core-ui/runtime/src/toasts.js. The module self-registers
-    // those on window.__gofastr when it loads. Core code that calls
-    // them (the click delegator for data-fui-toast, the X-Gofastr-Toast
-    // header dispatch in dispatchRPC) awaits loadModule('toasts')
-    // first so the very first toast on a cold cache still fires.
-
-    // Widget runtime (mountWidget, openWidget, closeWidget,
-    // _mountByName, _chromeCache, _deepLink{Push,Strip,Sync}, Modal
-    // Esc handler, Modal Tab focus trap) lives in the split-runtime
-    // widgets module at core-ui/runtime/src/widgets.js. The module
-    // self-registers those on window.__gofastr when loaded.
-    //
-    // State stays here on the namespace (_widgets, _modalStack,
-    // _popoverStack, _focusSel) so other modules (popover) can read
-    // it.
-    //
-    // Stub left below for the very few callers (mostly tests) that
-    // ask for openWidget before widgets has had a chance to load;
-    // the stub awaits loadModule then forwards.
-    async openWidget(name, opts) {
-      await this.loadModule('widgets');
-      return this.openWidget(name, opts);
-    },
-
-    // _dispatchToastHeader is the X-Gofastr-Toast response-header
-    // path. It tries the full toasts module first; on failure it
-    // falls back to a minimal inline renderer so the user never loses
-    // an important message (e.g. "Save failed") to a transient
-    // module-load 5xx or network hiccup.
-    _dispatchToastHeader(header) {
-      let arr;
-      try {
-        const parsed = JSON.parse(header);
-        arr = Array.isArray(parsed) ? parsed : [parsed];
-      } catch (_) { return; }
-      for (const cfg of arr) this._toastOrFallback(cfg);
-    },
-
-    // _toastOrFallback dispatches a single toast cfg, falling back to
-    // the inline renderer if the toasts module isn't available.
-    _toastOrFallback(cfg) {
-      this.loadModule('toasts')
-        .then(() => { try { this.toast(cfg); } catch (_) {} })
-        .catch(() => { try { this._fallbackToast(cfg); } catch (_) {} });
-    },
-
-    // _fallbackToast renders an unstyled-but-visible toast notice when
-    // the toasts module can't load. No TTL, no animation, no hover
-    // pause — just a labelled live region the user can read and
-    // dismiss with the × button. Uses textContent throughout (no
-    // innerHTML) so a malicious title can't inject script.
-    _fallbackToast(cfg) {
-      if (!cfg || !cfg.title) return null;
-      // Body singleton (doc.MANIFEST) — distinct from the styled
-      // [data-fui-toast-stack] container the toasts module owns; the
-      // fallback stays deliberately unstyled + module-free.
-      const container = doc.singleton('fui-toast-fallback', () => {
-        const c = document.createElement('div');
-        c.setAttribute('data-fui-toast-fallback', '');
-        c.setAttribute('role', 'region');
-        c.setAttribute('aria-label', 'Notifications');
-        c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
-        return c;
-      });
-      const variant = cfg.variant || 'info';
-      const isAssertive = variant === 'warning' || variant === 'danger';
-      // mk: tiny element builder (tag, cssText, textContent) — inline
-      // styles + textContent only (no innerHTML) so a malicious title
-      // can't inject script.
-      const mk = (tag, css, txt) => {
-        const n = document.createElement(tag);
-        n.style.cssText = css;
-        if (txt != null) n.textContent = txt;
-        return n;
-      };
-      const item = mk('div', 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;');
-      item.setAttribute('role', isAssertive ? 'alert' : 'status');
-      item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
-      const text = mk('div', 'flex:1;');
-      text.appendChild(mk('strong', 'display:block;', cfg.title));
-      if (cfg.body) {
-        text.appendChild(mk('div', 'margin-top:0.25rem;opacity:0.9;', cfg.body));
-      }
-      const dismiss = mk('button', 'background:none;border:0;color:inherit;font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.25rem;', '×');
-      dismiss.type = 'button';
-      dismiss.setAttribute('aria-label', 'Dismiss notification');
-      dismiss.addEventListener('click', () => { item.remove(); });
-      item.appendChild(text);
-      item.appendChild(dismiss);
-      container.appendChild(item);
-      return item;
-    },
-  };
 
   // Apply the SSR signal seed (stashed above) to the signal store BEFORE
   // hydration. Existing in-memory values win (the seed never clobbers a
@@ -1256,24 +1173,40 @@
     }
   }
 
+// nav.js — SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
+// Owns: <a> click hijack, history.pushState, popstate, screen cache,
+// cross-layout shell swap, screen-group sibling nav, updateActiveLink,
+// document.title writes, the navigate() namespace member.
+
   // -----------------------------------------------------------------------
-  // Helpers
+  // Screen cache — stores rendered screens for instant back-navigation.
   // -----------------------------------------------------------------------
-  const closestAttr = (el, attr) => {
-    const node = el.closest(`[${attr}]`);
-    return node?.getAttribute(attr) ?? null;
+  const screenCache = new Map(); // path → { html, title, timestamp }
+  // sseMeta reads the live stream-id carrier from a document (default:
+  // the live one). The SSE module re-reads it on every reconnect, so
+  // pointing it at a fresh session id is the whole recovery contract.
+  const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
+  const MAX_CACHE_SIZE = 20;
+
+  // True LRU: Map preserves insertion order, so delete+set on every
+  // write/read promotes the path to most-recently-used; oldest entry
+  // is always keys().next() when we exceed the cap.
+  const cacheScreen = (path, html, title) => {
+    if (screenCache.has(path)) screenCache.delete(path);
+    if (screenCache.size >= MAX_CACHE_SIZE) {
+      const oldest = screenCache.keys().next().value;
+      screenCache.delete(oldest);
+    }
+    screenCache.set(path, { html, title, timestamp: Date.now() });
   };
 
-  const collectParams = (el) => {
-    if (!el?.attributes) return {};
-    const params = {};
-    for (const a of el.attributes) {
-      if (a.name.startsWith('data-param-')) {
-        params[a.name.slice('data-param-'.length)] = a.value;
-      }
-    }
-    return params;
-  };
+  // Cache the initial page so back-navigation to it works instantly.
+  // Route through cacheScreen() so the LRU cap is enforced uniformly.
+  const initialMain = document.querySelector('[role="main"]') ?? document.querySelector('main');
+  if (initialMain) {
+    cacheScreen(location.pathname, initialMain.innerHTML, document.title);
+  }
+
 
   // -----------------------------------------------------------------------
   // Client-side router
@@ -1806,6 +1739,185 @@
     }, 0);
   });
 
+  // nav namespace member. navigate() is the choke point for all programmatic
+  // SPA navigation (scheme guard -> pushState -> loadPage). _originOK is read
+  // via `this`, so it resolves at call time regardless of composition order.
+  Object.assign(window.__gofastr, {
+    // --- Router API ---
+
+    /** Programmatically navigate to a path. force re-fetches even when
+        the path is the current page and bypasses the screen cache —
+        use it after a mutation so the destination reflects new state. */
+    navigate(path, { replace = false, force = false } = {}) {
+      if (path === currentPath && !force) return;
+      // Security: reject attacker-controllable schemes BEFORE
+      // touching the URL bar. Server-rendered data-fui-push-state
+      // attributes (e.g. on a combobox option) and signal-bound
+      // hrefs are the trust boundary; navigate() is the choke point
+      // for all programmatic SPA navigation, so the guard lives
+      // here. Reuses the same gate as Lightbox AllowDownload etc.
+      if (!this._originOK(path)) return;
+      if (replace || path === currentPath) {
+        history.replaceState(null, '', path);
+      } else {
+        history.pushState(null, '', path);
+      }
+      loadPage(path, { bypassCache: force });
+    },
+  });
+
+// widgets-boot.js (spec fragment `widgets-boot`, boot class; deps: kernel+rpc).
+// Owns: the /__gofastr/widgets catalog fetch + auto-mount pass, the
+// _widgetCatalog readiness Promise, and the eager open/toast click
+// delegators that must be installed before the catalog resolves.
+
+  // Auto-discover registered widgets. The framework runtime is loaded
+  // once per page (via /__gofastr/runtime.js); each Mount(r, def) on
+  // the server registers in a process-global map; this fetch picks the
+  // list up and mounts every widget. 404 means no widgets registered
+  // — silently skip (the runtime works for plain pages too).
+  // Per-page scoped widget discovery — apps that constrain widgets
+  // to specific routes via .Pages / .PagesPrefix / .PagesMatch get
+  // a filtered catalog. Widgets with no Routes declared appear on
+  // every page (the backwards-compatible default).
+  // The eager click delegator (installed below) awaits this readiness
+  // Promise before calling openWidget. openWidget reads
+  // _widgetCatalog[name] and silently bails if absent, so a click that
+  // arrives before the catalog returns must wait for entries to be
+  // populated. We set the Promise up immediately and stash the resolver
+  // so the .then() of the catalog fetch (which runs after the namespace
+  // is assigned further down) can settle it. Stash on the IIFE-local
+  // bag below; the namespace assignment at __gofastr = { … } would
+  // otherwise wipe direct assignments here.
+  let _wcr;
+  const _wready = new Promise((resolve) => { _wcr = resolve; });
+
+  // Widget catalog fetch. The live endpoint is session-gated and per-page
+  // scoped (?page= filters widgets to the current route). A serverless
+  // export never composes widgets-boot — the `static` composition omits it
+  // and rpc-stub intercepts data-fui-open clicks — so this fetch only ever
+  // runs in the live (full) composition.
+  fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
+        { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then(async (list) => {
+      if (!Array.isArray(list)) { _wcr(); return; }
+      // The widget runtime now ships as a split module. Make sure it's
+      // loaded before iterating mounts — covers the case where no
+      // [data-fui-widget] marker is present in initial HTML (the
+      // marker scanner wouldn't have fired) but server-side
+      // registration says there are widgets to mount.
+      if (list.length > 0) {
+        try { await window.__gofastr.loadModule('widgets'); } catch (_) {}
+      }
+      const tryMount = () => {
+        if (!window.__gofastr || !window.__gofastr.mountWidget) {
+          setTimeout(tryMount, 0);
+          return;
+        }
+        // Stash every widget's payload so openWidget can retrieve a
+        // hidden one on demand. Also resolve _widgetCatalogReadyResolve
+        // so the eager click delegator can proceed.
+        window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
+        for (const item of list) {
+          window.__gofastr._widgetCatalog[item.cfg.name] = item;
+          if (item.hidden) continue; // open later via openWidget(name)
+          // Non-hidden widgets auto-mount at boot. Chrome HTML is
+          // fetched lazily from cfg.chromePath so the registry stays
+          // small; if the page already SSR-inlined this widget (root
+          // element exists in DOM), mountWidget short-circuits to a
+          // hydrate-only path. Either way, the result is a wired
+          // widget root.
+          window.__gofastr._mountByName(item.cfg.name);
+        }
+        // Open any widget whose deep link matches the current URL. Pure
+        // post-hydration — there's a single-frame window where the page
+        // paints without the modal. SSR pre-rendering is a future
+        // optimization; correctness (refresh / share / back-button) is
+        // already covered by this open-on-boot pass.
+        window.__gofastr._syncDeepLinks();
+
+        // Eager click delegator (installed at boot, see below) is
+        // awaiting this Promise — resolve so queued clicks unblock now
+        // that the catalog is populated.
+        _wcr();
+      };
+      tryMount();
+    })
+    .catch(() => { _wcr(); });
+
+  // === EAGER WIDGET DELEGATORS =========================================
+  // The data-fui-open click handler, data-fui-toast click handler, and
+  // popstate listener used to live inside the /__gofastr/widgets
+  // catalog fetch's .then() callback. That meant on a slow network the
+  // very first click on an open trigger had no handler to receive it
+  // — the catalog hadn't returned yet, so the .then() hadn't run.
+  //
+  // We install them here at boot, before the catalog fetch. Each
+  // handler awaits loadModule('widgets') (via the openWidget stub on
+  // __gofastr) so it works regardless of whether the catalog has
+  // resolved. Idempotent via document.__fuiOpenDispatch.
+  function _installEagerWidgetDelegators() {
+    if (document.__fuiOpenDispatch) return;
+    document.__fuiOpenDispatch = true;
+    document.addEventListener('click', (e) => {
+      // Toast trigger: data-fui-toast='<json>' fires a client toast.
+      const toastBtn = e.target.closest && e.target.closest('[data-fui-toast]');
+      if (toastBtn) {
+        e.preventDefault();
+        window.__gofastr.loadModule('toasts').then(() => {
+          try {
+            const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
+            window.__gofastr.toast(cfg);
+          } catch (_) {}
+        }).catch(() => {});
+        return;
+      }
+      const btn = e.target.closest && e.target.closest('[data-fui-open]');
+      if (!btn) return;
+      // Static mode no longer short-circuits here: the exporter dumps the
+      // widget catalog + chrome as static files, so openWidget resolves
+      // against the file tree. (Server-backed RPCs inside a widget are
+      // still gated in dispatchRPC.)
+      const name = btn.getAttribute('data-fui-open');
+      if (!name) return;
+      e.preventDefault();
+      const raw = btn.getAttribute('data-fui-deeplink') || '';
+      const overrides = {};
+      if (raw) {
+        for (const pair of raw.split('&')) {
+          if (!pair) continue;
+          const eq = pair.indexOf('=');
+          if (eq < 0) continue;
+          overrides[decodeURIComponent(pair.slice(0, eq))] =
+            decodeURIComponent(pair.slice(eq + 1));
+        }
+      }
+      const anchorPref = btn.getAttribute('data-fui-popover-anchor');
+      (async () => {
+        // The widgets module + catalog must both be ready before
+        // openWidget can find the entry. Awaiting both here keeps the
+        // click responsive even on a cold-cache page where the user
+        // clicked faster than /__gofastr/widgets returned.
+        await window.__gofastr.loadModule('widgets').catch(() => {});
+        await _wready;
+        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
+        if (anchorPref !== null) {
+          await window.__gofastr.loadModule('popover');
+          window.__gofastr._anchorPopover(name, btn, anchorPref || 'bottom');
+        }
+      })();
+    });
+  }
+  _installEagerWidgetDelegators();
+
+// boot.js — kernel boot tail (always composed LAST, after every other fragment).
+// These declarations run AFTER nav/signals/widgets-boot have loaded because
+// _initialPass() is invoked synchronously here and calls updateActiveLink (nav)
+// and _injectSignalAria (signals). Function declarations (loadModule,
+// _scanForModules, _prefetch, _installEagerWidgetDelegators) are hoisted into
+// the shared IIFE scope so earlier fragments can reference them at event time.
+
   // Event delegation: [data-action]
   document.addEventListener('click', (e) => {
     const target = e.target.closest('[data-action]');
@@ -2001,71 +2113,6 @@
   }
   document.addEventListener('pointerover', _prefetch, { capture: true, passive: true });
   document.addEventListener('focusin', _prefetch, { capture: true });
-
-  // === EAGER WIDGET DELEGATORS =========================================
-  // The data-fui-open click handler, data-fui-toast click handler, and
-  // popstate listener used to live inside the /__gofastr/widgets
-  // catalog fetch's .then() callback. That meant on a slow network the
-  // very first click on an open trigger had no handler to receive it
-  // — the catalog hadn't returned yet, so the .then() hadn't run.
-  //
-  // We install them here at boot, before the catalog fetch. Each
-  // handler awaits loadModule('widgets') (via the openWidget stub on
-  // __gofastr) so it works regardless of whether the catalog has
-  // resolved. Idempotent via document.__fuiOpenDispatch.
-  function _installEagerWidgetDelegators() {
-    if (document.__fuiOpenDispatch) return;
-    document.__fuiOpenDispatch = true;
-    document.addEventListener('click', (e) => {
-      // Toast trigger: data-fui-toast='<json>' fires a client toast.
-      const toastBtn = e.target.closest && e.target.closest('[data-fui-toast]');
-      if (toastBtn) {
-        e.preventDefault();
-        window.__gofastr.loadModule('toasts').then(() => {
-          try {
-            const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
-            window.__gofastr.toast(cfg);
-          } catch (_) {}
-        }).catch(() => {});
-        return;
-      }
-      const btn = e.target.closest && e.target.closest('[data-fui-open]');
-      if (!btn) return;
-      // Static mode no longer short-circuits here: the exporter dumps the
-      // widget catalog + chrome as static files, so openWidget resolves
-      // against the file tree. (Server-backed RPCs inside a widget are
-      // still gated in dispatchRPC.)
-      const name = btn.getAttribute('data-fui-open');
-      if (!name) return;
-      e.preventDefault();
-      const raw = btn.getAttribute('data-fui-deeplink') || '';
-      const overrides = {};
-      if (raw) {
-        for (const pair of raw.split('&')) {
-          if (!pair) continue;
-          const eq = pair.indexOf('=');
-          if (eq < 0) continue;
-          overrides[decodeURIComponent(pair.slice(0, eq))] =
-            decodeURIComponent(pair.slice(eq + 1));
-        }
-      }
-      const anchorPref = btn.getAttribute('data-fui-popover-anchor');
-      (async () => {
-        // The widgets module + catalog must both be ready before
-        // openWidget can find the entry. Awaiting both here keeps the
-        // click responsive even on a cold-cache page where the user
-        // clicked faster than /__gofastr/widgets returned.
-        await window.__gofastr.loadModule('widgets').catch(() => {});
-        await _wready;
-        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
-        if (anchorPref !== null) {
-          await window.__gofastr.loadModule('popover');
-          window.__gofastr._anchorPopover(name, btn, anchorPref || 'bottom');
-        }
-      })();
-    });
-  }
-  _installEagerWidgetDelegators();
 
   // === DRAG-TO-DISMISS (bottom-sheet style) ============================
   // Pointer-driven drag-to-close for widgets (DragDismiss /
@@ -2393,4 +2440,5 @@
   } else {
     _initialPass();
   }
+
 })();

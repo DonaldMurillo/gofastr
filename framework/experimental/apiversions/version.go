@@ -7,12 +7,11 @@
 //
 // Usage:
 //
-//	v1 := apiversions.Version(app, "v1")
-//	v1.Entity("orders", ordersConfigV1)
+//	v1 := apiversions.Version(app.Router(), "v1")
+//	v2 := apiversions.Version(app.Router(), "v2")
 //
-//	v2 := apiversions.Version(app, "v2")
-//	v2.Entity("orders", ordersConfigV2)
-//	apiversions.Deprecate(v2.Router(), "/v1/orders", "2026-06-01", "/v2/orders")
+//	app.GroupEntity(v1.Group(), "orders", ordersConfigV1)
+//	app.GroupEntity(v2.Group(), "orders", ordersConfigV2)
 package apiversions
 
 import (

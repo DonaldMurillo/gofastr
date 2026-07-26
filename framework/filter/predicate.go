@@ -82,26 +82,37 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 	if raw == "" {
 		return nil, nil
 	}
+	// Accept a field's wire key as well as its column name, matching
+	// ParseFiltersValues, ParseSortValues and ?fields= projection. A client
+	// told to call the field "writer" must be able to use that name on every
+	// read path; resolving it in three of four places splits the contract.
+	// Hidden fields are skipped before either name is registered, so a hidden
+	// column stays unreachable under its column name AND its alias.
 	allow := make(map[string]bool, len(fields))
+	alias := make(map[string]string, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
 			continue
 		}
 		allow[f.Name] = true
+		if f.WireName != "" && f.WireName != f.Name {
+			allow[f.WireName] = true
+			alias[f.WireName] = f.Name
+		}
 	}
 	var msg json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		return nil, fmt.Errorf("where: invalid JSON: %w", err)
 	}
 	count := 0
-	p, err := parseNode(msg, allow, 1, &count)
+	p, err := parseNode(msg, allow, alias, 1, &count)
 	if err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
-func parseNode(msg json.RawMessage, allow map[string]bool, depth int, count *int) (Predicate, error) {
+func parseNode(msg json.RawMessage, allow map[string]bool, alias map[string]string, depth int, count *int) (Predicate, error) {
 	if depth > maxPredicateDepth {
 		return Predicate{}, fmt.Errorf("where: nesting exceeds max depth %d", maxPredicateDepth)
 	}
@@ -128,7 +139,7 @@ func parseNode(msg json.RawMessage, allow map[string]bool, depth int, count *int
 		}
 		children := make([]Predicate, 0, len(kids))
 		for _, k := range kids {
-			c, err := parseNode(k, allow, depth+1, count)
+			c, err := parseNode(k, allow, alias, depth+1, count)
 			if err != nil {
 				return Predicate{}, err
 			}
@@ -141,6 +152,11 @@ func parseNode(msg json.RawMessage, allow map[string]bool, depth int, count *int
 	if !allow[rp.Field] {
 		// Unknown or Hidden field — never build a predicate on it.
 		return Predicate{}, fmt.Errorf("where: unknown filter field %q", rp.Field)
+	}
+	// Resolve an alias to its column: Predicate.Field reaches the WHERE
+	// clause, so a wire name would name a column that does not exist.
+	if col, ok := alias[rp.Field]; ok {
+		rp.Field = col
 	}
 	opTok := rp.Op
 	if opTok == "" {

@@ -103,17 +103,39 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		// would resurrect exactly the value-disclosure oracle the flat-filter
 		// Hidden exclusion blocks, just one relation hop away.
 		if registry != nil {
-			if target, err := registry.Get(rel.Entity); err == nil {
-				known := false
-				for _, f := range target.GetFields() {
-					if f.Name == fieldName {
-						known = !f.Hidden
-						break
+			// FAIL CLOSED on a resolution error. This used to be
+			// `if target, err := ...; err == nil`, which skipped the entire
+			// validation block whenever resolution failed — and resolution
+			// fails precisely when a name has several versions. Two versions of
+			// "users" therefore disabled the Hidden check, and
+			// ?author.password_hash_like=… reached SQL as a value-disclosure
+			// oracle: exactly the leak this block exists to close.
+			//
+			// Resolve against the SOURCE's version too, so the Hidden set
+			// checked is the one that governs this request rather than an
+			// unversioned declaration's.
+			target, err := entity.ResolveTarget(registry, ent, rel.Entity)
+			if err != nil {
+				return nil, fmt.Errorf("nested filter %q: cannot resolve relation target %q: %w", key, rel.Entity, err)
+			}
+			// Match the column name OR the field's wire key. A client is told
+			// the field is called "content"; ?author.content=x must work for
+			// the same reason ?content=x does on the flat path. Resolving the
+			// alias in three of four filter surfaces splits the wire contract
+			// by entry point. Hidden still wins under BOTH names.
+			known := false
+			for _, f := range target.GetFields() {
+				if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) {
+					known = !f.Hidden
+					if known {
+						// Rewrite to the column: fieldName reaches SQL.
+						fieldName = f.Name
 					}
+					break
 				}
-				if !known {
-					return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, rel.Entity)
-				}
+			}
+			if !known {
+				return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, rel.Entity)
 			}
 		}
 

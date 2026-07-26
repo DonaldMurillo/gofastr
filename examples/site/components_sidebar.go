@@ -5,10 +5,16 @@ package main
 // sheet on mobile. The active component is highlighted by the runtime's
 // active-link pass (exact-href aria-current) since the sidebar persists across
 // the screen-group's client-side navigation.
+//
+// The catalog this iterates is owned by framework/gallery; the helpers below
+// re-export gallery's data so the rest of examples/site keeps using the same
+// names (groupCatalog, demoSectionMenuConfig, componentGroup) it did when the
+// catalog was local.
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/gallery"
 )
 
 type ComponentsSidebar struct{}
@@ -52,43 +58,20 @@ func componentsSectionMenuConfig() interactive.SectionMenuConfig {
 
 // demoSectionMenuConfig powers the /components/section-menu showcase — a small
 // self-contained menu whose drawer is mounted in main.go like any real menu.
+//
+// Re-exported here as a wrapper because main.go and the catalog both call it
+// by this name; gallery owns the actual config.
 func demoSectionMenuConfig() interactive.SectionMenuConfig {
-	return interactive.SectionMenuConfig{
-		AriaLabel:    "Demo sections",
-		TriggerLabel: "Sections",
-		DrawerName:   "demo-section-menu",
-		Lead:         &interactive.SectionItem{Label: "Overview", Href: "#overview"},
-		Groups: []interactive.SectionGroup{
-			{Eyebrow: "01", Label: "Modeling", Items: []interactive.SectionItem{
-				{Label: "Entities", Href: "#entities", Active: true},
-				{Label: "Filter DSL", Href: "#dsl"},
-				{Label: "Relations", Href: "#relations"},
-			}},
-			{Eyebrow: "02", Label: "Serving", Collapsed: true, Items: []interactive.SectionItem{
-				{Label: "Screens", Href: "#screens"},
-				{Label: "Islands", Href: "#islands"},
-			}},
-		},
-	}
+	return gallery.DemoSectionMenuConfig()
 }
 
 // groupCatalog — category-grouped catalog. Shared here to keep navigation
 // in lock-step with the showcase.
 func groupCatalog() []componentGroup {
-	var groups []componentGroup
-	seen := map[string]int{}
-	for _, c := range componentCatalog {
-		if i, ok := seen[c.Category]; ok {
-			groups[i].Entries = append(groups[i].Entries, c)
-			continue
-		}
-		seen[c.Category] = len(groups)
-		groups = append(groups, componentGroup{Name: c.Category, Entries: []componentEntry{c}})
-	}
-	return groups
+	return gallery.Grouped()
 }
 
-type componentGroup struct {
-	Name    string
-	Entries []componentEntry
-}
+// componentGroup is the category-grouped slice the sidebar and the index
+// screen iterate. Alias of gallery.Group so callers can keep using the
+// unexported name they did when the catalog was local.
+type componentGroup = gallery.Group

@@ -1,12 +1,44 @@
 package style
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"regexp"
 	"sort"
 	"strings"
 )
+
+// ThemeHash is the canonical content address of a theme: a short digest of
+// the :root custom properties it emits. Two themes that produce identical
+// CSS hash identically, which is exactly the equivalence callers want —
+// a theme differing only in its Name changes no pixel and should not bust
+// a cache.
+//
+// This is the single implementation. Anything keying a cache, a URL, or an
+// asset version on "which theme is this" must call it rather than hashing
+// the theme itself: CSSCustomProperties() is byte-stable (its lines are
+// sorted), whereas struct field order and unexported state are not.
+//
+// Six bytes is 48 bits — ample for distinguishing the handful of themes a
+// process serves, and short enough to sit in a query string.
+func ThemeHash(t Theme) string {
+	return CSSFingerprint(t.CSSCustomProperties())
+}
+
+// CSSFingerprint is the content address of an arbitrary block of CSS, in the
+// same width and encoding ThemeHash uses.
+//
+// Callers keying a cacheable URL must fingerprint the WHOLE response body, not
+// just the theme it derives from. A stylesheet that also carries custom CSS or
+// contributed fragments is not identified by its palette: reusing a
+// palette-only key for it would let a browser serve one release's bytes under
+// another release's URL.
+func CSSFingerprint(css string) string {
+	sum := sha256.Sum256([]byte(css))
+	return hex.EncodeToString(sum[:6])
+}
 
 // tokenRefRe matches token references like {colors.primary}.
 var tokenRefRe = regexp.MustCompile(`\{([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)\}`)
@@ -194,11 +226,29 @@ func CSSCustomPropertiesOf(theme any) string {
 	return b.String()
 }
 
-// collectTokenDecls walks any struct value (including embedded
-// structs) and records `--<category>-<name>: <value>;` declarations
-// for every typed token it finds. Recursion stops at primitive
-// scalars (typed tokens implement their own emission).
-func collectTokenDecls(v reflect.Value, out *[]string) {
+// tokenKV is a single typed token flattened to its CSS custom-property
+// identifier (Key, WITHOUT the leading "--") and the exact value string
+// the :root block emits after the colon. Both CSSCustomPropertiesOf and
+// ThemeToTokens produce these via the single walkTokens walk, so the two
+// flatteners can never disagree about which tokens exist or their values.
+type tokenKV struct {
+	Key, Value string
+}
+
+// walkTokens walks v — recursing into struct fields and dereferencing
+// pointers/interfaces — and appends every emittable typed token as a
+// tokenKV. The Key is the CSS custom-property identifier WITHOUT the
+// leading "--" ("color-primary", "spacing-md", "duration-fast",
+// "tk-kw"); the Value is exactly what CSSCustomProperties emits after
+// the colon ("#4F46E5", "8px", "150ms", "var(--color-code-text)").
+//
+// This is the single shared reflection walk. collectTokenDecls (the
+// :root emitter) and ThemeToTokens (the token map) both route through
+// it, which is what guarantees a theme flattened to a map and re-applied
+// reproduces identical CSS — the round-trip property ThemeHash asserts.
+// The two flatteners that disagree is precisely the bug the token-map
+// layer exists to prevent, so the walk is shared rather than duplicated.
+func walkTokens(v reflect.Value, out *[]tokenKV) {
 	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return
@@ -208,84 +258,100 @@ func collectTokenDecls(v reflect.Value, out *[]string) {
 	if v.Kind() != reflect.Struct {
 		return
 	}
-
-	// Handle the token types directly — they know how to render.
-	if decl := tokenDecl(v); decl != "" {
-		*out = append(*out, decl)
+	if key, val, ok := tokenPair(v); ok {
+		*out = append(*out, tokenKV{key, val})
 		return
 	}
-
 	for i := 0; i < v.NumField(); i++ {
 		f := v.Field(i)
 		if !f.CanInterface() {
 			continue
 		}
-		collectTokenDecls(f, out)
+		walkTokens(f, out)
 	}
 }
 
-// tokenDecl checks if v is one of the typed token structs and
-// returns a "--name: value;" CSS line. Returns "" when v is some
-// other struct (caller should recurse into its fields).
-func tokenDecl(v reflect.Value) string {
+// tokenPair returns the (cssVarName, cssValue) pair for a typed token
+// struct, matching exactly what the :root emitter writes as
+// "--<cssVarName>: <cssValue>;". ok is false for any non-token struct
+// (the caller recurses into its fields) and for a token the emitter
+// skips — one with an empty Name, or an optional CodeColor whose Value
+// is unset. Centralizing the var-naming convention and the skip rules
+// in one place keeps emission and the token map in lockstep: changing
+// the prefix for one category here changes it for both consumers at
+// once.
+func tokenPair(v reflect.Value) (key, value string, ok bool) {
 	switch t := v.Interface().(type) {
 	case Color:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--color-%s: %s;", t.Name, t.Value)
+		return "color-" + t.Name, t.Value, true
 	case Spacing:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--spacing-%s: %dpx;", t.Name, t.Value)
+		return "spacing-" + t.Name, fmt.Sprintf("%dpx", t.Value), true
 	case Radius:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--radii-%s: %dpx;", t.Name, t.Value)
+		return "radii-" + t.Name, fmt.Sprintf("%dpx", t.Value), true
 	case Font:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--font-%s: %s;", t.Name, t.Value)
+		return "font-" + t.Name, t.Value, true
 	case Breakpoint:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--breakpoint-%s: %dpx;", t.Name, t.Value)
+		return "breakpoint-" + t.Name, fmt.Sprintf("%dpx", t.Value), true
 	case Shadow:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--shadow-%s: %s;", t.Name, t.Value)
+		return "shadow-" + t.Name, t.Value, true
 	case ZIndexValue:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--z-%s: %d;", t.Name, t.Value)
+		return "z-" + t.Name, fmt.Sprintf("%d", t.Value), true
 	case Duration:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--duration-%s: %s;", t.Name, t.FormattedValue())
+		return "duration-" + t.Name, t.FormattedValue(), true
 	case Easing:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--easing-%s: %s;", t.Name, t.Value)
+		return "easing-" + t.Name, t.Value, true
 	case FontSize:
 		if t.Name == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--text-%s: %s;", t.Name, t.Value)
+		return "text-" + t.Name, t.Value, true
 	case CodeColor:
 		// Optional token: emitted only when fully set (an unset slot
 		// leaves the component-CSS fallback palette in charge).
 		if t.Name == "" || t.Value == "" {
-			return ""
+			return "", "", false
 		}
-		return fmt.Sprintf("--tk-%s: %s;", t.Name, t.Value)
+		return "tk-" + t.Name, t.Value, true
 	}
-	return ""
+	return "", "", false
+}
+
+// collectTokenDecls walks any struct value (including embedded structs)
+// and records `--<category>-<name>: <value>;` declarations for every
+// typed token it finds. Thin formatter over walkTokens: the walk and
+// the var-naming live in one place (walkTokens / tokenPair); this just
+// stitches the "--" / ": " / ";" punctuation the :root block needs.
+func collectTokenDecls(v reflect.Value, out *[]string) {
+	var pairs []tokenKV
+	walkTokens(v, &pairs)
+	for _, p := range pairs {
+		*out = append(*out, "--"+p.Key+": "+p.Value+";")
+	}
 }

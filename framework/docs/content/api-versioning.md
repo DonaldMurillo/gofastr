@@ -71,9 +71,144 @@ app.GroupEntity(v2, "posts", postsV2Config)
 ```
 
 Each group carries its own middleware stack, access policy, OpenAPI tag,
-and MCP namespace, so the two versions are independently
-gated and independently described. Register each entity into a version with
+and MCP namespace, so the two versions are independently gated and
+independently described. Register each entity into a version with
 `app.GroupEntity(group, name, config)`.
+
+### What you must set for versioned entities
+
+Two things do **not** auto-disambiguate when the same entity name lives
+under two groups — you must configure them per group:
+
+1. **MCP tool names.** Without a namespace, both versions try to
+   register `posts_list` → the second panics with a duplicate-tool
+   error. Give each group an MCP namespace so tools are named
+   `v1.posts.list` / `v2.posts.list`:
+
+   ```go
+   v1 := app.Group("/api/v1", routegroup.WithMCPNamespace("v1"))
+   v2 := app.Group("/api/v2", routegroup.WithMCPNamespace("v2"))
+   ```
+
+   Entities registered via `App.Entity` (no group) keep the historical
+   flat `posts_list` names — the namespace only applies inside a group
+   that sets one.
+
+2. **OpenAPI tags (optional but recommended).** Without a tag, both
+   versions' operations land under the same schema-component name and
+   tag in `/openapi.json`. Set a per-version tag so the spec stays
+   organized:
+
+   ```go
+   v1 := app.Group("/api/v1",
+       routegroup.WithMCPNamespace("v1"),
+       routegroup.WithOpenAPITag("v1"))
+   ```
+
+### What the registry does for you
+
+The entity registry keys on `(name, version)` — the version being the
+group's full prefix (e.g. `/api/v1`). So the same entity name
+coexists across groups without colliding. `Registry.Get(name)` resolves
+the unversioned entity (registered via `App.Entity`), or the sole
+version if only one exists. When multiple versions exist and none is
+unversioned, `Get` returns an ambiguity error — use
+`Registry.GetVersioned(name, "/api/v1")` to pick one.
+
+### Shared table, shared schema
+
+Two versions of one entity **share one database table**. The table name
+is derived from the entity name (or set explicitly), and since both
+versions mount the same entity name, they point at the same physical
+table. This is the key constraint that makes side-by-side versions safe
+and cheap: one table, one set of columns, two API surfaces reading and
+writing it.
+
+Because the versions share the table, the migration system treats their
+declared fields as a **union**:
+
+- **Additive differences migrate automatically.** If v2 declares a
+  column v1 does not (the most common reason to cut a v2 — adding a
+  field), boot auto-migrate creates that column via `ALTER TABLE ADD
+  COLUMN`, exactly as a new column on a single-version entity is
+  created. You do not configure anything; the column exists after boot.
+- **The table is migrated once, from the union** — not once per version.
+  A re-boot is a no-op even with multiple versions.
+- **Single-version entities are completely unchanged.** The union is a
+  superset view applied only when a name has multiple versions; one
+  version per name takes the identical path as before.
+
+A column both versions declare **must have a physically identical
+definition**. If v1 declares `summary TEXT` and v2 declares
+`summary INTEGER`, that is a misconfiguration — the DDL emitted at boot
+would depend on which version the migrator saw first. **Registration
+panics at boot** (not at migrate time) with a message naming the entity,
+the table, the conflicting column, and both versions. The check derives
+the column type from `migrate.SQLType` — the same function that emits the
+DDL — so it catches every attribute that changes the physical column:
+
+| Compared (must match) | Ignored (free to differ) |
+| --- | --- |
+| the rendered SQL type — `Type`, `RawType`, **and `String.Max`** (which selects `VARCHAR(n)`) | `Hidden` (wire visibility) |
+| `Unique` | `WireName` (JSON key override) |
+| `Required` (NOT NULL) | `ReadOnly` (request-body acceptance) |
+| `AutoGenerate` (DEFAULT strategy) | `Min` / `Pattern` / `Values` (validation) |
+| `Default` value | `To` / `Many` (relation metadata) |
+| primary-key-ness (`Name == PrimaryKey`) | field ordering |
+
+Wire-only and validation-only differences are never conflicts — they
+are the whole point of versioning. `apiversions.ApplyToEntityConfig`
+relies on exactly this: `Exclude` sets `Hidden=true` and `Rename` sets
+`WireName`, both of which the conflict check deliberately ignores
+because neither changes the physical column. (`String.Max` is the one
+validation knob that DOES reach the DDL — `VARCHAR(n)` — so it is
+compared; `Min`, `Pattern`, and `Values` do not.)
+
+Beyond column definitions, four structural invariants also panic at
+registration, because a silent violation would corrupt the shared table:
+
+- **Same table.** Two versions of one name MUST target the same physical
+  table. Registering `posts` at `Table: "posts_v1"` and `Table: "posts_v2"`
+  is rejected — the union merges by name and would keep only one table,
+  silently dropping the other version's. Use distinct entity names if you
+  need distinct tables.
+- **No mandatory exclusive column.** A `Required` column with no
+  `Default` and no `AutoGenerate` that ONE version declares but the other
+  does not is rejected — the shared table gains a `NOT NULL` column the
+  other version can never supply, so every complete request through the
+  older version fails at the database. Give the column a default, make it
+  auto-generated, or declare it in both versions.
+- **Same managed posture.** Mixing `Unmanaged: true` and managed versions
+  of one name is rejected — an unmanaged representative suppresses
+  migration for the whole union, so a managed version's columns would
+  never be created. (A view or external table that legitimately shares a
+  managed table is a different shape — distinct entity name, exempt from
+  the column check by design.)
+- **At most one Seed.** Two versions may not both declare a `Seed` —
+  functions cannot be compared for equality, so the second is ambiguous.
+  The sole seed runs regardless of which version declares it.
+
+Named indices and foreign keys on the shared table follow the same rule:
+if two versions declare an index by the same name, or a relation on the
+same FK column, their definitions (columns, expression, uniqueness,
+ordering for indices; target table, key, and relation type for FKs) must
+match — otherwise the union would keep one and silently violate the
+other's declared invariant.
+
+> **See also:** [migrations](migrations.md) for the full additive-only
+> contract — boot never drops, renames, or retypes; destructive changes
+> require a reviewed migration file (`migrate generate`).
+
+### OpenAPI output for versioned entities
+
+Each versioned entity gets its own:
+- **Path** — `/api/v1/posts` and `/api/v2/posts` (not the bare `/posts`).
+- **Schema component** — `posts_api_v1` / `posts_api_v2` (non-colliding).
+- **Operation IDs** — `list_posts_api_v1` / `list_posts_api_v2`.
+- **Tag** — the group's `OpenAPITag` if set, else `posts_api_v1`.
+
+Unversioned entities (via `App.Entity`) keep the historical bare names
+(`/posts`, schema `posts`, tag `posts`) — no change for existing apps.
 
 ---
 
@@ -140,7 +275,13 @@ app.GroupEntity(v2.Group(), "posts", apiversions.ApplyToEntityConfig(basePostsCo
 A `Projection` selects fields with `Include` (allow-list; empty = all),
 narrows them with `Exclude`, and can remap JSON keys per version with
 `Rename`. `ApplyToEntityConfig` returns a copy of the base config shaped
-for that version, so `v1` clients never see `summary`.
+for that version.
+
+**How it works:** `Exclude` sets the field's `Hidden` flag (the column
+stays in the shared table, just hidden from that version's wire output).
+`Rename` sets the field's `WireName` — the JSON key clients see, without
+changing the DB column name. Both versions read and write the same
+underlying table; the projection is purely a wire-level concern.
 
 ---
 
@@ -158,15 +299,21 @@ for that version, so `v1` clients never see `summary`.
   applied app-wide at `Start()` time. If you also call `app.Group("/api/v1")`
   and register entities there, those entities receive the prefix twice
   (`/api/v1/api/v1/posts`). Use `WithAPIPrefix` **or** route groups, not both.
-- **Not propagating the prefix to the OpenAPI `servers` list.** GoFastr does
-  this automatically when you use `WithAPIPrefix`. If you wire your own prefix
-  via a middleware or reverse-proxy rewrite, update `AppConfig.OpenAPIServers`
-  to match — otherwise SDK generators and agents read incorrect base paths.
+- **Forgetting `WithMCPNamespace` on versioned groups.** Two versions of the
+  same entity produce identical flat MCP tool names (`posts_list`), and the
+  second registration panics. Always set `routegroup.WithMCPNamespace("v1")`
+  (and `"v2"`) on version groups so tools disambiguate as `v1.posts.list`.
 - **Using the `apiversions` package in stable production without pinning.**
   The `framework/experimental/apiversions` package has an API that can still change.
   Treat it like a preview: write tests that compile against the types you use
   so a breaking rename fails your build rather than silently misbehaving at
   runtime.
+- **Declaring the same column with incompatible schemas across versions.**
+  Two versions of one entity share one DB table, so a column both declare
+  must have a physically identical definition (type, nullability,
+  uniqueness, default, auto/PK). v1 `summary TEXT` + v2 `summary INTEGER`
+  panics at registration — see [Shared table, shared schema](#shared-table-shared-schema).
+  Add the column in v2 only, or make both definitions match.
 - **Registering the same entity name into two groups with identical configs.**
   Both groups serve the same handler state. If a `BeforeList` hook scopes by
   version, it sees the same hook registry for both — there's one entity, one

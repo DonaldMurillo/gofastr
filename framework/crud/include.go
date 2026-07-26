@@ -151,9 +151,15 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			// allow-list. A relation pointed at a self-migrated table
 			// (auth_users) then returned every column of any row the FK
 			// named. Unresolvable target = refuse, at every depth.
-			target, err := registry.Get(rel.Entity)
+			// Resolve against the SOURCE entity's version. registry.Get prefers
+			// the unversioned registration, so a request under /api/v1 whose
+			// relation targets a name that also exists unversioned would adopt
+			// the unversioned entity's Hidden set and scopes — disclosing
+			// columns v1 hides and returning rows v1's owner/tenant/soft-delete
+			// scopes exclude. Ambiguity is an error, never a silent pick.
+			target, err := entity.ResolveTarget(registry, ent, rel.Entity)
 			if err != nil {
-				return nil, fmt.Errorf("include %q: relation %q targets entity %q, which is not registered", path, seg, rel.Entity)
+				return nil, fmt.Errorf("include %q: relation %q targets entity %q, which is not registered: %w", path, seg, rel.Entity, err)
 			}
 			node, exists := siblingMap[seg]
 			if !exists {
@@ -268,6 +274,12 @@ func splitIncludePath(s string) []string {
 // every field name is accepted at parse time.
 func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string) ([]filter.ParsedFilter, error) {
 	knownField := map[string]bool{}
+	// wireAlias maps a field's wire key to its column, so a scoped filter may
+	// use the name clients are actually told — ?include=comments(content=x)
+	// must work for the same reason ?content=x does at the top level.
+	// Populated only for non-Hidden fields, so a hidden column stays
+	// unreachable under its alias as well as its column name.
+	wireAlias := map[string]string{}
 	for _, f := range fields {
 		// A Hidden column is treated as NOT declared — the identical
 		// "not on target entity" error a nonexistent field gets. The
@@ -279,6 +291,10 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		// nested_filter.go), one relation hop away.
 		if !f.Hidden {
 			knownField[f.Name] = true
+			if f.WireName != "" && f.WireName != f.Name {
+				knownField[f.WireName] = true
+				wireAlias[f.WireName] = f.Name
+			}
 		}
 	}
 	suffixes := []struct {
@@ -311,6 +327,12 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		}
 		if fields != nil && !knownField[field] {
 			return nil, fmt.Errorf("include %q: scoped field %q not on target entity", pathForErrors, field)
+		}
+		// Resolve the wire key to its column AFTER the allow-list check:
+		// ParsedFilter.Field reaches the WHERE clause, so emitting the alias
+		// would name a column that does not exist.
+		if col, ok := wireAlias[field]; ok {
+			field = col
 		}
 		if op == filter.OpIn {
 			vals := strings.Split(value, "|")
@@ -567,6 +589,13 @@ func rawRelationValue(rel entity.Relation, val any, present bool) any {
 // converts every nested map's keys to JSON case, including any subtrees
 // previously attached during recurseLoadOnRawRows.
 func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, present bool, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, error) {
+	// Included rows belong to the TARGET entity, so their keys must be
+	// converted with the target's wire map — not this handler's. posts
+	// aliasing body_text->"summary" must not rename comments' body_text,
+	// which declares its own alias "content". Resolution is version-aware
+	// (entity.ResolveTarget) for the same reason the include tree is: a v1
+	// request must not adopt an unversioned declaration's field naming.
+	conv := ch.wireConverterFor(rel.Entity)
 	switch rel.Type {
 	case entity.RelHasMany, entity.RelManyToMany:
 		if !present {
@@ -578,7 +607,7 @@ func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, pre
 		}
 		out := make([]map[string]any, len(slice))
 		for i, m := range slice {
-			c, _, err := ch.deepConvertMap(m, converted, budget)
+			c, _, err := ch.deepConvertMap(m, conv, converted, budget)
 			if err != nil {
 				return nil, err
 			}
@@ -593,7 +622,7 @@ func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, pre
 		if !ok {
 			return nil, nil
 		}
-		c, _, err := ch.deepConvertMap(m, converted, budget)
+		c, _, err := ch.deepConvertMap(m, conv, converted, budget)
 		if err != nil {
 			return nil, err
 		}
@@ -615,7 +644,10 @@ func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, pre
 // Returns the converted value plus the number of row references it
 // serialises to, so callers can charge a re-referenced subtree its full
 // weight without re-walking it.
-func (ch *CrudHandler) deepConvertMap(v any, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, int, error) {
+func (ch *CrudHandler) deepConvertMap(v any, conv func(string) string, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, int, error) {
+	if conv == nil {
+		conv = ch.convertKey
+	}
 	switch x := v.(type) {
 	case map[string]any:
 		id := reflect.ValueOf(x).Pointer()
@@ -638,12 +670,12 @@ func (ch *CrudHandler) deepConvertMap(v any, converted map[uintptr]*convertedSub
 		converted[id] = entry
 		total := 1
 		for k, val := range x {
-			c, n, err := ch.deepConvertMap(val, converted, budget)
+			c, n, err := ch.deepConvertMap(val, conv, converted, budget)
 			if err != nil {
 				return nil, 0, err
 			}
 			total += n
-			out[ch.convertKey(k)] = c
+			out[conv(k)] = c
 		}
 		entry.nodes = total
 		return out, total, nil
@@ -651,7 +683,7 @@ func (ch *CrudHandler) deepConvertMap(v any, converted map[uintptr]*convertedSub
 		out := make([]map[string]any, len(x))
 		total := 0
 		for i, m := range x {
-			c, n, err := ch.deepConvertMap(m, converted, budget)
+			c, n, err := ch.deepConvertMap(m, conv, converted, budget)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -663,7 +695,7 @@ func (ch *CrudHandler) deepConvertMap(v any, converted map[uintptr]*convertedSub
 		out := make([]any, len(x))
 		total := 0
 		for i, v := range x {
-			c, n, err := ch.deepConvertMap(v, converted, budget)
+			c, n, err := ch.deepConvertMap(v, conv, converted, budget)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -736,4 +768,46 @@ func applyRelatedTenantScope(ctx context.Context, node *IncludeNode) {
 		Op:    filter.OpEq,
 		Value: tenant.GetTenantID(ctx),
 	}}, node.Filters...)
+}
+
+// wireConverterFor returns the JSON-key converter for the entity a relation
+// points at, so an included row is renamed by ITS OWN schema rather than the
+// parent handler's.
+//
+// Without this, deepConvertMap applied the parent's wire map at every depth:
+// posts aliasing body_text->"summary" renamed comments' body_text to
+// "summary" too, ignoring comments' own alias, and a parent with no matching
+// column fell through to plain case conversion — so the included entity's
+// declared wire contract was never honoured at all.
+//
+// Resolution is version-aware for the same reason the include tree is: a v1
+// request must not adopt an unversioned declaration's field naming. On any
+// resolution failure this falls back to the handler's own converter, which is
+// the pre-existing behaviour — the include tree has already refused
+// unresolvable targets by this point, so this path is defensive only.
+func (ch *CrudHandler) wireConverterFor(targetName string) func(string) string {
+	if ch.Registry == nil {
+		return ch.convertKey
+	}
+	target, err := entity.ResolveTarget(ch.Registry, ch.Entity, targetName)
+	if err != nil || target == nil {
+		return ch.convertKey
+	}
+	// Build the target's wire map once per relation, not per row.
+	wire := make(map[string]string, len(target.GetFields()))
+	for _, f := range target.GetFields() {
+		if f.WireName != "" {
+			wire[f.Name] = f.WireName
+		}
+	}
+	if len(wire) == 0 {
+		// No aliases on the target: plain case conversion, same as before.
+		return ch.convertKeyRaw
+	}
+	return func(k string) string {
+		if w, ok := wire[k]; ok {
+			return w
+		}
+		return ch.convertKeyRaw(k)
+	}
 }
