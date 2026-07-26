@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
@@ -1588,6 +1589,16 @@ func validateBlueprint(bp Blueprint) error {
 		}
 		if !isGoIdentifier(toCamelCase(decl.Name)) {
 			return fmt.Errorf("blueprint: entity %q does not produce a valid Go identifier — the generated code would not compile; rename it to start with a letter (e.g. \"two_fa_tokens\" instead of \"2fa_tokens\")", decl.Name)
+		}
+		// The table name reaches two sinks that neither re-escape nor
+		// re-validate it: the generated typed client emits it into Go string
+		// literals, and the runtime interpolates it into DDL/queries as a
+		// bare SQL identifier. An entity name is already constrained to a Go
+		// identifier above; `table:` was the way around that.
+		if decl.Table != "" {
+			if _, err := query.SafeIdent(decl.Table); err != nil {
+				return fmt.Errorf("blueprint: entity %q table %q must be letters, digits and underscores (it becomes a SQL identifier and is emitted into generated Go)", decl.Name, decl.Table)
+			}
 		}
 		if entityNames[decl.Name] {
 			return fmt.Errorf("blueprint: duplicate entity %q", decl.Name)

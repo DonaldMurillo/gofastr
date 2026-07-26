@@ -1006,6 +1006,11 @@ The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
 - duplicate entity names, routes, endpoints, middleware, plugins, or helpers
+- an entity `table:` that is not letters, digits and underscores — the table
+  name reaches two sinks that neither re-escape nor re-validate it: the
+  generated typed client emits it into Go string literals, and the runtime
+  interpolates it into DDL as a bare SQL identifier. The entity `name:` is
+  already constrained to a Go identifier; `table:` was the way around that.
 - relation-typed fields (`type: relation`) without a `to:` target, or whose
   `to:` names an entity the blueprint does not declare — without this check
   the built app would crash at startup with "auto-migrate: entity has
