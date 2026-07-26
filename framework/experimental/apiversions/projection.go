@@ -47,34 +47,30 @@ func (ps *ProjectionSet) For(version string) *Projection {
 	return ps.Default
 }
 
-// ApplyToEntityConfig returns a modified EntityConfig with fields filtered
-// and renamed according to the projection for the given version.
-// Does not mutate the original.
+// ApplyToEntityConfig returns a modified EntityConfig with fields' visibility
+// and wire names adjusted according to the projection for the given version.
+// Does not mutate the original, and crucially does NOT change the field set
+// or the DB column names: Exclude hides a field (Hidden=true), Include hides
+// everything not allow-listed, and Rename sets the wire-name override
+// (WireName) — the underlying table schema is identical across versions so
+// two versions of one entity can share one table safely.
 func ApplyToEntityConfig(base entity.EntityConfig, ps *ProjectionSet, version string) entity.EntityConfig {
 	p := ps.For(version)
 	if p == nil {
 		return base
 	}
 
-	filtered := make([]schema.Field, 0, len(base.Fields))
-	for _, f := range base.Fields {
-		if !shouldInclude(f.Name, p) {
-			continue
-		}
+	adjusted := make([]schema.Field, len(base.Fields))
+	for i, f := range base.Fields {
+		f.Hidden = f.Hidden || !shouldInclude(f.Name, p)
 		if rename, ok := p.Rename[f.Name]; ok {
-			// Rename by creating a new field with the JSON name overridden.
-			// The framework's JSON case logic uses Name, so we replace it
-			// with the renamed version and keep the original as a reference.
-			renamed := f
-			renamed.Name = rename
-			filtered = append(filtered, renamed)
-		} else {
-			filtered = append(filtered, f)
+			f.WireName = rename
 		}
+		adjusted[i] = f
 	}
 
 	cfg := base
-	cfg.Fields = filtered
+	cfg.Fields = adjusted
 	return cfg
 }
 
@@ -93,10 +89,4 @@ func shouldInclude(fieldName string, p *Projection) bool {
 		return false
 	}
 	return true
-}
-
-// VersionConfig bundles entity configuration for a specific API version.
-type VersionConfig struct {
-	Version string
-	Config  entity.EntityConfig
 }
