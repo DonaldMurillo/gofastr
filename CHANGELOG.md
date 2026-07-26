@@ -7,9 +7,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [0.46.0] - 2026-07-26
 
-The v0.43.0 audit backlog (#135) closed, four filed issues fixed (#136,
-#138, #139, #141), and the first audit of surfaces the previous passes had
-never opened.
+The v0.43.0 audit backlog (#135) closed, three filed issues fixed (#138,
+#139, #141), and the first audit of surfaces the previous passes had never
+opened (#136 — partially; its two concrete bugs are fixed and four of its
+listed surfaces audited, but most of its never-opened list is still never
+opened, and one pass does not clear a surface by this repo's gate).
 
 Same shape as 0.45.0: **guard drift** — a check one path has and its
 sibling skips. Three of the findings below are the *same* property
