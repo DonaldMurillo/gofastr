@@ -138,6 +138,34 @@ as script in a victim's browser (stored-XSS guard). Path-traversal
 defense is delegated to the backend's key sanitization; the handler
 echoes no filesystem path on any error.
 
+### Range requests and resumable downloads
+
+`Storage.Get` returns an `io.ReadCloser`, which erases seekability — and
+`http.ServeContent` needs an `io.ReadSeeker` to answer a `Range:` header.
+Backends that hold their bytes locally declare the capability instead:
+
+```go
+type RangeGetter interface {
+    GetRange(ctx context.Context, key string) (io.ReadSeekCloser, error)
+}
+```
+
+`ServeHandler` type-asserts for it. When the backend implements it, range
+requests get a `206` with `Accept-Ranges: bytes`, so a download interrupted
+1.8 GB into a 2 GB file resumes instead of restarting. When it doesn't, the
+handler serves whole bodies exactly as before — declining is legal.
+
+| Backend | `RangeGetter` |
+| --- | --- |
+| `upload.LocalStorage`, `storage.LocalStorage` | yes — already opens an `*os.File` |
+| `storage.MemoryStorage` | yes — the bytes are already resident |
+| `storage.S3Storage` | no — a network backend would have to buffer the whole object to satisfy `Seek`. Use `WithPresigner` so the transfer bypasses the app entirely. |
+
+Implement it on your own backend only if seeking is genuinely cheap there,
+and route key validation through the same code path as `Get` — a capability
+that skipped the traversal check would be a path-traversal hole with a
+performance justification.
+
 ## Content checksums
 
 The `battery/storage` package provides opt-in SHA-256 helpers that wrap

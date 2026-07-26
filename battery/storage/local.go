@@ -164,6 +164,20 @@ func (ls *LocalStorage) Delete(ctx context.Context, key string) error {
 
 // Get opens the file identified by key and returns a ReadCloser for its contents.
 func (ls *LocalStorage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	return ls.open(ctx, key)
+}
+
+// GetRange implements [upload.RangeGetter], exposing the seekability the
+// local backend already has: Get opens an *os.File and then discards Seek
+// through the io.ReadCloser return type. Key validation runs through the same
+// fullPath call, not a parallel one.
+func (ls *LocalStorage) GetRange(ctx context.Context, key string) (io.ReadSeekCloser, error) {
+	return ls.open(ctx, key)
+}
+
+// open is the single enforcement point shared by Get and GetRange, so the two
+// cannot drift on key validation.
+func (ls *LocalStorage) open(ctx context.Context, key string) (*os.File, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
