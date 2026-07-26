@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.46.0
+through: v0.47.0
 
 releases:
   - version: v0.3.0
@@ -348,3 +348,15 @@ releases:
         breaking: true
         guidance: "Replay now re-checks that a delete was covered by an approved, unspent plan naming that target. A .kiln.session.jsonl written before v0.46.0 that contains deletes will fail replay — run `kiln freeze` with the old binary first, or start a fresh session."
         detect: "\\.kiln\\.session\\.jsonl"
+  - version: v0.47.0
+    title: Image placeholders render; uploads derive their own renditions
+    notes:
+      - change: OptimizedImage/PipelineImage Placeholder takes an inline raster data URI only
+        breaking: true
+        guidance: "A bare BlurHash string is no longer accepted — it was previously emitted as a data-blurhash attribute that nothing read, so placeholders never painted. Decode first with image.BlurHashDataURL(hash, image.BlurHashRenderConfig{}) and pass the result. Unusable values are dropped and the image renders without a placeholder rather than panicking."
+      - change: The data-placeholder and data-blurhash attributes are no longer emitted
+        breaking: true
+        guidance: "Both were dead — no CSS rule or runtime script in the framework ever read them. The placeholder is now a real stacked <img> positioned by the ui-image stylesheet. If you wired your own CSS or JS hydration to either attribute, delete it; the component paints the placeholder itself with no JavaScript."
+      - change: html.Image accepts raster data URIs; other resource sinks still reject them
+        breaking: false
+        guidance: "core-ui/html.Image moved from urlsafe.Resource to the new urlsafe.ImageSource policy, so an inline data:image/{jpeg,png,gif,webp,avif} src renders instead of being swapped for the blank stub. data:image/svg+xml and every non-image media type stay rejected, and <script src>/<link href> are unchanged. framework/ui image sinks (OptimizedImage, PipelineImage, Gallery, Avatar) inherit this."

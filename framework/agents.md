@@ -4,7 +4,8 @@ App-level helpers worth surfacing to AI agents alongside the batteries.
 
 **Use this when** the prompt mentions: audit trail / who did what, hot
 reload, dev server, browser auto-refresh, livereload, run the app while
-developing, `.env` loading, live app introspection.
+developing, `.env` loading, live app introspection, image uploads that need
+thumbnails / responsive sizes / a blur placeholder.
 
 ## `app.WithAuditLog(cfg)` — automatic CRUD audit
 
@@ -37,6 +38,31 @@ helper for entity CRUD. DO keep custom audit writes for domain actions
 not arbitrary domain events.
 
 ---
+
+## `framework.WithImagePipeline(d)` — uploads derive their own renditions
+
+Every `schema.Image` upload produces the configured renditions plus a
+BlurHash, stores them beside the original, and writes the metadata to sibling
+columns the entity declares (`<field>_blurhash`, `<field>_variants`,
+`<field>_placeholder`). Undeclared columns are skipped, so a column is how you
+opt in.
+
+```go
+framework.WithFileStorage(store),
+framework.WithImagePipeline(imagefield.MustNew(imagefield.Config{
+    Variants:  []image.Variant{{Width: 960, Format: image.FormatJPEG, Quality: 82, Suffix: "md"}},
+    BlurHashX: 4, BlurHashY: 3,
+})),
+```
+
+`WithImagePipelineFor(entity, field, d)` overrides one field; a nil deriver
+opts a field out. Render with `image.BlurHashDataURL(hash, ...)` into
+`ui.PipelineImage`'s `Placeholder`.
+
+Two things to know: the derive is synchronous in the request (~180ms for two
+JPEG widths from a 3000px source, ~540ms once WebP is included, because that
+encoder runs five passes), and an undecodable upload fails the request rather
+than storing a file with no renditions. `gofastr docs uploads` has the detail.
 
 ## `framework/dev` — auto-wired livereload
 
@@ -100,6 +126,10 @@ a running server, or "is this app healthy". See the
 - A livereload SSE handler — framework auto-wires it under `gofastr dev`.
 - A dotenv loader — `NewApp` does it.
 - Per-test PG isolation — see `framework/testkit` (`NewIsolatedDB`).
+- Resize/encode/thumbnail code in an upload handler — `WithImagePipeline`
+  does it from the field declaration; `framework/image` is the manual path.
+- A JS BlurHash decoder — `image.BlurHashDataURL` decodes server-side and
+  `ui.PipelineImage` paints it with no JavaScript.
 - Hand-rolled markup or CSS — `framework/ui` ships ~100 components;
   see the `ui` row of AGENTS.md (`agents/ui.md`) and
   `gofastr docs ui-new-components`.

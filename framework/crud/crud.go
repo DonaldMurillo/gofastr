@@ -21,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
@@ -57,17 +58,27 @@ type DBExecutor = db.Executor
 
 // CrudHandler provides auto-generated CRUD HTTP handlers for an Entity.
 type CrudHandler struct {
-	Entity       *entity.Entity
-	DB           DBExecutor
-	PrimaryKey   string             // defaults to "id"
-	JSONCase     JSONCase           // casing strategy for JSON keys
-	Hooks        *hook.HookRegistry // optional lifecycle hooks
-	Storage      upload.Storage     // optional; enables multipart uploads for Image/File fields
-	Events       *event.EventBus    // optional; receives entity.created/updated/deleted on commit
-	Outbox       EventOutbox        // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
-	Registry     entity.Registry    // optional; required for nested ?include=author.profile resolution
-	BasePath     string             // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
-	MCPNamespace string             // optional; when set (e.g. "admin"), MCP tools are named "<ns>.<entity>.<action>" instead of the flat "<entity>_<action>". Empty preserves the historical flat tool names.
+	Entity     *entity.Entity
+	DB         DBExecutor
+	PrimaryKey string             // defaults to "id"
+	JSONCase   JSONCase           // casing strategy for JSON keys
+	Hooks      *hook.HookRegistry // optional lifecycle hooks
+	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
+	// ImageDeriver, when set, runs over every schema.Image upload to
+	// produce stored renditions plus a BlurHash/LQIP. Derived values land
+	// in sibling columns the entity declares — see applyDerivedColumns.
+	// framework/imagefield provides the implementation.
+	ImageDeriver file.ImageDeriver
+	// FieldImageDerivers overrides ImageDeriver for specific image fields,
+	// keyed by field name. An avatar wants portrait components and animated
+	// sources rejected; a hero cover wants wide renditions — one app-wide
+	// config cannot express both.
+	FieldImageDerivers map[string]file.ImageDeriver
+	Events             *event.EventBus // optional; receives entity.created/updated/deleted on commit
+	Outbox             EventOutbox     // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
+	Registry           entity.Registry // optional; required for nested ?include=author.profile resolution
+	BasePath           string          // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
+	MCPNamespace       string          // optional; when set (e.g. "admin"), MCP tools are named "<ns>.<entity>.<action>" instead of the flat "<entity>_<action>". Empty preserves the historical flat tool names.
 
 	visibleFieldsCache []string
 	visibleJSONKeys    []string

@@ -101,7 +101,8 @@
 //	PasswordInput        — password field with show/hide toggle
 //	PieChart             — SVG ratio chart (donut variant via InnerRadius)
 //	PipelineImage        — multi-format <picture> consuming framework/image
-//	                       VariantSet output (typed sources + LQIP/BlurHash)
+//	                       VariantSet output (typed sources + a stacked
+//	                       low-fidelity placeholder from a data: URI)
 //	PollingIndicator     — pulsing dot confirming a polling RPC is firing
 //	PricingCard          — plan tile with price + feature list + CTA
 //	ProgressSteps        — linear step indicator (horizontal + vertical)

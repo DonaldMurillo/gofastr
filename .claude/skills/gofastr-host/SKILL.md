@@ -67,6 +67,7 @@ generated guidance.
 | background job, scheduled task, retry-on-failure | `battery/queue` (use `DBQueue` for real workloads) |
 | send email, SMTP, transactional mail | `battery/email` |
 | file upload, S3, MinIO, attachments | `battery/storage` + `framework.WithFileStorage` |
+| image upload wanting thumbnails, srcset, blur placeholder | `framework.WithImagePipeline(imagefield.MustNew(...))` — every `schema.Image` upload gets renditions + a BlurHash, written to `<field>_blurhash` / `<field>_variants` / `<field>_placeholder` sibling columns you declare. Render with `image.BlurHashDataURL` + `ui.PipelineImage`. Per-field variation via `WithImagePipelineFor`. Never hand-roll resize/encode in an upload handler |
 | full-text search | `battery/search` |
 | outbound signed webhooks with retry | `battery/webhook` |
 | cache key/value, memoize, "remember for N seconds" | `battery/cache` |

@@ -80,9 +80,19 @@ type OptimizedImageConfig struct {
 	// Rounded toggles a token-driven border-radius treatment.
 	Rounded bool
 
-	// Placeholder, when non-empty, renders a low-fidelity background
-	// (typically a 1x1 base64-encoded pixel) that shows under the
-	// image while loading.
+	// Placeholder, when set to an inline raster data: URI, renders a
+	// low-fidelity image behind this one so something content-shaped is
+	// visible before the real pixels arrive.
+	//
+	// Produce one with framework/image: BlurHashDataURL(hash, …) to render
+	// a stored BlurHash, or Image.Placeholder() to build an LQIP straight
+	// from the source. A bare BlurHash string is not accepted — it is not
+	// an image until it is decoded.
+	//
+	// Values that are not usable inline images (a raw hash, a remote URL,
+	// a non-raster data: URI) are dropped and the image renders without a
+	// placeholder. See placeholderImage for why that degrades instead of
+	// panicking.
 	Placeholder string
 
 	ID    string
@@ -104,8 +114,12 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	// with the framework's tiny placeholder URL — a 1×1 transparent
 	// stub the runtime serves. The browser renders nothing, and the
 	// surrounding layout is preserved. Preferable to silently shipping
-	// a `javascript:`/`data:` URL into <img src>.
-	if safe := safeResourceURL(cfg.Src); safe != "" {
+	// a `javascript:` URL into <img src>.
+	//
+	// safeImageURL, not safeResourceURL: an inline raster data: URI is a
+	// legitimate image source, and rejecting it here produced an image that
+	// looked broken rather than one that looked blocked.
+	if safe := safeImageURL(cfg.Src); safe != "" {
 		cfg.Src = safe
 	} else {
 		cfg.Src = "/__gofastr/blank.png"
@@ -113,7 +127,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	if len(cfg.Sources) > 0 {
 		filtered := cfg.Sources[:0]
 		for _, s := range cfg.Sources {
-			if safeResourceURL(s.URL) != "" {
+			if safeImageURL(s.URL) != "" {
 				filtered = append(filtered, s)
 			}
 		}
@@ -128,6 +142,8 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		panic("ui: OptimizedImage requires Width and Height > 0 to prevent CLS")
 	}
 
+	lqip := placeholderImage(cfg.Placeholder)
+
 	cls := "ui-image"
 	if cfg.Fit != ImageFitCover {
 		cls += " ui-image--fit-" + string(cfg.Fit)
@@ -137,6 +153,9 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	}
 	if cfg.Rounded {
 		cls += " ui-image--rounded"
+	}
+	if lqip != "" {
+		cls += " ui-image--placeheld"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -156,11 +175,6 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	if cfg.HighPriority {
 		imgAttrs["fetchpriority"] = "high"
 	}
-	if cfg.Placeholder != "" {
-		// Pass through a CSS custom property the stylesheet reads via
-		// attr() — no inline style, CSP-clean.
-		imgAttrs["data-placeholder"] = cfg.Placeholder
-	}
 
 	imgCfg := html.ImageConfig{
 		Src:        cfg.Src,
@@ -173,7 +187,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	if len(cfg.Sources) == 0 {
 		return imageStyle.WrapHTML(html.Span(html.TextConfig{
 			Class: cls, ID: cfg.ID,
-		}, html.Image(imgCfg)))
+		}, lqip, html.Image(imgCfg)))
 	}
 
 	// Multi-source <picture> wrapper.
@@ -189,7 +203,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	picture := render.Tag("picture", nil, source, html.Image(imgCfg))
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
-	}, picture))
+	}, lqip, picture))
 }
 
 func buildSrcset(sources []ImageSource) string {
@@ -198,7 +212,10 @@ func buildSrcset(sources []ImageSource) string {
 		if s.URL == "" || s.Width <= 0 {
 			continue
 		}
-		parts = append(parts, s.URL+" "+strconv.Itoa(s.Width)+"w")
+		// encodeSrcsetURL, not raw concatenation: a comma or space in the
+		// URL (presigned links, keys with comma-separated segments) would
+		// otherwise split one candidate into several malformed ones.
+		parts = append(parts, encodeSrcsetURL(s.URL)+" "+strconv.Itoa(s.Width)+"w")
 	}
 	return strings.Join(parts, ", ")
 }

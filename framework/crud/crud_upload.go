@@ -159,7 +159,7 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, erro
 				return nil, errStorageNotConfigured
 			}
 			fh := headers[0]
-			if err := saveFilePart(r.Context(), ch, key, fh, body); err != nil {
+			if err := saveFilePart(r.Context(), ch, key, fileFieldNames[key], fh, body); err != nil {
 				return nil, err
 			}
 		}
@@ -169,19 +169,94 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, erro
 }
 
 // saveFilePart opens one multipart file header, runs ProcessFileField, and
-// stores the resulting URL on body[key].
-func saveFilePart(ctx context.Context, ch *CrudHandler, key string, fh *multipart.FileHeader, body map[string]any) error {
+// stores the resulting URL on body[key]. For a schema.Image field with an
+// ImageDeriver configured, renditions and placeholder metadata are derived
+// too and spread across whichever sibling columns the entity declares.
+func saveFilePart(ctx context.Context, ch *CrudHandler, key string, fieldType schema.FieldType, fh *multipart.FileHeader, body map[string]any) error {
 	f, err := fh.Open()
 	if err != nil {
 		return fmt.Errorf("open file part %q: %w", key, err)
 	}
 	defer f.Close()
-	ff, err := file.ProcessFileField(ctx, ch.Storage, f, fh.Filename, ch.Entity.GetName(), key)
+
+	var opts []file.ProcessOption
+	// Only Image fields get the pipeline. A File field is any binary — a
+	// PDF, a CSV — and decoding it as an image would fail every upload.
+	if fieldType == schema.Image {
+		if d := ch.deriverFor(key); d != nil {
+			opts = append(opts, file.WithImageDeriver(d))
+		}
+	}
+
+	ff, err := file.ProcessFileField(ctx, ch.Storage, f, fh.Filename, ch.Entity.GetName(), key, opts...)
 	if err != nil {
 		return fmt.Errorf("upload %q: %w", key, err)
 	}
 	body[key] = ff.URL
+	if ff.Image != nil {
+		applyDerivedColumns(ch.Entity, key, ff.Image, body)
+	}
 	return nil
+}
+
+// deriverFor resolves the deriver for one image field: a per-field override
+// when present, otherwise the handler-wide default. A per-field entry of nil
+// is honoured as "no pipeline for this field", so a single noisy field can be
+// opted out without unpicking the app-wide config.
+func (ch *CrudHandler) deriverFor(field string) file.ImageDeriver {
+	if ch.FieldImageDerivers != nil {
+		if d, ok := ch.FieldImageDerivers[field]; ok {
+			return d
+		}
+	}
+	return ch.ImageDeriver
+}
+
+// derivedColumnSuffixes maps each derived artifact to the sibling column
+// that receives it. An Image field named "cover" populates
+// "cover_blurhash", "cover_placeholder", and "cover_variants" — but only
+// those the entity actually declares, so adopting one is a matter of adding
+// the column and nothing else. Columns that do not exist are skipped
+// silently; that is what makes this additive rather than a schema
+// requirement.
+var derivedColumnSuffixes = struct {
+	blurHash    string
+	placeholder string
+	variants    string
+}{
+	blurHash:    "_blurhash",
+	placeholder: "_placeholder",
+	variants:    "_variants",
+}
+
+// applyDerivedColumns writes derived values onto body for the sibling
+// columns the entity declares.
+func applyDerivedColumns(ent *entity.Entity, field string, d *file.ImageDerivatives, body map[string]any) {
+	declared := make(map[string]schema.FieldType, len(ent.GetFields()))
+	for _, f := range ent.GetFields() {
+		declared[f.Name] = f.Type
+	}
+	set := func(suffix string, value any) {
+		name := field + suffix
+		if _, ok := declared[name]; !ok {
+			return
+		}
+		body[name] = value
+	}
+	if d.BlurHash != "" {
+		set(derivedColumnSuffixes.blurHash, d.BlurHash)
+	}
+	if d.Placeholder != "" {
+		set(derivedColumnSuffixes.placeholder, d.Placeholder)
+	}
+	if len(d.Variants) > 0 {
+		// Marshalled here rather than handed over as a slice: the column is
+		// declared schema.JSON, and the write path expects a value the
+		// driver can bind directly.
+		if raw, err := json.Marshal(d.Variants); err == nil {
+			set(derivedColumnSuffixes.variants, string(raw))
+		}
+	}
 }
 
 // coerceFormValue attempts a minimal type coercion based on the schema field

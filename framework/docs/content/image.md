@@ -141,6 +141,24 @@ Per-format option structs:
 Inspect output before materialising via `Encoder.MIME()` and
 `Encoder.Format()`.
 
+## Already have uploads? Skip the wiring
+
+If the images arrive as CRUD uploads on a `schema.Image` field, you do not
+need to call any of this by hand. One app option makes every upload produce
+renditions plus a BlurHash and writes them to sibling columns:
+
+```go
+framework.WithImagePipeline(imagefield.MustNew(imagefield.Config{
+    Variants:  []image.Variant{{Width: 960, Format: image.FormatWebP, Suffix: "md"}},
+    BlurHashX: 4, BlurHashY: 3,
+}))
+```
+
+See [uploads.md](uploads.md) → "Automatic renditions and placeholders".
+The rest of this page is the pipeline underneath, for images that do not
+come in through an upload — generated covers, imported batches, one-off
+scripts.
+
 ## Plug-and-play: VariantSet → PipelineImage
 
 For the common case — "take this upload, produce three sizes plus a
@@ -203,18 +221,24 @@ ui.PipelineImage(ui.PipelineImageConfig{
 
 `PipelineImage` emits one `<source type="…" srcset="…">` per distinct
 `Type` in input order — put the modern format first so legacy browsers
-fall through to the `<img>` fallback. The `Placeholder` field accepts
-either a `data:` URL (set as `data-placeholder`) or a BlurHash string
-(set as `data-blurhash`); style or hydrate either as the calling page
-prefers.
+fall through to the `<img>` fallback.
 
 ## Placeholders
 
-Two placeholder strategies for above-the-fold image loading:
+A placeholder is a cheap stand-in that paints before the real image
+arrives. `Placeholder` on `ui.OptimizedImage` and `ui.PipelineImage`
+takes an inline raster `data:` URI and renders it as an image stacked
+behind the real one. No JavaScript is involved and nothing needs
+hydrating — the placeholder is server-rendered and simply stays behind
+the loaded image.
+
+Two ways to produce one.
+
+**LQIP — encode a tiny copy of the source.** Simplest when you hold the
+image at the moment you need the placeholder:
 
 ```go
-// Tiny base64 data URL — a ~20×N JPEG that browsers render directly.
-durl, err := img.Placeholder()  // ~500 bytes typical
+durl, err := img.Placeholder()  // ~500-byte JPEG data URL
 
 durl, err := img.Placeholder(image.PlaceholderOptions{
     Width:   24,  // px (height computed from aspect)
@@ -222,14 +246,68 @@ durl, err := img.Placeholder(image.PlaceholderOptions{
 })
 ```
 
+**BlurHash — store ~28 characters, render later.** Compute the hash once
+at upload time, keep it in a column, and turn it back into pixels on
+render:
+
 ```go
-// BlurHash: ~28-char base83 string that requires a client-side decoder.
-hash, err := img.Resize(32, 0).BlurHash(4, 3)  // "LEHV6nWB2yk8…"
+hash, err := img.BlurHash(4, 3)  // "LEHV6nWB2yk8…" → store this
+
+// …later, rendering a row that has only the hash:
+durl, err := image.BlurHashDataURL(hash, image.BlurHashRenderConfig{})
 ```
 
-The BlurHash implementation follows the [blurha.sh][bh-spec]
-reference. Resize first; the algorithm cost scales with
-`width × height × components`.
+Pick BlurHash when a 28-byte column beats a ~500-byte one, or when
+hashes already reach you from another client. Pick LQIP when you control
+the upload and want no decode step at render time. Either way the UI
+component takes the same `data:` URI:
+
+```go
+ui.PipelineImage(ui.PipelineImageConfig{
+    Fallback:    "/uploads/hero-md.jpg",
+    Alt:         "Sunset over the ocean",
+    Width:       800, Height: 600,
+    Placeholder: durl,
+})
+```
+
+`BlurHashDataURL` memoises its output, since the same handful of hashes
+recur on every request for a given page. `SetBlurHashCacheSize(n)` caps
+the table (`n <= 0` disables it) and `FlushBlurHashCache()` empties it.
+
+`BlurHashRenderConfig` knobs: `Width`/`Height` default to
+`DefaultBlurHashRenderSize` (20 px) and are capped at
+`MaxBlurHashRenderSize` (128 px) — a hash holds at most 9×9 cosine
+components, so rendering larger cannot recover detail it never carried.
+`Punch` raises contrast (default 1.0). `Format` defaults to
+`FormatJPEG`, whose size barely moves with dimensions (~840–940 bytes
+from 16 px to 48 px, because the quantisation and Huffman tables
+dominate a payload this small); `FormatPNG` is smaller at or below 20 px
+(~430–880 bytes) but grows to ~2.4 KB by 48 px.
+
+`DecodeBlurHash` is available directly when you want the pixels rather
+than a data URL — it returns a pipeline `*Image`, so it chains with the
+encoders like any other source.
+
+Both directions follow the [blurha.sh][bh-spec] reference. When
+encoding, note that cost scales with `width × height × components`;
+`BlurHash` auto-downscales to 64 px internally so you do not have to
+resize first.
+
+A malformed hash returns an error rather than pixels. Treat a
+placeholder as optional when rendering user data — the UI components
+already drop an unusable `Placeholder` and render the image without one,
+so a bad legacy row degrades instead of failing the page.
+
+Two behaviors worth knowing about, both consequences of the placeholder
+being a real element that is never removed:
+
+- With `Fit: ImageFitContain` the placeholder letterboxes exactly like
+  the image in front of it, so the empty bars show the component's
+  resting surface color rather than blur.
+- A real image with transparent regions lets the placeholder show
+  through them permanently. If that is unwanted, skip the placeholder
+  for transparent art.
 
 [bh-spec]: https://blurha.sh
 
@@ -324,7 +402,9 @@ picture := ui.PipelineImage(ui.PipelineImageConfig{
     Sources: ui.PipelineSourcesFromHeaders(headers, func(name string) string {
         return "/uploads/" + name
     }),
-    Placeholder: sr.BlurHash, // or sr.Placeholder for a data: URL
+    // sr.Placeholder is already a data: URL. To use the stored hash
+    // instead, decode it: image.BlurHashDataURL(sr.BlurHash, …).
+    Placeholder: sr.Placeholder,
 })
 ```
 
@@ -340,6 +420,9 @@ hand it directly to `storage.Save`).
 | Max encoded WebP dim | 16384 per axis | hard cap (spec) |
 | `VariantSet.Variants` | 64 entries | `MaxVariantsPerSet` const |
 | `BlurHash` working size | 64 px longest side | hard cap (perf) |
+| BlurHash render size | 20 px square | `BlurHashRenderConfig.Width/Height` |
+| Max BlurHash render size | 128 px per axis | `MaxBlurHashRenderSize` const |
+| Placeholder memo table | 512 entries | `SetBlurHashCacheSize` |
 | `Path` traversal | rejected on Open | none (use `OpenFS`) |
 
 ## Performance notes
@@ -354,6 +437,11 @@ hand it directly to `storage.Save`).
   inputs with one off-pixel still pay the full 5-pass.
 - **BlurHash auto-resizes** to 64 px on the longest side internally;
   callers do not need to pre-Resize.
+- **`BlurHashDataURL` memoises** decode+encode per
+  `(hash, size, punch, format, quality)`. Without the cache a list view
+  re-decodes the same handful of hashes on every request; a decode is
+  cheap but not free, and it multiplies by the number of images
+  on the page.
 - **`ProcessTo` releases resize intermediates** between variants so
   peak heap stays near one variant's worth, not all variants summed.
 - **`Modulate` fast-paths** `*image.NRGBA` and `*image.RGBA`; for

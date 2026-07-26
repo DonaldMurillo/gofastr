@@ -38,6 +38,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -132,13 +133,15 @@ const defaultShutdownTimeout = 15 * time.Second
 // App is the top-level application container.
 // It wires together the entity registry, router, MCP server, and database.
 type App struct {
-	Registry *Registry
-	router   *router.Router // access via App.Router() method
-	MCP      *mcp.Server
-	DB       *sql.DB
-	Config   AppConfig
-	Plugins  *PluginManager
-	Storage  upload.Storage // optional; enables multipart on Image/File fields
+	Registry           *Registry
+	router             *router.Router // access via App.Router() method
+	MCP                *mcp.Server
+	DB                 *sql.DB
+	Config             AppConfig
+	Plugins            *PluginManager
+	Storage            upload.Storage                          // optional; enables multipart on Image/File fields
+	imageDeriver       file.ImageDeriver                       // optional; derives renditions + BlurHash for Image fields
+	fieldImageDerivers map[string]map[string]file.ImageDeriver // entity -> field -> override
 
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
 	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
@@ -513,6 +516,54 @@ func WithMCP() AppOption {
 func WithFileStorage(s upload.Storage) AppOption {
 	return func(a *App) {
 		a.Storage = s
+	}
+}
+
+// WithImagePipeline makes every schema.Image upload produce stored
+// renditions plus a BlurHash (or LQIP) automatically, instead of needing a
+// per-entity upload handler.
+//
+// Pass a deriver from framework/imagefield, which is a separate package so
+// applications that do not process images never link the image decoders:
+//
+//	framework.WithImagePipeline(imagefield.MustNew(imagefield.Config{
+//	    Variants:  []image.Variant{{Width: 960, Format: image.FormatWebP, Suffix: "md"}},
+//	    BlurHashX: 4, BlurHashY: 3,
+//	}))
+//
+// Derived values are written to sibling columns the entity declares —
+// for an Image field "cover": "cover_blurhash", "cover_placeholder", and
+// "cover_variants" (JSON). Columns that do not exist are skipped, so
+// adopting one means adding the column and nothing else.
+//
+// Requires WithFileStorage; the renditions are written through the same
+// backend as the original. A source that cannot be decoded fails the
+// upload rather than storing a file with no renditions.
+func WithImagePipeline(d file.ImageDeriver) AppOption {
+	return func(a *App) {
+		a.imageDeriver = d
+	}
+}
+
+// WithImagePipelineFor overrides WithImagePipeline for a single image field.
+// One app-wide config cannot describe every image: an avatar wants portrait
+// BlurHash components and animated sources rejected, while a hero cover wants
+// wide renditions. Compose both:
+//
+//	framework.WithImagePipeline(covers),                         // default
+//	framework.WithImagePipelineFor("users", "avatar", avatars),  // override
+//
+// Passing a nil deriver opts that one field out of the pipeline entirely
+// without unpicking the app-wide default.
+func WithImagePipelineFor(entityName, fieldName string, d file.ImageDeriver) AppOption {
+	return func(a *App) {
+		if a.fieldImageDerivers == nil {
+			a.fieldImageDerivers = map[string]map[string]file.ImageDeriver{}
+		}
+		if a.fieldImageDerivers[entityName] == nil {
+			a.fieldImageDerivers[entityName] = map[string]file.ImageDeriver{}
+		}
+		a.fieldImageDerivers[entityName][fieldName] = d
 	}
 }
 
@@ -988,6 +1039,8 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
 		crudHandler.Storage = a.Storage
+		crudHandler.ImageDeriver = a.imageDeriver
+		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
 		crudHandler.Events = a.Events()
 		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
 		// in the EventOutbox interface and silently swallow every event.
@@ -1409,6 +1462,8 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
 		crudHandler.Storage = a.Storage
+		crudHandler.ImageDeriver = a.imageDeriver
+		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
 		crudHandler.Events = a.Events()
 		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
 		// in the EventOutbox interface and silently swallow every event.
@@ -1459,6 +1514,8 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 	ch.JSONCase = a.JSONCasing()
 	ch.Hooks = a.HookRegistry(name)
 	ch.Storage = a.Storage
+	ch.ImageDeriver = a.imageDeriver
+	ch.FieldImageDerivers = a.fieldImageDerivers[name]
 	ch.Events = a.Events()
 	if a.outbox != nil {
 		ch.Outbox = a.outbox

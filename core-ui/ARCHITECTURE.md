@@ -1348,6 +1348,7 @@ your need:
 | You want | Use | Notes |
 | --- | --- | --- |
 | Responsive lazy-loaded imagery | `framework/ui.OptimizedImage` | `<picture>` + `srcset`, lazy by default, mandatory `Width`+`Height` to eliminate CLS. |
+| Low-fidelity image placeholder | `Placeholder` on `framework/ui.OptimizedImage` / `PipelineImage` | Takes an inline raster `data:` URI (from `framework/image.BlurHashDataURL` or `Image.Placeholder`) and renders it as a stacked `<img>` behind the real one, positioned by static CSS. Zero JS: a per-instance value cannot go into CSS here (inline style attributes are blocked by the CSP and the `noinlinestyles` linter, and a data URI cannot be enumerated into a class), so an element is the only mechanism. Unusable values are dropped rather than fatal — a placeholder is data, not a caller bug. |
 | Overlapping avatar stack | `framework/ui.AvatarGroup` | Readable 10% negative-margin stack with compact corner presence dots and an adaptive-surface "+N" overflow indicator. Size propagates to children. |
 | Animated number counter | `framework/ui.AnimatedCounter` | Ticks from → to on scroll-into-view. Respects `prefers-reduced-motion`. |
 | Text link (inline / action / muted) | `framework/ui.Link` | Three variants: inline prose link, 44px action link, subdued muted link. |
