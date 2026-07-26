@@ -1581,7 +1581,13 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		if method == "" {
 			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
 		}
-		path := openapi.EntityEndpointPath(ent, endpoint.Path)
+		// path is where the endpoint is mounted (prefix applied for relative
+		// paths); specPath is the prefix-relative form the OpenAPI spec uses.
+		// The auto-generated tool name is derived from specPath so it keeps
+		// matching the spec's operationId — the prefix moves the route, not
+		// the endpoint's identity.
+		path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
+		specPath := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
 			a.router.Handle(method, path, endpoint.Handler)
 		}
@@ -1591,7 +1597,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			}
 			name := endpoint.Name
 			if name == "" {
-				name = openapi.DefaultEndpointToolName(ent.GetName(), method, path)
+				name = openapi.DefaultEndpointToolName(ent.GetName(), method, specPath)
 			}
 			description := endpoint.Description
 			if description == "" {

@@ -44,6 +44,7 @@ Input is normalised: `"api"`, `"/api"`, and `"/api/"` all become
 | Where | Behaviour under `WithAPIPrefix("/api/v1")` |
 | --- | --- |
 | **REST routes** | mounted at `/api/v1/<table>` (list/get/create/update/delete, `_batch`, `_events`, …). |
+| **Custom `Endpoints`** | a **relative** `Endpoint.Path` (`"{id}/publish"`) resolves under the prefixed table path → `/api/v1/posts/{id}/publish`. An **absolute** path (`"/health/posts"`) bypasses the prefix — the escape hatch for mounting outside the API namespace. |
 | **OpenAPI** (`/openapi.json`) | the prefix is expressed as the spec's **server URL** (`servers: [{ url: "/api/v1" }]`); operation paths stay bare (`/posts`). Generated SDKs prepend the server URL, so they call `/api/v1/posts`. |
 | **MCP tools** | `posts_list` / `posts_get` / `posts_create` / … dispatch against the prefixed path, so an agent driving the app over MCP reaches the same routes as REST. |
 

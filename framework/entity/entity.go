@@ -240,6 +240,12 @@ type Index struct {
 // are accepted. Handler is used for HTTP. MCPHandler is optional and is only
 // registered when MCP is true.
 //
+// Under framework.WithAPIPrefix a relative path resolves under the prefixed
+// table path — WithAPIPrefix("/api") mounts "{id}/publish" on entity "posts"
+// at POST /api/posts/{id}/publish, alongside that entity's CRUD routes. An
+// absolute path bypasses the prefix entirely; use it to mount outside the
+// entity's API namespace.
+//
 // InputSchema and OutputSchema are OPTIONAL typed descriptions of the request
 // body and the success (200) response, expressed as []schema.Field — the same
 // representation the entity's own CRUD schema is built from, so OpenAPI and the
