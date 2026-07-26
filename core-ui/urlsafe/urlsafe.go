@@ -23,11 +23,32 @@ const (
 	// relative, absolute-path, query-only and fragment-only references.
 	Anchor Policy = iota
 
-	// Resource is for URLs the browser fetches on its own: <img src>,
-	// <source src>, <script src>, <link href>, and head/meta URLs.
-	// Accepts http and https plus relative references — nothing else.
+	// Resource is for URLs the browser fetches on its own: <source src>,
+	// <script src>, <link href>, and head/meta URLs. Accepts http and
+	// https plus relative references — nothing else.
 	Resource
+
+	// ImageSource is Resource plus inline raster `data:` URIs, for the one
+	// sink where those are a feature rather than a mistake: <img src>.
+	//
+	// It is a separate policy precisely so the loosening cannot reach
+	// <script src> or <link href>, where a data: URI is a code-execution
+	// path. Only the raster media types this project's image pipeline can
+	// produce are accepted; `data:image/svg+xml` is excluded because SVG is
+	// a markup surface, and relying on browsers keeping img-loaded SVG
+	// script-disabled is a weaker guarantee than never emitting it.
+	ImageSource
 )
+
+// imageDataMediaTypes is the allow-list of media types ImageSource accepts
+// in a data: URI. Raster only — see the ImageSource doc comment.
+var imageDataMediaTypes = []string{
+	"image/jpeg",
+	"image/png",
+	"image/gif",
+	"image/webp",
+	"image/avif",
+}
 
 // OK reports whether u may be rendered into a URL attribute under p.
 //
@@ -68,7 +89,13 @@ func OK(u string, p Policy) bool {
 	for i := 0; i < len(trimmed); i++ {
 		switch trimmed[i] {
 		case ':':
-			return schemeOK(strings.ToLower(trimmed[:i]), p)
+			scheme := strings.ToLower(trimmed[:i])
+			// data: is gated on the media type, not the scheme alone, and
+			// only ImageSource admits it at all.
+			if scheme == "data" {
+				return p == ImageSource && dataImageOK(trimmed)
+			}
+			return schemeOK(scheme, p)
 		case '/', '?', '#':
 			return true
 		}
@@ -86,6 +113,35 @@ func schemeOK(scheme string, p Policy) bool {
 	default:
 		return false
 	}
+}
+
+// dataImageOK reports whether u is a `data:` URI carrying one of the
+// allow-listed raster media types. u is the caller's original string; the
+// media type is matched case-insensitively because `data:IMAGE/PNG` is
+// equivalent per RFC 2397, and a case-sensitive check would be a trivial
+// bypass of the allow-list.
+func dataImageOK(u string) bool {
+	const prefix = "data:"
+	if len(u) <= len(prefix) || !strings.EqualFold(u[:len(prefix)], prefix) {
+		return false
+	}
+	// A data: URI needs a payload delimiter; everything before it is the
+	// media type plus optional parameters (";base64", ";charset=…").
+	comma := strings.IndexByte(u, ',')
+	if comma < 0 {
+		return false
+	}
+	meta := strings.ToLower(u[len(prefix):comma])
+	mediaType := meta
+	if semi := strings.IndexByte(meta, ';'); semi >= 0 {
+		mediaType = meta[:semi]
+	}
+	for _, allowed := range imageDataMediaTypes {
+		if mediaType == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 // Clean returns u when OK(u, p), and "" otherwise. Convenient for the
