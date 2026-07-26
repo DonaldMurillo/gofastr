@@ -15,10 +15,9 @@
 package breadcrumbs
 
 import (
-	"strings"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -99,54 +98,12 @@ func renderCrumb(c Crumb) render.HTML {
 	)
 }
 
-// safeURL returns u if it is safe to render as an href, and "" if it
-// carries a script-executing or origin-ambiguous scheme. Permitted:
-// http(s), mailto, tel, relative paths, fragment- and query-only
-// references. Dropped: javascript:/vbscript:/data:/file:/blob: and any
-// other non-allow-listed scheme, protocol-relative "//host", and any
-// value containing control bytes or percent-encoded CR/LF. Mirrors
-// framework/ui/safety.go::safeURL and the sibling tree/nestedlist
-// builders — the patterns layer bypasses that helper, so the allow-list
-// is enforced here.
+// safeURL returns u if it is safe to render as an href, and "" otherwise.
+// The rule set lives in core-ui/urlsafe — this builder renders below
+// framework/ui, so the allow-list has to be enforced here too, but it is
+// the same allow-list, not another copy of it.
 func safeURL(u string) string {
-	if u == "" {
-		return ""
-	}
-	for i := 0; i < len(u); i++ {
-		if c := u[i]; c < 0x20 || c == 0x7f {
-			return ""
-		}
-	}
-	trimmed := strings.TrimLeft(u, " \t")
-	low := strings.ToLower(trimmed)
-	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
-		return ""
-	}
-	// Protocol-relative URLs are ambiguous about origin trust.
-	if strings.HasPrefix(trimmed, "//") {
-		return ""
-	}
-	// Fragment-only, query-only, or relative paths pass.
-	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "?") || strings.HasPrefix(trimmed, "./") || strings.HasPrefix(trimmed, "../") {
-		return u
-	}
-	for i := 0; i < len(trimmed); i++ {
-		switch c := trimmed[i]; c {
-		case ':':
-			switch strings.ToLower(trimmed[:i]) {
-			case "http", "https", "mailto", "tel":
-				return u
-			default:
-				return ""
-			}
-		case '/', '?', '#':
-			// No scheme before the first path/query/fragment delimiter
-			// — relative reference, allowed.
-			return u
-		}
-	}
-	// No colon — bare relative reference.
-	return u
+	return urlsafe.Clean(u, urlsafe.Anchor)
 }
 
 // baseCSS is the stylesheet for breadcrumbs. Tokens: --color-text-muted,

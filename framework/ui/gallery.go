@@ -180,7 +180,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 		// Drop unsafe schemes on the thumbnail src (see safety.go). An
 		// unsafe value falls back to the framework's 1×1 placeholder so
 		// a javascript:/data: URL never reaches <img src>.
-		if safe := safeURL(thumb); safe != "" {
+		if safe := safeResourceURL(thumb); safe != "" {
 			thumb = safe
 		} else {
 			thumb = "/__gofastr/blank.png"

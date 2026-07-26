@@ -105,7 +105,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	// stub the runtime serves. The browser renders nothing, and the
 	// surrounding layout is preserved. Preferable to silently shipping
 	// a `javascript:`/`data:` URL into <img src>.
-	if safe := safeURL(cfg.Src); safe != "" {
+	if safe := safeResourceURL(cfg.Src); safe != "" {
 		cfg.Src = safe
 	} else {
 		cfg.Src = "/__gofastr/blank.png"
@@ -113,7 +113,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	if len(cfg.Sources) > 0 {
 		filtered := cfg.Sources[:0]
 		for _, s := range cfg.Sources {
-			if safeURL(s.URL) != "" {
+			if safeResourceURL(s.URL) != "" {
 				filtered = append(filtered, s)
 			}
 		}

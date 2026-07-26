@@ -17,6 +17,7 @@ package apiversions
 
 import (
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"net/http"
 	"regexp"
 	"strings"
@@ -170,41 +171,8 @@ func DeprecationHeaders(w http.ResponseWriter, sunset time.Time, replacement str
 // deprecation hint into a phishing vector. Protocol-relative URLs
 // ("//other.example") are dropped as ambiguous about origin trust.
 func safeReplacementURL(u string) (string, bool) {
-	if u == "" {
+	if !urlsafe.OK(u, urlsafe.Resource) {
 		return "", false
-	}
-	for i := 0; i < len(u); i++ {
-		c := u[i]
-		if c < 0x20 || c == 0x7f {
-			return "", false
-		}
-	}
-	if strings.HasPrefix(u, "//") {
-		return "", false
-	}
-	// Percent-encoded CR/LF still smuggles a line when consumers decode.
-	low := strings.ToLower(u)
-	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
-		return "", false
-	}
-	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") {
-		return u, true
-	}
-	for i := 0; i < len(u); i++ {
-		c := u[i]
-		if c == ':' {
-			scheme := strings.ToLower(u[:i])
-			switch scheme {
-			case "http", "https":
-				return u, true
-			default:
-				return "", false
-			}
-		}
-		if c == '/' || c == '?' || c == '#' {
-			// No scheme delimiter before path-ish char — relative path.
-			return u, true
-		}
 	}
 	return u, true
 }
