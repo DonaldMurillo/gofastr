@@ -213,7 +213,16 @@ framework/
 ├── hook/            HookRegistry / HookType + lifecycle constants
 │                    (BeforeCreate, AfterCreate, etc.)
 ├── i18nui/          Translated default strings for framework UI surfaces
-├── image/           Image decode/encode + blurhash for the file/upload path
+├── image/           Image decode/encode, variant pipeline, BlurHash encode
+│                    + decode. A zero-dependency leaf: imports nothing from
+│                    gofastr, so nothing below it may import IT either (see
+│                    imagefield/ and the framework/ui layering test).
+├── imagefield/      Adapter making framework/image satisfy file.ImageDeriver,
+│                    so a schema.Image upload auto-produces renditions +
+│                    BlurHash. Separate package on purpose: file/ and crud/
+│                    must not link every image decoder, so the dependency is
+│                    inverted through an interface and only apps that opt in
+│                    (framework.WithImagePipeline) pay for the codecs.
 ├── internal/casing/ snake↔camel helpers (private to the framework
 │                    module — not part of the public API)
 ├── lifecycle/       Graceful shutdown contract — drain, flush, stop phases

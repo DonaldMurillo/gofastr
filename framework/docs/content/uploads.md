@@ -69,17 +69,252 @@ config. (JSON requests are reverse-cased; multipart is not.)
 | `schema.Image`  | multipart file part | `TEXT` URL    |
 | `schema.File`   | multipart file part | `TEXT` URL    |
 
-Both types behave identically except that the framework emits an
-image-aware widget for `Image` fields in the UI host.
+The two differ in two ways: the UI host emits an image-aware widget for
+`Image` fields, and only `Image` fields run the image pipeline described
+below. A `File` field is any binary — a PDF, a CSV — so decoding it as an
+image would fail every upload.
+
+## Automatic renditions and placeholders
+
+By default an upload is stored as-is: one file, one URL. Adding
+`WithImagePipeline` makes every `schema.Image` upload also produce
+resized renditions and a placeholder, with no per-entity upload handler:
+
+```go
+import (
+    "github.com/DonaldMurillo/gofastr/framework/image"
+    "github.com/DonaldMurillo/gofastr/framework/imagefield"
+)
+
+app := framework.NewApp(
+    framework.WithFileStorage(store),
+    framework.WithImagePipeline(imagefield.MustNew(imagefield.Config{
+        Variants: []image.Variant{
+            {Width: 480, Format: image.FormatWebP, Suffix: "sm"},
+            {Width: 960, Format: image.FormatWebP, Suffix: "md"},
+            {Width: 480, Format: image.FormatJPEG, Quality: 82, Suffix: "sm"},
+            {Width: 960, Format: image.FormatJPEG, Quality: 82, Suffix: "md"},
+        },
+        BlurHashX: 4, BlurHashY: 3,
+    })),
+)
+```
+
+`imagefield` is a separate package on purpose: `framework/image` carries
+every image decoder plus the WebP encoder, so importing it from the upload
+path unconditionally would put all of it in the binary of every app with a
+CRUD handler. Only apps that ask for the pipeline link it.
+
+### Where the derived values go
+
+Renditions are written through the same storage backend as the original,
+into the same directory, sharing its unique base name — an original at
+`products/cover/a1b2-photo.png` yields `products/cover/a1b2-photo-sm.webp`
+and so on, so two uploads of `photo.png` never collide.
+
+The metadata lands in **sibling columns**, named for the image field:
+
+| Column                 | Type            | Contents                                    |
+|------------------------|-----------------|---------------------------------------------|
+| `<field>_blurhash`     | `schema.String` | ~28-char BlurHash                           |
+| `<field>_placeholder`  | `schema.String` | LQIP `data:` URL (only if `Placeholder` set) |
+| `<field>_variants`     | `schema.JSON`   | `[{storage_ref, mime, width, height}, …]`, ascending by width |
+
+**Columns you do not declare are skipped.** Nothing errors, nothing is
+lost — you adopt a column by adding it to the entity. So an entity with a
+`cover` image field opts into the hash alone by declaring:
+
+```go
+Fields: []schema.Field{
+    {Name: "cover", Type: schema.Image},
+    {Name: "cover_blurhash", Type: schema.String},
+}
+```
+
+### Rendering the result
+
+`<field>_variants` maps onto a responsive `<picture>`, and
+`<field>_blurhash` becomes the placeholder that paints before it:
+
+```go
+durl, _ := image.BlurHashDataURL(row.CoverBlurHash, image.BlurHashRenderConfig{})
+
+var headers []ui.HeaderInfo
+for _, v := range row.CoverVariants {
+    headers = append(headers, ui.HeaderInfo{
+        Name: v.StorageRef, Width: v.Width, Height: v.Height, MIME: v.MIME,
+    })
+}
+
+ui.PipelineImage(ui.PipelineImageConfig{
+    Fallback:    "/uploads/" + row.Cover,
+    Alt:         row.Name,
+    Sources:     ui.PipelineSourcesFromHeaders(headers, func(n string) string { return "/uploads/" + n }),
+    Placeholder: durl,
+})
+```
+
+See [image.md](image.md) for the pipeline itself and for the
+BlurHash-versus-LQIP trade-off.
+
+### Config reference
+
+| Field            | Effect                                                      |
+|------------------|-------------------------------------------------------------|
+| `Variants`       | Renditions to produce and store. `Suffix` (or width) distinguishes each key. |
+| `BlurHashX/Y`    | BlurHash component counts, 1..9. Both zero = no hash; setting only one is an error. 4×3 landscape, 3×4 portrait. |
+| `Placeholder`    | Also store an LQIP data URL. Usually redundant next to a BlurHash — ~28 bytes versus a few hundred, and both render identically. |
+| `RejectAnimated` | Fail the upload on a multi-frame source instead of silently keeping frame one. Worth setting on avatars. |
+| `AllowUpscale`   | Permit renditions wider than the source. Off by default, so a small upload does not fan out into pixel-multiplied files. |
+| `MaxPixels`      | Override the decompression-bomb guard (default 64 MP).      |
+
+`New` returns an error for a config that could not produce anything, or
+that the pipeline would reject at process time anyway — so wiring
+mistakes surface at startup rather than on the first upload. `MustNew`
+panics instead, for package-level wiring.
+
+### Per-field configuration
+
+One app-wide config cannot describe every image. An avatar wants portrait
+BlurHash components and animated sources rejected; a hero cover wants wide
+renditions. Compose a default with overrides:
+
+```go
+framework.WithImagePipeline(covers),                        // default
+framework.WithImagePipelineFor("users", "avatar", avatars),  // this field only
+framework.WithImagePipelineFor("posts", "attachment", nil),  // opt out entirely
+```
+
+A field with no entry falls through to the default. An explicit `nil` opts
+that one field out without unpicking the app-wide config.
+
+### Doing it yourself
+
+The declarative wiring is a convenience over interfaces that stay open —
+none of it is a closed system, and every layer below remains callable.
+
+**Your own deriver.** `WithImagePipeline` takes a `file.ImageDeriver`, not a
+concrete type. `imagefield` is one implementation; implement the interface
+directly to crop to a focal point, watermark, push to a CDN, or name keys
+your own way:
+
+```go
+type ImageDeriver interface {
+    DeriveImage(ctx context.Context, store upload.Storage,
+        data []byte, primaryRef string) (*file.ImageDerivatives, error)
+}
+```
+
+Whatever you return is validated and then spread across the sibling columns
+exactly as `imagefield`'s output would be, so you keep the declarative half
+while owning the processing.
+
+**Driving the upload path directly**, outside auto-CRUD — your own handler,
+your own storage keys, the full `FileField` including `.Image` rather than
+just the URL string:
+
+```go
+ff, err := file.ProcessFileField(ctx, store, part, filename, "products", "cover",
+    file.WithImageDeriver(deriver))
+// ff.Image.Variants / .BlurHash / .Placeholder
+```
+
+**Ignoring all of it** and calling the pipeline yourself. `VariantSet` is
+headless and unchanged; see [image.md](image.md). Nothing about the upload
+path is required to use it — generated covers, imported batches, and one-off
+scripts have no upload to hang off.
+
+**Storing the metadata somewhere else.** The sibling columns are a
+convention, not a requirement. Declare none of them and the derived values
+are dropped; do the persistence in a `BeforeCreate` hook, a separate table,
+or a JSON blob of your own shape instead.
+
+The one thing the framework will not do is reach into `framework/image` from
+`framework/file` or `framework/crud` — that edge would link every image
+codec into every app with a CRUD handler, which is why the dependency is
+inverted through `ImageDeriver` in the first place.
+
+### Scope of this seam
+
+`ImageDeriver` is the only per-field transform the framework has, and it is
+image-shaped on purpose: it runs on write, for `schema.Image` fields, and
+puts its output in sibling columns. It is not a general field hook.
+
+For anything else — normalising a string on write, masking a value on read,
+composing several transforms on one field — use a `BeforeCreate`/
+`BeforeUpdate` hook or an `entity.ValidatorFunc` today. Note that schema
+validation runs *after* `BeforeCreate`, so a hook can normalise a value into
+validity.
+
+A general per-field middleware chain is being designed in
+[issue #144](https://github.com/DonaldMurillo/gofastr/issues/144). The
+blocking question there is the read half: a transform applied after the query
+has already filtered and sorted on the stored value silently breaks
+`?field=`, `?sort=`, `?q=`, cursor pagination, and export. Until that is
+settled, `ImageDeriver` stays narrow rather than growing sideways.
+
+### Failure behavior
+
+A source that cannot be decoded **fails the whole request** — the row is
+not written and no file is kept. That is deliberate: the column is
+declared as an image, and a silent success would surface much later as a
+page with no `srcset` and no placeholder, with nothing in the logs
+pointing back at the upload. The original is stored before renditions are
+derived, so a derive failure never leaves a half-written primary file.
+
+Renditions stream one at a time, so peak memory stays near a single
+rendition rather than all of them summed — this runs inside a request, on
+bytes a client chose.
+
+### Cost: this is synchronous
+
+Deriving happens in the upload request, and it is CPU-bound. Measured on an
+M-series laptop, from a generated source:
+
+| Renditions                  | Source | Derive |
+|-----------------------------|--------|--------|
+| JPEG ×2, 1200 px source     | 45 KB  | ~53 ms |
+| JPEG ×2, 3000 px source     | 196 KB | ~184 ms |
+| WebP ×2 + JPEG ×2, 3000 px  | 196 KB | ~537 ms |
+
+The jump is the WebP encoder: it is lossless-only and runs five predictor
+passes, shipping the smallest (see [image.md](image.md) → Performance
+notes). So:
+
+- For a **hot upload path**, prefer JPEG renditions. Two JPEG widths plus a
+  BlurHash is under 200 ms even from a large source.
+- Reserve **WebP** for low-volume flows — admin uploads, one-off imports —
+  or accept the half-second.
+- Each upload holds a request slot for that whole time and does not
+  parallelise away. If uploads are frequent, derive out-of-band instead:
+  store the original in the request, then produce renditions in a
+  `battery/queue` job and patch the sibling columns when it finishes. The
+  pieces are the same; only the timing moves.
+
+There is no built-in async mode — `WithImagePipeline` is deliberately the
+simple synchronous one, because it is correct for the common case (a user
+uploading their own avatar or a cover image) and needs no queue.
 
 ## Validation
 
-File-field validators run before storage so an invalid file does not
-consume bytes:
+Uploads are bounded and content-checked before anything is stored:
 
-- Size limit (set via `EntityConfig.FileField(name).MaxBytes`).
-- Allowed MIME types (set via `AllowedMIMETypes`).
-- Required (set on the field).
+- **Size** is capped at `file.MaxProcessFileSize` (32 MiB), and the
+  multipart parser buffers at most `crud.MaxMultipartMemory` (32 MiB) in
+  memory before spilling to a temp file. An oversize body returns
+  `file.ErrFileFieldTooLarge` without reading past the limit.
+- **Content shape** is sniffed from the bytes — never the filename or the
+  client's `Content-Type`, both of which an attacker controls. SVG/XML,
+  HTML, and executable magic bytes (PE, ELF, Mach-O) are rejected with
+  `file.ErrFileFieldUnsafeContent`.
+- **Required** is enforced from the field declaration, like any other
+  field.
+
+These are global limits, not per-field ones: there is no per-field byte
+cap or MIME allow-list today. To bound a specific field more tightly, use
+a `BeforeCreate` hook or an `entity.ValidatorFunc` — both run before the
+row is written — or set `imagefield.Config.MaxPixels` to tighten the
+decode guard for image fields.
 
 A failing validator returns `400 Bad Request` with a `fields` map
 identifying the offending field.
@@ -210,3 +445,17 @@ characters.
   validate or upload anything.
 - **Camelcasing multipart names.** They are literal column names. Use
   snake_case if your DB columns are snake_case.
+- **Expecting sibling columns to appear on their own.** `WithImagePipeline`
+  fills `<field>_blurhash` / `<field>_placeholder` / `<field>_variants`
+  only when the entity declares them. A missing column is skipped
+  silently, so a hash that "isn't saving" is usually an undeclared column.
+- **Wiring `WithImagePipeline` without `WithFileStorage`.** Renditions are
+  written through the same backend as the original; there is nowhere to
+  put them otherwise.
+- **Putting an image on a `File` field and expecting renditions.** Only
+  `schema.Image` runs the pipeline.
+- **Reaching for `framework/image` from `framework/file` or
+  `framework/crud`.** Both are below it in the layering, and the edge
+  would link every decoder into every app with a CRUD handler. That is why
+  `file.ImageDeriver` is an interface and `framework/imagefield`
+  implements it.
