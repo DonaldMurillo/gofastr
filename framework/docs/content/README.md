@@ -44,7 +44,8 @@ results, the harness contract) are exempt — the exemption list lives in
 - [Entity events & SSE](events.md) — `_events` stream, push-only,
   backpressure rules.
 - [File uploads](uploads.md) — multipart on `Image`/`File` fields via
-  `WithFileStorage`.
+  `WithFileStorage`, plus `WithImagePipeline` for automatic renditions,
+  BlurHash, and LQIP on every `Image` upload.
 - [Query DSL](query-dsl.md) — agent-friendly query parser →
   `core/query` builder.
 
@@ -150,8 +151,10 @@ results, the harness contract) are exempt — the exemption list lives in
 - [Search](search.md) — `battery/search` backend interface, memory
   implementation.
 - [Image pipeline](image.md) — `framework/image`: chainable
-  Resize / Rotate / Flip / Modulate / Placeholder / BlurHash, pure-Go
-  with no CGo or system codec dependencies.
+  Resize / Rotate / Flip / Modulate / Placeholder / BlurHash (encode and
+  decode), pure-Go with no CGo or system codec dependencies. For CRUD
+  uploads, wire it once with `WithImagePipeline` — see
+  [File uploads](uploads.md).
 
 ## Build-time tooling
 

@@ -96,3 +96,55 @@ func TestColonAfterDelimiterIsNotAScheme(t *testing.T) {
 		}
 	}
 }
+
+func TestImageSourceAcceptsRasterDataURLs(t *testing.T) {
+	for _, u := range []string{
+		"data:image/jpeg;base64,/9j/4AAQ",
+		"data:image/png;base64,iVBORw0KGgo=",
+		"data:image/gif;base64,R0lGODlh",
+		"data:image/webp;base64,UklGRg==",
+		"data:image/avif;base64,AAAAIGZ0",
+		"data:image/PNG;BASE64,iVBORw0K", // case-insensitive
+		"data:image/png,rawbytes",        // non-base64 payload is legal
+		"/photo.jpg",                     // ordinary resource URLs still pass
+		"https://cdn.example.com/a.png",
+	} {
+		if !OK(u, ImageSource) {
+			t.Errorf("OK(%q, ImageSource) = false, want true", u)
+		}
+	}
+}
+
+func TestImageSourceRejectsDangerousDataURLs(t *testing.T) {
+	for _, u := range []string{
+		"data:text/html;base64,PHNjcmlwdD4=",
+		"data:text/html,<script>alert(1)</script>",
+		// SVG in an <img> is script-disabled in browsers, but it is a
+		// markup surface this package never needs to emit, so it stays out
+		// of the allow-list rather than relying on that guarantee.
+		"data:image/svg+xml;base64,PHN2Zz4=",
+		"data:image/svg+xml,<svg onload=alert(1)>",
+		"data:application/javascript,alert(1)",
+		"data:,plain",
+		"data:image",     // no comma, no payload
+		"data:image/png", // media type but no payload delimiter
+		"data:imagex/png;base64,AAAA",
+		"javascript:alert(1)",
+		"vbscript:msgbox",
+		"data:image/png;base64,AA%0dAA", // CRLF smuggling
+	} {
+		if OK(u, ImageSource) {
+			t.Errorf("OK(%q, ImageSource) = true, want false", u)
+		}
+	}
+}
+
+// The looser image policy must not leak into the policies that guard
+// <script src> / <link href> / <a href>.
+func TestDataURLsStillRejectedByOtherPolicies(t *testing.T) {
+	for _, p := range []Policy{Anchor, Resource} {
+		if OK("data:image/png;base64,iVBORw0K", p) {
+			t.Errorf("policy %d must reject data: image URLs", p)
+		}
+	}
+}

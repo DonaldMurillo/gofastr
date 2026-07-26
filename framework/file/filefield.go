@@ -55,6 +55,11 @@ type FileField struct {
 
 	// StorageRef is the storage backend key used to reference this file.
 	StorageRef string `json:"storage_ref"`
+
+	// Image carries renditions and placeholder metadata derived from an
+	// uploaded image. Nil unless ProcessFileField ran with
+	// WithImageDeriver.
+	Image *ImageDerivatives `json:"image,omitempty"`
 }
 
 // Validate enforces invariants on a FileField that came from an untrusted
@@ -102,7 +107,9 @@ func (f *FileField) Validate() error {
 	if !isSafeMIMEString(f.MimeType) {
 		return fmt.Errorf("%w: %q", ErrFileFieldMimeUnsafe, f.MimeType)
 	}
-	return nil
+	// Derived references reach the same sinks as the primary file, so they
+	// are held to the same invariants.
+	return f.Image.Validate()
 }
 
 // isUnsafeURLScheme reports whether url begins with a scheme that should
@@ -186,9 +193,13 @@ func isSafeMIMEString(s string) bool {
 // deadlines are respected during slow uploads.
 func ProcessFileField(ctx context.Context, store upload.Storage, file interface {
 	Read([]byte) (int, error)
-}, filename string, entityName, fieldName string) (*FileField, error) {
+}, filename string, entityName, fieldName string, opts ...ProcessOption) (*FileField, error) {
 	if store == nil {
 		return nil, fmt.Errorf("filefield: storage backend is required")
+	}
+	var cfg processConfig
+	for _, o := range opts {
+		o(&cfg)
 	}
 
 	// Read at most MaxProcessFileSize+1 bytes so we can detect an
@@ -228,13 +239,27 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 		return nil, fmt.Errorf("filefield: saving file: %w", err)
 	}
 
-	return &FileField{
+	ff := &FileField{
 		URL:        path,
 		Filename:   filepath.Base(filename),
 		MimeType:   mimeType,
 		Size:       size,
 		StorageRef: path,
-	}, nil
+	}
+
+	// Renditions are derived after the original is safely stored, so a
+	// derive failure never leaves the primary upload half-written.
+	if cfg.deriver != nil {
+		derived, err := cfg.deriver.DeriveImage(ctx, store, data, path)
+		if err != nil {
+			return nil, fmt.Errorf("filefield: deriving image renditions: %w", err)
+		}
+		if err := derived.Validate(); err != nil {
+			return nil, fmt.Errorf("filefield: derived image metadata: %w", err)
+		}
+		ff.Image = derived
+	}
+	return ff, nil
 }
 
 // readerOf adapts the narrow Read-only interface accepted by

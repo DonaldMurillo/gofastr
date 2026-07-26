@@ -199,9 +199,52 @@ func imageCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-image"].ui-image--fit-contain .ui-image__img { object-fit: contain; }
 [data-fui-comp="ui-image"].ui-image--fit-fill    .ui-image__img { object-fit: fill;    }
+/* The root is included so its own background (which --placeheld sets, to
+   back the letterbox bars) is rounded too — otherwise its square corners
+   peek out around the rounded image. */
+[data-fui-comp="ui-image"].ui-image--rounded,
 [data-fui-comp="ui-image"].ui-image--rounded     .ui-image__img,
+[data-fui-comp="ui-image"].ui-image--rounded     .ui-image__lqip,
 [data-fui-comp="ui-image"].ui-image--rounded     picture {
   border-radius: var(--radii-md, 8px);
+}
+
+/* Low-quality placeholder: a decoded BlurHash or tiny LQIP, stacked behind
+   the real image so something content-shaped is on screen before the real
+   pixels land. It is an element rather than a background because a data URL
+   is per-instance data and this project cannot emit per-instance CSS —
+   inline style attributes are blocked by the CSP and by the
+   noinlinestyles linter, and a data URL cannot be enumerated into a class.
+
+   Both layers are positioned, so paint order follows tree order: the
+   placeholder is emitted first and the real image covers it. No z-index and
+   no JavaScript are involved, and the placeholder is simply left in place
+   once the image has loaded. */
+[data-fui-comp="ui-image"] .ui-image__lqip {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+[data-fui-comp="ui-image"] .ui-image__img,
+[data-fui-comp="ui-image"] picture {
+  position: relative;
+}
+/* The placeholder must letterbox exactly like the image in front of it.
+   Without this, a fit-contain image (which does not fill its box) would show
+   a cover-cropped blur through the empty bars — permanently, since the
+   placeholder is never removed. */
+[data-fui-comp="ui-image"].ui-image--fit-contain .ui-image__lqip { object-fit: contain; }
+[data-fui-comp="ui-image"].ui-image--fit-fill    .ui-image__lqip { object-fit: fill;    }
+/* With a placeholder present the grey resting fill moves to the root, so it
+   still backs the letterbox bars while the blur — not the grey — is what
+   shows through the image itself. */
+[data-fui-comp="ui-image"].ui-image--placeheld {
+  background: var(--color-surface-soft, #F4F4F5);
+}
+[data-fui-comp="ui-image"].ui-image--placeheld .ui-image__img {
+  background: transparent;
 }
 [data-fui-comp="ui-image"].ui-image--aspect-1-1  .ui-image__img { aspect-ratio: 1 / 1;  inline-size: 100%; block-size: auto; }
 [data-fui-comp="ui-image"].ui-image--aspect-4-3  .ui-image__img { aspect-ratio: 4 / 3;  inline-size: 100%; block-size: auto; }

@@ -31,11 +31,23 @@ func safeURL(u string) string {
 }
 
 // safeResourceURL is safeURL for URLs the BROWSER fetches on its own —
-// <img src>, <source src>, <link href>. It drops mailto:/tel:, which are
+// <source src>, <link href>. It drops mailto:/tel:, which are
 // meaningful on an anchor the user activates and a caller mistake on a
 // subresource.
 func safeResourceURL(u string) string {
 	return urlsafe.Clean(u, urlsafe.Resource)
+}
+
+// safeImageURL is safeResourceURL for <img src> and image srcsets, which
+// additionally accept an inline raster data: URI — a generated image or a
+// low-fidelity placeholder is a legitimate thing to inline, and the media
+// types urlsafe.ImageSource admits cannot carry script.
+//
+// Image sinks must use this rather than safeResourceURL: the stricter
+// policy silently swaps a data: URI for the blank stub, which looks like
+// "the image is broken" rather than "the URL was rejected".
+func safeImageURL(u string) string {
+	return urlsafe.Clean(u, urlsafe.ImageSource)
 }
 
 // scrubAttrs filters an html.Attrs map, removing keys that look like

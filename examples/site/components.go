@@ -1460,8 +1460,14 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		)
 	}},
 	{"pipelineimage", "PipelineImage", "Media", "Image processed through the framework's image pipeline.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("PipelineImage runs framework/image transforms (resize, webp) — see /examples for a live demo."),
+		demo := pipelineImageDemo()
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			demo.image,
+			html.Div(html.DivConfig{Class: "fact"},
+				render.Text("Left to right: the "+demo.hash+" BlurHash decoded to a placeholder, "+
+					"and the same image with that placeholder stacked behind it. "+
+					"The placeholder is server-rendered markup — no JavaScript decodes anything in the browser."),
+			),
 		)
 	}},
 	// ---------- Clientside Interactivity ----------

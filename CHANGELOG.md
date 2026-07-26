@@ -5,6 +5,124 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.47.0] - 2026-07-26
+
+Image placeholders now actually paint. The pipeline could produce a
+BlurHash since 0.5; nothing could turn one back into pixels, and the
+`data-placeholder` / `data-blurhash` attributes the UI components emitted
+were read by no CSS rule and no JavaScript anywhere in the tree. The
+feature was inert end to end, and the tests only asserted the attributes
+were present.
+
+### Added
+
+- **`framework.WithImagePipeline` — uploads now derive their own renditions
+  and BlurHash.** Previously the generate half of the story was entirely
+  BYO: nothing in the framework or any battery ever called `VariantSet`, so
+  "when does a BlurHash get made?" had one answer — whenever you hand-wrote
+  the call in an upload handler. Now declaring a `schema.Image` field is
+  enough. Every upload on that field produces the configured renditions
+  plus a BlurHash (and optionally an LQIP), stores the renditions beside
+  the original, and writes the metadata to sibling columns the entity
+  declares: `<field>_blurhash`, `<field>_placeholder`, `<field>_variants`.
+  Undeclared columns are skipped, so adopting one means adding the column
+  and nothing else.
+- **`framework.WithImagePipelineFor(entity, field, deriver)`** — per-field
+  override of the app-wide pipeline, since an avatar (portrait components,
+  reject animated) and a hero cover (wide renditions) cannot share one
+  config. An explicit `nil` opts a single field out without unpicking the
+  default.
+- **`framework/imagefield`** — the adapter implementing
+  `file.ImageDeriver` over `image.VariantSet`. A separate package on
+  purpose: `framework/crud` is in the dependency graph of nearly every
+  app, so a direct edge to `framework/image` would link every image
+  decoder plus the WebP encoder into every binary. The dependency is
+  inverted through an interface and only apps calling
+  `WithImagePipeline` pay for the codecs — enforced by a `go list -deps`
+  test, not a comment.
+- **`file.ImageDeriver` / `file.ImageDerivatives` / `file.DerivedVariant`**
+  plus `file.WithImageDeriver` on `ProcessFileField`, for callers driving
+  uploads directly. `FileField` gains an `Image` field carrying the
+  derived metadata, and `FileField.Validate` now checks it — derived
+  references reach the same sinks as the primary file.
+- **`image.DecodeBlurHash` + `image.BlurHashDataURL`** — the missing half
+  of the BlurHash story. Store the ~28-char hash in a column at upload
+  time; call `BlurHashDataURL` at render time to turn it back into an
+  inline image. `DecodeBlurHash` returns a pipeline `*Image`, so it chains
+  with the existing encoders. Hashes are treated as untrusted input:
+  length, alphabet, and component count are validated before any pixel
+  buffer is allocated, and output dimensions are capped at
+  `MaxBlurHashRenderSize` (128 px).
+- **Placeholder memoisation** — `SetBlurHashCacheSize` /
+  `FlushBlurHashCache` / `BlurHashCacheLen`. A list view would otherwise
+  re-decode the same handful of hashes on every request.
+- **`urlsafe.ImageSource` policy** — `Resource` plus inline raster `data:`
+  URIs, for the one sink where those are a feature rather than a mistake:
+  `<img src>`. `data:image/svg+xml` is excluded (SVG is a markup
+  surface), as is every non-image media type. `Resource` itself is
+  unchanged, so `<script src>` and `<link href>` still reject `data:`.
+
+### Changed
+
+- **`OptimizedImage` / `PipelineImage` render the placeholder as a real
+  stacked `<img>`** behind the image, positioned by static CSS. No
+  JavaScript, no `attr()`, no per-instance CSS — an inline `style`
+  attribute is blocked by both the default CSP and the repo's
+  `noinlinestyles` linter, so an element is the only mechanism available.
+- **`Placeholder` takes an inline raster `data:` URI. BREAKING.** A bare
+  BlurHash string is no longer accepted — it is not an image until it is
+  decoded. Bad values (a raw hash, a remote URL, a non-raster `data:` URI)
+  are dropped and the image renders without a placeholder rather than
+  panicking, matching how `PipelineImage` already treats missing intrinsic
+  dimensions: a placeholder is data, not a caller-code bug.
+- **`data-placeholder` and `data-blurhash` are no longer emitted.
+  BREAKING** for anyone who wired their own CSS or hydration to them.
+
+### Fixed
+
+- **A `data:` image URI was silently replaced with the 1×1 blank stub.**
+  The components pre-filtered `Src`/`Fallback`/`Sources` with
+  `urlsafe.Resource`, which rejects `data:`, so a generated or inlined
+  image rendered as "broken" rather than "blocked". Every `<img src>` sink
+  now uses `safeImageURL` — `OptimizedImage`, `PipelineImage`, and
+  `Gallery`'s thumbnails. `Avatar` has no pre-filter of its own and is
+  fixed by the `html.Image` policy change; a test pins that. Caught by
+  looking at a screenshot, not by any test.
+- **`PipelineImage` applied no URL allow-list at all** — `OptimizedImage`
+  ran `safeResourceURL` on its `Src` and every `Sources` URL; its sibling
+  ran it on neither `Fallback` nor `Sources`, despite rendering storage
+  URLs that routinely originate in user data.
+- **`OptimizedImage` did not escape srcset separators.** A URL containing
+  a comma or whitespace (presigned links, keys with comma-separated
+  segments) split one candidate into several malformed ones.
+  `PipelineImage` already escaped these; both now share one
+  implementation.
+- **The `Fit: contain` placeholder no longer bleeds into the letterbox
+  bars.** The placeholder is never removed, so a cover-cropped blur behind
+  a contained image was a permanent visual change, not a loading state.
+  It now mirrors the image's `object-fit`.
+
+### Internal
+
+- A `go list -deps` gate enforces that `framework/ui` never imports
+  `framework/image` — previously only a comment. The edge would put every
+  image decoder plus the WebP encoder in the binary of any host that
+  renders any UI at all.
+- A `go list -deps` gate likewise keeps `framework/crud` and
+  `framework/file` clear of `framework/image`, so the upload path's
+  dependency inversion cannot be "simplified" away.
+- The `/components/pipelineimage` showcase is a rendered demo instead of a
+  paragraph pointing at a demo that did not exist, and a new chromedp test
+  against it asserts the browser actually decoded the placeholder, that it
+  covers the real image's box, that the real image paints in front, and that
+  with the real image hidden the remaining pixels are a colourful blur
+  rather than the flat resting grey. The predecessor tests asserted a
+  `data-placeholder` attribute was present, which stayed green for as long
+  as the feature was entirely inert.
+- The demo's source image is a drawn mockup rather than a gradient: a
+  gradient's blur is indistinguishable from the gradient, so the first
+  version of the demo demonstrated nothing.
+
 ## [0.46.0] - 2026-07-26
 
 The v0.43.0 audit backlog (#135) closed, three filed issues fixed (#138,
