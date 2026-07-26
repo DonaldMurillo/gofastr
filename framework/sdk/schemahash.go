@@ -14,8 +14,15 @@ import (
 // input to SchemaHash (declarations converted via EntityDeclaration.Config()
 // carry no Name of their own).
 type NamedConfig struct {
-	Name   string
-	Config entity.EntityConfig
+	Name string
+	// Version is the route-group prefix the entity is mounted at (e.g.
+	// "/api/v1"), or "" for the unversioned App.Entity path. It is part
+	// of the hash identity so two versions of one entity — which expose
+	// different route paths — produce distinct hashes and signal drift.
+	// The generation side (gofastr generate sdk) leaves this "" until it
+	// learns about versions; the serving side fills it from the entity.
+	Version string
+	Config  entity.EntityConfig
 }
 
 // SchemaHash returns a deterministic "sha256:<hex>" digest of the
@@ -49,6 +56,10 @@ func SchemaHash(named []NamedConfig) string {
 		Default  any      `json:"default,omitempty"`
 		To       string   `json:"to,omitempty"`
 		Many     bool     `json:"many,omitempty"`
+		// WireName is part of the hash because it changes the client-facing
+		// JSON key — a version that renames a field produces a different
+		// SDK surface and must signal drift.
+		WireName string `json:"wireName,omitempty"`
 	}
 	type hashRelation struct {
 		Type       int    `json:"type"`
@@ -59,6 +70,7 @@ func SchemaHash(named []NamedConfig) string {
 	}
 	type hashEntity struct {
 		Name         string         `json:"name"`
+		Version      string         `json:"version,omitempty"`
 		Table        string         `json:"table"`
 		Public       bool           `json:"public"`
 		SoftDelete   bool           `json:"softDelete"`
@@ -73,6 +85,7 @@ func SchemaHash(named []NamedConfig) string {
 
 		he := hashEntity{
 			Name:       cfg.Name,
+			Version:    n.Version,
 			Table:      cfg.Table,
 			Public:     cfg.Public,
 			SoftDelete: cfg.SoftDelete,
@@ -93,6 +106,7 @@ func SchemaHash(named []NamedConfig) string {
 				Auto:     f.AutoGenerate != schema.AutoNone,
 				To:       f.To,
 				Many:     f.Many,
+				WireName: f.WireName,
 			}
 			hf.Values = append(hf.Values, f.Values...)
 			if f.Default != nil {
@@ -121,7 +135,12 @@ func SchemaHash(named []NamedConfig) string {
 
 		entities = append(entities, he)
 	}
-	sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
+	sort.Slice(entities, func(i, j int) bool {
+		if entities[i].Name != entities[j].Name {
+			return entities[i].Name < entities[j].Name
+		}
+		return entities[i].Version < entities[j].Version
+	})
 
 	raw, err := json.Marshal(entities)
 	if err != nil {
@@ -137,16 +156,34 @@ func SchemaHash(named []NamedConfig) string {
 
 // RegistryNamedConfigs adapts a live entity registry to SchemaHash input,
 // restricted to the given entity names (the manifest's Entities list).
-// Unknown names are skipped — an entity that was deleted since generation
-// changes the hash by omission, which is exactly the drift signal wanted.
+//
+// A name may resolve to MULTIPLE entities when it is registered under
+// several API versions (e.g. /api/v1/posts and /api/v2/posts). Every
+// version is included so the hash reflects the full live surface.
+//
+// The previous implementation called reg.Get(name), which returns an
+// ambiguity error when a name has several versions and none is
+// unversioned — and the error path silently skipped the entity, making a
+// versioned entity look identical to a deleted one. That produced false
+// drift: the live hash omitted the entity and never matched the manifest.
+// Scanning AllSorted() and grouping by name avoids the ambiguity error
+// entirely. Unknown names (no version registered) are still skipped — a
+// genuinely deleted entity changes the hash by omission, which is the
+// drift signal wanted.
 func RegistryNamedConfigs(reg entity.Registry, names []string) []NamedConfig {
+	byName := make(map[string][]*entity.Entity)
+	for _, e := range reg.AllSorted() {
+		byName[e.Config.Name] = append(byName[e.Config.Name], e)
+	}
 	var out []NamedConfig
 	for _, name := range names {
-		e, err := reg.Get(name)
-		if err != nil || e == nil {
-			continue
+		for _, e := range byName[name] {
+			out = append(out, NamedConfig{
+				Name:    e.Config.Name,
+				Config:  e.Config,
+				Version: e.Version,
+			})
 		}
-		out = append(out, NamedConfig{Name: e.Config.Name, Config: e.Config})
 	}
 	return out
 }

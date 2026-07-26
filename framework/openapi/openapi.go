@@ -96,6 +96,26 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		tableName := ent.GetTable()
 		fields := ent.GetFields()
 
+		// Version-aware disambiguation. Unversioned entities (App.Entity)
+		// keep the historical bare names — schema "posts", tag "posts",
+		// path "/posts". Versioned entities (App.GroupEntity) carry the
+		// group prefix as Version; we derive a slug from it so two versions
+		// of the same entity produce non-colliding schema component names,
+		// operation IDs, tags, and paths.
+		disambig := ""
+		tagName := entityName
+		pathPrefix := ""
+		if ent.Version != "" {
+			disambig = "_" + versionSlug(ent.Version)
+			pathPrefix = ent.Version
+			if ent.OpenAPITag != "" {
+				tagName = ent.OpenAPITag
+			} else {
+				tagName = entityName + disambig
+			}
+		}
+		schemaName := entityName + disambig
+
 		// Generate entity schema (excluding hidden fields from response)
 		visibleFields := make([]schema.Field, 0, len(fields))
 		for _, f := range fields {
@@ -104,26 +124,43 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 			}
 		}
 		entitySchema := openapi.FieldsToSchema(visibleFields)
-		// Convert snake_case property names to camelCase
+		// Remap property names via wireKeyOf (the shared wire-key helper:
+		// WireName verbatim when set, else the historical camelCase of the
+		// DB column). The entity schema is built from snake_case field
+		// Names; this step translates them to the wire keys clients see.
+		// Do NOT camelCase a WireName — it is the literal JSON key the
+		// entity chose to expose. wireKeyOf is the SAME resolution used by
+		// the ?fields= description and excludeFieldsByBehavior so every
+		// surface agrees on what a field is called on the wire.
 		if props, ok := entitySchema["properties"].(map[string]any); ok {
-			camelProps := make(map[string]any, len(props))
-			for k, v := range props {
-				camelProps[casing.ToCamel(k)] = v
+			remapped := make(map[string]any, len(props))
+			for _, f := range visibleFields {
+				if v, ok := props[f.Name]; ok {
+					remapped[wireKeyOf(f)] = v
+				}
 			}
-			entitySchema["properties"] = camelProps
+			entitySchema["properties"] = remapped
 		}
 		if reqs, ok := entitySchema["required"].([]string); ok {
+			lookup := make(map[string]schema.Field, len(visibleFields))
+			for _, f := range visibleFields {
+				lookup[f.Name] = f
+			}
 			for i, r := range reqs {
-				reqs[i] = casing.ToCamel(r)
+				if f, ok := lookup[r]; ok {
+					reqs[i] = wireKeyOf(f)
+				} else {
+					reqs[i] = casing.ToCamel(r)
+				}
 			}
 		}
-		s.AddSchema(entityName, entitySchema)
+		s.AddSchema(schemaName, entitySchema)
 
 		// Tag for grouping
-		s.AddTag(entityName, entityName+" operations")
+		s.AddTag(tagName, entityName+" operations")
 
 		// Reference to entity schema
-		entityRef := map[string]any{"$ref": "#/components/schemas/" + entityName}
+		entityRef := map[string]any{"$ref": "#/components/schemas/" + schemaName}
 		singleRef := map[string]any{
 			"type":     "object",
 			"required": []string{"data"},
@@ -135,7 +172,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		cursorRef := map[string]any{"$ref": "#/components/schemas/CursorPage"}
 		errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
-		path := "/" + tableName
+		path := pathPrefix + "/" + tableName
 
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts
@@ -170,7 +207,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// SDK generators / agents can discover the projection surface.
 		fieldNames := make([]string, 0, len(visibleFields))
 		for _, f := range visibleFields {
-			fieldNames = append(fieldNames, casing.ToCamel(f.Name))
+			fieldNames = append(fieldNames, wireKeyOf(f))
 		}
 		fieldsDesc := "Comma-separated list of fields to return (projection); the primary key is always included."
 		if len(fieldNames) > 0 {
@@ -181,8 +218,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// --- GET /{table} — List ---
 		listOp := openapi.NewOperation()
 		listOp.Summary = "List " + entityName
-		listOp.OperationID = "list_" + entityName
-		listOp.Tags = []string{entityName}
+		listOp.OperationID = "list_" + schemaName
+		listOp.Tags = []string{tagName}
 		listOp.AddParameter("page", "query", "Page number (offset mode)", false, map[string]any{"type": "integer", "default": 1})
 		listOp.AddParameter("limit", "query", "Items per page (max 100)", false, map[string]any{"type": "integer", "default": 20})
 		listOp.AddParameter("sort", "query", "Sort field (offset mode only; ignored when ?cursor is present)", false, map[string]any{"type": "string"})
@@ -200,9 +237,14 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// which accepts <field>, <field>_gt, <field>_gte, <field>_lt,
 		// <field>_lte, <field>_like, <field>_in.
 		// Filter parameters use raw field names (e.g. "created_at_gt")
-		// because ParseFilters matches against the schema field names directly.
+		// because ParseFilters matches against the schema field names
+		// directly, plus a WireName alias when one is set. The wire key
+		// (WireName or raw Name — NOT camelCased) is what a client sends.
 		for _, f := range visibleFields {
 			name := f.Name
+			if f.WireName != "" {
+				name = f.WireName
+			}
 			filterSchema := fieldToFilterSchema(f)
 			// Exact match and _in apply to every field type.
 			listOp.AddParameter(name, "query", "Exact match on "+name, false, filterSchema)
@@ -246,8 +288,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// --- POST /{table} — Create ---
 		createOp := openapi.NewOperation()
 		createOp.Summary = "Create " + entityName
-		createOp.OperationID = "create_" + entityName
-		createOp.Tags = []string{entityName}
+		createOp.OperationID = "create_" + schemaName
+		createOp.Tags = []string{tagName}
 
 		// Create request body excludes auto-generated and read-only fields
 		createSchema := excludeFieldsByBehavior(entitySchema, fields)
@@ -265,8 +307,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// --- GET /{table}/:id — Get by ID ---
 		getOp := openapi.NewOperation()
 		getOp.Summary = "Get " + entityName + " by ID"
-		getOp.OperationID = "get_" + entityName
-		getOp.Tags = []string{entityName}
+		getOp.OperationID = "get_" + schemaName
+		getOp.Tags = []string{tagName}
 		getOp.AddParameter("include", "query", includeDesc, false, includeSchema)
 		getOp.AddParameter("fields", "query", fieldsDesc, false, fieldsSchema)
 		getOp.AddResponse(200, "Single "+entityName, singleRef)
@@ -283,8 +325,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// --- PUT /{table}/:id — Update ---
 		updateOp := openapi.NewOperation()
 		updateOp.Summary = "Update " + entityName
-		updateOp.OperationID = "update_" + entityName
-		updateOp.Tags = []string{entityName}
+		updateOp.OperationID = "update_" + schemaName
+		updateOp.Tags = []string{tagName}
 		updateOp.SetRequestBody("application/json", excludeFieldsByBehavior(entitySchema, fields), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
@@ -300,8 +342,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// --- PATCH /{table}/:id — Sparse update ---
 		patchOp := openapi.NewOperation()
 		patchOp.Summary = "Patch " + entityName
-		patchOp.OperationID = "patch_" + entityName
-		patchOp.Tags = []string{entityName}
+		patchOp.OperationID = "patch_" + schemaName
+		patchOp.Tags = []string{tagName}
 		patchSchema := excludeFieldsByBehavior(entitySchema, fields)
 		delete(patchSchema, "required")
 		patchOp.SetRequestBody("application/json", patchSchema, true)
@@ -319,8 +361,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// --- DELETE /{table}/:id — Delete ---
 		deleteOp := openapi.NewOperation()
 		deleteOp.Summary = "Delete " + entityName
-		deleteOp.OperationID = "delete_" + entityName
-		deleteOp.Tags = []string{entityName}
+		deleteOp.OperationID = "delete_" + schemaName
+		deleteOp.Tags = []string{tagName}
 		deleteOp.Responses = map[int]map[string]any{
 			204: {"description": "Deleted"},
 		}
@@ -347,8 +389,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		batchCreateOp := openapi.NewOperation()
 		batchCreateOp.Summary = "Batch create " + entityName + " (atomic)"
-		batchCreateOp.OperationID = "batch_create_" + entityName
-		batchCreateOp.Tags = []string{entityName}
+		batchCreateOp.OperationID = "batch_create_" + schemaName
+		batchCreateOp.Tags = []string{tagName}
 		batchCreateOp.SetRequestBody("application/json", batchCreateBody, true)
 		batchCreateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchCreateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
@@ -380,8 +422,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		batchUpdateOp := openapi.NewOperation()
 		batchUpdateOp.Summary = "Batch update " + entityName + " (atomic)"
-		batchUpdateOp.OperationID = "batch_update_" + entityName
-		batchUpdateOp.Tags = []string{entityName}
+		batchUpdateOp.OperationID = "batch_update_" + schemaName
+		batchUpdateOp.Tags = []string{tagName}
 		batchUpdateOp.SetRequestBody("application/json", batchUpdateBody, true)
 		batchUpdateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchUpdateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
@@ -396,8 +438,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// --- GET /{table}/_events — SSE entity subscription stream ---
 		eventsOp := openapi.NewOperation()
 		eventsOp.Summary = "Subscribe to " + entityName + " events (SSE)"
-		eventsOp.OperationID = "events_" + entityName
-		eventsOp.Tags = []string{entityName}
+		eventsOp.OperationID = "events_" + schemaName
+		eventsOp.Tags = []string{tagName}
 		eventsOp.Responses[200] = map[string]any{
 			"description": "Server-Sent Events stream of entity.created/updated/deleted",
 			"content": map[string]any{
@@ -428,8 +470,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		batchDeleteOp := openapi.NewOperation()
 		batchDeleteOp.Summary = "Batch delete " + entityName + " (atomic)"
-		batchDeleteOp.OperationID = "batch_delete_" + entityName
-		batchDeleteOp.Tags = []string{entityName}
+		batchDeleteOp.OperationID = "batch_delete_" + schemaName
+		batchDeleteOp.Tags = []string{tagName}
 		batchDeleteOp.SetRequestBody("application/json", batchDeleteBody, true)
 		batchDeleteOp.AddResponse(200, "All items committed", batchRespRef)
 		batchDeleteOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
@@ -450,8 +492,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 			if customOp.Summary == "" {
 				customOp.Summary = endpoint.Method + " " + endpoint.Path
 			}
-			customOp.OperationID = DefaultEndpointToolName(entityName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
-			customOp.Tags = []string{entityName}
+			customOp.OperationID = DefaultEndpointToolName(schemaName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
+			customOp.Tags = []string{tagName}
 			// A typed InputSchema becomes the JSON request body — but only for
 			// methods that carry one (GET/HEAD never do). Unset schemas fall
 			// back to today's shapeless {type:object} response and no body.
@@ -547,7 +589,7 @@ func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) m
 	exclude := make(map[string]bool)
 	for _, f := range fields {
 		if f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
-			exclude[casing.ToCamel(f.Name)] = true
+			exclude[wireKeyOf(f)] = true
 		}
 	}
 
@@ -574,4 +616,43 @@ func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) m
 		}
 	}
 	return cp
+}
+
+// versionSlug converts a route-group prefix (e.g. "/api/v1") into an
+// OpenAPI-component-safe slug (e.g. "api_v1"): strip the leading slash,
+// replace remaining slashes with underscores. The result is used to
+// disambiguate schema component names, operation IDs, and tags across
+// versions of the same entity. Empty input yields empty output.
+func versionSlug(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	s := strings.TrimPrefix(prefix, "/")
+	return strings.ReplaceAll(s, "/", "_")
+}
+
+// wireKeyOf returns the JSON wire key for a schema field: WireName
+// verbatim when set, else the camelCase of the DB column name. This is
+// the single wire-key resolution used by every OpenAPI surface that
+// names a field — response properties, the required list, the ?fields=
+// projection description, and excludeFieldsByBehavior (request-schema
+// exclusion). Routing every surface through one function prevents the
+// class of bug where one surface advertises bodyText (camelCase of
+// Name) while the runtime accepts content (the WireName the entity
+// actually exposed).
+//
+// Filter and sort parameters are a DELIBERATE exception: the filter
+// parser (framework/filter) matches against the raw DB column name plus
+// a WireName alias, never the camelCase form, so those params use
+// f.Name / f.WireName directly rather than this helper. Sharing
+// framework/crud's convertKey is impossible here: it is a method on
+// CrudHandler that depends on the per-handler JSONCase config, which
+// the OpenAPI builder (registry-only, no handler instance) does not
+// see. The OpenAPI builder assumes the default camelCase casing, which
+// is what convertKey returns when JSONCase is CaseCamel (the default).
+func wireKeyOf(f schema.Field) string {
+	if f.WireName != "" {
+		return f.WireName
+	}
+	return casing.ToCamel(f.Name)
 }

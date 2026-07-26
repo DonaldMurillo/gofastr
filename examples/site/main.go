@@ -32,6 +32,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
+	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -338,7 +339,7 @@ func setupServer() *framework.App {
 				Title: fmt.Sprintf("Note #%d (created %s)", sess.createNext-1, time.Now().Format("15:04:05")),
 			})
 		}
-		body := renderOptimisticCreateListFor(sess)
+		body := gallery.RenderOptimisticCreateList(sess.createNotes)
 		sess.mu.Unlock()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, string(body))
@@ -361,7 +362,7 @@ func setupServer() *framework.App {
 			}
 			sess.deleteNotes = append([]optimisticNote(nil), next...)
 		}
-		body := renderOptimisticDeleteListFor(sess)
+		body := gallery.RenderOptimisticDeleteList(sess.deleteNotes)
 		sess.mu.Unlock()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, string(body))
@@ -381,7 +382,7 @@ func setupServer() *framework.App {
 	// in the current notes list, mounted once at startup. After a
 	// delete the matching trigger is gone from the rendered list, so a
 	// stale modal is simply unreachable; reload re-renders without it.
-	for _, b := range optimisticDeleteModals() {
+	for _, b := range gallery.OptimisticDeleteModals() {
 		widget.MountBuilder(fwApp.Router(), b)
 	}
 
