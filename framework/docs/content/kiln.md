@@ -92,6 +92,20 @@ approved plan naming the exact operation and target. An approval is
 single-use. `undo` truncates one journal entry and deterministically rebuilds;
 `reset_session` clears the journal and ephemeral schema.
 
+Those rules are enforced during **replay**, not only at the tool call. The
+journal is the authorization record, so a destructive entry carries the
+`plan_id` that authorized it and replay re-checks that the plan exists, was
+approved, lists that exact target, and has not already been spent on it.
+Consumption is derived from the log too — it used to live in a per-process
+map that replay never rebuilt, so a restart re-armed every spent approval.
+The `multi_tenant` refusal runs on the same path.
+
+This matters because the journal is replayed at boot and by `kiln freeze`,
+which turns the replayed world into a blueprint. A hand-authored
+`.kiln.session.jsonl` used to install world state the tool API refuses. It
+needs a local filesystem write, so it is an integrity property rather than a
+remote one — but a guard only one of two readers applies is not a guard.
+
 ## Current world contract
 
 The world mirrors the current blueprint where a live representation is safe:

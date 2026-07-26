@@ -2,8 +2,6 @@ package journal
 
 import (
 	"fmt"
-
-	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // Replay reads every entry from j and applies it to a fresh Session.
@@ -33,7 +31,7 @@ func ReplayEntries(entries []Entry) (*Session, error) {
 func Apply(s *Session, e Entry) error {
 	switch e.Kind {
 	case KindWorldEdit:
-		return applyWorldEdit(s.World, e)
+		return applyWorldEdit(s, e)
 	case KindChatUser, KindChatAssistant:
 		var p ChatMessagePayload
 		if err := e.Decode(&p); err != nil {
@@ -121,7 +119,15 @@ func Apply(s *Session, e Entry) error {
 }
 
 // applyWorldEdit dispatches by Op.
-func applyWorldEdit(w *world.World, e Entry) error {
+//
+// It enforces the same semantic guards kiln/protocol enforces on the live
+// path — the multi-tenant refusal and plan-gating of destructive ops. Those
+// used to live only in protocol.go, so a hand-authored .kiln.session.jsonl
+// replayed at boot (kiln/live.New) or by `kiln freeze` installed world state
+// the HTTP API refuses. The log is the authorization record; a guard that
+// only one of the two readers applies is not a guard.
+func applyWorldEdit(s *Session, e Entry) error {
+	w := s.World
 	switch e.Op {
 	case OpSetAppConfig:
 		var p SetAppConfigPayload
@@ -154,6 +160,9 @@ func applyWorldEdit(w *world.World, e Entry) error {
 		if p.Entity.Name == "" {
 			return fmt.Errorf("add_entity: entity has empty name")
 		}
+		if p.Entity.MultiTenant {
+			return fmt.Errorf("add_entity: entity %q sets multi_tenant, which kiln cannot honour (it cannot choose the app-specific tenant resolver) — use owner_field, or add tenant middleware in owned Go after freeze", p.Entity.Name)
+		}
 		if _, exists := w.Entities[p.Entity.Name]; exists {
 			return fmt.Errorf("add_entity: %q already exists", p.Entity.Name)
 		}
@@ -168,6 +177,9 @@ func applyWorldEdit(w *world.World, e Entry) error {
 		if p.Entity == nil {
 			return fmt.Errorf("update_entity: nil entity")
 		}
+		if p.Entity.MultiTenant {
+			return fmt.Errorf("update_entity: entity %q sets multi_tenant, which kiln cannot honour (it cannot choose the app-specific tenant resolver) — use owner_field, or add tenant middleware in owned Go after freeze", p.Entity.Name)
+		}
 		if _, exists := w.Entities[p.Entity.Name]; !exists {
 			return fmt.Errorf("update_entity: %q not found", p.Entity.Name)
 		}
@@ -177,6 +189,10 @@ func applyWorldEdit(w *world.World, e Entry) error {
 	case OpDeleteEntity:
 		var p DeleteEntityPayload
 		if err := e.Decode(&p); err != nil {
+			return err
+		}
+		target := PlanTarget{Op: "delete_entity", Name: p.Name}
+		if err := s.spendPlan(p.PlanID, target); err != nil {
 			return err
 		}
 		if _, exists := w.Entities[p.Name]; !exists {
@@ -205,6 +221,10 @@ func applyWorldEdit(w *world.World, e Entry) error {
 	case OpDeleteField:
 		var p DeleteFieldPayload
 		if err := e.Decode(&p); err != nil {
+			return err
+		}
+		target := PlanTarget{Op: "delete_field", Name: p.Entity + "." + p.Field}
+		if err := s.spendPlan(p.PlanID, target); err != nil {
 			return err
 		}
 		ent, ok := w.Entities[p.Entity]
@@ -239,6 +259,10 @@ func applyWorldEdit(w *world.World, e Entry) error {
 	case OpDeletePage:
 		var p DeletePagePayload
 		if err := e.Decode(&p); err != nil {
+			return err
+		}
+		target := PlanTarget{Op: "delete_page", Name: p.Path}
+		if err := s.spendPlan(p.PlanID, target); err != nil {
 			return err
 		}
 		if _, exists := w.Pages[p.Path]; !exists {
@@ -282,6 +306,9 @@ func applyWorldEdit(w *world.World, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
+		if err := s.spendPlan(p.PlanID, PlanTarget{Op: "delete_hook", Name: p.ID}); err != nil {
+			return err
+		}
 		for i, h := range w.Hooks {
 			if h.ID == p.ID {
 				w.Hooks = append(w.Hooks[:i], w.Hooks[i+1:]...)
@@ -309,6 +336,9 @@ func applyWorldEdit(w *world.World, e Entry) error {
 	case OpDeleteRoute:
 		var p DeleteRoutePayload
 		if err := e.Decode(&p); err != nil {
+			return err
+		}
+		if err := s.spendPlan(p.PlanID, PlanTarget{Op: "delete_route", Name: p.Method + " " + p.Path}); err != nil {
 			return err
 		}
 		for i, r := range w.Routes {
@@ -344,4 +374,50 @@ func applyWorldEdit(w *world.World, e Entry) error {
 	default:
 		return fmt.Errorf("unknown world edit op %q", e.Op)
 	}
+}
+
+// spendPlan is the single authorization check for a destructive world edit:
+// the named plan must exist, be approved, not be rejected, list this exact
+// target, and not already have been spent on it. On success the (plan,
+// target) pair is marked consumed so one approval authorizes one deletion.
+//
+// It mirrors kiln/protocol's requirePlan + consumeTarget, but derives
+// consumption from the log instead of a per-process map — that map was never
+// rebuilt on replay, so every restart re-armed every consumed plan.
+func (s *Session) spendPlan(planID string, target PlanTarget) error {
+	if planID == "" {
+		return fmt.Errorf("%s %q: no plan_id — destructive edits require an approved plan naming this target", target.Op, target.Name)
+	}
+	plan, ok := s.Plans[planID]
+	if !ok {
+		return fmt.Errorf("%s %q: plan %q not found", target.Op, target.Name, planID)
+	}
+	if plan.Rejected {
+		return fmt.Errorf("%s %q: plan %q was rejected", target.Op, target.Name, planID)
+	}
+	if !plan.Approved {
+		return fmt.Errorf("%s %q: plan %q is not approved", target.Op, target.Name, planID)
+	}
+	listed := false
+	for _, tg := range plan.Targets {
+		if tg == target {
+			listed = true
+			break
+		}
+	}
+	if !listed {
+		return fmt.Errorf("%s %q: plan %q does not list this target", target.Op, target.Name, planID)
+	}
+	key := string(target.Op) + ":" + target.Name
+	if s.Consumed[planID][key] {
+		return fmt.Errorf("%s %q: plan %q was already spent on this target", target.Op, target.Name, planID)
+	}
+	if s.Consumed == nil {
+		s.Consumed = map[string]map[string]bool{}
+	}
+	if s.Consumed[planID] == nil {
+		s.Consumed[planID] = map[string]bool{}
+	}
+	s.Consumed[planID][key] = true
+	return nil
 }

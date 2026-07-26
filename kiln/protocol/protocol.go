@@ -29,20 +29,11 @@ type Tools struct {
 
 	mu      sync.Mutex
 	counter int64
-
-	// consumed tracks plan targets that have already been used. Once a
-	// destructive op succeeds against a plan, that (planID, opKey) pair
-	// is recorded here so the same plan can't authorize the same delete
-	// twice. Per-process, in-memory — not journaled.
-	consumed map[string]map[string]bool
 }
 
 // New constructs Tools bound to a Live runtime.
 func New(l *live.Live) *Tools {
-	return &Tools{
-		live:     l,
-		consumed: map[string]map[string]bool{},
-	}
+	return &Tools{live: l}
 }
 
 // Live returns the bound runtime, useful for transports that need the
@@ -339,11 +330,7 @@ func (t *Tools) DeleteEntity(_ context.Context, args DeleteEntityArgs) Result {
 	if r := t.requirePlan(args.PlanID, target); !r.OK {
 		return r
 	}
-	res := t.applyEdit(journal.OpDeleteEntity, journal.DeleteEntityPayload{Name: args.Name, Prev: prev})
-	if res.OK {
-		t.consumeTarget(args.PlanID, target)
-	}
-	return res
+	return t.applyEdit(journal.OpDeleteEntity, journal.DeleteEntityPayload{Name: args.Name, Prev: prev, PlanID: args.PlanID})
 }
 
 func (t *Tools) AddField(_ context.Context, args AddFieldArgs) Result {
@@ -382,11 +369,7 @@ func (t *Tools) DeleteField(_ context.Context, args DeleteFieldArgs) Result {
 	if r := t.requirePlan(args.PlanID, target); !r.OK {
 		return r
 	}
-	res := t.applyEdit(journal.OpDeleteField, journal.DeleteFieldPayload{Entity: args.Entity, Field: args.Field, Prev: prev})
-	if res.OK {
-		t.consumeTarget(args.PlanID, target)
-	}
-	return res
+	return t.applyEdit(journal.OpDeleteField, journal.DeleteFieldPayload{Entity: args.Entity, Field: args.Field, Prev: prev, PlanID: args.PlanID})
 }
 
 func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
@@ -595,11 +578,7 @@ func (t *Tools) DeletePage(_ context.Context, args DeletePageArgs) Result {
 	if r := t.requirePlan(args.PlanID, target); !r.OK {
 		return r
 	}
-	res := t.applyEdit(journal.OpDeletePage, journal.DeletePagePayload{Path: args.Path, Prev: prev})
-	if res.OK {
-		t.consumeTarget(args.PlanID, target)
-	}
-	return res
+	return t.applyEdit(journal.OpDeletePage, journal.DeletePagePayload{Path: args.Path, Prev: prev, PlanID: args.PlanID})
 }
 
 func (t *Tools) AddHook(_ context.Context, args AddHookArgs) Result {
@@ -629,11 +608,7 @@ func (t *Tools) DeleteHook(_ context.Context, args DeleteHookArgs) Result {
 	if r := t.requirePlan(args.PlanID, target); !r.OK {
 		return r
 	}
-	res := t.applyEdit(journal.OpDeleteHook, journal.DeleteHookPayload{ID: args.ID, Prev: prev})
-	if res.OK {
-		t.consumeTarget(args.PlanID, target)
-	}
-	return res
+	return t.applyEdit(journal.OpDeleteHook, journal.DeleteHookPayload{ID: args.ID, Prev: prev, PlanID: args.PlanID})
 }
 
 func (t *Tools) AddRoute(_ context.Context, args AddRouteArgs) Result {
@@ -663,11 +638,7 @@ func (t *Tools) DeleteRoute(_ context.Context, args DeleteRouteArgs) Result {
 	if r := t.requirePlan(args.PlanID, target); !r.OK {
 		return r
 	}
-	res := t.applyEdit(journal.OpDeleteRoute, journal.DeleteRoutePayload{Method: args.Method, Path: args.Path, Prev: prev})
-	if res.OK {
-		t.consumeTarget(args.PlanID, target)
-	}
-	return res
+	return t.applyEdit(journal.OpDeleteRoute, journal.DeleteRoutePayload{Method: args.Method, Path: args.Path, Prev: prev, PlanID: args.PlanID})
 }
 
 func (t *Tools) AddSeed(_ context.Context, args AddSeedArgs) Result {
@@ -756,9 +727,6 @@ func (t *Tools) ResetSession(_ context.Context, _ ResetSessionArgs) Result {
 	if err := t.live.Reload(); err != nil {
 		return failure("reload: %v", err)
 	}
-	t.mu.Lock()
-	t.consumed = map[string]map[string]bool{}
-	t.mu.Unlock()
 	// Notify so the panel re-fetches chat_html immediately. Without
 	// this the UI shows stale items until something else fires an
 	// SSE event — felt to the user like "Reset didn't work."
@@ -840,23 +808,14 @@ func (t *Tools) requirePlan(planID string, target journal.PlanTarget) Result {
 	if !matched {
 		return needsPlan(target, fmt.Sprintf("plan %q does not list this op in `targets` — propose a plan that includes %+v", planID, target))
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if used, ok := t.consumed[planID]; ok && used[target.Op+":"+target.Name] {
+	// Consumption is read from the session, which derives it from the
+	// journal. It used to live in a per-process map here, so every restart
+	// re-armed every already-spent plan — the record of what an approval had
+	// been used for did not survive the thing it was protecting.
+	if t.live.Session().Consumed[planID][target.Op+":"+target.Name] {
 		return needsPlan(target, fmt.Sprintf("plan %q already consumed for this target — propose a new plan", planID))
 	}
 	return Result{OK: true}
-}
-
-// consumeTarget marks (planID, target) as used. Called only after the
-// underlying applyEdit succeeded.
-func (t *Tools) consumeTarget(planID string, target journal.PlanTarget) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.consumed[planID] == nil {
-		t.consumed[planID] = map[string]bool{}
-	}
-	t.consumed[planID][target.Op+":"+target.Name] = true
 }
 
 // --- result constructors ----------------------------------------------

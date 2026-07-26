@@ -96,6 +96,11 @@ type UpdateEntityPayload struct {
 type DeleteEntityPayload struct {
 	Name string        `json:"name"`
 	Prev *world.Entity `json:"prev,omitempty"`
+	// PlanID names the approved plan that authorized this deletion. The
+	// log is the authorization record, not just a state record: without
+	// this, replay could not tell an approved delete from one appended by
+	// hand, and reproduced both. See planGatedTarget.
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 type AddFieldPayload struct {
@@ -107,6 +112,7 @@ type DeleteFieldPayload struct {
 	Entity string       `json:"entity"`
 	Field  string       `json:"field"`
 	Prev   *world.Field `json:"prev,omitempty"`
+	PlanID string       `json:"plan_id,omitempty"` // see DeleteEntityPayload.PlanID
 }
 
 type AddPagePayload struct {
@@ -114,8 +120,9 @@ type AddPagePayload struct {
 }
 
 type DeletePagePayload struct {
-	Path string      `json:"path"`
-	Prev *world.Page `json:"prev,omitempty"`
+	Path   string      `json:"path"`
+	Prev   *world.Page `json:"prev,omitempty"`
+	PlanID string      `json:"plan_id,omitempty"` // see DeleteEntityPayload.PlanID
 }
 
 // UpdatePageElementPayload carries the post-patch page snapshot. The
@@ -139,8 +146,9 @@ type AddHookPayload struct {
 }
 
 type DeleteHookPayload struct {
-	ID   string      `json:"id"`
-	Prev *world.Hook `json:"prev,omitempty"`
+	ID     string      `json:"id"`
+	Prev   *world.Hook `json:"prev,omitempty"`
+	PlanID string      `json:"plan_id,omitempty"` // see DeleteEntityPayload.PlanID
 }
 
 type AddRoutePayload struct {
@@ -151,6 +159,7 @@ type DeleteRoutePayload struct {
 	Method string       `json:"method"`
 	Path   string       `json:"path"`
 	Prev   *world.Route `json:"prev,omitempty"`
+	PlanID string       `json:"plan_id,omitempty"` // see DeleteEntityPayload.PlanID
 }
 
 type AddSeedPayload struct {
