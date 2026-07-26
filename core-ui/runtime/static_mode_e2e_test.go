@@ -13,18 +13,37 @@ import (
 )
 
 // Static-export mode: when <html> carries data-fui-static (injected only
-// by framework/static.Builder), the runtime must skip every server-backed
-// dispatch — the widget catalog fetch, data-fui-rpc clicks, and
-// data-fui-open triggers — so a click on a dead demo does not fire a
-// request that 404s against the serverless host. Client-only features
-// (theme toggle, copy, signal mutations) are unaffected.
+// by framework/static.Builder), the runtime resolves server-backed
+// affordances against the static tree instead of the live server.
+// data-fui-open overlays still open — the static composition ships
+// widgets-boot-static, which fetches the dumped /__gofastr/widgets.json
+// catalog the exporter writes, and the per-widget chrome HTML the
+// exporter dumps at /core-ui/widget/<name>/chrome. data-fui-rpc clicks
+// are the one thing that genuinely need the server, so rpc-stub
+// surfaces a "Needs the Go server" notice for them instead of firing
+// a dead request. Client-only features (theme toggle, copy, signals)
+// are unaffected.
 
-// startStaticModeServer serves runtime.js plus a page that optionally
-// carries the static marker. Server-side counters record hits to the
-// two server-backed endpoints so the test can assert they were skipped.
+// startStaticModeServer serves the appropriate runtime composition plus a
+// page that optionally carries the static marker. When static=true the page
+// is served the `static` composition (kernel+rpc-stub+signals+nav+
+// widgets-boot-static) — the composition IS the static-mode switch now,
+// replacing the old runtime branch on <html data-fui-static>. When
+// static=false the page gets the `full` composition (the regression
+// guard). Server-side counters record hits to the live widget endpoint
+// (the session-gated /__gofastr/widgets?page=…) and the dead RPC path so
+// the test can assert the live endpoint is skipped in static mode and
+// fired in live mode; the dumped /__gofastr/widgets.json is also served
+// so widgets-boot-static resolves cleanly.
 func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, rpcHits *int32) {
 	t.Helper()
-	js, err := RuntimeJS()
+	var js string
+	var err error
+	if static {
+		js, err = StaticJS()
+	} else {
+		js, err = RuntimeJS()
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,12 +86,13 @@ func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, 
 	return srv.URL, &wh, &rh
 }
 
-// TestStaticMode_SkipsServerBackedRequests: on a page marked static, the
-// runtime fetches the dumped catalog FILE (widgets.json) — NOT the live
-// session-gated /__gofastr/widgets endpoint — and an RPC click is skipped
-// (dispatchRPC is gated). data-fui-open is no longer gated: overlays resolve
-// against dumped files on a real export (the empty catalog here makes the
-// open a clean no-op).
+// TestStaticMode_SkipsServerBackedRequests: the `static` composition
+// fetches the dumped catalog at /__gofastr/widgets.json (written by
+// framework/static.Builder.dumpWidgetAssets), NOT the live session-gated
+// endpoint /__gofastr/widgets?page=…, which would 404 on a serverless
+// host. rpc-stub still intercepts data-fui-rpc clicks and surfaces a
+// notice. The live widget endpoint stays at zero hits; the RPC endpoint
+// stays at zero hits.
 func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 	base, widgetHits, rpcHits := startStaticModeServer(t, true)
 	ctx := newSeedBrowserCtx(t)
@@ -90,7 +110,7 @@ func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if got := atomic.LoadInt32(widgetHits); got != 0 {
-		t.Errorf("static mode must not hit the live /__gofastr/widgets endpoint (it fetches widgets.json instead), got %d hits", got)
+		t.Errorf("static composition must not hit the live /__gofastr/widgets?page endpoint (it fetches the dumped /__gofastr/widgets.json instead), got %d hits", got)
 	}
 	if got := atomic.LoadInt32(rpcHits); got != 0 {
 		t.Errorf("static mode must skip RPC dispatch, got %d hits", got)
@@ -150,38 +170,77 @@ func TestStaticMode_RPCShowsNotice(t *testing.T) {
 	}
 }
 
-// TestStaticMode_MissingWidgetShowsNotice: a data-fui-open trigger whose
-// target widget isn't registered (e.g. a note-only showcase demo whose modal
-// was never mounted) must not fail silently on a static page — openWidget
-// surfaces a "Needs the Go server" notice via the synchronous _fallbackToast.
-// Serves the REAL widgets split module so the bail path runs end-to-end.
-func TestStaticMode_MissingWidgetShowsNotice(t *testing.T) {
-	js, err := RuntimeJS()
+// TestStaticMode_WidgetOpensFromStaticCatalog is the regression guard for
+// restoring widget mounting to the `static` composition. A data-fui-open
+// click on a static page must still OPEN the overlay, resolving the widget
+// from the dumped /__gofastr/widgets.json catalog and fetching its chrome
+// HTML from the per-widget file the exporter dumps. This is the capability
+// that was lost when widgets-boot was dropped from the static composition
+// and replaced with a rpc-stub interceptor that surfaced a "Needs the Go
+// server" notice for every data-fui-open click.
+//
+// Against the regressed code (rpc-stub intercepts data-fui-open) the
+// chrome endpoint is never hit, so chromeHits stays at 0 and the test
+// fails on the chromedp.WaitVisible (no widget ever mounts) — exactly the
+// silent-failure mode the composition safety rule exists to prevent.
+func TestStaticMode_WidgetOpensFromStaticCatalog(t *testing.T) {
+	js, err := StaticJS()
 	if err != nil {
 		t.Fatal(err)
 	}
-	widgetsMod, ok := Module("widgets")
+	widgetsModule, ok := Module("widgets")
 	if !ok {
-		t.Fatal("widgets module not embedded")
+		t.Fatal("embedded widgets module missing — required to exercise openWidget end-to-end")
 	}
+
+	// One hidden modal widget in the dumped catalog. Hidden => not
+	// auto-mounted at boot, so opening it goes through the full
+	// openWidget -> _mountByName -> chrome fetch path (the path the
+	// rpc-stub interceptor used to swallow).
+	widgetCatalog := `[{"hidden":true,"cfg":{` +
+		`"name":"palette",` +
+		`"position":"center",` +
+		`"backdrop":true,` +
+		`"closeOnEscape":true,` +
+		`"closeOnClick":true,` +
+		`"chromePath":"/core-ui/widget/palette/chrome",` +
+		`"stylePath":"/core-ui/widget/palette/style.css"` +
+		`}}]`
+
+	// Chrome HTML carries a unique marker the test can read out of the
+	// DOM — proving the runtime mounted the bytes it fetched (not just
+	// that the fetch landed server-side). The data-fui-widget attribute
+	// matches what mountWidget expects to find as the root.
+	const chromeMarker = "palette-chrome-mounted-xyz789"
+
+	var jsonHits, chromeHits int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
+	mux.HandleFunc("/__gofastr/widgets.json", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&jsonHits, 1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(widgetCatalog))
+	})
 	mux.HandleFunc("/__gofastr/runtime/widgets.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
-		w.Write([]byte(widgetsMod))
+		w.Write([]byte(widgetsModule))
 	})
-	// Empty catalog — the target widget is intentionally absent.
-	mux.HandleFunc("/__gofastr/widgets.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("[]"))
+	mux.HandleFunc("/core-ui/widget/palette/chrome", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&chromeHits, 1)
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(w, `<div data-fui-widget="palette"><p id="palette-marker">%s</p></div>`, chromeMarker)
+	})
+	mux.HandleFunc("/core-ui/widget/palette/style.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		// Empty body — the test does not exercise CSS application.
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html data-fui-static><head><title>static</title></head><body>
-  <button id="opener" data-fui-open="never-mounted">open</button>
+  <button id="opener" data-fui-open="palette">open</button>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`)
@@ -190,19 +249,29 @@ func TestStaticMode_MissingWidgetShowsNotice(t *testing.T) {
 	t.Cleanup(srv.Close)
 	ctx := newSeedBrowserCtx(t)
 
-	var toastText string
+	var mountedText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		// Let widgets-boot-static's catalog fetch + loadModule('widgets')
+		// settle so the eager click delegator's _wready has resolved.
+		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Click(`#opener`, chromedp.ByID),
-		// openWidget loads the widgets module, finds no catalog entry, and
-		// fires _fallbackToast synchronously into [data-fui-toast-fallback].
-		chromedp.WaitVisible(`[data-fui-toast-fallback]`, chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelector('[data-fui-toast-fallback]').textContent`, &toastText),
+		// Click chains through loadModule('widgets') → _wready →
+		// openWidget → _mountByName → chrome fetch → mountWidget DOM
+		// insertion. Wait for the marker that proves the chrome mounted.
+		chromedp.WaitVisible(`#palette-marker`, chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('palette-marker').textContent`, &mountedText),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if !strings.Contains(toastText, "Needs the Go server") {
-		t.Errorf("missing-widget open on static should show 'Needs the Go server'; got %q", toastText)
+	if got := atomic.LoadInt32(&jsonHits); got == 0 {
+		t.Error("static composition should fetch /__gofastr/widgets.json at boot (widgets-boot-static)")
+	}
+	if got := atomic.LoadInt32(&chromeHits); got == 0 {
+		t.Error("static data-fui-open click must fetch widget chrome — regressed to a 'Needs the Go server' notice when widgets-boot-static was absent")
+	}
+	if !strings.Contains(mountedText, chromeMarker) {
+		t.Errorf("static data-fui-open should mount the widget chrome into the DOM; got %q", mountedText)
 	}
 }

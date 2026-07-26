@@ -156,6 +156,95 @@ every component inside it reads `var(--color-…)` from that class
 instead of from `:root`. Registering the same theme twice returns the
 same handle, so its CSS only ships once.
 
+## Token map — `ThemeToTokens` / `ApplyTokens`
+
+Two surfaces need to move tokens in and out of a `style.Theme` as a flat
+`map[string]string` instead of a typed struct:
+
+- **A theme configurator** (a tweakcn-style local UI) edits token values
+  and must round-trip them back to a `style.Theme`.
+- **An embedded surface** lets a third-party site supply a small set of
+  brand tokens. Those values are attacker-influenced and reach CSS, so
+  applying them is a security boundary, not a convenience.
+
+`style.ThemeToTokens(t)` flattens a theme to a map keyed by the CSS
+custom-property identifier **without** the leading `--`:
+`"color-primary"`, `"spacing-md"`, `"duration-fast"`, `"tk-kw"`. The value
+is exactly what the `:root` block emits after the colon — `"#4F46E5"`,
+`"8px"`, `"150ms"`. That key is chosen over a Go field-path key because it
+is what the CSS emits, what a UI control edits, and stable across struct
+reorganisations.
+
+`DarkColors` / `DarkCode` (the dark-scheme maps) share their CSS var name
+with the light token but live in a different selector scope, so they are
+flattened under a `dark.` prefix to stay distinct:
+`DarkColors["primary"]` → `"dark.color-primary"`, `DarkCode["kw"]` →
+`"dark.tk-kw"`.
+
+`style.ApplyTokens(base, tokens)` returns a copy of `base` with the
+supplied tokens applied. It **fails closed on every axis**:
+
+- An unknown key is an error — a typo in a theme file is reported, and an
+  embed can't probe for which keys a host accepts.
+- A value must validate for its token's type. Colors accept a bounded
+  grammar (hex, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`/`oklab()`,
+  `color-mix()`, `var(--…)`, and the CSS named colors) and reject
+  everything else. Integer/duration tokens must match their numeric
+  format. Every free-form string (Font, Shadow, Easing, FontSize,
+  CodeColor) is rejected if it contains a declaration-breaking sequence
+  (`;`, `}`, `{`, `/*`, `*/`, `<`, `>`, `\`, a newline, or `url(`).
+
+A value like `red; --x:}body{display:none}` escapes its CSS declaration;
+CSS alone can then exfiltrate via attribute selectors and
+`background-image` URLs. `ApplyTokens` rejects it rather than sanitising —
+never strip, always reject.
+
+Round-trip is exact over `ThemeHash`:
+`ApplyTokens(t, ThemeToTokens(t))` produces a theme with the same hash as
+`t` (identical emitted CSS), so a configurator's save/load cycle changes
+no pixel:
+
+```go
+tokens := style.ThemeToTokens(myTheme)
+// ...edit tokens["color-primary"], tokens["dark.color-primary"], ...
+reApplied, err := style.ApplyTokens(myTheme, tokens)
+if err != nil {
+    return err
+}
+// style.ThemeHash(reApplied) == style.ThemeHash(myTheme)
+```
+
+For an embedded surface, apply the caller's brand tokens, then register
+the result as a theme variant so the surface is served by content hash,
+not by caller-supplied values:
+
+```go
+brand, err := style.ApplyTokens(app.Theme, map[string]string{
+    "color-primary":      customerPrimary,
+    "dark.color-primary": customerPrimaryDark,
+})
+if err != nil {
+    return fmt.Errorf("invalid brand tokens: %w", err)
+}
+hash := host.RegisterThemeVariant(brand) // framework/uihost.UIHost
+// hand `hash` to the themed surface's app.css URL
+```
+
+### Common mistakes
+
+- **Applying caller-supplied theme values without `ApplyTokens`.** A raw
+  `Colors.Primary.Value = req.BrandColor` puts attacker-controlled text
+  directly into CSS. Route every external value through `ApplyTokens` so
+  the bounded grammar and declaration-breaker rejection run.
+- **Expecting `ApplyTokens` to enforce semantic constraints.** It validates
+  type and safety (parseable, not injecting); it does not run
+  `Theme.Validate()`. A spacing of `0px` parses fine but is a layout bug —
+  call `Theme.Validate()` on the result for the name/value sanity checks
+  `WithTheme` runs at boot.
+- **Keying the map by Go field path.** `Colors.Primary` is not a valid key;
+  `color-primary` is. Round-trip through `ThemeToTokens` once to see the
+  exact key set a theme exposes.
+
 ## Per-component knobs — the `--ui-*` variables
 
 Some components expose dimensions or accents that aren't global

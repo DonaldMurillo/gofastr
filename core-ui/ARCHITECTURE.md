@@ -278,7 +278,12 @@ server side and the runtime does the work.
 | `data-fui-poll-src="<url>"` | The GET endpoint the `poll` runtime module fetches on each `data-fui-poll` tick. The response body replaces the parent element's `innerHTML`. Same-origin by default (`credentials: 'same-origin'`); the endpoint should return an HTML fragment, not a full document. Every successful applied tick (page-level here, widget-level `Builder.Poll` alike) increments the shared liveness observable `window.__gofastr.pollStatus` (`{ ticks, lastTickAt }` — one object mutated in place, the poll analog of `sseStatus`); an HTTP-error response counts as a failure and triggers the back-off. |
 
 
-For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Adding a new attribute requires updating this table AND adding a runtime test.
+For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`.
+Adding a new attribute requires updating this table, adding a runtime
+test, AND assigning it an owning fragment in
+`core-ui/runtime/fragments.go` (see [§ Fragments](#fragments-runtime-composition)
+below) — the build fails on an unassigned attribute, so the map cannot
+drift ahead of the source.
 
 **Component-action attributes** (the compiled `data-action` family, distinct
 from the `data-fui-*` runtime primitives above): `data-action="<name>"` on an
@@ -318,6 +323,42 @@ corrupt the region on every failed RPC). `text`-mode regions render a
 human-readable "Error: <status> — <text>" line. This is the
 optimistic-UI invariant: a failed mutation leaves the bound region
 exactly where it was.
+
+### Fragments (runtime composition)
+
+Every `data-fui-*` attribute is owned by exactly one **fragment** — the
+unit the runtime composer (spec: `SPEC-runtime-composer.md`; declaration:
+`core-ui/runtime/fragments.go`) includes or omits per composition. The goal
+is the same as the component-CSS pipeline: ship only the JavaScript a page
+needs. `attrdoc_test.go` fails the build if any attribute in the runtime
+sources lacks an owner, or any declared owner has drifted out of the source.
+
+Two kinds of fragment, and the distinction is a safety rule, not an
+optimization knob:
+
+- **Marker** (`rpc`, `signals`, `compute`, and every `src/*.js` demand
+  module). Behavior is triggered by a `data-fui-*` marker in the DOM, so a
+  composition that omits the fragment self-heals — the kernel's
+  `_scanForModules` sees the marker and demand-loads it. Safe to omit by
+  default; a resolution miss cannot strand a marker.
+- **Boot** (`kernel`, `nav`, `widgets-boot`, `sse`, `boot-embed`). These
+  install listeners or fetch at boot with no marker to recover from —
+  `nav`'s `<a>` hijack, `widgets-boot`'s `/__gofastr/widgets` catalog fetch,
+  `sse`'s `EventSource`. Omitting one is a deliberate, manifest-driven SSR
+  decision (exactly as `intercept` already is at `_scanForModules`). A boot
+  fragment can NEVER be made marker-driven — that is the silent-failure
+  case, a button that does nothing with no error. `kernel` is always
+  present (the substrate: module loader, the `data-fui-comp` CSS scanner,
+  doc state, `window.__gofastr`).
+
+Ownership, not reference, decides the map: an attribute belongs to the
+fragment or module whose code implements its handler. The ~55 attributes
+that appear in BOTH `runtime.js` and a `src/*.js` module are core's
+load/dispatch glue (`_scanForModules`, `dispatchRPC`'s widget-scoping
+reads), not ownership — an attribute owned by a `src/<name>.js` module maps
+to that module. `data-fui-compute` is the one overlap to note: it is owned
+by the `compute` core fragment (which step 2 extracts from today's
+`src/compute.js`), not by the module of the same name.
 
 ### Global document state (`__gofastr.doc`)
 
@@ -477,8 +518,15 @@ client-side with no per-consumer round-trip.
 - **Computed.** `store.Computed` derives a value client-side from dependency
   slices via a host-registered JS reducer (CSP-safe, no `eval`). Register
   reducers on `window.__gofastr._reducers` from a script loaded **after**
-  `runtime.js` (e.g. via `WithExtraScripts`), since the runtime assigns the
-  `__gofastr` namespace wholesale on boot.
+  `runtime.js` (e.g. via `WithExtraScripts`). The runtime is now composed
+  from fragments (`core-ui/runtime/frag/*.js`, see [§ Fragments](#fragments-runtime-composition)):
+  the `kernel` fragment assigns `window.__gofastr` as a fresh object during
+  boot, and `rpc`/`signals`/`nav` extend it via `Object.assign`. A
+  `_reducers` property set before the IIFE runs is therefore replaced —
+  register after `runtime.js` so it survives. (The contract is unchanged
+  from the pre-split "assigns wholesale" wording; the reason is the same —
+  the kernel fragment's `window.__gofastr = {…}` line is the fresh-object
+  assignment that overwrites anything set earlier.)
 
 See `framework/docs/content/signal-store.md` for the full guide.
 

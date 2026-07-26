@@ -211,9 +211,9 @@ func fnLocation(fn func(style.Theme) string) string {
 	return fmt.Sprintf("%s (%s:%d)", rf.Name(), file, line)
 }
 
-// themeHash hashes the theme's deterministic CSS custom properties.
-// Two themes that resolve identically produce the same hash.
-func themeHash(t style.Theme) string {
-	sum := sha256.Sum256([]byte(t.CSSCustomProperties()))
-	return hex.EncodeToString(sum[:6])
-}
+// themeHash delegates to style.ThemeHash. It stays as a local alias because
+// this package's call sites read better unqualified, but the implementation
+// must live in exactly one place: component CSS URLs and app.css URLs are
+// keyed on it, and two hashes that disagreed would serve one theme's
+// stylesheet under another theme's cache entry.
+func themeHash(t style.Theme) string { return style.ThemeHash(t) }
