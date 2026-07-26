@@ -325,11 +325,18 @@ for every operation on an entity that declares none of `OwnerField`,
    `Read` + a real `Create` permission).
 
 Because entity MCP tools dispatch through the router, this gate governs
-them automatically — no separate `mcp.Gated`/`auth.MCPUser` wiring is
-needed for generated CRUD tools (that machinery remains for *custom*
-tools registered directly via `app.MCP.RegisterTool` or
-`Endpoint.MCPHandler`, which bypass route middleware; see
+them automatically — no separate `mcp.WithToolGate`/`auth.MCPUser` wiring
+is needed for generated CRUD tools (that machinery remains for *custom*
+tools registered directly via `app.MCP.RegisterTool`; `Endpoint.MCPHandler`
+twins default to requiring an authenticated caller — see
 [agent-ready](agent-ready.md)).
+
+The entity's auto-generated `/{table}/llm.md` runs the **same** `requireScope`
+chain as `List`. It documents exactly the entity `List` serves, so it answers
+to the same gate: an authenticated caller without the entity's read permission
+gets a 403 on the schema, not just on the rows. The field list is a disclosure
+in its own right — it names every non-`Hidden` column, its type and its enum
+set.
 
 `gofastr generate` prints a warning listing every entity left publicly
 readable/writable (`public: true`), so a generated app never has open
