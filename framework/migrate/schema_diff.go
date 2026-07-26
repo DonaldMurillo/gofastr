@@ -38,7 +38,7 @@ type SchemaChange struct {
 	// Destructive marks a change that can lose data — a DROP COLUMN today
 	// (DROP TABLE in future). ApplySchemaDiff refuses to run destructive
 	// changes unless the caller opts in via ApplySchemaDiffWithOptions, so a
-	// routine `migrate diff --apply` never silently deletes a column. This is
+	// routine boot-time convergence never silently deletes a column. This is
 	// the GORM-style "never drop by default" safety posture.
 	Destructive bool
 }
@@ -61,7 +61,7 @@ func (e *DestructiveChangeError) Error() string {
 // (delegates to the same builder AutoMigrate uses).
 func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]SchemaChange, error) {
 	dialect := DetectDialect(db)
-	all := registry.All()
+	all := UnionEntities(registry)
 
 	// Walk entities in topo order so referenced tables get diffed first.
 	ordered, err := topoSortEntities(all)

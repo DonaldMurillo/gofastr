@@ -68,8 +68,6 @@ func TestCLI_PG_Force(t *testing.T) {
 	}
 }
 
-// CLI `migrate diff --apply` against a live Postgres applies the declarative
-// delta and a re-diff is idempotent (up to date).
 // CLI `migrate status` renders a dirty migration (⚠ DIRTY) on Postgres.
 func TestCLI_PG_StatusShowsDirty(t *testing.T) {
 	dsn := pgtest.FreshDatabaseDSN(t)

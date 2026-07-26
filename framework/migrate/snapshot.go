@@ -54,7 +54,7 @@ func SnapshotFromRegistry(reg entity.Registry, dialect Dialect) SchemaSnapshot {
 func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 	snap := SchemaSnapshot{Tables: map[string]map[string]string{}}
 	if plan.Registry != nil {
-		all := plan.Registry.All()
+		all := UnionEntities(plan.Registry)
 		for _, ent := range all {
 			if ent.Config.Unmanaged {
 				continue // views / external tables aren't part of the table snapshot
@@ -111,7 +111,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	all := map[string]*entity.Entity{}
 	var ordered []*entity.Entity
 	if plan.Registry != nil {
-		all = plan.Registry.All()
+		all = UnionEntities(plan.Registry)
 		ordered, err = topoSortEntities(all)
 		if err != nil {
 			return "", "", SchemaSnapshot{}, err

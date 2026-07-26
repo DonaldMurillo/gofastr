@@ -140,8 +140,16 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	}
 	dialect := DetectDialect(db)
 
+	// Route through the version union, NOT Registry.All(). All() returns one
+	// representative per name, so a Seed declared only on a non-representative
+	// version is invisible — hasSeed stays false and the seed silently never
+	// runs. The union propagates the sole seed (registration guarantees at
+	// most one) into the merged entity regardless of which version is the
+	// representative (F11).
+	merged := UnionEntities(registry)
+
 	hasSeed := false
-	for _, ent := range registry.All() {
+	for _, ent := range merged {
 		if ent.Config.Seed != nil {
 			hasSeed = true
 			break
@@ -165,7 +173,7 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	poolSize := db.Stats().MaxOpenConnections
 	if dialect == DialectPostgres && poolSize != 1 {
 		return coremig.WithAdvisoryLockKey(ctx, db, dialect, coremig.SeedAdvisoryLockKey, func(_ *sql.Conn) error {
-			return runSeedsBody(ctx, db, dialect, registry)
+			return runSeedsBody(ctx, db, dialect, merged)
 		})
 	}
 	if dialect == DialectPostgres && poolSize == 1 {
@@ -180,13 +188,15 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 		// weaken the single-run guarantee.
 		slog.Default().Warn("seed advisory lock skipped: Postgres pool has MaxOpenConns(1), so startup seeds are NOT serialized across replicas — raise MaxOpenConns above 1 to enable cross-replica seed coordination")
 	}
-	return runSeedsBody(ctx, db, dialect, registry)
+	return runSeedsBody(ctx, db, dialect, merged)
 }
 
 // runSeedsBody is the ensure-ledger → read-ledger → run → record loop,
 // extracted so RunSeeds can wrap it in the advisory lock on Postgres and
 // call it directly on SQLite. db is the pool; seed funcs receive it as-is.
-func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, registry entity.Registry) error {
+// `all` is the version-union map (one entity per name, with the sole Seed
+// propagated) computed by RunSeeds via UnionEntities.
+func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, all map[string]*entity.Entity) error {
 	logger := seedLoggerFromCtx(ctx)
 	if err := ensureSeedLedger(ctx, db, dialect); err != nil {
 		return fmt.Errorf("seed: ensure ledger: %w", err)
@@ -198,7 +208,7 @@ func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, registry ent
 	}
 	logger.Debug("seed ledger read", "already_seeded", len(seeded))
 
-	ordered, err := topoSortEntities(registry.All())
+	ordered, err := topoSortEntities(all)
 	if err != nil {
 		return err
 	}

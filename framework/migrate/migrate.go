@@ -60,7 +60,7 @@ func AutoMigrate(db *sql.DB, registry entity.Registry) error {
 // entities: missing tables are created, and a field declared on an entity
 // whose existing table lacks the column is added via ALTER TABLE ADD COLUMN
 // (additive only — boot never drops, renames, or retypes; those stay behind
-// `migrate diff --apply`). Entities are migrated in dependency order so FK
+// an explicit AllowDestructive diff apply). Entities are migrated in dependency order so FK
 // targets exist before referencing tables, and CREATE TABLE/INDEX IF NOT
 // EXISTS keeps re-runs safe.
 //
@@ -102,7 +102,12 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	var ordered []*entity.Entity
 	all := map[string]*entity.Entity{}
 	if plan.Registry != nil {
-		all = plan.Registry.All()
+		// One entity per name, but with the field/index/relation set drawn
+		// from the UNION of every registered version. Two versions of one
+		// entity share one DB table; the table is migrated once, from the
+		// union, so a column only v2 declares is created at boot exactly as
+		// a new column on a single-version entity is. See UnionEntities.
+		all = UnionEntities(plan.Registry)
 		var err error
 		ordered, err = topoSortEntities(all)
 		if err != nil {
@@ -377,9 +382,12 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 // addMissingColumns converges an EXISTING table additively: every field the
 // entity declares that the live table lacks is added via ALTER TABLE ADD
 // COLUMN — the exact DDL the declarative diff emits (shared
-// diffEntityFromLive path, so boot and `migrate diff` can never disagree).
-// Boot never drops, renames, or retypes: destructive changes are filtered
-// out here and remain behind `migrate diff --apply --allow-destructive`.
+// diffEntityFromLive path, so boot and the diff can never disagree).
+// Boot never drops, renames, or retypes: destructive changes are filtered out
+// here and remain behind ApplySchemaDiffWithOptions with AllowDestructive set.
+// (The old `migrate diff --apply` CLI path is gone — it applied a blueprint
+// straight onto a live DB; `gofastr migrate generate` emits a reviewable
+// migration instead.)
 //
 // preRead was captured BEFORE the advisory lock, so when it shows drift the
 // columns are re-read on the lock-holding connection and the diff recomputed:
@@ -536,6 +544,159 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 			safeRelFK, safeTargetTable, safeTargetPK))
 	}
 	return out, nil
+}
+
+// UnionEntities returns one entity per name, with the field, index, relation,
+// and seed sets drawn from the UNION of every registered version of that
+// name. Two versions of one entity share one DB table; the table is migrated
+// once, from the union, so a column only v2 declares is treated as an
+// additive change and created at boot — exactly as a new column on a
+// single-version entity is today.
+//
+// This is the single shared helper every consumer of the multi-version
+// registry routes through. Migration (AutoMigrate/DiffSchema), the schema
+// snapshot, the seed runner, and data export all call it so they agree on
+// what "all versions of this physical entity" means — iterating
+// Registry.All() instead returns one representative per name and silently
+// drops a field, index, or seed declared only on a non-representative
+// version.
+//
+// Single-version names are returned as-is (the registered pointer,
+// unmodified) so the single-version migration path is byte-for-byte
+// unchanged. Multi-version names get a shallow-cloned entity whose
+// Config.Fields / Indices / Relations are the deduplicated union; the
+// base is the representative (unversioned if present, else the
+// lex-first version) so Table, PrimaryKey, Timestamps, SoftDelete, etc.
+// come from a real version rather than a synthesis.
+//
+// Conflict detection at registration (Registry.checkColumnConflicts +
+// checkVersionCompat) guarantees no two versions declare the same column,
+// index, foreign key, table, or managed posture with incompatible physical
+// definitions, and at most one declares a Seed — so the union is always
+// well-defined: where two versions both declare something, either definition
+// is DDL-equivalent.
+func UnionEntities(reg entity.Registry) map[string]*entity.Entity {
+	sorted := reg.AllSorted()
+	byName := make(map[string][]*entity.Entity, len(sorted))
+	for _, e := range sorted {
+		byName[e.Config.Name] = append(byName[e.Config.Name], e)
+	}
+	out := make(map[string]*entity.Entity, len(byName))
+	for name, versions := range byName {
+		if len(versions) == 1 {
+			out[name] = versions[0]
+			continue
+		}
+		out[name] = mergeVersions(versions)
+	}
+	return out
+}
+
+// mergeVersions builds the synthetic merged entity for one name that has
+// multiple registered versions. The base (Table, PrimaryKey, scope flags,
+// Unmanaged) comes from the representative — unversioned if present,
+// otherwise versions[0] (AllSorted orders "" before "/api/v1" etc., so the
+// lex-first version is versions[0] when none is unversioned). Fields,
+// Indices, Relations, and Seed are the deduplicated union across every version.
+func mergeVersions(versions []*entity.Entity) *entity.Entity {
+	base := versions[0]
+	for _, e := range versions {
+		if e.Version == "" {
+			base = e
+			break
+		}
+	}
+	merged := *base // shallow clone — only Config is rebuilt below
+	merged.Config = mergeEntityConfig(base.Config, versions)
+	return &merged
+}
+
+// mergeEntityConfig returns a copy of base with Fields, Indices, Relations,
+// and Seed replaced by the deduplicated union across all versions. The
+// first declaration wins on a name clash (for fields and indices) or on a
+// ForeignKey clash (for relations); the sole Seed (at most one — enforced at
+// registration) is propagated from whichever version declares it. Conflict
+// detection at registration already guaranteed those clashing declarations
+// are DDL-equivalent, so "first wins" is the same as "any wins".
+func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) entity.EntityConfig {
+	cfg := base // copy — slices below are replaced, not aliased
+
+	// Fields: union by lowercased name. First occurrence wins.
+	seenField := make(map[string]bool)
+	fields := make([]schema.Field, 0, len(base.Fields))
+	for _, v := range versions {
+		for _, f := range v.Config.Fields {
+			key := strings.ToLower(f.Name)
+			if seenField[key] {
+				continue
+			}
+			seenField[key] = true
+			fields = append(fields, f)
+		}
+	}
+	cfg.Fields = fields
+
+	// Indices: union by name. An unnamed index is deduped by the same
+	// synthesised slug indexDDL would produce, so two versions declaring
+	// the same unnamed index do not double-emit. CREATE INDEX IF NOT
+	// EXISTS makes any residual duplicate harmless, but deduping keeps the
+	// emitted DDL set clean.
+	seenIdx := make(map[string]bool)
+	var indices []entity.Index
+	for _, v := range versions {
+		for _, idx := range v.Config.Indices {
+			name := idx.Name
+			if name == "" && len(idx.Columns) > 0 {
+				name = "idx_" + v.Config.Table + "_" + strings.Join(idx.Columns, "_")
+			}
+			if name != "" && seenIdx[name] {
+				continue
+			}
+			if name != "" {
+				seenIdx[name] = true
+			}
+			indices = append(indices, idx)
+		}
+	}
+	cfg.Indices = indices
+
+	// Relations: union by ForeignKey (the physical column). foreignKeyClauses
+	// already dedupes by ForeignKey for the CREATE TABLE FK clauses, so
+	// duplicates are harmless, but unioning here keeps the merged entity's
+	// relation list honest for topo-sort (a BelongsTo in any version means
+	// the dependency must be respected at migrate time).
+	seenRel := make(map[string]bool)
+	var rels []entity.Relation
+	for _, v := range versions {
+		for _, rel := range v.Config.Relations {
+			key := rel.ForeignKey
+			if key == "" {
+				key = rel.Name // HasMany/HasOne with no FK column — dedupe by logical name
+			}
+			if seenRel[key] {
+				continue
+			}
+			seenRel[key] = true
+			rels = append(rels, rel)
+		}
+	}
+	cfg.Relations = rels
+
+	// Seed: at most one version may declare a Seed (enforced at registration
+	// by checkVersionCompat), so propagate the sole seed — plus its SeedFS /
+	// SeedPath context — into the merged config regardless of which version is
+	// the representative. Without this, a seed declared only on a
+	// non-representative version would be invisible to RunSeeds, which iterates
+	// this union rather than Registry.All() (F11).
+	for _, v := range versions {
+		if v.Config.Seed != nil {
+			cfg.Seed = v.Config.Seed
+			cfg.SeedFS = v.Config.SeedFS
+			cfg.SeedPath = v.Config.SeedPath
+		}
+	}
+
+	return cfg
 }
 
 // topoSortEntities orders entities so referenced tables come before their
