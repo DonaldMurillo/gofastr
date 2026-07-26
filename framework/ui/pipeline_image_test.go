@@ -90,20 +90,33 @@ func TestPipelineImageEmitsOneSourcePerType(t *testing.T) {
 	}
 }
 
-func TestPipelineImageEmitsPlaceholderDataURL(t *testing.T) {
+func TestPipelineImageRendersPlaceholderDataURL(t *testing.T) {
 	h := PipelineImage(PipelineImageConfig{
 		Fallback: "/p.jpg", Alt: "x", Width: 100, Height: 50,
 		Placeholder: "data:image/jpeg;base64,Zm9v",
 	})
-	mustContain(t, h, `data-placeholder="data:image/jpeg;base64,Zm9v"`)
+	// The placeholder is a stacked element, not an attribute for someone
+	// else to hydrate — see image_placeholder_test.go for the full contract.
+	mustContain(t, h, `class="ui-image__lqip"`)
+	mustContain(t, h, `src="data:image/jpeg;base64,Zm9v"`)
 }
 
-func TestPipelineImageEmitsBlurHashAttr(t *testing.T) {
+// A BlurHash is not an image until it is decoded; framework/image
+// .BlurHashDataURL does that. Handing the raw hash to the component used to
+// emit a data-blurhash attribute that nothing consumed, so it silently did
+// nothing at all.
+func TestPipelineImageRefusesRawBlurHash(t *testing.T) {
 	h := PipelineImage(PipelineImageConfig{
 		Fallback: "/p.jpg", Alt: "x", Width: 100, Height: 50,
 		Placeholder: "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
 	})
-	mustContain(t, h, `data-blurhash="LEHV6nWB2yk8pyo0adR*.7kCMdnj"`)
+	out := string(h)
+	if strings.Contains(out, "LEHV6nWB") {
+		t.Errorf("raw BlurHash leaked into the markup: %s", out)
+	}
+	if strings.Contains(out, "ui-image__lqip") {
+		t.Errorf("raw BlurHash must not render a placeholder: %s", out)
+	}
 }
 
 func TestPipelineImageHonoursSizes(t *testing.T) {

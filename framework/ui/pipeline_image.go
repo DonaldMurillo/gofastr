@@ -83,10 +83,18 @@ type PipelineImageConfig struct {
 	// Sizes is the CSS sizes attribute. Default "100vw".
 	Sizes string
 
-	// Placeholder accepts either a data: URL (LQIP) or a BlurHash
-	// string. The component sets data-placeholder for data: URLs and
-	// data-blurhash for anything else. Consumers wire those attributes
-	// to a CSS background or a JS hydrator as they see fit.
+	// Placeholder, when set to an inline raster data: URI, renders a
+	// low-fidelity image behind this one so something content-shaped is
+	// visible before the real pixels arrive.
+	//
+	// Produce one with framework/image: BlurHashDataURL(hash, …) to render
+	// a stored BlurHash — the natural companion to VariantResult.BlurHash —
+	// or pass VariantResult.Placeholder straight through for an LQIP.
+	// A bare BlurHash string is not accepted; it is not an image until it
+	// is decoded.
+	//
+	// Values that are not usable inline images are dropped and the image
+	// renders without a placeholder.
 	Placeholder string
 
 	Eager        bool
@@ -124,6 +132,28 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 		panic("ui: PipelineImage requires Alt (or add ui-image--decorative to Class for intentional decorative images with alt=\"\")")
 	}
 
+	// Same URL allow-list OptimizedImage applies: drop unsafe schemes on
+	// the fallback and on every source, replacing an unusable fallback with
+	// the framework's 1x1 stub so the surrounding layout survives. This
+	// component renders storage URLs that often originate in user data, so
+	// it needs the guard at least as much as OptimizedImage does.
+	if safe := safeImageURL(cfg.Fallback); safe != "" {
+		cfg.Fallback = safe
+	} else {
+		cfg.Fallback = "/__gofastr/blank.png"
+	}
+	if len(cfg.Sources) > 0 {
+		filtered := make([]PipelineSource, 0, len(cfg.Sources))
+		for _, s := range cfg.Sources {
+			if safeImageURL(s.URL) != "" {
+				filtered = append(filtered, s)
+			}
+		}
+		cfg.Sources = filtered
+	}
+
+	lqip := placeholderImage(cfg.Placeholder)
+
 	cls := "ui-image"
 	if cfg.Fit != ImageFitCover {
 		cls += " ui-image--fit-" + string(cfg.Fit)
@@ -133,6 +163,9 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	}
 	if cfg.Rounded {
 		cls += " ui-image--rounded"
+	}
+	if lqip != "" {
+		cls += " ui-image--placeheld"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -160,13 +193,6 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	if cfg.HighPriority {
 		imgAttrs["fetchpriority"] = "high"
 	}
-	if cfg.Placeholder != "" {
-		if strings.HasPrefix(cfg.Placeholder, "data:") {
-			imgAttrs["data-placeholder"] = cfg.Placeholder
-		} else {
-			imgAttrs["data-blurhash"] = cfg.Placeholder
-		}
-	}
 
 	img := html.Image(html.ImageConfig{
 		Src:        cfg.Fallback,
@@ -186,9 +212,12 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	children = append(children, img)
 	picture := render.Tag("picture", nil, children...)
 
+	// The placeholder is emitted before the picture so the real image paints
+	// over it in DOM order — both are positioned, so tree order decides,
+	// with no z-index needed.
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
-	}, picture))
+	}, lqip, picture))
 }
 
 type pipelineGroup struct {
