@@ -181,9 +181,16 @@ func (g *RouteGroup) Group(prefix string, opts ...GroupOption) *RouteGroup {
 	return child
 }
 
-// Prefix returns the full URL prefix for this group.
+// Prefix returns the full URL prefix for this group, composing every
+// enclosing group's prefix.
+//
+// It used to return only this group's own segment, so a nested
+// app.Group("/api").Group("/v2") reported "/v2". Callers that address the
+// group's routes by URL — the entity route-collision pre-flight, and the MCP
+// tools that re-dispatch through the router — were checking and dispatching
+// against a path that does not exist.
 func (g *RouteGroup) Prefix() string {
-	return g.prefix
+	return g.router_().Prefix()
 }
 
 // OpenAPITag returns the configured OpenAPI tag, or empty string.

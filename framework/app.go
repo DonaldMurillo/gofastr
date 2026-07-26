@@ -988,6 +988,14 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 			crudHandler.Outbox = a.outbox
 		}
 		crudHandler.Registry = a.Registry
+		// The MCP tools re-dispatch through the router — that is what makes
+		// them inherit auth, owner and tenant scoping rather than
+		// re-implementing it — so they must address the path the routes are
+		// actually mounted at. A group's sub-router shares the parent mux and
+		// registers PREFIXED patterns, so dispatching to the bare "/table"
+		// 404s. App.Entity sets this from the API prefix; the grouped path
+		// left it empty.
+		crudHandler.BasePath = g.Prefix()
 
 		// Register CRUD routes on the group's sub-router.
 		// The group's prefix is already baked into the sub-router,
