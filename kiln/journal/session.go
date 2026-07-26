@@ -11,6 +11,14 @@ type Session struct {
 	World *world.World     `json:"world"`
 	Chat  []ChatEvent      `json:"chat"`
 	Plans map[string]*Plan `json:"plans"`
+
+	// Consumed records which (planID, op:name) authorizations have already
+	// been spent, so an approved plan authorizes its target exactly once.
+	//
+	// It is derived from the log during Apply rather than held per-process:
+	// the live path used to track this in a map that replay never rebuilt,
+	// so every restart re-armed every consumed plan.
+	Consumed map[string]map[string]bool `json:"consumed,omitempty"`
 }
 
 // ChatEvent is one entry on the conversation timeline. Exactly one of
@@ -48,7 +56,8 @@ type Plan struct {
 // NewSession returns an empty Session with an empty world.
 func NewSession() *Session {
 	return &Session{
-		World: world.New(),
-		Plans: map[string]*Plan{},
+		World:    world.New(),
+		Plans:    map[string]*Plan{},
+		Consumed: map[string]map[string]bool{},
 	}
 }

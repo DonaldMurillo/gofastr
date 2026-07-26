@@ -32,7 +32,7 @@ import (
 //	    id              TEXT PRIMARY KEY,
 //	    subscriber_id   TEXT NOT NULL,
 //	    event           TEXT NOT NULL,
-//	    payload         BLOB NOT NULL,
+//	    payload         BLOB NOT NULL,           -- BYTEA on postgres
 //	    attempts        INTEGER NOT NULL,
 //	    status          TEXT NOT NULL,
 //	    last_error      TEXT NOT NULL,
@@ -122,9 +122,13 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 }
 
 func (s *SQLStore) ensureTables() error {
-	ts := "DATETIME"
+	ts, blob := "DATETIME", "BLOB"
 	if s.dialect == "postgres" {
-		ts = "TIMESTAMPTZ"
+		// Postgres has no BLOB type; the byte-array spelling is BYTEA. The
+		// timestamp column was already switched here, which is what made
+		// leaving the payload column behind a construction-time failure on
+		// every Postgres app rather than a subtle storage difference.
+		ts, blob = "TIMESTAMPTZ", "BYTEA"
 	}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -139,14 +143,14 @@ func (s *SQLStore) ensureTables() error {
 			id              TEXT PRIMARY KEY,
 			subscriber_id   TEXT NOT NULL,
 			event           TEXT NOT NULL,
-			payload         BLOB NOT NULL,
+			payload         %s NOT NULL,
 			attempts        INTEGER NOT NULL,
 			status          TEXT NOT NULL,
 			last_error      TEXT NOT NULL,
 			next_attempt_at %s,
 			created_at      %s NOT NULL,
 			updated_at      %s NOT NULL
-		)`, s.delTable, ts, ts, ts),
+		)`, s.delTable, blob, ts, ts, ts),
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_due_idx ON %s (status, next_attempt_at)",
 			s.delTable, s.delTable),
 	}

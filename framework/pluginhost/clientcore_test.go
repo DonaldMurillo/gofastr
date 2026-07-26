@@ -30,20 +30,23 @@ func TestBrokerJS_ValidatesMessageSource(t *testing.T) {
 }
 
 // (2) The iframe sandbox attribute is set from the authoritative sandboxFor
-// (pinned separately in TestBrokerJS_SandboxForIsAuthoritative) and the
-// same-origin token must appear NOWHERE as a literal that could be emitted.
+// (pinned separately in TestBrokerJS_SandboxForIsAuthoritative), which filters
+// through an allow-list — so allow-same-origin must appear NOWHERE in a
+// grantable position. Under an allow-list "grantable" means a key in
+// ALLOWED_SANDBOX; prose mentioning the token is inert.
 func TestBrokerJS_NeverEmitsAllowSameOrigin(t *testing.T) {
 	js := string(brokerJSBytes)
-	// allow-same-origin may appear ONLY inside the SAME_ORIGIN_COLLAPSING
-	// filter (as a key to strip), never in an additive/emitting position.
 	for _, line := range strings.Split(js, "\n") {
-		if !strings.Contains(line, "allow-same-origin") {
-			continue
+		code := strings.TrimSpace(line)
+		if idx := strings.Index(code, "//"); idx >= 0 {
+			code = strings.TrimSpace(code[:idx]) // strip trailing comment
 		}
-		if strings.Contains(line, "SAME_ORIGIN_COLLAPSING") {
-			continue // the strip-filter declaration — allowed
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue // whole-line comment
 		}
-		t.Errorf("allow-same-origin referenced outside the strip filter: %q", strings.TrimSpace(line))
+		if strings.Contains(code, "allow-same-origin") {
+			t.Errorf("allow-same-origin referenced in executable code: %q", strings.TrimSpace(line))
+		}
 	}
 }
 

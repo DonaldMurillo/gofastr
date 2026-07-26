@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -21,6 +22,10 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		description string
 		schema      map[string]any
 		handler     func(ctx context.Context, params map[string]any) (any, error)
+		// gate, when set, is a per-caller precondition. It also decides
+		// whether the tool is visible in tools/list, so a caller who cannot
+		// invoke it does not learn it exists.
+		gate func(ctx context.Context) error
 	}{
 		{
 			name:        "log_recent",
@@ -65,6 +70,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 			description string
 			schema      map[string]any
 			handler     func(ctx context.Context, params map[string]any) (any, error)
+			gate        func(ctx context.Context) error
 		}{
 			name:        "log_set_level",
 			description: "Change the minimum log level emitted by the fan-out handler. Useful for temporarily switching to DEBUG during an investigation, then restoring the previous level (returned in `.previous_level`). Returns the previous level. Only registered when log.Config.AllowMCPMutation is true.",
@@ -76,10 +82,20 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 				},
 			},
 			handler: p.toolSetLevel,
+			// This tool mutates the running app's observability: an
+			// unauthenticated caller could flip the app to DEBUG (log
+			// volume, and whatever DEBUG lines carry) or to ERROR to go
+			// quiet before doing something else. It registers directly on
+			// the MCP server, so no route middleware ever runs for it.
+			gate: p.setLevelGate(),
 		})
 	}
 	for _, t := range tools {
-		if err := app.MCP.RegisterTool(t.name, t.description, t.schema, t.handler); err != nil {
+		var opts []mcp.ToolOption
+		if t.gate != nil {
+			opts = append(opts, mcp.WithToolGate(t.gate))
+		}
+		if err := app.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("register %s: %w", t.name, err)
 		}
 	}
@@ -336,4 +352,22 @@ func levelAtLeast(entry map[string]any, min slog.Level) bool {
 		return false
 	}
 	return lv >= min
+}
+
+// setLevelGate returns the precondition log_set_level runs behind, or nil
+// when the tool is dev-implied.
+//
+// The tool mutates the running app's observability: an unauthenticated caller
+// could flip it to DEBUG (log volume, and whatever DEBUG lines carry) or to
+// ERROR to go quiet before doing something else. It registers directly on the
+// MCP server, so no route middleware ever runs for it.
+//
+// Under `gofastr dev` there is no auth to satisfy, so a gate would only lock
+// the developer's own agent out — the same call framework's control tools
+// make. Dev exposure is bounded by the loopback bind instead.
+func (p *Plugin) setLevelGate() func(ctx context.Context) error {
+	if p.mutationDevImplied {
+		return nil
+	}
+	return framework.MCPRequireUser()
 }

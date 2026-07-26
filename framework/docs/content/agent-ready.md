@@ -198,12 +198,42 @@ running app (persisted through the module store, dependency-checked). Keep
 it off any `/mcp` reachable by untrusted callers.
 
 When you opt in explicitly, both control tools require an
-**authenticated caller**: they run behind an `mcp.Gated` precondition
-that refuses a request with no identity on its context. Make sure the
-app's session/JWT middleware runs on the `/mcp` route, or every call
-comes back asking for a caller. The gate asks only for an identity —
-the framework layer cannot know your role vocabulary — so wrap your own
-handlers with `mcp.Gated(auth.MCPRole("admin"), …)` when you want more.
+**authenticated caller**: they run behind an `mcp.WithToolGate`
+precondition that refuses a request with no identity on its context. Make
+sure the app's session/JWT middleware runs on the `/mcp` route, or every
+call comes back asking for a caller. The gate asks only for an identity —
+the framework layer cannot know your role vocabulary — so pass
+`auth.MCPRole("admin")` when you want more.
+
+A gated tool is also **hidden from `tools/list`** for callers who cannot
+invoke it. That matters more than it sounds: `tools/list` used to run with
+no gate at all, so an anonymous POST came back with every tool's
+`inputSchema` — and for entity CRUD tools those schemas are built from live
+entity definitions, naming every entity and every non-`Hidden` field with
+its type and enum set. The call refused; the schema was already out.
+
+Prefer `mcp.WithToolGate(gate)` as a `RegisterTool` option over the older
+`mcp.Gated(gate, handler)` wrapper. `Gated` wraps the handler, so it only
+ever reached `tools/call` — the listing never consulted it.
+
+```go
+app.MCP.RegisterTool("orders_refund", "…", schema, refundHandler,
+    mcp.WithToolGate(auth.MCPRole("support")))
+```
+
+When the whole endpoint is private, close it in one place instead:
+
+```go
+framework.NewApp(
+    framework.WithMCP(),
+    framework.WithMCPGate(framework.MCPRequireUser()),
+)
+```
+
+`WithMCPGate` covers `tools/list`, `tools/call`, `resources/list` and
+`resources/read`. The `initialize` handshake and `ping` stay open by
+design — they carry only the protocol version, capability booleans and the
+server name, and a client that cannot handshake cannot present credentials.
 
 The `gofastr dev` loop is exempt: it turns these tools on with no auth
 configured at all, so a gate would only lock the dev loop out of its own
@@ -219,9 +249,28 @@ through the router, so session/JWT auth, owner scoping, and RBAC apply
 exactly as they do over HTTP (the caller's Cookie/Authorization from the `/mcp`
 request carries through). Directly registered tools — custom
 `app.MCP.RegisterTool` handlers and `Endpoint.MCPHandler` twins — run
-without route middleware; gate them per-caller with `mcp.Gated` +
-battery/auth's `auth.MCPUser()` / `auth.MCPRole(...)` (see
-[plugins](plugins.md)).
+without route middleware, so they carry their own gate.
+
+**`Endpoint.MCPHandler` twins default to requiring an authenticated
+caller.** An `Endpoint` has two front doors for one operation: `Handler`
+inherits the route's middleware chain, `MCPHandler` does not. An endpoint
+behind `auth.RequireRole("editor")` was therefore role-checked over HTTP
+and ungated over MCP. Declare something stricter with
+`Endpoint.MCPGate`, or opt out with `Endpoint.MCPPublic: true` for an
+endpoint that really is anonymous over HTTP too:
+
+```go
+entity.Endpoint{
+    Method: "POST", Path: "{id}/publish", MCP: true,
+    Handler:    publishHTTP,
+    MCPHandler: publishTool,
+    MCPGate:    auth.MCPRole("editor"),   // else: any authenticated caller
+}
+```
+
+For your own `RegisterTool` calls, gate them per-caller with
+`mcp.WithToolGate` + battery/auth's `auth.MCPUser()` / `auth.MCPRole(...)`
+(see [plugins](plugins.md)).
 
 Process modules (issue `#37`) add a third tool kind alongside the entity
 CRUD tools and directly-registered handlers. Each tool a process module

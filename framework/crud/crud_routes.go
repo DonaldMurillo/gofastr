@@ -7,9 +7,15 @@ import (
 
 // registerLLMMDRoutes registers the /{path}/llm.md documentation endpoint for
 // a single entity. Called automatically by RegisterCrudRoutes.
-func registerLLMMDRoutes(r *router.Router, ent *entity.Entity, path string) {
+//
+// It mounts the SCOPE-AWARE handler: the docs describe exactly the entity the
+// sibling List route serves, so they answer to the same gate. Mounting the
+// bare LLMMDHandler here checked only for a session, which let an
+// authenticated caller with no read permission fetch the schema of an entity
+// whose rows they get a 403 on.
+func registerLLMMDRoutes(r *router.Router, ch *CrudHandler, path string) {
 	path = NormalizePath(path)
-	r.Get(path+"/llm.md", LLMMDHandler(ent))
+	r.Get(path+"/llm.md", LLMMDHandlerFor(ch))
 }
 
 // CrudRouteOptions controls which routes are registered by RegisterCrudRoutes.
@@ -60,7 +66,7 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opt
 
 	// LLM-friendly documentation endpoint
 	if !opt.NoLLMMD {
-		registerLLMMDRoutes(r, handler.Entity, path)
+		registerLLMMDRoutes(r, handler, path)
 	}
 }
 

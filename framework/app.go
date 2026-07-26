@@ -988,6 +988,14 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 			crudHandler.Outbox = a.outbox
 		}
 		crudHandler.Registry = a.Registry
+		// The MCP tools re-dispatch through the router — that is what makes
+		// them inherit auth, owner and tenant scoping rather than
+		// re-implementing it — so they must address the path the routes are
+		// actually mounted at. A group's sub-router shares the parent mux and
+		// registers PREFIXED patterns, so dispatching to the bare "/table"
+		// 404s. App.Entity sets this from the API prefix; the grouped path
+		// left it empty.
+		crudHandler.BasePath = g.Prefix()
 
 		// Register CRUD routes on the group's sub-router.
 		// The group's prefix is already baked into the sub-router,
@@ -1040,7 +1048,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 			if description == "" {
 				description = method + " " + g.Prefix() + path
 			}
-			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler); err != nil {
+			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -1581,7 +1589,13 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		if method == "" {
 			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
 		}
-		path := openapi.EntityEndpointPath(ent, endpoint.Path)
+		// path is where the endpoint is mounted (prefix applied for relative
+		// paths); specPath is the prefix-relative form the OpenAPI spec uses.
+		// The auto-generated tool name is derived from specPath so it keeps
+		// matching the spec's operationId — the prefix moves the route, not
+		// the endpoint's identity.
+		path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
+		specPath := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
 			a.router.Handle(method, path, endpoint.Handler)
 		}
@@ -1591,18 +1605,35 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			}
 			name := endpoint.Name
 			if name == "" {
-				name = openapi.DefaultEndpointToolName(ent.GetName(), method, path)
+				name = openapi.DefaultEndpointToolName(ent.GetName(), method, specPath)
 			}
 			description := endpoint.Description
 			if description == "" {
 				description = method + " " + path
 			}
-			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler); err != nil {
+			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(endpoint)...); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// endpointMCPOptions returns the registration options for an Endpoint's MCP
+// twin. An Endpoint's two front doors do not get the same protection for
+// free: Handler inherits the route's middleware chain, MCPHandler is
+// registered straight onto the MCP server and sees none of it. So the twin
+// defaults to requiring an authenticated caller, and an endpoint that really
+// is anonymous says so with MCPPublic.
+func endpointMCPOptions(ep entity.Endpoint) []mcp.ToolOption {
+	switch {
+	case ep.MCPGate != nil:
+		return []mcp.ToolOption{mcp.WithToolGate(ep.MCPGate)}
+	case ep.MCPPublic:
+		return nil
+	default:
+		return []mcp.ToolOption{mcp.WithToolGate(MCPRequireUser())}
+	}
 }
 
 // openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to

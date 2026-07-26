@@ -25,8 +25,8 @@ type toolsCallResult struct {
 }
 
 // handleToolsList returns all registered tools.
-func (s *Server) handleToolsList(_ context.Context, req Request) Response {
-	tools := s.listTools()
+func (s *Server) handleToolsList(ctx context.Context, req Request) Response {
+	tools := s.listTools(ctx)
 	return newSuccessResponse(req.ID, toolsListResult{Tools: tools})
 }
 

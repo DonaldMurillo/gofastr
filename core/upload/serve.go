@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // scriptableHead reports whether a sniffed content type is one a
@@ -52,6 +53,10 @@ func scriptableExt(key string) bool {
 //     backend ([LocalStorage]'s sanitizeKey is the single enforcement
 //     point); the handler performs no path manipulation of its own and
 //     echoes no filesystem path on any error.
+//   - When the backend implements [RangeGetter], `Range:` requests are
+//     answered with 206 and Accept-Ranges is advertised, so an interrupted
+//     download of a large object resumes instead of restarting. Backends
+//     that decline the capability serve whole bodies exactly as before.
 func ServeHandler(storage Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -63,6 +68,21 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 		key := r.PathValue("key")
 		if key == "" {
 			key = strings.TrimPrefix(r.URL.Path, "/")
+		}
+
+		// A backend that implements RangeGetter hands back a seekable
+		// reader, which is what http.ServeContent needs to answer a Range
+		// request. Backends that decline fall through to the whole-body
+		// path below.
+		if rg, ok := storage.(RangeGetter); ok {
+			rs, err := rg.GetRange(r.Context(), key)
+			if err != nil {
+				serveStoreError(w, err)
+				return
+			}
+			defer rs.Close()
+			serveSeekable(w, r, key, rs)
+			return
 		}
 
 		rc, err := storage.Get(r.Context(), key)
@@ -82,18 +102,8 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 			return
 		}
 		head = head[:n]
-		contentType := http.DetectContentType(head)
 
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		if scriptableHead(contentType) || scriptableExt(key) {
-			// Stored-XSS guard: never let a browser render uploaded
-			// HTML/SVG. Force a neutral, downloadable representation.
-			// SVG sniffs as text/plain, so the key's extension is the
-			// reliable "derived" signal for it.
-			contentType = "application/octet-stream"
-			w.Header().Set("Content-Disposition", "attachment")
-		}
-		w.Header().Set("Content-Type", contentType)
+		setServeHeaders(w, key, http.DetectContentType(head))
 
 		if r.Method == http.MethodHead {
 			w.WriteHeader(http.StatusOK)
@@ -103,6 +113,46 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.Copy(w, io.MultiReader(bytes.NewReader(head), rc))
 	}
+}
+
+// serveSeekable sniffs the head, rewinds, and hands the reader to
+// http.ServeContent, which owns Range/If-Range/206/Accept-Ranges. The
+// content-type headers are set first: ServeContent only guesses a type when
+// the header is unset, so the sniffed value and the stored-XSS guard both
+// survive.
+func serveSeekable(w http.ResponseWriter, r *http.Request, key string, rs io.ReadSeeker) {
+	head := make([]byte, 512)
+	n, readErr := io.ReadFull(rs, head)
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if _, err := rs.Seek(0, io.SeekStart); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	setServeHeaders(w, key, http.DetectContentType(head[:n]))
+
+	// An empty name keeps ServeContent from re-deriving a content type from
+	// the extension — the sniffed value above is authoritative. A zero modtime
+	// suppresses Last-Modified; the Storage contract exposes no mtime.
+	http.ServeContent(w, r, "", time.Time{}, rs)
+}
+
+// setServeHeaders applies the content-type decision shared by both serving
+// paths, including the stored-XSS guard.
+func setServeHeaders(w http.ResponseWriter, key, contentType string) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if scriptableHead(contentType) || scriptableExt(key) {
+		// Stored-XSS guard: never let a browser render uploaded HTML/SVG.
+		// Force a neutral, downloadable representation. SVG sniffs as
+		// text/plain, so the key's extension is the reliable "derived"
+		// signal for it.
+		contentType = "application/octet-stream"
+		w.Header().Set("Content-Disposition", "attachment")
+	}
+	w.Header().Set("Content-Type", contentType)
 }
 
 // serveStoreError maps a Storage.Get error to an HTTP status without

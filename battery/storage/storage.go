@@ -11,6 +11,13 @@ import (
 // Storage is a re-export of the upload.Storage interface for convenience.
 type Storage = upload.Storage
 
+// RangeGetter is a re-export of [upload.RangeGetter], the optional capability
+// a backend implements to expose seekable reads so HTTP range requests can be
+// answered. LocalStorage and MemoryStorage implement it; S3Storage declines —
+// a network-backed store would have to buffer the whole object to satisfy
+// Seek, and [WithPresigner] lets the transfer bypass the app entirely.
+type RangeGetter = upload.RangeGetter
+
 // StorageType enumerates available storage backend types.
 type StorageType int
 
@@ -78,6 +85,10 @@ var (
 	_ Storage = (*LocalStorage)(nil)
 	_ Storage = (*MemoryStorage)(nil)
 	_ Storage = (*S3Storage)(nil)
+
+	// Backends that can serve byte ranges. S3Storage is deliberately absent.
+	_ RangeGetter = (*LocalStorage)(nil)
+	_ RangeGetter = (*MemoryStorage)(nil)
 )
 
 // KeyValidator validates storage keys to prevent path traversal and other attacks.

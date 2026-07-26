@@ -332,6 +332,12 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	composed.ServeHTTP(w, req)
 }
 
+// Prefix returns the router's full path prefix — the composition of every
+// enclosing Group's prefix. Registrars that need to address a sub-router's
+// routes by URL (the entity MCP tools re-dispatch through the router) must
+// use this, not the innermost segment.
+func (r *Router) Prefix() string { return r.prefix }
+
 // Group creates a sub-router with the given path prefix and optional middleware.
 // The sub-router inherits its parent's middleware chain — resolved at
 // request time, so middleware added to the parent after Group still

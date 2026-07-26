@@ -34,6 +34,13 @@ type DBQueue struct {
 	stop           chan struct{}
 	stopped        chan struct{}
 
+	// started records whether Start launched the supervisor goroutine — the
+	// only thing that ever closes stopped. Close waits on stopped, so without
+	// this flag a queue that was constructed and abandoned (a startup sequence
+	// that failed after NewDBQueue, a test that only enqueued) blocked forever
+	// on shutdown. Guarded by mu.
+	started bool
+
 	// mu guards post-construction mutation of handlers, lease, and gate so
 	// that RegisterHandler/SetLeaseTimeout/SetGate can race safely against
 	// the worker loop's reads (workerLoop, eligibleWhere).
@@ -670,11 +677,20 @@ var (
 
 // Close stops worker goroutines started by Start. Idempotent.
 func (q *DBQueue) Close() error {
+	q.mu.Lock()
 	select {
 	case <-q.stop:
+		q.mu.Unlock()
 		return nil
 	default:
 		close(q.stop)
+	}
+	started := q.started
+	q.mu.Unlock()
+	if !started {
+		// Nothing will ever close q.stopped. Signalling stop is the whole
+		// contract for a queue that never ran.
+		return nil
 	}
 	<-q.stopped
 	return nil
@@ -687,6 +703,23 @@ func (q *DBQueue) Close() error {
 // handler-recover guard) is respawned so the pool can never be permanently
 // drained by a poison message.
 func (q *DBQueue) Start(ctx context.Context) {
+	q.mu.Lock()
+	if q.started {
+		// A second pool would race to close q.stopped and panic.
+		q.mu.Unlock()
+		return
+	}
+	select {
+	case <-q.stop:
+		// Close already ran and has already returned. Spawning workers now
+		// would leak goroutines nobody joins.
+		q.mu.Unlock()
+		return
+	default:
+	}
+	q.started = true
+	q.mu.Unlock()
+
 	// Count total workers so the done channel and join loop match.
 	laneCount := 0
 	for _, n := range q.laneWorkers {

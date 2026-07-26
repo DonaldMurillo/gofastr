@@ -107,6 +107,14 @@ type Plugin struct {
 	// auto-installed. Populated during Init so the log_filter tool can
 	// tail the file for historical entries beyond the ring window.
 	resolvedFilePath string
+
+	// mutationDevImplied records that log_set_level exists only because
+	// `gofastr dev` turned mutation on, not because the host asked. Those
+	// tools are NOT auth-gated: the dev loop has no auth configured at all,
+	// so a gate would only lock the developer's agent out of its own app.
+	// Dev exposure is bounded on the other axis instead — the listener must
+	// be loopback (framework's guardDevMCPBind).
+	mutationDevImplied bool
 }
 
 // New constructs an unregistered plugin. Call App.RegisterPlugin to wire.
@@ -179,6 +187,7 @@ func (p *Plugin) Init(app *framework.App) error {
 	// explicit Config fields stay the only path there.
 	if dev.DevMCPEnabled() {
 		cfg.EnableMCP = true
+		p.mutationDevImplied = !cfg.AllowMCPMutation
 		cfg.AllowMCPMutation = true
 	}
 

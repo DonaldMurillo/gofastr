@@ -240,6 +240,12 @@ type Index struct {
 // are accepted. Handler is used for HTTP. MCPHandler is optional and is only
 // registered when MCP is true.
 //
+// Under framework.WithAPIPrefix a relative path resolves under the prefixed
+// table path — WithAPIPrefix("/api") mounts "{id}/publish" on entity "posts"
+// at POST /api/posts/{id}/publish, alongside that entity's CRUD routes. An
+// absolute path bypasses the prefix entirely; use it to mount outside the
+// entity's API namespace.
+//
 // InputSchema and OutputSchema are OPTIONAL typed descriptions of the request
 // body and the success (200) response, expressed as []schema.Field — the same
 // representation the entity's own CRUD schema is built from, so OpenAPI and the
@@ -257,6 +263,26 @@ type Endpoint struct {
 	OutputSchema []schema.Field  `json:"outputSchema,omitempty"`
 	Handler      http.Handler    `json:"-"`
 	MCPHandler   mcp.ToolHandler `json:"-"`
+
+	// MCPGate is an optional per-caller precondition for the MCP twin. It
+	// runs before MCPHandler on every tools/call, and decides whether the
+	// tool is visible to that caller in tools/list.
+	//
+	// It exists because the two front doors of one Endpoint do not get the
+	// same protection for free: Handler inherits the route's middleware
+	// chain, while MCPHandler is registered straight onto the MCP server and
+	// sees none of it. An endpoint behind auth.RequireRole("editor") was
+	// therefore role-checked over HTTP and ungated over MCP.
+	//
+	// When unset, the twin defaults to requiring an authenticated caller
+	// (framework.MCPRequireUser). Set MCPPublic to opt out of that default;
+	// set this to something stricter, e.g. auth.MCPRole("editor").
+	MCPGate func(ctx context.Context) error `json:"-"`
+
+	// MCPPublic opts the MCP twin out of the default authenticated-caller
+	// gate, for an endpoint that really is anonymous over HTTP too. Ignored
+	// when MCPGate is set.
+	MCPPublic bool `json:"mcpPublic,omitempty"`
 }
 
 // TenantColumn returns the tenant-scoping column name for this entity:

@@ -35,6 +35,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -2840,44 +2841,14 @@ func extractAttrValue(tag, attr string) string {
 }
 
 // isSafeHeadURL is the allow-list for URLs that may appear in caller-
-// supplied head tags. Mirrors the framework/ui safety policy: relative,
-// http(s), or fragment.
+// supplied head tags. These are subresources the browser fetches on its own
+// (og:image, canonical, alternate), so the Resource policy applies: http(s)
+// and relative references, nothing else.
+//
+// The rule set is core-ui/urlsafe's, not a local copy — this guard had been
+// re-derived six times across the repo.
 func isSafeHeadURL(u string) bool {
-	if u == "" {
-		return false
-	}
-	for i := 0; i < len(u); i++ {
-		c := u[i]
-		if c < 0x20 || c == 0x7f {
-			return false
-		}
-	}
-	low := strings.ToLower(u)
-	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
-		return false
-	}
-	if strings.HasPrefix(u, "//") {
-		return false
-	}
-	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "#") || strings.HasPrefix(u, "?") || strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") {
-		return true
-	}
-	for i := 0; i < len(u); i++ {
-		c := u[i]
-		if c == ':' {
-			scheme := strings.ToLower(u[:i])
-			switch scheme {
-			case "http", "https":
-				return true
-			default:
-				return false
-			}
-		}
-		if c == '/' || c == '?' || c == '#' {
-			return true
-		}
-	}
-	return true
+	return urlsafe.OK(u, urlsafe.Resource)
 }
 
 // handleComponentCSS serves a single registered component's scoped

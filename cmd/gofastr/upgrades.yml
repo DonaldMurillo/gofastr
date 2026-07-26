@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.45.0
+through: v0.46.0
 
 releases:
   - version: v0.3.0
@@ -311,3 +311,40 @@ releases:
       - change: Plugin iframe sandbox tokens are an allow-list
         breaking: true
         guidance: "framework/pluginhost drops any sandbox token outside allow-scripts/forms/modals/popups/pointer-lock/orientation-lock/presentation. A manifest asking for allow-popups-to-escape-sandbox, allow-top-navigation or allow-downloads no longer gets them."
+  - version: v0.46.0
+    title: Audit backlog closed + never-looked surfaces
+    notes:
+      - change: A gated MCP tool is hidden from tools/list
+        breaking: true
+        guidance: "mcp.Gated wraps a handler, so it only reached tools/call — an anonymous tools/list returned every gated tool's inputSchema. Register with mcp.WithToolGate(gate) instead of wrapping with mcp.Gated to gate the listing too."
+        detect: "mcp\\.Gated\\("
+      - change: Endpoint.MCPHandler twins require an authenticated caller
+        breaking: true
+        guidance: "The HTTP Handler inherits route middleware; the MCP twin never did. Set Endpoint.MCPGate for a stricter predicate, or Endpoint.MCPPublic: true for an endpoint that really is anonymous over HTTP too."
+        detect: "MCPHandler:"
+      - change: "/{table}/llm.md runs the entity's full access chain"
+        breaking: true
+        guidance: "It checked for a session but not the entity's declared permission, so a caller without orders:read got 403 on rows and 200 on the schema. Grant the entity's read permission to callers that should read its docs."
+      - change: log_set_level requires an authenticated caller
+        breaking: true
+        guidance: "Only when the host set AllowMCPMutation itself; dev-implied registration stays ungated. Make sure the app's session middleware runs on the /mcp route."
+        detect: "AllowMCPMutation"
+      - change: WithAPIPrefix now applies to EntityConfig.Endpoints
+        breaking: true
+        guidance: "A relative Endpoint.Path resolves under the prefixed table path — {id}/revoke on entity licenses with WithAPIPrefix(\"/api\") mounts at /api/licenses/{id}/revoke. Drop any hand-rolled prefix from relative paths; absolute paths still bypass the prefix."
+        detect: "WithAPIPrefix\\("
+      - change: The plugin host JS sandbox sanitizer is an allow-list
+        breaking: true
+        guidance: "host/pluginhost.js was still a one-token deny-list after the Go half flipped in v0.45.0. A manifest asking for allow-popups-to-escape-sandbox, allow-top-navigation or allow-downloads no longer gets them from either side."
+      - change: Manifest.Entry must be a same-origin absolute path
+        breaking: true
+        guidance: "An off-origin or scheme-bearing entry escapes the CSP sandbox header AssetServer emits, so it is refused by both Manifest.Validate and the JS broker. Serve the frame document from your own origin."
+        detect: "Entry:"
+      - change: A blueprint entity table must be letters, digits and underscores
+        breaking: true
+        guidance: "The table name is emitted into generated Go string literals and interpolated into DDL as a bare SQL identifier. Rename the table; entity name: was already constrained this way."
+        detect: "table:"
+      - change: Kiln journal destructive entries carry their authorizing plan_id
+        breaking: true
+        guidance: "Replay now re-checks that a delete was covered by an approved, unspent plan naming that target. A .kiln.session.jsonl written before v0.46.0 that contains deletes will fail replay — run `kiln freeze` with the old binary first, or start a fresh session."
+        detect: "\\.kiln\\.session\\.jsonl"

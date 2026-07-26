@@ -75,6 +75,9 @@ func (m Manifest) Validate() error {
 	if m.Entry == "" {
 		return errors.New("pluginhost: manifest entry is required")
 	}
+	if err := validateEntry(m.Entry); err != nil {
+		return err
+	}
 	if m.Isolation != "" && m.Isolation != IsolationSandboxOpaque {
 		return fmt.Errorf("pluginhost: unsupported isolation %q (v1 supports only %q)",
 			m.Isolation, IsolationSandboxOpaque)
@@ -107,6 +110,39 @@ func (m Manifest) Validate() error {
 // invariant does not depend on anyone having called [Manifest.Validate].
 func (m Manifest) SandboxString() string {
 	return sanitizeSandboxTokens(m.Sandbox)
+}
+
+// validateEntry requires the frame document URL to be a same-origin absolute
+// path.
+//
+// Entry ships with the third-party plugin, so it is attacker-influenced by
+// construction. The opaque-origin guarantee has two carriers: the iframe
+// sandbox attribute, and the `Content-Security-Policy: sandbox allow-scripts`
+// header [AssetServer] emits for the assets IT serves. A cross-origin or
+// scheme-bearing Entry escapes the second one entirely — nothing the host
+// controls is emitting headers for someone else's document.
+//
+// Rejected: any scheme (`https:`, `javascript:`, `data:`), protocol-relative
+// `//host/…`, the backslash forms browsers normalise to an authority
+// (`\\host\…`, `/\host/…`), relative paths (they resolve against whatever page
+// mounted the plugin, which is not knowable here), and control characters
+// (header/attribute smuggling).
+func validateEntry(entry string) error {
+	for _, r := range entry {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("pluginhost: manifest entry %q contains a control character", entry)
+		}
+	}
+	// Normalise backslashes the way a browser does before deciding what the
+	// authority component is: "/\evil.example/x" is //evil.example/x.
+	norm := strings.ReplaceAll(entry, "\\", "/")
+	if !strings.HasPrefix(norm, "/") {
+		return fmt.Errorf("pluginhost: manifest entry %q must be a same-origin absolute path beginning with \"/\" (a scheme or relative path escapes the host origin, and with it the framed-CSP sandbox header)", entry)
+	}
+	if strings.HasPrefix(norm, "//") {
+		return fmt.Errorf("pluginhost: manifest entry %q is protocol-relative, which resolves to another origin", entry)
+	}
+	return nil
 }
 
 // allowedSandboxTokens is the set of iframe sandbox capabilities a plugin

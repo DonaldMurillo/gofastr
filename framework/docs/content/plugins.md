@@ -39,15 +39,20 @@ dodge.
 
 Directly registered MCP tools do NOT pass through route middleware —
 the handler runs as-is for any caller who can reach `/mcp`. To
-auth-gate one, wrap it with `mcp.Gated` and a precondition; battery/auth
-ships ready-made gates that read the identity the app's global
-session/JWT middleware resolved onto the request context:
+auth-gate one, register it with `mcp.WithToolGate` and a precondition;
+battery/auth ships ready-made gates that read the identity the app's
+global session/JWT middleware resolved onto the request context:
 
 ```go
 app.MCP.RegisterTool("reports_rebuild", "Rebuild the reports cache", schema,
-    mcp.Gated(auth.MCPRole("admin"), rebuildHandler))
+    rebuildHandler, mcp.WithToolGate(auth.MCPRole("admin")))
 // auth.MCPUser() = any signed-in caller; auth.MCPRole("a", "b") = any of the roles.
 ```
+
+`WithToolGate` also **hides the tool from `tools/list`** for callers who
+cannot invoke it — the `inputSchema` is a disclosure in its own right. The
+older `mcp.Gated(gate, handler)` wrapper still works but only reaches
+`tools/call`, so the schema stayed visible to everyone; prefer the option.
 
 (Entity CRUD tools don't need this — they re-dispatch through the
 router and inherit HTTP auth, owner scoping, and RBAC wholesale.)

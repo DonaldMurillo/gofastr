@@ -83,6 +83,27 @@ func (ms *MemoryStorage) Get(_ context.Context, key string) (io.ReadCloser, erro
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
+// GetRange implements [upload.RangeGetter]. The bytes are already in memory,
+// so a *bytes.Reader satisfies Seek for free — the wrapper only supplies the
+// no-op Close.
+func (ms *MemoryStorage) GetRange(_ context.Context, key string) (io.ReadSeekCloser, error) {
+	ms.mu.RLock()
+	data, ok := ms.files[key]
+	ms.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("storage: key %q not found", key)
+	}
+
+	return nopSeekCloser{bytes.NewReader(data)}, nil
+}
+
+// nopSeekCloser adds a no-op Close to a *bytes.Reader, the in-memory analogue
+// of [io.NopCloser] for a seekable source.
+type nopSeekCloser struct{ *bytes.Reader }
+
+func (nopSeekCloser) Close() error { return nil }
+
 // Exists reports whether a file exists for the given key.
 func (ms *MemoryStorage) Exists(_ context.Context, key string) (bool, error) {
 	ms.mu.RLock()

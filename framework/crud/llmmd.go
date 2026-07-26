@@ -342,6 +342,27 @@ func LLMMDHandler(ent *entity.Entity) http.Handler {
 	})
 }
 
+// LLMMDHandlerFor is [LLMMDHandler] with the entity's own access gate
+// applied — the form the CRUD routes register.
+//
+// LLMMDHandler checks only for a session, while List runs the full scope
+// chain, so an authenticated caller with no `orders:read` grant got 403 on the
+// rows and 200 on the schema: every field name, type and enum of an entity
+// they cannot read. The schema is the disclosure, not the row.
+//
+// It reuses requireScope, so owner, tenant, baseline-session and RBAC all move
+// together with the read path instead of being restated here.
+func LLMMDHandlerFor(ch *CrudHandler) http.Handler {
+	docs := LLMMDHandler(ch.Entity)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if !ch.requireScope(w, r, opRead) {
+			return
+		}
+		docs.ServeHTTP(w, r)
+	})
+}
+
 // RegistryLLMMDHandler returns an http.Handler that serves the top-level
 // LLM-friendly markdown index for all registered entities. Auth-required
 // for the same reason as [LLMMDHandler].

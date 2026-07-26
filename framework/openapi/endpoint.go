@@ -22,6 +22,30 @@ func EntityEndpointPath(ent *entity.Entity, path string) string {
 	return crud.NormalizePath(convertColonParams(path))
 }
 
+// EntityEndpointRoutePath is EntityEndpointPath with the app's API prefix
+// applied — the path the endpoint is actually mounted at.
+//
+// A relative Endpoint.Path is documented as resolving against the entity's
+// table path. Under WithAPIPrefix that table path is prefixed, so the endpoint
+// must be too; without this an app using both ends up with its API split
+// across two prefixes (CRUD at /api/licenses, the custom endpoint at
+// /licenses/{id}/revoke) and nothing reports it.
+//
+// An absolute path keeps bypassing the prefix. That is the documented escape
+// hatch for mounting outside the entity's namespace.
+//
+// The OpenAPI spec deliberately keeps using EntityEndpointPath: it carries the
+// prefix in the `servers` entry, so its paths are prefix-relative by
+// construction.
+func EntityEndpointRoutePath(ent *entity.Entity, path, apiPrefix string) string {
+	relative := !strings.HasPrefix(strings.TrimSpace(path), "/")
+	out := EntityEndpointPath(ent, path)
+	if relative && apiPrefix != "" {
+		out = strings.TrimSuffix(apiPrefix, "/") + out
+	}
+	return out
+}
+
 func convertColonParams(path string) string {
 	parts := strings.Split(path, "/")
 	for i, part := range parts {

@@ -2,6 +2,7 @@ package log_test
 
 import (
 	"context"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -164,8 +165,11 @@ func TestMCPSetLevelMutatesThreshold(t *testing.T) {
 	// At default Level=INFO, a DEBUG line is suppressed.
 	app.Logger().Debug("invisible-at-info")
 
-	// Switch to DEBUG via the tool.
-	result, err := app.MCP.CallTool(context.Background(), "log_set_level", map[string]any{"level": "DEBUG"})
+	// Switch to DEBUG via the tool. log_set_level mutates the running app,
+	// so it runs behind an authenticated-caller gate — the tool call carries
+	// the identity the route middleware would have resolved.
+	ctx := handler.SetUser(context.Background(), "u1")
+	result, err := app.MCP.CallTool(ctx, "log_set_level", map[string]any{"level": "DEBUG"})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)
 	}

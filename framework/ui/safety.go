@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
 
 // safeURL returns u if it is safe to render as an href / src / action /
@@ -19,50 +20,22 @@ import (
 // architecture iterations expected callers to handle. Callers that
 // need a legitimate non-http(s) scheme can render the raw anchor via
 // core-ui/html directly — UI builders no longer make that decision.
+//
+// The rule set lives in core-ui/urlsafe, not here: it had been
+// re-derived six times across framework/ui, framework/uihost,
+// framework/crud, framework/experimental/apiversions and three
+// core-ui/patterns builders, each copy free to drift the day after it
+// was written.
 func safeURL(u string) string {
-	if u == "" {
-		return ""
-	}
-	// Reject control bytes outright.
-	for i := 0; i < len(u); i++ {
-		c := u[i]
-		if c < 0x20 || c == 0x7f {
-			return ""
-		}
-	}
-	trimmed := strings.TrimLeft(u, " \t")
-	low := strings.ToLower(trimmed)
-	// Reject percent-encoded CR/LF as a downstream header-smuggling
-	// primitive. Real content rarely contains those byte sequences.
-	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
-		return ""
-	}
-	// Protocol-relative URLs are ambiguous about origin trust.
-	if strings.HasPrefix(trimmed, "//") {
-		return ""
-	}
-	// Fragment-only or relative paths pass.
-	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "?") || strings.HasPrefix(trimmed, "./") || strings.HasPrefix(trimmed, "../") {
-		return u
-	}
-	for i := 0; i < len(trimmed); i++ {
-		c := trimmed[i]
-		if c == ':' {
-			scheme := strings.ToLower(trimmed[:i])
-			switch scheme {
-			case "http", "https", "mailto", "tel":
-				return u
-			default:
-				return ""
-			}
-		}
-		if c == '/' || c == '?' || c == '#' {
-			// No scheme — relative reference, allowed.
-			return u
-		}
-	}
-	// No colon — bare relative reference.
-	return u
+	return urlsafe.Clean(u, urlsafe.Anchor)
+}
+
+// safeResourceURL is safeURL for URLs the BROWSER fetches on its own —
+// <img src>, <source src>, <link href>. It drops mailto:/tel:, which are
+// meaningful on an anchor the user activates and a caller mistake on a
+// subresource.
+func safeResourceURL(u string) string {
+	return urlsafe.Clean(u, urlsafe.Resource)
 }
 
 // scrubAttrs filters an html.Attrs map, removing keys that look like

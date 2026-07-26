@@ -5,6 +5,128 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.46.0] - 2026-07-26
+
+The v0.43.0 audit backlog (#135) closed, four filed issues fixed (#136,
+#138, #139, #141), and the first audit of surfaces the previous passes had
+never opened.
+
+Same shape as 0.45.0: **guard drift** — a check one path has and its
+sibling skips. Three of the findings below are the *same* property
+(a schema is a disclosure even when the data behind it is refused) showing
+up on three different surfaces.
+
+### Security
+
+- **`tools/list` no longer hands the schema to callers who cannot call
+  the tool.** `mcp.Gated` wraps a *handler*, so it only ever reached
+  `tools/call` — an unauthenticated POST came back with every tool's
+  `inputSchema`, and for entity CRUD tools those are built from live
+  entity definitions: every entity name, every non-`Hidden` field, its
+  type and full enum set. New `mcp.WithToolGate` registration option runs
+  the gate on both `tools/call` and `tools/list`; the MCP control tools
+  and `log_set_level` use it. **BREAKING** for anyone reading a gated
+  tool's schema anonymously.
+- **`framework.WithMCPGate` + `framework.MCPRequireUser`** close the whole
+  `/mcp` data surface (`tools/list`, `tools/call`, `resources/list`,
+  `resources/read`) in one call. `initialize` and `ping` stay open by
+  design — they carry only the protocol version, capability booleans and
+  the server name.
+- **`Endpoint.MCPHandler` twins require an authenticated caller by
+  default. BREAKING.** An `Endpoint` has two front doors for one
+  operation: `Handler` inherits the route's middleware chain, `MCPHandler`
+  does not — so an endpoint behind `auth.RequireRole("editor")` was
+  role-checked over HTTP and ungated over MCP. New `Endpoint.MCPGate` for
+  something stricter, `Endpoint.MCPPublic: true` to opt out.
+- **`log_set_level` is gated.** It mutates the running app's
+  observability — an anonymous caller could flip it to DEBUG, or to ERROR
+  to go quiet before doing something else. Dev-implied registration stays
+  ungated (the dev loop has no auth to satisfy; its exposure is bounded by
+  the loopback bind instead), but an app that set `AllowMCPMutation`
+  itself keeps the gate even under `gofastr dev`.
+- **`/{table}/llm.md` runs the entity's full scope chain.** It checked for
+  a session but not for the entity's declared permission, so an
+  authenticated caller with no `orders:read` grant got 403 on the rows and
+  200 on the schema. **BREAKING** for a caller that has a session but not
+  the read permission.
+- **The plugin iframe sandbox sanitizer is an allow-list on both sides.**
+  v0.45.0 flipped the Go half; `host/pluginhost.js` — the sink that
+  actually sets the attribute — was still a one-token deny-list, so
+  `allow-popups-to-escape-sandbox`, `allow-top-navigation` and
+  `allow-downloads` all passed it. **BREAKING** for a manifest asking for
+  those.
+- **`Manifest.Entry` must be a same-origin absolute path.** It was an
+  unvalidated arbitrary URL, and the opaque-origin guarantee has two
+  carriers — the sandbox attribute and the `CSP: sandbox` header
+  `AssetServer` emits for assets *it* serves. A cross-origin entry escapes
+  the second entirely. Dual-enforced in Go and in the JS broker.
+- **A blueprint entity `table:` must be an identifier.** It reaches two
+  sinks that neither re-escape nor re-validate it: the generated typed
+  client emits it into Go string literals, and the runtime interpolates it
+  into DDL. `name:` was already constrained to a Go identifier; `table:`
+  was the way around that. Found by a property sweep over every IR field
+  the emitters read — the tail of the injection class from #134.
+- **Kiln enforces its semantic guards during replay, not only at the tool
+  call. BREAKING journal format.** The journal is replayed at boot and by
+  `kiln freeze`; it recorded *what* was deleted but not that anyone
+  approved it, so a hand-authored `.kiln.session.jsonl` installed world
+  state the API refuses. Destructive entries now carry the authorizing
+  `plan_id` and replay re-checks approval, target match and single-use.
+  Plan consumption moved from a per-process map — which replay never
+  rebuilt, so a restart re-armed every spent approval — onto the session.
+- **CORS's wildcard writer forwards `Flush` and `Hijack`.** Every other
+  wrapper in `core/middleware` does, with a test pinning it;
+  `stripCredsWriter` did not, so behind `AllowedOrigins: ["*"]` the SSE
+  bus lost its `Flusher` (a hard failure — the SSE constructor
+  type-asserts it) and WebSocket upgrade lost its `Hijacker`. `Flush` now
+  strips the credentials header too, and `Vary` is appended rather than
+  clobbering an upstream `Vary: Accept-Encoding`.
+- **`core-ui/urlsafe` is now genuinely the single URL guard.** v0.45.0
+  claimed this and delivered one call site. The remaining six —
+  `framework/ui`, `framework/uihost`, `framework/crud`,
+  `framework/experimental/apiversions`, and the `tree` / `nestedlist` /
+  `breadcrumbs` pattern builders — now call it, `framework/ui` splits
+  anchor vs subresource policy (`mailto:` on an `<img src>` is dropped),
+  and a `repolint` rule fails the build if a seventh copy appears.
+
+### Fixed
+
+- **`WithAPIPrefix` applies to `EntityConfig.Endpoints`** (#139). A
+  relative `Endpoint.Path` is documented as resolving against the entity
+  table path, but the prefix was applied only to the generated CRUD
+  routes — so an app using both had its API split across two prefixes with
+  no warning. Absolute paths still bypass the prefix. **BREAKING** for an
+  app relying on the unprefixed mount.
+- **`webhook.NewSQLStore` works on Postgres** (#141). Both stores
+  dialect-switched their timestamp columns but hardcoded `payload BLOB`,
+  and Postgres has no `BLOB` type — so the outbound webhook battery could
+  not be constructed against the dialect it is most likely deployed on.
+- **`queue.DBQueue.Close()` returns when `Start` was never called**
+  (#141). It waited on a channel only `Start`'s goroutine closes, so a
+  failed startup sequence hung on shutdown. `Start` is now idempotent and
+  refuses to spawn workers after `Close`.
+- **Grouped entities' MCP tools reach their routes** (#136). `App.Entity`
+  sets `crudHandler.BasePath` from the API prefix; `GroupEntity` never
+  did, so a grouped entity's tools dispatched to `/widgets` while the
+  routes lived at `/api/widgets`. Fail-closed (a 404), but the tools were
+  simply broken for every grouped entity.
+- **`RouteGroup.Prefix()` composes nested prefixes.** It returned only its
+  own segment, so `app.Group("/api").Group("/v2")` reported `/v2` — and
+  both the route-collision pre-flight and the MCP dispatch above were
+  checking a path that does not exist.
+
+### Added
+
+- **`upload.RangeGetter`** (#138) — an optional capability a `Storage`
+  backend implements to expose seekable reads, so `upload.ServeHandler`
+  answers `Range:` requests with a 206 instead of the whole body. Local
+  and memory backends implement it; S3 declines (a network backend would
+  have to buffer the whole object to `Seek` — use `WithPresigner`).
+  `Storage.Get` keeps its narrow `io.ReadCloser` contract.
+- **`mcp.Server.ListToolsFor(ctx)`** — the caller-filtered listing.
+  `ListTools()` stays unfiltered for in-process introspection and is
+  documented as never safe to serve to a remote caller.
+
 ## [0.45.0] - 2026-07-25
 
 A full security pass — two-profile audit, 30 findings, every one fixed

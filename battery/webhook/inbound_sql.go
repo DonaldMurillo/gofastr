@@ -20,7 +20,7 @@ import (
 //	    source      TEXT NOT NULL,
 //	    dedupe_key  TEXT NOT NULL DEFAULT '',  -- '' means no dedupe
 //	    headers     TEXT NOT NULL DEFAULT '{}', -- JSON object, allowlisted subset
-//	    payload     BLOB NOT NULL,
+//	    payload     BLOB NOT NULL,       -- BYTEA on postgres
 //	    status      TEXT NOT NULL,
 //	    attempts    INTEGER NOT NULL DEFAULT 0,
 //	    last_error  TEXT NOT NULL DEFAULT '',
@@ -80,9 +80,10 @@ func NewSQLInboundStore(db *sql.DB, opts ...InboundSQLOption) (*SQLInboundStore,
 }
 
 func (s *SQLInboundStore) ensureTable() error {
-	ts := "DATETIME"
+	ts, blob := "DATETIME", "BLOB"
 	if s.dialect == "postgres" {
-		ts = "TIMESTAMPTZ"
+		// See SQLStore.ensureTables: Postgres spells a byte array BYTEA.
+		ts, blob = "TIMESTAMPTZ", "BYTEA"
 	}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -90,13 +91,13 @@ func (s *SQLInboundStore) ensureTable() error {
 			source      TEXT NOT NULL,
 			dedupe_key  TEXT NOT NULL DEFAULT '',
 			headers     TEXT NOT NULL DEFAULT '{}',
-			payload     BLOB NOT NULL,
+			payload     %s NOT NULL,
 			status      TEXT NOT NULL,
 			attempts    INTEGER NOT NULL DEFAULT 0,
 			last_error  TEXT NOT NULL DEFAULT '',
 			received_at %s NOT NULL,
 			updated_at  %s NOT NULL
-		)`, s.table, ts, ts),
+		)`, s.table, blob, ts, ts),
 		// Lookup indexes — no unique constraint (see type doc).
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_dedupe_idx ON %s (source, dedupe_key)",
 			s.table, s.table),

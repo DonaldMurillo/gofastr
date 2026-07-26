@@ -139,6 +139,21 @@ func (s *LocalStorage) Delete(_ context.Context, key string) error {
 // absolute filesystem path stripped, so a 500 propagated to an end
 // user doesn't disclose where the data lives.
 func (s *LocalStorage) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	return s.open(key)
+}
+
+// GetRange implements [RangeGetter]. The local backend already opens an
+// *os.File, so seekability costs nothing here — Get simply discarded it
+// through the io.ReadCloser return type. Key validation is the same code
+// path, not a parallel one.
+func (s *LocalStorage) GetRange(_ context.Context, key string) (io.ReadSeekCloser, error) {
+	return s.open(key)
+}
+
+// open resolves key against baseDir and opens it. It is the single
+// enforcement point for sanitization and the base-dir containment check, so
+// Get and GetRange cannot drift apart.
+func (s *LocalStorage) open(key string) (*os.File, error) {
 	safeKey, err := sanitizeKey(key)
 	if err != nil {
 		return nil, err

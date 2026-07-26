@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -248,44 +249,14 @@ func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
 // stored value flows into HTML attributes and HTTP redirects later —
 // any scheme not on this list becomes a phishing / XSS / SSRF vector
 // when rendered.
+//
+// The scheme allow-list is core-ui/urlsafe's Resource policy (http(s) plus
+// relative references), not a local copy of it. The traversal check on top is
+// storage-specific: a stored key must not climb out of the storage root, and
+// urlsafe deliberately allows "../" because a relative href legitimately may.
 func isSafeMediaURL(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
-			return false
-		}
-	}
-	low := strings.ToLower(s)
-	// Percent-encoded CR/LF tries to smuggle a header line through
-	// downstream consumers that re-encode the URL.
-	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
-		return false
-	}
-	// Path traversal escapes the storage root.
 	if strings.Contains(s, "..") {
 		return false
 	}
-	// Protocol-relative URLs are ambiguous about origin trust.
-	if strings.HasPrefix(s, "//") {
-		return false
-	}
-	// Relative paths (no scheme) are fine — they live under the storage
-	// prefix.
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == ':' {
-			scheme := strings.ToLower(s[:i])
-			switch scheme {
-			case "http", "https":
-				return true
-			default:
-				return false
-			}
-		}
-		if c == '/' || c == '?' || c == '#' || c == '.' {
-			// Hit a non-scheme delimiter first — relative path.
-			return true
-		}
-	}
-	// No colon at all — bare filename.
-	return true
+	return urlsafe.OK(s, urlsafe.Resource)
 }
