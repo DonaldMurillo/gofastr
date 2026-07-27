@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.47.0
+through: v0.48.0
 
 releases:
   - version: v0.3.0
@@ -360,3 +360,48 @@ releases:
       - change: html.Image accepts raster data URIs; other resource sinks still reject them
         breaking: false
         guidance: "core-ui/html.Image moved from urlsafe.Resource to the new urlsafe.ImageSource policy, so an inline data:image/{jpeg,png,gif,webp,avif} src renders instead of being swapped for the blank stub. data:image/svg+xml and every non-image media type stay rejected, and <script src>/<link href> are unchanged. framework/ui image sinks (OptimizedImage, PipelineImage, Gallery, Avatar) inherit this."
+  - version: v0.48.0
+    title: Masked fields stop leaking through the query surface
+    notes:
+      - change: entity.Define panics on a Hidden or NoQuery cursor column
+        breaking: true
+        guidance: "Keyset paging orders and compares on the cursor column and encodes its value into the cursor token, which is reversible base64 — so a masked column there hands the caller back what the mask withholds. The check covers CursorField, CursorFields, the primary-key default, and the primary key auto-appended as a composite tiebreak. Pick a different keyset column."
+        detect: "CursorFields?:"
+      - change: entity.Define panics on a NoQuery SearchFields entry
+        breaking: true
+        guidance: "?q= runs LIKE against the stored value, so a masked column in SearchFields discloses exactly what NoQuery keeps off the query surface. Drop the column from search_fields, or drop no_query if the value is not sensitive."
+        detect: "SearchFields:"
+      - change: "Blueprint screens reject hidden and no_query columns in search, filters, a stat_card source.filter or summed field, and a chart group_by"
+        breaking: true
+        guidance: "Each reaches ListAll/CountAll with a hand-built ParsedFilter or a raw read, bypassing the filter parser, so a masked column there discloses on the app's own page. A chart group_by is the sharpest: it renders every distinct stored value as a bar or slice label. gofastr generate now fails with the screen, block and column named — point the block at a queryable column. id, the timestamps/soft_delete stamps and relation-derived foreign keys all stay valid. This is checked in gofastr.yml, which the scanner below does not read: re-run gofastr generate to see it."
+      - change: "Blueprint cursor_field / cursor_fields reject hidden and no_query columns at decode time"
+        breaking: true
+        guidance: "entity.Define already panicked on these; the blueprint decoder now catches it during generate instead, so the failure is an error naming the column rather than a generated app that dies at boot."
+      - change: AfterGet/AfterList now run on every HTTP path that returns a row
+        breaking: true
+        guidance: "Keyset pages, ?include= children, _events deliveries and create/update response bodies previously returned stored values past an AfterGet/AfterList mask; they are redacted now. If a hook was written assuming it only ever saw GET responses, it now also sees include payloads, event records and write bodies — check it tolerates a primary-key-only delete stub and does not assume a full row."
+        detect: "hook\\.(AfterGet|AfterList)"
+      - change: "A failed AfterGet on a write response returns the row id instead of 500"
+        breaking: false
+        guidance: "The write has already committed and its event has shipped by the time the response hook runs, so answering 500 made callers retry and write the row twice — and in a _batch it discarded the ids of every row that committed. The body degrades to the primary key and the hook error is logged. If your client asserts on a full body, handle the id-only shape."
+      - change: "A nested ?rel.field= filter now refuses when the relation target is not a registered entity"
+        breaking: true
+        guidance: "The Hidden/NoQuery/declared-column checks need the target's schema, and skipping them let any column of an unregistered table be predicated on — auth_users.password_hash among them. ?include= has always refused the same shape. If a filter that used to work now 400s, register the target entity (app.Entity) or filter on the parent instead."
+        detect: "\\?[a-zA-Z_]+\\.[a-zA-Z_]+(_like|_gte|_lte|_gt|_lt|_in)?="
+      - change: "An ?include= child hook may not reorder rows"
+        breaking: true
+        guidance: "Each eager-loaded row is already keyed to its parent, so the hook's output is folded back positionally. A hook that resorts p.Results attributed records to the wrong parent (and duplicated one row while destroying another); it now fails the request, as a row-count change already did. Sort in the child's own BeforeList, which changes the query."
+      - change: "The admin edit form renders hook-masked columns empty and write-only"
+        breaking: false
+        guidance: "It reads the row twice and treats any column an AfterGet hook rewrites as write-only: rendered blank with a hint (or an explicit \"— unchanged —\" option on a checkbox, enum, or relation picker), kept as stored unless an admin supplies a value. This replaces both older behaviours — prefilling the mask (which Save wrote back over the real value) and prefilling raw (which showed an admin what the API masks). A hook that TRANSFORMS rather than masks (normalising a phone number, rounding a currency) also makes its columns write-only, since the form cannot tell the two apart."
+      - change: "?cursor= now validates ?sort= instead of ignoring it unparsed"
+        breaking: true
+        guidance: "Keyset mode still ignores the sort — the cursor fields control ORDER BY — but it no longer skips validation, so any ?sort= the offset path rejects is now rejected alongside a cursor too. That includes an UNKNOWN column, not just a masked one. A client that appends its UI sort state to a cursor request and previously got a silent 200 now gets a 400; drop the sort when paging by cursor."
+        detect: "[?&]cursor="
+      - change: "Nested ?rel.field= filters require CrudHandler.Registry"
+        breaking: true
+        guidance: "The Hidden/NoQuery/declared-column checks need the target entity's schema, so a handler with no registry now refuses nested filters rather than trusting the column name. framework.App, App.View and generated typed repos all set it; a handler built by hand with crud.NewCrudHandler does not. Set Registry, or filter on the parent."
+      - change: In-process reads opt in to read hooks with crud.WithReadHooks
+        breaking: false
+        guidance: "ListAll/CountAll/GetOne still return stored values by default — right for read-modify-write, seed lookups and aggregates. Wrap the context with crud.WithReadHooks(ctx) where rows are rendered to an end user; generated blueprint screens already do. Do not set it on a context handed to a hook."
+        detect: "\\.(ListAll|GetOne|CountAll)\\("

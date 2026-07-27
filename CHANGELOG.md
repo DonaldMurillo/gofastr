@@ -5,6 +5,247 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.48.0] - 2026-07-26
+
+`AfterGet` and `AfterList` are documented as the way to mask a field on
+the way out — "redact fields, drop rows" — and they worked on `GET /x`
+and `GET /x/{id}`. Six other paths did not. The filter surface never saw
+the mask, so the stored value was recoverable a character at a time from
+which rows came back:
+
+```
+GET /cards?number_like=4111  → 1 row    every response still
+GET /cards?number_like=4112  → 0 rows   reads "****1111"
+```
+
+`framework/filter` already names that attack and blocks it for `Hidden`
+columns. Hook-based redaction had none of that protection. Chasing it
+turned up five more paths that returned the stored value outright, not as
+an inference: keyset pages, `?include=` children, `_events` deliveries,
+create/update response bodies, and the in-process reads a generated app
+renders its own screens through. All are closed.
+
+### Added
+
+- **`schema.Field.NoQuery`** — a column that stays in API responses but
+  is refused by every query surface: flat filters, `?sort=`, `?where=`
+  predicate trees, nested `?rel.field=` filters, scoped `?include=`
+  filters, and the DSL. `Hidden` already closed this by removing the
+  column from responses; `NoQuery` is for values the caller must still
+  see in a reduced form. Declarations use `no_query: true`. The
+  rejection names the field, unlike `Hidden`'s — a `NoQuery` column is
+  visible in the response, so its existence is not a secret worth
+  protecting and a precise error saves a developer hunting for a typo.
+- **`crud.WithReadHooks(ctx)`** (also `framework.WithReadHooks`) — makes
+  an in-process read apply `AfterList`/`AfterGet`. Generated blueprint
+  list, detail, and related-list screens use it, so an app's own pages
+  show what its API shows. Stored values stay the default for the Go API,
+  which is what keeps read-modify-write, seed lookups and aggregates
+  correct. The context handed to a hook has the flag stripped, so a hook
+  that reads its own entity cannot re-enter itself.
+- **`crud.CrudHandler.ChildHooks`** — resolves another entity's hook
+  registry by name so `?include=` rows run the read hooks of the entity
+  they belong to. `framework.App` wires it on every mounted handler.
+- **`webhook.WithBridgeRedactor`** — transforms an event before the
+  webhook bridge POSTs it to subscriber URLs. The bridge is an outbound
+  delivery to third parties and has no handler to run read hooks through,
+  so masked fields would otherwise leave the server there in full.
+
+### Fixed
+
+- **`?cursor=` skipped `AfterList` entirely**, writing stored values
+  straight to the wire while the offset path returned masked ones. The
+  hook now runs over the page, after the continue-cursor is derived from
+  the stored keyset values, so a hook that masks the keyset column
+  cannot corrupt paging.
+- **`?include=` children skipped the child entity's hooks.** Rows come
+  from a join/`IN` loader rather than the child's handler, so a redaction
+  applied to `GET /children` but not to the same row one hop away. The
+  child's `AfterList` now runs over the attached rows, after key
+  conversion so the hook sees the keys its own endpoint returns, plus its
+  `AfterGet` for a to-one relation — that serialises as a single object,
+  so the surface it mirrors is `GET /child/{id}`, and an app masking only
+  there was still serving the stored value through `?include=`.
+- **`_events` published stored values.** The record is captured from the
+  write's `RETURNING`, before any read hook. Deliveries are redacted per
+  subscriber, which keeps the hook out of the write transaction. Delete
+  stubs pass through intact; a hook error omits the record rather than
+  publishing it raw.
+- **Create and update responses echoed stored values.** `RETURNING`
+  yields every visible column, so a partial `PUT` returned fields the
+  caller never sent, unmasked, to anyone with update permission.
+  `AfterGet` now runs over the response body.
+- **The admin edit form wrote masks back over stored values.** It
+  prefilled through the HTTP `Get` handler, which runs `AfterGet`, then
+  posted every field back on submit — so editing one field persisted the
+  mask over every other. Pre-existing. It now reads the row twice and
+  treats any column the hook rewrites as write-only: rendered empty with
+  a hint, kept as stored unless an admin types a new value. Reading raw
+  and prefilling it, the first fix here, swapped the bug for a
+  disclosure aimed at the one reader who can see every row.
+- **A nested `?rel.field=` filter skipped every schema check when the
+  relation's target was not a registered entity.** The `Hidden`/
+  `NoQuery`/declared-column checks all sat inside `if registry.Get(...)
+  == nil`, and `isSafeIdentifier` only constrains the SHAPE of a name, so
+  the column went into an `EXISTS` predicate unvalidated. A relation may
+  legitimately point at a table no entity registers — the auth battery
+  self-migrates `auth_users` — which made `?author.password_hash_like=`
+  a working oracle over a column that is in no response. `?include=`
+  already refused that shape; nested filters now match it, in-process
+  callers included.
+- **A write response's redaction reached the event record.** The hook
+  runs on a copy because the raw record has already gone to the async
+  event goroutine, but the copy was one level deep, so a hook masking a
+  field inside an embedded object wrote through the shared nested map
+  into the bus, the fanout tap and the webhook bridge — and raced
+  whichever subscriber was reading it, which is a runtime throw
+  `recover()` cannot catch. The copy is now reflective rather than a
+  list of named types: the containers that matter are the ones an
+  application's hook injects, and a hand-written type switch covers only
+  the shapes its author thought of — `[]byte`, `[]string`,
+  `map[string]string` and `[][]map[string]any` were all still shared.
+- **The read-hook opt-in survived into `payload.Request.Context()`.**
+  `hookCtx` strips it from the context argument, but on the in-process
+  path the request handed to a hook is synthesised from the caller's
+  context, so a hook reading through `p.Request.Context()` re-entered
+  itself until the stack was gone.
+- **A child `AfterList` that reordered rows corrupted the `?include=`
+  payload.** The fold paired the hook's output with the loader's rows by
+  index, so a permutation attributed each record to the wrong parent
+  and — because it mutates rows later iterations still read as sources —
+  duplicated one and destroyed another: `[A,B,C]` came back `[C,B,C]`.
+  The fold now matches rows by PRIMARY KEY, so sorting `Results`
+  (ordinary list-hook behaviour, and correct on the child's own route) is
+  a no-op rather than either a corruption or a 500 — the order a client
+  sees comes from the attachment, which the fold never touches — and a
+  hook that projects *and* reorders folds correctly too. A many-to-many
+  child shared by two parents arrives as two distinct maps carrying one
+  id, so the index is multi-valued and each replacement claims a distinct
+  slot. Refused: a changed row count, a projection that dropped its id,
+  an id the query never returned, and one row returned more often than
+  the query produced it.
+- **A failed response hook turned a committed write into a 500.** The row
+  was in the table and the event had shipped, so the caller retried and
+  wrote it twice; in a `_batch` it lost the ids of every row that
+  committed. The response degrades to the new row's id instead. `_batch`
+  also skips the redaction pass entirely when the transaction rolled
+  back, where it was replacing a per-item error report with an opaque
+  500.
+- **`?cursor=&sort=<NoQuery>` answered 200** where `?sort=<NoQuery>`
+  answers 400. Keyset mode ignores `?sort=` — the cursor fields control
+  `ORDER BY` — but it returned before the sort was parsed, so appending
+  one empty parameter skipped the refusal. The sort is still ignored in
+  keyset mode; it is now validated first, so any `?sort=` the offset path
+  rejects (an unknown column as well as a masked one) is rejected here
+  too.
+- **The admin edit form mangled `date` and `timestamp` values.** Reading
+  through the in-process API returns what the driver scanned — a
+  `time.Time`, where the old JSON round trip produced a string — and the
+  cell formatter had no case for it, so the input rendered Go's default
+  layout, failed RFC 3339 validation on submit, and took the user's
+  other edits down with it. `date` columns render `yyyy-mm-dd`, which is
+  the only value `<input type="date">` accepts — RFC 3339 there blanks
+  the control and the save wipes the column.
+- **A masked `bool`, `enum`, or foreign key was overwritten on save.**
+  The write-only contract held only for text inputs: a checkbox cannot
+  express "unchanged", and `formToJSON` emitted a bool either way, so an
+  edit to an unrelated field cleared `is_admin` to false. A `<select>`
+  with nothing preselected posted its first option, silently reassigning
+  an enum or a relation. Masked columns of every control type now offer
+  an explicit "— unchanged —" choice, drop `Required`, and the save path
+  recomputes which columns are masked server-side rather than trusting
+  the form.
+- **A blueprint screen could name a framework-managed column the entity
+  does not have.** `created_at`/`updated_at` exist only under
+  `timestamps:`, `deleted_at` under `soft_delete:`, `tenant_id` under
+  `multi_tenant:` — the validator treated the NAME as proof of
+  existence, so a `search:` or `group_by` on one passed generate and
+  failed as an anonymous SQL error at runtime.
+- **The DSL selected `Hidden` columns.** `BuildDSLQuery` projected
+  `Schema.Names()`, which includes them, and accepted them in `where`
+  and `order`. It has no callers outside its own tests, so nothing was
+  exposed, but the projection is `VisibleFields()` now and both clauses
+  are guarded.
+- `gofastr pack` dropped field flags it did not name explicitly, so a
+  pack/regenerate round trip silently removed `no_query`.
+- **The generated Go SDK README documented a request that returns 400.**
+  Its filter example took the entity's first column without checking
+  `NoQuery`, so the snippet whose job is to demonstrate the snake_case
+  query contract could name a column the server refuses. The JS README
+  already skipped them; the Go one now does too.
+
+### Changed
+
+- **BREAKING: `entity.Define` panics on a `Hidden` or `NoQuery` cursor
+  column.** Keyset paging orders and compares on that column and encodes
+  its value into the cursor token, which is reversible base64. The check
+  covers a declared `CursorField`/`CursorFields`, the primary-key
+  default, and the primary key auto-appended as a composite tiebreak.
+- **BREAKING: `entity.Define` panics on a `NoQuery` `SearchFields`
+  entry**, and the blueprint decoder rejects the same. `?q=` matches on
+  the stored value.
+- **BREAKING: blueprint `entity_list` `search:` and `filters:`, a
+  `stat_card` `source.filter` or summed `source.field`, and a chart's
+  `group_by` reject `hidden` and `no_query` columns.** Each reaches
+  `ListAll`/`CountAll` with a hand-built `ParsedFilter` or a raw read,
+  bypassing the filter parser, so a masked column there is a value
+  oracle on the app's own page. The chart is the sharpest: `group_by`
+  renders every distinct stored value as a bar or slice LABEL, so the
+  same page printed the mask in its table and the full value in its
+  chart. `group_by` was not validated as a column at all, so a typo
+  silently grouped every row into one bucket. `search:` was previously
+  unvalidated; `id`, the `timestamps:`/`soft_delete:` stamps, and
+  relation-derived foreign keys all stay valid — none is in
+  `decl.Fields`, and rejecting them broke blueprints that generated
+  before.
+- **BREAKING: blueprint `cursor_field`/`cursor_fields` reject `hidden`
+  and `no_query` columns at decode time.** `entity.Define` already
+  panicked on them, but a generated app that dies at boot is a much
+  worse diagnostic than the error `search_fields` gets.
+- Generated CLI filter flags, the JS SDK `<entity>Fields` constant,
+  typed column constants, OpenAPI filter parameters, MCP list-tool
+  arguments, `llm.md`, and the SDK docs examples all omit `NoQuery`
+  columns — each previously advertised a filter the server answers with
+  400. The columns stay in output structs, input and patch structs, and
+  mutation flags: a field can be writable without being queryable.
+- `SchemaHash` covers `NoQuery`, so flipping it moves the hash and the
+  SDK drift banner fires.
+- The admin renders a `NoQuery` column unsortable and never picks one as
+  the quick-search column; either returned a 400 that blanked the grid.
+  Relation labels use a separate picker, so a masked column can still
+  label a foreign-key cell.
+
+### Notes
+
+Register a mask on **both** `AfterGet` and `AfterList`. Each response
+path runs the hook matching the shape it serves, exactly as the entity's
+own routes do, so a mask that exists on only one of them has a gap on the
+paths that use the other. A to-one `?include=` consequently runs the
+child's `AfterGet` once per distinct attached row — rows are deduplicated
+by identity and bounded by the page size, but a hook that queries the
+database is doing that per row, where `AfterList` did it once. A hook
+registered on both surfaces runs twice on those rows, so keep masks
+idempotent: assigning a constant or deleting a key both are; appending or
+truncating are not.
+
+On `?include=`, a child hook may redact in place or by replacing a row
+with a projection; both are folded back into the attached row. It may not
+change the row count — the loader has already keyed each row to its
+parent — so a dropping hook fails the request rather than serving the
+rows it tried to remove. Filter in the child's `BeforeList` instead.
+Sorting `Results` is harmless and has no effect on the payload; keep the
+id when projecting, since that is what identifies the row.
+
+Three surfaces stay raw on purpose. `?stream=true` refuses when an
+`AfterList` hook is registered rather than bypassing it. The durable
+outbox row stores the unredacted record, since it is server-side state
+used for replay. And `webhook.Bridge` POSTs to third-party URLs with no
+handler to redact through — `webhook.WithBridgeRedactor` is available for
+apps that need it.
+
+`Hidden` is unaffected throughout: it is enforced in the SQL projection,
+so no path can return it.
+
 ## [0.47.0] - 2026-07-26
 
 Image placeholders now actually paint. The pipeline could produce a

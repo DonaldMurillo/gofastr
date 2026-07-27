@@ -240,7 +240,55 @@ Each entry under `fields:` accepts:
 | `auto_generate` | string | Auto-populate strategy, e.g. `uuid` on an id column — the generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
 | `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned — `visibleFields` shapes the projection). |
+| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form — see "Masked fields" below. |
 | `to` | string | For `type: relation`, the target entity. |
+
+### Masked fields
+
+An `AfterGet` / `AfterList` hook can rewrite a field on the way out — a
+card number to its last four digits, a note redacted for non-owners.
+That changes what the caller reads. It does not change what the database
+filtered and sorted on.
+
+Left alone, the stored value is still a live column, so a caller
+recovers it a character at a time from which rows come back:
+
+```
+GET /cards?number_like=4111    → 1 row   ┐ every response still
+GET /cards?number_like=4112    → 0 rows  ┘ reads "****1111"
+```
+
+`no_query` closes that. The field stays in the response and the query
+surface refuses it:
+
+```yaml
+fields:
+  - name: number
+    type: string
+    no_query: true    # masked by a hook; never filterable or sortable
+```
+
+```
+GET /cards?number_like=4111    → 400 field "number" cannot be filtered
+```
+
+Use `hidden` instead when the caller should not see the value at all —
+`hidden` also removes the field from responses, and hides the fact that
+the column exists. `no_query` is for when they must see *something*.
+
+`no_query` refuses the query surface; it does not mask anything by
+itself. The hook is what rewrites the value, so declare both, and
+register the hook on `AfterGet` **and** `AfterList` — each response path
+runs the one matching the shape it serves.
+
+The admin's edit form reads the row twice and treats any column the hook
+rewrites as write-only: rendered empty (or with an explicit
+"— unchanged —" option on a checkbox, enum, or relation picker), left
+alone unless you supply a value. It compares the two reads rather than
+looking at `no_query`, so a hook that *transforms* rather than masks —
+normalising a phone number, rounding a currency — also makes its columns
+write-only in the admin. Do that work in `BeforeCreate`/`BeforeUpdate`
+if the column should stay editable.
 
 Relation *blocks* (the `relations:` list, distinct from a `relation`
 field) take `type` (`belongs_to`, `has_many`, `has_one`), `name`,
