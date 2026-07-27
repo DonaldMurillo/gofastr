@@ -31,6 +31,20 @@ const (
 )
 
 // Field defines a single field in an entity schema.
+//
+// Hidden and NoQuery both restrict a field, at different layers. Hidden
+// removes it from responses AND from every query surface, so its value and
+// its existence stay server-side. NoQuery keeps the field in responses but
+// bars it from filters, sorting, and search.
+//
+// NoQuery exists for values the caller may see only in transformed form —
+// a card masked to last-4 by an AfterGet/AfterList hook, say. Without it the
+// stored value is still a live column in WHERE and ORDER BY, so a caller
+// recovers it a character at a time (?card_like=4111) while every response
+// reads "****1111". Mark such a field NoQuery and the query surface refuses
+// it. See framework/crud/redaction_oracle_security_test.go.
+//
+// Hidden implies NoQuery; setting both is redundant but harmless.
 type Field struct {
 	Name         string       // field name (must be unique within a Schema)
 	Type         FieldType    // field type
@@ -40,6 +54,7 @@ type Field struct {
 	AutoGenerate AutoGenerate // server-side auto-generation strategy
 	ReadOnly     bool         // excluded from create/update request bodies
 	Hidden       bool         // excluded from API responses
+	NoQuery      bool         // returned in responses, but never filterable/sortable/searchable
 	Max          *float64     // upper bound (numeric max / string max-length)
 	Min          *float64     // lower bound (numeric min / string min-length)
 	Pattern      string       // regex pattern for string validation

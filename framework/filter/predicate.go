@@ -83,8 +83,16 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 		return nil, nil
 	}
 	allow := make(map[string]bool, len(fields))
+	var noQuery map[string]bool
 	for _, f := range fields {
 		if f.Hidden {
+			continue
+		}
+		if f.NoQuery {
+			if noQuery == nil {
+				noQuery = make(map[string]bool)
+			}
+			noQuery[f.Name] = true
 			continue
 		}
 		allow[f.Name] = true
@@ -94,14 +102,14 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 		return nil, fmt.Errorf("where: invalid JSON: %w", err)
 	}
 	count := 0
-	p, err := parseNode(msg, allow, 1, &count)
+	p, err := parseNode(msg, allow, noQuery, 1, &count)
 	if err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
-func parseNode(msg json.RawMessage, allow map[string]bool, depth int, count *int) (Predicate, error) {
+func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, depth int, count *int) (Predicate, error) {
 	if depth > maxPredicateDepth {
 		return Predicate{}, fmt.Errorf("where: nesting exceeds max depth %d", maxPredicateDepth)
 	}
@@ -128,7 +136,7 @@ func parseNode(msg json.RawMessage, allow map[string]bool, depth int, count *int
 		}
 		children := make([]Predicate, 0, len(kids))
 		for _, k := range kids {
-			c, err := parseNode(k, allow, depth+1, count)
+			c, err := parseNode(k, allow, noQuery, depth+1, count)
 			if err != nil {
 				return Predicate{}, err
 			}
@@ -138,6 +146,11 @@ func parseNode(msg json.RawMessage, allow map[string]bool, depth int, count *int
 	}
 
 	// Leaf.
+	if noQuery[rp.Field] {
+		// Visible in responses but barred from the query surface, so the
+		// field can be named without disclosing anything new.
+		return Predicate{}, fmt.Errorf("where: field %q cannot be filtered", rp.Field)
+	}
 	if !allow[rp.Field] {
 		// Unknown or Hidden field — never build a predicate on it.
 		return Predicate{}, fmt.Errorf("where: unknown filter field %q", rp.Field)

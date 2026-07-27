@@ -438,11 +438,11 @@ func Define(name string, config EntityConfig) *Entity {
 		panic(fmt.Sprintf("entity %q: CrossOwnerRead %q requires OwnerField (cross-owner read only applies to owner-scoped entities)", name, config.CrossOwnerRead))
 	}
 
-	// SearchFields must reference known, non-Hidden, String/Text columns.
-	// An unknown name would produce a "no such column" error at query time;
-	// a Hidden column would turn ?q= into a value-disclosure oracle (same
-	// rationale as ParseFilters' hidden stripping); a non-text column can't
-	// meaningfully participate in LOWER() LIKE matching. Catch all three
+	// SearchFields must reference known, non-Hidden, non-NoQuery, String/Text
+	// columns. An unknown name would produce a "no such column" error at query
+	// time; a Hidden or NoQuery column would turn ?q= into a value-disclosure
+	// oracle (same rationale as ParseFilters' exclusions); a non-text column
+	// can't meaningfully participate in LOWER() LIKE matching. Catch all four
 	// here, at definition, with an actionable message.
 	if len(config.SearchFields) > 0 {
 		for _, sf := range config.SearchFields {
@@ -459,9 +459,59 @@ func Define(name string, config EntityConfig) *Entity {
 			if found.Hidden {
 				panic(fmt.Sprintf("entity %q: SearchFields entry %q is Hidden (search would disclose its values)", name, sf))
 			}
+			if found.NoQuery {
+				panic(fmt.Sprintf("entity %q: SearchFields entry %q is NoQuery (?q= would match on the stored value, disclosing what NoQuery keeps off the query surface)", name, sf))
+			}
 			if found.Type != schema.String && found.Type != schema.Text {
 				panic(fmt.Sprintf("entity %q: SearchFields entry %q must be String or Text, got %d", name, sf, found.Type))
 			}
+		}
+	}
+
+	// Cursor columns are a query surface too: they land in ORDER BY and in the
+	// keyset WHERE, and the emitted cursor token is base64 JSON of the raw
+	// value — reversible, not secret. A Hidden or NoQuery keyset column
+	// therefore hands the caller back exactly what those flags withhold, and
+	// lets them binary-search it by forging cursors. Fail at definition, the
+	// same way SearchFields does.
+	//
+	// The DEFAULT keyset column (the primary key) is checked too, not just
+	// explicitly declared ones. Keyset paging falls back to the PK when no
+	// cursor field is configured, so a NoQuery primary key is used exactly
+	// as if it had been named — and its stored value ends up in the emitted
+	// token. Checking only declared columns left ?cursor= leaking a value
+	// that ?sort= and every filter refused, and disagreed with the DSL's
+	// after() guard, which resolves the same default before checking.
+	// This mirrors CrudHandler.cursorFields() branch for branch. Anything
+	// less lets a column reach ORDER BY and the token without being checked:
+	// a composite silently gains the primary key as its tiebreak, so
+	// validating only the declared members missed a NoQuery `id` entirely.
+	// EntityConfig carries no primary key of its own; Entity.PrimaryKey and
+	// CrudHandler both default to "id", so that is the effective column.
+	// normalizeSubConfigs has already copied Pagination.* down by here.
+	var cursorCols []string
+	switch {
+	case len(config.CursorFields) > 0:
+		cursorCols = append(cursorCols, config.CursorFields...)
+		cursorCols = append(cursorCols, "id") // auto-appended tiebreak
+	case config.CursorField != "":
+		cursorCols = append(cursorCols, config.CursorField)
+	default:
+		cursorCols = append(cursorCols, "id")
+	}
+	for _, cf := range cursorCols {
+		for i := range config.Fields {
+			f := config.Fields[i]
+			if f.Name != cf {
+				continue
+			}
+			if f.Hidden {
+				panic(fmt.Sprintf("entity %q: cursor field %q is Hidden (the cursor token would carry its stored value back to the caller)", name, cf))
+			}
+			if f.NoQuery {
+				panic(fmt.Sprintf("entity %q: cursor field %q is NoQuery (keyset paging orders and compares on the stored value, and the cursor token carries it verbatim)", name, cf))
+			}
+			break
 		}
 	}
 
