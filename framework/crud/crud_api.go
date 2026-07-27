@@ -156,7 +156,12 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 			return nil, fmt.Errorf("include: %w", err)
 		}
 	}
-	return result, nil
+
+	// AfterGet, in the same position the HTTP handler runs it (after
+	// includes are attached). Without this a redaction hook applied only to
+	// `GET /x/{id}` while every in-process reader — including the generated
+	// blueprint detail screen and edit form — saw the stored value.
+	return ch.runAfterGet(ctx, req, id, result)
 }
 
 // ListOptions controls ListAll.
@@ -239,7 +244,11 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 			return nil, fmt.Errorf("include: %w", err)
 		}
 	}
-	return results, nil
+
+	// AfterList, matching the HTTP handler. A generated blueprint list screen
+	// reads through here, so skipping it meant the app's own grid printed
+	// what the API masked.
+	return ch.runAfterList(ctx, req, results)
 }
 
 // BatchCreateMany runs CreateOne for each body in a single transaction.

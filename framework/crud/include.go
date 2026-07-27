@@ -268,6 +268,7 @@ func splitIncludePath(s string) []string {
 // every field name is accepted at parse time.
 func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string) ([]filter.ParsedFilter, error) {
 	knownField := map[string]bool{}
+	var noQueryField map[string]bool
 	for _, f := range fields {
 		// A Hidden column is treated as NOT declared — the identical
 		// "not on target entity" error a nonexistent field gets. The
@@ -276,7 +277,18 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		// the related row's presence/absence in the response leaks
 		// whether the value matched — the same value-disclosure oracle
 		// the top-level and nested filter paths close (see
-		// nested_filter.go), one relation hop away.
+		// nested_filter.go), one relation hop away. NoQuery columns are
+		// blocked for the same reason, but tracked separately so the error
+		// can name them — they are visible in the response, so folding them
+		// into "not on target entity" only sends a developer hunting for a
+		// typo in a column they can plainly see.
+		if f.NoQuery && !f.Hidden {
+			if noQueryField == nil {
+				noQueryField = map[string]bool{}
+			}
+			noQueryField[f.Name] = true
+			continue
+		}
 		if !f.Hidden {
 			knownField[f.Name] = true
 		}
@@ -308,6 +320,9 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 				op = s.op
 				break
 			}
+		}
+		if noQueryField[field] {
+			return nil, fmt.Errorf("include %q: scoped field %q cannot be filtered", pathForErrors, field)
 		}
 		if fields != nil && !knownField[field] {
 			return nil, fmt.Errorf("include %q: scoped field %q not on target entity", pathForErrors, field)
@@ -431,7 +446,10 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 			row[outKey] = out
 		}
 	}
-	return nil
+
+	// Child read hooks run last, on the converted maps now attached to the
+	// parent rows — see applyChildReadHooks for why the ordering matters.
+	return ch.applyChildReadHooks(ctx, nodes, rows)
 }
 
 // recurseLoadOnRawRows operates on rows that are still in raw DB casing — the
