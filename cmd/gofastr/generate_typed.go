@@ -21,6 +21,14 @@ func renderEntityColumns(decl framework.EntityDeclaration) string {
 		if field.Name == "id" {
 			continue
 		}
+		// A typed column exists to be put in a WHERE or ORDER BY. Emitting
+		// one for a NoQuery field hands the developer a compiling, running
+		// way to query the very column the HTTP surface refuses — TypedQuery
+		// applies conditions straight to the builder without re-checking the
+		// schema. Leave it out; the field is still readable on the struct.
+		if field.NoQuery {
+			continue
+		}
 		sb.WriteString(fmt.Sprintf("\t%s%s = %s(%q)\n",
 			struct_, toCamelCase(field.Name),
 			columnConstructor(field.Type), field.Name))

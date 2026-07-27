@@ -73,6 +73,12 @@ func EntityLLMMD(ent *entity.Entity) string {
 			}
 			notes += "values: " + strings.Join(f.Values, "|")
 		}
+		if f.NoQuery {
+			if notes != "" {
+				notes += ", "
+			}
+			notes += "not filterable/sortable"
+		}
 		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", f.Name, fieldTypeLabel(f.Type), createCol, updateCol, notes)
 	}
 	b.WriteString("\n")
@@ -119,15 +125,17 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("| `include` | string | Comma-separated relations to eager-load |\n")
 	b.WriteString("\n")
 
-	// Filter operators
+	// Filter operators. NoQuery fields are excluded along with Hidden ones:
+	// this section tells an agent what it can filter on, and a NoQuery field
+	// answers every filter with a 400.
 	visibleFields := make([]schema.Field, 0, len(fields))
 	for _, f := range fields {
-		if !f.Hidden {
+		if !f.Hidden && !f.NoQuery {
 			visibleFields = append(visibleFields, f)
 		}
 	}
 	if len(visibleFields) > 0 {
-		b.WriteString("**Filter operators** (append to any visible field name):\n\n")
+		b.WriteString("**Filter operators** (append to any filterable field name):\n\n")
 		b.WriteString("| Suffix | Operator | Example |\n")
 		b.WriteString("|--------|----------|----------|\n")
 		sampleField := visibleFields[0].Name

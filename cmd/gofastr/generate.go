@@ -1250,6 +1250,9 @@ func renderFieldLiteral(field framework.FieldDeclaration) (string, error) {
 	if field.Hidden {
 		parts = append(parts, "Hidden: true")
 	}
+	if field.NoQuery {
+		parts = append(parts, "NoQuery: true")
+	}
 	if field.Default != nil {
 		literal, err := renderGoLiteral(field.Default)
 		if err != nil {

@@ -308,6 +308,7 @@ func fieldToMap(f framework.FieldDeclaration) map[string]any {
 	putStr(m, "auto_generate", f.AutoGenerate)
 	putBool(m, "read_only", f.ReadOnly)
 	putBool(m, "hidden", f.Hidden)
+	putBool(m, "no_query", f.NoQuery)
 	return m
 }
 
@@ -1203,6 +1204,7 @@ func packReadFields(e ast.Expr) []framework.FieldDeclaration {
 			Unique:   astBool(fv["Unique"]),
 			ReadOnly: astBool(fv["ReadOnly"]),
 			Hidden:   astBool(fv["Hidden"]),
+			NoQuery:  astBool(fv["NoQuery"]),
 			Pattern:  astString(fv["Pattern"]),
 			To:       astString(fv["To"]),
 			Many:     astBool(fv["Many"]),

@@ -74,7 +74,18 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			// is omitted from output, but a filter turns row presence /
 			// absence into a value-disclosure oracle over a secret column.
 			// Mirrors listToolSchema, which also skips Hidden fields.
-			if field.Hidden {
+			// NoQuery fields are skipped for the same reason: the value is
+			// returned in a transformed form, so filtering on the stored
+			// one rebuilds the oracle.
+			//
+			// Skipping means the key is never forwarded, so the request
+			// runs UNFILTERED rather than returning the 400 the HTTP
+			// surface would give. That is deliberate and pinned by
+			// TestMCP_ListToolOmitsHiddenFieldFilters. Neither field kind is
+			// advertised in listToolSchema, so a well-formed tool call never
+			// sends one; a malformed one gets a wider result set, not a
+			// narrower one, and never an oracle bit.
+			if field.Hidden || field.NoQuery {
 				continue
 			}
 			for _, suffix := range []string{"", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
@@ -238,7 +249,10 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 		props["q"] = map[string]any{"type": "string", "description": "Free-text search across: " + strings.Join(ent.Config.SearchFields, ", ")}
 	}
 	for _, field := range ent.GetFields() {
-		if field.Hidden {
+		// These props are the list tool's FILTER arguments, so NoQuery
+		// fields are omitted alongside Hidden ones — an agent offered a
+		// filter the parser rejects just burns a call on a 400.
+		if field.Hidden || field.NoQuery {
 			continue
 		}
 		props[field.Name] = mcpFieldSchema(field)

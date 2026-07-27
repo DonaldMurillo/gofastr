@@ -201,7 +201,13 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// <field>_lte, <field>_like, <field>_in.
 		// Filter parameters use raw field names (e.g. "created_at_gt")
 		// because ParseFilters matches against the schema field names directly.
+		// NoQuery fields are in the response schema but rejected by the
+		// filter parser, so advertising them here would generate SDK
+		// methods and agent calls that always 400.
 		for _, f := range visibleFields {
+			if f.NoQuery {
+				continue
+			}
 			name := f.Name
 			filterSchema := fieldToFilterSchema(f)
 			// Exact match and _in apply to every field type.
