@@ -662,8 +662,34 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			if found.Hidden {
 				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q is Hidden (search would disclose its values)", decl.Name, sf)
 			}
+			if found.NoQuery {
+				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q is no_query (?q= would match on the stored value)", decl.Name, sf)
+			}
 			if found.Type != "string" && found.Type != "text" {
 				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
+			}
+		}
+		// Cursor columns get the same treatment. entity.Define panics on a
+		// Hidden or no_query keyset column — correct, since the cursor token
+		// carries its value — but a generated app that dies at boot is a much
+		// worse diagnostic than the error search_fields gets here. Both
+		// spellings, and the framework-managed columns resolve as unflagged.
+		for _, cf := range append(append([]string{}, decl.CursorFields...), decl.CursorField) {
+			if cf == "" {
+				continue
+			}
+			found, ok := blueprintColumn(decl, cf)
+			if !ok {
+				return nil, nil, fmt.Errorf("blueprint: entity %q cursor field %q is not a declared field", decl.Name, cf)
+			}
+			if found == nil {
+				continue
+			}
+			if found.Hidden {
+				return nil, nil, fmt.Errorf("blueprint: entity %q cursor field %q is Hidden (it is not in the projection, so paging cannot read it)", decl.Name, cf)
+			}
+			if found.NoQuery {
+				return nil, nil, fmt.Errorf("blueprint: entity %q cursor field %q is no_query (the cursor token would carry its stored value)", decl.Name, cf)
 			}
 		}
 		relations, err := decodeRelations(m["relations"])
@@ -916,7 +942,7 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"name": true, "type": true, "required": true, "unique": true, "default": true, "auto_generate": true, "read_only": true, "hidden": true, "max": true, "min": true, "pattern": true, "values": true, "to": true, "many": true}
+		allowed := map[string]bool{"name": true, "type": true, "required": true, "unique": true, "default": true, "auto_generate": true, "read_only": true, "hidden": true, "no_query": true, "max": true, "min": true, "pattern": true, "values": true, "to": true, "many": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("fields[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -929,6 +955,7 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 			AutoGenerate: stringValue(m["auto_generate"]),
 			ReadOnly:     boolValue(m["read_only"]),
 			Hidden:       boolValue(m["hidden"]),
+			NoQuery:      boolValue(m["no_query"]),
 			Pattern:      stringValue(m["pattern"]),
 			Values:       stringListValue(m["values"]),
 			To:           stringValue(m["to"]),
@@ -1854,6 +1881,30 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if block.Limit < 0 {
 			return fmt.Errorf("blueprint: screen %q entity_list limit must be >= 0", screenName)
 		}
+		// search: the column the screen's quick-search box runs LIKE against.
+		// It reaches ListAll directly (the generated resource builds the
+		// ParsedFilter by hand, bypassing ParseFilters), so the checks the
+		// HTTP filter parser would apply have to happen here instead. A
+		// Hidden or NoQuery column would make the rendered row set and count
+		// a value oracle for a column the caller may not read in full.
+		if block.Search != "" {
+			// blueprintColumn covers the columns the framework adds that are
+			// never in decl.Fields — id, the timestamps:/soft_delete: stamps,
+			// and relations:-declared FKs. Every one of them was a working
+			// search column before this check existed.
+			found, ok := blueprintColumn(decl, block.Search)
+			switch {
+			case !ok:
+				return fmt.Errorf("blueprint: screen %q entity_list search %q is not defined on entity %q", screenName, block.Search, block.Entity)
+			case found == nil:
+				// framework-managed column: exists, and cannot carry a Hidden
+				// or no_query flag of its own.
+			case found.Hidden:
+				return fmt.Errorf("blueprint: screen %q entity_list search %q is hidden (search would disclose its values)", screenName, block.Search)
+			case found.NoQuery:
+				return fmt.Errorf("blueprint: screen %q entity_list search %q is no_query (search would match on the stored value)", screenName, block.Search)
+			}
+		}
 		// filters: each must be a defined column of a facetable type — enum,
 		// bool, or relation. Explicit only (no auto-derivation): an omitted
 		// filters: list renders exactly as before, no facet toolbar.
@@ -1863,11 +1914,24 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 			for _, field := range decl.Fields {
 				typeOf[field.Name] = strings.ToLower(strings.TrimSpace(field.Type))
 			}
+			barred := map[string]string{}
+			for _, field := range decl.Fields {
+				if field.Hidden {
+					barred[field.Name] = "hidden"
+				} else if field.NoQuery {
+					barred[field.Name] = "no_query"
+				}
+			}
 			for _, col := range block.Filters {
 				t, defined := typeOf[col]
 				_, isRel := rels[col]
 				if !defined && !isRel {
 					return fmt.Errorf("blueprint: screen %q entity_list filter %q is not defined on entity %q", screenName, col, block.Entity)
+				}
+				// Facet values become an OpEq filter handed straight to
+				// ListAll, so the same query-surface bar applies here.
+				if why := barred[col]; why != "" {
+					return fmt.Errorf("blueprint: screen %q entity_list filter %q is %s and cannot be faceted", screenName, col, why)
 				}
 				switch {
 				case t == "enum", t == "bool", t == "boolean", t == "relation", isRel:
@@ -1929,6 +1993,18 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if decl.CRUD != nil && !*decl.CRUD {
 			return fmt.Errorf("blueprint: screen %q %s source entity %q must enable crud (the chart reads its rows via the CRUD handler)", screenName, kind, srcEntity)
 		}
+		// group_by is the chart's LABEL, not an aggregate: groupCounts reads
+		// rows raw (no WithReadHooks — the dashboard aggregates are meant to
+		// compute over stored values) and prints each distinct value as a bar
+		// or slice label. Pointed at a masked column that renders the stored
+		// value verbatim on the page while the API masks it — the full value
+		// set, not the one-bit oracle the stat_card filter guard below closes.
+		// Masking groupCounts instead would collapse every row into a single
+		// "****" bucket, so the bar belongs here.
+		if err := requireGroupableColumn(screenName, kind, "group_by", groupBy,
+			"the chart renders each distinct stored value as a bar or slice label", decl); err != nil {
+			return err
+		}
 	case "stat_card":
 		// A stat_card with a source binds to live entity data; without a
 		// registered CRUD handler statValue would render a silent "—".
@@ -1945,6 +2021,40 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 			}
 			if decl.CRUD != nil && !*decl.CRUD {
 				return fmt.Errorf("blueprint: screen %q stat_card source entity %q must enable crud", screenName, srcEntity)
+			}
+			// source.filter is split on "=" and handed to CountAll as a raw
+			// ParsedFilter, bypassing ParseFilters — the same unvalidated
+			// route entity_list facets take. A Hidden or NoQuery column there
+			// turns the rendered count into a one-bit oracle, so bar it here,
+			// where entity_list's filters: are barred.
+			// src["filter"], not block.Props["filter"]: the filter lives in
+			// the nested source map, which is what statValue reads. Checking
+			// the outer props meant this guard never fired.
+			if f, ok := src["filter"].(string); ok && f != "" {
+				col := strings.TrimSpace(strings.SplitN(f, "=", 2)[0])
+				for i := range decl.Fields {
+					if decl.Fields[i].Name != col {
+						continue
+					}
+					if decl.Fields[i].Hidden {
+						return fmt.Errorf("blueprint: screen %q stat_card filter column %q is hidden (the count would disclose its values)", screenName, col)
+					}
+					if decl.Fields[i].NoQuery {
+						return fmt.Errorf("blueprint: screen %q stat_card filter column %q is no_query (the count would match on the stored value)", screenName, col)
+					}
+					break
+				}
+			}
+			// agg: sum reads the same raw rows and renders the total of the
+			// named column. At one row that total IS the stored value, so the
+			// masked-column bar applies here too.
+			if agg, _ := src["agg"].(string); strings.EqualFold(strings.TrimSpace(agg), "sum") {
+				if f, _ := src["field"].(string); f != "" {
+					if err := requireGroupableColumn(screenName, "stat_card", "source.field", f,
+						"the card renders the total of the stored values, which at one row is the value itself", decl); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	case "stack", "cluster", "grid", "stat_grid":
@@ -3262,10 +3372,11 @@ var appResources = map[string]ResourceConfig{}
 
 // ResField is one displayed entity field.
 type ResField struct {
-	Key    string
-	Label  string
-	Type   string   // string,text,int,float,decimal,bool,enum,date,timestamp,uuid,relation,...
-	Values []string // enum: the allowed values (drives <option>s on the form)
+	Key     string
+	Label   string
+	Type    string   // string,text,int,float,decimal,bool,enum,date,timestamp,uuid,relation,...
+	Values  []string // enum: the allowed values (drives <option>s on the form)
+	NoQuery bool     // shown in the grid, but the API refuses to filter or sort on it
 }
 
 // RelSource resolves a foreign-key column to a related record's label.
@@ -3340,6 +3451,18 @@ func (c ResourceConfig) pageSize() int {
 	return 25
 }
 
+// sortable reports whether a column may be used in ORDER BY. Displayed and
+// sortable are not the same set: a NoQuery column shows its (masked) value
+// but the API rejects sorting on it.
+func (c ResourceConfig) sortable(k string) bool {
+	for _, f := range c.Fields {
+		if f.Key == k {
+			return !f.NoQuery
+		}
+	}
+	return false
+}
+
 func (c ResourceConfig) hasField(k string) bool {
 	for _, f := range c.Fields {
 		if f.Key == k {
@@ -3392,7 +3515,11 @@ func (c ResourceConfig) relationLabels(ctx context.Context) map[string]map[strin
 		if rel.Crud == nil {
 			continue
 		}
-		rows, err := rel.Crud.ListAll(ctx, framework.ListOptions{Limit: 1000})
+		// WithReadHooks: the DISPLAY value becomes the visible label on the
+		// grid and detail page, so it must show the mask. Only the id is used
+		// for lookup, and a picker submits the id — so redacting the label
+		// cannot write a masked value back.
+		rows, err := rel.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Limit: 1000})
 		if err != nil {
 			continue
 		}
@@ -3436,12 +3563,18 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	}
 	var sorts []filter.ParsedSort
 	sortCol := q.Get("sort")
-	if sortCol != "" && c.hasField(sortCol) {
+	// sortable(), not hasField(): a NoQuery column is displayed but the API
+	// refuses ORDER BY on it, and this ParsedSort goes straight to ListAll
+	// without passing through ParseSortValues. Rendering the header
+	// unsortable stops the app emitting the link; this stops a hand-typed
+	// or bookmarked ?sort= from reaching the query.
+	if sortCol != "" && c.sortable(sortCol) {
 		sorts = append(sorts, filter.ParsedSort{Field: sortCol, Desc: q.Get("dir") == "desc"})
 	}
 
 	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
-	rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
+	// WithReadHooks: these rows are rendered to an end user.
+	rows, err := c.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
 
 	var actions render.HTML
 	if c.CanCreate {
@@ -3474,7 +3607,9 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	}
 	cols := make([]ui.Column, 0, len(c.Fields)+1)
 	for _, f := range c.Fields {
-		col := ui.Column{Key: f.Key, Header: f.Label, Sortable: true}
+		// A NoQuery column still shows its value, but ?sort= on it is a 400
+		// that blanks the grid — so it renders unsortable.
+		col := ui.Column{Key: f.Key, Header: f.Label, Sortable: !f.NoQuery}
 		if resNumeric(f.Type) {
 			col.Align = "end"
 		}
@@ -3584,7 +3719,9 @@ func resRelFacetOptions(m map[string]string) []ui.FacetOption {
 
 // Detail renders the single-record detail screen.
 func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
-	row, err := c.Crud.GetOne(ctx, id, nil)
+	// WithReadHooks: this row is rendered to an end user, so it must show
+	// whatever an AfterGet redaction shows, not the stored value.
+	row, err := c.Crud.GetOne(framework.WithReadHooks(ctx), id, nil)
 	if err != nil || row == nil {
 		return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
 	}
@@ -3633,7 +3770,10 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 // relatedList renders one reverse-relation section: the related entity's rows
 // where ForeignKey == this record's id, as a compact table under a heading.
 func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id string) render.HTML {
-	rows, err := rl.Crud.ListAll(ctx, framework.ListOptions{
+	// WithReadHooks: these rows are rendered to an end user, same as List and
+	// Detail. relatedRelationLabels and the dashboard aggregates below stay
+	// raw on purpose — they resolve ids and compute over stored values.
+	rows, err := rl.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{
 		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
 		Limit:   10,
 	})
@@ -3679,7 +3819,11 @@ func relatedRelationLabels(ctx context.Context, rels map[string]RelSource) map[s
 		if rel.Crud == nil {
 			continue
 		}
-		rows, err := rel.Crud.ListAll(ctx, framework.ListOptions{Limit: 1000})
+		// WithReadHooks: the DISPLAY value becomes the visible label on the
+		// grid and detail page, so it must show the mask. Only the id is used
+		// for lookup, and a picker submits the id — so redacting the label
+		// cannot write a masked value back.
+		rows, err := rel.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Limit: 1000})
 		if err != nil {
 			continue
 		}
@@ -3707,6 +3851,10 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
 	edit := id != ""
 	var row map[string]any
 	if edit {
+		// Deliberately NOT WithReadHooks: this is an EDIT form and its inputs
+		// round-trip back on submit, so prefilling from a redacted read would
+		// write the mask over the stored value. Display surfaces (List,
+		// Detail) opt in; an editor has to see what it edits.
 		r, err := c.Crud.GetOne(ctx, id, nil)
 		if err != nil || r == nil {
 			return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
@@ -5107,7 +5255,11 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 			}
 			values = ", Values: []string{" + strings.Join(quoted, ", ") + "}"
 		}
-		sb.WriteString(fmt.Sprintf("\t\t\t{Key: %q, Label: %q, Type: %q%s},\n", f.Name, humanizeFieldLabel(f.Name), f.Type, values))
+		noQuery := ""
+		if f.NoQuery {
+			noQuery = ", NoQuery: true"
+		}
+		sb.WriteString(fmt.Sprintf("\t\t\t{Key: %q, Label: %q, Type: %q%s%s},\n", f.Name, humanizeFieldLabel(f.Name), f.Type, values, noQuery))
 	}
 	sb.WriteString("\t\t},\n")
 	// Relations: FK column -> related crud + display field.
@@ -5138,6 +5290,31 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 	return sb.String()
 }
 
+// blueprintEntityHasSystemColumn reports whether a framework-managed column
+// actually exists on THIS entity.
+//
+// blueprintFieldSystem answers "is this the name of a system column", which is
+// the right question for hiding one from a generated form and the wrong one
+// for validating a screen against a schema: created_at/updated_at exist only
+// under timestamps:, deleted_at only under soft_delete:, tenant_id only under
+// multi_tenant:. Treating the name as proof of existence let a screen name a
+// column the table does not have — validation passed and the generated app
+// issued `WHERE created_at LIKE …` against a table without one, turning a
+// named generate-time error into an anonymous runtime failure.
+func blueprintEntityHasSystemColumn(decl framework.EntityDeclaration, name string) bool {
+	switch name {
+	case "id":
+		return true
+	case "created_at", "updated_at":
+		return decl.Timestamps == nil || *decl.Timestamps
+	case "deleted_at":
+		return decl.SoftDelete
+	case "tenant_id":
+		return decl.MultiTenant
+	}
+	return false
+}
+
 // blueprintFieldSystem reports auto/system columns hidden from generated UIs.
 func blueprintFieldSystem(name string) bool {
 	switch name {
@@ -5145,6 +5322,54 @@ func blueprintFieldSystem(name string) bool {
 		return true
 	}
 	return false
+}
+
+// blueprintColumn resolves a column named in a screen block against the
+// entity's declaration, accounting for the columns the framework adds that
+// never appear in decl.Fields.
+//
+// Three of those exist, and every one of them was a legal, working screen
+// column before any of this validation existed: `id` (always present),
+// `created_at` / `updated_at` / `deleted_at` (from timestamps:/soft_delete:),
+// and a FK column declared by a top-level relations: block rather than a
+// type: relation field. Rejecting them as undefined broke blueprints that
+// generated fine, and the message asserted something false — the column does
+// exist. None of them can carry a hidden or no_query flag of its own, so
+// found==nil with ok==true means "exists, unflagged".
+func blueprintColumn(decl framework.EntityDeclaration, name string) (found *framework.FieldDeclaration, ok bool) {
+	for i := range decl.Fields {
+		if decl.Fields[i].Name == name {
+			return &decl.Fields[i], true
+		}
+	}
+	if blueprintEntityHasSystemColumn(decl, name) {
+		return nil, true
+	}
+	if _, isRelCol := blueprintEntityRelations(decl)[name]; isRelCol {
+		return nil, true
+	}
+	return nil, false
+}
+
+// requireGroupableColumn refuses a screen column whose stored values would be
+// rendered or matched on: a chart's group_by label, a summed stat_card field.
+// Hidden and no_query are both barred, for the reasons stated at each call
+// site.
+func requireGroupableColumn(screenName, kind, key, col, why string, decl framework.EntityDeclaration) error {
+	found, ok := blueprintColumn(decl, col)
+	if !ok {
+		return fmt.Errorf("blueprint: screen %q %s %s %q is not defined on entity %q", screenName, kind, key, col, decl.Name)
+	}
+	if found == nil {
+		return nil // framework-managed column; carries no flags
+	}
+	if found.Hidden {
+		return fmt.Errorf("blueprint: screen %q %s %s %q is hidden (it is not in the projection, so every row would group under the same empty value)", screenName, kind, key, col)
+	}
+	if found.NoQuery {
+		return fmt.Errorf("blueprint: screen %q %s %s %q is no_query (%s)", screenName, kind, key, col, why)
+	}
+	return nil
 }
 
 // humanizeFieldLabel turns a column name into a header: "customer_id" →

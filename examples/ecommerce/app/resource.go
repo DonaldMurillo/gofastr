@@ -28,10 +28,11 @@ var appResources = map[string]ResourceConfig{}
 
 // ResField is one displayed entity field.
 type ResField struct {
-	Key    string
-	Label  string
-	Type   string   // string,text,int,float,decimal,bool,enum,date,timestamp,uuid,relation,...
-	Values []string // enum: the allowed values (drives <option>s on the form)
+	Key     string
+	Label   string
+	Type    string   // string,text,int,float,decimal,bool,enum,date,timestamp,uuid,relation,...
+	Values  []string // enum: the allowed values (drives <option>s on the form)
+	NoQuery bool     // shown in the grid, but the API refuses to filter or sort on it
 }
 
 // RelSource resolves a foreign-key column to a related record's label.
@@ -106,6 +107,18 @@ func (c ResourceConfig) pageSize() int {
 	return 25
 }
 
+// sortable reports whether a column may be used in ORDER BY. Displayed and
+// sortable are not the same set: a NoQuery column shows its (masked) value
+// but the API rejects sorting on it.
+func (c ResourceConfig) sortable(k string) bool {
+	for _, f := range c.Fields {
+		if f.Key == k {
+			return !f.NoQuery
+		}
+	}
+	return false
+}
+
 func (c ResourceConfig) hasField(k string) bool {
 	for _, f := range c.Fields {
 		if f.Key == k {
@@ -158,7 +171,11 @@ func (c ResourceConfig) relationLabels(ctx context.Context) map[string]map[strin
 		if rel.Crud == nil {
 			continue
 		}
-		rows, err := rel.Crud.ListAll(ctx, framework.ListOptions{Limit: 1000})
+		// WithReadHooks: the DISPLAY value becomes the visible label on the
+		// grid and detail page, so it must show the mask. Only the id is used
+		// for lookup, and a picker submits the id — so redacting the label
+		// cannot write a masked value back.
+		rows, err := rel.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Limit: 1000})
 		if err != nil {
 			continue
 		}
@@ -202,12 +219,18 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	}
 	var sorts []filter.ParsedSort
 	sortCol := q.Get("sort")
-	if sortCol != "" && c.hasField(sortCol) {
+	// sortable(), not hasField(): a NoQuery column is displayed but the API
+	// refuses ORDER BY on it, and this ParsedSort goes straight to ListAll
+	// without passing through ParseSortValues. Rendering the header
+	// unsortable stops the app emitting the link; this stops a hand-typed
+	// or bookmarked ?sort= from reaching the query.
+	if sortCol != "" && c.sortable(sortCol) {
 		sorts = append(sorts, filter.ParsedSort{Field: sortCol, Desc: q.Get("dir") == "desc"})
 	}
 
 	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
-	rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
+	// WithReadHooks: these rows are rendered to an end user.
+	rows, err := c.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
 
 	var actions render.HTML
 	if c.CanCreate {
@@ -240,7 +263,9 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	}
 	cols := make([]ui.Column, 0, len(c.Fields)+1)
 	for _, f := range c.Fields {
-		col := ui.Column{Key: f.Key, Header: f.Label, Sortable: true}
+		// A NoQuery column still shows its value, but ?sort= on it is a 400
+		// that blanks the grid — so it renders unsortable.
+		col := ui.Column{Key: f.Key, Header: f.Label, Sortable: !f.NoQuery}
 		if resNumeric(f.Type) {
 			col.Align = "end"
 		}
@@ -350,7 +375,9 @@ func resRelFacetOptions(m map[string]string) []ui.FacetOption {
 
 // Detail renders the single-record detail screen.
 func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
-	row, err := c.Crud.GetOne(ctx, id, nil)
+	// WithReadHooks: this row is rendered to an end user, so it must show
+	// whatever an AfterGet redaction shows, not the stored value.
+	row, err := c.Crud.GetOne(framework.WithReadHooks(ctx), id, nil)
 	if err != nil || row == nil {
 		return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
 	}
@@ -399,7 +426,10 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 // relatedList renders one reverse-relation section: the related entity's rows
 // where ForeignKey == this record's id, as a compact table under a heading.
 func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id string) render.HTML {
-	rows, err := rl.Crud.ListAll(ctx, framework.ListOptions{
+	// WithReadHooks: these rows are rendered to an end user, same as List and
+	// Detail. relatedRelationLabels and the dashboard aggregates below stay
+	// raw on purpose — they resolve ids and compute over stored values.
+	rows, err := rl.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{
 		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
 		Limit:   10,
 	})
@@ -445,7 +475,11 @@ func relatedRelationLabels(ctx context.Context, rels map[string]RelSource) map[s
 		if rel.Crud == nil {
 			continue
 		}
-		rows, err := rel.Crud.ListAll(ctx, framework.ListOptions{Limit: 1000})
+		// WithReadHooks: the DISPLAY value becomes the visible label on the
+		// grid and detail page, so it must show the mask. Only the id is used
+		// for lookup, and a picker submits the id — so redacting the label
+		// cannot write a masked value back.
+		rows, err := rel.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Limit: 1000})
 		if err != nil {
 			continue
 		}
@@ -473,6 +507,10 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
 	edit := id != ""
 	var row map[string]any
 	if edit {
+		// Deliberately NOT WithReadHooks: this is an EDIT form and its inputs
+		// round-trip back on submit, so prefilling from a redacted read would
+		// write the mask over the stored value. Display surfaces (List,
+		// Detail) opt in; an editor has to see what it edits.
 		r, err := c.Crud.GetOne(ctx, id, nil)
 		if err != nil || r == nil {
 			return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
