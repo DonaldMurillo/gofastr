@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -296,31 +297,82 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 	return nil
 }
 
-// collectSources enumerates every table to dump/restore: registry entities
-// first (alphabetical), then registered DataExporters whose table is not
-// already an entity table. Identifiers are SafeIdent-checked at the use sites
-// (export read / import write), so a single choke point enforces D2.
+// collectSources enumerates every table to dump/restore: one source per
+// PHYSICAL TABLE, then registered DataExporters whose table is not already an
+// entity table. Identifiers are SafeIdent-checked at the use sites (export
+// read / import write), so a single choke point enforces D2.
+//
+// Registry entities are collapsed through migrate.UnionEntities — the same
+// version-union helper migration, snapshot, and the seed runner use — so two
+// versions of one entity name produce exactly ONE source (one <name>.ndjson)
+// for their shared table. Without this, iterating AllSorted() emits one source
+// per version under the same <name>.ndjson path; the second write clobbers the
+// first while the manifest gains two entries for one table, and import either
+// checksum-mismatches or double-inserts the same primary keys (F3).
+//
+// Distinct entity names that explicitly target the same physical table are
+// also collapsed to one source (the lex-first name) whose column list is the
+// union across every entity sharing the table — a faithful backup reads every
+// physical column, not just one name's projection.
 func (a *App) collectSources() []exportSource {
 	var out []exportSource
 	seenTable := make(map[string]bool)
 	seenName := make(map[string]bool)
 
 	if a.Registry != nil {
-		for _, ent := range a.Registry.AllSorted() {
-			cols := make([]string, 0, len(ent.GetFields()))
+		merged := migrate.UnionEntities(a.registryView())
+		// Sort by name for a deterministic archive, then group by physical
+		// table so each table appears exactly once.
+		names := make([]string, 0, len(merged))
+		for n := range merged {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		tableCols := map[string][]string{} // table → unioned column names
+		tableName := map[string]string{}   // table → lex-first entity name
+		tablePK := map[string]string{}     // table → primary-key column
+		for _, n := range names {
+			ent := merged[n]
+			table := ent.GetTable()
+			if _, first := tableCols[table]; !first {
+				tableName[table] = n
+				pk := ent.PrimaryKey
+				if pk == "" {
+					pk = "id"
+				}
+				tablePK[table] = pk
+				tableCols[table] = []string{}
+			}
+			// Union this entity's columns into the table's set. Duplicates are
+			// deduped by lowercased name (Postgres folds unquoted identifiers),
+			// preserving the first-seen casing.
+			dedup := make(map[string]bool, len(tableCols[table]))
+			for _, c := range tableCols[table] {
+				dedup[strings.ToLower(c)] = true
+			}
 			for _, f := range ent.GetFields() {
-				cols = append(cols, f.Name)
+				key := strings.ToLower(f.Name)
+				if dedup[key] {
+					continue
+				}
+				dedup[key] = true
+				tableCols[table] = append(tableCols[table], f.Name)
 			}
-			pk := ent.PrimaryKey
-			if pk == "" {
-				pk = "id"
-			}
+		}
+		// Emit one source per table, table-name-sorted for deterministic output.
+		tables := make([]string, 0, len(tableCols))
+		for t := range tableCols {
+			tables = append(tables, t)
+		}
+		sort.Strings(tables)
+		for _, t := range tables {
+			n := tableName[t]
 			out = append(out, exportSource{
-				name: ent.GetName(), source: "entity",
-				table: ent.GetTable(), primaryKey: pk, columns: cols,
+				name: n, source: "entity",
+				table: t, primaryKey: tablePK[t], columns: tableCols[t],
 			})
-			seenTable[ent.GetTable()] = true
-			seenName[ent.GetName()] = true
+			seenTable[t] = true
+			seenName[n] = true
 		}
 	}
 	for _, ex := range datexport.All() {

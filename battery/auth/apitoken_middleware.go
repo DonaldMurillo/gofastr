@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -263,7 +264,32 @@ func RequireAPIScopes(apiPrefix string) middleware.Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			resource, _, _ := strings.Cut(rest, "/")
+			// Derive the authorization resource from the first path segment
+			// after the API prefix, skipping version-like segments (v1, v2,
+			// v1.2) so that /api/v1/posts and /api/v2/posts both map to the
+			// same scope resource "posts". Version is an API-surface concern,
+			// not an authorization one — a token scoped to posts:read can read
+			// posts at any version. Per-version authorization uses RequireScope.
+			//
+			// A version-like segment is only skipped when a real segment
+			// follows it. An entity whose table is genuinely version-shaped
+			// ("v1", "v2" — legal, since Table only has to match [A-Za-z0-9_])
+			// would otherwise leave resource empty, and the empty case falls
+			// through unchecked: an authorization bypass, not a naming quirk.
+			segs := make([]string, 0, 4)
+			for _, seg := range strings.Split(rest, "/") {
+				if seg != "" {
+					segs = append(segs, seg)
+				}
+			}
+			resource := ""
+			for i, seg := range segs {
+				if isVersionSegment(seg) && i < len(segs)-1 {
+					continue
+				}
+				resource = seg
+				break
+			}
 			if resource == "" {
 				next.ServeHTTP(w, r)
 				return
@@ -295,4 +321,13 @@ func RequireScope(scope string) middleware.Middleware {
 			writeAuthError(w, http.StatusForbidden, "insufficient token scope")
 		})
 	}
+}
+
+var versionSegmentRe = regexp.MustCompile(`^v\d+(\.\d+)?$`)
+
+// isVersionSegment reports whether a path segment looks like an API version
+// identifier (e.g. "v1", "v2", "v1.2"). Used by RequireAPIScopes to skip
+// version segments when deriving the scope resource from the request path.
+func isVersionSegment(seg string) bool {
+	return versionSegmentRe.MatchString(seg)
 }

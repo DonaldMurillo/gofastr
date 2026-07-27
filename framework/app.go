@@ -1004,6 +1004,13 @@ func (a *App) Group(prefix string, opts ...routegroup.GroupOption) *routegroup.R
 // This is the group-scoped equivalent of App.Entity.
 func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.EntityConfig) *App {
 	e := entity.Define(name, config)
+	// The registry keys on (name, version) so the same entity name can be
+	// registered into multiple groups. The version is the group's full
+	// prefix (e.g. "/api/v1"); an entity is unique per (name, prefix).
+	e.Version = g.Prefix()
+	// Carry the group's OpenAPI tag so the generated spec can group this
+	// entity's operations under the version's tag instead of the bare name.
+	e.OpenAPITag = g.OpenAPITag()
 
 	if a.DB != nil {
 		e.SetDB(a.DB)
@@ -1051,6 +1058,11 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		// 404s. App.Entity sets this from the API prefix; the grouped path
 		// left it empty.
 		crudHandler.BasePath = g.Prefix()
+		// Propagate the group's MCP namespace so tools registered for a
+		// namespaced entity are disambiguated from other versions
+		// (e.g. "admin.posts.list" vs "public.posts.list"). An empty
+		// namespace keeps the historical flat "posts_list" tool names.
+		crudHandler.MCPNamespace = g.MCPNamespace()
 
 		// Register CRUD routes on the group's sub-router.
 		// The group's prefix is already baked into the sub-router,
@@ -1084,7 +1096,16 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		if method == "" {
 			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
 		}
-		path := openapi.EntityEndpointPath(ent, endpoint.Path)
+		// EntityEndpointPath includes the version prefix for OpenAPI/spec use.
+		// Here we register on the group's sub-router, which already carries
+		// the prefix — so build the RELATIVE path (table/endpoint) instead.
+		path := "/" + strings.Trim(ent.GetTable(), "/")
+		if !strings.HasPrefix(strings.TrimSpace(endpoint.Path), "/") {
+			path += "/" + strings.TrimPrefix(endpoint.Path, "/")
+		} else {
+			path = strings.TrimSpace(endpoint.Path)
+		}
+		path = crud.NormalizePath(convertGroupEndpointPath(path))
 		if endpoint.Handler != nil {
 			g.Handle(method, path, endpoint.Handler)
 		}
@@ -1109,6 +1130,19 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		}
 	}
 	return nil
+}
+
+// convertGroupEndpointPath converts ":id"-style params to "{id}" for the
+// group sub-router, mirroring openapi.convertColonParams without importing
+// the unexported helper. The group sub-router already carries the prefix.
+func convertGroupEndpointPath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if strings.HasPrefix(part, ":") && len(part) > 1 {
+			parts[i] = "{" + strings.TrimPrefix(part, ":") + "}"
+		}
+	}
+	return strings.Join(parts, "/")
 }
 
 // Use appends middleware to the app's router chain. The default chain
@@ -1494,6 +1528,50 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 	return ch, nil
 }
 
+// CrudHandlerForEntity is CrudHandler that takes the entity directly instead
+// of looking it up by name. Use it when you already hold the *entity.Entity
+// (e.g. from Registry.All or AllSorted) and the name may be ambiguous because
+// multiple versions are registered. The handler is wired identically to the
+// one CrudHandler(name) produces.
+func (a *App) CrudHandlerForEntity(ent *entity.Entity) (*crud.CrudHandler, error) {
+	if a.DB == nil {
+		return nil, fmt.Errorf("app.CrudHandlerForEntity: no DB configured")
+	}
+	if ent == nil {
+		return nil, fmt.Errorf("app.CrudHandlerForEntity: entity is nil")
+	}
+	// The entity must be the one the registry holds at that (name, version).
+	// Building a handler for an unregistered entity yields something wired to
+	// routes that do not exist — every dispatch through it 404s, far from the
+	// call that made it.
+	registered, err := a.Registry.GetVersioned(ent.Config.Name, ent.Version)
+	if err != nil {
+		return nil, fmt.Errorf("app.CrudHandlerForEntity: %w", err)
+	}
+	if registered != ent {
+		return nil, fmt.Errorf("app.CrudHandlerForEntity: entity %q at version %q is not the registered instance", ent.Config.Name, ent.Version)
+	}
+	ch := crud.NewCrudHandler(ent, a.DB)
+	ch.JSONCase = a.JSONCasing()
+	ch.Hooks = a.HookRegistry(ent.GetName())
+	ch.Storage = a.Storage
+	ch.Events = a.Events()
+	if a.outbox != nil {
+		ch.Outbox = a.outbox
+	}
+	ch.Registry = a.Registry
+	// BasePath is where the entity's routes are actually mounted. mcpBase() is
+	// BasePath + "/" + table, so leaving it empty addresses "/posts" while a
+	// versioned entity's routes live at "/api/v1/posts". An unversioned entity
+	// takes the app-wide API prefix, matching App.Entity.
+	if ent.Version != "" {
+		ch.BasePath = ent.Version
+	} else {
+		ch.BasePath = a.apiPrefix()
+	}
+	return ch, nil
+}
+
 // MustCrudHandler is CrudHandler that panics on error — for app setup where a
 // missing entity is a programming mistake.
 func (a *App) MustCrudHandler(name string) *crud.CrudHandler {
@@ -1572,6 +1650,12 @@ func (a *App) View(v migrate.View) *App {
 		ch.JSONCase = a.JSONCasing()
 		ch.Registry = a.Registry
 		ch.ChildHooks = a.lookupHookRegistry
+		// Views mount under the API prefix like entities do, so BasePath must
+		// match or anything deriving a URL from the handler addresses the
+		// wrong path. mcpBase() is BasePath + "/" + table, so an empty value
+		// silently yields "/posts" where the routes live at "/api/posts" — a
+		// 404 surfacing far from its cause the moment a view gains a tool.
+		ch.BasePath = a.apiPrefix()
 		crud.RegisterCrudRoutes(a.router, ch, a.entityMountPath(ent.GetTable()),
 			crud.CrudRouteOptions{ReadOnly: true, NoLLMMD: a.Config.NoLLMMD})
 	}
@@ -2549,8 +2633,18 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		fmt.Fprintf(w, "  %s Stats: http://%s/.debug/stats\n", arrow(), boundAddr)
 	}
 
-	for _, e := range a.Registry.All() {
-		fmt.Fprintf(w, "  %s %-12s http://%s%s\n", arrow(), e.GetName(), boundAddr, a.entityMountPath(e.GetTable()))
+	for _, e := range a.Registry.AllSorted() {
+		mountPath := "/" + e.GetTable()
+		if e.Version != "" {
+			mountPath = e.Version + mountPath
+		} else {
+			mountPath = a.entityMountPath(e.GetTable())
+		}
+		label := e.GetName()
+		if e.Version != "" {
+			label = e.GetName() + " (" + e.Version + ")"
+		}
+		fmt.Fprintf(w, "  %s %-12s http://%s%s\n", arrow(), label, boundAddr, mountPath)
 	}
 
 	if hasAPI {

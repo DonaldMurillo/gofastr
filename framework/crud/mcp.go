@@ -33,17 +33,28 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		return fmt.Errorf("entity mcp: router is nil — MCP CRUD tools must dispatch through the app router so middleware applies")
 	}
 	ent := crud.Entity.GetName()
+	// Tool name shape:
+	//   no namespace      → "<entity>_<action>"   (historical flat names — public agent surface)
+	//   namespace set     → "<ns>.<entity>.<action>" (per routegroup.WithMCPNamespace docs)
+	// The flat form MUST stay stable for unversioned/no-namespace entities;
+	// the namespaced dot form disambiguates two versions of the same entity.
+	toolName := func(action string) string {
+		if crud.MCPNamespace == "" {
+			return ent + "_" + action
+		}
+		return crud.MCPNamespace + "." + ent + "." + action
+	}
 	defs := []struct {
 		name        string
 		description string
 		schema      map[string]any
 		handler     mcp.ToolHandler
 	}{
-		{ent + "_list", "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router)},
-		{ent + "_get", "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router)},
-		{ent + "_create", "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router)},
-		{ent + "_update", "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router)},
-		{ent + "_delete", "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router)},
+		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router)},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router)},
+		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router)},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router)},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router)},
 	}
 	for _, def := range defs {
 		if err := server.RegisterTool(def.name, def.description, def.schema, def.handler); err != nil {
@@ -89,7 +100,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				continue
 			}
 			for _, suffix := range []string{"", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
-				key := field.Name + suffix
+				key := mcpFieldKey(field) + suffix
 				if v, ok := params[key]; ok {
 					values.Set(key, fmt.Sprint(v))
 				}
@@ -255,7 +266,7 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 		if field.Hidden || field.NoQuery {
 			continue
 		}
-		props[field.Name] = mcpFieldSchema(field)
+		props[mcpFieldKey(field)] = mcpFieldSchema(field)
 	}
 	return map[string]any{"type": "object", "properties": props}
 }
@@ -267,9 +278,10 @@ func writeToolSchema(ent *entity.Entity) map[string]any {
 		if field.AutoGenerate != schema.AutoNone || field.ReadOnly || field.Hidden {
 			continue
 		}
-		props[field.Name] = mcpFieldSchema(field)
+		key := mcpFieldKey(field)
+		props[key] = mcpFieldSchema(field)
 		if field.Required && field.Default == nil {
-			required = append(required, field.Name)
+			required = append(required, key)
 		}
 	}
 	out := map[string]any{"type": "object", "properties": props}
@@ -285,6 +297,16 @@ func updateToolSchema(ent *entity.Entity) map[string]any {
 	props["id"] = map[string]any{"type": "string"}
 	out["required"] = []string{"id"}
 	return out
+}
+
+// mcpFieldKey returns the parameter name a field is exposed under in MCP
+// tool schemas: WireName when set (the version-specific alias), else the
+// raw DB column Name. The CRUD filter parser accepts both forms.
+func mcpFieldKey(field schema.Field) string {
+	if field.WireName != "" {
+		return field.WireName
+	}
+	return field.Name
 }
 
 func mcpFieldSchema(field schema.Field) map[string]any {

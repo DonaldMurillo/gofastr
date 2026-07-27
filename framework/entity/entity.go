@@ -309,6 +309,21 @@ type Entity struct {
 	Config     EntityConfig
 	DB         *sql.DB
 	PrimaryKey string // defaults to "id"
+
+	// Version identifies the API version this entity is mounted under, when
+	// registered via App.GroupEntity. It is the route group's full prefix
+	// (e.g. "/api/v1"). Empty for entities registered via App.Entity — those
+	// keep the historical single-version behaviour. The registry keys on
+	// (Config.Name, Version) so the same entity name can coexist under
+	// different versions; callers that don't care about version resolve the
+	// unversioned or sole entity via Registry.Get.
+	Version string
+
+	// OpenAPITag is the tag applied to this entity's operations in the
+	// generated OpenAPI document. Set from the route group's OpenAPITag
+	// when registered via App.GroupEntity; empty for App.Entity (the tag
+	// defaults to the entity name in that case).
+	OpenAPITag string
 }
 
 // Define creates a new Entity with the given name and configuration.
@@ -614,6 +629,18 @@ func (e *Entity) Validate() error {
 	}
 
 	seen := make(map[string]bool, len(e.Config.Fields))
+	// wireKeys maps each field's wire key (WireName when set, else the column
+	// name) back to the column that claimed it. A wire key addresses exactly
+	// one column: JSON has no way to express two.
+	//
+	// Without this guard the collision is SILENT and splits reads from writes.
+	// CRUD's refreshFieldCache keeps whichever field it saw first, so a body
+	// posted under the shared key writes to that column, while filters resolve
+	// the same key independently and may target the other — the row written is
+	// then invisible to the filter, with no error anywhere. crud.go documented
+	// this as "a config error that ValidateWireNames catches at Define"; that
+	// function never existed, so nothing caught it.
+	wireKeys := make(map[string]string, len(e.Config.Fields))
 	for _, f := range e.Config.Fields {
 		if f.Name == "" {
 			return fmt.Errorf("entity %q: field name must not be empty", e.Config.Name)
@@ -622,6 +649,20 @@ func (e *Entity) Validate() error {
 			return fmt.Errorf("entity %q: duplicate field %q", e.Config.Name, f.Name)
 		}
 		seen[f.Name] = true
+
+		// Hidden fields are included deliberately: they are excluded from
+		// responses but still resolve on write and filter paths, so letting a
+		// visible field alias a hidden column would be worse, not harmless.
+		wk := f.WireName
+		if wk == "" {
+			wk = f.Name
+		}
+		if owner, clash := wireKeys[wk]; clash {
+			return fmt.Errorf(
+				"entity %q: fields %q and %q both resolve to wire key %q — a wire key addresses exactly one column; change one field's WireName",
+				e.Config.Name, owner, f.Name, wk)
+		}
+		wireKeys[wk] = f.Name
 
 		if f.Type == schema.Relation && f.To == "" {
 			return fmt.Errorf("entity %q: relation field %q must specify To", e.Config.Name, f.Name)

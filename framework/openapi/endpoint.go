@@ -17,7 +17,14 @@ func EntityEndpointPath(ent *entity.Entity, path string) string {
 		path = "/"
 	}
 	if !strings.HasPrefix(path, "/") {
-		path = "/" + strings.Trim(ent.GetTable(), "/") + "/" + strings.TrimPrefix(path, "/")
+		// Relative paths resolve under the entity's table path. For a
+		// versioned entity (registered via App.GroupEntity) the table path
+		// carries the group prefix, so the endpoint must too.
+		base := "/" + strings.Trim(ent.GetTable(), "/")
+		if ent.Version != "" {
+			base = ent.Version + base
+		}
+		path = base + "/" + strings.TrimPrefix(path, "/")
 	}
 	return crud.NormalizePath(convertColonParams(path))
 }

@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -97,11 +98,22 @@ func (s *Spec) AddPath(method, path string, op Operation) {
 	if s.paths[openapiPath] == nil {
 		s.paths[openapiPath] = make(map[string]any)
 	}
+	if _, exists := s.paths[openapiPath][method]; exists {
+		panic(fmt.Sprintf("openapi: AddPath: %s %s is already registered — two entities or endpoints resolve to the same operation; use distinct paths or versions",
+			strings.ToUpper(method), openapiPath))
+	}
 	s.paths[openapiPath][method] = op.ToMap()
 }
 
-// AddSchema registers a reusable schema component.
+// AddSchema registers a reusable schema component. Registering the same
+// name twice panics: a collision means two entities (or two versions of
+// one entity) produced the same component key, and silent overwrite would
+// leave $ref pointing at the wrong schema. The caller must disambiguate
+// before building the spec (e.g. via a version slug in the component name).
 func (s *Spec) AddSchema(name string, schema map[string]any) {
+	if _, exists := s.schemas[name]; exists {
+		panic(fmt.Sprintf("openapi: AddSchema: component %q is already registered — schema component names must be unique across entities and versions", name))
+	}
 	s.schemas[name] = schema
 }
 

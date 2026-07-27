@@ -43,8 +43,10 @@ func TestNestedFilterRefusesUnregisteredTarget(t *testing.T) {
 		t.Fatal("SECURITY: a nested filter on an unregistered relation target was accepted; " +
 			"the column reaches an EXISTS predicate with no schema check")
 	}
-	if !strings.Contains(err.Error(), "not registered") {
-		t.Fatalf("error should name the missing registration, got: %v", err)
+	// The operator has to know WHICH target could not be resolved, or the
+	// error sends them looking through every relation on the entity.
+	if !strings.Contains(err.Error(), "auth_users") {
+		t.Fatalf("error should name the unresolvable target, got: %v", err)
 	}
 }
 

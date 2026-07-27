@@ -11,7 +11,7 @@ import (
 // Boot-time additive convergence: AutoMigrate creates missing tables AND adds
 // missing columns to existing tables (ALTER TABLE ADD COLUMN — the same DDL
 // the declarative diff emits). It never drops, renames, or retypes; those
-// stay behind `migrate diff --apply [--allow-destructive]`.
+// stay behind an explicit ApplySchemaDiffWithOptions/AllowDestructive apply.
 
 // notesRegistry builds a registry with a single "notes" entity carrying the
 // given fields, simulating an entity declaration evolving between boots.
@@ -24,7 +24,7 @@ func notesRegistry(cfg entity.EntityConfig) *Registry {
 
 // TestAutoMigrate_AddsMissingColumn is the tutorial walkthrough regression:
 // boot with {title}, add user_id to the declaration, boot again — the column
-// must exist and be writable, with no `migrate diff --apply` step in between.
+// must exist and be writable, with no explicit diff-apply step in between.
 func TestAutoMigrate_AddsMissingColumn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		v1 := notesRegistry(entity.EntityConfig{

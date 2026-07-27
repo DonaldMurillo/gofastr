@@ -196,7 +196,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, fmt.Errorf("static: color-scheme.js: %w", err)
 	}
 	assets := []asset{
-		{urlPath: "/__gofastr/runtime.js", body: []byte(runtime.MustRuntimeJS())},
+		{urlPath: "/__gofastr/runtime.js", body: []byte(runtime.MustStaticJS())},
 		// Loaded synchronously at the top of <head>; themeswitch.js
 		// early-returns without window.__gofastr_colorScheme, so a
 		// missing file silently kills the theme toggle on a static host.

@@ -72,6 +72,11 @@ type UIHost struct {
 	App     *app.App
 	Islands *island.Manager
 	mu      sync.RWMutex
+	// variants holds themes servable under app.css besides App.Theme —
+	// see themevariant.go. Its own lock, not ds.mu: registration happens at
+	// wire time while reads happen per request, and coupling them would put
+	// stylesheet lookups behind the host's general-purpose mutex.
+	variants themeVariants
 	// sessionKey signs and verifies the stateless session tokens that
 	// replaced the old in-memory session map (issue #112): any process
 	// holding the same key accepts any process's tokens, so sessions are
@@ -482,7 +487,20 @@ func (ds *UIHost) CustomCSS() string {
 // component would render with UA defaults. The DefaultTheme()
 // floor guarantees var() resolution.
 func (ds *UIHost) AppCSS() string {
-	t := ds.activeTheme() // falls back to DefaultTheme() when App.Theme nil
+	return ds.AppCSSFor(ds.activeTheme())
+}
+
+// AppCSSFor renders the app stylesheet against an explicit theme instead of
+// the boot-time App.Theme. Everything except the :root custom-property block
+// and token resolution is theme-independent, so the two callers that need a
+// per-request palette — an embedded surface carrying a host's brand color, and
+// the theme configurator previewing an unsaved theme — go through here rather
+// than mutating App.Theme, which is process-global and shared across requests.
+//
+// Callers are responsible for content-addressing the result: component CSS is
+// already busted by registry.VersionFor(theme), and app.css must be keyed the
+// same way or a second theme would be served the first theme's cached bytes.
+func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	out := t.CSSCustomProperties() + "\n"
 	// Framework-built-in helpers: visually-hidden for skip links, live
 	// regions, etc. Inlined here (not via WithCustomCSS) so apps don't
@@ -611,8 +629,13 @@ td[data-align="end"] {
   z-index: 9999;
   max-width: calc(100vw - 32px);
   padding: 12px 16px;
-  background: #18181B;
-  color: #FAFAFA;
+  /* Reuses the theme's always-dark inkwell pair rather than hardcoding a
+     palette or inventing an inverse-surface token. CodeSurface/CodeText are
+     deliberately non-inverting and contrast-tuned in both schemes, which is
+     exactly what a transient overlay wants — and unlike literal hex, a themed
+     app's toast now tracks its palette. */
+  background: var(--color-code-surface, #18181B);
+  color: var(--color-code-text, #FAFAFA);
   border-radius: 8px;
   font: 0.9rem system-ui, -apple-system, sans-serif;
   box-shadow: 0 10px 25px rgba(0,0,0,0.25);
@@ -625,8 +648,11 @@ td[data-align="end"] {
   opacity: 1;
   transform: translateY(0);
 }
-/* Progress indicator on slow SPA navigation. Apps can override the
-   color via .fui-nav-busy { background: ... } */
+/* Progress indicator on slow SPA navigation. The bar tracks the theme's
+   primary color via the token — a literal hex here would keep the bar
+   indigo in a teal app, and would ignore a per-request theme variant
+   entirely (the whole point of app.css being theme-addressed). The
+   fallback only applies if a host serves this CSS with no :root tokens. */
 html[aria-busy="true"] {
   cursor: progress;
 }
@@ -639,7 +665,7 @@ html[aria-busy="true"]::after {
   animation: fui-nav-progress 1s linear infinite;
   z-index: 9999;
   pointer-events: none;
-  color: #4F46E5;
+  color: var(--color-primary, #4F46E5);
 }
 @keyframes fui-nav-progress {
   0% { transform: translateX(-100%); }
@@ -1477,8 +1503,32 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 // WithCustomCSS payload + style.Contribute'd fragments concatenated.
 // One request per page replaces the legacy theme.css + styles.css
 // split.
+// An optional ?t=<themeHash> selects a registered theme variant
+// (RegisterThemeVariant) instead of App.Theme. The hash is a LOOKUP KEY, never
+// a theme description — an unregistered hash falls back to the app theme, so a
+// request can neither inject CSS nor mint an unbounded set of cache entries.
+//
+// Requests naming a variant are content-addressed and therefore immutable: the
+// hash changes whenever the emitted CSS does. The unparameterised URL keeps its
+// historical `no-cache`, because that response tracks App.Theme plus
+// WithCustomCSS plus contributed fragments, none of which are in the URL.
 func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+
+	if hash := r.URL.Query().Get("t"); hash != "" {
+		if t, ok := ds.themeVariant(hash); ok {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			fmt.Fprint(w, ds.AppCSSFor(t))
+			return
+		}
+		// Unknown variant: serve the app theme, but do NOT mark it immutable —
+		// the URL says one thing and the bytes say another, so caching it under
+		// that key would poison the variant once it is registered.
+		w.Header().Set("Cache-Control", "no-cache")
+		fmt.Fprint(w, ds.AppCSS())
+		return
+	}
+
 	w.Header().Set("Cache-Control", "no-cache")
 	fmt.Fprint(w, ds.AppCSS())
 }

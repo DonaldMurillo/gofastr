@@ -102,24 +102,34 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		// would resurrect exactly the value-disclosure oracle the flat-filter
 		// Hidden exclusion blocks, just one relation hop away.
 		//
-		// An unresolvable target is a REFUSAL, not a skip. This used to read
-		// "if registry != nil { if err == nil { … } }", so a relation pointing
-		// at a real table that isn't a registered entity — auth_users is the
-		// documented case — dropped the whole check and let the caller name
-		// any column of it in an EXISTS predicate. isSafeIdentifier gates the
-		// shape of the name, not its membership, so `?author.password_hash_
-		// like=$2a$` came back 200 with a row set that varies by the stored
-		// value. parseIncludeTree refuses the same shape for the same reason
-		// (include.go); this is its sibling and now matches it.
-		target, err := nestedFilterTarget(registry, rel)
+		// FAIL CLOSED on a resolution error, and resolve against the SOURCE's
+		// version. This block used to be wrapped in
+		// `if registry != nil { if err == nil { … } }`, which skipped every
+		// check on two independent paths: resolution fails precisely when a
+		// name has several versions, so two versions of "users" disabled the
+		// Hidden check; and a relation pointing at a real table that no entity
+		// registers — auth_users is the documented case — dropped it too.
+		// isSafeIdentifier gates the SHAPE of a name, not its membership, so
+		// either way ?author.password_hash_like=$2a$ reached SQL as a
+		// value-disclosure oracle. ResolveTarget also errors on a nil registry,
+		// so there is nothing left to guard: no schema, no filter.
+		target, err := entity.ResolveTarget(registry, ent, rel.Entity)
 		if err != nil {
-			return nil, fmt.Errorf("nested filter %q: %w", key, err)
+			return nil, fmt.Errorf("nested filter %q: cannot resolve relation target %q: %w", key, rel.Entity, err)
 		}
+		// Match the column name OR the field's wire key. A client is told the
+		// field is called "content"; ?author.content=x must work for the same
+		// reason ?content=x does on the flat path. Hidden and NoQuery both win
+		// under BOTH names — resolving an alias past a refusal would make the
+		// wire key a way around the guard.
 		known, blocked := false, false
 		for _, f := range target.GetFields() {
-			if f.Name == fieldName {
+			if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) {
 				known = !f.Hidden
 				blocked = known && f.NoQuery
+				if known {
+					fieldName = f.Name // rewrite to the column: this reaches SQL
+				}
 				break
 			}
 		}
@@ -144,29 +154,6 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		}
 	}
 	return out, nil
-}
-
-// nestedFilterTarget resolves the entity a nested filter predicates on, or
-// returns the error that refuses the filter.
-//
-// Both callers need the target's schema to run the Hidden/NoQuery/declared
-// checks, and there is no safe way to proceed without it: the field name is
-// interpolated into an EXISTS subquery, so "we couldn't check" means "we
-// filtered on an arbitrary column of a table nobody vouched for". The
-// messages name the missing registration, because that is what the operator
-// has to fix.
-func nestedFilterTarget(registry entity.Registry, rel entity.Relation) (*entity.Entity, error) {
-	if registry == nil {
-		return nil, fmt.Errorf(
-			"nested filters require an entity registry: set CrudHandler.Registry (framework apps do this automatically)")
-	}
-	target, err := registry.Get(rel.Entity)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"relation %q targets entity %q, which is not registered — register it, or filter on the parent instead",
-			rel.Name, rel.Entity)
-	}
-	return target, nil
 }
 
 // NestedFilter is the in-process (ListOptions) equivalent of a single
@@ -206,16 +193,20 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 		if !isSafeIdentifier(spec.Field) {
 			return nil, fmt.Errorf("nested filter %q.%q: unsafe field name", spec.Relation, spec.Field)
 		}
-		// Unresolvable target refuses, exactly as on the HTTP path — see
-		// nestedFilterTarget. Skipping the check here let a typed caller
-		// predicate on any column of an unregistered table.
-		target, err := nestedFilterTarget(registry, rel)
+		// Unresolvable target refuses, exactly as on the HTTP path, and
+		// resolves against the source's version for the same reason.
+		// Skipping the check here let a typed caller predicate on any column
+		// of an unregistered table, or of whichever version Get happened to
+		// return.
+		target, err := entity.ResolveTarget(registry, ent, rel.Entity)
 		if err != nil {
-			return nil, fmt.Errorf("nested filter %q.%q: %w", spec.Relation, spec.Field, err)
+			return nil, fmt.Errorf("nested filter %q.%q: cannot resolve relation target %q: %w",
+				spec.Relation, spec.Field, rel.Entity, err)
 		}
+		field := spec.Field
 		known, blocked := false, false
 		for _, f := range target.GetFields() {
-			if f.Name == spec.Field {
+			if f.Name == field || (f.WireName != "" && f.WireName == field) {
 				// A Hidden target column is treated as not-declared —
 				// the same value-disclosure-oracle rejection the HTTP
 				// path applies in parseNestedFilters. Without this, a
@@ -225,6 +216,9 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 				// responses, so hiding its existence buys nothing.
 				known = !f.Hidden
 				blocked = known && f.NoQuery
+				if known {
+					field = f.Name // rewrite to the column: this reaches SQL
+				}
 				break
 			}
 		}
@@ -234,7 +228,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 		if !known {
 			return nil, fmt.Errorf("nested filter %q.%q: field not declared on %q", spec.Relation, spec.Field, rel.Entity)
 		}
-		nf := nestedFilter{Relation: rel, Field: spec.Field, Op: spec.Op}
+		nf := nestedFilter{Relation: rel, Field: field, Op: spec.Op}
 		if spec.Op == filter.OpIn {
 			nf.Values = spec.Values
 		} else {

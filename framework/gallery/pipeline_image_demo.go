@@ -1,4 +1,4 @@
-package main
+package gallery
 
 import (
 	stdimage "image"

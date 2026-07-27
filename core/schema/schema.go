@@ -62,6 +62,17 @@ type Field struct {
 	To           string       // target entity name for Relation
 	Many         bool         // has-many relation flag
 	RawType      string       // explicit SQL column type, overrides Type→SQL mapping (e.g. "NUMERIC(10,2)", "INET")
+
+	// WireName overrides the JSON key this field is exposed under. When
+	// empty, the wire key is derived from Name via the entity's JSONCase
+	// (camelCase → "authorId", snake_case → "author_id"). When set, it is
+	// used verbatim as the JSON output key, the accepted input key, and the
+	// filter parameter name — the DB column (Name) is never changed. This is
+	// how an API version renames or aliases a field without altering the
+	// underlying table: v2 exposes column "author_id" as "authorId" (the
+	// JSONCase default) or as a custom "writer" (WireName), while v1 keeps
+	// the bare column shape. Both read and write the same column.
+	WireName string
 }
 
 // Schema is an ordered collection of Fields with convenience helpers.

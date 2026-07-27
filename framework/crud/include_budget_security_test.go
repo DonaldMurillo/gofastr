@@ -196,7 +196,7 @@ func TestDeepConvertMapShapes(t *testing.T) {
 		"shared_again": shared,
 	}
 	memo := map[uintptr]*convertedSubtree{}
-	out, n, err := ch.deepConvertMap(in, memo, newIncludeBudget())
+	out, n, err := ch.deepConvertMap(in, nil, memo, newIncludeBudget())
 	if err != nil {
 		t.Fatalf("deepConvertMap: %v", err)
 	}

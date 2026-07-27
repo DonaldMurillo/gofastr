@@ -204,6 +204,12 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	}
 
 	fieldSet := make(map[string]bool, len(fields))
+	// wireAlias maps a WireName override (and only the override — the
+	// case-derived form is still matched via fieldSet) to the DB column
+	// name, so ?writer=123 resolves to column "author_id" when the field
+	// declares WireName:"writer". The ParsedFilter.Field is always the
+	// column name, never the wire key.
+	wireAlias := make(map[string]string, len(fields))
 	names := make([]string, 0, len(fields))
 	// NoQuery fields are tracked separately from the unknown-key path. They
 	// are visible in responses, so naming one back to the caller discloses
@@ -219,10 +225,21 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 				noQuery = make(map[string]bool)
 			}
 			noQuery[f.Name] = true
+			// Under the wire key as well. It is deliberately NOT added to
+			// wireAlias — resolving an alias to its column happens before the
+			// refusal is consulted, so registering it there would turn the
+			// name clients are actually told to send into a way around the
+			// guard. Tracking it here refuses it by the name they used.
+			if f.WireName != "" && f.WireName != f.Name {
+				noQuery[f.WireName] = true
+			}
 			continue
 		}
 		fieldSet[f.Name] = true
 		names = append(names, f.Name)
+		if f.WireName != "" {
+			wireAlias[f.WireName] = f.Name
+		}
 	}
 
 	// FilterSuffixes is package-level — see its declaration above.
@@ -260,39 +277,44 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		// swallowed, which would return an unfiltered result set.
 		matched := false
 		for _, s := range FilterSuffixes {
-			if strings.HasSuffix(key, s.Suffix) {
-				fieldName := strings.TrimSuffix(key, s.Suffix)
-				if noQuery[fieldName] {
-					if !o.lenient && (blocked == "" || fieldName < blocked) {
-						blocked = fieldName
-					}
-					matched = true
-					break
-				}
-				if !fieldSet[fieldName] {
-					continue
-				}
-				consumed[fieldName] = true
-				if s.Op == OpIn {
-					parts := strings.Split(values[0], ",")
-					// Cap the IN list. An attacker can otherwise post a
-					// 10K-element ?id_in=a,a,a,… string and force the
-					// query builder to expand a parameter list that
-					// blows DB statement-cache or buffer limits. 1 000
-					// is generous for legitimate use and short of any
-					// driver's parameter limit.
-					if len(parts) > maxINListEntries {
-						parts = parts[:maxINListEntries]
-					}
-					for _, p := range parts {
-						filters = append(filters, ParsedFilter{Field: fieldName, Op: OpIn, Value: p})
-					}
-				} else {
-					filters = append(filters, ParsedFilter{Field: fieldName, Op: s.Op, Value: values[0]})
+			if !strings.HasSuffix(key, s.Suffix) {
+				continue
+			}
+			fieldName := strings.TrimSuffix(key, s.Suffix)
+			// Refuse a NoQuery column BEFORE resolving an alias to it. The
+			// map holds both spellings, so ?writer_like= is refused for the
+			// same reason ?author_id_like= is.
+			if noQuery[fieldName] {
+				if !o.lenient && (blocked == "" || fieldName < blocked) {
+					blocked = fieldName
 				}
 				matched = true
 				break
 			}
+			// Accept both the raw column name and a WireName override;
+			// resolve to the DB column for the WHERE clause.
+			col := fieldName
+			if !fieldSet[col] {
+				if w, ok := wireAlias[col]; ok {
+					col = w
+				} else {
+					continue
+				}
+			}
+			consumed[col] = true
+			if s.Op == OpIn {
+				parts := strings.Split(values[0], ",")
+				if len(parts) > maxINListEntries {
+					parts = parts[:maxINListEntries]
+				}
+				for _, p := range parts {
+					filters = append(filters, ParsedFilter{Field: col, Op: OpIn, Value: p})
+				}
+			} else {
+				filters = append(filters, ParsedFilter{Field: col, Op: s.Op, Value: values[0]})
+			}
+			matched = true
+			break
 		}
 		if matched {
 			continue
@@ -311,6 +333,13 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		if fieldSet[key] {
 			if !consumed[key] {
 				filters = append(filters, ParsedFilter{Field: key, Op: OpEq, Value: values[0]})
+			}
+			continue
+		}
+		// WireName override on a plain key (no suffix): resolve to column.
+		if col, ok := wireAlias[key]; ok {
+			if !consumed[col] {
+				filters = append(filters, ParsedFilter{Field: col, Op: OpEq, Value: values[0]})
 			}
 			continue
 		}
@@ -416,8 +445,18 @@ func ParseSort(r *http.Request, fields []schema.Field) ([]ParsedSort, error) {
 // accepts an already-parsed url.Values so the CRUD List handler can
 // thread the same parsed query through every helper.
 func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) {
+	// A field's wire key is what clients are told to use, so it must sort as
+	// well as it filters. ParseFiltersValues and ?fields= projection already
+	// resolve WireName; without the same resolution here the wire contract
+	// splits by entry point — ?writer=x filters fine while ?sort=writer 400s.
+	//
+	// Both the column name and the alias are accepted: the alias is what a
+	// versioned client sends, the column name is what existing unversioned
+	// callers already send. Hidden fields are skipped before either is
+	// registered, so a hidden column stays unreachable under both names.
 	allowed := make(map[string]bool, len(fields))
 	var noQuery map[string]bool
+	sortAlias := make(map[string]string, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
 			continue
@@ -427,9 +466,18 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 				noQuery = make(map[string]bool)
 			}
 			noQuery[f.Name] = true
+			// Same reasoning as the filter path: refuse the wire key by the
+			// name the client used rather than letting sortAlias resolve it.
+			if f.WireName != "" && f.WireName != f.Name {
+				noQuery[f.WireName] = true
+			}
 			continue
 		}
 		allowed[f.Name] = true
+		if f.WireName != "" && f.WireName != f.Name {
+			allowed[f.WireName] = true
+			sortAlias[f.WireName] = f.Name
+		}
 	}
 
 	sortParams := q["sort"]
@@ -470,6 +518,11 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 		}
 		if !allowed[field] {
 			return nil, fmt.Errorf("invalid sort field %q", field)
+		}
+		// Resolve an alias to its column: ParsedSort.Field reaches ORDER BY,
+		// so emitting the wire name would name a column that does not exist.
+		if col, ok := sortAlias[field]; ok {
+			field = col
 		}
 		sorts = append(sorts, ParsedSort{Field: field, Desc: desc})
 	}

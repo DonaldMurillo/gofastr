@@ -20,6 +20,7 @@ package runtime
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"os"
 	"sort"
@@ -30,8 +31,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 )
 
-//go:embed runtime.js
-var bundleFS embed.FS
+//go:embed frag/*.js
+var fragFS embed.FS
 
 //go:embed colorscheme.js
 var colorSchemeFS embed.FS
@@ -112,21 +113,70 @@ var (
 	modulesData map[string]string
 )
 
-// RuntimeJS returns the bundled runtime — the single-file IIFE every
-// page ships by default. Minified on first call (or returned verbatim
-// when RUNTIME_NOMINIFY=1).
+// composeFull assembles the `full` runtime composition: every fragment
+// (kernel + rpc + signals + nav + widgets-boot) plus boot.js (the kernel
+// boot tail), concatenated INSIDE the single IIFE wrapper. Closure
+// semantics are preserved exactly — every fragment sees the same lexical
+// scope it does in the unsplit source.
+//
+// The served runtime.js is ASSEMBLED rather than monolithic so future
+// compositions (static / embed / per-page) can omit fragments by name.
+// For step 2 only the `full` composition is wired; it must behave
+// identically to the pre-split runtime.js (verified by the symbol-
+// completeness test and the full chromedp e2e suite).
+//
+// Composed once at init and cached (bundleOnce in RuntimeJS); the
+// token-aware minifier runs on the composed output, unchanged.
+const iifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: full = kernel+rpc+signals+nav+widgets-boot)\n" +
+	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeFull) from\n" +
+	"// core-ui/runtime/frag/*.js. This file is the on-disk canonical form the gate\n" +
+	"// tests scan (attrdoc_test.go / integrity_test.go read it via os.ReadFile);\n" +
+	"// RuntimeJS() serves the minified composition produced by composeFull().\n" +
+	"(() => {\n" +
+	"  'use strict';\n"
+
+const iifeFooter = "\n})();\n"
+
+// fullFragmentOrder is the composition order for the `full` bundle.
+// kernel first (it creates window.__gofastr); boot last (its _initialPass
+// synchronously calls nav + signals helpers, so those fragments must have
+// declared their consts first). rpc/signals/nav/widgets-boot fall between
+// in dependency order. Every function declaration in a fragment is hoisted
+// into the shared IIFE scope, so earlier fragments can reference later
+// fragments' functions at event time without a temporal-dead-zone fault.
+var fullFragmentOrder = []string{"kernel", "rpc", "signals", "nav", "widgets-boot", "boot"}
+
+func composeFull() (string, error) {
+	var b strings.Builder
+	b.WriteString(iifeHeader)
+	for _, name := range fullFragmentOrder {
+		data, err := fs.ReadFile(fragFS, "frag/"+name+".js")
+		if err != nil {
+			return "", fmt.Errorf("compose fragment %q: %w", name, err)
+		}
+		b.WriteByte('\n')
+		b.WriteString(strings.TrimRight(string(data), "\n"))
+		b.WriteByte('\n')
+	}
+	b.WriteString(iifeFooter)
+	return b.String(), nil
+}
+
+// RuntimeJS returns the composed runtime — the single-file IIFE every
+// page ships by default. Assembled from the fragment files once, then
+// minified (or returned verbatim when RUNTIME_NOMINIFY=1).
 func RuntimeJS() (string, error) {
 	bundleOnce.Do(func() {
-		raw, err := fs.ReadFile(bundleFS, "runtime.js")
+		raw, err := composeFull()
 		if err != nil {
 			bundleErr = err
 			return
 		}
 		if nominify() {
-			bundleData = string(raw)
+			bundleData = raw
 			return
 		}
-		bundleData = minify.Minify(string(raw))
+		bundleData = minify.Minify(raw)
 	})
 	return bundleData, bundleErr
 }
@@ -147,6 +197,90 @@ func RuntimeSize() int {
 		return 0
 	}
 	return len(js)
+}
+
+// staticIifeHeader is the IIFE wrapper for the `static` composition (SSG
+// export). Same wrapper structure as iifeHeader, but names the static
+// fragment set and omits the on-disk-canonical-form note — only `full`
+// (runtime.js) has an on-disk form the gate tests scan. The static bundle
+// is assembled purely in memory and served by StaticJS().
+const staticIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: static = kernel+rpc-stub+signals+nav+widgets-boot-static)\n" +
+	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeStatic) from\n" +
+	"// core-ui/runtime/frag/*.js. Served only by the static exporter\n" +
+	"// (framework/static.Builder) for serverless SSG output.\n" +
+	"(() => {\n" +
+	"  'use strict';\n"
+
+// staticFragmentOrder is the composition order for the `static` bundle.
+// kernel first (creates window.__gofastr); boot last (its _initialPass
+// synchronously calls nav + signals helpers). rpc-stub replaces rpc — the
+// two are mutually exclusive, never compose both. widgets-boot-static
+// replaces widgets-boot (also mutually exclusive): the static exporter
+// (framework/static.Builder.dumpWidgetAssets) writes the catalog to
+// /__gofastr/widgets.json and each widget's chrome HTML to
+// /core-ui/widget/<name>/chrome, so openWidget resolves against the
+// static tree — RPCs are still server-backed and rpc-stub surfaces a
+// "Needs the Go server" notice for them. nav stays: SPA navigation
+// works against static HTML (fetch + DOMParser extracts <main>; no
+// server-only response headers required), confirmed against the
+// static-export path.
+var staticFragmentOrder = []string{"kernel", "rpc-stub", "signals", "nav", "widgets-boot-static", "boot"}
+
+// composeStatic assembles the `static` runtime composition for SSG export.
+// Same concatenation shape as composeFull — fragments are embedded JS files
+// joined inside one IIFE so closure semantics are preserved exactly.
+func composeStatic() (string, error) {
+	var b strings.Builder
+	b.WriteString(staticIifeHeader)
+	for _, name := range staticFragmentOrder {
+		data, err := fs.ReadFile(fragFS, "frag/"+name+".js")
+		if err != nil {
+			return "", fmt.Errorf("compose fragment %q: %w", name, err)
+		}
+		b.WriteByte('\n')
+		b.WriteString(strings.TrimRight(string(data), "\n"))
+		b.WriteByte('\n')
+	}
+	b.WriteString(iifeFooter)
+	return b.String(), nil
+}
+
+var (
+	staticOnce sync.Once
+	staticData string
+	staticErr  error
+)
+
+// StaticJS returns the `static` runtime composition — the bundle the SSG
+// exporter (framework/static.Builder) serves for serverless deploys. Omits
+// rpc (replaced by rpc-stub), sse, and compute: none function without the
+// Go server behind them. widgets-boot is replaced by widgets-boot-static,
+// which fetches the dumped /__gofastr/widgets.json catalog so
+// data-fui-open overlays resolve against the static tree. Composed once at
+// first read and cached (staticOnce), minified unless RUNTIME_NOMINIFY=1.
+func StaticJS() (string, error) {
+	staticOnce.Do(func() {
+		raw, err := composeStatic()
+		if err != nil {
+			staticErr = err
+			return
+		}
+		if nominify() {
+			staticData = raw
+			return
+		}
+		staticData = minify.Minify(raw)
+	})
+	return staticData, staticErr
+}
+
+// MustStaticJS returns the static runtime or panics.
+func MustStaticJS() string {
+	js, err := StaticJS()
+	if err != nil {
+		panic(err)
+	}
+	return js
 }
 
 // ColorSchemeJS returns the color-scheme bootstrap script — a tiny

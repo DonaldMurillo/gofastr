@@ -3,6 +3,7 @@ package filter
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -126,5 +127,45 @@ func TestNoQueryLenientDropsSilently(t *testing.T) {
 	}
 	if len(filters) != 1 || filters[0].Field != "title" {
 		t.Errorf("filters = %+v, want only the title predicate", filters)
+	}
+}
+
+// A WireName is the key clients are told to send, and the filter parser
+// resolves it to the column before building the WHERE clause. That resolution
+// runs BEFORE the NoQuery refusal is consulted, so registering the alias in
+// the allow-set — as the plain path does — would make the wire key a way
+// straight around the guard. Neither the aliasing work nor the NoQuery work
+// has this hole alone; only both in one tree.
+func TestNoQueryRefusedUnderItsWireName(t *testing.T) {
+	fields := []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "author_id", Type: schema.String, WireName: "writer"},
+		{Name: "card_number", Type: schema.String, WireName: "pan", NoQuery: true},
+	}
+
+	// Control: an ordinary field's alias resolves to its column.
+	got, err := ParseFiltersValues(url.Values{"writer": {"u1"}}, fields)
+	if err != nil {
+		t.Fatalf("an ordinary wire alias must filter: %v", err)
+	}
+	if len(got) != 1 || got[0].Field != "author_id" {
+		t.Fatalf("wire alias did not resolve to the column: %#v", got)
+	}
+
+	// The masked column is refused under the column name AND the wire name,
+	// with and without an operator suffix.
+	for _, key := range []string{"card_number", "pan", "card_number_like", "pan_like", "pan_in"} {
+		if _, err := ParseFiltersValues(url.Values{key: {"4111"}}, fields); err == nil {
+			t.Errorf("SECURITY: ?%s= was accepted on a NoQuery column", key)
+		}
+	}
+	// And on the sort surface.
+	for _, s := range []string{"pan", "-pan", "card_number"} {
+		if _, err := ParseSortValues(url.Values{"sort": {s}}, fields); err == nil {
+			t.Errorf("SECURITY: ?sort=%s was accepted on a NoQuery column", s)
+		}
+	}
+	if _, err := ParseSortValues(url.Values{"sort": {"writer"}}, fields); err != nil {
+		t.Errorf("an ordinary wire alias must still sort: %v", err)
 	}
 }
