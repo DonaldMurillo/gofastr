@@ -5,7 +5,7 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [0.48.0] - 2026-07-26
+## [0.48.0] - 2026-07-27
 
 `AfterGet` and `AfterList` are documented as the way to mask a field on
 the way out — "redact fields, drop rows" — and they worked on `GET /x`
