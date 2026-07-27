@@ -136,7 +136,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		return
 	}
 
-	if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
+	if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), results, includes); err != nil {
 		writeIncludeError(w, "cursor", err)
 		return
 	}
@@ -153,6 +153,28 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 			page.Data[i], page.Data[j] = page.Data[j], page.Data[i]
 		}
 	}
+
+	// AfterList, on the same terms as the offset path. Without this, adding
+	// ?cursor= to any request skipped a redaction hook entirely and wrote the
+	// stored value straight to the wire — direct disclosure, not an oracle.
+	// It runs AFTER buildCursorPage on purpose: the continue-cursor has to be
+	// derived from the stored keyset values, so a hook that masks the keyset
+	// column must not be allowed to corrupt paging.
+	if ch.Hooks != nil {
+		// Carry extraWhere through so an AfterList hook sees the same payload
+		// shape on both paths. The offset path hands over the clauses
+		// BeforeList accumulated; constructing a bare payload here made a
+		// hook that inspects Where (audit logging the applied scope, say)
+		// behave differently the moment a client appended ?cursor=.
+		payload := &hook.ListPayload{Request: r, Where: extraWhere, Results: page.Data}
+		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterList, payload); err != nil {
+			log.Printf("crud: after-list hook failed (cursor): %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		page.Data = payload.Results
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(page)
 }
