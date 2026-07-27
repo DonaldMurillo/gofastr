@@ -168,6 +168,12 @@ var FilterSuffixes = [...]FilterSuffixOp{
 // exfiltrate it prefix by prefix. A Hidden field name is treated as
 // an unknown filter param and never produces a ParsedFilter.
 //
+// NoQuery fields are excluded too, and for the same oracle reason — a
+// value masked on the way out (last-4, redacted by an AfterGet hook) is
+// still recoverable a character at a time if the stored column remains
+// filterable. They are rejected by name rather than as unknown: the field
+// is in the response, so its existence is not a secret worth protecting.
+//
 // STRICT by default: an unknown top-level filter key (a typo like
 // ?stauts=active, or a suffixed op on a non-field) returns a structured
 // error rather than being silently dropped. Dropping it would return an
@@ -205,8 +211,28 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// column name, never the wire key.
 	wireAlias := make(map[string]string, len(fields))
 	names := make([]string, 0, len(fields))
+	// NoQuery fields are tracked separately from the unknown-key path. They
+	// are visible in responses, so naming one back to the caller discloses
+	// nothing they can't already read — unlike a Hidden field, whose very
+	// existence has to stay indistinguishable from "no such column".
+	var noQuery map[string]bool
 	for _, f := range fields {
 		if f.Hidden {
+			continue
+		}
+		if f.NoQuery {
+			if noQuery == nil {
+				noQuery = make(map[string]bool)
+			}
+			noQuery[f.Name] = true
+			// Under the wire key as well. It is deliberately NOT added to
+			// wireAlias — resolving an alias to its column happens before the
+			// refusal is consulted, so registering it there would turn the
+			// name clients are actually told to send into a way around the
+			// guard. Tracking it here refuses it by the name they used.
+			if f.WireName != "" && f.WireName != f.Name {
+				noQuery[f.WireName] = true
+			}
 			continue
 		}
 		fieldSet[f.Name] = true
@@ -230,6 +256,10 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// smallest bad key, with a suggestion).
 	unknown := ""
 
+	// blocked records the first NoQuery field a caller tried to filter on,
+	// chosen lexically for the same determinism reason as unknown.
+	blocked := ""
+
 	for key, values := range q {
 		if len(values) == 0 {
 			continue
@@ -251,6 +281,16 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 				continue
 			}
 			fieldName := strings.TrimSuffix(key, s.Suffix)
+			// Refuse a NoQuery column BEFORE resolving an alias to it. The
+			// map holds both spellings, so ?writer_like= is refused for the
+			// same reason ?author_id_like= is.
+			if noQuery[fieldName] {
+				if !o.lenient && (blocked == "" || fieldName < blocked) {
+					blocked = fieldName
+				}
+				matched = true
+				break
+			}
 			// Accept both the raw column name and a WireName override;
 			// resolve to the DB column for the WHERE clause.
 			col := fieldName
@@ -283,6 +323,13 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		// A plain known field name. When it was already consumed by a
 		// suffixed op on the same request, drop the redundant equals — but it
 		// is still a KNOWN field, so it must never be reported as unknown.
+		if noQuery[key] {
+			if !o.lenient && (blocked == "" || key < blocked) {
+				blocked = key
+			}
+			continue
+		}
+
 		if fieldSet[key] {
 			if !consumed[key] {
 				filters = append(filters, ParsedFilter{Field: key, Op: OpEq, Value: values[0]})
@@ -311,11 +358,24 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 	}
 
+	// Reported ahead of unknown: a caller who named a real column wants to be
+	// told it isn't filterable, not that it doesn't exist.
+	if blocked != "" {
+		return nil, notQueryableError(blocked, "filtered")
+	}
 	if unknown != "" {
 		return nil, unknownFilterError(unknown, names)
 	}
 
 	return filters, nil
+}
+
+// notQueryableError builds the 400-shaped error for a NoQuery field a caller
+// tried to filter or sort on. Naming the field is deliberate: NoQuery fields
+// appear in responses, so the caller already knows the column exists and the
+// only useful information to add is that the query surface refuses it.
+func notQueryableError(field, verb string) error {
+	return fmt.Errorf("field %q cannot be %s", field, verb)
 }
 
 // unknownFilterError builds the structured 400-shaped error for an
@@ -368,7 +428,9 @@ func nearestField(key string, fieldNames []string) string {
 //
 // Hidden fields are excluded from the allow-list: sorting by a hidden
 // column reveals row ordering by a value the caller can't read, which
-// is an information-disclosure path. Unknown fields fail closed with a
+// is an information-disclosure path. NoQuery fields are excluded for the
+// same reason, but rejected by name — they appear in responses, so the
+// caller already knows the column exists. Unknown fields fail closed with a
 // 400-shaped error rather than being silently ignored — silent drop
 // turns probe attempts into "the API works the same with or without
 // this param" oracles that mask broken client code.
@@ -393,9 +455,22 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 	// callers already send. Hidden fields are skipped before either is
 	// registered, so a hidden column stays unreachable under both names.
 	allowed := make(map[string]bool, len(fields))
+	var noQuery map[string]bool
 	sortAlias := make(map[string]string, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
+			continue
+		}
+		if f.NoQuery {
+			if noQuery == nil {
+				noQuery = make(map[string]bool)
+			}
+			noQuery[f.Name] = true
+			// Same reasoning as the filter path: refuse the wire key by the
+			// name the client used rather than letting sortAlias resolve it.
+			if f.WireName != "" && f.WireName != f.Name {
+				noQuery[f.WireName] = true
+			}
 			continue
 		}
 		allowed[f.Name] = true
@@ -437,6 +512,9 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 		if strings.HasPrefix(s, "-") {
 			desc = true
 			field = s[1:]
+		}
+		if noQuery[field] {
+			return nil, notQueryableError(field, "sorted on")
 		}
 		if !allowed[field] {
 			return nil, fmt.Errorf("invalid sort field %q", field)

@@ -3,6 +3,7 @@ package hook
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 // HookType enumerates the lifecycle hook points for entity operations.
@@ -27,7 +28,15 @@ const (
 type HookFunc func(ctx context.Context, data any) error
 
 // HookRegistry stores lifecycle hooks grouped by hook type.
+//
+// Registration is normally a setup-time activity, but two things read a
+// registry on the request path — the CRUD handler's own hook lookups, and
+// ?include= resolving a CHILD entity's registry — while kiln's build-mode
+// runtime registers hooks against a live server. An unguarded map would make
+// that pairing a concurrent read/write, which is an unrecoverable runtime
+// throw rather than a panic a hook recover() could catch.
 type HookRegistry struct {
+	mu    sync.RWMutex
 	hooks map[HookType][]HookFunc
 }
 
@@ -41,6 +50,8 @@ func NewHookRegistry() *HookRegistry {
 // RegisterHook appends a hook function for the given hook type.
 // Hooks execute in registration order.
 func (hr *HookRegistry) RegisterHook(hookType HookType, fn HookFunc) {
+	hr.mu.Lock()
+	defer hr.mu.Unlock()
 	hr.hooks[hookType] = append(hr.hooks[hookType], fn)
 }
 
@@ -49,7 +60,12 @@ func (hr *HookRegistry) RegisterHook(hookType HookType, fn HookFunc) {
 // is caught and surfaced as an error — without recovery a single buggy or
 // third-party hook would tear down the entire request goroutine.
 func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, data any) error {
-	for _, fn := range hr.hooks[hookType] {
+	// Snapshot under the lock, then run unlocked: a hook may register another
+	// hook, and holding the lock across arbitrary user code would deadlock.
+	hr.mu.RLock()
+	fns := append([]HookFunc(nil), hr.hooks[hookType]...)
+	hr.mu.RUnlock()
+	for _, fn := range fns {
 		if err := runHookSafely(ctx, fn, data); err != nil {
 			return err
 		}
@@ -71,6 +87,8 @@ func runHookSafely(ctx context.Context, fn HookFunc, data any) (err error) {
 
 // HooksFor returns a copy of the hooks registered for the given type (for inspection/testing).
 func (hr *HookRegistry) HooksFor(hookType HookType) []HookFunc {
+	hr.mu.RLock()
+	defer hr.mu.RUnlock()
 	out := make([]HookFunc, len(hr.hooks[hookType]))
 	copy(out, hr.hooks[hookType])
 	return out

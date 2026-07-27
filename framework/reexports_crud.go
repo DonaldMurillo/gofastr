@@ -36,6 +36,7 @@ var (
 	EagerLoad              = crud.EagerLoad
 	RegisterEntityMCPTools = crud.RegisterEntityMCPTools
 	WithServerWrites       = crud.WithServerWrites
+	WithReadHooks          = crud.WithReadHooks
 	NewValidationError     = crud.NewValidationError
 )
 

@@ -274,6 +274,7 @@ func splitIncludePath(s string) []string {
 // every field name is accepted at parse time.
 func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string) ([]filter.ParsedFilter, error) {
 	knownField := map[string]bool{}
+	var noQueryField map[string]bool
 	// wireAlias maps a field's wire key to its column, so a scoped filter may
 	// use the name clients are actually told — ?include=comments(content=x)
 	// must work for the same reason ?content=x does at the top level.
@@ -288,7 +289,26 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		// the related row's presence/absence in the response leaks
 		// whether the value matched — the same value-disclosure oracle
 		// the top-level and nested filter paths close (see
-		// nested_filter.go), one relation hop away.
+		// nested_filter.go), one relation hop away. NoQuery columns are
+		// blocked for the same reason, but tracked separately so the error
+		// can name them — they are visible in the response, so folding them
+		// into "not on target entity" only sends a developer hunting for a
+		// typo in a column they can plainly see.
+		if f.NoQuery && !f.Hidden {
+			if noQueryField == nil {
+				noQueryField = map[string]bool{}
+			}
+			noQueryField[f.Name] = true
+			// Under its wire key too. The alias is what clients are told to
+			// send, so a refusal that only knows the column name would let
+			// ?include=comments(writer=x) through as "not on target entity"
+			// at best — and, if the alias ever reached knownField, past the
+			// guard entirely.
+			if f.WireName != "" && f.WireName != f.Name {
+				noQueryField[f.WireName] = true
+			}
+			continue
+		}
 		if !f.Hidden {
 			knownField[f.Name] = true
 			if f.WireName != "" && f.WireName != f.Name {
@@ -324,6 +344,9 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 				op = s.op
 				break
 			}
+		}
+		if noQueryField[field] {
+			return nil, fmt.Errorf("include %q: scoped field %q cannot be filtered", pathForErrors, field)
 		}
 		if fields != nil && !knownField[field] {
 			return nil, fmt.Errorf("include %q: scoped field %q not on target entity", pathForErrors, field)
@@ -453,7 +476,10 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 			row[outKey] = out
 		}
 	}
-	return nil
+
+	// Child read hooks run last, on the converted maps now attached to the
+	// parent rows — see applyChildReadHooks for why the ordering matters.
+	return ch.applyChildReadHooks(ctx, nodes, rows)
 }
 
 // recurseLoadOnRawRows operates on rows that are still in raw DB casing — the

@@ -122,6 +122,12 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	fmt.Fprintf(js, "/** Snake_case query-param names for %s filters and sort. */\nexport const %sFields = Object.freeze({\n", ent.Struct, jsResourceProp(ent))
 	fmt.Fprintf(dts, "export declare const %sFields: Readonly<{\n", jsResourceProp(ent))
 	for _, f := range ent.Fields {
+		// The constant exists to be used as a filter/sort key, so a NoQuery
+		// field must not appear in it — the server answers every such key
+		// with 400 "cannot be filtered".
+		if f.NoQuery {
+			continue
+		}
 		fmt.Fprintf(js, "  %s: %q,\n", f.Wire, f.Snake)
 		fmt.Fprintf(dts, "  %s: %q;\n", f.Wire, f.Snake)
 	}
@@ -162,10 +168,21 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	sb.WriteString("Two plain files, zero dependencies, no build step: `client.js` (ESM) and\n`client.d.ts` (types). Drop them into your project — or import the client\nstraight from the running app:\n\n")
 	fmt.Fprintf(&sb, "```js\nimport { Client } from %q;\n// or, served by the app itself:\n// import { Client } from %q;\n\nconst api = new Client({ baseURL: %q, token: process.env.API_TOKEN });\nconst page = await api.%s.list({ sort: \"-created_at\", limit: 50 });\n```\n\n", "./client.js", sdkExampleHost(spec)+"/docs/api/sdk/client.js", sdkExampleBaseURL(spec), prop)
 	sb.WriteString("TypeScript picks up `client.d.ts` automatically when both files sit side by\nside. There is intentionally no package.json — if you want this on npm,\nadd your own and publish it; it's your API.\n\n")
-	sb.WriteString("## Casing contract\n\nResponses are camelCase. Filter/sort **query params** and validation-error\n`fields` keys are the server's snake_case column names — use the exported\n`<entity>Fields` constants instead of guessing:\n\n")
-	if len(first.Fields) > 0 {
-		f := first.Fields[0]
-		fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + \"_gte\"]: \"10\" } });\n```\n\n", prop, prop, prop, f.Wire)
+	sb.WriteString("## Casing contract\n\nResponses are camelCase. Filter/sort **query params** and validation-error\n`fields` keys are the server's snake_case column names. Use the exported\n`<entity>Fields` constants for filter and sort keys instead of guessing.\nThey list only the queryable columns, so a column the API refuses to filter\non is absent — validation errors can still name it, since a field can be\nwritable without being queryable:\n\n")
+	// Pick the first field the constant actually defines. NoQuery fields are
+	// excluded from <entity>Fields, so taking Fields[0] blindly could name a
+	// key that resolves to undefined — the example would then send
+	// "undefined_gte" and earn a 400 from the very snippet meant to show the
+	// casing contract working.
+	var example *cliField
+	for i := range first.Fields {
+		if !first.Fields[i].NoQuery {
+			example = &first.Fields[i]
+			break
+		}
+	}
+	if example != nil {
+		fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + \"_gte\"]: \"10\" } });\n```\n\n", prop, prop, prop, example.Wire)
 	}
 	sb.WriteString("## Surface per entity\n\n`list(params)`, `listCursor(params)`, `get(id, opts)`, `create(body)`,\n`update(id, body)`, `patch(id, body)` (send only the keys you mean —\nJS objects are presence-faithful), `remove(id)`, `batchCreate(items)`,\n`batchUpdate(items)` (each item carries `id`), `batchDelete(ids)`, and\n`watch(onEvent, { signal })` for the live SSE feed (uses fetch streaming so\nthe Authorization header works — EventSource can't send it).\n\nErrors throw `ApiError` with `status`, `code`, `fields`, and the raw `body`.\nBatch rollbacks (HTTP 400 with a decodable envelope) resolve normally —\ninspect `committed` and per-item `error`.\n")
 	return sb.String()

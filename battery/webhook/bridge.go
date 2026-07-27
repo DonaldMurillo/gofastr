@@ -14,6 +14,32 @@ type BridgeOption func(*bridgeOpts)
 type bridgeOpts struct {
 	onMarshalError func(eventType string, err error)
 	onPublishError func(eventType string, err error)
+	redact         func(eventType string, ev event.Event) event.Event
+}
+
+// WithBridgeRedactor installs a transform applied to each event before it is
+// marshalled and POSTed to subscriber URLs.
+//
+// This bridge is an OUTBOUND delivery to third-party endpoints, and the event
+// record is the row the write produced — stored values. The framework's own
+// read redaction (an AfterGet hook) applies to responses and to the SSE
+// stream, but this bridge has no handler to run it through, so by default a
+// masked field leaves the server here in full.
+//
+// A field that must never leave the server at all belongs in a Hidden
+// column: those are stripped in the SQL projection, so they never reach an
+// event in the first place. Use this option for fields that are masked
+// rather than hidden:
+//
+//	webhook.BridgeWithOptions(bus, mgr, nil,
+//	    webhook.WithBridgeRedactor(func(_ string, ev event.Event) event.Event {
+//	        return maskCardNumber(ev)
+//	    }))
+//
+// The transform must not mutate ev in place — other subscribers hold the
+// same event. Return a copy.
+func WithBridgeRedactor(fn func(eventType string, ev event.Event) event.Event) BridgeOption {
+	return func(o *bridgeOpts) { o.redact = fn }
 }
 
 // WithBridgeMarshalError installs a callback invoked when json.Marshal
@@ -71,6 +97,9 @@ func BridgeWithOptions(bus *event.EventBus, mgr *Manager, events []string, opts 
 	for _, et := range events {
 		eventType := et
 		c := bus.Subscribe(eventType, func(ctx context.Context, e event.Event) error {
+			if cfg.redact != nil {
+				e = cfg.redact(eventType, e)
+			}
 			payload, err := json.Marshal(e)
 			if err != nil {
 				if cfg.onMarshalError != nil {

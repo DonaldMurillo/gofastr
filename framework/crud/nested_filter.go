@@ -94,49 +94,52 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			return nil, fmt.Errorf("nested filter %q: unsafe field name", key)
 		}
 
-		// Validate the field exists on the target entity (when the registry
-		// has it). Without the registry we trust the field name as-is.
+		// Validate the field against the target entity's schema.
 		//
 		// A Hidden column is treated as NOT declared — the identical error to
 		// a nonexistent field, so the response can't distinguish hidden from
 		// absent. Otherwise a nested predicate (?author.password_hash_like=…)
 		// would resurrect exactly the value-disclosure oracle the flat-filter
 		// Hidden exclusion blocks, just one relation hop away.
-		if registry != nil {
-			// FAIL CLOSED on a resolution error. This used to be
-			// `if target, err := ...; err == nil`, which skipped the entire
-			// validation block whenever resolution failed — and resolution
-			// fails precisely when a name has several versions. Two versions of
-			// "users" therefore disabled the Hidden check, and
-			// ?author.password_hash_like=… reached SQL as a value-disclosure
-			// oracle: exactly the leak this block exists to close.
-			//
-			// Resolve against the SOURCE's version too, so the Hidden set
-			// checked is the one that governs this request rather than an
-			// unversioned declaration's.
-			target, err := entity.ResolveTarget(registry, ent, rel.Entity)
-			if err != nil {
-				return nil, fmt.Errorf("nested filter %q: cannot resolve relation target %q: %w", key, rel.Entity, err)
-			}
-			// Match the column name OR the field's wire key. A client is told
-			// the field is called "content"; ?author.content=x must work for
-			// the same reason ?content=x does on the flat path. Resolving the
-			// alias in three of four filter surfaces splits the wire contract
-			// by entry point. Hidden still wins under BOTH names.
-			known := false
-			for _, f := range target.GetFields() {
-				if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) {
-					known = !f.Hidden
-					if known {
-						// Rewrite to the column: fieldName reaches SQL.
-						fieldName = f.Name
-					}
-					break
+		//
+		// FAIL CLOSED on a resolution error, and resolve against the SOURCE's
+		// version. This block used to be wrapped in
+		// `if registry != nil { if err == nil { … } }`, which skipped every
+		// check on two independent paths: resolution fails precisely when a
+		// name has several versions, so two versions of "users" disabled the
+		// Hidden check; and a relation pointing at a real table that no entity
+		// registers — auth_users is the documented case — dropped it too.
+		// isSafeIdentifier gates the SHAPE of a name, not its membership, so
+		// either way ?author.password_hash_like=$2a$ reached SQL as a
+		// value-disclosure oracle. ResolveTarget also errors on a nil registry,
+		// so there is nothing left to guard: no schema, no filter.
+		target, err := entity.ResolveTarget(registry, ent, rel.Entity)
+		if err != nil {
+			return nil, fmt.Errorf("nested filter %q: cannot resolve relation target %q: %w", key, rel.Entity, err)
+		}
+		// Match the column name OR the field's wire key. A client is told the
+		// field is called "content"; ?author.content=x must work for the same
+		// reason ?content=x does on the flat path. Hidden and NoQuery both win
+		// under BOTH names — resolving an alias past a refusal would make the
+		// wire key a way around the guard.
+		known, blocked := false, false
+		for _, f := range target.GetFields() {
+			if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) {
+				known = !f.Hidden
+				blocked = known && f.NoQuery
+				if known {
+					fieldName = f.Name // rewrite to the column: this reaches SQL
 				}
+				break
 			}
-			if !known {
-				return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, rel.Entity)
-			}
+		}
+		// A NoQuery column is in the response, so it can be named
+		// rather than folded into the not-declared rejection.
+		if blocked {
+			return nil, fmt.Errorf("nested filter %q: field %q cannot be filtered", key, fieldName)
+		}
+		if !known {
+			return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, rel.Entity)
 		}
 
 		if op == filter.OpIn {
@@ -190,26 +193,42 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 		if !isSafeIdentifier(spec.Field) {
 			return nil, fmt.Errorf("nested filter %q.%q: unsafe field name", spec.Relation, spec.Field)
 		}
-		if registry != nil {
-			if target, err := registry.Get(rel.Entity); err == nil {
-				known := false
-				for _, f := range target.GetFields() {
-					if f.Name == spec.Field {
-						// A Hidden target column is treated as not-declared —
-						// the same value-disclosure-oracle rejection the HTTP
-						// path applies in parseNestedFilters. Without this, a
-						// typed caller passing a partially user-influenced
-						// field name rebuilds the oracle one relation hop away.
-						known = !f.Hidden
-						break
-					}
+		// Unresolvable target refuses, exactly as on the HTTP path, and
+		// resolves against the source's version for the same reason.
+		// Skipping the check here let a typed caller predicate on any column
+		// of an unregistered table, or of whichever version Get happened to
+		// return.
+		target, err := entity.ResolveTarget(registry, ent, rel.Entity)
+		if err != nil {
+			return nil, fmt.Errorf("nested filter %q.%q: cannot resolve relation target %q: %w",
+				spec.Relation, spec.Field, rel.Entity, err)
+		}
+		field := spec.Field
+		known, blocked := false, false
+		for _, f := range target.GetFields() {
+			if f.Name == field || (f.WireName != "" && f.WireName == field) {
+				// A Hidden target column is treated as not-declared —
+				// the same value-disclosure-oracle rejection the HTTP
+				// path applies in parseNestedFilters. Without this, a
+				// typed caller passing a partially user-influenced
+				// field name rebuilds the oracle one relation hop away.
+				// NoQuery is blocked too, but named: it is visible in
+				// responses, so hiding its existence buys nothing.
+				known = !f.Hidden
+				blocked = known && f.NoQuery
+				if known {
+					field = f.Name // rewrite to the column: this reaches SQL
 				}
-				if !known {
-					return nil, fmt.Errorf("nested filter %q.%q: field not declared on %q", spec.Relation, spec.Field, rel.Entity)
-				}
+				break
 			}
 		}
-		nf := nestedFilter{Relation: rel, Field: spec.Field, Op: spec.Op}
+		if blocked {
+			return nil, fmt.Errorf("nested filter %q.%q: field cannot be filtered", spec.Relation, spec.Field)
+		}
+		if !known {
+			return nil, fmt.Errorf("nested filter %q.%q: field not declared on %q", spec.Relation, spec.Field, rel.Entity)
+		}
+		nf := nestedFilter{Relation: rel, Field: field, Op: spec.Op}
 		if spec.Op == filter.OpIn {
 			nf.Values = spec.Values
 		} else {

@@ -77,8 +77,15 @@ type CrudHandler struct {
 	Events             *event.EventBus // optional; receives entity.created/updated/deleted on commit
 	Outbox             EventOutbox     // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
 	Registry           entity.Registry // optional; required for nested ?include=author.profile resolution
-	BasePath           string          // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
-	MCPNamespace       string          // optional; when set (e.g. "admin"), MCP tools are named "<ns>.<entity>.<action>" instead of the flat "<entity>_<action>". Empty preserves the historical flat tool names.
+	// ChildHooks resolves ANOTHER entity's hook registry by name, so rows
+	// eager-loaded through ?include= run the read hooks of the entity they
+	// belong to rather than this one's. Without it a redaction on the child
+	// applies to GET /children but not to the same row one relation hop away.
+	// Must not create registries — it is called on the request path.
+	// framework.App wires it; nil leaves includes unhooked.
+	ChildHooks   func(entityName string) *hook.HookRegistry
+	BasePath     string // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
+	MCPNamespace string // optional; when set (e.g. "admin"), MCP tools are named "<ns>.<entity>.<action>" instead of the flat "<entity>_<action>". Empty preserves the historical flat tool names.
 
 	visibleFieldsCache []string
 	visibleJSONKeys    []string
@@ -530,6 +537,16 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// empty for first-page) switches to keyset mode and emits the
 		// CursorPage envelope.
 		if q.Has("cursor") {
+			// Keyset mode ignores ?sort= — the cursor fields control ORDER BY
+			// — but it must still REFUSE a sort it would refuse anywhere else.
+			// Returning early before this check made ?cursor=&sort=<NoQuery>
+			// answer 200 where ?sort=<NoQuery> answers 400, so "every query
+			// surface refuses it" had an exception reachable by appending one
+			// empty parameter.
+			if _, err := filter.ParseSortValues(q, ch.Entity.GetFields()); err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			ch.serveCursorList(ctx, w, r, includes, filters, nested, listPayload.Where)
 			return
 		}
@@ -658,7 +675,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
+		if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), results, includes); err != nil {
 			writeIncludeError(w, "list", err)
 			return
 		}
@@ -836,7 +853,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		if err := ch.applyIncludeTree(ctx, []map[string]any{result}, includes); err != nil {
+		if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), []map[string]any{result}, includes); err != nil {
 			writeIncludeError(w, "get", err)
 			return
 		}
@@ -900,9 +917,24 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 
 		ch.EmitEvent(r.Context(), event.EntityCreated, result)
 
+		// AfterGet over the response body. RETURNING gives back every visible
+		// column, including ones the caller never sent, so without this a
+		// create echoes stored values that GET masks. AfterCreate has already
+		// run above; this is the read-shaped view of the same row.
+		//
+		// A hook error degrades the body to the new row's id rather than
+		// answering 500: the row is committed and the event has shipped, so a
+		// 500 would be a lie the caller acts on by retrying — creating it
+		// twice. See identityOnly.
+		body, hookErr := ch.runResponseHooks(r, result)
+		if hookErr != nil {
+			log.Printf("crud: after-get hook failed on create response, returning id only: %v", hookErr)
+			body = ch.identityOnly(result)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(singleResponse{Data: result})
+		json.NewEncoder(w).Encode(singleResponse{Data: body})
 	}
 }
 
@@ -951,8 +983,19 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 
 		ch.EmitEvent(r.Context(), event.EntityUpdated, result)
 
+		// AfterGet over the response body — see the note on Create. A partial
+		// PUT/PATCH otherwise returns stored values for every field the
+		// caller did not send.
+		// A hook error degrades to the id, not a 500 — the update is already
+		// committed. See identityOnly.
+		body, hookErr := ch.runResponseHooks(r, result)
+		if hookErr != nil {
+			log.Printf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
+			body = ch.identityOnly(result)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(singleResponse{Data: result})
+		json.NewEncoder(w).Encode(singleResponse{Data: body})
 	}
 }
 

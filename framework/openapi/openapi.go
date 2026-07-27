@@ -240,7 +240,13 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// because ParseFilters matches against the schema field names
 		// directly, plus a WireName alias when one is set. The wire key
 		// (WireName or raw Name — NOT camelCased) is what a client sends.
+		// NoQuery fields are in the response schema but rejected by the
+		// filter parser under BOTH names, so advertising them here would
+		// generate SDK methods and agent calls that always 400.
 		for _, f := range visibleFields {
+			if f.NoQuery {
+				continue
+			}
 			name := f.Name
 			if f.WireName != "" {
 				name = f.WireName

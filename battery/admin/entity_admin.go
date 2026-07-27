@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -346,6 +347,36 @@ func listColumns(ent *entity.Entity) []string {
 	return cols
 }
 
+// sortableColumns is listColumns minus the NoQuery fields. A NoQuery column
+// is shown in the grid (it is in the response, just masked) but the filter
+// parser rejects ?sort= on it with a 400 — so rendering its header as
+// sortable would hand the user a link that breaks the whole list page.
+func sortableColumns(ent *entity.Entity) []string {
+	noQuery := noQueryColumns(ent)
+	cols := listColumns(ent)
+	out := cols[:0:0]
+	for _, c := range cols {
+		if !noQuery[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// noQueryColumns is the set of column names the query surface refuses.
+func noQueryColumns(ent *entity.Entity) map[string]bool {
+	var set map[string]bool
+	for _, f := range ent.GetFields() {
+		if f.NoQuery {
+			if set == nil {
+				set = map[string]bool{}
+			}
+			set[f.Name] = true
+		}
+	}
+	return set
+}
+
 // listRows runs the CrudHandler List with the given query and returns the
 // decoded rows plus the total count for pagination.
 func (b *Battery) listRows(ctx context.Context, ent *entity.Entity, query string) (rows []map[string]any, total int, err error) {
@@ -386,6 +417,94 @@ func (b *Battery) getRow(ctx context.Context, ent *entity.Entity, id string) (ma
 	return adminResponseRow(response.Data, adminResponseKeys(ent, ch)), nil
 }
 
+// getRowForEdit loads a single record for the EDIT form, and reports which of
+// its columns an AfterGet hook masks.
+//
+// Two failures meet on this form and only one fix clears both. Prefilling from
+// a hooked read (what the detail screen does) writes the MASK back over the
+// stored column, because the form posts every input on submit. Prefilling from
+// a raw read shows an admin a value the API masks — the disclosure this
+// release exists to close, aimed at the one reader who can see every row.
+//
+// So: read twice, diff, and treat the columns that differ as write-only. The
+// form renders them empty with a placeholder, and formToJSON already omits an
+// empty value, so leaving one alone updates nothing while typing into it
+// replaces the stored value. It is the password-field pattern, applied to
+// whatever the app decided to mask.
+//
+// The masked set comes from comparing the two reads rather than from NoQuery,
+// because those answer different questions: NoQuery is about the query
+// surface, and an app may mask a column it never marked.
+func (b *Battery) getRowForEdit(ctx context.Context, ent *entity.Entity, id string) (map[string]any, map[string]bool, error) {
+	ch := b.crudFor(ent)
+	sctx := adminSuperuserCtx(ctx)
+	raw, err := ch.GetOne(sctx, id, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys := adminResponseKeys(ent, ch)
+	rawRow := adminResponseRow(raw, keys)
+	return rawRow, b.maskedFields(ctx, ent, id, rawRow, keys), nil
+}
+
+// maskedFields reports which of an entity's editable columns an AfterGet hook
+// rewrites, by comparing the stored row against the hooked one.
+//
+// Split out from getRowForEdit because the SAVE path needs the same answer:
+// the form omits masked columns, so the handler has to know which submitted
+// blanks mean "unchanged" rather than "clear this". Recomputing it server-side
+// rather than round-tripping it through a hidden input keeps it authoritative.
+func (b *Battery) maskedFields(ctx context.Context, ent *entity.Entity, id string, rawRow map[string]any, keys map[string]string) map[string]bool {
+	ch := b.crudFor(ent)
+	sctx := adminSuperuserCtx(ctx)
+	masked := map[string]bool{}
+	// A hook failure here must not take the form down: it means we cannot
+	// prove a column is safe to prefill, so treat every editable column as
+	// masked and let the admin retype what they mean to change.
+	hooked, hookErr := ch.GetOne(crud.WithReadHooks(sctx), id, nil)
+	switch {
+	case hookErr != nil:
+		for _, f := range editableFields(ent) {
+			masked[f.Name] = true
+		}
+	default:
+		// Diff the rows AFTER adminResponseRow, so the keys are the schema
+		// names editableFields yields. GetOne returns JSON casing, and keying
+		// this set on `cardNumber` while the form looks up `card_number` would
+		// mark nothing masked on exactly the multi-word columns — invisible in
+		// any single-word test.
+		hookedRow := adminResponseRow(hooked, keys)
+		for k, v := range rawRow {
+			if h, ok := hookedRow[k]; !ok || !sameStoredValue(v, h) {
+				masked[k] = true
+			}
+		}
+	}
+	return masked
+}
+
+// maskedFieldsForID recomputes the masked set on the SAVE path, where there is
+// no already-loaded row to diff against.
+func (b *Battery) maskedFieldsForID(ctx context.Context, ent *entity.Entity, id string) map[string]bool {
+	if id == "" {
+		return nil // create: nothing is stored yet, so nothing is masked
+	}
+	ch := b.crudFor(ent)
+	raw, err := ch.GetOne(adminSuperuserCtx(ctx), id, nil)
+	if err != nil {
+		return nil
+	}
+	keys := adminResponseKeys(ent, ch)
+	return b.maskedFields(ctx, ent, id, adminResponseRow(raw, keys), keys)
+}
+
+// sameStoredValue compares two reads of the same column. It is a value
+// comparison, not an identity one: the two GetOne calls scan independently, so
+// equal columns are equal values in different allocations.
+func sameStoredValue(a, b any) bool {
+	return reflect.DeepEqual(a, b)
+}
+
 // ----- write handlers (explicit routes) -------------------------------------
 
 // entitySave handles create (edit=false) and update (edit=true). On success it
@@ -402,7 +521,10 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 		if edit {
 			id = r.PathValue("id")
 		}
-		body := formToJSON(ent, r)
+		// Recompute server-side rather than trusting a hidden input: the form
+		// omits masked columns, so the handler must know which blanks mean
+		// "unchanged".
+		body := formToJSON(ent, r, b.maskedFieldsForID(r.Context(), ent, id))
 		ch := b.crudFor(ent)
 		var code int
 		var raw []byte
@@ -463,10 +585,19 @@ func (b *Battery) entityRows(ent *entity.Entity) http.HandlerFunc {
 // accepts, coercing by field type. Empty optional values are omitted so the
 // handler's defaults/validation behave as on the API; booleans always send (an
 // unchecked checkbox is absent → false).
-func formToJSON(ent *entity.Entity, r *http.Request) string {
+func formToJSON(ent *entity.Entity, r *http.Request, masked map[string]bool) string {
 	obj := map[string]any{}
 	for _, f := range editableFields(ent) {
 		raw := strings.TrimSpace(r.PostForm.Get(f.Name))
+		// A masked column renders empty and is write-only: blank means "leave
+		// the stored value alone". This has to run BEFORE the type switch,
+		// because schema.Bool emits unconditionally — an unchecked box is
+		// indistinguishable from an absent one, so a masked bool was written
+		// back as false on every save, silently flipping exactly the
+		// is_admin / is_active columns an app is most likely to mask.
+		if raw == "" && masked[f.Name] {
+			continue
+		}
 		switch f.Type {
 		case schema.Bool:
 			obj[f.Name] = raw == "on" || raw == "true" || raw == "1"

@@ -201,7 +201,16 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		return nil, err
 	}
 	entitySchema := ent.Schema()
-	qb := query.Select(entitySchema.Names()...).From(ent.GetTable())
+	// Project VisibleFields, not Names(): Names() includes Hidden columns, so
+	// selecting it would hand back the password hashes the HTTP read paths
+	// strip. NoQuery columns stay in the projection — they are meant to be
+	// returned, just not queried on.
+	visible := entitySchema.VisibleFields()
+	cols := make([]string, 0, len(visible))
+	for _, f := range visible {
+		cols = append(cols, f.Name)
+	}
+	qb := query.Select(cols...).From(ent.GetTable())
 
 	for _, include := range parsed.Includes {
 		if !hasRelation(ent, include) {
@@ -210,8 +219,13 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 	}
 	for _, filter := range parsed.Filters {
 		field, ok := entitySchema.FieldByName(filter.Field)
-		if !ok {
+		if !ok || field.Hidden {
+			// Hidden folds into not-found so the DSL can't distinguish a
+			// hidden column from an absent one, matching ParseFilters.
 			return nil, fmt.Errorf("dsl: field %q not found on %s", filter.Field, parsed.Entity)
+		}
+		if field.NoQuery {
+			return nil, fmt.Errorf("dsl: field %q on %s cannot be filtered", filter.Field, parsed.Entity)
 		}
 		condition, args, err := dslCondition(field, filter.Operator, filter.Value)
 		if err != nil {
@@ -220,8 +234,12 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		qb.Where(condition, args...)
 	}
 	for _, order := range parsed.Orders {
-		if _, ok := entitySchema.FieldByName(order.Field); !ok {
+		orderField, ok := entitySchema.FieldByName(order.Field)
+		if !ok || orderField.Hidden {
 			return nil, fmt.Errorf("dsl: field %q not found on %s", order.Field, parsed.Entity)
+		}
+		if orderField.NoQuery {
+			return nil, fmt.Errorf("dsl: field %q on %s cannot be sorted on", order.Field, parsed.Entity)
 		}
 		qb.Order(order.Field, order.Direction)
 	}
@@ -246,8 +264,12 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		if cursorField == "" {
 			cursorField = "id"
 		}
-		if _, ok := entitySchema.FieldByName(cursorField); !ok {
+		cf, ok := entitySchema.FieldByName(cursorField)
+		if !ok || cf.Hidden {
 			return nil, fmt.Errorf("dsl: after() cursor field %q not found on %s", cursorField, parsed.Entity)
+		}
+		if cf.NoQuery {
+			return nil, fmt.Errorf("dsl: after() cursor field %q on %s cannot be queried", cursorField, parsed.Entity)
 		}
 		qb.Cursor(cursorField, parsed.After, "forward")
 	}

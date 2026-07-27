@@ -456,6 +456,9 @@ func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig) render.HTML {
 			continue
 		}
 		var notes []string
+		if f.NoQuery {
+			notes = append(notes, "not filterable/sortable")
+		}
 		if f.AutoGenerate != schema.AutoNone {
 			notes = append(notes, "auto-generated")
 		} else if f.ReadOnly {
@@ -610,7 +613,11 @@ await api.%s.watch((event) => console.log(event), { signal });`,
 func exampleFilterField(cfg entity.EntityConfig) string {
 	first := ""
 	for _, f := range cfg.Fields {
-		if f.Hidden || f.AutoGenerate != schema.AutoNone || f.Type == schema.Relation {
+		// NoQuery skipped alongside Hidden: this example exists to show a
+		// filter that works, and the parser answers a NoQuery column with a
+		// 400, so publishing it as the canonical snippet is worse than
+		// publishing nothing.
+		if f.Hidden || f.NoQuery || f.AutoGenerate != schema.AutoNone || f.Type == schema.Relation {
 			continue
 		}
 		switch f.Type {
@@ -624,7 +631,18 @@ func exampleFilterField(cfg entity.EntityConfig) string {
 	if first != "" {
 		return first
 	}
-	return "created_at"
+	// Fall back to created_at only when the entity actually has it. An entity
+	// built WithTimestamps(false) whose every other column is Hidden, NoQuery,
+	// auto-generated, or a relation has no filterable column at all, and
+	// naming a column that does not exist publishes three examples (Go, TS,
+	// curl) that every reader copies into a 400. The primary key is always
+	// present and always filterable, so it is the honest last resort.
+	for _, f := range cfg.Fields {
+		if f.Name == "created_at" && !f.Hidden && !f.NoQuery {
+			return "created_at"
+		}
+	}
+	return "id"
 }
 
 // upperFirst turns casing.ToCamel's lowerCamel wire form into the
