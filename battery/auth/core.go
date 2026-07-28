@@ -66,14 +66,23 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/register", c.registerHandler())
 }
 
-// rejectCrossSiteForm refuses a browser cross-site FORM submission to an
-// auth mutation endpoint and reports whether it wrote a response. Login
-// CSRF needs no pre-existing cookie — an attacker's page can silently log
-// the victim into an attacker-controlled account — so SameSite session
+// rejectCrossSiteForm refuses a browser cross-site submission to an auth
+// mutation endpoint and reports whether it wrote a response. Login CSRF
+// needs no pre-existing cookie — an attacker's page can silently log the
+// victim into an attacker-controlled account — so SameSite session
 // cookies don't cover it. JSON bodies are exempt: a cross-site JSON POST
 // needs a CORS preflight, which the framework never answers for these
 // routes. Non-browser clients (curl, tests, native apps) send neither
 // header and pass.
+//
+// The gate is isForgeableRequest, NOT isFormRequest. It used to be the
+// latter, which recognised only urlencoded and multipart — so a form with
+// enctype="text/plain" (a CORS-simple type, no preflight) skipped the
+// check entirely, and so did a bodyless fetch() that sends no
+// Content-Type. On magic-link verify, whose credential comes from the URL
+// rather than the body, that was a complete confirmation-step bypass:
+// the attacker's own token, auto-submitted from their page, minted a
+// session in the victim's browser.
 //
 // Sec-Fetch-Site is the authoritative signal and is checked FIRST: every
 // modern browser sends it, and a genuine cross-site attack POST carries
@@ -83,7 +92,7 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 // form navigation sends Origin: null (opaque origin) too — using null as
 // the reject trigger would break normal browser logins.
 func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
-	if !isFormRequest(r) {
+	if !isForgeableRequest(r) {
 		return false
 	}
 	// Primary: Fetch Metadata. Same-origin / none are safe; a cross-site
