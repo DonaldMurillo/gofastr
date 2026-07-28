@@ -236,6 +236,52 @@ func TestRedirectParamRenameStillCollides(t *testing.T) {
 	d.RedirectPattern("/users/{handle:alpha}", "/profiles/{handle}") // must NOT panic
 }
 
+// Guards the last unchecked redirect/screen pair: a pattern redirect
+// covering an EXACT screen path. Redirects resolve before screens
+// (uihost.handlePage), so /old/special used to 308 to /new/special
+// forever with its own screen never rendering and no diagnostic.
+func TestPatternRedirectOverExactScreen(t *testing.T) {
+	a := NewApp("t")
+	a.RedirectPattern("/old/{id}", "/new/{id}")
+	msg := panicMsg(t, func() { a.Register("/old/special", &basicComp{}, nil) })
+	if !strings.Contains(msg, "unreachable") {
+		t.Errorf("exact screen under a pattern redirect must panic, got: %s", msg)
+	}
+
+	// And the reverse registration order.
+	b := NewApp("t")
+	b.Register("/old/special", &basicComp{}, nil)
+	msg = panicMsg(t, func() { b.RedirectPattern("/old/{id}", "/new/{id}") })
+	if !strings.Contains(msg, "overlap") {
+		t.Errorf("pattern redirect over an exact screen must panic, got: %s", msg)
+	}
+
+	// The mirror case (dynamic screen under a pattern redirect) has always
+	// panicked — this pair is an omission, not a deliberate contract.
+	c := NewApp("t")
+	c.RedirectPattern("/old/{id}", "/new/{id}")
+	msg = panicMsg(t, func() { c.Register("/old/{slug}", &basicComp{}, nil) })
+	if !strings.Contains(msg, "overlap") {
+		t.Errorf("dynamic screen under a pattern redirect must panic, got: %s", msg)
+	}
+}
+
+// The one cross-shape shadow ResolveRedirect's doc deliberately allows:
+// an EXACT redirect over one concrete path of a dynamic screen. It
+// follows the router's own exact-beats-dynamic contract, so tightening
+// the pattern-redirect side above must not swallow it.
+func TestExactRedirectOverDynamicScreenAllowed(t *testing.T) {
+	a := NewApp("t")
+	a.Register("/users/{id}", &basicComp{}, nil)
+	a.Redirect("/users/me", "/profile") // must NOT panic
+	if target, ok := a.ResolveRedirect("/users/me"); !ok || target != "/profile" {
+		t.Errorf("ResolveRedirect(/users/me) = %q %v, want /profile true", target, ok)
+	}
+	if _, _, ok := a.Router.Resolve("/users/42"); !ok {
+		t.Error("the dynamic screen must still serve every other id")
+	}
+}
+
 func TestRedirectOverlapAndValidation(t *testing.T) {
 	// Sol round-2's exact input: an int-constrained redirect over an
 	// unconstrained screen would steal every numeric id.

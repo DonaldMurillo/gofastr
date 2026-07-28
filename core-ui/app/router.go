@@ -57,6 +57,19 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 		if _, ok := r.exactRedir[screen.Path]; ok {
 			panic("app: screen " + screen.Path + " collides with a registered redirect")
 		}
+		// A pattern redirect that covers this literal path shadows it just
+		// as completely as it shadows a dynamic screen (checked below):
+		// ResolveRedirect runs before screen resolution, so /old/special
+		// would 308 away forever with its screen never rendering. Same
+		// overlap test, same voice — the exact-screen side was simply
+		// never wired up.
+		exactSegs := strings.Split(strings.Trim(screen.Path, "/"), "/")
+		for _, pr := range r.patternRedir {
+			if patternsOverlap(pr.segments, exactSegs) {
+				panic("app: screen " + screen.Path + " overlaps a registered redirect — " +
+					"redirects are consulted before screens, so the screen would be unreachable on shared URLs")
+			}
+		}
 		r.screens[screen.Path] = screen
 		return
 	}
