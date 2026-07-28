@@ -18,7 +18,7 @@ func middlewareHost(t *testing.T, mutate ...func(*Config)) *Host {
 
 func grantFor(t *testing.T, h *Host) string {
 	t.Helper()
-	tok, err := h.MintNonce("dashboard", "u-7", "https://acme.com", nil)
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-7", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestMiddlewareDiscardsCookiesOnAnEmbedRequest(t *testing.T) {
 // that turns an expired grant into a silently wrong render.
 func TestMiddlewareRefusesABadGrant(t *testing.T) {
 	h := middlewareHost(t)
-	nonce, err := h.MintNonce("dashboard", "u-7", "https://acme.com", nil)
+	nonce, err := h.MintNonce(context.Background(), "dashboard", "u-7", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}

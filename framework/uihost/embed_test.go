@@ -63,6 +63,13 @@ func (c *embedSubjectComp) Actions() {
 	component.On("embed-probe", func(_ *component.ComponentContext) {})
 }
 
+// embedTestScreen is a fembed.Screen for uihost tests that build a fembed.Host
+// directly (theme-resolution tests) without registering a real *app.Screen or
+// running the boot walk. *app.Screen is what production surfaces carry.
+type embedTestScreen struct{ path string }
+
+func (s embedTestScreen) RoutePath() string { return s.path }
+
 type embedFixture struct {
 	host    *UIHost
 	embed   *fembed.Host
@@ -78,19 +85,21 @@ func newEmbedFixture(t *testing.T, mutate ...func(*fembed.Config)) embedFixture 
 	t.Helper()
 	application := app.NewApp("Embed Test")
 	application.SetDefaultLayout(app.NewLayout("main").WithHeader(&testHeaderComp{}))
-	application.RegisterScreen(app.NewScreen("/reports", &embedSubjectComp{}).WithTitle("Reports"), nil)
-	application.RegisterScreen(app.NewScreen("/other", &embedSubjectComp{}).WithTitle("Other"), nil)
+	reportsScreen := app.NewScreen("/reports", &embedSubjectComp{}).WithTitle("Reports")
+	otherScreen := app.NewScreen("/other", &embedSubjectComp{}).WithTitle("Other")
+	application.RegisterScreen(reportsScreen, nil)
+	application.RegisterScreen(otherScreen, nil)
 
 	cfg := fembed.Config{
 		Surfaces: []fembed.Surface{
 			{
 				Name:    "reports",
-				Path:    "/reports",
+				Screen:  reportsScreen,
 				Origins: []string{embedTestOrigin, embedTestOrigin2},
 				Scopes:  []string{"read"},
 				Theme:   fembed.ThemeConfig{AllowTokens: []string{"color-primary"}, MaxVariants: 2},
 			},
-			{Name: "other", Path: "/other", Origins: []string{embedTestOrigin}},
+			{Name: "other", Screen: otherScreen, Origins: []string{embedTestOrigin}},
 		},
 		BurnStore: fembed.NewMemoryBurnStore(),
 		Resolve: func(_ context.Context, subject string) (any, error) {
@@ -129,7 +138,7 @@ func (f embedFixture) do(t *testing.T, method, path string, body string, mutate 
 // grantFor runs the whole handshake and returns the frame's credential.
 func (f embedFixture) grantFor(t *testing.T, surface string) string {
 	t.Helper()
-	nonce, err := f.embed.MintNonce(surface, "user-7", embedTestOrigin, nil)
+	nonce, err := f.embed.MintNonce(context.Background(), surface, "user-7", embedTestOrigin, nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -346,7 +355,7 @@ func TestEmbedExchangeRejectsGET(t *testing.T) {
 // "the embed randomly doesn't load".
 func TestEmbedExchangeIsIdempotent(t *testing.T) {
 	f := newEmbedFixture(t)
-	nonce, err := f.embed.MintNonce("reports", "user-7", embedTestOrigin, nil)
+	nonce, err := f.embed.MintNonce(context.Background(), "reports", "user-7", embedTestOrigin, nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -386,7 +395,7 @@ func TestEmbedExchangeIsIdempotent(t *testing.T) {
 // nonce exactly how far they got. Every rejection answers identically.
 func TestEmbedExchangeFailuresAreIndistinguishable(t *testing.T) {
 	f := newEmbedFixture(t)
-	good, err := f.embed.MintNonce("reports", "user-7", embedTestOrigin, nil)
+	good, err := f.embed.MintNonce(context.Background(), "reports", "user-7", embedTestOrigin, nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -395,7 +404,7 @@ func TestEmbedExchangeFailuresAreIndistinguishable(t *testing.T) {
 	// and then never exercise. GrantTTL is milliseconds here so the window
 	// really closes.
 	spentFixture := newEmbedFixture(t, func(c *fembed.Config) { c.GrantTTL = 20 * time.Millisecond })
-	spent, err := spentFixture.embed.MintNonce("reports", "user-7", embedTestOrigin, nil)
+	spent, err := spentFixture.embed.MintNonce(context.Background(), "reports", "user-7", embedTestOrigin, nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -448,7 +457,7 @@ func TestEmbedContentRequiresAGrant(t *testing.T) {
 
 	// A nonce is not a grant. Presenting one must fail even though it verifies
 	// under the OTHER key.
-	nonce, err := f.embed.MintNonce("reports", "user-7", embedTestOrigin, nil)
+	nonce, err := f.embed.MintNonce(context.Background(), "reports", "user-7", embedTestOrigin, nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -559,7 +568,7 @@ func TestEmbedRefreshRollsTheGrantForward(t *testing.T) {
 	}
 
 	// A nonce cannot be refreshed into a grant.
-	nonce, err := f.embed.MintNonce("reports", "user-7", embedTestOrigin, nil)
+	nonce, err := f.embed.MintNonce(context.Background(), "reports", "user-7", embedTestOrigin, nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -740,9 +749,10 @@ func TestEmbedRuntimeIsServed(t *testing.T) {
 // than behave as though every token were fine.
 func TestEmbedWithoutKeysRefuses(t *testing.T) {
 	application := app.NewApp("Keyless")
-	application.RegisterScreen(app.NewScreen("/reports", &embedSubjectComp{}).WithTitle("Reports"), nil)
+	reportsScreen := app.NewScreen("/reports", &embedSubjectComp{}).WithTitle("Reports")
+	application.RegisterScreen(reportsScreen, nil)
 	eh, err := fembed.New(fembed.Config{
-		Surfaces:  []fembed.Surface{{Name: "reports", Path: "/reports", Origins: []string{embedTestOrigin}}},
+		Surfaces:  []fembed.Surface{{Name: "reports", Screen: reportsScreen, Origins: []string{embedTestOrigin}}},
 		BurnStore: fembed.NewMemoryBurnStore(),
 	})
 	if err != nil {

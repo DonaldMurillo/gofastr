@@ -18,13 +18,14 @@ import (
 func buildDemo(t *testing.T) (appSrv, customerSrv *httptest.Server, embeds *fembed.Host) {
 	t.Helper()
 	application := app.NewApp("Embed demo")
-	application.Register("/reports", &reportsScreen{}, app.EmbedLayout())
+	reports := app.NewScreen("/reports", &reportsScreen{})
+	application.RegisterScreen(reports, app.EmbedLayout())
 
 	var err error
 	embeds, err = fembed.New(fembed.Config{
 		Surfaces: []fembed.Surface{{
 			Name:    "reports",
-			Path:    "/reports",
+			Screen:  reports,
 			Origins: []string{customerOrigin},
 			Theme:   fembed.ThemeConfig{AllowTokens: []string{"color-primary"}},
 		}},

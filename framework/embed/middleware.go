@@ -111,7 +111,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 				return
 			}
-			g, err := h.VerifyGrant(token)
+			g, err := h.VerifyGrant(r.Context(), token)
 			if err != nil {
 				// Refuse rather than fall through anonymously. A caller that
 				// presented a credential and had it rejected must not silently
@@ -216,6 +216,25 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithDeadline(ctx, g.Expires)
 				defer cancel()
+			}
+
+			// The tenant, if the app can name one for this subject. Installed
+			// from a server-side lookup keyed on the grant's subject — never
+			// from anything the request carried, which is what makes a stolen
+			// grant unable to choose its own tenant.
+			if h.resolveTenant != nil && g.Subject != "" {
+				tid, err := h.resolveTenant(ctx, g.Subject)
+				if err != nil {
+					// Fail closed, for the same reason the subject resolver
+					// does: continuing without a tenant would either error
+					// deep in CRUD or, worse, run untenanted.
+					http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+					return
+				}
+				if tid != "" {
+					ctx = handler.SetTenant(ctx, tid)
+					ctx = tenant.SetTenantID(ctx, tid)
+				}
 			}
 
 			if h.resolve != nil && g.Subject != "" {

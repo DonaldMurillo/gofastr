@@ -109,7 +109,7 @@ func TestMiddlewareRefusesNonCanonicalPaths(t *testing.T) {
 func TestSurfacePathIsValidatedLikeReach(t *testing.T) {
 	for _, p := range []string{"/auth", "/admin", "/mcp", "/print", "/api/docs", "/"} {
 		_, err := New(Config{
-			Surfaces:  []Surface{{Name: "s", Path: p, Origins: []string{"https://acme.example"}}},
+			Surfaces:  []Surface{{Name: "s", Screen: testScreen{p}, Origins: []string{"https://acme.example"}}},
 			BurnStore: NewMemoryBurnStore(),
 		})
 		if err == nil {
@@ -126,7 +126,7 @@ func TestSurfacePathIsValidatedLikeReach(t *testing.T) {
 // then 403'd every one of its own islands.
 func TestSurfacePathTrailingSlashStillOwnsItsSubtree(t *testing.T) {
 	h, err := New(Config{
-		Surfaces:  []Surface{{Name: "reports", Path: "/reports/", Origins: []string{"https://acme.example"}}},
+		Surfaces:  []Surface{{Name: "reports", Screen: testScreen{"/reports/"}, Origins: []string{"https://acme.example"}}},
 		BurnStore: NewMemoryBurnStore(),
 	})
 	if err != nil {
@@ -146,7 +146,7 @@ func TestSurfacePathTrailingSlashStillOwnsItsSubtree(t *testing.T) {
 // A battery that moved its prefix takes its protection with it.
 func TestAddReservedPrefixesRefusesASurfaceOverAMountedBattery(t *testing.T) {
 	h, err := New(Config{
-		Surfaces:  []Surface{{Name: "s", Path: "/back-office", Origins: []string{"https://acme.example"}}},
+		Surfaces:  []Surface{{Name: "s", Screen: testScreen{"/back-office"}, Origins: []string{"https://acme.example"}}},
 		BurnStore: NewMemoryBurnStore(),
 	})
 	if err != nil {

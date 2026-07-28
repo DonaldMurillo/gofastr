@@ -24,7 +24,7 @@ func TestResolveEmbedThemeRejectsADecodedPayloadPastTheByteBound(t *testing.T) {
 	eh, err := fembed.New(fembed.Config{
 		Surfaces: []fembed.Surface{{
 			Name:    "reports",
-			Path:    "/reports",
+			Screen:  embedTestScreen{"/reports"},
 			Origins: []string{embedTestOrigin},
 			Theme:   fembed.ThemeConfig{AllowTokens: []string{"color-primary"}},
 		}},

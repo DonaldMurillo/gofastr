@@ -53,19 +53,43 @@ type ThemeConfig struct {
 	MaxVariants int
 }
 
+// Screen is the minimal view of a core-ui/app.Screen this package needs: the
+// app route the surface renders. *app.Screen satisfies it structurally, so
+// this package never imports the UI layer — battery/auth imports this package,
+// and dragging core-ui in would be a layering regression.
+//
+// A Surface carries the screen value rather than a path string so the link
+// from a surface to the component tree it renders is a Go value — followable
+// by a human, a static analyzer, and the boot-time server-action walk —
+// instead of a string resolved against a route table.
+type Screen interface {
+	// RoutePath is the app route the screen is mounted at, e.g. "/reports".
+	RoutePath() string
+}
+
 // Surface is one embeddable piece of the app.
 type Surface struct {
 	// Name is the id a customer references in the embed snippet. It appears in
 	// a URL, so it is restricted to lowercase letters, digits and dashes.
 	Name string
-	// Path is the app route rendered inside the frame.
+	// Screen is the app screen rendered inside the frame. Required: a surface
+	// renders a screen, not a path string, so the framework can follow a
+	// surface to the component tree it renders without resolving strings.
+	//
+	// *app.Screen (core-ui/app) satisfies the Screen interface above. Pass the
+	// same *app.Screen value you register with App.RegisterScreen to the
+	// surface, so the link is a value identity rather than a re-typed path:
+	//
+	//	reports := app.NewScreen("/reports", &ReportsScreen{})
+	//	application.RegisterScreen(reports, app.EmbedLayout())
+	//	embed.Surface{Name: "reports", Screen: reports, Origins: ...}
 	//
 	// An island-only embed is a screen whose body is that island: the
 	// chrome-less embed layout emits no header, nav or footer, so a
 	// single-island screen renders as exactly that island and nothing else.
 	// There is deliberately no second render path for islands — one path means
 	// one set of security decisions.
-	Path string
+	Screen Screen
 	// Origins lists the exact origins allowed to frame this surface. Required;
 	// there is no wildcard and no "allow any" spelling.
 	Origins []string
@@ -103,6 +127,10 @@ type Surface struct {
 // type its screens already expect. Returning an error fails the request closed.
 type SubjectResolver func(ctx context.Context, subject string) (any, error)
 
+// TenantResolver turns a grant's subject into the tenant id its requests run
+// under. Returning an error fails the request closed.
+type TenantResolver func(ctx context.Context, subject string) (string, error)
+
 // Config declares an app's embeddable surfaces.
 type Config struct {
 	// Surfaces is the closed set of embeddable surfaces. A name that is not
@@ -116,21 +144,44 @@ type Config struct {
 	// an embed renders anonymously, which is the right shape for a public
 	// pricing table or status widget.
 	Resolve SubjectResolver
+	// ResolveTenant maps a grant subject to its tenant id. Optional.
+	//
+	// Middleware clears the tenant along with every other ambient identity
+	// value, because inheriting the COOKIE user's tenant is a cross-tenant
+	// read. Without this hook it then had no way to install the right one, so
+	// a multi-tenant entity behind an embed simply errored — the app's only
+	// recourse was undocumented middleware of its own.
+	//
+	// The tenant comes from the app's lookup ON THE GRANT'S SUBJECT, never
+	// from the request, so a stolen grant cannot choose its own tenant. That
+	// is also why this is a resolver rather than a claim inside the token: a
+	// claim has to be correct at mint time, in a credential living in a page
+	// the app does not control, and a wrong one is a cross-tenant read.
+	ResolveTenant TenantResolver
 	// NonceTTL / GrantTTL / GrantMaxAge override the defaults above.
 	NonceTTL    time.Duration
 	GrantTTL    time.Duration
 	GrantMaxAge time.Duration
+	// OriginSource optionally supplies a surface's allowed origins per
+	// customer at request time. When set, the embed shell serves only the
+	// origins of the customer named in the request instead of the whole
+	// static allowlist — see [OriginSource] and the Origins section of the
+	// embed docs. Leave it nil to behave exactly as today (static
+	// Surface.Origins on every shell response).
+	OriginSource OriginSource
 }
 
 // Host serves an app's embeddable surfaces. Construct with [New].
 type Host struct {
-	surfaces    map[string]*ResolvedSurface
-	names       []string
-	store       BurnStore
-	resolve     SubjectResolver
-	nonceTTL    time.Duration
-	grantTTL    time.Duration
-	grantMaxAge time.Duration
+	surfaces      map[string]*ResolvedSurface
+	names         []string
+	store         BurnStore
+	resolve       SubjectResolver
+	resolveTenant TenantResolver
+	originSource  OriginSource
+	nonceTTL      time.Duration
+	grantTTL      time.Duration
+	grantMaxAge   time.Duration
 
 	nonceKey []byte
 	grantKey []byte
@@ -144,11 +195,22 @@ type Host struct {
 
 // ResolvedSurface is a declared Surface with its origins normalized once at
 // boot, so no request path ever re-parses an allowlist.
+//
+// path is the screen's route resolved and normalized once at boot. MayReach
+// and every other path comparison read it from here, so swapping Surface to
+// carry a screen instead of a path string left the request-time matching logic
+// unchanged.
 type ResolvedSurface struct {
 	Surface
+	path    string
 	origins *originSet
 	scopes  map[string]struct{}
 }
+
+// Path returns the validated, normalized app route a grant for this surface
+// may reach as its own subtree. It is resolved once at boot from the surface's
+// screen. Callers that compared the old Surface.Path string read this instead.
+func (s *ResolvedSurface) Path() string { return s.path }
 
 // validSurfaceName mirrors the module-name rule in core-ui/runtime: the name
 // lands in a URL path segment, so anything that could be read as traversal or
@@ -182,13 +244,15 @@ func New(cfg Config) (*Host, error) {
 		return nil, errors.New("embed: a BurnStore is required — single-use nonces cannot be enforced without one")
 	}
 	h := &Host{
-		surfaces:    make(map[string]*ResolvedSurface, len(cfg.Surfaces)),
-		store:       cfg.BurnStore,
-		resolve:     cfg.Resolve,
-		nonceTTL:    cfg.NonceTTL,
-		grantTTL:    cfg.GrantTTL,
-		grantMaxAge: cfg.GrantMaxAge,
-		reserved:    slices.Clone(reservedPrefixes),
+		surfaces:      make(map[string]*ResolvedSurface, len(cfg.Surfaces)),
+		store:         cfg.BurnStore,
+		resolve:       cfg.Resolve,
+		resolveTenant: cfg.ResolveTenant,
+		originSource:  cfg.OriginSource,
+		nonceTTL:      cfg.NonceTTL,
+		grantTTL:      cfg.GrantTTL,
+		grantMaxAge:   cfg.GrantMaxAge,
+		reserved:      slices.Clone(reservedPrefixes),
 	}
 	if h.nonceTTL <= 0 {
 		h.nonceTTL = DefaultNonceTTL
@@ -217,24 +281,33 @@ func New(cfg Config) (*Host, error) {
 		if _, dup := h.surfaces[s.Name]; dup {
 			return nil, fmt.Errorf("embed: surface %q declared twice", s.Name)
 		}
-		if !strings.HasPrefix(s.Path, "/") {
-			return nil, fmt.Errorf("embed: surface %q Path must be an absolute app route, got %q", s.Name, s.Path)
+		// A surface renders a screen, not a path string. A nil screen is a
+		// boot error — there is no surface without the component tree it
+		// renders, and a path string with no screen is the gap this change
+		// exists to close (neither a human nor a static analyzer could follow
+		// it to what actually renders).
+		if s.Screen == nil {
+			return nil, fmt.Errorf("embed: surface %q: Screen is required — a surface renders a screen, not a path string", s.Name)
 		}
-		// Path gets the SAME validation as Reach, and for a stronger reason.
+		route := s.Screen.RoutePath()
+		if !strings.HasPrefix(route, "/") {
+			return nil, fmt.Errorf("embed: surface %q screen route must be an absolute app route, got %q", s.Name, route)
+		}
+		// The screen's route gets the SAME validation as Reach, and for a
+		// stronger reason.
 		//
-		// MayReach checks the surface's own Path subtree first, so Path grants
-		// everything a Reach entry would — and Path is the field an author
-		// reaches for. Validating one and not the other meant
-		// Reach: []string{"/auth"} failed at boot with a clear error while
-		// Path: "/auth" booted clean and handed every grant the entire auth
-		// battery. Normalising here also fixes the trailing-slash footgun:
-		// Path: "/reports/" matched neither /reports nor /reports/42, so the
-		// surface rendered and then 403'd its own islands.
-		norm, err := normalizeReach(s.Name, "Path", s.Path, h.reserved)
+		// MayReach checks the surface's own subtree first, so the route grants
+		// everything a Reach entry would — and it is the value an author binds
+		// a surface with. Validating one and not the other meant
+		// Reach: []string{"/auth"} failed at boot with a clear error while a
+		// screen mounted at "/auth" booted clean and handed every grant the
+		// entire auth battery. Normalising here also fixes the trailing-slash
+		// footgun: a screen at "/reports/" matched neither /reports nor
+		// /reports/42, so the surface rendered and then 403'd its own islands.
+		norm, err := normalizeReach(s.Name, "Path", route, h.reserved)
 		if err != nil {
 			return nil, err
 		}
-		s.Path = norm
 		origins, err := newOriginSet(s.Origins)
 		if err != nil {
 			return nil, fmt.Errorf("embed: surface %q: %w", s.Name, err)
@@ -258,7 +331,7 @@ func New(cfg Config) (*Host, error) {
 			}
 			s.Reach = cleaned
 		}
-		h.surfaces[s.Name] = &ResolvedSurface{Surface: s, origins: origins, scopes: scopes}
+		h.surfaces[s.Name] = &ResolvedSurface{Surface: s, path: norm, origins: origins, scopes: scopes}
 		h.names = append(h.names, s.Name)
 	}
 	sort.Strings(h.names)
@@ -305,6 +378,12 @@ func (h *Host) GrantTTL() time.Duration { return h.grantTTL }
 // Resolver returns the configured subject resolver, or nil.
 func (h *Host) Resolver() SubjectResolver { return h.resolve }
 
+// OriginSource returns the configured per-customer origin source, or nil when
+// the app serves only the static Surface.Origins allowlist. The embed shell
+// uses this to decide whether to resolve a per-customer frame-ancestors
+// directive; nil means "behave exactly as today".
+func (h *Host) OriginSource() OriginSource { return h.originSource }
+
 // MintNonce signs a single-use handshake nonce for one viewer of one surface on
 // one customer origin.
 //
@@ -317,7 +396,40 @@ func (h *Host) Resolver() SubjectResolver { return h.resolve }
 // surface's full set; passing a scope the surface does not declare is an error
 // rather than a silent drop, because a silent drop makes an over-broad call
 // site look like it worked.
-func (h *Host) MintNonce(surfaceName, subject, origin string, scopes []string) (string, error) {
+
+// originAllowed reports whether origin may frame this surface, consulting the
+// static allowlist first and the OriginSource second.
+//
+// Static first is deliberate: it is a map lookup, it covers every app that
+// never configures a source, and it keeps the source off the hot path for
+// origins the operator listed at boot. The source is asked only about origins
+// the static list does not know — which is exactly the set it exists to serve.
+//
+// A source error fails CLOSED. The alternative reading, "the store is down so
+// let it through", would turn an outage into an open framing policy.
+//
+// Effect on removal: an origin dropped from the source stops verifying on the
+// next request, the same as one dropped from Surface.Origins. Nothing waits
+// for a grant to expire.
+func (h *Host) originAllowed(ctx context.Context, s *ResolvedSurface, surfaceName, origin string) (bool, error) {
+	if s.origins.Has(origin) {
+		return true, nil
+	}
+	if h.originSource == nil {
+		return false, nil
+	}
+	normalized, err := NormalizeOrigin(origin)
+	if err != nil {
+		return false, nil
+	}
+	ok, err := h.originSource.Allows(ctx, surfaceName, normalized)
+	if err != nil {
+		return false, fmt.Errorf("embed: origin source failed for surface %q: %w", surfaceName, err)
+	}
+	return ok, nil
+}
+
+func (h *Host) MintNonce(ctx context.Context, surfaceName, subject, origin string, scopes []string) (string, error) {
 	if !h.Ready() {
 		return "", errors.New("embed: no signing key — set an app secret (WithSecret or GOFASTR_SECRET)")
 	}
@@ -325,7 +437,11 @@ func (h *Host) MintNonce(surfaceName, subject, origin string, scopes []string) (
 	if !ok {
 		return "", fmt.Errorf("embed: unknown surface %q", surfaceName)
 	}
-	if !s.origins.Has(origin) {
+	allowed, err := h.originAllowed(ctx, s, surfaceName, origin)
+	if err != nil {
+		return "", err
+	}
+	if !allowed {
 		return "", fmt.Errorf("embed: origin %q is not allowed to frame surface %q", origin, surfaceName)
 	}
 	granted := s.Scopes
@@ -392,7 +508,11 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 		// The surface was removed after the nonce was minted. Fail closed.
 		return ExchangeResult{}, fmt.Errorf("embed: unknown surface %q", n.Surface)
 	}
-	if !s.origins.Has(n.Origin) {
+	allowedOrigin, err := h.originAllowed(ctx, s, n.Surface, n.Origin)
+	if err != nil {
+		return ExchangeResult{}, err
+	}
+	if !allowedOrigin {
 		// The origin was removed from the allowlist after the nonce was minted.
 		return ExchangeResult{}, fmt.Errorf("embed: origin %q is no longer allowed to frame surface %q", n.Origin, n.Surface)
 	}
@@ -463,7 +583,7 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 
 // VerifyGrant checks a grant against the host's key and confirms the surface it
 // names still exists and still allows the origin it was minted for.
-func (h *Host) VerifyGrant(token string) (Grant, error) {
+func (h *Host) VerifyGrant(ctx context.Context, token string) (Grant, error) {
 	if !h.Ready() {
 		return Grant{}, errors.New("embed: no signing key")
 	}
@@ -475,7 +595,11 @@ func (h *Host) VerifyGrant(token string) (Grant, error) {
 	if !ok {
 		return Grant{}, fmt.Errorf("embed: unknown surface %q", g.Surface)
 	}
-	if !s.origins.Has(g.Origin) {
+	allowedOrigin, err := h.originAllowed(ctx, s, g.Surface, g.Origin)
+	if err != nil {
+		return Grant{}, err
+	}
+	if !allowedOrigin {
 		return Grant{}, fmt.Errorf("embed: origin %q is no longer allowed to frame surface %q", g.Origin, g.Surface)
 	}
 	// Intersect with the surface's CURRENT scopes.
@@ -521,8 +645,8 @@ var ErrGrantExhausted = errors.New("embed: grant reached its absolute deadline")
 // stops that from being an immortal credential is the deadline the grant has
 // carried since it was issued: Refresh moves the expiry, never the deadline,
 // and refuses once the deadline passes.
-func (h *Host) Refresh(token string) (RefreshedGrant, error) {
-	g, err := h.VerifyGrant(token)
+func (h *Host) Refresh(ctx context.Context, token string) (RefreshedGrant, error) {
+	g, err := h.VerifyGrant(ctx, token)
 	if err != nil {
 		return RefreshedGrant{}, err
 	}

@@ -98,12 +98,13 @@ func main() {
 	application := app.NewApp("Embed demo")
 	// The embed layout is chrome-less: no site header, no nav, no footer. The
 	// customer's page already has all of those.
-	application.Register("/reports", &reportsScreen{}, app.EmbedLayout())
+	reports := app.NewScreen("/reports", &reportsScreen{})
+	application.RegisterScreen(reports, app.EmbedLayout())
 
 	embeds, err := fembed.New(fembed.Config{
 		Surfaces: []fembed.Surface{{
 			Name:    "reports",
-			Path:    "/reports",
+			Screen:  reports,
 			Origins: []string{customerOrigin},
 			// Declare what an embed of this surface may do. A grant carries the
 			// subject's FULL authority unless something narrows it, so a surface
@@ -181,7 +182,7 @@ func customerSite(embeds *fembed.Host) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		nonce, err := embeds.MintNonce("reports", "avery@acme.example", customerOrigin, nil)
+		nonce, err := embeds.MintNonce(r.Context(), "reports", "avery@acme.example", customerOrigin, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

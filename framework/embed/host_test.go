@@ -13,7 +13,7 @@ func testHost(t *testing.T, mutate ...func(*Config)) *Host {
 	cfg := Config{
 		Surfaces: []Surface{{
 			Name:    "dashboard",
-			Path:    "/embed/dashboard",
+			Screen:  testScreen{"/embed/dashboard"},
 			Origins: []string{"https://acme.com", "https://shop.acme.com"},
 			Scopes:  []string{"read", "comment"},
 			// The surface posts to an API route outside its own subtree, which
@@ -34,17 +34,17 @@ func testHost(t *testing.T, mutate ...func(*Config)) *Host {
 }
 
 func TestNewRejectsBadConfig(t *testing.T) {
-	ok := Surface{Name: "dash", Path: "/d", Origins: []string{"https://acme.com"}}
+	ok := Surface{Name: "dash", Screen: testScreen{"/d"}, Origins: []string{"https://acme.com"}}
 	bad := []struct {
 		why string
 		cfg Config
 	}{
 		{"no surfaces", Config{BurnStore: NewMemoryBurnStore()}},
 		{"no burn store", Config{Surfaces: []Surface{ok}}},
-		{"no origins", Config{Surfaces: []Surface{{Name: "dash", Path: "/d"}}, BurnStore: NewMemoryBurnStore()}},
-		{"relative path", Config{Surfaces: []Surface{{Name: "dash", Path: "d", Origins: []string{"https://acme.com"}}}, BurnStore: NewMemoryBurnStore()}},
-		{"uppercase name", Config{Surfaces: []Surface{{Name: "Dash", Path: "/d", Origins: []string{"https://acme.com"}}}, BurnStore: NewMemoryBurnStore()}},
-		{"traversal name", Config{Surfaces: []Surface{{Name: "../x", Path: "/d", Origins: []string{"https://acme.com"}}}, BurnStore: NewMemoryBurnStore()}},
+		{"no origins", Config{Surfaces: []Surface{{Name: "dash", Screen: testScreen{"/d"}}}, BurnStore: NewMemoryBurnStore()}},
+		{"relative path", Config{Surfaces: []Surface{{Name: "dash", Screen: testScreen{"d"}, Origins: []string{"https://acme.com"}}}, BurnStore: NewMemoryBurnStore()}},
+		{"uppercase name", Config{Surfaces: []Surface{{Name: "Dash", Screen: testScreen{"/d"}, Origins: []string{"https://acme.com"}}}, BurnStore: NewMemoryBurnStore()}},
+		{"traversal name", Config{Surfaces: []Surface{{Name: "../x", Screen: testScreen{"/d"}, Origins: []string{"https://acme.com"}}}, BurnStore: NewMemoryBurnStore()}},
 		{"duplicate name", Config{Surfaces: []Surface{ok, ok}, BurnStore: NewMemoryBurnStore()}},
 	}
 	for _, c := range bad {
@@ -57,24 +57,24 @@ func TestNewRejectsBadConfig(t *testing.T) {
 func TestMintNonceEnforcesSurfaceOriginAndScopes(t *testing.T) {
 	h := testHost(t)
 
-	if _, err := h.MintNonce("dashboard", "u-1", "https://acme.com/", nil); err != nil {
+	if _, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com/", nil); err != nil {
 		t.Fatalf("a listed origin (with a trailing slash) was rejected: %v", err)
 	}
-	if _, err := h.MintNonce("nope", "u-1", "https://acme.com", nil); err == nil {
+	if _, err := h.MintNonce(context.Background(), "nope", "u-1", "https://acme.com", nil); err == nil {
 		t.Error("minting for an undeclared surface succeeded")
 	}
-	if _, err := h.MintNonce("dashboard", "u-1", "https://evil.com", nil); err == nil {
+	if _, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://evil.com", nil); err == nil {
 		t.Error("minting for an origin not on the allowlist succeeded")
 	}
-	if _, err := h.MintNonce("dashboard", "u-1", "https://acme.com", []string{"read"}); err != nil {
+	if _, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", []string{"read"}); err != nil {
 		t.Errorf("narrowing scopes was rejected: %v", err)
 	}
-	if _, err := h.MintNonce("dashboard", "u-1", "https://acme.com", []string{"admin"}); err == nil {
+	if _, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", []string{"admin"}); err == nil {
 		t.Error("minting a scope the surface does not declare succeeded — a silent drop makes an over-broad call site look correct")
 	}
 
 	// Default (nil) scopes grant the surface's full declared set.
-	tok, err := h.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestMintNonceEnforcesSurfaceOriginAndScopes(t *testing.T) {
 
 func TestMintRefusesWithoutKeys(t *testing.T) {
 	h, err := New(Config{
-		Surfaces:  []Surface{{Name: "dash", Path: "/d", Origins: []string{"https://acme.com"}}},
+		Surfaces:  []Surface{{Name: "dash", Screen: testScreen{"/d"}, Origins: []string{"https://acme.com"}}},
 		BurnStore: NewMemoryBurnStore(),
 	})
 	if err != nil {
@@ -98,7 +98,7 @@ func TestMintRefusesWithoutKeys(t *testing.T) {
 	if h.Ready() {
 		t.Fatal("a keyless host reports ready")
 	}
-	if _, err := h.MintNonce("dash", "u", "https://acme.com", nil); err == nil {
+	if _, err := h.MintNonce(context.Background(), "dash", "u", "https://acme.com", nil); err == nil {
 		t.Error("minting without a key succeeded")
 	}
 	if _, err := h.Exchange(context.Background(), "emb_x.y", ""); err == nil {
@@ -112,7 +112,7 @@ func TestMintRefusesWithoutKeys(t *testing.T) {
 func TestExchangeIsSingleUseAndIdempotent(t *testing.T) {
 	h := testHost(t)
 	ctx := context.Background()
-	tok, err := h.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestExchangeIsSingleUseAndIdempotent(t *testing.T) {
 func TestExchangeRejectsSpentNonceAfterWindow(t *testing.T) {
 	h := testHost(t, func(c *Config) { c.GrantTTL = 30 * time.Millisecond })
 	ctx := context.Background()
-	tok, err := h.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestExchangeChecksFramedOrigin(t *testing.T) {
 	ctx := context.Background()
 
 	h := testHost(t)
-	tok, err := h.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestExchangeChecksFramedOrigin(t *testing.T) {
 	}
 
 	h2 := testHost(t)
-	tok2, err := h2.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok2, err := h2.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -204,14 +204,14 @@ func TestExchangeChecksFramedOrigin(t *testing.T) {
 func TestExchangeFailsClosedWhenConfigChanges(t *testing.T) {
 	ctx := context.Background()
 	minter := testHost(t)
-	tok, err := minter.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := minter.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
 
 	// Surface removed after the nonce was minted.
 	gone, err := New(Config{
-		Surfaces:  []Surface{{Name: "other", Path: "/o", Origins: []string{"https://acme.com"}}},
+		Surfaces:  []Surface{{Name: "other", Screen: testScreen{"/o"}, Origins: []string{"https://acme.com"}}},
 		BurnStore: NewMemoryBurnStore(),
 	})
 	if err != nil {
@@ -224,7 +224,7 @@ func TestExchangeFailsClosedWhenConfigChanges(t *testing.T) {
 
 	// Origin de-listed after the nonce was minted.
 	delisted, err := New(Config{
-		Surfaces:  []Surface{{Name: "dashboard", Path: "/embed/dashboard", Origins: []string{"https://other.example"}}},
+		Surfaces:  []Surface{{Name: "dashboard", Screen: testScreen{"/embed/dashboard"}, Origins: []string{"https://other.example"}}},
 		BurnStore: NewMemoryBurnStore(),
 	})
 	if err != nil {
@@ -239,7 +239,7 @@ func TestExchangeFailsClosedWhenConfigChanges(t *testing.T) {
 func TestHostVerifyGrantTracksConfig(t *testing.T) {
 	ctx := context.Background()
 	h := testHost(t)
-	tok, err := h.MintNonce("dashboard", "u-1", "https://acme.com", []string{"read"})
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", []string{"read"})
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestHostVerifyGrantTracksConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
-	g, err := h.VerifyGrant(res.Grant)
+	g, err := h.VerifyGrant(context.Background(), res.Grant)
 	if err != nil {
 		t.Fatalf("VerifyGrant: %v", err)
 	}
@@ -255,19 +255,19 @@ func TestHostVerifyGrantTracksConfig(t *testing.T) {
 		t.Fatalf("grant claims wrong: %+v", g)
 	}
 	// A nonce is not a grant, on the host surface too.
-	if _, err := h.VerifyGrant(tok); err == nil {
+	if _, err := h.VerifyGrant(context.Background(), tok); err == nil {
 		t.Error("Host.VerifyGrant accepted a nonce")
 	}
 
 	delisted, err := New(Config{
-		Surfaces:  []Surface{{Name: "dashboard", Path: "/embed/dashboard", Origins: []string{"https://other.example"}}},
+		Surfaces:  []Surface{{Name: "dashboard", Screen: testScreen{"/embed/dashboard"}, Origins: []string{"https://other.example"}}},
 		BurnStore: NewMemoryBurnStore(),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	delisted.SetKeys(testNonceKey, testGrantKey)
-	if _, err := delisted.VerifyGrant(res.Grant); err == nil {
+	if _, err := delisted.VerifyGrant(context.Background(), res.Grant); err == nil {
 		t.Error("a grant for a de-listed origin still verified — de-listing must take effect for live frames too")
 	}
 }
@@ -311,7 +311,7 @@ func TestSpentNonceSurvivesAPruneWhenItOutlivesItsGrant(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	tok, err := h.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestSpentNonceSurvivesAPruneWhenItOutlivesItsGrant(t *testing.T) {
 func TestExchangeRequiresAReportedOrigin(t *testing.T) {
 	h := testHost(t)
 	ctx := context.Background()
-	tok, err := h.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestVerifyGrantIntersectsWithCurrentScopes(t *testing.T) {
 	wide := testHost(t, func(c *Config) {
 		c.Surfaces[0].Scopes = []string{"read", "admin"}
 	})
-	tok, err := wide.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := wide.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
@@ -373,14 +373,14 @@ func TestVerifyGrantIntersectsWithCurrentScopes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
-	if g, err := wide.VerifyGrant(res.Grant); err != nil || !g.HasScope("admin") {
+	if g, err := wide.VerifyGrant(context.Background(), res.Grant); err != nil || !g.HasScope("admin") {
 		t.Fatalf("baseline: the grant should carry admin: %+v %v", g, err)
 	}
 
 	narrowed := testHost(t, func(c *Config) {
 		c.Surfaces[0].Scopes = []string{"read"}
 	})
-	g, err := narrowed.VerifyGrant(res.Grant)
+	g, err := narrowed.VerifyGrant(context.Background(), res.Grant)
 	if err != nil {
 		t.Fatalf("VerifyGrant on the narrowed host: %v", err)
 	}
@@ -392,11 +392,11 @@ func TestVerifyGrantIntersectsWithCurrentScopes(t *testing.T) {
 	}
 
 	// And a refresh must not resurrect it.
-	ref, err := narrowed.Refresh(res.Grant)
+	ref, err := narrowed.Refresh(context.Background(), res.Grant)
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	after, err := narrowed.VerifyGrant(ref.Token)
+	after, err := narrowed.VerifyGrant(context.Background(), ref.Token)
 	if err != nil {
 		t.Fatalf("VerifyGrant after refresh: %v", err)
 	}
