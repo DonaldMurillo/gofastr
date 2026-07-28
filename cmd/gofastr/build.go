@@ -109,10 +109,19 @@ func runBuild(args []string) {
 // standalone cmd/check-embed CLI uses — so build-time and CLI findings are
 // identical. On a violation it prints each finding with its fix hint.
 func buildEmbedGate(pattern string) bool {
-	findings, fset, err := embedcheck.Check(pattern)
+	findings, unresolved, fset, err := embedcheck.CheckAll(pattern)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "check-embed: %v\n", err)
 		return false
+	}
+	// Print what the static walk could NOT follow even when nothing
+	// failed. A gate that gives up silently reads as "clean" — which is
+	// the failure this whole check exists to avoid. These never fail the
+	// build: the boot-time walk in framework/uihost covers the dynamic
+	// cases exactly, and failing here would break any app with an
+	// interface-typed or slice-of-components field.
+	for _, u := range unresolved {
+		fmt.Fprintf(os.Stderr, "check-embed: note: %s: %s\n", fset.Position(u.Pos), u.Format())
 	}
 	if len(findings) == 0 {
 		return true

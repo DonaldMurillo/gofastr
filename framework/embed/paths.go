@@ -77,5 +77,35 @@ func CSRFExempt(r *http.Request) bool {
 	case ExchangePath, RefreshPath:
 		return true
 	}
-	return strings.HasPrefix(clean, SurfacePrefix)
+	// The surface space is exempt for SAFE methods only.
+	//
+	// The framework mounts exactly two routes under SurfacePrefix — the shell
+	// and the content endpoint — and both are r.Get (see
+	// framework/uihost/embed.go mountEmbed). A blanket prefix exemption
+	// therefore granted CSRF-free status to nothing that exists, and to every
+	// POST/PUT/PATCH/DELETE an app might later mount under the same prefix.
+	// The justification above only covers requests that carry no ambient
+	// credential; it says nothing about an app's own state-changing route that
+	// happens to sit in this namespace, which a same-site frame CAN reach with
+	// the viewer's cookie attached.
+	//
+	// Narrowing to safe methods keeps the two real routes exempt and makes the
+	// exemption's blast radius equal to its argument. An embed route that ever
+	// needs to accept a POST carries the grant header, and the branch above
+	// already exempts that on its own terms.
+	if isSafeMethod(r.Method) && strings.HasPrefix(clean, SurfacePrefix) {
+		return true
+	}
+	return false
+}
+
+// isSafeMethod reports whether m is a method that by definition does not change
+// server state, and so is not a CSRF target. Matches the method set
+// core/middleware.CSRF itself lets through unchecked.
+func isSafeMethod(m string) bool {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, "":
+		return true
+	}
+	return false
 }

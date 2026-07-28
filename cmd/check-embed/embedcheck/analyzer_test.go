@@ -31,6 +31,13 @@ func testdataDir(t *testing.T) string {
 // static expectations.
 func loadFindings(t *testing.T, pkgName string) []Finding {
 	t.Helper()
+	findings, _ := loadAll(t, pkgName)
+	return findings
+}
+
+// loadAll is loadFindings plus the walk's give-up notes.
+func loadAll(t *testing.T, pkgName string) ([]Finding, []Unresolved) {
+	t.Helper()
 	dir := testdataDir(t)
 	fset := token.NewFileSet()
 	cfg := &packages.Config{
@@ -49,6 +56,7 @@ func loadFindings(t *testing.T, pkgName string) []Finding {
 		t.Fatalf("loading %s: %v", pkgName, err)
 	}
 	var out []Finding
+	var notes []Unresolved
 	loaded := false
 	for _, p := range pkgs {
 		if p.Types == nil || p.TypesInfo == nil {
@@ -58,12 +66,14 @@ func loadFindings(t *testing.T, pkgName string) []Finding {
 			continue
 		}
 		loaded = true
-		out = append(out, findFindings(p.Types, p.TypesInfo, p.Syntax)...)
+		f, u := analyze(p.Types, p.TypesInfo, p.Syntax)
+		out = append(out, f...)
+		notes = append(notes, u...)
 	}
 	if !loaded {
 		t.Fatalf("package %s did not type-check (see logged errors above)", pkgName)
 	}
-	return out
+	return out, notes
 }
 
 // TestAnalyzerAnalysistest runs the analyzer against every resolvable shape and
@@ -78,6 +88,8 @@ func TestAnalyzerAnalysistest(t *testing.T) {
 		"./src/inline",
 		"./src/whitespace",
 		"./src/falsepositives",
+		"./src/unresolved",
+		"./src/childaction",
 	)
 }
 
@@ -131,8 +143,11 @@ func TestServerActionOnEmbedFlagged(t *testing.T) {
 	t.Logf("verbatim finding message:\n%s", msg)
 }
 
+// childaction is the rendered-child shape: the root declares no action and the
+// child it renders declares a server action. Guards the gate that followed only
+// the surface's root component type.
 func TestAnalyzerResolvesSupportedScreenShapes(t *testing.T) {
-	for _, pkgName := range []string{"interfacecomponent", "chained", "inline"} {
+	for _, pkgName := range []string{"interfacecomponent", "chained", "inline", "childaction"} {
 		t.Run(pkgName, func(t *testing.T) {
 			if got := loadFindings(t, pkgName); len(got) != 1 {
 				t.Fatalf("expected 1 finding on %s, got %d: %+v", pkgName, len(got), got)
@@ -160,6 +175,37 @@ func TestExecutableServerActionCallAcceptsUnicodeWhitespace(t *testing.T) {
 func TestAnalyzerIgnoresNonClientJSAndDeadRegistrations(t *testing.T) {
 	if got := loadFindings(t, "falsepositives"); len(got) != 0 {
 		t.Fatalf("expected 0 findings on falsepositives, got %d: %+v", len(got), got)
+	}
+}
+
+// A surface whose walk cannot be completed must produce a note, not silence.
+// "found nothing" and "could not look" read identically otherwise, which is how
+// the rendered-child hole survived a release.
+func TestAnalyzerNotesUnfollowableChild(t *testing.T) {
+	findings, notes := loadAll(t, "unresolved")
+	if len(findings) != 0 {
+		t.Fatalf("expected 0 findings on unresolved, got %d: %+v", len(findings), findings)
+	}
+	if len(notes) == 0 {
+		t.Fatal("an interface-typed child field produced no note — the gate gave up silently")
+	}
+	msg := notes[0].Format()
+	for _, want := range []string{`embed surface "unresolved"`, "interface-typed", "boot walk"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("note missing %q\nfull note:\n%s", want, msg)
+		}
+	}
+}
+
+// A surface the walk follows end to end must produce NO note. A gate that
+// warned about everything would be ignored, which is the same outcome as
+// warning about nothing.
+func TestAnalyzerSilentWhenFullyResolved(t *testing.T) {
+	for _, pkgName := range []string{"clean", "bad", "chained", "inline", "childaction"} {
+		if _, notes := loadAll(t, pkgName); len(notes) != 0 {
+			t.Errorf("%s produced %d unresolved note(s) on a fully followable tree: %+v",
+				pkgName, len(notes), notes)
+		}
 	}
 }
 
@@ -281,6 +327,7 @@ func TestMutationResolvedShapesBecomeClean(t *testing.T) {
 		{pkgName: "interfacecomponent", from: `G.serverAction("save")`},
 		{pkgName: "chained", from: `G.serverAction("save")`},
 		{pkgName: "inline", from: `G.serverAction("save")`},
+		{pkgName: "childaction", from: `G.serverAction("save")`},
 		{pkgName: "whitespace", from: `G.serverAction ("save")`},
 	}
 	for _, fixture := range fixtures {

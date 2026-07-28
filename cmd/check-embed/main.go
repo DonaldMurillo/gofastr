@@ -27,12 +27,22 @@ func main() {
 	if len(os.Args) > 1 {
 		pattern = os.Args[1]
 	}
-	findings, fset, err := embedcheck.Check(pattern)
+	findings, unresolved, fset, err := embedcheck.CheckAll(pattern)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(2)
 	}
+	// Printed before the verdict, and printed even when the verdict is clean:
+	// "found nothing" and "could not look" must not read the same. These do not
+	// affect the exit code — the boot walk covers them.
+	for _, u := range unresolved {
+		fmt.Fprintf(os.Stderr, "%s: %s\n", fset.Position(u.Pos), u.Format())
+	}
 	if len(findings) == 0 {
+		if len(unresolved) > 0 {
+			fmt.Printf("  ✓ no embeddable surface registers a server action (%d place(s) not statically followable — see above)\n", len(unresolved))
+			return
+		}
 		fmt.Println("  ✓ no embeddable surface registers a server action")
 		return
 	}
