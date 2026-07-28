@@ -99,7 +99,7 @@ func TestReachRefusesConfigurationsThatCannotBeRight(t *testing.T) {
 	} {
 		_, err := New(Config{
 			Surfaces: []Surface{{
-				Name: "dashboard", Path: "/embed/dashboard",
+				Name: "dashboard", Screen: testScreen{"/embed/dashboard"},
 				Origins: []string{"https://acme.com"},
 				Reach:   []string{bad.reach},
 			}},
@@ -113,7 +113,7 @@ func TestReachRefusesConfigurationsThatCannotBeRight(t *testing.T) {
 	// A legitimate one still boots.
 	if _, err := New(Config{
 		Surfaces: []Surface{{
-			Name: "dashboard", Path: "/embed/dashboard",
+			Name: "dashboard", Screen: testScreen{"/embed/dashboard"},
 			Origins: []string{"https://acme.com"},
 			Reach:   []string{"/api/orders"},
 		}},

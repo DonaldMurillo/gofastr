@@ -27,7 +27,7 @@ func policyEmbedFixture(t *testing.T, policy app.Policy) embedFixture {
 	cfg := fembed.Config{
 		Surfaces: []fembed.Surface{{
 			Name:    "reports",
-			Path:    "/reports",
+			Screen:  scr,
 			Origins: []string{embedTestOrigin},
 			Scopes:  []string{"read"},
 		}},

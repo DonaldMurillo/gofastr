@@ -5,7 +5,7 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [0.50.0] - 2026-07-28
+## [0.51.0] - 2026-07-28
 
 The SPA screen cache gained eviction, and its e2e test caught a
 framework-wide bug: twenty demand modules re-bound their components on a
@@ -62,6 +62,104 @@ navigation event that never reached them.
 - The widget RPC's inline `X-Gofastr-Toast` parse now delegates to the
   kernel dispatcher, so a toast survives a failed `toasts` module load
   via the fallback renderer (previously it was silently dropped).
+
+## [0.50.0] - 2026-07-28
+
+Closes [#150](https://github.com/DonaldMurillo/gofastr/issues/150) — every gap
+v0.49.0 shipped embeddable surfaces with.
+
+Onboarding a customer is now a row in your table rather than a config change and
+a deploy: a domain typed into your settings page is framed *and* granted without
+a restart. Multi-tenant entities compose with embeds. A surface that would rely
+on `G.serverAction` fails at `gofastr build`, and at boot if the build gate could
+not see it — never in a customer's page. And a surface carries the screen it
+renders instead of a path string, which is what let the last two be checked at
+all.
+
+### Changed
+
+- **BREAKING: `embed.Surface` carries a screen, not a path string.** `Surface.Path`
+  (a `string`) is replaced by `Surface.Screen` (a screen value). A surface
+  renders a screen, and the screen — not a string the framework resolves — is
+  the link to the component tree, so a human, a static analyzer, and the
+  boot-time server-action walk can all follow it. Pass the same `*app.Screen`
+  you register:
+  ```go
+  reports := app.NewScreen("/reports", &Reports{})
+  application.RegisterScreen(reports, app.EmbedLayout())
+  embed.Surface{Name: "reports", Screen: reports, Origins: ...}
+  ```
+  `*app.Screen` satisfies the new `embed.Screen` interface (`RoutePath()`)
+  structurally; `framework/embed` still does not import `core-ui/app`. The route
+  is still validated exactly as `Path` was (absolute, normalized, not `/`, not
+  covering a reserved prefix); a nil screen is a boot error. Read the resolved
+  route via `ResolvedSurface.Path()` where you read `Surface.Path` before.
+  `framework/uihost` reads it for you (`embedSurfacePath`, the shell config,
+  the content render).
+- **BREAKING: `MintNonce`, `VerifyGrant` and `Refresh` take a `context.Context`
+  first.** Every caller must thread a context through: the grant path consults
+  the `OriginSource` (and any store) on each call, and a context is how a
+  deadline and a trace ride along. Add `ctx` (or `r.Context()`) as the first
+  argument — `MintNonce(ctx, surface, subject, origin, scopes)`,
+  `VerifyGrant(ctx, token)`, `Refresh(ctx, token)`. `gofastr upgrade` flags
+  every call site.
+
+### Added
+
+- **`embed.Config.ResolveTenant`** — multi-tenant entities behind an embed.
+  `Middleware()` clears the tenant along with every other ambient identity
+  value, because inheriting the *cookie* user's tenant is a cross-tenant read.
+  It then had no way to install the right one, so a multi-tenant entity behind a
+  surface simply errored. Give it a lookup and it works:
+  ```go
+  ResolveTenant: func(ctx context.Context, subject string) (string, error) {
+      u, err := users.FindByID(ctx, subject)
+      return u.TenantID, err
+  },
+  ```
+  The tenant comes from that lookup **on the grant's subject**, never from
+  anything the request carried — a stolen grant cannot pick its own tenant. A
+  resolver error fails the request closed. Nil behaves exactly as before.
+- **`embed.OriginSource`** — runtime origin management, the thing that makes a
+  white-label embed a product rather than a deploy pipeline. An app implements
+  it against its own table; the shell serves only the requesting customer's
+  origins in `frame-ancestors`, and the grant path (`MintNonce`, `Exchange`,
+  `VerifyGrant`) consults it for origins the static list does not know.
+  - The static allowlist is checked first — a map lookup, and all an app
+    without a source ever pays.
+  - `Allows` is on the hot path (`VerifyGrant` calls it per request for
+    non-static origins). Cache it.
+  - Removing a customer takes effect on the **next request**, not when their
+    grant expires — the same property de-listing a static origin has.
+  - A source error, an unknown customer, or an over-size list all fail closed to
+    `frame-ancestors 'none'`. An outage must not become an open framing policy.
+  - Two consequences of per-customer responses, both improvements: your customer
+    list is no longer enumerable from one URL, and one customer's list growing no
+    longer breaks the surface for everyone.
+  - The snippet carries the customer id as `data-customer`; the loader forwards
+    it onto the frame URL (bounded and encoded), and the shell reads it as the
+    `customer` query param to resolve that customer's origins. Without that
+    forwarding an `OriginSource` app serves `frame-ancestors 'none'` for every
+    customer, so the row you added is never reached — framing and granting a new
+    domain with no restart works only because the loader carries the id.
+- **`check-embed`**, a build gate wired into `gofastr build` beside `check-csp`
+  and the accessibility gate. It resolves `embed.Surface{…}` → `app.NewScreen`
+  → the component type → its `On(...)` registrations, and fails naming the
+  surface, component and action. It reports only what it can prove — a screen
+  built in a loop, or a component in another package, it stays silent about,
+  because the boot walk already covers those and a false positive in a build
+  gate is worse than a miss.
+- **Boot-time refusal of a server action on an embeddable surface.** `G.serverAction`
+  is refused inside a frame (the action registry is app-global with no
+  relationship to any surface), and that refusal stays — but the developer now
+  learns about it at boot. `uihost` walks each declared surface's screen on
+  `Mount` and panics if the component registers an action whose client handler
+  calls `G.serverAction`, naming the surface, the component and the action and
+  pointing at island RPC, a form POST, or polling. Detection mirrors the action
+  compiler exactly: it flags the `G.serverAction(` token in a registered
+  action's `ClientJS`. A separate `check-embed` analyzer will catch the
+  statically-resolvable cases at build time; this walk is the backstop that
+  sees what actually registered.
 
 ## [0.49.0] - 2026-07-27
 

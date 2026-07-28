@@ -17,7 +17,7 @@ func TestOriginListIsCappedAtBoot(t *testing.T) {
 		many = append(many, fmt.Sprintf("https://customer-%03d.example.com", i))
 	}
 	_, err := New(Config{
-		Surfaces:  []Surface{{Name: "reports", Path: "/reports", Origins: many}},
+		Surfaces:  []Surface{{Name: "reports", Screen: testScreen{"/reports"}, Origins: many}},
 		BurnStore: NewMemoryBurnStore(),
 	})
 	if err == nil {
@@ -41,7 +41,7 @@ func TestOrdinaryOriginListsStillBoot(t *testing.T) {
 			origins = append(origins, fmt.Sprintf("https://customer-%03d.example.com", i))
 		}
 		if _, err := New(Config{
-			Surfaces:  []Surface{{Name: "reports", Path: "/reports", Origins: origins}},
+			Surfaces:  []Surface{{Name: "reports", Screen: testScreen{"/reports"}, Origins: origins}},
 			BurnStore: NewMemoryBurnStore(),
 		}); err != nil {
 			t.Fatalf("New refused %d origins: %v", n, err)

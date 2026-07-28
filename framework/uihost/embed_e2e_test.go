@@ -93,12 +93,13 @@ func TestEmbedEndToEndInABrowser(t *testing.T) {
 
 	application := app.NewApp("Embed E2E")
 	application.SetDefaultLayout(app.NewLayout("main").WithHeader(&testHeaderComp{}))
-	application.RegisterScreen(app.NewScreen("/reports", &tallEmbedComp{}).WithTitle("Reports"), app.EmbedLayout())
+	reportsScreen := app.NewScreen("/reports", &tallEmbedComp{}).WithTitle("Reports")
+	application.RegisterScreen(reportsScreen, app.EmbedLayout())
 
 	eh, err := fembed.New(fembed.Config{
 		Surfaces: []fembed.Surface{{
 			Name:    "reports",
-			Path:    "/reports",
+			Screen:  reportsScreen,
 			Origins: []string{customer.URL},
 		}},
 		BurnStore: fembed.NewMemoryBurnStore(),
@@ -135,7 +136,7 @@ func TestEmbedEndToEndInABrowser(t *testing.T) {
 	t.Cleanup(appSrv.Close)
 	appURL = appSrv.URL
 
-	if nonce, err = eh.MintNonce("reports", "user-7", customer.URL, nil); err != nil {
+	if nonce, err = eh.MintNonce(context.Background(), "reports", "user-7", customer.URL, nil); err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
 

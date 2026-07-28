@@ -127,6 +127,12 @@ kiln-*
 /site
 /widgets-demo
 /widgets_demo
+# Every examples/<name> builds to /<name> when someone runs `go build
+# ./examples/<name>` from the root. Naming them one at a time loses that race
+# every time a new example lands — a 12MB embed-demo binary reached a commit
+# this way. Ignore the shape instead.
+/*-demo
+/*-demo-*
 *.png
 !assets/brand/*.png
 .playwright-mcp/

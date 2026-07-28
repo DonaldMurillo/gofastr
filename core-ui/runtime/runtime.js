@@ -339,6 +339,21 @@
 
     /** Call a server action and handle the response */
     async serverAction(action, params = {}) {
+      // Reaching here means the call was never compiled.
+      //
+      // The action compiler rewrites the literal "G.serverAction(" into
+      // "G._serverActionFor(<componentId>, ", so every registered action
+      // arrives with an id. A call the compiler could not see — a computed
+      // spelling like G["serverAction"](…), an aliased reference, a call
+      // assembled at runtime — keeps this method and posts with an empty
+      // componentId, which the server cannot route. That used to be a silent
+      // 404 discovered in production; say what actually happened instead.
+      //
+      // The build gate and the boot walk catch the ordinary spellings. This is
+      // the backstop for the ones neither can see, and the reason it lives at
+      // runtime is that neither static analysis nor the compiler can resolve
+      // them either.
+      console.error('[gofastr] serverAction("' + action + '") was not compiled; write it literally.');
       return this._serverActionFor('', action, params);
     },
 
@@ -1816,9 +1831,7 @@
         if (s.includes('?')) { screenCache.delete(s); continue; }
         // Queryless selector: evict the pathname and all its query
         // variants (a stale list is stale on every page/filter of it).
-        for (const k of screenCache.keys()) {
-          if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
-        }
+        for (const k of screenCache.keys()) if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
       }
     },
 
@@ -1831,15 +1844,15 @@
     // the header literal in one module; the callers in rpc/widgets/
     // intercept stay a few bytes). The value is a JSON string array of
     // selectors, applied on 2xx by nav/RPC/widget/intercept fetches.
-    // Malformed values must never break the response that carried
-    // them: warn and move on.
+    // A malformed value is a producer bug (ui.InvalidateScreens always
+    // emits a valid array) and must never break the response that
+    // carried it — ignore it. The Array.isArray gate matters: spreading
+    // a parsed bare string would evict per-character.
     _inval(r) {
-      const v = r.headers.get('X-Gofastr-Invalidate');
-      if (!v) return;
       try {
-        const a = JSON.parse(v);
+        const a = JSON.parse(r.headers.get('X-Gofastr-Invalidate'));
         if (Array.isArray(a)) this.invalidate(...a);
-      } catch (_) { console.warn('[gofastr] Bad X-Gofastr-Invalidate header'); }
+      } catch (_) {}
     },
   });
 

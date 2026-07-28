@@ -1,6 +1,7 @@
 package embed
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -72,7 +73,7 @@ func TestRefreshRefusesAGrantPastItsDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
-	if _, err := h.Refresh(tok); !errors.Is(err, ErrGrantExhausted) {
+	if _, err := h.Refresh(context.Background(), tok); !errors.Is(err, ErrGrantExhausted) {
 		t.Fatalf("Refresh of a grant past its deadline: err = %v, want ErrGrantExhausted", err)
 	}
 }

@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.50.0
+through: v0.51.0
 
 releases:
   - version: v0.3.0
@@ -430,3 +430,18 @@ releases:
       - change: Versions of one entity share a table and migrate the union of their columns
         breaking: false
         guidance: "A column only v2 declares is an additive change, applied at boot. A CONFLICTING definition (type, nullability, unique, default) across versions panics at wire time naming both call sites; Hidden and WireName are wire concerns and are never conflicts."
+  - version: v0.50.0
+    title: Embeddable surfaces carry a screen; server actions refused at boot
+    notes:
+      - change: "embed.Surface.Path (string) replaced by embed.Surface.Screen (a screen value)"
+        breaking: true
+        guidance: "A surface renders a screen, not a path string. Build the *app.Screen, register it, and pass that same value to the surface: reports := app.NewScreen(\"/reports\", &Reports{}); application.RegisterScreen(reports, app.EmbedLayout()); embed.Surface{Name: \"reports\", Screen: reports, ...}. *app.Screen satisfies the embed.Screen interface (RoutePath()) structurally. The route is still validated as Path was; read the resolved route via ResolvedSurface.Path() where you read Surface.Path before. uihost reads it internally."
+        detect: "embed\\.Surface|fembed\\.Surface"
+      - change: A surface whose screen registers G.serverAction panics at boot
+        breaking: true
+        guidance: "G.serverAction is refused inside a frame (the action registry is app-global). uihost now walks each embed surface's screen on Mount and panics naming the surface, component and action if any registered action's client handler calls G.serverAction. Use an island RPC, a form POST, or polling instead — all work in a frame. Detection flags the literal G.serverAction( token in a registered action's ClientJS."
+        detect: "G\\.serverAction\\("
+      - change: "embed Host.MintNonce/VerifyGrant/Refresh take a context.Context first"
+        breaking: true
+        guidance: "Every caller must thread a context through — the grant path consults the OriginSource (and any store) on each call, and a context carries the deadline and trace. Add ctx (or r.Context()) as the first argument: embeds.MintNonce(ctx, surface, subject, origin, scopes), embeds.VerifyGrant(ctx, token), embeds.Refresh(ctx, token)."
+        detect: "\\.MintNonce\\(|\\.VerifyGrant\\(|\\.Refresh\\("

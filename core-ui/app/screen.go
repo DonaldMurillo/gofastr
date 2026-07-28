@@ -160,6 +160,17 @@ func NewScreen(path string, comp component.Component) *Screen {
 	}
 }
 
+// RoutePath returns the app route this screen is mounted at (the [Screen.Path]
+// field), e.g. "/reports".
+//
+// It is the contract an embed surface carries: framework/embed.Surface holds
+// the screen rather than a path string, so the link from a surface to the
+// component tree it renders is a Go value — followable by a human, a static
+// analyzer, and the boot-time server-action walk — instead of a string the
+// framework has to resolve against a route table. Named for the route it
+// occupies, not as a field accessor.
+func (s *Screen) RoutePath() string { return s.Path }
+
 // WithTitle sets the screen's page title.
 func (s *Screen) WithTitle(title string) *Screen {
 	s.Title = title

@@ -99,10 +99,10 @@ func (h *Host) AddReservedPrefixes(prefixes ...string) error {
 	for _, name := range h.names {
 		s := h.surfaces[name]
 		for _, reserved := range added {
-			if pathWithin(reserved, s.Path) || pathWithin(s.Path, reserved) {
+			if pathWithin(reserved, s.path) || pathWithin(s.path, reserved) {
 				return fmt.Errorf(
 					"embed: surface %q: Path %q covers %q, which a mounted battery serves "+
-						"— an embed grant must never reach it", name, s.Path, reserved)
+						"— an embed grant must never reach it", name, s.path, reserved)
 			}
 			for _, rch := range s.Reach {
 				if pathWithin(reserved, rch) || pathWithin(rch, reserved) {
@@ -212,7 +212,7 @@ func (s *ResolvedSurface) MayReach(p string) bool {
 		return false
 	}
 	cleaned := path.Clean(p)
-	if pathWithin(s.Path, cleaned) {
+	if pathWithin(s.path, cleaned) {
 		return true
 	}
 	if pathWithin("/__gofastr", cleaned) {
