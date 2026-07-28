@@ -20,10 +20,19 @@ import "github.com/DonaldMurillo/gofastr/framework/embed"
 burn, err := embed.NewSQLBurnStore(db)
 if err != nil { log.Fatal(err) }
 
+// The screen the surface renders, registered chrome-less so it paints with no
+// header, nav or footer — what you want inside a 400px frame. Pass the SAME
+// *app.Screen value to the surface: a Surface carries a screen, not a path
+// string, so the link from a surface to the component tree it renders is a Go
+// value a human, a static analyzer, and the boot-time server-action walk can
+// follow — nothing has to resolve a string against a route table.
+reports := app.NewScreen("/embed/reports", &Reports{})
+application.RegisterScreen(reports, app.EmbedLayout())
+
 embeds, err := embed.New(embed.Config{
     Surfaces: []embed.Surface{{
         Name:    "reports",
-        Path:    "/embed/reports",
+        Screen:  reports,
         Origins: []string{"https://acme.com", "https://shop.acme.com"},
         Scopes:  []string{"read"},
         Theme:   embed.ThemeConfig{AllowTokens: []string{"color-primary"}},
@@ -48,22 +57,22 @@ fwApp.Mount(site)
 fwApp.Use(embeds.Middleware())
 
 // Scopes are not enforced automatically. This is what makes them bind.
-reports := fwApp.Group("/reports")
-reports.Use(embeds.RequireScope("reports:read"))
+reportsRoutes := fwApp.Group("/reports")
+reportsRoutes.Use(embeds.RequireScope("reports:read"))
 ```
 
 ### What a grant may reach
 
-A grant reaches its surface's own `Path` subtree and the runtime's
-`/__gofastr/*` endpoints. **Everything else answers 403** until the surface
-says otherwise:
+A grant reaches its surface's own route subtree (the path of the screen it
+carries) and the runtime's `/__gofastr/*` endpoints. **Everything else
+answers 403** until the surface says otherwise:
 
 ```go
 Surface{
-    Name: "reports",
-    Path: "/embed/reports",
+    Name:   "reports",
+    Screen: reports,
     // The surface's form posts here, outside its own subtree.
-    Reach: []string{"/api/orders"},
+    Reach:  []string{"/api/orders"},
 }
 ```
 
@@ -91,8 +100,8 @@ the subject with that subject's full authority, including any role they hold.
 Gate the routes that need it:
 
 ```go
-reports := fwApp.Group("/reports")
-reports.Use(embeds.RequireScope("reports:read"))
+reportsRoutes := fwApp.Group("/reports")
+reportsRoutes.Use(embeds.RequireScope("reports:read"))
 
 // or, as a group option:
 fwApp.Group("/reports", routegroup.WithMiddleware(embeds.RequireScope("reports:read")))
@@ -132,12 +141,13 @@ cannot take them back: it does not know which keys another package used. The
 observable failures are a bearer token overwriting the grant's identity, and an
 API token's scopes surviving under the grant subject's name.
 
-`Path` is an ordinary app route. Register it with the `core-ui/app` package's
-`EmbedLayout()` and it renders with no header, nav or footer — which is what
-you want inside a 400px frame on someone else's page:
+A surface renders a screen, and that screen decides its own chrome. Register
+it with the `core-ui/app` package's `EmbedLayout()` and it renders with no
+header, nav or footer — which is what you want inside a 400px frame on someone
+else's page:
 
 ```go
-application.RegisterScreen(app.NewScreen("/embed/reports", &Reports{}), app.EmbedLayout())
+application.RegisterScreen(reports, app.EmbedLayout())
 ```
 
 (`app` here is the imported `core-ui/app` package — which is why the framework
@@ -152,7 +162,7 @@ decisions.
 The app mints a nonce server-side, for one viewer, on one origin:
 
 ```go
-nonce, err := embeds.MintNonce("reports", user.ID, "https://acme.com", nil)
+nonce, err := embeds.MintNonce(r.Context(), "reports", user.ID, "https://acme.com", nil)
 ```
 
 Render `nonce` into the snippet you give the customer. Passing `nil` for scopes
@@ -230,27 +240,103 @@ origin written four ways, and comparing the raw strings means a customer's
 trailing slash silently never matches.
 
 The browser-enforced control is the embed document's CSP `frame-ancestors`
-directive, which lists every allowed origin. It has to list them all: no
-`Origin` header is sent on a navigation GET, so at the moment the header is
-written the server does not know who is framing it. Listing ten origins does not
-let an eleventh frame the page — the browser enforces against the real ancestor
-chain.
+directive. No `Origin` header is sent on a navigation GET, so at the moment the
+header is written the server does not know who the framer is. Listing origins
+does not widen anything: the browser enforces against the real ancestor chain,
+so an eleventh origin still cannot frame a page that lists ten.
+
+There are two ways that list is produced.
+
+### Static origins (the default)
+
+`Surface.Origins` is read once at boot and ships in `frame-ancestors` on every
+shell response. It is also the universe a grant may bind: `MintNonce` refuses
+an origin that is not on it, and `Exchange`/grant verification re-check it. An
+app that never configures anything else behaves exactly this way.
 
 Two consequences worth knowing before you sell this to your hundredth customer:
 
-**Your customer list is public.** The allowlist ships in a response header on an
-unauthenticated route, so anyone who fetches the embed URL can enumerate every
-origin allowed to frame that surface. If who-your-customers-are is not public
-information, put those customers on separate surfaces.
+**The customer list is public.** The whole allowlist ships in one response
+header on an unauthenticated route, so anyone who fetches the embed URL can
+enumerate every origin allowed to frame that surface. If who-your-customers-are
+is not public information, put those customers on separate surfaces — or use a
+source (below).
 
-**The list is bounded.** All of it goes into one directive on every shell
-response, so the customer count is encoded into response-header size. GoFastr
-refuses at boot past 4 KiB of origins (a few hundred), because the alternative
-is discovering the limit when a proxy starts truncating the header and the
+**The list is bounded at boot.** All of it goes into one directive on every
+shell response, so the customer count is encoded into response-header size.
+GoFastr refuses at boot past 4 KiB of origins (a few hundred), because the
+alternative is discovering the limit when a proxy truncates the header and the
 surface breaks for *every* customer at once. Past that, split across surfaces.
 
-Origins are fixed at boot. Adding a customer is a config change and a deploy;
-there is no runtime API for it.
+### Per-customer origins (an `OriginSource`)
+
+When the app supplies an `OriginSource` in `embed.Config`, the shell stops
+serving the whole list and serves only the origins of the single customer the
+request names. That is the ordinary product shape this was built for: a SaaS
+customer's allowed domain lives in your own table, and each frame response
+carries only theirs.
+
+```go
+type OriginSource interface {
+    // Origins returns the exact origins allowed to frame the named surface for
+    // the named customer, in declaration order. Need not be pre-normalized;
+    // ResolveCustomerOrigins normalizes and validates them exactly as it does a
+    // static list. An empty slice or an error fails the shell closed.
+    Origins(ctx context.Context, surface, customer string) ([]string, error)
+
+    // Allows reports whether origin may frame the named surface for ANY
+    // customer. It is the grant path's question — MintNonce is handed an
+    // origin, not a customer — so this is what decides whether a source-managed
+    // origin can obtain a credential at all. It is on the hot path (VerifyGrant
+    // calls it per request for origins the static list does not know), so cache
+    // it; a table scan per request is not acceptable. An error fails closed.
+    Allows(ctx context.Context, surface, origin string) (bool, error)
+}
+```
+
+The customer identity reaches the shell as a `customer` query parameter on the
+frame URL (`/__gofastr/embed/{surface}?customer=<id>`). The snippet carries it
+as a `data-customer` attribute, the loader forwards it onto the frame URL the
+way it forwards `data-theme`, and the shell reads it, asks the source for that
+customer's origins, normalizes and de-duplicates them, and writes only those
+into `frame-ancestors`.
+
+The cap moves with it. A static list is bounded once at boot because one
+over-size directive breaks every customer; a per-customer list is bounded at
+*response* time, so one customer whose origins overflow the directive fails
+closed for *that customer only* — `frame-ancestors 'none'` — and everyone else
+is unaffected.
+
+**The enumerability trade-off, stated plainly.** A customer id is
+attacker-chosen: the shell route is unauthenticated, so anyone may request
+another customer's shell by id and read THAT customer's origins in the header.
+That is a strictly smaller leak than the static model, where the entire list is
+public to everyone on every response — and it grants no framing. The browser
+still enforces `frame-ancestors` against the real ancestor chain, and a grant
+is separately bound to the origin it was minted for. Requesting someone else's
+origins does not let you frame them.
+
+Fail-closed is the whole shape of the source path. An unknown customer id, an
+empty one, a source that errors, a list that overflows the per-response cap, or
+any origin that fails normalization, each make the shell answer
+`frame-ancestors 'none'`. The source is not a trusted input, and a broken
+lookup never widens to "allow".
+
+**The grant path consults the source too**, which is what makes onboarding a
+customer a row rather than a deploy. `MintNonce`, `Exchange` and `VerifyGrant`
+each check the static allowlist first — a map lookup, and the only thing an app
+without a source ever pays — then ask the source about origins the static list
+does not know.
+
+Two consequences worth planning around:
+
+- **`Allows` is on the hot path.** `VerifyGrant` calls it on every embed request
+  whose origin is not boot-listed. Cache it; a table scan per request is not
+  acceptable. Origins arrive canonicalized, so an equality lookup is enough.
+- **Removing a customer takes effect on the next request**, not when their grant
+  expires. That is the same property de-listing a static origin has, and it is
+  why a source outage fails closed rather than falling back to "allow" — an
+  outage must not become an open framing policy.
 
 ## Cookies
 
@@ -445,23 +531,72 @@ boundary. Hand them this much along with the snippet:
   as nobody.
 - **Sizing an embeddable surface to the viewport.** See above.
 
-## What embeds do not do yet
+## Server actions do not work in a frame
 
-- **Multi-tenant entities.** An embed request carries no tenant: the middleware
-  installs the grant's subject and deliberately clears every other identity
-  value, including the tenant. `framework/crud` refuses a multi-tenant entity
-  with no tenant on the context, so a surface over one answers an error rather
-  than leaking across tenants. That is the right failure, but it means embeds
-  and `tenant.WithMultiTenant` do not compose today. Resolve the tenant from
-  the grant's subject in your own middleware, inside `embeds.Middleware()`, if
-  you need both.
-- **Server actions.** `G.serverAction` does not work inside a frame. The action
-  registry is app-global with no relationship to any surface, so accepting a
-  grant there would let a credential minted for one surface invoke any action
-  in the app. Islands, forms and polling all work normally; only the
-  `serverAction` escape hatch is closed.
-- **Runtime origin management.** See [Origins](#origins) — adding a customer is
-  a deploy.
+`G.serverAction` is refused inside an embed. The action registry is app-global,
+keyed by `(componentID, action)` with no relationship to any surface, so
+honouring a grant there would let a credential minted for one surface invoke
+any action registered anywhere in the app — including from a public,
+subject-less surface.
+
+You find out at **boot**, not in a customer's page. Two gates back that up, and
+each sees a different slice — neither is total on its own:
+
+- **`gofastr build` (the `check-embed` analyzer)** resolves
+  `embed.Surface{…}` → `app.NewScreen` → the component type → its `On(...)`
+  registrations statically. It reports only what it can prove: a screen built
+  in a loop, or a component whose type lives in another package, it stays
+  silent about, because a false positive in a build gate is worse than a miss.
+- **The boot walk (`enforceNoServerActionsOnEmbeds`)** runs on `Mount` and sees
+  whatever actually registered at runtime — so nothing dynamic slips past — but
+  only for surfaces whose screen is a `*app.Screen` (every production surface),
+  the concrete type whose component tree it can reach. A surface carrying a
+  screen that is not a `*app.Screen` is invisible to this walk and falls to the
+  static analyzer above.
+
+Both panic naming the surface, the component and the action, and point at
+island RPC, a form POST, or polling.
+
+Everything else works in a frame: island RPC, form posts, `data-fui-poll`, and
+SSE. Only the `serverAction` escape hatch is closed.
+
+## Multi-tenant surfaces
+
+An embed request carries no tenant of its own. `Middleware()` installs the
+grant's subject and deliberately clears every other ambient identity value,
+tenant included — inheriting the *cookie* user's tenant is a cross-tenant read,
+and the whole point of stripping credentials is that the grant is the only
+identity on the request.
+
+So tell it how to find the tenant, and multi-tenant entities work behind an
+embed:
+
+```go
+embeds, _ := embed.New(embed.Config{
+    Surfaces:  []embed.Surface{reportsSurface},
+    BurnStore: embed.NewSQLBurnStore(db),
+    Resolve: func(ctx context.Context, subject string) (any, error) {
+        return users.FindByID(ctx, subject)
+    },
+    ResolveTenant: func(ctx context.Context, subject string) (string, error) {
+        u, err := users.FindByID(ctx, subject)
+        if err != nil {
+            return "", err
+        }
+        return u.TenantID, nil
+    },
+})
+```
+
+The tenant comes from **your lookup on the grant's subject**, never from
+anything the request carried. That is the property that makes this safe to
+offer: a stolen grant cannot pick its own tenant, because nothing in the
+request is consulted. A resolver that errors fails the request closed, for the
+same reason `Resolve` does — running untenanted is worse than refusing.
+
+Leave `ResolveTenant` nil and nothing changes: no tenant is installed, and a
+multi-tenant entity behind that surface still refuses, which is the correct
+failure rather than a silent cross-tenant read.
 
 ## Related
 

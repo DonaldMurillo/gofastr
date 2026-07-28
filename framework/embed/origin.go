@@ -174,21 +174,41 @@ type originSet struct {
 	set   map[string]struct{}
 }
 
-// newOriginSet normalizes and de-duplicates an allowlist.
+// normalizeOrigins normalizes and de-duplicates an origin list and returns the
+// set alongside the byte size of the frame-ancestors directive it would
+// produce. It validates nothing about the LIST as a whole (empty-ness, the
+// response-header cap) — those policies differ between the boot-time static
+// path and the per-customer runtime path, so each applies its own. Sharing
+// this core is what makes a runtime OriginSource go through the SAME
+// normalization as a boot-time Surface.Origins: a store is not a trusted
+// input, and the two paths must reject the same wildcard or userinfo string.
+// maxSourceRows bounds how many rows a source may return before any of them is
+// normalized.
 //
-// An empty allowlist is an error, never "allow everything": a surface with no
-// declared framers is a configuration mistake, and the fail-open reading of it
-// would publish the surface to the whole internet.
-func newOriginSet(raw []string) (*originSet, error) {
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("embed: at least one allowed origin is required")
+// The response cap counts DE-DUPLICATED output bytes, so a source returning
+// 100,000 copies of one valid origin passed it: the directive was one origin
+// long, and normalizing the list first cost ~23ms and ~31MB per call. On the
+// unauthenticated shell route, with no cache in front of it, that is an
+// amplification primitive rather than a slow path. Bound the raw count before
+// preallocating anything from it.
+//
+// Generous on purpose: a surface legitimately serving hundreds of origins hits
+// the byte cap long before this.
+const maxSourceRows = 4096
+
+func normalizeOrigins(raw []string) (*originSet, int, error) {
+	// Bound the RAW count before anything is sized or normalized from it. The
+	// byte cap below counts de-duplicated output, so it cannot see a list of
+	// duplicates — and normalizing one is where the work actually goes.
+	if len(raw) > maxSourceRows {
+		return nil, 0, fmt.Errorf("embed: origin list has %d entries, over the %d-row limit", len(raw), maxSourceRows)
 	}
 	s := &originSet{set: make(map[string]struct{}, len(raw))}
 	bytes := len("frame-ancestors")
 	for _, r := range raw {
 		o, err := NormalizeOrigin(r)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if _, dup := s.set[o]; dup {
 			continue
@@ -197,16 +217,35 @@ func newOriginSet(raw []string) (*originSet, error) {
 		s.order = append(s.order, o)
 		bytes += len(o) + 1 // the separating space in the CSP directive
 	}
-	// Every origin is joined into ONE frame-ancestors directive on every shell
-	// response, so the customer count is encoded directly into response-header
-	// size. Past a few hundred origins that directive exceeds the response
-	// header limits common in proxies and cloud load balancers, and the failure
-	// is not graceful: the shell is rejected or the CSP is truncated, and the
-	// surface stops loading for EVERY customer at once, including the ones that
-	// worked yesterday.
+	return s, bytes, nil
+}
+
+// newOriginSet normalizes and de-duplicates the STATIC allowlist and enforces
+// the boot-time cap on it.
+//
+// An empty allowlist is an error, never "allow everything": a surface with no
+// declared framers is a configuration mistake, and the fail-open reading of it
+// would publish the surface to the whole internet.
+func newOriginSet(raw []string) (*originSet, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("embed: at least one allowed origin is required")
+	}
+	s, bytes, err := normalizeOrigins(raw)
+	if err != nil {
+		return nil, err
+	}
+	// Every static origin is joined into ONE frame-ancestors directive on
+	// every shell response, so the customer count is encoded directly into
+	// response-header size. Past a few hundred origins that directive exceeds
+	// the response header limits common in proxies and cloud load balancers,
+	// and the failure is not graceful: the shell is rejected or the CSP is
+	// truncated, and the surface stops loading for EVERY customer at once,
+	// including the ones that worked yesterday.
 	//
 	// Refuse at boot with the arithmetic in the message rather than let it be
-	// discovered by whichever customer's onboarding crossed the line.
+	// discovered by whichever customer's onboarding crossed the line. This is
+	// the cap for the STATIC path; the per-customer runtime path is capped at
+	// response time by buildCustomerOriginSet.
 	if bytes > maxFrameAncestorsBytes {
 		return nil, fmt.Errorf(
 			"embed: %d origins produce a %d-byte frame-ancestors directive, over the %d-byte "+
@@ -214,6 +253,33 @@ func newOriginSet(raw []string) (*originSet, error) {
 				"truncate outsized response headers, which breaks the surface for every "+
 				"customer at once. Split the customers across separate surfaces",
 			len(s.order), bytes, maxFrameAncestorsBytes)
+	}
+	return s, nil
+}
+
+// buildCustomerOriginSet normalizes and de-duplicates ONE customer's origins
+// and enforces the per-response cap on them.
+//
+// This is the runtime analogue of newOriginSet for surfaces backed by an
+// OriginSource. The cap is applied here, per response, rather than at boot:
+// an over-large list fails this ONE customer closed (frame-ancestors 'none')
+// instead of the old behaviour where the whole surface refused to start. An
+// empty list is a fail-closed error too — a customer with no framers is a
+// configuration mistake, never an allow-everyone wildcard.
+func buildCustomerOriginSet(raw []string) (*originSet, error) {
+	s, bytes, err := normalizeOrigins(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(s.order) == 0 {
+		return nil, fmt.Errorf("embed: origin source returned no origins — a customer with no framers fails closed rather than widening to everyone")
+	}
+	if bytes > maxFrameAncestorsBytes {
+		return nil, fmt.Errorf(
+			"embed: customer produces a %d-byte frame-ancestors directive, over the %d-byte "+
+				"limit — failing this customer closed rather than shipping a directive a proxy "+
+				"will truncate or reject",
+			bytes, maxFrameAncestorsBytes)
 	}
 	return s, nil
 }

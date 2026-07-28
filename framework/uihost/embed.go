@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // Embed route paths. The two API endpoints deliberately sit OUTSIDE the
@@ -332,13 +333,14 @@ func stripCookies(r *http.Request) {
 // response. Those are correct app defaults and they are exactly what an embed
 // must not have.
 //
-// frame-ancestors lists EVERY origin the surface allows, not the one that
-// framed us. No Origin header is sent on a navigation GET, so at the moment
-// this header is written the server does not know who the framer is. Listing
-// them all does not widen anything: the browser enforces against the real
-// ancestor chain, so an eleventh origin still cannot frame a surface that lists
-// ten. The only cost is that the allowlist is public to anyone who fetches the
-// embed URL.
+// frame-ancestors lists the origins the SHELL resolved for this response, not
+// the one that framed us. No Origin header is sent on a navigation GET, so at
+// the moment this header is written the server does not know who the framer
+// is; the shell decides the list (see embedShellOrigins) and this function
+// only writes it. Listing origins does not widen anything: the browser
+// enforces against the real ancestor chain, so an eleventh origin still
+// cannot frame a surface that lists ten. An empty list fails closed to
+// frame-ancestors 'none' (see withFrameAncestors) — never a wildcard.
 func applyEmbedFraming(w http.ResponseWriter, origins []string) {
 	h := w.Header()
 	// X-Frame-Options has no "these specific origins" mode, so it can only be
@@ -358,7 +360,15 @@ func applyEmbedFraming(w http.ResponseWriter, origins []string) {
 // rest, and an embed document loads scripts and styles like any other page. It
 // needs the framing directive widened and nothing else touched.
 func withFrameAncestors(policy string, origins []string) string {
-	directive := "frame-ancestors " + strings.Join(origins, " ")
+	// An empty origin list is the fail-closed shape: the shell's source
+	// returned nothing usable, so the directive must read 'none' (the same
+	// thing the app default already says) — never a bare "frame-ancestors "
+	// with no sources, which is a directive a browser could read oddly, and
+	// never a widening to everyone.
+	directive := "frame-ancestors 'none'"
+	if len(origins) > 0 {
+		directive = "frame-ancestors " + strings.Join(origins, " ")
+	}
 	if strings.TrimSpace(policy) == "" {
 		return directive
 	}
@@ -382,6 +392,38 @@ func withFrameAncestors(policy string, origins []string) string {
 		out = append(out, directive)
 	}
 	return strings.Join(out, "; ")
+}
+
+// embedShellOrigins resolves the frame-ancestors origin list for one shell
+// response.
+//
+// With no OriginSource it is the surface's static allowlist, exactly as
+// before — an app that never configures a source behaves identically to
+// today. With a source it is ONLY the origins of the customer named in the
+// request, so the directive no longer publishes the whole customer list and
+// one customer's over-large list cannot overflow the response header for
+// everyone else.
+//
+// The customer id is attacker-chosen: it arrives on an unauthenticated
+// navigation, so anyone may request another customer's shell and read THAT
+// customer's origins. That is a smaller leak than today (the whole list on
+// every response) and grants no framing — the browser enforces against the
+// real ancestor chain, and a grant stays bound to the origin it was minted
+// for. Every failure of the source path (unknown customer, source error,
+// over-size list, invalid origin) returns nil, which withFrameAncestors
+// writes as frame-ancestors 'none': fail closed, never widen.
+func (ds *UIHost) embedShellOrigins(r *http.Request, s *fembed.ResolvedSurface) []string {
+	src := ds.embedHost.OriginSource()
+	if src == nil {
+		return s.AllowedOrigins()
+	}
+	resolved, err := fembed.ResolveCustomerOrigins(r.Context(), src, s.Name, r.URL.Query().Get("customer"))
+	if err != nil {
+		slog.Default().Warn("uihost: embed origin source failed closed — serving frame-ancestors 'none'",
+			"surface", s.Name, "err", err)
+		return nil
+	}
+	return resolved
 }
 
 func (ds *UIHost) handleEmbedLoaderJS(w http.ResponseWriter, r *http.Request) {
@@ -521,7 +563,7 @@ func (ds *UIHost) handleEmbedRefresh(w http.ResponseWriter, r *http.Request) {
 		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
 		return
 	}
-	grant, err := ds.embedHost.Refresh(r.Header.Get(embedGrantHeader))
+	grant, err := ds.embedHost.Refresh(r.Context(), r.Header.Get(embedGrantHeader))
 	if err != nil {
 		embedError(w, http.StatusUnauthorized, "refresh refused", err)
 		return
@@ -561,7 +603,7 @@ func (ds *UIHost) embedGrant(r *http.Request) (fembed.Grant, bool) {
 	if token == "" {
 		return fembed.Grant{}, false
 	}
-	g, err := ds.embedHost.VerifyGrant(token)
+	g, err := ds.embedHost.VerifyGrant(r.Context(), token)
 	if err != nil {
 		return fembed.Grant{}, false
 	}
@@ -586,7 +628,7 @@ func (ds *UIHost) embedSurfacePath(g fembed.Grant) string {
 	if !ok {
 		return ""
 	}
-	return s.Path
+	return s.Path()
 }
 
 // resolveEmbedSurface looks up the surface named in the path.
@@ -634,7 +676,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
 		return
 	}
-	applyEmbedFraming(w, s.AllowedOrigins())
+	applyEmbedFraming(w, ds.embedShellOrigins(r, s))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// The shell carries no identity, so it would be safe to cache — but it
 	// also carries the component catalog, whose per-component hashes change on
@@ -652,7 +694,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 		// asks the server "what belongs on this page" has to name THIS, not the
 		// shell's own URL — a widget scoped with .Pages("/reports") is not
 		// scoped to /__gofastr/embed/reports.
-		"path": s.Path,
+		"path": s.Path(),
 	}
 	cfgJSON, _ := json.Marshal(cfg)
 
@@ -853,7 +895,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
 		return
 	}
-	grant, err := ds.embedHost.VerifyGrant(r.Header.Get(embedGrantHeader))
+	grant, err := ds.embedHost.VerifyGrant(r.Context(), r.Header.Get(embedGrantHeader))
 	if err != nil {
 		embedError(w, http.StatusUnauthorized, "grant refused", err)
 		return
@@ -893,10 +935,35 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	// it would render the surface as the cookie's user. Reset first; the grant
 	// is the only identity an embedded surface may have.
 	ctx = handler.SetUser(ctx, nil)
+	// The TENANT too, and for the same reason.
+	//
+	// Clearing the user and leaving the tenant is the worst of both: the
+	// surface then renders as the GRANT's subject scoped to the COOKIE
+	// visitor's tenant, which is the pairing Host.Middleware names as tenant
+	// isolation off. The island path refuses that combination outright; this
+	// route was serving it, on the first paint.
+	ctx = handler.SetTenant(ctx, nil)
+	ctx = tenant.SetTenantID(ctx, "")
+
 	// Install the granted identity so the screen's policies and its
 	// ContextComponents see a logged-in user exactly as they would on a
 	// first-party page. Without a resolver the surface renders anonymously,
 	// which is the right shape for a public pricing table or status widget.
+	//
+	// Tenant first: the subject lookup is then tenant-scoped, matching the
+	// order Host.Middleware uses, so a subject that does not belong to the
+	// resolved tenant fails closed here rather than rendering.
+	if resolveTenant := ds.embedHost.TenantResolver(); resolveTenant != nil && grant.Subject != "" {
+		tid, err := resolveTenant(ctx, grant.Subject)
+		if err != nil {
+			embedError(w, http.StatusForbidden, "tenant did not resolve", err)
+			return
+		}
+		if tid != "" {
+			ctx = handler.SetTenant(ctx, tid)
+			ctx = tenant.SetTenantID(ctx, tid)
+		}
+	}
 	if resolve := ds.embedHost.Resolver(); resolve != nil && grant.Subject != "" {
 		user, err := resolve(ctx, grant.Subject)
 		if err != nil {
@@ -906,12 +973,18 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 			embedError(w, http.StatusForbidden, "subject did not resolve", err)
 			return
 		}
-		if user != nil {
+		// isNilValue, not user != nil: a resolver written as
+		// func(...) (*User, error) returning a nil *User yields a non-nil
+		// interface wrapping nil, and installing it makes every "is a user
+		// present" gate downstream report authenticated for a subject that
+		// does not exist. Host.Middleware has guarded this since v0.49.0; this
+		// route was still using the bare comparison.
+		if !fembed.IsNilValue(user) {
 			ctx = handler.SetUser(ctx, user)
 		}
 	}
 
-	res, err := ds.App.RenderPartialResult(ctx, s.Path)
+	res, err := ds.App.RenderPartialResult(ctx, s.Path())
 	if err != nil {
 		http.NotFound(w, r)
 		return

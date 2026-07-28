@@ -18,18 +18,23 @@ import (
 func buildDemo(t *testing.T) (appSrv, customerSrv *httptest.Server, embeds *fembed.Host) {
 	t.Helper()
 	application := app.NewApp("Embed demo")
-	application.Register("/reports", &reportsScreen{}, app.EmbedLayout())
+	reports := app.NewScreen("/reports", &reportsScreen{})
+	application.RegisterScreen(reports, app.EmbedLayout())
 
 	var err error
 	embeds, err = fembed.New(fembed.Config{
 		Surfaces: []fembed.Surface{{
 			Name:    "reports",
-			Path:    "/reports",
+			Screen:  reports,
 			Origins: []string{customerOrigin},
 			Theme:   fembed.ThemeConfig{AllowTokens: []string{"color-primary"}},
 		}},
-		BurnStore: fembed.NewMemoryBurnStore(),
-		Resolve:   func(_ context.Context, subject string) (any, error) { return subject, nil },
+		BurnStore:     fembed.NewMemoryBurnStore(),
+		Resolve:       func(_ context.Context, subject string) (any, error) { return subject, nil },
+		ResolveTenant: func(_ context.Context, _ string) (string, error) { return demoTenant, nil },
+		OriginSource: &demoSource{origins: map[string][]string{
+			demoCustomer: {customerOrigin},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("embed.New: %v", err)
@@ -92,6 +97,53 @@ func TestDemoHandshakeYieldsAnAuthenticatedPanel(t *testing.T) {
 	}
 	if !strings.Contains(string(html), "avery@acme.example") {
 		t.Fatalf("the panel did not render as the granted subject:\n%s", html)
+	}
+}
+
+// The customer id the loader forwards (data-customer) reaches the shell as
+// ?customer=<id>, and the shell asks the OriginSource for THAT customer's
+// origins — writing only them into frame-ancestors. An unknown customer fails
+// closed to 'none'. This is the path the loader's customer forwarding exists to
+// feed: without it the shell sees an empty id and (with a source) blocks every
+// frame for every customer.
+func TestShellServesOnlyTheRequestingCustomersOrigins(t *testing.T) {
+	appSrv, _, _ := buildDemo(t)
+
+	shellCSP := func(t *testing.T, customer string) string {
+		t.Helper()
+		resp, err := http.Get(appSrv.URL + "/__gofastr/embed/reports?customer=" + customer)
+		if err != nil {
+			t.Fatalf("shell GET: %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("shell: status %d", resp.StatusCode)
+		}
+		return resp.Header.Get("Content-Security-Policy")
+	}
+
+	if csp := shellCSP(t, demoCustomer); !strings.Contains(csp, customerOrigin) {
+		t.Fatalf("customer %q: frame-ancestors did not list that customer's origin %q\nCSP: %s",
+			demoCustomer, customerOrigin, csp)
+	}
+	if csp := shellCSP(t, "nobody"); strings.Contains(csp, customerOrigin) {
+		t.Fatalf("an unknown customer leaked another customer's origin into frame-ancestors — the source must fail closed\nCSP: %s", csp)
+	}
+}
+
+// The customer page must carry data-customer so the loader forwards it on the
+// frame URL. Without it the loader change is unreachable from the snippet path,
+// and an app with an OriginSource gets frame-ancestors 'none' for everyone.
+func TestCustomerPageCarriesTheCustomerIdForTheLoader(t *testing.T) {
+	_, customer, _ := buildDemo(t)
+	resp, err := http.Get(customer.URL + "/")
+	if err != nil {
+		t.Fatalf("get customer page: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	if want := `data-customer="` + demoCustomer + `"`; !strings.Contains(string(body), want) {
+		t.Fatalf("customer page has no %q — the loader cannot forward the customer id", want)
 	}
 }
 

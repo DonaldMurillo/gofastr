@@ -42,7 +42,21 @@
     // frame links the right stylesheet in its FIRST response instead of
     // rendering in the app palette and swapping. They are colours, not secrets.
     let src = origin + '/__gofastr/embed/' + encodeURIComponent(surface);
-    if (opts.theme) src += '?theme=' + encodeURIComponent(opts.theme);
+    // customer + theme ride in the URL so the shell's FIRST response is right
+    // (the right frame-ancestors list for an OriginSource, the right
+    // stylesheet) instead of swapping after paint. Neither is secret:
+    // customer is an identifier, theme is colours. The customer id is the one
+    // that breaks silently — an app with an OriginSource fails closed to
+    // frame-ancestors 'none' on an empty id, blocking EVERY customer (even
+    // ones the static list covered), so the loader forwards it the way it
+    // already forwarded theme. It is attacker-chosen at the unauthenticated
+    // navigation GET, so bound it (256, the server's maxCustomerIDBytes) and
+    // encode it like any URL value — a malformed snippet must not turn the
+    // loader into a URL builder.
+    const q = [];
+    if (opts.customer) q.push('customer=' + encodeURIComponent((opts.customer + '').slice(0, 256)));
+    if (opts.theme) q.push('theme=' + encodeURIComponent(opts.theme));
+    if (q.length) src += '?' + q.join('&');
     frame.src = src;
     frame.title = opts.title || ('Embedded ' + surface);
     // Scripts run the handshake/runtime; same-origin keeps app fetches and
@@ -194,6 +208,7 @@
         className: self.getAttribute('data-class') || '',
         title: self.getAttribute('data-title') || '',
         theme: self.getAttribute('data-theme') || '',
+        customer: self.getAttribute('data-customer') || '',
         // The auto-mount path had no error surface at all: onError was reachable
         // only through the programmatic API, so every failure inside the frame
         // (a spent nonce from a cached page, a refused origin) reached the
@@ -230,6 +245,7 @@
         className: opts.className || '',
         title: opts.title || '',
         theme: opts.theme || '',
+        customer: opts.customer || '',
         onError: opts.onError,
       });
     },

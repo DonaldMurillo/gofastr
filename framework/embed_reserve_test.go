@@ -15,10 +15,18 @@ type reservingOnly struct{ prefixes []string }
 func (m *reservingOnly) Mount(*router.Router)            {}
 func (m *reservingOnly) ReservedEmbedPrefixes() []string { return m.prefixes }
 func newReserving(p ...string) *reservingOnly            { return &reservingOnly{prefixes: p} }
+
+// fwTestScreen is a minimal embed.Screen for framework-root tests, which build
+// an embed.Host directly (no UIHost.Mount) to exercise key derivation and
+// reserved-prefix wiring — not rendering.
+type fwTestScreen struct{ path string }
+
+func (s fwTestScreen) RoutePath() string { return s.path }
+
 func hostWithSurface(t *testing.T, path string) *embed.Host {
 	t.Helper()
 	h, err := embed.New(embed.Config{
-		Surfaces:  []embed.Surface{{Name: "reports", Path: path, Origins: []string{"https://acme.com"}}},
+		Surfaces:  []embed.Surface{{Name: "reports", Screen: fwTestScreen{path}, Origins: []string{"https://acme.com"}}},
 		BurnStore: embed.NewMemoryBurnStore(),
 	})
 	if err != nil {

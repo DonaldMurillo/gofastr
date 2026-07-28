@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,7 +21,7 @@ func (m *embedMountable) EmbedHost() *embed.Host { return m.host }
 func newTestEmbedHost(t *testing.T) *embed.Host {
 	t.Helper()
 	h, err := embed.New(embed.Config{
-		Surfaces:  []embed.Surface{{Name: "reports", Path: "/reports", Origins: []string{"https://acme.com"}}},
+		Surfaces:  []embed.Surface{{Name: "reports", Screen: fwTestScreen{"/reports"}, Origins: []string{"https://acme.com"}}},
 		BurnStore: embed.NewMemoryBurnStore(),
 	})
 	if err != nil {
@@ -42,7 +43,7 @@ func TestMountDerivesEmbedKeysFromTheAppSecret(t *testing.T) {
 		t.Fatal("Mount did not hand the embed host its signing keys")
 	}
 	// The keys must actually work end to end, not merely be non-empty.
-	if _, err := host.MintNonce("reports", "u-1", "https://acme.com", nil); err != nil {
+	if _, err := host.MintNonce(context.Background(), "reports", "u-1", "https://acme.com", nil); err != nil {
 		t.Fatalf("MintNonce with the derived key: %v", err)
 	}
 }

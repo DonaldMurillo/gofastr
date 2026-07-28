@@ -149,7 +149,7 @@ func TestGrantMaxAgeMustExceedGrantTTL(t *testing.T) {
 	// at its deadline and every refresh clamps back to it, so the loop never
 	// moves forward. It read like a legal configuration.
 	_, err := New(Config{
-		Surfaces:    []Surface{{Name: "dashboard", Path: "/d", Origins: []string{"https://acme.com"}}},
+		Surfaces:    []Surface{{Name: "dashboard", Screen: testScreen{"/d"}, Origins: []string{"https://acme.com"}}},
 		BurnStore:   NewMemoryBurnStore(),
 		GrantTTL:    15 * time.Minute,
 		GrantMaxAge: 15 * time.Minute,

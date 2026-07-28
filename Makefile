@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples csp-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -8,13 +8,13 @@
 # are ephemeral and watched-tree pollution causes rebuild storms.
 DIST_DIR ?= dist
 
-build: csp-check build-cmd
+build: csp-check embed-check build-cmd
 
 build-cmd: $(DIST_DIR)
 	go build -o $(DIST_DIR)/gofastr ./cmd/gofastr
 	go build -o $(DIST_DIR)/kiln    ./cmd/kiln
 
-build-examples: csp-check $(DIST_DIR)
+build-examples: csp-check embed-check $(DIST_DIR)
 	@SITE_VER=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); \
 	LDFLAGS=$$( [ -n "$$SITE_VER" ] && echo "-ldflags=-X=main.siteVersion=$$SITE_VER" ); \
 	for dir in examples/api-tour examples/blog examples/semantic-demo \
@@ -32,7 +32,7 @@ build-examples: csp-check $(DIST_DIR)
 	@echo "  building ecommerce → $(DIST_DIR)/examples/ecommerce"
 	@go build -o $(DIST_DIR)/examples/ecommerce ./examples/ecommerce/app || exit 1
 
-build-all: csp-check build-cmd build-examples
+build-all: csp-check embed-check build-cmd build-examples
 
 # csp-check refuses to build when production source emits inline
 # <script> blocks. The framework's default Content-Security-Policy
@@ -41,6 +41,15 @@ build-all: csp-check build-cmd build-examples
 # this so a regression fails the build, not the eyeball test.
 csp-check:
 	@go run ./cmd/check-csp .
+
+# embed-check refuses to build when an embeddable surface's screen renders a
+# component whose registered ClientJS calls G.serverAction — the one thing that
+# does not work inside a frame, because the action registry is app-global with
+# no relationship to any surface. framework/uihost panics at boot for the same
+# condition; this catches it at build time. Matches csp-check's shape (a go run
+# of a cmd/ gate binary scanning ./...).
+embed-check:
+	@go run ./cmd/check-embed ./...
 
 $(DIST_DIR):
 	@mkdir -p $(DIST_DIR)

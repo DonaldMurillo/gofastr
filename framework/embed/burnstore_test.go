@@ -187,7 +187,7 @@ func TestExchangeAgainstSQLBurnStore(t *testing.T) {
 	store := newSQLiteBurnStore(t)
 	h := testHost(t, func(c *Config) { c.BurnStore = store })
 	ctx := context.Background()
-	tok, err := h.MintNonce("dashboard", "u-1", "https://acme.com", nil)
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}

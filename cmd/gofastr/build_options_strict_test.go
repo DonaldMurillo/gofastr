@@ -34,3 +34,17 @@ func TestBuildRejectsOptionLikePackageValue(t *testing.T) {
 		t.Fatalf("error %q does not identify --pkg", err)
 	}
 }
+
+func TestBuildAcceptsNoEmbedCheckFlag(t *testing.T) {
+	opts, err := parseBuildOptions([]string{"--no-embed-check"})
+	if err != nil {
+		t.Fatalf("expected --no-embed-check to parse, got: %v", err)
+	}
+	if !opts.noEmbedCheck {
+		t.Fatal("expected noEmbedCheck=true after --no-embed-check")
+	}
+	// The other skip flags stay independent.
+	if opts.noGenerate || opts.noA11y {
+		t.Fatal("expected --no-embed-check to set only noEmbedCheck")
+	}
+}

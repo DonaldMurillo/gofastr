@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"encoding/json"
 	html "html"
 	"net/http"
@@ -248,7 +249,7 @@ func TestOversizeThemeCannotEvictARealTheme(t *testing.T) {
 // had not happened. The property is about the GRANT.
 func TestExchangeIsIdempotentOnTheGrant(t *testing.T) {
 	f := newEmbedFixture(t)
-	nonce, err := f.embed.MintNonce("reports", "user-7", embedTestOrigin, nil)
+	nonce, err := f.embed.MintNonce(context.Background(), "reports", "user-7", embedTestOrigin, nil)
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}

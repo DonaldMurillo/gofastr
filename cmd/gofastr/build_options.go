@@ -6,10 +6,11 @@ import (
 )
 
 type buildOptions struct {
-	output     string
-	pkg        string
-	noGenerate bool
-	noA11y     bool
+	output       string
+	pkg          string
+	noGenerate   bool
+	noA11y       bool
+	noEmbedCheck bool
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
@@ -21,6 +22,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 			opts.noGenerate = true
 		case arg == "--no-a11y":
 			opts.noA11y = true
+		case arg == "--no-embed-check":
+			opts.noEmbedCheck = true
 		case arg == "--pkg":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				return buildOptions{}, errors.New("build: --pkg requires a package path")
