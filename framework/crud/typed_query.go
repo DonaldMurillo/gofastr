@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -102,34 +103,46 @@ func (q *TypedQuery[T]) requireTenantCtx(ctx context.Context) error {
 	return q.handler.requireTenantContext(ctx)
 }
 
-// Find executes the query and decodes results into []*T.
-func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
+// findRaw runs the SELECT and attaches any requested includes, returning the
+// raw row maps plus the synthetic request the read hooks are handed.
+//
+// Split out of Find so First can run the AfterGet chain over the row map
+// before it is decoded into T — once a row is a struct there is nothing left
+// for a map-shaped hook to redact.
+func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Request, error) {
 	if err := q.requireTenantCtx(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	qb := q.buildSelect(ctx)
 	sqlStr, args := qb.Build()
 	rows, err := q.handler.DB.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	cols := q.handler.visibleFields()
 	raw, err := scanRows(rows, cols, q.handler.convertKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(q.includes) > 0 {
 		nodes, err := buildIncludeNodesFromNames(q.handler.Entity, q.handler.Registry, q.includes)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		// ctx is threaded through unchanged so applyChildReadHooks sees the
+		// same opt-in the top-level rows get — an included row must not stay
+		// raw while its parent is redacted.
 		if err := q.handler.applyIncludeTree(ctx, raw, nodes); err != nil {
-			return nil, fmt.Errorf("include: %w", err)
+			return nil, nil, fmt.Errorf("include: %w", err)
 		}
 	}
+	return raw, syntheticRequest(ctx, http.MethodGet, "/"), nil
+}
 
+// decodeRows converts scanned row maps into []*T.
+func decodeRows[T any](raw []map[string]any) ([]*T, error) {
 	out := make([]*T, len(raw))
 	for i, m := range raw {
 		var v T
@@ -141,20 +154,57 @@ func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
 	return out, nil
 }
 
-// First runs the query with Limit(1) and returns the lone result. Returns
-// sql.ErrNoRows when the query yields zero rows so callers can detect "not
-// found" with errors.Is.
-func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
-	one := 1
-	q.limit = &one
-	out, err := q.Find(ctx)
+// Find executes the query and decodes results into []*T.
+//
+// Under crud.WithReadHooks the AfterList chain runs before decoding, exactly
+// as ListAll does it — a typed repo backing a rendered page must not show
+// stored values the entity's own list endpoint masks. Without the opt-in the
+// rows are stored values, so read-modify-write still round-trips.
+func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
+	raw, req, err := q.findRaw(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(out) == 0 {
+	raw, err = q.handler.runAfterList(ctx, req, raw)
+	if err != nil {
+		return nil, err
+	}
+	return decodeRows[T](raw)
+}
+
+// First runs the query with Limit(1) and returns the lone result. Returns
+// sql.ErrNoRows when the query yields zero rows so callers can detect "not
+// found" with errors.Is.
+//
+// The single-row surface mirrors GET /entity/{id}, so under
+// crud.WithReadHooks it runs AfterGet — the same chain GetOne runs, and the
+// same one the HTTP handler runs for a by-id read. It deliberately does NOT
+// also run AfterList: that would redact more than the entity's own routes do
+// and make the two surfaces disagree in the other direction.
+func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
+	one := 1
+	q.limit = &one
+	raw, req, err := q.findRaw(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
 		return nil, sql.ErrNoRows
 	}
-	return out[0], nil
+	row := raw[0]
+	id := ""
+	if v, ok := row[q.handler.convertKey(q.handler.PrimaryKey)]; ok {
+		id = fmt.Sprint(v)
+	}
+	row, err = q.handler.runAfterGet(ctx, req, id, row)
+	if err != nil {
+		return nil, err
+	}
+	var v T
+	if err := unmarshalRowToStruct(row, &v); err != nil {
+		return nil, err
+	}
+	return &v, nil
 }
 
 // Count returns the number of rows matching the current filters. Ignores

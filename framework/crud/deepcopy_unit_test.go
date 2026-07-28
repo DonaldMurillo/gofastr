@@ -316,10 +316,38 @@ func TestDeepCopyReflectCoversArraysAndNilElements(t *testing.T) {
 	if cp["withNil"].([]any)[0] != nil {
 		t.Errorf("a nil element did not survive: %#v", cp["withNil"])
 	}
-	// Pointers are deliberately not traversed — cloning an arbitrary struct
-	// means cloning whatever it embeds.
+	// A pointer to a STRUCT is deliberately not traversed — cloning an
+	// arbitrary struct means cloning whatever it embeds (a mutex, a file
+	// handle, a driver connection).
 	if cp["structptr"] != src["structptr"] {
-		t.Errorf("a pointer should be passed through, not cloned")
+		t.Errorf("a pointer to a struct should be passed through, not cloned")
+	}
+}
+
+// A pointer to a plain CONTAINER is not covered by the struct rationale above:
+// it is the record's own data one indirection out, and leaving it aliased put
+// the response-hook copy and the record already handed to the event goroutine
+// back on the same map — the concurrent-map-writes throw the reflective
+// fallback exists to prevent.
+func TestDeepCopyCopiesPointerContainers(t *testing.T) {
+	nested := map[string]any{"secret": "stored"}
+	list := []map[string]any{{"secret": "stored"}}
+	anys := []any{map[string]any{"secret": "stored"}}
+	src := map[string]any{"profile": &nested, "rows": &list, "items": &anys}
+
+	cp := deepCopyRecord(src)
+
+	(*cp["profile"].(*map[string]any))["secret"] = "***"
+	if nested["secret"] != "stored" {
+		t.Errorf("*map[string]any is shared with the copy: %#v", nested)
+	}
+	(*cp["rows"].(*[]map[string]any))[0]["secret"] = "***"
+	if list[0]["secret"] != "stored" {
+		t.Errorf("*[]map[string]any is shared with the copy: %#v", list)
+	}
+	(*cp["items"].(*[]any))[0].(map[string]any)["secret"] = "***"
+	if anys[0].(map[string]any)["secret"] != "stored" {
+		t.Errorf("*[]any is shared with the copy: %#v", anys)
 	}
 }
 
@@ -344,5 +372,138 @@ func TestDeepCopyReflectDescendsIntoInterfaceElements(t *testing.T) {
 	cp["namedMap"].(Extra)["nested"].(map[string]any)["ssn"] = "***"
 	if got := src["namedMap"].(Extra)["nested"].(map[string]any)["ssn"]; got != "111" {
 		t.Errorf("an interface element inside a named map type is shared with the copy: %q", got)
+	}
+}
+
+// The pointer arm traverses only pointers to containers, and only when
+// there is something to traverse. These are the refusals: a nil pointer
+// has no pointee, and a pointer to a struct is deliberately left aliased
+// (cloning an arbitrary struct means cloning whatever it embeds — a
+// mutex, a file handle, a driver connection).
+func TestDeepCopyRefusesUncopyablePointers(t *testing.T) {
+	type opaque struct{ N int }
+	var nilMap *map[string]any
+	ptrStruct := &opaque{N: 1}
+
+	row := map[string]any{
+		"nil_map_ptr": nilMap,
+		"struct_ptr":  ptrStruct,
+		"nil_iface":   nil,
+		"iface_slice": []any{nil, map[string]any{"k": "v"}},
+		"ptr_slice":   []*opaque{nil, ptrStruct},
+	}
+	cp := deepCopyRecord(row)
+
+	if cp["nil_map_ptr"] != any(nilMap) {
+		t.Error("a nil *map was not passed through untouched")
+	}
+	if cp["struct_ptr"] != any(ptrStruct) {
+		t.Error("a *struct was cloned; the struct exclusion is deliberate")
+	}
+	if cp["nil_iface"] != nil {
+		t.Error("a nil interface value was not passed through")
+	}
+	// The container around them is still rebuilt, which is the point.
+	inner := cp["iface_slice"].([]any)[1].(map[string]any)
+	inner["k"] = "mutated"
+	if row["iface_slice"].([]any)[1].(map[string]any)["k"] != "v" {
+		t.Error("mutating the copy reached the original through an interface element")
+	}
+	if got := cp["ptr_slice"].([]*opaque); got[0] != nil || got[1] != ptrStruct {
+		t.Error("a []*struct element was not passed through untouched")
+	}
+}
+
+// Arrays and maps reach elements through deepCopyReflectValue rather than
+// the typed fast paths, so they exercise the interface- and pointer-element
+// arms. A nil interface element and a nil container pointer both have
+// nothing to clone and must survive the walk untouched.
+func TestDeepCopyWalksArrayAndMapElements(t *testing.T) {
+	inner := map[string]any{"k": "v"}
+	var nilMapPtr *map[string]any
+
+	row := map[string]any{
+		"arr":       [2]any{nil, inner},
+		"ptr_map":   map[string]*map[string]any{"a": nilMapPtr, "b": &inner},
+		"nil_slice": []any(nil),
+	}
+	cp := deepCopyRecord(row)
+
+	arr := cp["arr"].([2]any)
+	if arr[0] != nil {
+		t.Error("a nil interface element did not survive the array walk")
+	}
+	arr[1].(map[string]any)["k"] = "mutated"
+	if inner["k"] != "v" {
+		t.Error("mutating the copied array element reached the original map")
+	}
+
+	m := cp["ptr_map"].(map[string]*map[string]any)
+	if m["a"] != nil {
+		t.Error("a nil *map value did not survive the map walk")
+	}
+	if m["b"] == &inner {
+		t.Error("a *map value was aliased rather than copied")
+	}
+}
+
+// Anything that is not a container falls through untouched. Channels and
+// funcs are the honest examples: there is no meaningful clone, and the
+// pointer work must not have widened the walk into them.
+func TestDeepCopyPassesThroughOpaqueKinds(t *testing.T) {
+	ch := make(chan int, 1)
+	fn := func() {}
+	row := map[string]any{"chan": ch, "func": fn}
+
+	cp := deepCopyRecord(row)
+	if cp["chan"] != any(ch) {
+		t.Error("a channel was not passed through untouched")
+	}
+	if cp["func"] == nil {
+		t.Error("a func was dropped rather than passed through")
+	}
+}
+
+// StageEvent is a no-op without an outbox: an app that never configured
+// one must not get an error from a write path that merely wanted to
+// record an event.
+func TestStageEventWithoutOutbox(t *testing.T) {
+	ch := &CrudHandler{}
+	if err := ch.StageEvent(context.Background(), "created", map[string]any{"id": "1"}); err != nil {
+		t.Fatalf("StageEvent with no outbox = %v, want nil", err)
+	}
+}
+
+// fakeOutbox records what CRUD staged, so the outbox-present paths are
+// exercised without a database.
+type fakeOutbox struct {
+	appended []string
+	nudged   int
+}
+
+func (f *fakeOutbox) Append(_ context.Context, _ DBExecutor, eventType string, _ any) (string, error) {
+	f.appended = append(f.appended, eventType)
+	return "1", nil
+}
+func (f *fakeOutbox) Nudge() { f.nudged++ }
+
+// With an outbox configured, StageEvent writes through it and EmitEvent
+// nudges the relay — the two halves of "the write committed, go deliver".
+func TestStageEventWritesToOutbox(t *testing.T) {
+	fo := &fakeOutbox{}
+	// eventData needs a real entity behind it, so build a real handler.
+	ch := maskedRowHandler(t, hook.AfterGet)
+	ch.Outbox = fo
+
+	if err := ch.StageEvent(context.Background(), "created", map[string]any{"id": "1"}); err != nil {
+		t.Fatalf("StageEvent: %v", err)
+	}
+	if len(fo.appended) != 1 || fo.appended[0] != "created" {
+		t.Fatalf("outbox recorded %v, want one \"created\"", fo.appended)
+	}
+
+	ch.EmitEvent(context.Background(), "created", map[string]any{"id": "1"})
+	if fo.nudged == 0 {
+		t.Error("EmitEvent did not nudge the outbox relay")
 	}
 }
