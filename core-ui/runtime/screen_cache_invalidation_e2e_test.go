@@ -82,21 +82,27 @@ func invalidationSrv(t *testing.T) *httptest.Server {
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`, routesJSON, n)
 	})
-	// Mutation endpoints, one per header shape under test.
-	mut := func(header string) http.HandlerFunc {
+	// Mutation endpoints, one per header shape under test. Each returns
+	// a distinct body; the buttons carry data-fui-rpc-signal="mut", so
+	// the body lands in the #mutsig span AFTER the runtime processed
+	// the response headers — waiting for that text is a deterministic
+	// "eviction already happened" barrier (no sleeps).
+	mut := func(header, body string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if header != "" {
 				w.Header().Set("X-Gofastr-Invalidate", header)
 			}
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("ok"))
+			w.Write([]byte(body))
 		}
 	}
-	mux.HandleFunc("/mut-items", mut(`["/items"]`))
-	mux.HandleFunc("/mut-exact", mut(`["/items?view=open"]`))
-	mux.HandleFunc("/mut-all", mut(`["*"]`))
-	mux.HandleFunc("/mut-bad", mut(`not-json`))
-	// Failed mutation: the header on a non-2xx must be ignored.
+	mux.HandleFunc("/mut-items", mut(`["/items"]`, "did-items"))
+	mux.HandleFunc("/mut-exact", mut(`["/items?view=open"]`, "did-exact"))
+	mux.HandleFunc("/mut-all", mut(`["*"]`, "did-all"))
+	mux.HandleFunc("/mut-bad", mut(`not-json`, "did-bad"))
+	// Failed mutation: the header on a non-2xx must be ignored. The
+	// error path writes {ok:false,…} into the signal, so #mutsig's text
+	// changing away from the previous marker is the barrier.
 	mux.HandleFunc("/mut-fail", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Gofastr-Invalidate", `["*"]`)
 		http.Error(w, "boom", http.StatusInternalServerError)
@@ -119,15 +125,16 @@ func invalidationSrv(t *testing.T) *httptest.Server {
     <a id="detail" href="/items/42">detail</a>
     <a id="toentry" href="/entry?x=1">entry</a>
     <a id="redir" href="/redir">redir</a>
-    <button id="mut-items" data-fui-rpc="/mut-items" data-fui-rpc-method="POST">a</button>
-    <button id="mut-fail" data-fui-rpc="/mut-fail" data-fui-rpc-method="POST">e</button>
+    <button id="mut-items" data-fui-rpc="/mut-items" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">a</button>
+    <button id="mut-fail" data-fui-rpc="/mut-fail" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">e</button>
     <button id="tog" data-fui-comp="ui-toggle-action" data-state="idle"
             data-fui-toggle-endpoint="/mut-items">
       <span data-fui-toggle-idle>t</span><span data-fui-toggle-committed hidden>c</span>
     </button>
-    <button id="mut-exact" data-fui-rpc="/mut-exact" data-fui-rpc-method="POST">b</button>
-    <button id="mut-all" data-fui-rpc="/mut-all" data-fui-rpc-method="POST">c</button>
-    <button id="mut-bad" data-fui-rpc="/mut-bad" data-fui-rpc-method="POST">d</button>
+    <button id="mut-exact" data-fui-rpc="/mut-exact" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">b</button>
+    <button id="mut-all" data-fui-rpc="/mut-all" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">c</button>
+    <button id="mut-bad" data-fui-rpc="/mut-bad" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">d</button>
+    <span id="mutsig" data-fui-signal="mut"></span>
   </main>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
@@ -161,33 +168,56 @@ func TestInvalidateHeaderEviction(t *testing.T) {
 	srv := invalidationSrv(t)
 	ctx := newSeedBrowserCtx(t)
 
+	// mutate clicks a mutation button and waits for the response body
+	// to land in the signal-bound #mutsig span. The runtime writes the
+	// signal AFTER processing response headers, so once the marker
+	// shows, X-Gofastr-Invalidate has been applied — a deterministic
+	// barrier where a fixed sleep flaked on slow CI runners.
+	mutate := func(id, marker string) []chromedp.Action {
+		return []chromedp.Action{
+			chromedp.Click("#"+id, chromedp.ByID),
+			waitText("#mutsig", marker),
+		}
+	}
+
 	steps := []chromedp.Action{
 		chromedp.Navigate(srv.URL + "/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		// #ready proves the DOM, not the runtime — on a slow runner the
+		// first click can beat hydration and fall back to a hard load,
+		// desyncing the fetch counters. Wait for the router to exist.
+		chromedp.Poll(`window.__gofastr && typeof window.__gofastr.navigate === 'function'`,
+			nil, chromedp.WithPollingTimeout(8*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
 	}
 	// Seed the cache with three screens.
 	steps = append(steps, visit("open", "items-open 1")...)
 	steps = append(steps, visit("closed", "items-closed 1")...)
 	steps = append(steps, visit("detail", "detail 1")...)
 	// Malformed header: mutation succeeds, cache untouched.
-	steps = append(steps, chromedp.Click("#mut-bad", chromedp.ByID), chromedp.Sleep(300*time.Millisecond))
+	steps = append(steps, mutate("mut-bad", "did-bad")...)
 	steps = append(steps, visit("open", "items-open 1")...)
 	// Exact-query selector: only that variant re-fetches.
-	steps = append(steps, chromedp.Click("#mut-exact", chromedp.ByID), chromedp.Sleep(300*time.Millisecond))
+	steps = append(steps, mutate("mut-exact", "did-exact")...)
 	steps = append(steps, visit("open", "items-open 2")...)
 	steps = append(steps, visit("closed", "items-closed 1")...)
 	// Queryless selector: every query variant re-fetches, the detail
 	// page (different pathname) survives.
-	steps = append(steps, chromedp.Click("#mut-items", chromedp.ByID), chromedp.Sleep(300*time.Millisecond))
+	steps = append(steps, mutate("mut-items", "did-items")...)
 	steps = append(steps, visit("open", "items-open 3")...)
 	steps = append(steps, visit("closed", "items-closed 2")...)
 	steps = append(steps, visit("detail", "detail 1")...)
 	// Wildcard clears everything.
-	steps = append(steps, chromedp.Click("#mut-all", chromedp.ByID), chromedp.Sleep(300*time.Millisecond))
+	steps = append(steps, mutate("mut-all", "did-all")...)
 	steps = append(steps, visit("detail", "detail 2")...)
 	// Non-2xx: the header on a failed mutation is ignored — detail
-	// still serves from cache.
-	steps = append(steps, chromedp.Click("#mut-fail", chromedp.ByID), chromedp.Sleep(300*time.Millisecond))
+	// still serves from cache. The error path writes {ok:false,…} into
+	// the signal, so waiting for the marker to leave "did-all" is the
+	// barrier.
+	steps = append(steps,
+		chromedp.Click("#mut-fail", chromedp.ByID),
+		chromedp.Poll(`document.querySelector('#mutsig')?.textContent !== 'did-all'`,
+			nil, chromedp.WithPollingTimeout(8*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
+	)
 	steps = append(steps, visit("detail", "detail 2")...)
 	// Redirect + invalidate on one response: eviction happens before
 	// the X-Gofastr-Location chase, so the redirect target re-fetches
@@ -199,8 +229,13 @@ func TestInvalidateHeaderEviction(t *testing.T) {
 		chromedp.WaitVisible("#tog", chromedp.ByID),
 	)
 	// ToggleAction is a mutation surface too — its commit consumes the
-	// header (same one-line consumer as optimistic/sortable).
-	steps = append(steps, chromedp.Click("#tog", chromedp.ByID), chromedp.Sleep(300*time.Millisecond))
+	// header before setState('committed'), so data-state flipping is
+	// the barrier.
+	steps = append(steps,
+		chromedp.Click("#tog", chromedp.ByID),
+		chromedp.Poll(`document.querySelector('#tog')?.getAttribute('data-state') === 'committed'`,
+			nil, chromedp.WithPollingTimeout(8*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
+	)
 	steps = append(steps, visit("open", "items-open 5")...)
 
 	if err := chromedp.Run(ctx, steps...); err != nil {
@@ -219,6 +254,8 @@ func TestInvalidateJSAndRefresh(t *testing.T) {
 		// be cached under pathname+search.
 		chromedp.Navigate(srv.URL+"/entry?x=1"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`window.__gofastr && typeof window.__gofastr.navigate === 'function'`,
+			nil, chromedp.WithPollingTimeout(8*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
 		waitText("#v", "entry 1"),
 		// Away and back: cache hit proves the initial-page keying.
 		chromedp.Click("#home", chromedp.ByID),
