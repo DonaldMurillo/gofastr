@@ -1,76 +1,113 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/battery/embed"
-	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
-// TestEmbedDemoSmoke wires the demo's plugin onto a fresh App + Router
-// and verifies the /embed/* routes actually answer.
-func TestEmbedDemoSmoke(t *testing.T) {
-	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "embed-demo-test"}))
-	idx, err := embed.Open(embed.Options{
-		Embedder: embed.NewStubEmbedder(64),
-		Keyword:  embed.NewMemoryKeyword(),
+// buildDemo wires the same two halves main() does, against test servers.
+func buildDemo(t *testing.T) (appSrv, customerSrv *httptest.Server, embeds *fembed.Host) {
+	t.Helper()
+	application := app.NewApp("Embed demo")
+	application.Register("/reports", &reportsScreen{}, app.EmbedLayout())
+
+	var err error
+	embeds, err = fembed.New(fembed.Config{
+		Surfaces: []fembed.Surface{{
+			Name:    "reports",
+			Path:    "/reports",
+			Origins: []string{customerOrigin},
+			Theme:   fembed.ThemeConfig{AllowTokens: []string{"color-primary"}},
+		}},
+		BurnStore: fembed.NewMemoryBurnStore(),
+		Resolve:   func(_ context.Context, subject string) (any, error) { return subject, nil },
 	})
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("embed.New: %v", err)
 	}
-	seed(idx)
-	app.RegisterPlugin(embed.NewPlugin(idx))
-	if err := app.InitPlugins(); err != nil {
-		t.Fatalf("InitPlugins: %v", err)
-	}
+	embeds.SetKeys(demoKey("test-secret", "nonce"), demoKey("test-secret", "grant"))
 
-	srv := httptest.NewServer(app.Router())
-	defer srv.Close()
+	appSrv = httptest.NewServer(uihost.New(application, uihost.WithEmbed(embeds)))
+	t.Cleanup(appSrv.Close)
+	customerSrv = httptest.NewServer(customerSite(embeds))
+	t.Cleanup(customerSrv.Close)
+	return appSrv, customerSrv, embeds
+}
 
-	// /embed/* routes now require auth (security hardening).
-	authed := func(req *http.Request) *http.Request {
-		req.Header.Set("Authorization", "Bearer test")
-		return req
+// The customer's page must carry a FRESH nonce on every load. A nonce baked
+// into a template is spent by the first visitor, and every visitor after them
+// arrives as the same identity — the failure single-use exists to prevent.
+func TestCustomerPageMintsAFreshNoncePerLoad(t *testing.T) {
+	_, customer, _ := buildDemo(t)
+
+	first := fetchNonce(t, customer.URL)
+	second := fetchNonce(t, customer.URL)
+	if first == "" || second == "" {
+		t.Fatal("the customer page carries no nonce")
 	}
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/embed/stats", nil)
-	resp, err := http.DefaultClient.Do(authed(req))
+	if first == second {
+		t.Fatal("two page loads served the SAME nonce — it would be spent by the first visitor")
+	}
+}
+
+func TestDemoHandshakeYieldsAnAuthenticatedPanel(t *testing.T) {
+	appSrv, customer, _ := buildDemo(t)
+	nonce := fetchNonce(t, customer.URL)
+
+	body, _ := json.Marshal(map[string]string{"token": nonce, "origin": customerOrigin})
+	resp, err := http.Post(appSrv.URL+"/__gofastr/embed-exchange", "application/json", strings.NewReader(string(body)))
 	if err != nil {
-		t.Fatalf("GET /embed/stats: %v", err)
+		t.Fatalf("exchange: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
+		t.Fatalf("exchange: status %d", resp.StatusCode)
 	}
-	var stats embed.Stats
-	json.NewDecoder(resp.Body).Decode(&stats)
-	if stats.Docs < 4 {
-		t.Fatalf("stats.Docs = %d, want >= 4", stats.Docs)
+	var out struct {
+		Grant string `json:"grant"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode grant: %v", err)
 	}
 
-	body := strings.NewReader(`{"text":"cache battery","k":3,"hybrid":true}`)
-	req, _ = http.NewRequest(http.MethodPost, srv.URL+"/embed/query", body)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err = http.DefaultClient.Do(authed(req))
+	req, _ := http.NewRequest(http.MethodGet, appSrv.URL+"/__gofastr/embed/reports/content", nil)
+	req.Header.Set("X-Gofastr-Embed", out.Grant)
+	content, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("POST /embed/query: %v", err)
+		t.Fatalf("content: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		buf := new(bytes.Buffer)
-		buf.ReadFrom(resp.Body)
-		t.Fatalf("query status = %d body=%s", resp.StatusCode, buf)
+	defer func() { _ = content.Body.Close() }()
+	html, _ := io.ReadAll(content.Body)
+	if content.StatusCode != http.StatusOK {
+		t.Fatalf("content: status %d: %s", content.StatusCode, html)
 	}
-	var qr struct{ Hits []embed.Hit }
-	json.NewDecoder(resp.Body).Decode(&qr)
-	if len(qr.Hits) == 0 {
-		t.Fatalf("no hits")
+	if !strings.Contains(string(html), "avery@acme.example") {
+		t.Fatalf("the panel did not render as the granted subject:\n%s", html)
 	}
-	if qr.Hits[0].Chunk.DocID != "battery-cache" {
-		t.Fatalf("top hit doc=%q, want battery-cache (hits=%+v)", qr.Hits[0].Chunk.DocID, qr.Hits)
+}
+
+func fetchNonce(t *testing.T, base string) string {
+	t.Helper()
+	resp, err := http.Get(base + "/")
+	if err != nil {
+		t.Fatalf("get customer page: %v", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
+	page, _ := io.ReadAll(resp.Body)
+	const marker = `data-token="`
+	i := strings.Index(string(page), marker)
+	if i < 0 {
+		return ""
+	}
+	rest := string(page)[i+len(marker):]
+	return rest[:strings.IndexByte(rest, '"')]
 }

@@ -4,7 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
+
+// embedGrantRefused reports the error an MCP precondition returns for a caller
+// authenticated by an embed grant.
+//
+// A grant resolves to the same ctx user a session does, so without this an MCP
+// tool gated on MCPUser/MCPRole is reachable with a credential that lives in a
+// third party's page. MCP tools run commands and read data on the caller's
+// behalf; that is not a capability a surface handed to a customer's website
+// should carry, and no surface declares it.
+func embedGrantRefused(ctx context.Context) error {
+	if _, embedded := embed.GrantFromContext(ctx); embedded {
+		return errors.New("auth: this tool is not reachable from an embedded surface — an embed grant is a delegated, scoped credential, not an interactive session")
+	}
+	return nil
+}
 
 // MCPUser is an mcp.Gated precondition requiring an authenticated user
 // on the tool call's context. Works whenever the app's session/JWT
@@ -19,7 +36,7 @@ func MCPUser() func(ctx context.Context) error {
 		if GetCurrentUser(ctx) == nil {
 			return errors.New("auth: this tool requires an authenticated caller — send the session cookie or Authorization header on the /mcp request")
 		}
-		return nil
+		return embedGrantRefused(ctx)
 	}
 }
 
@@ -37,6 +54,9 @@ func MCPRole(roles ...string) func(ctx context.Context) error {
 		user := GetCurrentUser(ctx)
 		if user == nil {
 			return errors.New("auth: this tool requires an authenticated caller — send the session cookie or Authorization header on the /mcp request")
+		}
+		if err := embedGrantRefused(ctx); err != nil {
+			return err
 		}
 		if !hasAnyRole(user, roles) {
 			return fmt.Errorf("auth: this tool requires role %v", roles)

@@ -146,10 +146,13 @@ const iifeFooter = "\n})();\n"
 // fragments' functions at event time without a temporal-dead-zone fault.
 var fullFragmentOrder = []string{"kernel", "rpc", "signals", "nav", "widgets-boot", "boot"}
 
-func composeFull() (string, error) {
+// composeFragments concatenates the named fragments inside one IIFE. Every
+// composition goes through it, so a new bundle cannot accidentally assemble
+// itself differently from the ones the gate tests cover.
+func composeFragments(header string, order []string) (string, error) {
 	var b strings.Builder
-	b.WriteString(iifeHeader)
-	for _, name := range fullFragmentOrder {
+	b.WriteString(header)
+	for _, name := range order {
 		data, err := fs.ReadFile(fragFS, "frag/"+name+".js")
 		if err != nil {
 			return "", fmt.Errorf("compose fragment %q: %w", name, err)
@@ -160,6 +163,10 @@ func composeFull() (string, error) {
 	}
 	b.WriteString(iifeFooter)
 	return b.String(), nil
+}
+
+func composeFull() (string, error) {
+	return composeFragments(iifeHeader, fullFragmentOrder)
 }
 
 // RuntimeJS returns the composed runtime — the single-file IIFE every
@@ -230,19 +237,7 @@ var staticFragmentOrder = []string{"kernel", "rpc-stub", "signals", "nav", "widg
 // Same concatenation shape as composeFull — fragments are embedded JS files
 // joined inside one IIFE so closure semantics are preserved exactly.
 func composeStatic() (string, error) {
-	var b strings.Builder
-	b.WriteString(staticIifeHeader)
-	for _, name := range staticFragmentOrder {
-		data, err := fs.ReadFile(fragFS, "frag/"+name+".js")
-		if err != nil {
-			return "", fmt.Errorf("compose fragment %q: %w", name, err)
-		}
-		b.WriteByte('\n')
-		b.WriteString(strings.TrimRight(string(data), "\n"))
-		b.WriteByte('\n')
-	}
-	b.WriteString(iifeFooter)
-	return b.String(), nil
+	return composeFragments(staticIifeHeader, staticFragmentOrder)
 }
 
 var (
@@ -277,6 +272,109 @@ func StaticJS() (string, error) {
 // MustStaticJS returns the static runtime or panics.
 func MustStaticJS() string {
 	js, err := StaticJS()
+	if err != nil {
+		panic(err)
+	}
+	return js
+}
+
+// embedIifeHeader is the IIFE wrapper for the `embed` composition — the
+// runtime that ships INSIDE an embedded surface's iframe.
+const embedIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: embed = kernel+rpc+signals+widgets-boot+boot-embed)\n" +
+	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeEmbed) from\n" +
+	"// core-ui/runtime/frag/*.js. Served at /__gofastr/embed-runtime.js and loaded\n" +
+	"// only inside an embed frame.\n" +
+	"(() => {\n" +
+	"  'use strict';\n"
+
+// embedFragmentOrder is the composition order for the `embed` bundle.
+//
+// The nav fragment is ABSENT, and that absence is the feature: SPA navigation
+// inside a frame is impossible because the code is not there, not because a
+// flag is off. Nothing downstream can re-enable it by mistake.
+//
+// boot still ships — it is the kernel's boot tail (hydration, the mutation
+// observer, module demand-loading), none of which is navigation. It calls one
+// nav symbol, updateActiveLink, behind a typeof probe for exactly this
+// composition. boot-embed comes last: it runs after _initialPass and calls into
+// the namespace every earlier fragment has finished assembling.
+var embedFragmentOrder = []string{"kernel", "rpc", "signals", "widgets-boot", "boot", "boot-embed"}
+
+func composeEmbed() (string, error) {
+	return composeFragments(embedIifeHeader, embedFragmentOrder)
+}
+
+var (
+	embedOnce sync.Once
+	embedData string
+	embedErr  error
+)
+
+// EmbedJS returns the `embed` runtime composition — the bundle served inside an
+// embedded surface's iframe.
+//
+// Its budget is looser than the core runtime's on purpose: it loads inside a
+// frame and blocks nothing on the host page. It is still budgeted, because how
+// fast an embed paints is the product.
+func EmbedJS() (string, error) {
+	embedOnce.Do(func() {
+		raw, err := composeEmbed()
+		if err != nil {
+			embedErr = err
+			return
+		}
+		if nominify() {
+			embedData = raw
+			return
+		}
+		embedData = minify.Minify(raw)
+	})
+	return embedData, embedErr
+}
+
+// MustEmbedJS returns the embed runtime or panics.
+func MustEmbedJS() string {
+	js, err := EmbedJS()
+	if err != nil {
+		panic(err)
+	}
+	return js
+}
+
+//go:embed embed-loader.js
+var embedLoaderFS embed.FS
+
+var (
+	embedLoaderOnce sync.Once
+	embedLoaderData string
+	embedLoaderErr  error
+)
+
+// EmbedLoaderJS returns the loader a customer pastes into their own page.
+//
+// This is the tightest budget in the repo: it lands on a stranger's critical
+// path, on a site whose performance we do not control and whose owner did not
+// choose GoFastr. It creates the iframe, hands over the nonce by postMessage,
+// and resizes. Anything else belongs inside the frame.
+func EmbedLoaderJS() (string, error) {
+	embedLoaderOnce.Do(func() {
+		raw, err := fs.ReadFile(embedLoaderFS, "embed-loader.js")
+		if err != nil {
+			embedLoaderErr = err
+			return
+		}
+		if nominify() {
+			embedLoaderData = string(raw)
+			return
+		}
+		embedLoaderData = minify.Minify(string(raw))
+	})
+	return embedLoaderData, embedLoaderErr
+}
+
+// MustEmbedLoaderJS returns the embed loader or panics.
+func MustEmbedLoaderJS() string {
+	js, err := EmbedLoaderJS()
 	if err != nil {
 		panic(err)
 	}

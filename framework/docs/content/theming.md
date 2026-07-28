@@ -64,6 +64,64 @@ fields directly.
 Check the result at `/__gofastr/app.css` — your values should show up
 as `:root` custom properties.
 
+## Editing live — `gofastr theme edit`
+
+`gofastr theme edit` boots a local theme configurator: a controls pane
+(generated from `ThemeToTokens`) on the left and a live component preview
+on the right. Changing a token value re-applies it through `ApplyTokens`,
+registers the result as a theme variant, and swaps the preview's
+`app.css?t=<key>` — the same path an embedded surface uses. No page
+reload: the browser re-resolves every `var(--*)` reference against the new
+`:root` values the moment the stylesheet link swaps.
+
+```sh
+gofastr theme edit                        # ephemeral loopback port, auto-open
+gofastr theme edit --out=theme/theme.go   # write-back target (default)
+gofastr theme edit --addr=127.0.0.1:8090 --no-open
+```
+
+**It is loopback-only.** The page carries its own bearer token and the
+write-back endpoint rewrites a Go file on disk, so a non-loopback bind is
+refused: a Host pin stops a browser from rebinding DNS onto the port, but not a
+direct TCP client, which chooses its own Host and can simply read the token out
+of the page. A bare `--addr=:8090` is read as `127.0.0.1:8090`.
+
+**It starts from the framework default, not from your `theme.go`.** The tool
+does not read an existing theme, so it is for arriving at a palette, not for
+iterating on one you have already hand-edited: writing back over a file you
+edited by hand replaces it with the defaults plus whatever you changed in that
+session. That is why it refuses to overwrite an existing `--out` without
+`--force`. To try a change against an existing theme, point `--out` at a new
+path and copy across what you want.
+
+The preview renders the `framework/gallery` catalog — every design-system
+component against your theme — so you see the effect of a token change
+across buttons, badges, cards, inputs, and the status tones at once.
+
+**Contrast checking runs in the browser**, not in Go. `getComputedStyle`
+resolves every colour space (`oklch()`, `color-mix()`, `var()`) natively.
+The checker reads RGBA values through a canvas, composites text over the
+measured probe background, then composites any transparent probe background
+over the page background. A transparent page canvas falls back to white.
+Pairs below 4.5:1 are flagged for both light and dark schemes. The pairs
+checked are the ones `core-ui/style/theme.go` documents: text tiers on
+`surface`, `primary-fg` on `primary`, and each status tone both as a
+white-text fill and as label text on its own 15% tint.
+
+**Write-back** emits `%q` string literals, then writes a temporary file in the
+target directory, calls `fsync`, and renames it over the destination. Each
+click re-checks the destination and refuses to replace a **hand-edited** file
+unless the editor started with `--force`. A file this session already wrote is
+its own to rewrite, so iterating on a palette is one Write per change rather
+than one Write per process. If the directory already contains a Go file,
+the generated file uses that package name; otherwise it uses the sanitized
+directory name. The editor regenerates the file whole, so confirm before
+replacing hand-edited values.
+
+The tool binds loopback, pins the Host header (DNS-rebinding defence), and
+mints a per-process bearer token delivered in a `<meta>` tag — the same
+posture `gofastr harness --web` uses.
+
 ## Self-hosting web fonts
 
 Setting `Fonts.Body`/`Fonts.Heading` to a custom family only names the

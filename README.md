@@ -302,7 +302,7 @@ uploads, sparse updates. Hooks run inside the write's transaction
 | `core/` | Stdlib-only primitives — router, query, schema, render, mcp, openapi, migrate. Each usable on its own. | you want plain Go building blocks, no framework. |
 | `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting its focused runtime subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
 | `core-ui/` | Server-driven UI runtime — `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
-| `battery/` | Opt-in infrastructure — admin, auth, cache, email, embed, log, notify, print, queue, search, setup, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
+| `battery/` | Opt-in infrastructure — admin, auth, cache, email, semantic, log, notify, print, queue, search, setup, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
 | `cmd/gofastr` | The CLI — `init`, `generate`, `pack` (lossy app→blueprint snapshot), `migrate`, `build`, `dev`, `docs`, and more. | you're scaffolding or generating code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
 | `examples/` | Runnable reference apps — the `meridian` blueprint flagship (a SaaS billing console + marketing site), the `ecommerce` blueprint pipeline, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
@@ -366,7 +366,8 @@ connected to a running app.
 - [Migrations](framework/docs/content/migrations.md) — versioned migrations and the CLI
 - [Query DSL](framework/docs/content/query-dsl.md) — `Entity.where(...).order(...).limit(N)`
 - [Search](framework/docs/content/search.md) — the `battery/search` interface
-- [Embed](framework/docs/content/embed.md) — local semantic search via `battery/embed`
+- [Semantic search](framework/docs/content/semantic-search.md) — local semantic search via `battery/semantic`
+- [Embeddable surfaces](framework/docs/content/embed.md) — hand a screen to a website you don't control: single-use handshake nonce, exact origin allowlist, a frame runtime with no SPA navigation
 - [Security](framework/docs/content/security.md) — defaults, headers, and limits
 - [Deployment](framework/docs/content/deploy.md) — single-binary build, graceful shutdown, production checklist
 - [Horizontal scaling](framework/docs/content/scaling.md) — what's process-local by default and the replica-safe alternative for each

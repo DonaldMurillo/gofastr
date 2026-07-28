@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
 // SessionMiddlewareOption tunes SessionMiddleware. Today only logging
@@ -67,6 +68,24 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 	// outer tenant's identity into its handler, and OwnerField CRUD
 	// queries scope cross-tenant. See TestSessionMiddleware_ClearsUserOn*.
 	anon := func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		// ...but NOT an embed grant's subject. An embed request has no session
+		// cookie by construction — framework/embed deletes it, and a browser
+		// would not send one cross-site anyway — so this branch is the one every
+		// embed request takes. Clearing here erased the identity the grant just
+		// established, which made the documented wiring
+		//
+		//	fwApp.Use(embeds.Middleware())   // outermost
+		//	fwApp.Use(auth.SessionMiddleware(mgr))
+		//
+		// produce an anonymous handler: owner-scoped CRUD, policies, tenant
+		// resolution and audit all saw nobody. The reason anon exists — an outer
+		// SessionMiddleware leaking one tenant's user into an inner one — does
+		// not apply to a credential this middleware never issued and cannot
+		// verify.
+		if _, embedded := embed.GrantFromContext(r.Context()); embedded {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ctx := handler.SetUser(r.Context(), nil)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}

@@ -230,7 +230,7 @@ func TestEveryBatteryDirHasAgentsSection(t *testing.T) {
 	allowed := map[string]bool{
 		// Pre-1.0 surfaces. If you intend an exclusion, justify it here.
 		"experimental": true,
-		"embed":        true,
+		"semantic":     true,
 	}
 	for _, e := range entries {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {

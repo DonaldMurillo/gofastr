@@ -36,6 +36,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -197,6 +198,14 @@ func New(cfg Config) *Battery {
 // the configured AdminRole — secure by default. A custom Authorize overrides
 // the role check entirely.
 func (b *Battery) authorized(ctx context.Context) bool {
+	// BEFORE the custom hook, not after. A host that supplies its own
+	// Authorize — which is exactly what the comment below recommends for a
+	// different role model — otherwise gets no embed refusal at all, and past
+	// this gate every admin route runs under a wildcard access policy. Whether
+	// an embed may drive the back office is not the host's call to make.
+	if _, embedded := embed.GrantFromContext(ctx); embedded {
+		return false
+	}
 	if b.cfg.Authorize != nil {
 		return b.cfg.Authorize(ctx)
 	}
@@ -245,6 +254,16 @@ func (b *Battery) authzStatus(ctx context.Context) int {
 
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "admin" }
+
+// ReservedEmbedPrefixes reports the prefix this battery actually mounted, so
+// an embed grant can never reach the back office even when the app relocated
+// it with Config.PathPrefix. See framework.EmbedReserving.
+func (b *Battery) ReservedEmbedPrefixes() []string {
+	if b.cfg.PathPrefix == "" {
+		return []string{"/admin"}
+	}
+	return []string{b.cfg.PathPrefix}
+}
 
 // Init implements framework.Battery. Mounts the three admin pages on
 // the App's router under cfg.PathPrefix.

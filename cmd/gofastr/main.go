@@ -114,6 +114,7 @@ func printHelp() {
   pack [app-dir]        Snapshot a generated app into a best-effort gofastr.yml (lossy; not an inverse of generate)
   validate <yml>        Validate a blueprint without generating (exit 0 = valid)
   theme init            Scaffold theme/theme.go for a UI project
+  theme edit            Live theme configurator with a component preview
   build                 Run codegen + go vet + accessibility lint + go build
                         --no-a11y skips the accessibility gate
                         --pkg=<path> selects the main package built after the
@@ -129,7 +130,7 @@ func printHelp() {
                        against the project root
   migrate [up|down|status|generate|force]  Run database migrations
   test                  Run project tests
-  embed <sub>           Local semantic index (index/watch/query/stats/clear)
+  semantic <sub>        Local semantic index (index/watch/query/stats/clear)
   harness               Start the AI agent harness (interactive loop / TUI)
     mcp                 Launch harness as a stdio MCP server for IDE integration
     creds [add|list|delete]  Manage encrypted API-key credentials
@@ -190,6 +191,8 @@ var ownsHelp = map[string]bool{
 	"gen":      true,
 	"g":        true,
 	"validate": true,
+	"theme":    true,
+	"semantic": true,
 }
 
 func hasHelpFlag(args []string) bool {
@@ -256,8 +259,8 @@ func dispatch(args []string) {
 		runMigrate(cmdArgs)
 	case "test", "t":
 		runTest(cmdArgs)
-	case "embed":
-		runEmbed(cmdArgs)
+	case "semantic":
+		runSemantic(cmdArgs)
 	case "harness":
 		runHarness(cmdArgs)
 	case "docs", "doc":
@@ -273,7 +276,7 @@ func dispatch(args []string) {
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "generate", "pack", "validate", "build", "dev", "migrate", "test", "embed", "harness", "docs", "agents", "audit", "upgrade", "version"}
+		suggestions := []string{"init", "generate", "pack", "validate", "build", "dev", "migrate", "test", "semantic", "harness", "docs", "agents", "audit", "upgrade", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))

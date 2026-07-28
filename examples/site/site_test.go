@@ -193,7 +193,7 @@ func TestPageTitlesSingleSuffix(t *testing.T) {
 
 func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 	html := body(t, "/examples")
-	slugs := []string{"meridian", "ecommerce", "blog", "site", "api-tour", "embed-demo", "spa", "static-site"}
+	slugs := []string{"meridian", "ecommerce", "blog", "site", "api-tour", "semantic-demo", "spa", "embed-demo", "static-site"}
 	for _, slug := range slugs {
 		if !strings.Contains(html, `id="`+slug+`"`) {
 			t.Errorf("/examples missing anchor id=%q", slug)

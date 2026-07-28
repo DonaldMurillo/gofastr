@@ -8,7 +8,10 @@ package main
 // the markup in screens_pages.go reads the same as the prototype source.
 // =============================================================================
 
-import "github.com/DonaldMurillo/gofastr/core-ui/style"
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/gallery"
+)
 
 // -----------------------------------------------------------------------------
 // /get-started — six-step onboarding with sticky step-rail.
@@ -1010,17 +1013,11 @@ func pageComponents(ss *style.StyleSheet) {
 			"flex-direction", "column",
 			"gap", "{spacing.md}").End()
 
-	// .demo-row + .demo-stack — generic inline wrappers used by Demo
-	// functions so groups of variants line up without bespoke CSS.
-	ss.Rule(".demo-row").
-		Set("display", "flex",
-			"flex-wrap", "wrap",
-			"gap", "{spacing.md}",
-			"align-items", "center").End()
-	ss.Rule(".demo-stack").
-		Set("display", "flex",
-			"flex-direction", "column",
-			"gap", "{spacing.md}").End()
+	// .demo-row / .demo-stack / .demo-stack-lg come from framework/gallery,
+	// which is what emits them. Defining them here meant the site owned CSS
+	// for markup it does not write, and a second consumer (the theme
+	// configurator) had to copy the rules to render the same demos.
+	gallery.ContributeCSS(ss)
 
 	// Clientside-interactivity demo boxes. CSP forbids inline style="…";
 	// these classes back the scroll-reveal and signal-animate demos so the
@@ -1052,11 +1049,6 @@ func pageComponents(ss *style.StyleSheet) {
 	ss.Rule(".demo-animate-fade.is-shown").
 		Set("opacity", "1",
 			"transform", "translateY(0)").End()
-	// Bigger-gap stack for grouping multiple sub-examples.
-	ss.Rule(".demo-stack-lg").
-		Set("display", "flex",
-			"flex-direction", "column",
-			"gap", "{spacing.xl}").End()
 	// Reserves height so a click-opened dropdown menu fits inside the
 	// demo frame instead of being clipped by .demo-stage overflow.
 	ss.Rule(".demo-dropdown-room").

@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"net/http"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -38,6 +39,11 @@ import (
 type themeVariants struct {
 	mu sync.RWMutex
 	m  map[string]style.Theme
+	// refs counts how many registrations are outstanding per key, so a caller
+	// that can evict (the embed theme cap) removes only its OWN contribution
+	// and never a variant another caller still depends on. Keys are content
+	// addresses, so two unrelated callers really can land on the same one.
+	refs map[string]int
 }
 
 // RegisterThemeVariant makes t servable as a theme variant and returns the key
@@ -79,7 +85,38 @@ func (ds *UIHost) RegisterThemeVariant(t style.Theme) string {
 	if _, ok := ds.variants.m[key]; !ok {
 		ds.variants.m[key] = t
 	}
+	if ds.variants.refs == nil {
+		ds.variants.refs = make(map[string]int, 4)
+	}
+	ds.variants.refs[key]++
 	return key
+}
+
+// ReleaseThemeVariant drops one registration of key, removing the variant when
+// the last one goes.
+//
+// It exists so a bounded cache of variants can actually bound something. A cap
+// that only refuses new registrations leaves the registry at its ceiling
+// forever, which turned into a real problem for embeds: the shell route is
+// unauthenticated by necessity, so any stranger could fill a surface's slots and
+// permanently lock out the customer's own branding. Eviction needs the evicted
+// entry to really go away, or it trades a lockout for unbounded growth.
+//
+// A released key whose URL is still in flight degrades to the app theme, which
+// is the same thing an unknown hash already does.
+func (ds *UIHost) ReleaseThemeVariant(key string) {
+	if key == "" {
+		return
+	}
+	ds.variants.mu.Lock()
+	defer ds.variants.mu.Unlock()
+	n := ds.variants.refs[key]
+	if n <= 1 {
+		delete(ds.variants.refs, key)
+		delete(ds.variants.m, key)
+		return
+	}
+	ds.variants.refs[key] = n - 1
 }
 
 // copyStringMap returns an independently-owned copy, or nil for an empty input
@@ -94,6 +131,28 @@ func copyStringMap(m map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// requestTheme resolves the theme THIS request renders under: the variant named
+// by ?t=, or the app theme.
+//
+// Component stylesheets need it for the same reason app.css does. A component's
+// StyleFn is handed a style.Theme and may read values from it directly rather
+// than emitting var() references, so serving every component's CSS under the
+// boot-time app theme left an embed half-rebranded: the token-driven parts
+// turned the customer's colour and the StyleFn-driven parts stayed the app's.
+// An unknown or absent key falls back to the app theme, which is what a
+// released variant already degrades to.
+func (ds *UIHost) requestTheme(r *http.Request) style.Theme {
+	if r == nil {
+		return ds.activeTheme()
+	}
+	if key := r.URL.Query().Get("t"); key != "" {
+		if t, ok := ds.themeVariant(key); ok {
+			return t
+		}
+	}
+	return ds.activeTheme()
 }
 
 // themeVariant resolves a registered variant by hash. ok is false for an

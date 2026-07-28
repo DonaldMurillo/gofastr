@@ -56,11 +56,17 @@ type fragmentDef struct {
 // These are the names the attribute map and the composition table (full /
 // static / embed) may use — nothing else.
 //
-// sse and boot-embed own zero data-fui-* attributes today: sse is triggered
-// by the privileged <meta name="gofastr-sse"> marker, and boot-embed's
-// postMessage-bridge attributes are not yet invented (adding any is itself a
-// Hard-rule-5 change). They are listed so the composition table can name
-// them and so the dependency closure is honest.
+// sse owns zero data-fui-* attributes: it is triggered by the privileged
+// <meta name="gofastr-sse"> marker rather than by a DOM attribute. boot-embed
+// is triggered by <meta name="gofastr-embed"> and owns one attribute,
+// data-fui-embed-state, which reports the frame's lifecycle.
+//
+// boot-embed's declared deps are the fragments it calls INTO: kernel (the
+// namespace and scanAndLoadCSS) and rpc (whose island dispatch is what the
+// grant it installs authenticates). It also relies on boot's mutation observer
+// to hydrate the content it injects, but boot is the kernel boot tail rather
+// than a declared fragment, so it cannot be named here; composeEmbed orders it
+// explicitly instead.
 //
 // Note on sse / compute: in today's unsplit runtime their CODE lives in
 // src/sse.js and src/compute.js (demand modules). The spec promotes each to
@@ -80,12 +86,11 @@ var fragments = map[string]fragmentDef{
 	// data-fui-toast / data-fui-deeplink, whose owner stays widgets-boot
 	// (the gate treats cross-references as non-transferable, and
 	// TestFragmentMapNoDuplicate forbids a second assignment). Same
-	// shape as rpc-stub (also absent from fragmentAttrs) and as
-	// boot-embed / sse (declared but attribute-free).
+	// shape as rpc-stub and sse, both absent from fragmentAttrs.
 	"widgets-boot-static": {name: "widgets-boot-static", class: bootClass, deps: []string{"kernel"}},
 	"sse":                 {name: "sse", class: bootClass, deps: []string{"kernel"}},
 	"compute":             {name: "compute", class: markerClass, deps: []string{"kernel"}},
-	"boot-embed":          {name: "boot-embed", class: bootClass, deps: []string{"kernel"}},
+	"boot-embed":          {name: "boot-embed", class: bootClass, deps: []string{"kernel", "rpc"}},
 }
 
 // fragmentAttrs maps each CORE fragment to the data-fui-* attributes whose
@@ -168,6 +173,13 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-open",
 		"data-fui-toast",
 		"data-fui-deeplink",
+	},
+	"boot-embed": {
+		// Set on the embed root as the frame moves through loading → ready
+		// (content injected) or → error (no parent, refused handshake, failed
+		// content fetch). Read by tests and available to a host page's own
+		// styling; nothing in the runtime branches on it.
+		"data-fui-embed-state",
 	},
 	"compute": {
 		"data-fui-compute",

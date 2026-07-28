@@ -408,3 +408,43 @@ func TestCacheMiddleware_RequestNoStoreBypassesStoredVariant(t *testing.T) {
 		t.Fatalf("SECURITY: [cache] request Cache-Control: no-store did not bypass stored variant. body1=%q body2=%q", rec1.Body.String(), rec2.Body.String())
 	}
 }
+
+// An embed grant is an app credential: framework/embed's middleware resolves it
+// into a user before the handler runs. It deliberately travels without a cookie
+// and without Authorization — that is the whole design — so a credential check
+// that looks only at those two saw an authenticated response as anonymous,
+// stored it under the shared method/host/path/query key, and served it to the
+// next grant holder as a HIT without the handler ever running.
+func TestCacheMiddleware_DoesNotCacheEmbedGrantResponses(t *testing.T) {
+	store := NewMemoryCache()
+	var n int32
+	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Stand in for a per-subject render.
+		subject := "alice"
+		if atomic.AddInt32(&n, 1) > 1 {
+			subject = "bob"
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(subject))
+	}))
+
+	get := func(grant string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/reports", nil)
+		req.Header.Set("X-Gofastr-Embed", grant)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := get("emg_alice-grant")
+	second := get("emg_bob-grant")
+
+	if second.Body.String() == first.Body.String() {
+		t.Fatalf("a second grant holder received the first one's response (%q). "+
+			"X-Gofastr-Embed must count as a credential, or the cache replays one "+
+			"embed subject's page to another.", second.Body.String())
+	}
+	if got := second.Header().Get("X-Cache"); got == "HIT" {
+		t.Errorf("X-Cache = HIT for a grant-authenticated request")
+	}
+}

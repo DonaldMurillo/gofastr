@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/battery/embed"
+	"github.com/DonaldMurillo/gofastr/battery/semantic"
 )
 
 // covT_unwritableHome points HOME at a regular file so the snapshot dir
-// (HOME/.gofastr/embed/...) can't be created → embed.Open fails.
+// (HOME/.gofastr/semantic/...) can't be created → semantic.Open fails.
 func covT_unwritableHome(t *testing.T) {
 	t.Helper()
 	f := filepath.Join(t.TempDir(), "homefile")
@@ -78,10 +78,10 @@ func TestEmbedRemoteQueryStatsConnError(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("remote stats conn-error want 1 got %d", code)
 	}
-	if _, err := remoteQuery(dead, embed.Query{Text: "x"}); err == nil {
+	if _, err := remoteQuery(dead, semantic.Query{Text: "x"}); err == nil {
 		t.Fatal("remoteQuery should error on dead host")
 	}
-	if _, err := remoteGet(dead + "/embed/stats"); err == nil {
+	if _, err := remoteGet(dead + "/semantic/stats"); err == nil {
 		t.Fatal("remoteGet should error on dead host")
 	}
 }

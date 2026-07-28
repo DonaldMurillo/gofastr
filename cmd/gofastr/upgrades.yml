@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.48.0
+through: v0.49.0
 
 releases:
   - version: v0.3.0
@@ -405,3 +405,28 @@ releases:
         breaking: false
         guidance: "ListAll/CountAll/GetOne still return stored values by default — right for read-modify-write, seed lookups and aggregates. Wrap the context with crud.WithReadHooks(ctx) where rows are rendered to an end user; generated blueprint screens already do. Do not set it on a context handed to a hook."
         detect: "\\.(ListAll|GetOne|CountAll)\\("
+  - version: v0.49.0
+    title: Embeddable surfaces take the embed name; API versions coexist
+    notes:
+      - change: "battery/embed is now battery/semantic"
+        breaking: true
+        guidance: "The semantic-search battery moved so the new embeddable-surfaces feature could take the embed name. Rewrite the import to github.com/DonaldMurillo/gofastr/battery/semantic and the package qualifier from embed. to semantic.; its routes moved from /embed/* to /semantic/* and its local snapshot dir from ~/.gofastr/embed to ~/.gofastr/semantic."
+        detect: "battery/embed"
+      - change: "kiln agent.NewEmbedContextHook is now agent.NewSemanticContextHook"
+        breaking: true
+        guidance: "Renamed with the battery it wraps. Behaviour is unchanged; only the name moved."
+        detect: "NewEmbedContextHook"
+      - change: "`gofastr embed` is now `gofastr semantic`"
+        breaking: true
+        guidance: "index|watch|query|stats|clear are unchanged; only the subcommand name moved. The old name is not aliased — it would be ambiguous with embeddable surfaces."
+      - change: The entity registry is keyed on (name, version)
+        breaking: true
+        guidance: "Registry.Get errors instead of guessing when one name has several versions; use GetVersioned(name, version). Registry.All still returns one representative per name, so anything iterating it sees only the lex-first version."
+        detect: "Registry\\.Get\\("
+      - change: An embeddable surface requires an app secret
+        breaking: false
+        guidance: "Unlike sessions there is no per-boot fallback key — a nonce that fails to verify is gone, and it was rendered into a page you cannot re-render. Set WithSecret or GOFASTR_SECRET (>=32 chars) before configuring uihost.WithEmbed, or Mount panics."
+        detect: "WithEmbed\\("
+      - change: Versions of one entity share a table and migrate the union of their columns
+        breaking: false
+        guidance: "A column only v2 declares is an additive change, applied at boot. A CONFLICTING definition (type, nullability, unique, default) across versions panics at wire time naming both call sites; Hidden and WireName are wire concerns and are never conflicts."

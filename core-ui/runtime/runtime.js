@@ -379,7 +379,13 @@
       this._pendingLinks.add(name);
       const link = document.createElement('link');
       link.rel = 'stylesheet';
-      link.href = e.stylePath + (e.version ? '?v=' + e.version : '');
+      // stylePath may already carry a query (an embed frame appends ?t=<variant>
+      // so component CSS resolves under the same theme as app.css), so pick the
+      // separator rather than always using '?'. Concatenating a second '?' put
+      // the whole thing in one parameter value, which the server read as an
+      // unknown theme key AND an absent version — silently serving the app
+      // palette with no immutable caching.
+      link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-fui-style', name);
       link.id = 'fui-css-' + name;
       document.head.appendChild(link);
@@ -915,7 +921,23 @@
           window.location.assign(resp.url);
           return;
         }
-      } catch (_) {}
+      } catch (err) {
+        // Never swallow this. The write may well have committed on the server,
+        // so a user who sees nothing happen presses the button again.
+        //
+        // Inside an embed frame this is the expected path rather than a rare
+        // one: boot-embed forces redirect:'error' on credentialed requests (a
+        // redirect would otherwise carry the grant to whatever origin it names),
+        // so a handler answering the ordinary 303-after-POST rejects here. The
+        // frame cannot follow it either way — the destination is an ordinary app
+        // page whose CSP refuses to be framed — so the honest outcome is a
+        // visible failure, not a blank panel.
+        console.error('[gofastr] form submit could not complete', err);
+        const g = window.__gofastr;
+        if (g && typeof g.toast === 'function') {
+          g.toast({ variant: 'error', title: 'Could not complete that submission.', ttl: 6000 });
+        }
+      }
     });
 
     // Debounced input-driven RPC: a form with
@@ -2425,7 +2447,13 @@
   window.addEventListener('gofastr:navigate', () => _runMountActions(document));
 
   const _initialPass = () => {
-    updateActiveLink(location.pathname);
+    // nav is optional in a composition — the `embed` bundle omits it, which is
+    // how SPA navigation is disabled inside frames. A bare call would throw a
+    // ReferenceError here and take the whole initial pass down with it, so the
+    // one nav symbol boot needs is probed rather than assumed. typeof on an
+    // undeclared identifier is the only safe probe; `updateActiveLink !==
+    // undefined` would itself throw.
+    if (typeof updateActiveLink === 'function') updateActiveLink(location.pathname);
     _bootstrapComponentCSS();
     _scanForModules(document);
     // Intercepting routes are rare, so their module is demand-loaded off

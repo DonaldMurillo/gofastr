@@ -141,8 +141,11 @@ results, the harness contract) are exempt — the exemption list lives in
   databases, migrate callback, auto-drop on cleanup.
 - [Queue](queue.md) — `battery/queue`: background job processing, dead-letter
   replay, Redis and in-memory backends. *(page created by queue agent)*
-- [Embed](embed.md) — local semantic search via brute-force cosine, no API
-  key required. *(page created by embed agent)*
+- [Embed](embed.md) — hand out screens as embeddable surfaces on other
+  people's sites: single-use handshake nonce, exact origin allowlist, a frame
+  runtime with no SPA navigation.
+- [Semantic search](semantic-search.md) — local semantic search via brute-force cosine, no API
+  key required.
 - [Admin UI](admin.md) — `battery/admin` stock screens for
   queue + audit log.
 - [Printable documents](print.md) — `battery/print`: declare a

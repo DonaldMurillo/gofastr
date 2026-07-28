@@ -73,7 +73,18 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 
 			// Requests that carry credentials are not cached by default.
 			// This avoids replaying one user's response to another.
-			hasCreds := r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != ""
+			//
+			// X-Gofastr-Embed is in the list because an embed grant is an app
+			// credential exactly like the other two: framework/embed's
+			// middleware resolves it into a user before the handler runs. It
+			// carries no cookie and no Authorization by construction — the whole
+			// point of the design — so a grant-authenticated response looked
+			// anonymous to this check and was stored under the shared
+			// method/host/path/query key, then served to a different grant
+			// subject as a HIT without the handler ever running.
+			hasCreds := r.Header.Get("Authorization") != "" ||
+				r.Header.Get("Cookie") != "" ||
+				r.Header.Get("X-Gofastr-Embed") != ""
 
 			// Range requests are partial-content requests. The cache key does
 			// not encode the Range, so serving from or writing to the cache

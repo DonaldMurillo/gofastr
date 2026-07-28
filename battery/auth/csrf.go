@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
 // CSRFCookieName is the cookie name battery/auth uses by default.
@@ -42,7 +43,12 @@ func CSRF(opts ...CSRFOption) middleware.Middleware {
 		CookieName: CSRFCookieName,
 		HeaderName: CSRFHeaderName,
 		FormField:  CSRFFormField,
-		Skip:       middleware.SkipBearerAuth(),
+		// Bearer-auth requests carry no ambient credential, and neither do
+		// embed endpoints — no cookie is ever sent from inside an embed frame,
+		// so a double-submit check there would 403 every exchange with
+		// "missing cookie" and the feature would be dead in exactly the
+		// configuration this framework recommends. See embed.CSRFExempt.
+		Skip: middleware.SkipAny(middleware.SkipBearerAuth(), embed.CSRFExempt),
 	}
 	for _, fn := range opts {
 		fn(&cfg)

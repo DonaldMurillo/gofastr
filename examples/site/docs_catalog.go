@@ -124,6 +124,7 @@ var docIntents = []docIntent{
 			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions, polling."},
 			{"optimistic-ui", "Optimistic UI", "The mutation lifecycle, rollback vs authoritative refresh, and seven composed recipes — toggle, inline edit, create, delete, kanban, group mutex, and slow/failure."},
 			{"pane-host", "Pane host", "Master-detail split-pane layout that collapses to an overlay drawer on narrow screens."},
+			{"embed", "Embeddable surfaces", "Hand a screen to a website you don't control: single-use handshake nonce, exact origin allowlist, a frame runtime with no SPA navigation."},
 			{"plugin-platform", "Plugin platform", "Host third-party JS plugins in a sandboxed opaque-origin iframe with a capability-gated postMessage protocol."},
 			{"process-modules", "Process modules", "Third-party modules as isolated child processes: crash/upgrade/revoke without touching the host, capability-brokered data, sandbox trust tiers."},
 			{"runtime-contract", "Runtime contract", "The SSR/hydration/island/SSE model and the full data-fui-* attribute reference."},
@@ -150,11 +151,11 @@ var docIntents = []docIntent{
 	{
 		Num: "05", Slug: "agents", Title: "Working with agents",
 		Lede: "MCP tools, Kiln build mode (experimental), agent permissions, plan-gated destructive ops.",
-		Path: []string{"Agent-readiness", "Kiln overview", "Embed", "Agent notes"},
+		Path: []string{"Agent-readiness", "Kiln overview", "Semantic search", "Agent notes"},
 		Docs: []docEntry{
 			{"agent-ready", "Agent-readiness", "Discovery surface scanners (isitagentready.com) look for: llms.txt, A2A card, MCP/OAuth well-knowns, markdown negotiation."},
 			{"kiln", "Kiln overview", "Experimental — the agent-driven build-mode binary."},
-			{"embed", "Embed", "Local semantic search via brute-force cosine — no API key."},
+			{"semantic-search", "Semantic search", "Local semantic search via brute-force cosine — no API key."},
 			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},
 			{"blueprints", "Blueprints", "Reusable bundles of entities + screens an agent can apply."},
 		},

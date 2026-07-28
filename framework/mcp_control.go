@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
 // WithMCPControl installs the MUTATING MCP tools that let a connected
@@ -142,8 +143,25 @@ func requireMCPUser(ctx context.Context) error {
 	if u, ok := handler.GetUser(ctx); !ok || u == nil {
 		return errAuthRequired
 	}
+	// An embed grant resolves to the same context user a session does, so
+	// without this every entity endpoint's MCP twin — and the control tools
+	// that enable and disable modules — is reachable with a credential that
+	// lives in a third party's page and can be read by anyone with devtools.
+	// MCP tools act on the caller's behalf; no surface declares that.
+	//
+	// This is the gate that is actually wired (Endpoint.MCPGate defaults to it,
+	// as do controlToolGate and battery/log's setLevelGate). battery/auth's
+	// MCPUser/MCPRole carry the same refusal for callers that opt into them.
+	if _, embedded := fembed.GrantFromContext(ctx); embedded {
+		return errEmbedNotAllowed
+	}
 	return nil
 }
+
+// errEmbedNotAllowed is deliberately distinct from errAuthRequired: the caller
+// IS authenticated, just not with a credential that may drive tools.
+var errEmbedNotAllowed = errors.New("this tool is not reachable from an embedded surface — " +
+	"an embed grant is delegated, scoped, and lives in a page the app does not control")
 
 // controlToolGate returns the precondition the MUTATING control tools
 // run behind, or nil for no gate.

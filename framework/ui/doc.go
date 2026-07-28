@@ -50,6 +50,7 @@
 //	CodeBlock            — styled <pre><code> sample block
 //	CodeTabs             — one snippet in several languages behind a zero-JS tab strip
 //	Collapsible          — styled <details> disclosure with summary
+//	ColorField           — colour swatch beside a text input, one control
 //	ColorPicker          — styled native <input type=color>
 //	CommandPalette       — ⌘K modal + combobox composition
 //	ConditionalField     — form section hidden until another field matches
@@ -97,6 +98,7 @@
 //	OptimisticAction     — instant-flip button with rollback on error
 //	OptimizedImage       — responsive <picture> with srcset + lazy + Width/Height
 //	PageHeader           — top-of-page header with title/eyebrow/subtitle/actions
+//	Workbench            — scrolling rail beside a filling pane (inspector shell)
 //	PaneHost             — primary pane + openable secondary/tertiary side panes
 //	PasswordInput        — password field with show/hide toggle
 //	PieChart             — SVG ratio chart (donut variant via InnerRadius)

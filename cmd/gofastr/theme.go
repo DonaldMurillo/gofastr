@@ -20,6 +20,8 @@ func runTheme(args []string) {
 	switch args[0] {
 	case "init":
 		runThemeInit(args[1:])
+	case "edit":
+		runThemeEdit(args[1:])
 	case "--help", "-h", "help":
 		printThemeHelp()
 	default:
@@ -34,6 +36,7 @@ func printThemeHelp() {
 	fmt.Println()
 	fmt.Println("Subcommands:")
 	fmt.Println("  init     Scaffold a starter theme.go in the current project.")
+	fmt.Println("  edit     Launch a local theme configurator with a live preview.")
 }
 
 // runThemeInit writes a starter theme.go to the user's project. The

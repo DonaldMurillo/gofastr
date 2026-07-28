@@ -5,6 +5,499 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.49.0] - 2026-07-27
+
+Two features that turned out to share one piece of plumbing. Embeddable
+surfaces let an app hand out a screen to a website it does not control.
+`gofastr theme edit` previews a theme against the whole component gallery
+while you edit it.
+
+The shared piece is per-request theme resolution: `AppCSS()` read a boot-time
+`App.Theme`, and both the embed frame and the theme preview need a different
+palette per request without mutating process-global state.
+
+### Added
+
+- **Embeddable surfaces (`framework/embed` + `uihost.WithEmbed`).** An app
+  declares a screen embeddable and names the exact origins allowed to frame
+  it; its customer pastes one `<script>` tag and gets a live, themed,
+  authenticated piece of the app. Delivery is an iframe, so inside the frame
+  GoFastr is same-origin with itself and the runtime's origin guards,
+  same-origin fetches and ownership of the document all hold unchanged.
+  - The credential is a **single-use handshake nonce** exchanged for a
+    short-lived grant. Single use exists to make a *shared* token impossible:
+    the predictable customer failure with a TTL token is hardcoding one into a
+    page template so every visitor arrives as the same identity. Minting is
+    stateless; only the exchange touches a store, claiming the nonce id against
+    a unique constraint so "already used" is decided by the database rather
+    than by a read-then-write two replicas could both win.
+  - The exchange is POST-only and idempotent within the grant's lifetime. A
+    prefetched iframe, a double-mounted loader and a page refresh all fire it
+    twice; without idempotency the feature surfaces as "the embed randomly
+    doesn't load".
+  - `embeds.RequireScope("reports:read")` gates the routes an embed may reach.
+    `Middleware()` installs the grant's subject with that subject's full
+    authority — including any admin role it holds — and a grant lives in a third
+    party's page where devtools can read it, so the surface's declared scopes
+    have to be enforceable somewhere. The framework has no route-to-scope map
+    and does not invent one; the app names the pairing. Ordinary first-party
+    traffic passes through untouched.
+  - `Middleware()` must be installed **outermost**, before any authentication
+    middleware. It discards `Cookie`, `Authorization` and `X-API-Key` so an
+    authenticator running inside it finds nothing to authenticate; installed the
+    other way round it cannot undo context values another package already wrote,
+    and a bearer token overwrites the grant's identity.
+  - Grants refresh while the frame lives, bounded by an absolute deadline the
+    grant has carried since it was issued (`Config.GrantMaxAge`, 12h). A frame
+    left open in a tab does not hold a credential forever.
+  - Origins are exact and compared **normalized**: `https://acme.com`,
+    `https://acme.com/`, `https://acme.com:443` and `https://ACME.com` are one
+    origin and four strings. There is no wildcard spelling, and a host that
+    looks like one (`*.acme.com`) is rejected at config time rather than
+    compared literally.
+  - `frame-ancestors` lists every allowed origin, because no `Origin` header
+    is sent on a navigation GET — at the moment the header is written the
+    server does not know who is framing it. The browser enforces against the
+    real ancestor chain.
+  - Embed routes **discard cookies** before any handler reads one. Inside a
+    cross-site frame none is sent, but an app at `app.acme.com` framed by
+    `www.acme.com` is same-site and a Strict cookie does ride along; honouring
+    it would hand a signed-in user's session to a third party's frame.
+  - `BurnStore` is pluggable with a SQL implementation for multi-replica
+    deployments. Embeds require an app secret — unlike sessions there is no
+    per-boot fallback, because a nonce that fails to verify is gone and it was
+    rendered into a page the app cannot re-render.
+  - **`embeds.Middleware()`** authenticates the island RPCs the surface fires
+    after first paint. Those target ordinary app routes, which know nothing
+    about embeds; without it a surface paints as its viewer and then acts as
+    nobody — or, in a same-site framing, as whoever the cookie says. It also
+    exempts grant-carrying requests from CSRF, which they have to be: no cookie
+    is ever sent from inside a frame, so a double-submit check has nothing to
+    compare and would 403 every embed interaction.
+  - The frame attaches its grant to **every same-origin fetch**, not to one
+    header builder. Polling, toggles, optimistic actions, infinite scroll and
+    sortable lists each assemble their own headers, so hooking the RPC path
+    alone left all of them fetching anonymously.
+  - Customer brand tokens go through `style.ApplyTokens` behind a per-surface
+    `AllowTokens` allowlist and a cap on distinct registered variants.
+  - `examples/embed-demo` runs both halves on two ports, which is the only way
+    to exercise the parts that exist because of the origin boundary.
+- **`gofastr theme edit`** — a local theme configurator. Controls are generated
+  from `style.ThemeToTokens`, so a token added later gets a usable control
+  without touching the tool. The preview is the real component gallery served
+  by a real `UIHost`, and an edit swaps `app.css?t=<key>` with no page reload.
+  Contrast is checked in the browser via `getComputedStyle`, which resolves
+  `oklch()` — the repo's only prior contrast code was hex-only and returned 0
+  for the colours real themes actually use. Write-back regenerates `theme.go`
+  whole, with an injection test modelled on the blueprint emitter's.
+- **API versioning that works.** The entity registry is keyed on
+  `(name, version)`, so `app.GroupEntity(v1, "posts", …)` beside
+  `app.GroupEntity(v2, "posts", …)` finally does what
+  `framework/docs/content/api-versioning.md` has described. It used to panic.
+- **`schema.Field.WireName`** — a JSON key alias that leaves the DB column
+  untouched, so a v2 can rename a field on the wire without a migration.
+  Honoured on every read path: filters, sorts, includes and nested filters all
+  accept the wire name and rewrite it to the column.
+- **Runtime compositions.** `core-ui/runtime/runtime.js` is now assembled in Go
+  from `frag/*.js` inside one IIFE. Three compositions ship: `full`, `static`
+  (SSG export — 19% smaller, retires the `_staticMode` request-time branch),
+  and `embed`. **Edit the fragments, never `runtime.js`.**
+- **Per-request theming** — `UIHost.AppCSSFor(theme)` and
+  `RegisterThemeVariant`, served at `/__gofastr/app.css?t=<key>`. A request
+  names a pre-registered key; it never describes a theme, which is what makes
+  CSS injection unrepresentable and bounds cache cardinality.
+- **`framework/gallery`** — the 139-entry component catalog, extracted from
+  `examples/site` so a CLI binary can render it. It now also ships the layout
+  classes its own demos emit (`ContributeCSS`), which the docs site had been
+  defining on its behalf.
+- **`app.EmbedLayout()`** — a chrome-less layout: the `<main>` landmark and
+  nothing else.
+- **`ui.Workbench`** — a viewport-height inspector shell: a fixed-width rail
+  that scrolls on its own beside a pane that fills the rest, with an `<iframe>`
+  in the pane filled edge to edge. It stacks below 720px.
+- **`ui.ColorField`** — a colour swatch beside a text input holding the same
+  value, as one control. The text input is the source of truth, so `transparent`,
+  `inherit` and `var(--x)` survive; a native colour input silently falls back to
+  black for all three. Use `ui.ColorPicker` when a swatch plus a label is
+  enough.
+
+  Both were added because `gofastr theme edit` needed them and had grown ~25
+  bespoke classes and ~21 hardcoded hex values standing in. The catalog being
+  incomplete is what bespoke CSS in a generator usually means.
+
+### Changed
+
+- **BREAKING: `battery/embed` is now `battery/semantic`.** The semantic-search
+  battery moved so the new feature could take the name that describes it. The
+  import path, the package qualifier, the `gofastr embed` subcommand
+  (now `gofastr semantic`), the `/embed/*` routes (now `/semantic/*`) and the
+  `~/.gofastr/embed` snapshot directory all move together, as does
+  `kiln/agent.NewEmbedContextHook`, now `agent.NewSemanticContextHook`.
+  `gofastr upgrade` carries the entry.
+### Documented late — API versioning shipped in 0.48.0
+
+These landed in the 0.48.0 tag with no release note, including a breaking
+change. Recording them here rather than leaving them undocumented.
+
+- **BREAKING (0.48.0): `Registry.Get` errors instead of guessing** when one
+  entity name has several versions. Use `GetVersioned(name, version)`.
+  `Registry.All` still returns one representative per name, so anything
+  iterating it sees only the lex-first version.
+- Versions of one entity share a table and migrate the **union** of their
+  columns; a column only v2 declares is an additive change. A *conflicting*
+  definition across versions panics at wire time naming both call sites.
+  `Hidden` and `WireName` are wire concerns and are never conflicts.
+- OpenAPI, `llm.md` and the generated MCP tools identify a versioned entity
+  rather than documenting both versions at the same path and silently
+  overwriting.
+
+### Security
+
+Seven review rounds ran against this release. These are the findings from the
+last one, all in the new embed surface.
+
+- **An encoded path could outrun the reach allow-list.** `MayReach` decided on
+  the percent-decoded path and cleaned it; `net/http`'s `ServeMux` matches on
+  the escaped one, where `%2e%2e` and `%2F` are ordinary bytes inside a single
+  segment. `GET /api/docs/%2e%2e/%2e%2e/reports` therefore cleaned into the
+  surface's own subtree, passed the gate, and dispatched to `/api/docs/` — a
+  prefix `reservedPrefixes` exists to keep grants away from. `RoutedPath` now
+  decodes segment by segment and refuses any path whose segments do not survive
+  decoding intact, so the gate and the router read the same string. Cleaning
+  cannot fix this class: normalising one of the two strings is what opens it.
+- **`Surface.Path` was not validated against reserved prefixes.** `Reach:
+  []string{"/auth"}` failed at boot with a clear error while `Path: "/auth"`
+  booted clean and handed every grant the whole auth battery — and `Path` is
+  the field an author reaches for. Both now get the same check. This also fixes
+  a trailing slash silently disabling a surface's own subtree.
+- **A relocated battery lost its protection.** The reserved list could only
+  name defaults, so `admin.Config.PathPrefix = "/back-office"` kept the guard on
+  `/admin` and lost it where it mattered. `framework.EmbedReserving` lets a
+  battery report the prefix it actually mounted; admin, print and api-tokens do,
+  and surfaces are re-validated once everything is mounted.
+- **`auth.HasScope` gave an embed grant full user capability.** The embed
+  middleware deletes `Authorization` and `X-API-Key`, so `TokenMiddleware` never
+  ran and no token scopes were set — which every scope gate read as "session,
+  unscoped". A grant declaring `orders:read` passed `RequireScope("orders:write")`
+  and deleted through `RequireAPIScopes`. `TokenScopes` now reports the grant's
+  own scopes, which are already in the same `resource:verb` grammar.
+- **The frame could navigate itself, or the customer's page.** The runtime's
+  navigation paths were neutralised; the browser's were not. An embeddable
+  screen containing `<a target="_top">` replaced the hosting page when clicked.
+  The iframe now carries a `sandbox` without any top-navigation token, and
+  native links and forms are cancelled in the capture phase with a visible
+  notice and an `onError` event. `target="_blank"` links open a new tab.
+- **`Middleware()` cleared the user but not the tenant.** Installed inside a
+  tenant resolver — the documented-wrong order, enforced by nothing — an embed
+  ran as the grant's subject with the cookie user's tenant. It now refuses such
+  a request outright with a message naming the fix.
+- **A grant-authenticated response carried no cacheability signal.** No
+  `Set-Cookie`, no `Authorization`, so two different subjects looked
+  byte-identical to a CDN. Now `Vary: X-Gofastr-Embed` and `private, no-store`.
+- **A held stream outlived its grant.** Verification happened once, at entry, so
+  an SSE stream kept emitting after fresh requests with the same grant had
+  started answering 401. The request context is now bounded by the grant expiry.
+- **Idempotency read only the first `Cookie` header field.** Behind a proxy that
+  prepends its own, two authenticated users shared one namespace and the second
+  received the first's stored response.
+- **The server-action grant refusal was bypassable in one extra request**, since
+  `/__gofastr/session` mints an anonymous session to anyone. That route now
+  refuses a grant-bearing request. Server actions remain reachable by any
+  same-origin anonymous caller and are not an authorization boundary; the
+  comment claiming otherwise has been corrected.
+- **The origin allowlist was unbounded.** All of it ships in one
+  `frame-ancestors` directive on every shell response, and a few hundred
+  customers exceeds common proxy header limits — which breaks the surface for
+  every customer at once. Refused at boot past 4 KiB, with the arithmetic in the
+  message.
+- Smaller: `crud.Redispatch` dropped the grant header, so reach and expiry were
+  not re-evaluated on the re-dispatched path; a `SubjectResolver` returning a
+  typed-nil pointer installed it as a logged-in user.
+
+### Fixed
+
+- **The component *bundle* CSS ignored the requested theme.** The
+  single-component handler was converted to per-request theming and the bulk one
+  was not, so a component whose `StyleFn` reads `style.Theme` directly kept
+  painting the base palette under a requested variant — the theme editor could
+  write a theme its operator had never actually seen.
+- **A stalled embed request left the panel loading forever.** The parent's
+  watchdog was cancelled on `ready`, before the exchange and content load, and
+  neither fetch had a deadline. All three phases now share a 15s abort.
+- A repeated nonce exchange now logs a warning. One replay is normal; a run of
+  them is the only visible symptom of a nonce baked into a cached customer page,
+  which hands one identity to every visitor of that copy.
+- **Hidden-column oracle in nested filters.** `include.go` and
+  `nested_filter.go` resolved a relation target with `Registry.Get`, which
+  preferred the unversioned entity — so a v1 request adopted an unversioned
+  declaration's `Hidden` set and scopes. Worse, the nested-filter check was
+  wrapped in `err == nil`, so version ambiguity disabled it entirely and
+  `?author.password_hash_like=` became a substring oracle over other users'
+  password hashes. Both now resolve version-aware and fail closed.
+- **Authorization bypass in `RequireAPIScopes`.** A path made entirely of
+  version-like segments left the resource name empty and fell through
+  unchecked: `GET /api/v1` returned 200 with unrelated scopes. A version
+  segment is now only skipped when a real segment follows.
+- **`isValidColor` accepted `rgb(0 0 0) URL(...)`.** Prefix-plus-balance is not
+  a grammar; a value must now close its function call at the end of the value,
+  and nested functions come from an allow-list — a deny-list misses
+  `image-set()`, `cross-fade()` and `element()`, all reachable through a
+  `var()` fallback.
+- **`CrudHandlerForEntity` never set `BasePath`** and accepted an unregistered
+  entity.
+- **`gofastr theme edit`'s contrast checker reported "no issues" for every
+  theme.** Three independent defects, each fatal on its own: the probes carried
+  their colours in an inline `style` attribute, which the framework's own CSP
+  discards; the colour regex was written with a doubled backslash inside a Go
+  raw string, so JavaScript saw a literal backslash and it never matched
+  anything; and the check ran before the stylesheet it measures had applied. It
+  also read `color-mix()` output — which Chromium serializes as
+  `color(srgb 0.95 …)` — as 8-bit RGB, turning a light tint into black and
+  inventing four failures. Colours are now converted by the browser itself, a
+  pair it cannot convert is reported rather than skipped, and a check that
+  throws says so instead of rendering an empty (clean-looking) panel.
+- **`gofastr theme edit --addr=:8090` — the form the docs gave as an example —
+  refused every request.** The wildcard bind reports its address as `[::]:8090`,
+  which no browser sends, so the Host pin rejected everything including the URL
+  the tool printed. A bare `:port` now resolves to loopback, and an explicit
+  non-loopback bind is refused: the page carries its own bearer token and the
+  write-back endpoint rewrites a Go file, and a Host pin does not stop a direct
+  TCP client.
+- **Widgets inside an embedded surface silently did nothing.** The catalog
+  endpoint gated on the session cookie, which a frame never sends — so a modal
+  or drawer trigger was dead DOM cross-site, while a same-site framing answered
+  it from the viewer's unrelated app session. It accepts an embed grant now, and
+  discovery names the surface's own route so `.Pages()` scoping applies.
+- **Everything else gated on the session cookie was still shut to a frame.**
+  Fixing the widget catalog fixed one endpoint out of four. `actions.js` and the
+  server-action endpoint gated the same way, and nothing emitted `actions.js`
+  into the frame at all — so `__gofastr.register` was never called, `handlers`
+  stayed empty for the life of the frame, and the failure was silent in both
+  directions: every `data-action-mount` node rendered and never filled (that is
+  every generated entity list and every relation `<select>`), while every
+  `data-action` click was `preventDefault()`ed by the delegator and then
+  dropped, so the control looked alive and did nothing. The frame's runtime now
+  carries the compiled actions, and the predicate behind
+  `Definition.RequireSession` accepts a grant so widget chrome loads one hop
+  further along.
+- **The widget catalog answered any grant with any page.** `embedGrantOK` only
+  checked that the token verified, so a grant minted for a public surface could
+  ask for `?page=/admin` — or omit the parameter and read the unfiltered
+  registry. The grant's own surface path is substituted for whatever the caller
+  asked for.
+- **`GrantFromContext` was empty on the first render.** Only the island RPCs
+  that came *after* first paint went through `Middleware()`, so a screen writing
+  `if !embedded { firstPartyControls() }` rendered those controls inside the
+  customer's iframe, and a scope-gated section appeared on first paint and
+  vanished on the first swap.
+- **Rejected theme parameters were retained forever.** `reserve` recorded the
+  attacker-supplied parameter in two maps and `release` cleaned one, so every
+  malformed `?theme=` on the unauthenticated shell route left a permanent entry
+  that eviction never reached and the cap never counted. The size bound also sat
+  *after* the value became a map key, so the retained key was bounded only by
+  the request line. Both fixed; an oversize parameter can no longer take a slot,
+  which means it can no longer evict a customer's real branding.
+- **Two visitors arriving at once got different palettes.** `reserve` reported
+  "someone is already resolving this exact theme" and "there is no room" as the
+  same refusal, so on a cold process one of two concurrent requests for one
+  customer's theme rendered in the app palette.
+- **Component stylesheets ignored the per-request theme.** The catalog and both
+  component-CSS handlers read the boot-time app theme, so an embed came back
+  half-rebranded: `var()`-driven components turned the customer's colour and
+  anything whose `StyleFn` read theme values directly stayed the app's.
+- **An expired grant made the frame anonymous instead of failing.** Clearing the
+  grant stopped the header being sent, and a request with no header is an
+  ordinary anonymous request the server passes straight through — so a dashboard
+  polling every 30s quietly swapped its authenticated numbers for the logged-out
+  render while still reporting `data-fui-embed-state="ready"`. The dead token is
+  kept so the server answers 401, and the new `expired` state says so.
+- **`history.pushState` from inside a frame wrote to the customer's back
+  button.** Removing the nav fragment removed navigation but not push-state, so
+  widget deep links, pane deep links and `X-Gofastr-Push-State` responses each
+  appended to the *top-level* page's session history — two entries per modal
+  open and close. The frame's `pushState`/`replaceState` are inert.
+- **A grant could survive a cross-origin redirect.** Same-origin was decided
+  from the URL given to `fetch`, and a redirect changes the origin after that
+  check; browsers strip only `Authorization` across one. Credentialed embed
+  requests now refuse to follow redirects.
+- **Reloading a frame bricked it permanently.** The loader handed the nonce over
+  exactly once, but a frame re-runs its document on "Reload frame" and on some
+  bfcache restores — leaving it waiting forever with an empty root and nothing
+  in either console. The loader answers every `ready` (the exchange is idempotent
+  by design), and the frame gives up with an error after 15s rather than
+  spinning.
+- **The documented snippet had no error surface.** `onError` was reachable only
+  through the programmatic API, so a spent nonce — a cached customer page, a Back
+  button — produced a blank 150px box with the explanation trapped in a
+  cross-origin console. The auto-mount path reports failures, and names the
+  missing attribute when `data-surface` or `data-token` is empty.
+- `VerifyNonce`/`VerifyGrant` accepted an empty HMAC key where the minting side
+  had always refused one, so a caller reaching a verifier before its key was set
+  authenticated forgeries rather than failing.
+- `GrantMaxAge == GrantTTL` passed the boot guard and produced exactly the
+  failure that guard names: every grant born at its deadline, every refresh
+  clamped back to it, no forward progress.
+- **SECURITY — `gofastr theme edit` published the harness signing key.** Its
+  bearer token was `deriveListenerSecret()`, which returns the same bytes that
+  HMAC every harness control-plane token when `GOFASTR_HARNESS_MACHINE_KEY` is
+  set — emitted into a `<meta>` tag on a page served with no authentication,
+  because that page is where the token comes from. Any local process, any other
+  user on the machine, or any screenshot in a bug report carried it away, and
+  the machine key is stable across restarts. The token is now per-session
+  random, which is all this listener ever needed.
+- **SECURITY — the framework MCP gate admitted an embed grant.** The previous
+  release note claimed this was closed; it patched `battery/auth`'s
+  `MCPUser`/`MCPRole`, which have no production call sites. The gate actually
+  wired to every entity endpoint's MCP twin and to the module enable/disable
+  control tools is `framework`'s own, and it was untouched. Both now refuse.
+- **`battery/admin`'s embed refusal sat below the custom-`Authorize` early
+  return**, so an app supplying its own authorize hook — what the surrounding
+  comment recommends for a different role model — got no refusal at all.
+- **`RequireAuth` admitted subject-less grants and `RequireRole` admitted any
+  grant.** A public surface's grant has no subject, so passing it through
+  handed handlers a request with no user while implying one was verified; and a
+  grant scoped to one surface satisfied `RequireRole("admin")` whenever its
+  subject held the role.
+- **`gofastr theme edit` wrote theme files that panicked the app at boot.**
+  `style.ApplyTokens` accepts a zero spacing, radius or z-index; `Theme.Validate`
+  — which `app.WithTheme` runs at startup — rejects them. One keystroke in a
+  number field produced a green "updated", a written `theme.go`, and a panic on
+  the next run. Edits are now validated against the boundary the artifact has
+  to survive.
+- **The theme editor's Write button worked exactly once per session.** The
+  no-`--force` guard re-ran on every write and refused the second one, citing a
+  file the tool itself had written seconds earlier — with no recovery but a
+  restart that discarded every edit. A file this session wrote is now its own to
+  rewrite.
+- **The contrast checker's readiness gate could not fail.** It tested that the
+  sentinel's colours were *parseable* rather than that they were the literal
+  black-on-white it declares, and `getComputedStyle` always yields a parseable
+  colour — so a slow stylesheet swap measured an unstyled document, scored ~21:1
+  on every pair, and reported a clean theme it had never measured.
+- **SECURITY — idempotency replayed one embed subject's response to another.**
+  The idempotency middleware is installed by `NewApp`, so it runs outside
+  `embeds.Middleware()` and before any grant is verified: every embed request
+  looked anonymous and shared one key namespace. Two grant holders sending the
+  same `Idempotency-Key` — `order-1` is enough — meant the second received the
+  first's stored response and its own handler never ran. The namespace is now
+  bound to the grant.
+- **JWT-protected routes 401'd every embed request.** `embeds.Middleware()`
+  deletes `Authorization` so nothing competes with the grant it just verified;
+  `RequireAuth` then demanded the header it had just removed. A request already
+  carrying a verified grant now passes, while an uncredentialed one is still
+  refused.
+- **The contrast checker invented failures it should never have reported.** It
+  hardcoded `#ffffff` as the foreground on status fills, but the design system
+  paints `var(--color-primary-fg)` there — `.ui-button--danger` sets exactly
+  that, and `styles_components.go` says so. In the default dark scheme that
+  token is `#111827` and the status tones are light, so the tool reported four
+  failures (white on `#F87171` at 2.77:1) for text nothing renders. Measured
+  against what is actually painted, the shipped theme passes every pair, and a
+  browser test now pins that as an invariant. A checker that cries wolf is worth
+  no more than one that never fires.
+- **Two concurrent requests for the same customer theme could drop the
+  variant.** The second resolved its own copy and released it immediately,
+  reasoning that the key is a content address so both land on the same one —
+  true, except when the duplicate arrived first: its register took the refcount
+  0→1 and its release took it 1→0, deleting the variant before the owner had
+  registered anything, and the frame rendered unthemed under a `?t=` pointing at
+  nothing. The duplicate now waits for the owner instead, bounded so a failed
+  owner cannot hang it.
+- **BREAKING: an embed grant now reaches only its own surface.** A grant is
+  valid for its surface's `Path` subtree, the runtime's `/__gofastr/*`
+  endpoints, and whatever the surface lists in the new `Surface.Reach`.
+  Everything else answers 403.
+
+  The previous default — a grant reaches every route the app author has not
+  explicitly gated — is not a property anyone can hold, because the framework
+  and its batteries mount `/mcp`, `{auth}/tokens` and `/admin/*` themselves.
+  Each of those had to be patched individually as it was discovered, and the
+  patch set was not converging. `Reach` is validated at boot: `"/"` is refused,
+  as is any prefix covering a framework-mounted route, and a refused request
+  answers with the surface, the path, and the `Reach` entry that would allow it.
+
+  A surface whose islands post outside its own subtree needs one line:
+  `Reach: []string{"/api/orders"}`.
+- **A stalled nonce claim can no longer mint a second grant.** Verification
+  happens before the burn and is not atomic with it, so a request that verified
+  a nonce and then stalled past its retention deadline could land after `Prune`
+  removed the winning row and insert a fresh one. The row is still written — it
+  is the tombstone, and withholding it would leave the nonce spendable — but no
+  usable grant comes back. `PruneGrace` keeps rows a further five minutes so a
+  fast pruner cannot delete one a slow verifier still needs.
+- **SECURITY — an embed grant could mint a permanent `*:*` API token.**
+  `POST {auth}/tokens` refuses API-token callers precisely so a scoped token
+  cannot escape its own leash; an embed grant is a third credential with the
+  same property and the gate did not know it existed. A credential deliberately
+  bounded to one surface, one origin and a 12-hour deadline — and living in a
+  third party's JavaScript — could exchange itself for an unscoped, never-
+  expiring one. The same classification gap opened `battery/admin` (past whose
+  gate a wildcard access policy is installed, so any admin who viewed an
+  embedded surface left an admin credential on someone else's website) and
+  every `mcp.Gated` tool. All three now refuse a grant.
+- **The documented middleware order erased the grant's identity.**
+  `embeds.Middleware()` installs the subject and deletes the cookie; the
+  `SessionMiddleware` inside it then found no cookie, took its anonymous branch
+  and cleared the user — so the wiring the docs prescribe produced a handler
+  that saw nobody, losing owner-scoped CRUD, policies, tenancy and audit.
+- **A refused grant still fell back to a session cookie on two widget routes.**
+  The shared gate was fixed for this; the catalog and the widget-session
+  predicate were not, so an expired embed — which the runtime keeps sending on
+  purpose — was answered as the viewer's unrelated logged-in user, skipping the
+  per-surface scoping.
+- **A combobox selection destroyed the embed.** Modules fall back to a hard
+  `location.href` when `__gofastr.navigate` is absent, which inside a frame is
+  not a race but the only path; the frame navigated to an ordinary app route
+  that refuses to be framed, and nothing was left alive to report it. The frame
+  now installs a no-op navigator, so every guarded call site takes the harmless
+  branch.
+- **The response cache replayed one embed subject's page to another.**
+  `battery/cache` classified a request as credentialed by looking for `Cookie`
+  or `Authorization`. An embed grant carries neither by construction, so a
+  grant-authenticated GET was stored under the shared key and returned to the
+  next grant holder as a `HIT` without the handler running.
+  `X-Gofastr-Embed` now counts as a credential.
+- **A grant opened any widget's own endpoints, not just its surface's.**
+  Scoping the catalog decided what a caller was told about; `/state` and
+  `/chrome` are predictable URLs, and the gate behind them reduced the grant to
+  a boolean. Anyone with devtools on a legitimate customer page could read the
+  state of a widget scoped to `/admin`. The gate now resolves the widget and
+  checks it belongs to the grant's own surface.
+- **Component stylesheets in a frame were requested with a malformed URL.** The
+  catalog began emitting `?t=<variant>` and the runtime appended its version
+  with a hard-coded `?`, so the server parsed one unusable parameter: the theme
+  key was never found (the per-request theme fix was inert on the only path that
+  uses it) and the version was empty, which also silently dropped `immutable`
+  caching from every component sheet an embed loads.
+- **A second visitor arriving mid-resolve still got the app palette.** An
+  in-flight reservation is stored as an empty key and `lookup` reported it as a
+  hit, so the caller took the empty key and never reached the duplicate branch
+  added for exactly that case. The window is the whole of a stylesheet
+  compose-and-hash, so it was the common path rather than a narrow race.
+- **A refused grant fell back to an ambient session.** The shared gate consulted
+  the session cookie after rejecting a presented grant, so in a same-site
+  framing an expired embed request was answered on the strength of the viewer's
+  unrelated logged-in session. A presented credential's verdict is now final.
+- **An embed grant could invoke any server action in the app.** The action
+  registry is keyed app-globally with no relationship to a surface, so a grant
+  minted for one surface reached every registered action — including from a
+  surface with no subject. `/__gofastr/action` requires a session again;
+  wiring it for embeds needs the app to say which surfaces may invoke what.
+- A refused refresh treated every non-OK status as fatal, so one 502/503 during
+  a rolling deploy permanently expired every open frame on every customer page.
+  Only 401/403 end a grant now; anything else backs off and retries.
+- A form submit whose handler answered a redirect failed silently inside a
+  frame — the rejection landed in a bare `catch {}`. It now logs and raises a
+  toast, and the limitation is documented.
+- The loader had no watchdog, so the most common integration mistake — the
+  customer's origin missing from the surface's allowlist — showed as an empty
+  box with nothing in either console, because the blocked frame never runs the
+  script that would have reported it.
+- The frame's fetch wrapper now sets `credentials: 'omit'`, making "no cookie
+  reaches an embed request" true at the source rather than assumed.
+- `TestEmbedExchangeIsIdempotent` compared whole response bodies including a
+  wall-clock `expires_in_ms`, so it failed roughly once in a thousand runs with
+  the message "one nonce bought two identities" — for two byte-identical grants.
 ## [0.48.0] - 2026-07-27
 
 `AfterGet` and `AfterList` are documented as the way to mask a field on

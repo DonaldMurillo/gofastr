@@ -16,6 +16,16 @@ const minSecretLen = 32
 // derivation can change without silently invalidating unrelated keys.
 const uihostSessionPurpose = "gofastr/uihost/session/v1"
 
+// Embed credential purposes. Two of them, not one: a handshake nonce and a
+// frame grant carry near-identical claims, so deriving them from the same key
+// would leave only the token prefix separating a single-use credential from a
+// long-lived one. Two keys makes the swap unrepresentable rather than
+// merely checked.
+const (
+	embedNoncePurpose = "gofastr/embed/nonce/v1"
+	embedGrantPurpose = "gofastr/embed/grant/v1"
+)
+
 // WithSecret sets the app-wide secret. Subsystem keys (starting with
 // the uihost session-signing key) are HKDF-derived from it, so one
 // secret shared across replicas is all a multi-replica deployment
@@ -65,4 +75,21 @@ func sessionKeyForMount(secret []byte, fanoutAttached bool) ([]byte, error) {
 		return nil, errors.New("framework: WithFanout requires an app secret — session tokens minted on one replica must verify on every other. Set WithSecret or GOFASTR_SECRET to the same random value (≥32 chars) on every replica")
 	}
 	return nil, nil
+}
+
+// embedKeysForMount resolves the nonce and grant signing keys handed to a
+// mounted embed host.
+//
+// Unlike sessions there is no self-minted per-boot fallback. A session that
+// fails to verify is re-minted on the next render and the visitor never
+// notices; an embed nonce that fails to verify is GONE — it is single-use, it
+// lives for a minute, and it was rendered into a page on someone else's site
+// that the app cannot re-render. So a secret is required, and an app that
+// hands out pieces of itself without one fails at boot rather than serving
+// embeds that break on every restart and on every second replica.
+func embedKeysForMount(secret []byte) (nonceKey, grantKey []byte, err error) {
+	if len(secret) == 0 {
+		return nil, nil, errors.New("framework: embeddable surfaces require an app secret — a per-boot key would invalidate every outstanding nonce on restart and would never verify on a second replica. Set WithSecret or GOFASTR_SECRET to the same random value (≥32 chars) on every replica")
+	}
+	return deriveKey(secret, embedNoncePurpose), deriveKey(secret, embedGrantPurpose), nil
 }

@@ -12,6 +12,15 @@ func LayoutBaseCSS() string {
 .layout-body { display: flex; align-items: stretch; min-height: 100vh; }
 .layout-body > main, .layout-body > .layout-content { flex: 1 1 auto; min-width: 0; }
 .layout-body > nav { flex: 0 0 auto; background-color: var(--color-surface, #fff); border-right: 1px solid var(--color-border, #e4e4e7); }
+
+/* Embed layout (EmbedLayout): sizes to its CONTENT, never to the viewport.
+   An embedded surface lives in an iframe that the host page resizes to the
+   height the frame reports. With min-height: 100vh that reported height is
+   partly the frame's own height, so each report grows the frame, which grows
+   100vh, which grows the next report — the panel ratchets open with a band of
+   empty space under the content. Caught in a screenshot; invisible to any DOM
+   assertion, because every element is present and correct. */
+.layout-embed .layout-body { min-height: 0; }
 @media (max-width: 47.99rem) {
   .layout-body { display: block; }
   .layout-body > nav { border-right: none; border-bottom: 1px solid var(--color-border, #e4e4e7); }

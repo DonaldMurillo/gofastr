@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
 // TestRedispatch_RunsThroughRouter proves the exported seam re-enters the
@@ -86,5 +87,32 @@ func TestRedispatch_StatusErrorIsSurfaceable(t *testing.T) {
 	// carries the denial text regardless of encoding.
 	if b, _ := json.Marshal(err.Error()); !strings.Contains(string(b), "access denied") {
 		t.Errorf("error should carry body text: %v", err)
+	}
+}
+
+// TestRedispatch_ReinjectsTheEmbedGrant proves the grant header survives the
+// re-dispatch.
+//
+// The grant also rides on the CONTEXT, so the user re-resolves either way and
+// this looks unnecessary. It is not: embed.Host.Middleware short-circuits on a
+// missing header, so without the copy the reach allow-list and the grant's
+// expiry are never evaluated for the path being re-dispatched TO. The request
+// stays authenticated and stops being gated, which is the worse half.
+func TestRedispatch_ReinjectsTheEmbedGrant(t *testing.T) {
+	var sawGrant string
+	mux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawGrant = r.Header.Get(fembed.GrantHeader)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	orig := httptest.NewRequest(http.MethodGet, "/api/widgets", nil)
+	orig.Header.Set(fembed.GrantHeader, "emg_fixture") // not-a-secret: fixture value, never verified here
+	ctx := mcp.WithRequest(context.Background(), orig)
+
+	if _, err := Redispatch(ctx, mux, http.MethodGet, "/api/widgets", nil); err != nil {
+		t.Fatalf("Redispatch: %v", err)
+	}
+	if sawGrant != "emg_fixture" {
+		t.Fatalf("%s = %q, want it copied — reach and expiry go unchecked without it",
+			fembed.GrantHeader, sawGrant)
 	}
 }

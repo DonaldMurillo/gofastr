@@ -371,7 +371,13 @@
       this._pendingLinks.add(name);
       const link = document.createElement('link');
       link.rel = 'stylesheet';
-      link.href = e.stylePath + (e.version ? '?v=' + e.version : '');
+      // stylePath may already carry a query (an embed frame appends ?t=<variant>
+      // so component CSS resolves under the same theme as app.css), so pick the
+      // separator rather than always using '?'. Concatenating a second '?' put
+      // the whole thing in one parameter value, which the server read as an
+      // unknown theme key AND an absent version — silently serving the app
+      // palette with no immutable caching.
+      link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-fui-style', name);
       link.id = 'fui-css-' + name;
       document.head.appendChild(link);

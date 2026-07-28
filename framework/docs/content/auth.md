@@ -237,6 +237,19 @@ flows) on any route that needs a logged-in user.
 
 ## Service accounts & scoped API tokens
 
+The self-service token endpoints require an **interactive session**. An API
+token cannot mint another token — that would let a scoped token escape its own
+leash — and neither can an embeddable surface's grant, for the same reason and
+more so: a grant is delegated authority, bounded to one surface and one origin
+with a deadline, sitting in a page the app does not control. Minting from it
+would exchange a bounded credential for an unbounded one.
+
+The same rule covers `battery/admin`, the framework's MCP tools, and
+`RequireRole`. If an embedded surface legitimately needs one of those, the
+answer is a scope on the surface plus `embeds.RequireScope`, not a wider
+credential.
+
+
 Non-human identities — CI runners, background workers, internal scripts —
 authenticate with **API tokens** (`gfsk_`-prefixed PATs) instead of session
 cookies or JWTs. Tokens are issued to a human user or to a **service

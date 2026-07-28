@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
 // TokensPlugin is the AuthPlugin + AuthPluginRoutes implementation that
@@ -45,6 +46,16 @@ func (p *TokensPlugin) WithPrefix(prefix string) *TokensPlugin {
 
 func (p *TokensPlugin) Name() string { return "api-tokens" }
 
+// ReservedEmbedPrefixes reports the prefix this plugin actually mounted. These
+// routes mint permanent API tokens, so no embed surface may sit over them or
+// reach them, whatever WithPrefix moved them to. See framework.EmbedReserving.
+func (p *TokensPlugin) ReservedEmbedPrefixes() []string {
+	if p.prefix == "" {
+		return []string{"/auth"}
+	}
+	return []string{p.prefix}
+}
+
 func (p *TokensPlugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
 	return nil
@@ -72,6 +83,17 @@ func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 	}
 	if _, tokenAuth := TokenScopes(r.Context()); tokenAuth {
 		writeAuthError(w, http.StatusUnauthorized, "token management requires an interactive session, not an API token")
+		return "", false
+	}
+	// An embed grant is the third credential with that property, and the worst
+	// of the three to accept here. It resolves to the same ctx user a session
+	// does, but it lives in a third party's page where any script — or anyone
+	// with devtools — can read it, and it is deliberately scoped and
+	// time-bounded. Minting from it converts a 15-minute, one-surface,
+	// one-origin credential into a permanent `*:*` API token that outlives the
+	// grant's deadline, ignores its scopes and is invisible to the embed system.
+	if _, embedded := embed.GrantFromContext(r.Context()); embedded {
+		writeAuthError(w, http.StatusUnauthorized, "token management requires an interactive session, not an embedded surface")
 		return "", false
 	}
 	return u.GetID(), true

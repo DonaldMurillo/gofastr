@@ -1,10 +1,10 @@
 # Dev-only Docker services for GoFastr.
 #
 # Today this is just Ollama — a local embedding/model server consumed
-# by battery/embed.OllamaEmbedder and the live-tagged test suite.
+# by battery/semantic.OllamaEmbedder and the live-tagged test suite.
 #
 # Bring up:    make ollama-up         (or: docker compose up -d ollama)
-# Run tests:   make embed-live
+# Run tests:   make semantic-live
 # Tear down:   make ollama-down       (or: docker compose down)
 #
 # Model files persist in ./.ollama/ (bind-mounted, gitignored) so

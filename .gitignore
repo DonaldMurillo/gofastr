@@ -128,6 +128,7 @@ kiln-*
 /widgets-demo
 /widgets_demo
 *.png
+!assets/brand/*.png
 .playwright-mcp/
 screens/
 research-ui-approaches.md
