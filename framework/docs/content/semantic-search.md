@@ -1,0 +1,316 @@
+# Semantic search
+
+`battery/semantic` adds vector-based semantic retrieval to any GoFastr app. It sits alongside `battery/search` (keyword) and `battery/cache`: one Go API, one set of HTTP routes, one CLI subcommand, one Kiln integration hook.
+
+This doc covers the architecture, persistence, watcher, hybrid pipeline, and the agent integration. For the package-level cheatsheet and file map, see [`battery/semantic/README.md`](../../../battery/semantic/README.md).
+
+## Why this is in-process by default
+
+Retrieval runs in the same process as your app, instead of requiring a separate vector DB or embedding service. A few things follow from that:
+
+- **In-process by default.** No vector DB, no embedding service. The default index runs in the same process as your routes, hooks, and Kiln agent.
+- **Pure-Go core.** Brute-force cosine, gob snapshot, polling watcher. No third-party deps in the core path, no CGO. `Open` has no default embedder: pass `NewOllamaEmbedder` (an HTTP client to a local Ollama server) for real retrieval, or `NewStubEmbedder` for tests.
+- **Four entry points, one index.** Go API for in-app use; HTTP routes for cross-process/cross-host; CLI for ops; Kiln hook for agent context. The same index serves all four.
+
+## Architecture
+
+```text
+            ┌─────────────────┐
+            │   Document      │   doc.ID, doc.Text, doc.Metadata
+            └────────┬────────┘
+                     │
+              Chunker.Chunk()           (FixedWindow | LangAware | user)
+                     │
+                     ▼
+            ┌─────────────────┐
+            │     Chunk       │   chunk.ID, chunk.Vec
+            └────────┬────────┘
+                     │
+              Embedder.Embed()          (StubEmbedder | OllamaEmbedder | user)
+                     │
+                     ▼
+            ┌─────────────────┐
+            │   Store.Add     │   FlatStore (in-memory, brute-force cosine)
+            └─────────────────┘
+
+            ┌─────────────────┐         ┌──────────────────┐
+            │  Embedder.Embed │◄────────│   Query.Text     │
+            └────────┬────────┘         └──────────────────┘
+                     │
+                     ▼
+              Store.Candidates ──────────► top-4K vector hits
+                     │
+                     │   if Hybrid:
+                     │   KeywordBackend.Search → top-4K keyword hits
+                     │                          │
+                     └─────────► fuseRRF ◄──────┘
+                                  │
+                                  ▼   if MMRLambda > 0:
+                                mmr(λ) ──► diverse top-K
+                                  │
+                                  │   if Rerank:
+                                  ▼
+                              Reranker.Rerank
+                                  │
+                                  ▼
+                              top-K Hits
+```
+
+The pipeline is composed inside `Index.Query`. Every stage is opt-in via the `Query` struct fields; the zero-value query runs the cheapest, simplest path (vector-only top-10).
+
+## Lifecycle and persistence
+
+| Event | Behaviour |
+| --- | --- |
+| `Open(Options{Path: dir})` | Load `dir/store.snap` if present; replay `dir/store.wal`. |
+| `Add(docs)` / `Remove(ids)` | Append WAL entry (fsync per write); apply to in-memory store. |
+| `Snapshot()` | Atomic write of `dir/store.snap.tmp` + rename; truncate WAL. |
+| `Add` / `Remove` every `SnapshotEvery` writes | Auto-triggers `Snapshot()`. |
+| `Close()` | Final `Snapshot()`; close WAL; close store. |
+
+The snapshot's header records the embedder's `Name()` and `Dim()`. Reopening with a different embedder is refused with `*ModelMismatchError` because mixing vectors from different models is silently catastrophic for retrieval quality. To migrate models: drop the snapshot, re-index from source.
+
+## Hybrid retrieval
+
+`Options.Keyword` injects a `KeywordBackend`. Two implementations ship:
+
+- **`MemoryKeyword`** — in-process BM25-flavoured backend. Zero deps. Recommended default.
+- **`WrapSearchBackend(b search.Backend)`** — adapter over `battery/search` so an app that already runs Postgres FTS or a Bleve index reuses it.
+
+When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
+
+## Diversity (MMR)
+
+`Query.MMRLambda ∈ [0, 1]` runs Maximal Marginal Relevance over the candidate set:
+
+- `λ = 0` — collapse to pure relevance order (no diversity).
+- `λ = 0.3` — useful default; trims near-duplicates without sacrificing relevance.
+- `λ = 1` — pick the most-diverse-from-already-picked items regardless of query.
+
+MMR needs the candidate vectors; the store keeps them on the chunks until the very end of the pipeline, then strips them before returning.
+
+## Reranking
+
+`Options.Reranker` is the second-stage scorer hook. The package ships **no** built-in reranker. Setting `Query.Rerank=true` without `Options.Reranker` is an error — silent quality loss is not allowed.
+
+A reranker receives the original query text and the candidate hits; it returns a reordered slice with its own scores. Typical wiring is a cross-encoder model behind an HTTP endpoint:
+
+```go
+type httpReranker struct{ url string }
+
+func (r httpReranker) Rerank(ctx context.Context, q string, hits []semantic.Hit) ([]semantic.Hit, error) {
+    // marshal {q, [hit.Text]} → POST → unmarshal scored slice → return
+}
+```
+
+## Watcher
+
+```go
+w := semantic.NewWatcher(idx, semantic.WatchOptions{
+    IncludeExts: []string{".go", ".md", ".markdown", ".txt"},
+    ExcludeDirs: []string{".git", "node_modules", "dist", ".gofastr", "vendor"},
+    PollInterval: 2 * time.Second,
+    MaxFileSize:  1 << 20,
+})
+w.Run(ctx, "./src", "./docs")     // until ctx cancellation
+// or
+w.ScanOnce(ctx, "./src")          // one-shot
+```
+
+`Watcher` is polling-based on purpose: no third-party deps, deterministic behaviour, and the dev-time cost on a tree of a few thousand files is well under the embedding cost of any actual file edit. For very large trees, swap the implementation for fsnotify-backed without changing the public API.
+
+`Index.Add` is replace-by-doc, so a re-emit of the same `Document.ID` cleanly replaces prior chunks. The watcher derives stable doc IDs from path hashes, so renames look like delete + add and bursty edits collapse into the next poll cycle.
+
+## CLI
+
+The `gofastr semantic` subcommand opens a per-cwd local snapshot at `~/.gofastr/semantic/<12-hex-chars-of-sha1(cwd)>/`. Different projects keep separate snapshots automatically.
+
+```bash
+gofastr semantic index .                                  # one-shot
+gofastr semantic watch ./src ./docs                       # until SIGINT
+gofastr semantic query "validate session token" -k 5 --hybrid
+gofastr semantic query "router middleware" --mmr 0.4
+gofastr semantic stats
+gofastr semantic clear
+```
+
+The CLI indexes with the deterministic **stub** embedder unless you say
+otherwise, which is fine for wiring a pipeline and useless for real retrieval —
+and nothing on disk says which one produced a snapshot. Select the real one per
+invocation:
+
+| Variable | Effect |
+|---|---|
+| `SEMANTIC_BACKEND=ollama` | Use the Ollama HTTP embedder instead of the stub. `EMBED_BACKEND` is still read as a deprecated alias and warns. |
+| `OLLAMA_URL` | Override `http://localhost:11434`. |
+| `OLLAMA_MODEL` | Override `nomic-embed-text`. |
+
+```sh
+SEMANTIC_BACKEND=ollama gofastr semantic index .
+```
+
+Switching backends changes the vectors, so the next `query` against a snapshot
+built by the other embedder returns a `ModelMismatchError` rather than quietly
+poor results.
+
+When `GOFASTR_URL` is set, `query` and `stats` are dispatched to that running server's `/semantic/*` routes. `index`, `watch`, and `clear` are always local — they mutate state and we don't want two writers fighting for the same file.
+
+## HTTP routes
+
+| Method | Path | Body | Status |
+| --- | --- | --- | --- |
+| POST | `/semantic/index` | `{"documents":[{"id","source","text","metadata"}…]}` | 202 |
+| POST | `/semantic/query` | `Query` (`text`, `k`, `filter`, `hybrid`, `mmr_lambda`, `rerank`) | 200 |
+| GET  | `/semantic/stats` | — | 200 |
+| DELETE | `/semantic/doc/{id}` | — | 204 |
+
+Mount the plugin onto a `framework.App`:
+
+```go
+app.RegisterPlugin(semantic.NewPlugin(idx).WithPrefix("/semantic"))
+app.InitPlugins()
+```
+
+Or wire the bare `http.Handler` onto a `core/router.Router` or stdlib `http.ServeMux`:
+
+```go
+mux.Handle("/semantic/", http.StripPrefix("/semantic", semantic.Handler(idx)))
+```
+
+## Agent inventory
+
+Importing `battery/semantic` registers a snippet in `agentsinv` (the process-wide agent-onboarding registry). Any binary that blank-imports the package — including the built `gofastr` CLI — will include the semantic entry in the generated `AGENTS.md` output from `gofastr agents sync`. The snippet lives in `battery/semantic/agents.md` and describes when to use the battery, the import path, and the key anti-patterns.
+
+## Kiln integration
+
+`kiln.Loop` gained a `ContextHook func(ctx, userText) string`. It is called once per turn with the most recent user message, and its return value is prepended to the provider's system prompt. The helper `agent.NewSemanticContextHook(idx, k)` wraps a `semantic.Index`:
+
+```go
+loop := &agent.Loop{
+    Provider:    provider,
+    Tools:       tools,
+    ContextHook: agent.NewSemanticContextHook(idx, 6),
+}
+```
+
+For every user turn, the hook runs a `Hybrid + MMR=0.3` query against the index and injects the top-6 chunks as a `# Project context` block. Retrieval errors degrade silently to an empty preamble so a misbehaving index never blocks the agent loop.
+
+## Local dev: Docker + live tests
+
+The package's default `go test ./...` covers the pipeline with the stub embedder + an `httptest` Ollama mock. To exercise the *real* semantic path (paraphrase clustering, real retrieval on a real corpus, MMR diversity that actually depends on real geometry), use the live-tagged suite:
+
+```bash
+make ollama-up        # docker compose up + pull nomic-embed-text on first run
+make semantic-live     # go test -tags=live -v ./battery/semantic/...
+make ollama-down      # tear down the container
+make ollama-logs      # tail Ollama logs while debugging
+```
+
+`docker-compose.yml` ships at the repo root with a single `ollama` service exposing port `11434` and bind-mounting `./.ollama/` (gitignored) so the ~270 MB model file persists between container restarts and stays out of the repo.
+
+The live suite (in `battery/semantic/live_test.go`, guarded by `//go:build live`) asserts:
+
+| Test | What it verifies |
+| --- | --- |
+| `TestLive_OllamaProbe` | Server reachable, model returns embeddings, dim auto-detected. |
+| `TestLive_SemanticSimilarity` | Paraphrase pairs cluster; cross-intent pairs don't — the property the stub embedder cannot satisfy. |
+| `TestLive_IndexRetrievalParaphrase` | A 6-doc corpus + a paraphrase query surfaces the right doc at rank #1, both vec-only and hybrid. |
+| `TestLive_MMRImprovesDiversityOnNearDuplicates` | MMR top-3 on a near-duplicate corpus surfaces ≥2 distinct topics. |
+| `TestLive_PersistenceSurvivesProcessRestart` | Snapshot + reopen with a fresh embedder instance preserves retrieval. Model fingerprint must match. |
+| `TestLive_WatcherFeedsRealEmbedder` | Polling watcher round-trips files through a real embedder. |
+
+`make semantic-live` refuses to run if `http://localhost:11434/api/tags` doesn't respond — it tells you to `make ollama-up` first.
+
+## Scale targets
+
+| Corpus | Vector RAM (384-dim float32) | Brute-force query latency (Apple M-class) |
+| --- | --- | --- |
+| 10k chunks | ~15 MB | <1 ms |
+| 100k chunks | ~150 MB | ~3 ms |
+| 1M chunks | ~1.5 GB | ~30 ms (consider int8 quantization or ANN) |
+
+Numbers above are from the `BenchmarkEmbed_*` family in `battery/semantic/bench_test.go` (corpus=10000 measured at ~3.3 ms per query on M4 Pro). Persistence costs scale linearly with chunk count; a 100k-chunk snapshot is ~200 MB on disk.
+
+## Embedders
+
+Two are wired:
+
+- **`StubEmbedder`** — deterministic FNV bag-of-words, no deps, low retrieval quality. Fine for tests and offline development. Not a real model.
+- **`OllamaEmbedder`** — HTTP client against a locally running Ollama-compatible server. Default `nomic-embed-text` (768-dim) gives real semantic retrieval. Recommended production default.
+
+For anything else (OpenAI Embeddings API, a private microservice, a CGO-bound model), implement the three-method `Embedder` interface and pass it via `Options.Embedder`. The rest of the package is embedder-agnostic.
+
+```go
+// Swap from stub to Ollama:
+embedder := semantic.NewOllamaEmbedder(semantic.OllamaConfig{
+    BaseURL: "http://localhost:11434",   // default
+    Model:   "nomic-embed-text",         // ollama pull nomic-embed-text first
+})
+
+// Optional: confirm the server is reachable and warm the dim cache.
+if err := embedder.Probe(ctx); err != nil {
+    log.Fatalf("ollama unreachable: %v", err)
+}
+```
+
+## Durable store (pgvector)
+
+The default [FlatStore] is in-process: fast, zero-dep, and the right choice for a single-replica app. Its limitation (called out above under "Why this is in-process by default") is that the index lives in one process's RAM. When you need a **shared, durable** index — multiple app replicas hitting the same vectors, or survival across restarts with no snapshot/WAL plumbing — use `PgVectorStore`, a [Store] backed by a Postgres table with a [pgvector](https://github.com/pgvector/pgvector) embedding column.
+
+```go
+embedder := semantic.NewOllamaEmbedder(semantic.OllamaConfig{Model: "nomic-embed-text"})
+
+store, err := semantic.NewPgVector(db, semantic.PgVectorConfig{
+    Dim:   embedder.Dim(), // REQUIRED — pgvector columns are fixed-dim
+    Table: "embed_chunks",  // optional, defaults to "embed_chunks"
+})
+if err != nil { return err }
+if err := store.EnsureSchema(ctx); err != nil { return err } // creates extension + table
+
+idx, err := semantic.Open(semantic.Options{
+    Embedder: embedder,
+    Store:    store,
+    Keyword:  semantic.NewMemoryKeyword(), // PgVectorStore implements chunkLister → hybrid works
+})
+```
+
+**Ranking parity.** `PgVectorStore` scores with pgvector's cosine-distance operator (`<=>`); because the embedder produces L2-normalized vectors, cosine equals the dot product `FlatStore` uses, so the two stores return the same top-K order given identical vectors (`Hit.Score = 1 − distance`). Default retrieval is brute-force cosine (correct, matches `FlatStore`); an operator can add an HNSW index for scale without code changes:
+
+```sql
+CREATE INDEX ON embed_chunks USING hnsw (embedding vector_cosine_ops);
+```
+
+**Extension note.** `EnsureSchema` runs `CREATE EXTENSION IF NOT EXISTS vector`. On managed Postgres (RDS, Cloud SQL) that is a one-time superuser action the app role often lacks — pre-install it once as admin. If the `vector` type is genuinely absent, `EnsureSchema` fails closed with an actionable error rather than proceeding.
+
+**No snapshot, no `Path`.** A Postgres table *is* the durable copy, so `PgVectorStore` deliberately does not implement the gob-snapshot capability. Pairing it with `Options.Path` fails closed at `Open` with an error — do not set `Path` with this store.
+
+**Honest trade-off.** `FlatStore` brute-force-scans a memory slice (~3 ms / 100k chunks on M-class, no network hop). `PgVectorStore` pays a Postgres round-trip per query but gains durability, multi-replica sharing, and a growth path to ANN indexing. Use `FlatStore` until the in-process limitation bites; switch when it does.
+
+## Limitations and follow-ups
+
+- The watcher does not honour `.gitignore` — only an explicit `ExcludeDirs` list. Glob-level ignore parsing is deferred.
+- Two store backends ship: `FlatStore` (in-process, brute-force, default) and `PgVectorStore` (durable Postgres+pgvector, multi-replica). Out-of-process ANN services (dedicated HNSW/IVF servers) remain out of scope until benchmarks show brute-force losing; an HNSW index on the pgvector table covers the scale path today.
+- Multiple named indexes per process are not supported; the design is one index per app, mirroring the `Options.Keyword` and `Options.Path` shape.
+
+## Common mistakes
+
+- **Switching embedders over an existing snapshot.** `Open` refuses
+  with a `*ModelMismatchError` — vectors from different models are
+  silently catastrophic for retrieval, so mixing is not allowed. To
+  change models: drop the snapshot directory and re-index from source.
+- **Setting `Hybrid: true` without `Options.Keyword`.** It silently
+  degrades to vector-only — no error, just no keyword leg in the
+  fusion. Wire `MemoryKeyword` (or `WrapSearchBackend`) if you want
+  hybrid to actually be hybrid.
+- **Setting `Rerank: true` without `Options.Reranker`.** Hard error:
+  the package ships no built-in reranker and refuses silent quality
+  loss. Implement the `Reranker` interface (typically a cross-encoder
+  behind HTTP) before opting in.
+- **Expecting real retrieval quality from `StubEmbedder`.** It's a
+  deterministic FNV bag-of-words for tests and offline development —
+  paraphrases will not cluster. Use `OllamaEmbedder` (or your own
+  `Embedder`) for anything a user sees.
+- **Pointing `index`/`watch`/`clear` at a running server.** Those
+  subcommands are always local, even with `GOFASTR_URL` set — only
+  `query` and `stats` dispatch to the server. Two writers on one
+  snapshot directory is exactly what the split prevents.

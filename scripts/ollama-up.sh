@@ -60,5 +60,5 @@ else
 fi
 
 info "next steps:"
-info "  make embed-live                     # run live-tagged tests"
-info "  EMBED_BACKEND=ollama gofastr embed query 'your query'"
+info "  make semantic-live                     # run live-tagged tests"
+info "  SEMANTIC_BACKEND=ollama gofastr semantic query 'your query'"

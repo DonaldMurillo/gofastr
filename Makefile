@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples csp-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs embed-live
+.PHONY: build build-all build-cmd build-examples csp-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -17,8 +17,8 @@ build-cmd: $(DIST_DIR)
 build-examples: csp-check $(DIST_DIR)
 	@SITE_VER=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); \
 	LDFLAGS=$$( [ -n "$$SITE_VER" ] && echo "-ldflags=-X=main.siteVersion=$$SITE_VER" ); \
-	for dir in examples/api-tour examples/blog examples/embed-demo \
-	            examples/spa examples/static-site examples/site; do \
+	for dir in examples/api-tour examples/blog examples/semantic-demo \
+	            examples/embed-demo examples/spa examples/static-site examples/site; do \
 		name=$$(basename $$dir); \
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
 		go build $$LDFLAGS -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
@@ -311,7 +311,7 @@ hooks:
 install: hooks
 	@echo "  ✓ GoFastr development environment ready"
 
-# ---- Ollama (battery/embed live tests) ----
+# ---- Ollama (battery/semantic live tests) ----
 #
 # These targets manage a local Ollama container declared in
 # docker-compose.yml. Models cache to ./.ollama/ which is gitignored.
@@ -326,13 +326,13 @@ ollama-down:
 ollama-logs:
 	@docker compose logs -f ollama
 
-# embed-live runs the battery/embed tests that talk to a real Ollama
+# semantic-live runs the battery/semantic tests that talk to a real Ollama
 # server. They are guarded by `//go:build live` so the default
 # `go test ./...` skips them entirely.
-embed-live:
+semantic-live:
 	@if ! curl -fsS http://localhost:11434/api/tags >/dev/null 2>&1; then \
 		echo "✗ ollama is not reachable at http://localhost:11434"; \
 		echo "  run: make ollama-up"; \
 		exit 1; \
 	fi
-	go test -tags=live -count=1 -v ./battery/embed/...
+	go test -tags=live -count=1 -v ./battery/semantic/...

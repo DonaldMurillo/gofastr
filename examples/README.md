@@ -14,7 +14,8 @@ Self-contained Go programs — `go run ./examples/<name>`:
 | `backoffice` | The entity admin (`battery/admin`) behind a demo login. |
 | `spa` | Client-side navigation over server-rendered islands. |
 | `static-site` | Static page serving with the file server. |
-| `embed-demo` | Semantic search with `battery/embed`. |
+| `semantic-demo` | Semantic search with `battery/semantic`. |
+| `embed-demo` | Embeddable surfaces: an app and a customer's site on two origins. |
 
 ## Blueprint examples (declarative)
 
