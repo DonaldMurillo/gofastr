@@ -93,6 +93,14 @@ func CORS(cfg CORSConfig) Middleware {
 			// a downstream handler can't accidentally enable it.
 			if allowAll {
 				next.ServeHTTP(stripCredsWriter{ResponseWriter: w}, r)
+				// A handler that sets the header and returns without
+				// writing reaches none of the wrapper's strip points:
+				// net/http's implicit WriteHeader(200) runs on the real
+				// response object, not on the wrapper. Nothing has been
+				// committed to the wire yet at this point, so a final
+				// strip closes that gap. Harmless when the handler did
+				// write — the header map was already cleaned then.
+				w.Header().Del("Access-Control-Allow-Credentials")
 				return
 			}
 			next.ServeHTTP(w, r)
