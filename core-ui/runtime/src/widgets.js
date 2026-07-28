@@ -374,7 +374,12 @@
         // modal on the list it inserts into).
         const nav = node.getAttribute('data-fui-rpc-navigate');
         if (nav) {
-          NS.navigate(nav, { force: true });
+          // Guarded like the sibling call in rpc.js. NS.navigate exists only
+          // when the nav fragment is composed, and the `embed` composition
+          // omits it — an unguarded call throws AFTER the RPC has already
+          // succeeded, lands in the catch below, and reports "Network error"
+          // for a write that went through. The user retries and writes twice.
+          try { if (NS.navigate) NS.navigate(nav, { force: true }); } catch (_) {}
         }
       } catch (err) {
         // Network error: write human-readable feedback to the signal.

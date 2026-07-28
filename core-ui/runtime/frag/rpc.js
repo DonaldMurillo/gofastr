@@ -362,7 +362,23 @@
           window.location.assign(resp.url);
           return;
         }
-      } catch (_) {}
+      } catch (err) {
+        // Never swallow this. The write may well have committed on the server,
+        // so a user who sees nothing happen presses the button again.
+        //
+        // Inside an embed frame this is the expected path rather than a rare
+        // one: boot-embed forces redirect:'error' on credentialed requests (a
+        // redirect would otherwise carry the grant to whatever origin it names),
+        // so a handler answering the ordinary 303-after-POST rejects here. The
+        // frame cannot follow it either way — the destination is an ordinary app
+        // page whose CSP refuses to be framed — so the honest outcome is a
+        // visible failure, not a blank panel.
+        console.error('[gofastr] form submit could not complete', err);
+        const g = window.__gofastr;
+        if (g && typeof g.toast === 'function') {
+          g.toast({ variant: 'error', title: 'Could not complete that submission.', ttl: 6000 });
+        }
+      }
     });
 
     // Debounced input-driven RPC: a form with

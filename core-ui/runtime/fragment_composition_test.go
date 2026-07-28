@@ -1,9 +1,11 @@
 package runtime
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -178,4 +180,182 @@ func TestComposedRuntimeMatchesOnDiskFile(t *testing.T) {
 		"Regenerate with:\n"+
 		"  GOFASTR_UPDATE_RUNTIME_JS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeMatchesOnDiskFile",
 		len(raw), len(onDisk))
+}
+
+// TestEmbedCompositionOmitsNav is the structural half of "SPA navigation is
+// disabled inside frames". The design decision was to enforce it by ABSENCE —
+// the nav fragment is not composed — rather than by a runtime flag, precisely
+// so a later refactor cannot re-enable it by flipping a boolean. This asserts
+// the absence is real: not one of nav.js's top-level symbols may appear in the
+// embed bundle.
+func TestEmbedCompositionOmitsNav(t *testing.T) {
+	navSrc, err := fs.ReadFile(fragFS, "frag/nav.js")
+	if err != nil {
+		t.Fatalf("read nav fragment: %v", err)
+	}
+	navSymbols := declaredSymbols(string(navSrc))
+	if len(navSymbols) == 0 {
+		t.Fatal("no symbols parsed out of nav.js — the guard below would pass vacuously")
+	}
+
+	embedded, err := composeEmbed()
+	if err != nil {
+		t.Fatalf("composeEmbed: %v", err)
+	}
+	composed := declaredSymbols(embedded)
+
+	var leaked []string
+	for name := range navSymbols {
+		if _, ok := composed[name]; ok {
+			leaked = append(leaked, name)
+		}
+	}
+	if len(leaked) > 0 {
+		sort.Strings(leaked)
+		t.Fatalf("the embed composition declares %d nav symbol(s) — SPA navigation is supposed to be impossible inside a frame BY ABSENCE:\n  %s",
+			len(leaked), strings.Join(leaked, "\n  "))
+	}
+
+	// And the fragment that replaces it must be there, or the frame has no way
+	// to receive its credential at all.
+	if !strings.Contains(embedded, "gofastr-embed/1") {
+		t.Error("the embed composition does not contain boot-embed's protocol marker")
+	}
+}
+
+// TestBootToleratesAMissingNav pins the one cross-fragment call that made a
+// nav-less composition possible. boot's _initialPass calls updateActiveLink,
+// which lives in nav; without the typeof probe the embed bundle throws a
+// ReferenceError at boot and takes hydration, module loading and the CSS
+// scanner down with it — a failure that looks like "the embed renders nothing".
+func TestBootToleratesAMissingNav(t *testing.T) {
+	src, err := fs.ReadFile(fragFS, "frag/boot.js")
+	if err != nil {
+		t.Fatalf("read boot fragment: %v", err)
+	}
+	if !strings.Contains(string(src), "typeof updateActiveLink === 'function'") {
+		t.Fatal("boot.js calls updateActiveLink without a typeof probe — the embed composition omits nav and would throw at boot")
+	}
+}
+
+// TestCompositionsShareByteIdenticalFragments is the anti-drift guard for the
+// composer as a whole. Every bundle is assembled from the SAME files by the
+// same function, so a fix applied to one composition cannot fail to reach
+// another. This asserts the assembly really is file concatenation — if a
+// composition ever grew a per-bundle transform, the substring check below stops
+// being true and the divergence surfaces here rather than in production.
+func TestCompositionsShareByteIdenticalFragments(t *testing.T) {
+	compositions := map[string][]string{
+		"full":   fullFragmentOrder,
+		"static": staticFragmentOrder,
+		"embed":  embedFragmentOrder,
+	}
+	built := map[string]string{}
+	var err error
+	if built["full"], err = composeFull(); err != nil {
+		t.Fatalf("composeFull: %v", err)
+	}
+	if built["static"], err = composeStatic(); err != nil {
+		t.Fatalf("composeStatic: %v", err)
+	}
+	if built["embed"], err = composeEmbed(); err != nil {
+		t.Fatalf("composeEmbed: %v", err)
+	}
+
+	for name, order := range compositions {
+		for _, frag := range order {
+			data, err := fs.ReadFile(fragFS, "frag/"+frag+".js")
+			if err != nil {
+				t.Fatalf("read fragment %q: %v", frag, err)
+			}
+			body := strings.TrimRight(string(data), "\n")
+			if !strings.Contains(built[name], body) {
+				t.Errorf("composition %q does not contain fragment %q verbatim — the bundles have started to diverge", name, frag)
+			}
+		}
+	}
+
+	// rpc and rpc-stub are mutually exclusive, as are widgets-boot and
+	// widgets-boot-static. Composing both halves of either pair would install
+	// two definitions of the same behaviour in one scope.
+	exclusive := [][2]string{{"rpc", "rpc-stub"}, {"widgets-boot", "widgets-boot-static"}}
+	for name, order := range compositions {
+		has := map[string]bool{}
+		for _, f := range order {
+			has[f] = true
+		}
+		for _, pair := range exclusive {
+			if has[pair[0]] && has[pair[1]] {
+				t.Errorf("composition %q includes both %q and %q, which are mutually exclusive", name, pair[0], pair[1])
+			}
+		}
+	}
+}
+
+// TestBootEmbedMeasuresContentNotViewport pins the height-report source.
+//
+// An embedded surface lives in an iframe the host page resizes to the height
+// the frame reports. documentElement.scrollHeight is at least the viewport
+// height, and that viewport IS the frame being resized — so measuring it feeds
+// each report into the next measurement, and any full-height rule inside makes
+// the panel ratchet open with a band of empty space under the content.
+//
+// This is a source-level check on purpose. The browser-level version is not
+// worth having: by the time a test can observe the frame the ratchet has
+// already settled, so two equal measurements prove nothing. What actually
+// caught this was a screenshot, and what keeps it fixed is the pair of this
+// check and TestEmbedLayoutIsNotViewportTall in core-ui/app.
+func TestBootEmbedMeasuresContentNotViewport(t *testing.T) {
+	src, err := fs.ReadFile(fragFS, "frag/boot-embed.js")
+	if err != nil {
+		t.Fatalf("read boot-embed fragment: %v", err)
+	}
+	body := string(src)
+	// A denylist of four spellings was the previous shape of this gate, and it
+	// could not see document.body.scrollHeight, root.scrollHeight,
+	// visualViewport.height, getComputedStyle(docEl).height, or
+	// observe(document.body) — any one of which reopens the ratchet. Assert what
+	// the measurement IS instead: every height-shaped read in this fragment has
+	// to come from the root's own bounding box.
+	heightRead := regexp.MustCompile(`(?:scrollHeight|offsetHeight|clientHeight|innerHeight|visualViewport|getComputedStyle)`)
+	if m := heightRead.FindAllString(body, -1); len(m) > 0 {
+		t.Errorf("boot-embed reads %v — the height report must be a function of the CONTENT, "+
+			"not of the frame it is resizing, so the only permitted source is "+
+			"root.getBoundingClientRect()", m)
+	}
+	// And the observer must watch the root, never the document or the body:
+	// observing either means observing the thing the report resizes.
+	observe := regexp.MustCompile(`observe\(\s*([A-Za-z_.]+)`)
+	for _, m := range observe.FindAllStringSubmatch(body, -1) {
+		if m[1] != "root" {
+			t.Errorf("boot-embed observes %q; observing anything but the root is a feedback loop", m[1])
+		}
+	}
+	if !strings.Contains(body, "root.getBoundingClientRect()") {
+		t.Error("boot-embed does not measure the embed root's own extent")
+	}
+}
+
+// The catalog's stylePath may already carry a query — an embed frame appends
+// ?t=<variant> so component CSS resolves under the same theme as app.css.
+// Appending the version with a hard-coded '?' folded both into one unparseable
+// parameter, so the server saw an unknown theme key and no version at all: the
+// frame silently served the app palette with caching disabled. Nothing in Go
+// can catch that; the defect is in this line of JavaScript.
+func TestKernelAppendsVersionWithTheRightSeparator(t *testing.T) {
+	src, err := fs.ReadFile(fragFS, "frag/kernel.js")
+	if err != nil {
+		t.Fatalf("read kernel fragment: %v", err)
+	}
+	body := string(src)
+
+	naive := regexp.MustCompile(`stylePath\s*\+\s*\([^)]*'\?v='`)
+	if naive.MatchString(body) {
+		t.Error("kernel.js appends the version with a hard-coded '?', which breaks any " +
+			"stylePath that already has a query — the embed frame's ?t=<variant> is one")
+	}
+	if !strings.Contains(body, `indexOf('?')`) {
+		t.Error("kernel.js does not choose its query separator; a stylePath carrying a " +
+			"query would get a second '?'")
+	}
 }

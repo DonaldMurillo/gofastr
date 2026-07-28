@@ -512,7 +512,13 @@
   window.addEventListener('gofastr:navigate', () => _runMountActions(document));
 
   const _initialPass = () => {
-    updateActiveLink(location.pathname);
+    // nav is optional in a composition — the `embed` bundle omits it, which is
+    // how SPA navigation is disabled inside frames. A bare call would throw a
+    // ReferenceError here and take the whole initial pass down with it, so the
+    // one nav symbol boot needs is probed rather than assumed. typeof on an
+    // undeclared identifier is the only safe probe; `updateActiveLink !==
+    // undefined` would itself throw.
+    if (typeof updateActiveLink === 'function') updateActiveLink(location.pathname);
     _bootstrapComponentCSS();
     _scanForModules(document);
     // Intercepting routes are rare, so their module is demand-loaded off

@@ -32,22 +32,32 @@ var privilegedAttrs = []string{
 }
 
 // runtimeJSAttrs returns every data-fui-* attribute literally referenced in
-// the bundled runtime.js and every on-demand src/*.js module. Comments are
-// intentionally included: several attributes (e.g. data-fui-rpc-after-done)
-// are read through the camelCase `dataset` API in code and only appear as a
-// literal hyphenated token inside a documenting comment.
+// the runtime sources: the bundled runtime.js, every on-demand src/*.js
+// module, and every frag/*.js fragment. Comments are intentionally included:
+// several attributes (e.g. data-fui-rpc-after-done) are read through the
+// camelCase `dataset` API in code and only appear as a literal hyphenated
+// token inside a documenting comment.
+//
+// frag/*.js is scanned SEPARATELY from runtime.js even though runtime.js is
+// composed from fragments. runtime.js is only the `full` composition, so an
+// attribute introduced by a fragment that composition omits — boot-embed,
+// rpc-stub, widgets-boot-static — appeared in no scanned file and was
+// invisible to the ownership and documentation gates below. Permanently: the
+// gate could never fail for it. data-fui-embed-state shipped that way.
 func runtimeJSAttrs(t *testing.T) []string {
 	t.Helper()
 	files := []string{"runtime.js"}
-	entries, err := os.ReadDir("src")
-	if err != nil {
-		t.Fatalf("read src dir: %v", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
-			continue
+	for _, dir := range []string{"src", "frag"} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read %s dir: %v", dir, err)
 		}
-		files = append(files, filepath.Join("src", e.Name()))
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
+				continue
+			}
+			files = append(files, filepath.Join(dir, e.Name()))
+		}
 	}
 
 	set := map[string]struct{}{}

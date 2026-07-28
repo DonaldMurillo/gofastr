@@ -252,6 +252,19 @@ func allWidgets() []*Definition {
 	return out
 }
 
+// Lookup returns the registered widget with this name.
+//
+// Exported for hosts that must authorise a DIRECT request to a widget's own
+// endpoints (/state, /chrome) rather than a catalog listing: those URLs are
+// predictable, so filtering the catalog only decides what a caller is told
+// about, never what it can reach.
+func Lookup(name string) (*Definition, bool) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	d, ok := registry[name]
+	return d, ok
+}
+
 // AllForSSR returns a snapshot of every registered widget. Exported
 // so SSR hosts (framework/uihost) can walk the registry and inline
 // chrome HTML on the page response. The returned slice is a copy of

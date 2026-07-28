@@ -105,6 +105,57 @@ func TestTypicalPagePayloadBudget(t *testing.T) {
 	}
 }
 
+// Embed budgets. They are asymmetric because the two files land in completely
+// different places.
+//
+// The loader runs on a customer's page — a site whose performance we do not
+// control and whose owner did not choose GoFastr. It is the tightest budget
+// here on purpose: crossing it means behaviour was added to the loader that
+// belongs inside the frame, where it costs the host page nothing.
+//
+// The frame runtime blocks nothing on the host page, so it is not bound by the
+// initial-congestion-window argument that sets core's 12 KB. It is still capped
+// at the same number for a simpler reason: an embedded surface has no business
+// shipping MORE javascript than a first-party page does. It ships less today
+// (no nav fragment).
+func TestEmbedSizeBudgets(t *testing.T) {
+	const (
+		loaderBudgetGZ = 1536
+		frameBudgetGZ  = 12 * 1024
+	)
+
+	loader, err := EmbedLoaderJS()
+	if err != nil {
+		t.Fatalf("EmbedLoaderJS: %v", err)
+	}
+	if got := gzipSize(t, loader); got > loaderBudgetGZ {
+		t.Errorf("embed loader gzip = %d bytes — exceeds %d byte budget; move the behaviour into boot-embed rather than raising the line, the loader runs on someone else's page", got, loaderBudgetGZ)
+	} else {
+		t.Logf("embed loader gzip = %d bytes (budget %d)", got, loaderBudgetGZ)
+	}
+
+	frame, err := EmbedJS()
+	if err != nil {
+		t.Fatalf("EmbedJS: %v", err)
+	}
+	if got := gzipSize(t, frame); got > frameBudgetGZ {
+		t.Errorf("embed runtime gzip = %d bytes — exceeds %d byte budget", got, frameBudgetGZ)
+	} else {
+		t.Logf("embed runtime gzip = %d bytes (budget %d)", got, frameBudgetGZ)
+	}
+
+	// The embed composition must stay SMALLER than the full one. If it ever
+	// isn't, a fragment landed in embed that the full bundle does not carry —
+	// which means the two are diverging rather than composing.
+	full, err := RuntimeJS()
+	if err != nil {
+		t.Fatalf("RuntimeJS: %v", err)
+	}
+	if gzipSize(t, frame) >= gzipSize(t, full) {
+		t.Errorf("embed runtime (%d gz) is not smaller than the full runtime (%d gz) — embed omits nav, so it must be", gzipSize(t, frame), gzipSize(t, full))
+	}
+}
+
 func gzipSize(t *testing.T, s string) int {
 	t.Helper()
 	var buf bytes.Buffer
