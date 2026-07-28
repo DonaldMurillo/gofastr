@@ -1,0 +1,74 @@
+# Top-level symbol manifest for core-ui/runtime/frag/*.js — the reference
+# for TestComposedRuntimeIsSymbolComplete. One "<fragment>\t<symbol>" line
+# per IIFE-body-level function/const/let/var declaration, sorted.
+#
+# This file is the gate's whole point: it is checked in, so DELETING a
+# declaration from a fragment shows up here as a removed line that a human
+# had to write. Regenerating runtime.js does not touch it.
+#
+# Regenerate (only when the change to the fragments is intentional):
+#   GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete
+#
+boot	_bootstrapComponentCSS
+boot	_initialPass
+boot	_injectSignalAria
+boot	_moduleManifest
+boot	_moduleMarkers
+boot	_modulePromises
+boot	_prefetch
+boot	_prefetchAttempted
+boot	_runMountActions
+boot	_scanForModules
+boot	_scheduleIdleModules
+boot	hydrate
+boot	hydrated
+boot	loadModule
+boot	setupMutationObserver
+kernel	M
+kernel	_dc
+kernel	_locks
+kernel	_readInlineJSON
+kernel	_single
+kernel	closestAttr
+kernel	collectParams
+kernel	currentPath
+kernel	doc
+kernel	docEl
+kernel	handlers
+kernel	registerRoutes
+kernel	routes
+kernel	state
+nav	MAX_CACHE_SIZE
+nav	_announceTimer
+nav	_pendingNav
+nav	_showNavToast
+nav	announceRoute
+nav	cacheScreen
+nav	domLayout
+nav	findCommonScreenGroup
+nav	getCachedScreen
+nav	initialMain
+nav	isInternalLink
+nav	isKnownRoute
+nav	layoutWillChange
+nav	loadPage
+nav	mergeSeedFromDOM
+nav	resolvePath
+nav	screenCache
+nav	scrollToHash
+nav	sseMeta
+nav	swapLayoutShell
+nav	swapMainContent
+nav	swapScreenGroupContent
+nav	updateActiveLink
+rpc	_csrf
+rpc	_idt
+rpc	_rpcInFlight
+rpc	dispatchRPC
+signals	isReservedSignalKey
+widgets-boot	_installEagerWidgetDelegators
+widgets-boot	_wcr
+widgets-boot	_wready
+widgets-boot-static	_installEagerWidgetDelegators
+widgets-boot-static	_wcr
+widgets-boot-static	_wready

@@ -3,7 +3,6 @@ package runtime
 import (
 	"io/fs"
 	"os"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
@@ -36,108 +35,136 @@ func declaredSymbols(src string) map[string]struct{} {
 	return out
 }
 
-// preSplitRuntimeJS returns the runtime.js source at HEAD (before the step-2
-// extraction), via `git show`. Used as the symbol-completeness reference — it
-// is the authority on which top-level symbols the runtime must still declare
-// after the split, so silent code loss during extraction fails the build.
-//
-// `git show` is read-only and never touches the working tree (the brief
-// forbids git checkout/restore/stash). If git is unavailable (e.g. a tarball
-// export with no .git), the test skips rather than failing — the bar is
-// meaningless without the pre-split reference.
-func preSplitRuntimeJS(t *testing.T) string {
+// symbolManifestPath is the checked-in reference for the symbol-completeness
+// gate below.
+const symbolManifestPath = "frag/SYMBOLS.txt"
+
+// fragmentSymbolIndex renders the manifest form of what frag/*.js declares
+// right now: one "<fragment>\t<symbol>" line per top-level declaration,
+// sorted. Every fragment is covered, not just the ones the `full`
+// composition uses — losing a symbol out of rpc-stub or boot-embed breaks
+// the static / embed bundles just as badly.
+func fragmentSymbolIndex(t *testing.T) string {
 	t.Helper()
-	out, err := exec.Command("git", "show", "HEAD:core-ui/runtime/runtime.js").Output()
+	entries, err := fs.ReadDir(fragFS, "frag")
 	if err != nil {
-		t.Skipf("git show HEAD:core-ui/runtime/runtime.js failed (%v); "+
-			"cannot run symbol-completeness gate without the pre-split reference", err)
+		t.Fatalf("read frag dir: %v", err)
 	}
-	return string(out)
+	var lines []string
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".js") {
+			continue
+		}
+		src, err := fs.ReadFile(fragFS, "frag/"+e.Name())
+		if err != nil {
+			t.Fatalf("read fragment %q: %v", e.Name(), err)
+		}
+		frag := strings.TrimSuffix(e.Name(), ".js")
+		for name := range declaredSymbols(string(src)) {
+			lines = append(lines, frag+"\t"+name)
+		}
+	}
+	sort.Strings(lines)
+	return symbolManifestHeader + strings.Join(lines, "\n") + "\n"
 }
 
-// TestComposedRuntimeIsSymbolComplete is acceptance-bar item 2 of the
-// runtime-composer spec (step 2). It guards against silent code loss during
-// fragment extraction: every top-level function/const/let declared in the
-// pre-split runtime.js MUST also be declared in the composed `full` output.
-//
-// Byte-identity was the original bar but is impossible (the spec's corrected
-// acceptance section explains why: fragments are not contiguous byte ranges,
-// and the namespace literal is restructured into incremental Object.assign
-// assembly). Symbol completeness is the stronger check where it actually
-// matters — it catches the specific failure byte-identity was a proxy for
-// (a function or const silently vanishing during the move into fragments).
-//
-// Extras (symbols in the composition but not in HEAD) are reported but do not
-// fail: the step-2 split may legitimately introduce a small number of new
-// IIFE-level helpers, and the bar is "nothing was lost", not "nothing was added".
-//
-// knownRemovals lists top-level symbols that were DELIBERATELY removed from
-// the runtime AFTER the step-2 extraction. Each has a comment explaining why.
-// Adding to this set is a design decision, not a convenience — it widens the
-// "code was silently lost" guard, so the bar for entry is the same as the bar
-// for editing a checked-in artifact: the removal must be intentional and
-// documented in the fragment that lost the symbol.
-var knownRemovals = map[string]bool{
-	// Step 3 (static composition): _staticMode was the runtime branch that
-	// tested <html data-fui-static> at request time. Composition replaced it
-	// with build-time fragment selection — the `static` bundle omits the
-	// fragments that branched on it, and the `full` bundle never carries the
-	// marker, so the const and its branches are dead code in both. Removed
-	// from kernel.js / rpc.js / widgets-boot.js.
-	"_staticMode": true,
-}
+const symbolManifestHeader = `# Top-level symbol manifest for core-ui/runtime/frag/*.js — the reference
+# for TestComposedRuntimeIsSymbolComplete. One "<fragment>\t<symbol>" line
+# per IIFE-body-level function/const/let/var declaration, sorted.
+#
+# This file is the gate's whole point: it is checked in, so DELETING a
+# declaration from a fragment shows up here as a removed line that a human
+# had to write. Regenerating runtime.js does not touch it.
+#
+# Regenerate (only when the change to the fragments is intentional):
+#   GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete
+#
+`
 
+// TestComposedRuntimeIsSymbolComplete guards against silent code loss in the
+// fragments: every top-level function/const/let they declare is pinned in a
+// checked-in manifest, and a declaration that disappears fails the build.
+//
+// What it catches: deleting (or typo-renaming) a top-level declaration in any
+// frag/*.js. Regenerating runtime.js with GOFASTR_UPDATE_RUNTIME_JS=1 does not
+// launder that away — the manifest is a separate artifact with a separate
+// regeneration flag, so the loss stays visible as a removed line in the diff
+// that a reviewer has to accept.
+//
+// What it does NOT catch, and never claimed to: deleting the BODY of a
+// declaration while keeping its name; anything block-scoped or nested (the
+// regex deliberately matches only two-space indent, the IIFE body's own
+// level); object-literal method shorthand on the namespace (the attr/doc
+// parity gate covers those); and any semantic regression at all. It is a
+// "nothing vanished" check, not a behaviour check — the chromedp e2e suite is
+// what covers behaviour.
+//
+// Its previous reference was `git show HEAD:core-ui/runtime/runtime.js`, which
+// stopped meaning anything the moment runtime.js became a generated artifact
+// that TestComposedRuntimeMatchesOnDiskFile pins byte-for-byte to
+// composeFull(): the gate was comparing the composition against itself and
+// could not fail.
 func TestComposedRuntimeIsSymbolComplete(t *testing.T) {
-	raw, err := composeFull()
-	if err != nil {
-		t.Fatalf("composeFull: %v", err)
+	have := fragmentSymbolIndex(t)
+	wantRaw, err := os.ReadFile(symbolManifestPath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read %s: %v", symbolManifestPath, err)
 	}
-	composed := declaredSymbols(raw)
-	head := declaredSymbols(preSplitRuntimeJS(t))
-
-	t.Logf("symbol sets: HEAD=%d  composed(full)=%d", len(head), len(composed))
-
-	var missing []string
-	for name := range head {
-		if _, ok := composed[name]; !ok {
-			if knownRemovals[name] {
-				continue
-			}
-			missing = append(missing, name)
-		}
+	want := string(wantRaw)
+	if have == want {
+		return
 	}
-	if len(missing) > 0 {
-		// Sort for deterministic output.
-		// (maps iterate in random order; a sorted list is the difference
-		// between a readable failure and a shuffled one.)
-		for i := 1; i < len(missing); i++ {
-			for j := i; j > 0 && missing[j-1] > missing[j]; j-- {
-				missing[j-1], missing[j] = missing[j], missing[j-1]
-			}
+	if os.Getenv("GOFASTR_UPDATE_RUNTIME_SYMBOLS") != "" {
+		if err := os.WriteFile(symbolManifestPath, []byte(have), 0o644); err != nil {
+			t.Fatalf("rewrite %s: %v", symbolManifestPath, err)
 		}
-		t.Fatalf("%d top-level symbol(s) declared in HEAD runtime.js are ABSENT from "+
-			"the composed `full` runtime — code was silently lost during fragment "+
-			"extraction:\n  %s\nRestore each into the owning fragment under "+
-			"core-ui/runtime/frag/.", len(missing), strings.Join(missing, "\n  "))
+		t.Logf("%s regenerated from frag/*.js — re-run without "+
+			"GOFASTR_UPDATE_RUNTIME_SYMBOLS to verify.", symbolManifestPath)
+		return
 	}
 
-	// Report extras as information only. Step 2 may introduce new IIFE-level
-	// helpers (e.g. a namespace alias); those are not regressions.
-	var extra []string
-	for name := range composed {
-		if _, ok := head[name]; !ok {
-			extra = append(extra, name)
+	inHave := map[string]bool{}
+	for _, l := range manifestLines(have) {
+		inHave[l] = true
+	}
+	var gone, added []string
+	for _, l := range manifestLines(want) {
+		if !inHave[l] {
+			gone = append(gone, l)
 		}
 	}
-	if len(extra) > 0 {
-		for i := 1; i < len(extra); i++ {
-			for j := i; j > 0 && extra[j-1] > extra[j]; j-- {
-				extra[j-1], extra[j] = extra[j], extra[j-1]
-			}
-		}
-		t.Logf("note: %d symbol(s) in composed `full` are NEW vs HEAD (allowed; "+
-			"introduced by the split): %s", len(extra), strings.Join(extra, ", "))
+	inWant := map[string]bool{}
+	for _, l := range manifestLines(want) {
+		inWant[l] = true
 	}
+	for _, l := range manifestLines(have) {
+		if !inWant[l] {
+			added = append(added, l)
+		}
+	}
+	if len(gone) > 0 {
+		t.Errorf("%d top-level symbol(s) pinned in %s are GONE from frag/*.js — either "+
+			"code was silently lost, or the removal is deliberate and the manifest has to say so:\n  %s",
+			len(gone), symbolManifestPath, strings.Join(gone, "\n  "))
+	}
+	if len(added) > 0 {
+		t.Errorf("%d top-level symbol(s) in frag/*.js are missing from %s:\n  %s",
+			len(added), symbolManifestPath, strings.Join(added, "\n  "))
+	}
+	t.Logf("Regenerate with:\n  GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete")
+}
+
+// manifestLines strips comments and blanks so the diff below reports symbols,
+// not header prose.
+func manifestLines(s string) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
 }
 
 // TestComposedRuntimeMatchesOnDiskFile is the drift guard. The gate tests in

@@ -1906,8 +1906,8 @@
           return;
         }
         // Stash every widget's payload so openWidget can retrieve a
-        // hidden one on demand. Also resolve _widgetCatalogReadyResolve
-        // so the eager click delegator can proceed.
+        // hidden one on demand. Also settle _wready (via _wcr) so the
+        // eager click delegator can proceed.
         window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
         for (const item of list) {
           window.__gofastr._widgetCatalog[item.cfg.name] = item;
