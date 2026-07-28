@@ -339,6 +339,25 @@
 
     /** Call a server action and handle the response */
     async serverAction(action, params = {}) {
+      // Reaching here means the call was never compiled.
+      //
+      // The action compiler rewrites the literal "G.serverAction(" into
+      // "G._serverActionFor(<componentId>, ", so every registered action
+      // arrives with an id. A call the compiler could not see — a computed
+      // spelling like G["serverAction"](…), an aliased reference, a call
+      // assembled at runtime — keeps this method and posts with an empty
+      // componentId, which the server cannot route. That used to be a silent
+      // 404 discovered in production; say what actually happened instead.
+      //
+      // The build gate and the boot walk catch the ordinary spellings. This is
+      // the backstop for the ones neither can see, and the reason it lives at
+      // runtime is that neither static analysis nor the compiler can resolve
+      // them either.
+      console.error(
+        '[gofastr] serverAction("' + action + '") was not compiled: it is being ' +
+        'called in a form the action compiler cannot rewrite (a computed or ' +
+        'aliased reference). Write it literally as G.serverAction("' + action +
+        '") so it gets its component id.');
       return this._serverActionFor('', action, params);
     },
 

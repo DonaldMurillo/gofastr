@@ -11,11 +11,11 @@
 //
 // # The signal
 //
-// The property "this action posts to the server" is carried solely by the
-// ClientJS a component registers, because that is what the action compiler keys
-// on — framework/uihost/uihost.go rewrites the literal "G.serverAction(" to
-// "G._serverActionFor(<componentID>, ". Matching what the compiler matches is
-// as precise as the compiler is.
+// The property "this action posts to the server" is carried by the ClientJS
+// passed to component.WithClientJS. The compiler rewrites only the canonical
+// "G.serverAction(" spelling. This analyzer also detects legal whitespace
+// before "(", then reports the canonical spelling instead of allowing a dead
+// call to ship.
 //
 // component.Server(...) and ActionDef.Server look like the marker but are dead
 // API: Server(...) has one call site in the whole repo (a unit test), and On()
@@ -36,13 +36,15 @@
 //     following one level of identifier → initializer within the package.
 //  3. comp → its concrete named type, following an identifier whose declared
 //     type is the component.Component interface back to its initializer.
-//  4. that type's Actions() method → On(...) registrations whose ClientJS
-//     contains "G.serverAction(".
+//  4. that type's Actions() method → executable component.On(...) calls with a
+//     literal component.WithClientJS(...) option containing a G.serverAction
+//     call outside JavaScript comments and strings.
 //
-// Where a step does not resolve — a screen built in a loop, a component chosen
-// at runtime, a component or screen from another package — the analyzer says
-// nothing and the boot walk catches it. A false positive in a build gate is
-// worse than a miss here, because the miss is already covered.
+// The analyzer gives up on computed screens, runtime-selected components,
+// cross-package screen/component values, non-literal ClientJS, and
+// registrations nested inside a function literal. The boot walk inspects the
+// compiled registry and catches those cases when they execute. Silence is
+// intentional when static reachability is not provable.
 package embedcheck
 
 import (
@@ -52,14 +54,17 @@ import (
 	"go/types"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
 )
 
 const (
-	embedPkgPath      = "github.com/DonaldMurillo/gofastr/framework/embed"
-	appPkgPath        = "github.com/DonaldMurillo/gofastr/core-ui/app"
-	serverActionToken = "G.serverAction(" // not-a-secret: the JS call the action compiler string-replaces; the signal this gate matches
+	embedPkgPath     = "github.com/DonaldMurillo/gofastr/framework/embed"
+	appPkgPath       = "github.com/DonaldMurillo/gofastr/core-ui/app"
+	componentPkgPath = "github.com/DonaldMurillo/gofastr/core-ui/component"
+	serverActionName = "G.serverAction"
 )
 
 // Analyzer is the go/analysis pass. analysistest exercises it directly, and a
@@ -91,11 +96,12 @@ type Finding struct {
 func (f Finding) Format() string {
 	return fmt.Sprintf(
 		"embed surface %q renders component %q which registers a server action "+
-			"%q: G.serverAction is refused inside a frame (the action registry is "+
-			"app-global with no relationship to any surface, so honouring an embed "+
-			"grant would let a credential minted for one surface invoke any action "+
-			"in the app). Use an island RPC, a form POST, or polling instead — "+
-			"all three work in a frame.",
+			"%q: G.serverAction(...) is refused inside a frame (the action registry "+
+			"is app-global with no relationship to any surface, so honouring an "+
+			"embed grant would let a credential minted for one surface invoke any "+
+			"action in the app). The compiler accepts only the canonical spelling "+
+			"G.serverAction(...), with no whitespace before '('. Use an island RPC, "+
+			"a form POST, or polling instead — all three work in a frame.",
 		f.Surface, f.Component, f.Action)
 }
 
@@ -333,7 +339,7 @@ func (r *resolver) concreteComponentType(expr ast.Expr) *types.Named {
 	if expr == nil {
 		return nil
 	}
-	if n := namedOf(r.info.Types[expr].Type); n != nil {
+	if n := namedOf(r.info.Types[expr].Type); n != nil && !types.IsInterface(n) {
 		return n
 	}
 	id, ok := expr.(*ast.Ident)
@@ -374,9 +380,11 @@ type registration struct {
 	event string
 }
 
-// serverActions returns the On(...) registrations in named's Actions() method
-// whose ClientJS contains "G.serverAction(". It only inspects components
-// defined in this package; a component from another package is a give-up.
+// serverActions returns executable component.On(...) registrations in named's
+// Actions method whose literal WithClientJS option calls G.serverAction. It
+// skips function literals because their bodies do not execute merely by being
+// declared. Immediately-invoked function literals are a deliberate static
+// give-up; the compiled-registry boot gate catches them.
 func (r *resolver) serverActions(named *types.Named) []registration {
 	if named.Obj().Pkg() == nil || named.Obj().Pkg() != r.pkg {
 		return nil
@@ -387,65 +395,157 @@ func (r *resolver) serverActions(named *types.Named) []registration {
 	}
 	var out []registration
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok {
+			return false
+		}
 		call, ok := n.(*ast.CallExpr)
-		if !ok {
+		if !ok || !r.isComponentCall(call, "On") {
 			return true
 		}
-		// component.On(event, handler, opts…) is the registration seam. Matching
-		// the simple name "On" (qualified or dot-imported) is precise enough
-		// here: we are already inside this specific component's Actions() body,
-		// and On is the only call that registers into the action registry that
-		// ExtractActions collects. ActionDef.Server / component.Server are dead
-		// and intentionally not matched.
-		if simpleName(call.Fun) != "On" {
+		clientJS, ok := r.clientJSLiteral(call)
+		if !ok || !executableServerActionCall(clientJS) {
 			return true
 		}
 		event := "<dynamic>"
 		if len(call.Args) > 0 {
 			event = stringLitValue(call.Args[0], "<dynamic>")
 		}
-		if containsServerActionToken(call) {
-			out = append(out, registration{pos: call.Pos(), event: event})
-		}
+		out = append(out, registration{pos: call.Pos(), event: event})
 		return true
 	})
 	return out
 }
 
-// containsServerActionToken reports whether call (an On registration) carries a
-// string literal containing "G.serverAction(" in any argument, including the
-// ClientJS passed via a nested WithClientJS(...) option. This mirrors the
-// action compiler's literal scan exactly.
-func containsServerActionToken(call *ast.CallExpr) bool {
-	hit := false
-	ast.Inspect(call, func(n ast.Node) bool {
-		if hit {
-			return false
-		}
-		bl, ok := n.(*ast.BasicLit)
-		if !ok || bl.Kind != token.STRING {
-			return true
-		}
-		if v, err := strconv.Unquote(bl.Value); err == nil {
-			if strings.Contains(v, serverActionToken) {
-				hit = true
-			}
-		} else if strings.Contains(bl.Value, serverActionToken) {
-			hit = true
-		}
-		return true
-	})
-	return hit
+func (r *resolver) isComponentCall(call *ast.CallExpr, name string) bool {
+	var obj types.Object
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		obj = r.info.Uses[fun]
+	case *ast.SelectorExpr:
+		obj = r.info.Uses[fun.Sel]
+	default:
+		return false
+	}
+	fn, ok := obj.(*types.Func)
+	return ok && fn.Name() == name && fn.Pkg() != nil && fn.Pkg().Path() == componentPkgPath
 }
 
-func simpleName(fun ast.Expr) string {
-	switch f := fun.(type) {
-	case *ast.Ident:
-		return f.Name
-	case *ast.SelectorExpr:
-		return f.Sel.Name
+// clientJSLiteral returns the literal JavaScript passed directly to a
+// component.WithClientJS option on this registration. Identifiers,
+// concatenations, wrapper options, and options returned by helpers are static
+// give-ups; evaluating them would risk reporting code that never registers.
+func (r *resolver) clientJSLiteral(call *ast.CallExpr) (string, bool) {
+	for _, arg := range call.Args[2:] {
+		opt, ok := arg.(*ast.CallExpr)
+		if !ok || !r.isComponentCall(opt, "WithClientJS") || len(opt.Args) != 1 {
+			continue
+		}
+		lit, ok := opt.Args[0].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return "", false
+		}
+		if value, err := strconv.Unquote(lit.Value); err == nil {
+			return value, true
+		}
+		return strings.Trim(lit.Value, "\"`"), true
 	}
-	return ""
+	return "", false
+}
+
+// executableServerActionCall scans JavaScript without treating text in
+// comments or string/template literals as code. It accepts whitespace and
+// comments between the callee and "(", both legal JavaScript forms that the
+// compiler cannot rewrite and that this gate must reject.
+func executableServerActionCall(src string) bool {
+	for i := 0; i < len(src); {
+		switch {
+		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
+			i = skipJSLineComment(src, i+2)
+		case src[i] == '/' && i+1 < len(src) && src[i+1] == '*':
+			i = skipJSBlockComment(src, i+2)
+		case src[i] == '\'' || src[i] == '"' || src[i] == '`':
+			i = skipJSString(src, i+1, src[i])
+		case strings.HasPrefix(src[i:], serverActionName) &&
+			(i == 0 || !isJSIdentByte(src[i-1])):
+			after := i + len(serverActionName)
+			if after < len(src) && isJSIdentByte(src[after]) {
+				i = after
+				continue
+			}
+			after = skipJSTrivia(src, after)
+			if after < len(src) && src[after] == '(' {
+				return true
+			}
+			i = after
+		default:
+			i++
+		}
+	}
+	return false
+}
+
+func skipJSTrivia(src string, i int) int {
+	for i < len(src) {
+		if size := jsSpaceLen(src[i:]); size > 0 {
+			i += size
+			continue
+		}
+		switch {
+		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
+			i = skipJSLineComment(src, i+2)
+		case src[i] == '/' && i+1 < len(src) && src[i+1] == '*':
+			i = skipJSBlockComment(src, i+2)
+		default:
+			return i
+		}
+	}
+	return i
+}
+
+func skipJSLineComment(src string, i int) int {
+	for i < len(src) && src[i] != '\n' && src[i] != '\r' {
+		i++
+	}
+	return i
+}
+
+func skipJSBlockComment(src string, i int) int {
+	for i+1 < len(src) {
+		if src[i] == '*' && src[i+1] == '/' {
+			return i + 2
+		}
+		i++
+	}
+	return len(src)
+}
+
+func skipJSString(src string, i int, quote byte) int {
+	for i < len(src) {
+		if src[i] == '\\' && i+1 < len(src) {
+			i += 2
+			continue
+		}
+		if src[i] == quote {
+			return i + 1
+		}
+		i++
+	}
+	return len(src)
+}
+
+func jsSpaceLen(src string) int {
+	r, size := utf8.DecodeRuneInString(src)
+	if unicode.IsSpace(r) {
+		return size
+	}
+	return 0
+}
+
+func isJSIdentByte(c byte) bool {
+	return c == '_' || c == '$' ||
+		c >= 'a' && c <= 'z' ||
+		c >= 'A' && c <= 'Z' ||
+		c >= '0' && c <= '9'
 }
 
 // funcDeclForMethod finds the FuncDecl for methodName on named by receiver type

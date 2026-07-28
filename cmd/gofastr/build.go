@@ -78,6 +78,7 @@ func runBuild(args []string) {
 	// panics at boot when a surface's screen registers one. This catches it at
 	// build time, with the same signal the boot walk uses. --no-embed-check
 	// skips it for genuinely blocked builds.
+
 	if !opts.noEmbedCheck {
 		info("Checking embed surfaces for server actions...")
 		if !buildEmbedGate("./...") {

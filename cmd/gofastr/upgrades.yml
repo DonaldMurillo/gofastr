@@ -441,3 +441,7 @@ releases:
         breaking: true
         guidance: "G.serverAction is refused inside a frame (the action registry is app-global). uihost now walks each embed surface's screen on Mount and panics naming the surface, component and action if any registered action's client handler calls G.serverAction. Use an island RPC, a form POST, or polling instead — all work in a frame. Detection flags the literal G.serverAction( token in a registered action's ClientJS."
         detect: "G\\.serverAction\\("
+      - change: "embed Host.MintNonce/VerifyGrant/Refresh take a context.Context first"
+        breaking: true
+        guidance: "Every caller must thread a context through — the grant path consults the OriginSource (and any store) on each call, and a context carries the deadline and trace. Add ctx (or r.Context()) as the first argument: embeds.MintNonce(ctx, surface, subject, origin, scopes), embeds.VerifyGrant(ctx, token), embeds.Refresh(ctx, token)."
+        detect: "\\.MintNonce\\(|\\.VerifyGrant\\(|\\.Refresh\\("

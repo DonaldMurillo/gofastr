@@ -66,11 +66,19 @@ func loadFindings(t *testing.T, pkgName string) []Finding {
 	return out
 }
 
-// TestAnalyzerAnalysistest is the canonical go/analysis/analysistest run. The
-// `bad` fixture carries a `// want` directive on the offending On(...) line;
-// `clean` and `notembeddable` carry none and must emit no diagnostics.
+// TestAnalyzerAnalysistest runs the analyzer against every resolvable shape and
+// the fixtures that must remain silent.
 func TestAnalyzerAnalysistest(t *testing.T) {
-	analysistest.Run(t, testdataDir(t), Analyzer, "./src/clean", "./src/bad", "./src/notembeddable")
+	analysistest.Run(t, testdataDir(t), Analyzer,
+		"./src/clean",
+		"./src/bad",
+		"./src/notembeddable",
+		"./src/interfacecomponent",
+		"./src/chained",
+		"./src/inline",
+		"./src/whitespace",
+		"./src/falsepositives",
+	)
 }
 
 // TestCleanSurfaceNotFlagged: an embeddable surface rendering a component that
@@ -121,6 +129,38 @@ func TestServerActionOnEmbedFlagged(t *testing.T) {
 		}
 	}
 	t.Logf("verbatim finding message:\n%s", msg)
+}
+
+func TestAnalyzerResolvesSupportedScreenShapes(t *testing.T) {
+	for _, pkgName := range []string{"interfacecomponent", "chained", "inline"} {
+		t.Run(pkgName, func(t *testing.T) {
+			if got := loadFindings(t, pkgName); len(got) != 1 {
+				t.Fatalf("expected 1 finding on %s, got %d: %+v", pkgName, len(got), got)
+			}
+		})
+	}
+}
+
+func TestAnalyzerFlagsWhitespaceServerActionCall(t *testing.T) {
+	got := loadFindings(t, "whitespace")
+	if len(got) != 1 {
+		t.Fatalf("expected 1 finding on whitespace, got %d: %+v", len(got), got)
+	}
+	if msg := got[0].Format(); !strings.Contains(msg, "G.serverAction(") {
+		t.Fatalf("finding must name the canonical spelling G.serverAction(:\n%s", msg)
+	}
+}
+
+func TestExecutableServerActionCallAcceptsUnicodeWhitespace(t *testing.T) {
+	if !executableServerActionCall("G.serverAction\u00a0(\"save\")") {
+		t.Fatal("scanner missed a server action separated by Unicode whitespace")
+	}
+}
+
+func TestAnalyzerIgnoresNonClientJSAndDeadRegistrations(t *testing.T) {
+	if got := loadFindings(t, "falsepositives"); len(got) != 0 {
+		t.Fatalf("expected 0 findings on falsepositives, got %d: %+v", len(got), got)
+	}
 }
 
 // --- mutation checks ----------------------------------------------------
@@ -175,7 +215,7 @@ func TestMutationCleanBecomesFlagged(t *testing.T) {
 	const rel = "testdata/src/clean/clean.go"
 	orig := mutateFixture(t, rel, replacement{
 		from: "G.setState('count', 1)",
-		to:   `G.serverAction("save")`,
+		to:   `G.serverAction(\"save\")`,
 	})
 	defer restore(t, rel, orig)
 	if got := loadFindings(t, "clean"); len(got) != 1 {
@@ -230,5 +270,31 @@ func TestMutationNonEmbeddableBecomesFlagged(t *testing.T) {
 	defer restore(t, rel, orig)
 	if got := loadFindings(t, "notembeddable"); len(got) != 1 {
 		t.Fatalf("after mutation, expected 1 finding on notembeddable, got %d: %+v", len(got), got)
+	}
+}
+
+func TestMutationResolvedShapesBecomeClean(t *testing.T) {
+	fixtures := []struct {
+		pkgName string
+		from    string
+	}{
+		{pkgName: "interfacecomponent", from: `G.serverAction("save")`},
+		{pkgName: "chained", from: `G.serverAction("save")`},
+		{pkgName: "inline", from: `G.serverAction("save")`},
+		{pkgName: "whitespace", from: `G.serverAction ("save")`},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.pkgName, func(t *testing.T) {
+			rel := filepath.Join("testdata", "src", fixture.pkgName, fixture.pkgName+".go")
+			orig := mutateFixture(t, rel, replacement{
+				from: fixture.from,
+				to:   `G.setState("saved", true)`,
+			})
+			defer restore(t, rel, orig)
+			if got := loadFindings(t, fixture.pkgName); len(got) != 0 {
+				t.Fatalf("after mutation, expected 0 findings on %s, got %d: %+v",
+					fixture.pkgName, len(got), got)
+			}
+		})
 	}
 }

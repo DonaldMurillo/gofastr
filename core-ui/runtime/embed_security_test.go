@@ -28,6 +28,8 @@ var existingEmbedSourceControls = []embedSourceControl{
 	{name: "loader clamps reported height", file: "embed-loader.js", literal: "Math.min(Math.ceil(h), 20000)", minCount: 1, mutation: "Math.ceil(h)"},
 	{name: "loader suppresses referrer", file: "embed-loader.js", literal: "frame.setAttribute('referrerpolicy', 'no-referrer');", minCount: 1, mutation: ""},
 	{name: "loader prevents duplicate target mounts", file: "embed-loader.js", literal: "if (target.__gofastrEmbed) return target.__gofastrEmbed;", minCount: 1, mutation: ""},
+	{name: "loader forwards the customer id on the frame URL", file: "embed-loader.js", literal: "q.push('customer=' + encodeURIComponent((opts.customer + '').slice(0, 256)))", minCount: 1, mutation: ""},
+	{name: "loader reads data-customer in auto-mount", file: "embed-loader.js", literal: "customer: self.getAttribute('data-customer') || '',", minCount: 1, mutation: ""},
 }
 
 var containmentEmbedSourceControls = []embedSourceControl{
