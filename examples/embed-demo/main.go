@@ -47,6 +47,15 @@ const (
 	// Exact origins only — http://localhost:8088 does not cover
 	// http://127.0.0.1:8088, and that is the point.
 	customerOrigin = "http://localhost" + customerAddr
+	// demoCustomer is the OriginSource key for Acme. It rides the frame URL as
+	// ?customer=<id> (the loader forwards it from the snippet's data-customer),
+	// and the shell asks the source for THIS customer's origins to build
+	// frame-ancestors. Onboarding Acme is adding this row, not editing config.
+	demoCustomer = "acme"
+	// demoTenant is what Config.ResolveTenant returns. The tenant comes from a
+	// lookup on the grant's subject, never from anything the request carried —
+	// a stolen grant cannot pick its own tenant. The demo has one tenant.
+	demoTenant = "tenant-acme"
 )
 
 // reportsScreen is the embeddable surface: a small dashboard built entirely
@@ -85,6 +94,39 @@ func (s *reportsScreen) RenderCtx(ctx context.Context) render.HTML {
 	)
 }
 
+// demoSource is a toy embed.OriginSource. A real SaaS stores each customer's
+// allowed framing origins in its own table; here that table is a literal map
+// so the demo runs with no database. Two methods, because the shell and the
+// grant path ask different questions: the shell knows the customer (it arrives
+// on the frame URL) and needs their LIST to build frame-ancestors; the grant
+// path (MintNonce/VerifyGrant) knows only an origin — MintNonce takes an
+// origin, not a customer — and needs a yes/no. See embed.OriginSource.
+type demoSource struct {
+	origins map[string][]string // customer id -> exact origins allowed to frame
+}
+
+func (s *demoSource) Origins(_ context.Context, _, customer string) ([]string, error) {
+	// A missing customer returns nil, which the shell writes as
+	// frame-ancestors 'none'. That fail-closed property is the point: a stranger
+	// guessing ids cannot widen framing, and a typo in the snippet blocks only
+	// the one frame that has it.
+	return s.origins[customer], nil
+}
+
+func (s *demoSource) Allows(_ context.Context, _, origin string) (bool, error) {
+	// VerifyGrant calls this on every embed request whose origin is not
+	// boot-listed, so a real impl indexes origin -> customer and caches. The
+	// demo has one customer, so any origin it lists is allowed.
+	for _, list := range s.origins {
+		for _, o := range list {
+			if o == origin {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func main() {
 	secret := os.Getenv("GOFASTR_SECRET")
 	if secret == "" {
@@ -103,8 +145,17 @@ func main() {
 
 	embeds, err := fembed.New(fembed.Config{
 		Surfaces: []fembed.Surface{{
-			Name:    "reports",
-			Screen:  reports,
+			Name:   "reports",
+			Screen: reports,
+			// The static allowlist is the boot-time floor (embed.New requires at
+			// least one origin) and the fallback if OriginSource is removed.
+			// With a source wired the shell serves ONLY the requesting
+			// customer's origins from it, so this list stops driving
+			// frame-ancestors the moment the source is configured — and an
+			// empty or unknown customer fails closed to 'none' rather than
+			// falling back to it. That fail-closed-on-empty is exactly why the
+			// loader must forward data-customer, and is the F1 break this demo
+			// exercises.
 			Origins: []string{customerOrigin},
 			// Declare what an embed of this surface may do. A grant carries the
 			// subject's FULL authority unless something narrows it, so a surface
@@ -126,6 +177,20 @@ func main() {
 			// one user, so the id is the identity.
 			return subject, nil
 		},
+		// Multi-tenant entities behind an embed: Middleware() clears the tenant
+		// along with every other ambient identity, so a tenant-scoped entity
+		// behind this surface would error without this lookup. The tenant comes
+		// from YOUR lookup on the grant's subject, never from the request.
+		ResolveTenant: func(_ context.Context, _ string) (string, error) {
+			return demoTenant, nil
+		},
+		// Per-customer origins at request time. The customer id reaches the
+		// shell as ?customer=<id> on the frame URL — forwarded by the loader
+		// from the snippet's data-customer — and the shell asks this source for
+		// that customer's origins only.
+		OriginSource: &demoSource{origins: map[string][]string{
+			demoCustomer: {customerOrigin},
+		}},
 	})
 	if err != nil {
 		log.Fatalf("embed.New: %v", err)
@@ -194,7 +259,7 @@ func customerSite(embeds *fembed.Host) http.Handler {
 		theme := base64.RawURLEncoding.EncodeToString(brand)
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, customerPage, appOrigin, nonce, theme)
+		fmt.Fprintf(w, customerPage, appOrigin, demoCustomer, nonce, theme)
 	})
 	return mux
 }
@@ -227,6 +292,7 @@ const customerPage = `<!doctype html>
 </main>
 <script src="%s/__gofastr/embed.js"
         data-surface="reports"
+        data-customer="%s"
         data-token="%s"
         data-theme="%s"
         data-target="#reports"></script>

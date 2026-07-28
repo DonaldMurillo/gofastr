@@ -38,6 +38,13 @@ all.
   route via `ResolvedSurface.Path()` where you read `Surface.Path` before.
   `framework/uihost` reads it for you (`embedSurfacePath`, the shell config,
   the content render).
+- **BREAKING: `MintNonce`, `VerifyGrant` and `Refresh` take a `context.Context`
+  first.** Every caller must thread a context through: the grant path consults
+  the `OriginSource` (and any store) on each call, and a context is how a
+  deadline and a trace ride along. Add `ctx` (or `r.Context()`) as the first
+  argument — `MintNonce(ctx, surface, subject, origin, scopes)`,
+  `VerifyGrant(ctx, token)`, `Refresh(ctx, token)`. `gofastr upgrade` flags
+  every call site.
 
 ### Added
 
@@ -71,6 +78,12 @@ all.
   - Two consequences of per-customer responses, both improvements: your customer
     list is no longer enumerable from one URL, and one customer's list growing no
     longer breaks the surface for everyone.
+  - The snippet carries the customer id as `data-customer`; the loader forwards
+    it onto the frame URL (bounded and encoded), and the shell reads it as the
+    `customer` query param to resolve that customer's origins. Without that
+    forwarding an `OriginSource` app serves `frame-ancestors 'none'` for every
+    customer, so the row you added is never reached — framing and granting a new
+    domain with no restart works only because the loader carries the id.
 - **`check-embed`**, a build gate wired into `gofastr build` beside `check-csp`
   and the accessibility gate. It resolves `embed.Surface{…}` → `app.NewScreen`
   → the component type → its `On(...)` registrations, and fails naming the

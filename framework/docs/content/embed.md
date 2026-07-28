@@ -57,8 +57,8 @@ fwApp.Mount(site)
 fwApp.Use(embeds.Middleware())
 
 // Scopes are not enforced automatically. This is what makes them bind.
-reports := fwApp.Group("/reports")
-reports.Use(embeds.RequireScope("reports:read"))
+reportsRoutes := fwApp.Group("/reports")
+reportsRoutes.Use(embeds.RequireScope("reports:read"))
 ```
 
 ### What a grant may reach
@@ -100,8 +100,8 @@ the subject with that subject's full authority, including any role they hold.
 Gate the routes that need it:
 
 ```go
-reports := fwApp.Group("/reports")
-reports.Use(embeds.RequireScope("reports:read"))
+reportsRoutes := fwApp.Group("/reports")
+reportsRoutes.Use(embeds.RequireScope("reports:read"))
 
 // or, as a group option:
 fwApp.Group("/reports", routegroup.WithMiddleware(embeds.RequireScope("reports:read")))
@@ -162,7 +162,7 @@ decisions.
 The app mints a nonce server-side, for one viewer, on one origin:
 
 ```go
-nonce, err := embeds.MintNonce("reports", user.ID, "https://acme.com", nil)
+nonce, err := embeds.MintNonce(r.Context(), "reports", user.ID, "https://acme.com", nil)
 ```
 
 Render `nonce` into the snippet you give the customer. Passing `nil` for scopes
@@ -278,20 +278,28 @@ carries only theirs.
 
 ```go
 type OriginSource interface {
-    // Origins returns customer's allowed origins for surface. Need not be
-    // pre-normalized; the framework normalizes and validates them exactly as
-    // it does a static list.
+    // Origins returns the exact origins allowed to frame the named surface for
+    // the named customer, in declaration order. Need not be pre-normalized;
+    // ResolveCustomerOrigins normalizes and validates them exactly as it does a
+    // static list. An empty slice or an error fails the shell closed.
     Origins(ctx context.Context, surface, customer string) ([]string, error)
+
+    // Allows reports whether origin may frame the named surface for ANY
+    // customer. It is the grant path's question — MintNonce is handed an
+    // origin, not a customer — so this is what decides whether a source-managed
+    // origin can obtain a credential at all. It is on the hot path (VerifyGrant
+    // calls it per request for origins the static list does not know), so cache
+    // it; a table scan per request is not acceptable. An error fails closed.
+    Allows(ctx context.Context, surface, origin string) (bool, error)
 }
 ```
 
 The customer identity reaches the shell as a `customer` query parameter on the
-frame URL (`/__gofastr/embed/{surface}?customer=<id>`). The shell reads it,
-asks the source for that customer's origins, normalizes and de-duplicates them,
-and writes only those into `frame-ancestors`. (Carrying `customer` from the
-snippet into that URL is the loader's job; it is a one-line addition to
-`embed-loader.js`, forwarding a `data-customer` attribute the way it already
-forwards `data-theme`.)
+frame URL (`/__gofastr/embed/{surface}?customer=<id>`). The snippet carries it
+as a `data-customer` attribute, the loader forwards it onto the frame URL the
+way it forwards `data-theme`, and the shell reads it, asks the source for that
+customer's origins, normalizes and de-duplicates them, and writes only those
+into `frame-ancestors`.
 
 The cap moves with it. A static list is bounded once at boot because one
 over-size directive breaks every customer; a per-customer list is bounded at
@@ -531,10 +539,23 @@ honouring a grant there would let a credential minted for one surface invoke
 any action registered anywhere in the app — including from a public,
 subject-less surface.
 
-You find out at **boot**, not in a customer's page: `Mount` walks each surface's
-screen and panics naming the surface, the component and the action. Two gates
-back that up — `gofastr build` runs a static check for the same thing, and the
-boot walk sees whatever actually registered, so nothing dynamic slips past.
+You find out at **boot**, not in a customer's page. Two gates back that up, and
+each sees a different slice — neither is total on its own:
+
+- **`gofastr build` (the `check-embed` analyzer)** resolves
+  `embed.Surface{…}` → `app.NewScreen` → the component type → its `On(...)`
+  registrations statically. It reports only what it can prove: a screen built
+  in a loop, or a component whose type lives in another package, it stays
+  silent about, because a false positive in a build gate is worse than a miss.
+- **The boot walk (`enforceNoServerActionsOnEmbeds`)** runs on `Mount` and sees
+  whatever actually registered at runtime — so nothing dynamic slips past — but
+  only for surfaces whose screen is a `*app.Screen` (every production surface),
+  the concrete type whose component tree it can reach. A surface carrying a
+  screen that is not a `*app.Screen` is invisible to this walk and falls to the
+  static analyzer above.
+
+Both panic naming the surface, the component and the action, and point at
+island RPC, a form POST, or polling.
 
 Everything else works in a frame: island RPC, form posts, `data-fui-poll`, and
 SSE. Only the `serverAction` escape hatch is closed.
