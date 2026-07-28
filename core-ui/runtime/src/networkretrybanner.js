@@ -129,7 +129,7 @@
   };
 
   requestAnimationFrame(() => scan(document));
-  document.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', () => {
     // Disconnect old banners' timers — their DOM is about to be
     // replaced. Walk the WeakMap-keyed Set; banners not in the new
     // DOM tree get GC'd as the Set is cleared.

@@ -58,7 +58,7 @@
   }
 
   scan(document);
-  document.addEventListener('gofastr:navigate', function () { scan(document); });
+  window.addEventListener('gofastr:navigate', function () { scan(document); });
 
   window.__gofastr = window.__gofastr || {};
   window.__gofastr.animatedCounter = { rescan: scan };

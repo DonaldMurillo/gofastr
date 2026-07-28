@@ -111,6 +111,11 @@
         if (responseSignal) window.__gofastr.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
         return;
       }
+      // Server-named stale screens (X-Gofastr-Invalidate) — evicted
+      // before any post-success effect (data-fui-rpc-navigate must see
+      // the eviction). The consumer lives in nav; optional because the
+      // embed composition ships rpc without nav (no screen cache).
+      window.__gofastr._inval?.(r);
       // URL state update (no re-fetch). Either the server hands us the
       // canonical URL via X-Gofastr-Push-State, or the triggering
       // element declares it via data-fui-push-state. Header takes

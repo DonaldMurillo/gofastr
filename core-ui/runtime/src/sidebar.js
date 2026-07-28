@@ -47,7 +47,7 @@
   });
 
   scan(document);
-  document.addEventListener('gofastr:navigate', () => scan(document));
+  window.addEventListener('gofastr:navigate', () => scan(document));
   new MutationObserver((records) => {
     for (const record of records) {
       for (const node of record.addedNodes) {

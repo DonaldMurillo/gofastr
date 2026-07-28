@@ -74,6 +74,7 @@
       fetch(url, { method, credentials: 'same-origin', headers })
         .then((res) => {
           if (res.ok) {
+            window.__gofastr._inval?.(res);
             setState(btn, 'committed');
             btn.dispatchEvent(new CustomEvent('optimistic-action:committed', { bubbles: true }));
             return;
@@ -102,7 +103,7 @@
   };
 
   requestAnimationFrame(() => scan(document));
-  document.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', () => {
     requestAnimationFrame(() => scan(document));
   });
 

@@ -65,7 +65,11 @@
       method: (method || 'POST').toUpperCase(),
       credentials: 'same-origin',
       headers: csrfHeaders(),
-    }).then((res) => res.ok, () => false);
+    }).then((res) => {
+      // Toggles are mutations — honor X-Gofastr-Invalidate like rpc.js.
+      if (res.ok) window.__gofastr._inval?.(res);
+      return res.ok;
+    }, () => false);
   };
 
   const revokeGroupSiblings = (group, except) => {
@@ -124,7 +128,7 @@
   };
 
   requestAnimationFrame(() => scan(document));
-  document.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', () => {
     requestAnimationFrame(() => scan(document));
   });
 

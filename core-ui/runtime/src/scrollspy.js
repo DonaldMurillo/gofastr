@@ -127,7 +127,7 @@
   };
 
   requestAnimationFrame(() => scan(document));
-  document.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', () => {
     // SPA navigation replaces the page DOM. Disconnect every active
     // observer before re-scanning so the old observers + their
     // strong references to (now-detached) target elements release.

@@ -353,11 +353,7 @@
       // the backstop for the ones neither can see, and the reason it lives at
       // runtime is that neither static analysis nor the compiler can resolve
       // them either.
-      console.error(
-        '[gofastr] serverAction("' + action + '") was not compiled: it is being ' +
-        'called in a form the action compiler cannot rewrite (a computed or ' +
-        'aliased reference). Write it literally as G.serverAction("' + action +
-        '") so it gets its component id.');
+      console.error('[gofastr] serverAction("' + action + '") was not compiled; write it literally.');
       return this._serverActionFor('', action, params);
     },
 
@@ -689,6 +685,11 @@
         if (responseSignal) window.__gofastr.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
         return;
       }
+      // Server-named stale screens (X-Gofastr-Invalidate) — evicted
+      // before any post-success effect (data-fui-rpc-navigate must see
+      // the eviction). The consumer lives in nav; optional because the
+      // embed composition ships rpc without nav (no screen cache).
+      window.__gofastr._inval?.(r);
       // URL state update (no re-fetch). Either the server hands us the
       // canonical URL via X-Gofastr-Push-State, or the triggering
       // element declares it via data-fui-push-state. Header takes
@@ -1222,7 +1223,7 @@
   // -----------------------------------------------------------------------
   // Screen cache — stores rendered screens for instant back-navigation.
   // -----------------------------------------------------------------------
-  const screenCache = new Map(); // path → { html, title, timestamp }
+  const screenCache = new Map(); // path → { html, title }
   // sseMeta reads the live stream-id carrier from a document (default:
   // the live one). The SSE module re-reads it on every reconnect, so
   // pointing it at a fresh session id is the whole recovery contract.
@@ -1238,14 +1239,17 @@
       const oldest = screenCache.keys().next().value;
       screenCache.delete(oldest);
     }
-    screenCache.set(path, { html, title, timestamp: Date.now() });
+    screenCache.set(path, { html, title });
   };
 
   // Cache the initial page so back-navigation to it works instantly.
   // Route through cacheScreen() so the LRU cap is enforced uniformly.
   const initialMain = document.querySelector('[role="main"]') ?? document.querySelector('main');
   if (initialMain) {
-    cacheScreen(location.pathname, initialMain.innerHTML, document.title);
+    // Key with the search string too — every later entry (and
+    // currentPath) is keyed pathname+search, and invalidate()
+    // matches against that form.
+    cacheScreen(location.pathname + location.search, initialMain.innerHTML, document.title);
   }
 
 
@@ -1445,9 +1449,12 @@
       if (!grp && layoutWillChange(path)) {
         const fr = await fetch(path);
         if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
+        window.__gofastr._inval(fr);
         const doc = new DOMParser().parseFromString(await fr.text(), 'text/html');
         let dest = path;
-        if (fr.redirected && fr.url) { try { dest = new URL(fr.url).pathname; } catch (_) {} }
+        // resolvePath keeps the search string — the cache key and the
+        // URL bar must carry a redirect-added query (e.g. ?next=/admin).
+        if (fr.redirected && fr.url) dest = resolvePath(fr.url);
         if (dest !== path) { try { history.replaceState(null, '', dest); } catch (_) {} currentPath = dest; }
         const t = doc.querySelector('title')?.textContent || document.title;
         document.title = t;
@@ -1483,6 +1490,11 @@
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
       if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + rs));
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      // Evict server-named stale screens BEFORE chasing a redirect, so
+      // a "mutated + redirected" response drops entries first and the
+      // redirect target is then fetched/cached fresh.
+      window.__gofastr._inval(resp);
 
       // X-Gofastr-Location signals "server policy redirected this
       // partial — go nav to the new URL instead of trying to swap
@@ -1804,6 +1816,43 @@
         history.pushState(null, '', path);
       }
       loadPage(path, { bypassCache: force });
+    },
+
+    /** Drop cached screens so the next visit re-fetches. Selectors:
+        "/orders" drops that pathname AND every cached query variant;
+        "/orders?page=2" drops exactly that entry; "*" clears all.
+        Root-relative paths only — anything else is ignored. Never
+        touches the live DOM; pair with refresh()/navigate(force) when
+        the current screen must re-render too. */
+    invalidate(...sels) {
+      for (const s of sels) {
+        if (s === '*') { screenCache.clear(); return; }
+        if (!s || s[0] !== '/') continue;
+        if (s.includes('?')) { screenCache.delete(s); continue; }
+        // Queryless selector: evict the pathname and all its query
+        // variants (a stale list is stale on every page/filter of it).
+        for (const k of screenCache.keys()) if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
+      }
+    },
+
+    /** Re-fetch and re-render the current screen from the server,
+        bypassing the cache. Goes straight to loadPage — history is not
+        touched, so a #fragment on the URL survives. */
+    refresh() { loadPage(currentPath, { bypassCache: true }); },
+
+    // X-Gofastr-Invalidate consumer — takes the whole Response (keeps
+    // the header literal in one module; the callers in rpc/widgets/
+    // intercept stay a few bytes). The value is a JSON string array of
+    // selectors, applied on 2xx by nav/RPC/widget/intercept fetches.
+    // A malformed value is a producer bug (ui.InvalidateScreens always
+    // emits a valid array) and must never break the response that
+    // carried it — ignore it. The Array.isArray gate matters: spreading
+    // a parsed bare string would evict per-character.
+    _inval(r) {
+      try {
+        const a = JSON.parse(r.headers.get('X-Gofastr-Invalidate'));
+        if (Array.isArray(a)) this.invalidate(...a);
+      } catch (_) {}
     },
   });
 

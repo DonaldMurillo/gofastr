@@ -69,7 +69,7 @@
 
   // Initial pass + SPA-nav rescan.
   applyPersistedDismissals(document);
-  document.addEventListener('gofastr:navigate', function () {
+  window.addEventListener('gofastr:navigate', function () {
     applyPersistedDismissals(document);
   });
 

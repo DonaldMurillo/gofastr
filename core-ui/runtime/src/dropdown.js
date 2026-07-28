@@ -103,7 +103,7 @@
   });
 
   // SPA navigation → close all.
-  document.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', () => {
     closeAll(null);
   });
 
@@ -123,7 +123,7 @@
   };
 
   requestAnimationFrame(() => scan(document));
-  document.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', () => {
     requestAnimationFrame(() => scan(document));
   });
 

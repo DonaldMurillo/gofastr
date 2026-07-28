@@ -345,11 +345,7 @@
       // the backstop for the ones neither can see, and the reason it lives at
       // runtime is that neither static analysis nor the compiler can resolve
       // them either.
-      console.error(
-        '[gofastr] serverAction("' + action + '") was not compiled: it is being ' +
-        'called in a form the action compiler cannot rewrite (a computed or ' +
-        'aliased reference). Write it literally as G.serverAction("' + action +
-        '") so it gets its component id.');
+      console.error('[gofastr] serverAction("' + action + '") was not compiled; write it literally.');
       return this._serverActionFor('', action, params);
     },
 

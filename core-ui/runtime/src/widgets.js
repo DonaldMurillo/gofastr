@@ -340,16 +340,11 @@
           if (sig) NS.setSignal(sig, { ok: false, status: r.status, text: txt });
           return;
         }
+        NS._inval?.(r);
+        // Kernel's dispatcher — same parse as the old inline version
+        // plus the module-load-failure fallback renderer.
         const toast = r.headers.get('X-Gofastr-Toast');
-        if (toast) {
-          NS.loadModule('toasts').then(() => {
-            try {
-              const parsed = JSON.parse(toast);
-              const arr = Array.isArray(parsed) ? parsed : [parsed];
-              for (const cfg of arr) NS.toast(cfg);
-            } catch (_) {}
-          }).catch(() => {});
-        }
+        if (toast) NS._dispatchToastHeader(toast);
         const ct = r.headers.get('content-type') || '';
         const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
         if (sig) NS.setSignal(sig, data);

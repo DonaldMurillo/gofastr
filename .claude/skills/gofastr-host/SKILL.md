@@ -73,6 +73,7 @@ generated guidance.
 | cache key/value, memoize, "remember for N seconds" | `battery/cache` |
 | UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components) — `gofastr docs ui-composition-recipes` for page grammar, `gofastr docs ui-new-components` for the catalog, live demos at `/components/<slug>` on the docs site (`examples/site`) |
 | live/auto-refreshing dashboard, counter, status ("websockets"?) | the reactivity ladder (`gofastr docs reactivity`): passive freshness = `data-fui-poll` / widget `Builder.Poll` (no connection, no infra); SSE bus ONLY for presence/collab/sub-second; never WebSockets, never a bespoke `EventSource` |
+| stale page after mutation, "back button shows old data", bust cached screen | `ui.InvalidateScreens(w, "/orders")` on the mutation handler — evicts that pathname (and its query variants) from the requesting tab's screen cache; pair with `data-fui-rpc-navigate` when the user should land on the fresh screen; `gofastr docs runtime-contract` for selector rules |
 | multi-replica deploy (sessions, live updates across replicas) | `framework.WithSecret` (or `GOFASTR_SECRET` env) + `framework.WithFanout` — fanout without a secret fails at boot by design; `gofastr docs scaling` |
 | structured request log, panic recovery, log MCP debug tools | `battery/log` |
 | browser refresh on `gofastr dev` rebuild | auto-wired if your `main.go` uses `framework.NewApp` + `uihost.New` — no host code; for custom bootstraps call `dev.RegisterLiveReload(router)` manually |

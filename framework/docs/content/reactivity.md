@@ -43,6 +43,18 @@ region or writes the value into a signal.
 - Covers every user-initiated data change: paginate, filter, create, update,
   delete, optimistic toggles with rollback.
 
+A mutation can also stale screens the user is *not* on — a create stales
+every cached page of the list, an admin action stales `/pricing`. Name
+them on the response with `ui.InvalidateScreens(w, "/orders")` and the
+runtime drops those entries from its per-tab screen cache, so back-nav
+re-fetches instead of showing the pre-mutation copy. This rides the
+initiating RPC's response — it is part of this rung, not a fifth one. It
+only reaches the tab that made the request; other tabs that need the
+fresh value are the polling rung's job, and SSE is never a
+cache-invalidation transport. For the *current* screen, use
+`data-fui-rpc-navigate` (or return island HTML) — eviction alone never
+re-renders anything.
+
 See [Interactive patterns](interactive-patterns.md) for the full attribute
 vocabulary and [Optimistic UI](optimistic-ui.md) for the mutation lifecycle.
 

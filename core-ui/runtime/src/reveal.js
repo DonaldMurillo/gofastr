@@ -52,7 +52,7 @@
   requestAnimationFrame(() => scan(document));
 
   // SPA re-wire
-  document.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', () => {
     requestAnimationFrame(() => scan(document));
   });
 

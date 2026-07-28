@@ -106,7 +106,7 @@
 
   // On SPA navigation, tear down listeners for computed elements that left the
   // DOM BEFORE the new page's scanner re-wires the fresh markers.
-  document.addEventListener('gofastr:navigate', teardownDetached);
+  window.addEventListener('gofastr:navigate', teardownDetached);
 
   if (window.__gofastr) {
     window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {};
