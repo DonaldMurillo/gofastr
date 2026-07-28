@@ -123,7 +123,7 @@ server side and the runtime does the work.
 | `data-fui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle `<link>` to list the components it covers. The runtime reads it at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
 | `data-fui-layout="<name>"` | Set by the outermost layout shell on its root `<div>` with the layout's name (e.g. `app`, `marketing`). On SPA navigation the runtime compares the destination route's layout (from the route manifest's `layout` field) with the current shell's marker; when they differ — cross-layout nav, where the chrome itself changes — it fetches the full page and swaps the whole shell instead of just `<main>`, so the new screen renders in the right chrome without a hard reload. A shared `data-fui-screen-group` between the two paths overrides this comparison: it proves both screens share the outer shell, so the nav is an in-shell content swap even though a group screen's manifest `layout` (the inner group layout) never matches the outermost marker. |
 | `data-fui-disclosure` | Marks a `<details>` element as a dismissible disclosure (mobile hamburger nav, popover, etc.). The runtime closes it automatically on SPA navigation and when Escape is pressed anywhere on the page (native `<details>` only handles Escape when the `<summary>` itself has focus). |
-| `data-fui-disclosure-trap` | Opt-in modifier on a `data-fui-disclosure` `<details>` element: when open, the runtime sets `inert` on every sibling so focus is trapped inside the disclosure body. Use for mobile drawer / full-sheet popover patterns that need modal-style focus containment (vs. the default non-trapping inline disclosure). |
+| `data-fui-disclosure-trap` | Opt-in modifier on a `data-fui-disclosure` `<details>` element: when open, the runtime sets `inert` on every sibling so focus is trapped inside the disclosure body. Use for mobile drawer / full-sheet popover patterns that need modal-style focus containment (vs. the default non-trapping inline disclosure). The `inert` is released when the disclosure closes, when it is **detached** from the DOM, and on `gofastr:navigate` — a detached `<details>` fires no `toggle`, so both SPA swap paths (layout-shell replace, `<main>` innerHTML write) would otherwise strand every other `<body>` child out of the focus order and the accessibility tree. |
 | `data-fui-action="<name>"` | Marks an element as a server-action trigger. Used together with `data-fui-rpc` to dispatch a named action. |
 | `data-fui-widget="<name>"` | Marks a registered widget instance — the runtime mounts behavior on it after first paint. |
 | `data-fui-backdrop` | Marks an element as a click-to-dismiss overlay backdrop. Pairs with `data-fui-open` to make the floating surface dismissible. |
@@ -815,7 +815,7 @@ completeness test: when it can't, you found the gap.
   generic — not by being tiny in source (the runtime is ~7,400 lines of
   vanilla JS: a core `runtime.js` plus per-feature split modules under
   `core-ui/runtime/src/`), but by being carved and budgeted: a page
-  loads `core.js` (≤12 KB gzipped, enforced by
+  loads `core.js` (≤12.5 KB gzipped, enforced by
   `core-ui/runtime/budget_test.go`) plus only the demand modules its
   components actually use (≤3 KB gzipped each; `widgets` carries a
   tracked 5 KB override). A second gate pins the *typical-page* payload
@@ -824,7 +824,7 @@ completeness test: when it can't, you found the gap.
   the real download while the core number stays pure. None of it
   re-implements server logic.
 
-  The budget policy: 12 KB sits under TCP's initial congestion window
+  The budget policy: 12.5 KB sits under TCP's initial congestion window
   (~14 KB ≈ 10 packets), so the core arrives in the first round trip on
   a cold connection — that cliff is what the number protects; smaller
   buys nothing, bigger costs an RTT. When a budget trips, **carve a

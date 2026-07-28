@@ -9,7 +9,8 @@
 //   - menu disclosures (data-fui-menu) move focus to the first menuitem
 //     on open, so keyboard users land inside the panel without a Tab
 //   - an opt-in focus trap (data-fui-disclosure-trap) for mobile drawers
-//     and full-sheet popovers
+//     and full-sheet popovers, released when the drawer closes, when it
+//     is detached from the DOM, or on SPA navigation
 //
 // Loads on demand: core's module scanner watches
 // details[data-fui-disclosure], so the fetch starts in the initial pass
@@ -38,6 +39,10 @@
   // is exact — "remove inert from everything" would clobber a host's own
   // inert state.
   const inertNeighbors = new WeakMap();
+  // activeTraps is the sibling Set rule 12 asks for: the WeakMap alone is
+  // unenumerable, so there is no way to reach an engaged trap that never
+  // gets another `toggle`.
+  const activeTraps = new Set();
   const applyTrap = (d, open) => {
     if (open) {
       let bodyChild = d;
@@ -53,11 +58,42 @@
         made.push(sib);
       }
       inertNeighbors.set(d, made);
+      activeTraps.add(d);
     } else {
+      activeTraps.delete(d);
       const made = inertNeighbors.get(d);
       if (!made) return;
       for (const sib of made) sib.removeAttribute('inert');
       inertNeighbors.delete(d);
+    }
+    syncTrapWatcher();
+  };
+
+  // Releasing the trap hangs off the element's own `toggle` event, and a
+  // DETACHED <details> never fires one. SPA navigation detaches it two
+  // ways: nav.js's cross-layout branch replaces the whole
+  // [data-fui-layout] shell (cur.replaceWith), and swapMainContent writes
+  // main.innerHTML before its close-open-disclosures sweep can reach a
+  // drawer living inside <main>. Either way the inert would stick to every
+  // other <body> child — gone from the focus order AND the accessibility
+  // tree — for the life of the tab. So watch for the detach directly, and
+  // only while a trap is actually engaged (rule 13: clean up per-instance
+  // state, then re-scan).
+  let trapWatcher = null;
+  const releaseStaleTraps = () => {
+    for (const d of Array.from(activeTraps)) {
+      if (!d.isConnected || !d.open) applyTrap(d, false);
+    }
+  };
+  const syncTrapWatcher = () => {
+    if (activeTraps.size > 0 && !trapWatcher) {
+      // childList only — releaseStaleTraps mutates attributes, so an
+      // attribute-observing watcher would re-enter itself.
+      trapWatcher = new MutationObserver(releaseStaleTraps);
+      trapWatcher.observe(document.body, { childList: true, subtree: true });
+    } else if (activeTraps.size === 0 && trapWatcher) {
+      trapWatcher.disconnect();
+      trapWatcher = null;
     }
   };
 
@@ -106,7 +142,10 @@
   };
   scan(document);
   (NS._moduleScanners ||= {}).disclosure = scan;
-  window.addEventListener('gofastr:navigate', () => scan(document));
+  window.addEventListener('gofastr:navigate', () => {
+    releaseStaleTraps();
+    scan(document);
+  });
 
   (NS.loadedModules ||= {}).disclosure = true;
 })();
