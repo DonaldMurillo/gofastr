@@ -2105,6 +2105,11 @@ func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 func (ds *UIHost) Mount(r *router.Router) {
 	ds.enforceStrict()
 	ds.AutoCompileActions()
+	// Refuse a server action on an embeddable surface at boot, before any
+	// route is served: G.serverAction is dead inside a frame, and finding out
+	// in a customer's page is the failure this exists to prevent. See
+	// embed_actions.go.
+	ds.enforceNoServerActionsOnEmbeds()
 
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))
 	// Embeddable surfaces. Registered only when WithEmbed configured a host,
