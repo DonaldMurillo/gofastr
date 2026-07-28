@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -55,6 +54,10 @@ type SSEBroker struct {
 	fanoutCancel func()
 	fanoutOnce   sync.Once
 	closed       atomic.Bool
+
+	// principal resolves a request to a caller identity for
+	// subscriber-id eviction scoping. nil disables eviction.
+	principal func(*http.Request) string
 }
 
 type subscriber struct {
@@ -114,6 +117,24 @@ type SSEBrokerConfig struct {
 	// A blocking send with no timeout is unbounded backpressure.
 	BlockTimeout time.Duration
 
+	// Principal identifies the caller behind a request, so a reconnect
+	// with the same ?subscriber_id replaces its OWN entry and nobody
+	// else's. Return "" for "cannot tell", which is treated as "not the
+	// same caller".
+	//
+	// Set this to something the caller cannot choose and another caller
+	// cannot guess — a session user id is the usual answer.
+	//
+	// Left nil, the broker never evicts. The old default keyed on
+	// RemoteAddr's host, which is honest only on a direct connection:
+	// behind nginx, an ALB, Cloudflare or a k8s ingress, every request's
+	// TCP peer is the proxy, so all subscribers collapsed to one
+	// principal and `?subscriber_id=<victim>` dropped the victim's
+	// stream — repeatably. Nothing is lost by not evicting: subscriber
+	// ids address nothing (deliver() broadcasts), and a dropped
+	// connection already unregisters itself.
+	Principal func(*http.Request) string
+
 	// MaxSubscribers caps concurrent subscribers; 0 = unlimited.
 	// Subscribe rejects past the cap rather than evicting, so an
 	// attacker cannot displace live subscribers by reconnecting.
@@ -144,6 +165,7 @@ func NewSSEBroker(cfg SSEBrokerConfig) *SSEBroker {
 		maxBuf:            maxBuf,
 		heartbeatInterval: hb,
 		fanoutTopic:       "gofastr.sse." + cfg.Topic,
+		principal:         cfg.Principal,
 
 		allowClientSlowMode: cfg.AllowClientSlowMode,
 		blockTO:             cfg.BlockTimeout,
@@ -260,11 +282,19 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	// drop their stream — repeatably, for a permanent denial. A
 	// reconnect from the same principal still replaces its own entry,
 	// which is the case the eviction was written for.
-	sub.principal = ssePrincipal(r)
+	//
+	// "Same principal" is only meaningful if the host can actually tell
+	// callers apart, so it comes from Config.Principal. With no such
+	// function, every principal is "" — deliberately never equal to
+	// another (see below), so nothing is ever evicted. That is the safe
+	// default: the previous RemoteAddr-based guess collapsed every
+	// caller behind a reverse proxy into one principal and re-opened the
+	// exact denial this scoping exists to prevent.
+	sub.principal = b.principalFor(r)
 
 	b.mu.Lock()
 	prev, collision := b.subscribers[subID]
-	if collision && prev.principal != sub.principal {
+	if collision && (sub.principal == "" || prev.principal != sub.principal) {
 		// Different caller, same requested id: leave the incumbent
 		// alone and give the newcomer an id of its own.
 		subID = generateSubscriberID()
@@ -468,18 +498,15 @@ func (b *SSEBroker) parseSlowMode(r *http.Request) sseSlowMode {
 	return sseSlowDropOldest
 }
 
-// ssePrincipal derives the caller identity used to namespace
-// subscriber ids. RemoteAddr's host is a coarse but honest default:
-// it is not spoofable by the request body or query string.
-func ssePrincipal(r *http.Request) string {
-	if r == nil {
+// principalFor derives the caller identity used to scope subscriber-id
+// eviction, or "" when the host gave the broker no way to tell callers
+// apart. "" is never treated as equal to another principal, so it
+// disables eviction rather than widening it.
+func (b *SSEBroker) principalFor(r *http.Request) string {
+	if b.principal == nil || r == nil {
 		return ""
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return b.principal(r)
 }
 
 // blockTimeout is the bound on a block-mode send. Never zero, so a
