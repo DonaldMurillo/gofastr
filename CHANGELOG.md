@@ -5,6 +5,64 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.50.0] - 2026-07-28
+
+The SPA screen cache gained eviction, and its e2e test caught a
+framework-wide bug: twenty demand modules re-bound their components on a
+navigation event that never reached them.
+
+### Added
+
+- **Screen-cache invalidation (`X-Gofastr-Invalidate` +
+  `ui.InvalidateScreens`).** The runtime keeps a 20-entry per-tab LRU of
+  rendered screens for instant back/forward; until now nothing could evict
+  an entry, so after a mutation the back button showed pre-mutation state.
+  A handler names the screens it staled — `ui.InvalidateScreens(w,
+  "/orders")` — and the runtime drops them when the response resolves 2xx.
+  - Selectors: `"/orders"` evicts that pathname plus every cached query
+    variant (`/orders?page=2`, …); `"/orders?page=2"` evicts exactly that
+    entry; `"*"` clears the cache. No prefix matching — `"/orders"` never
+    touches `/orders/42`. The header value is a JSON string array
+    (commas are legal in query values) and accumulates across calls like
+    `AddToast`. Paths with control characters are rejected: DEL survives
+    JSON encoding un-escaped, and Go's HTTP/2 writer silently discards a
+    header with an invalid value.
+  - Consumed on every 2xx mutation or navigation dispatch — RPC, widget
+    RPC, nav partials, full-shell fetches, intercepted nav,
+    toggle/optimistic actions, sortable reorders — never on poll replies,
+    and before `X-Gofastr-Location`, so a mutated-and-redirected response
+    evicts first and the redirect target is fetched fresh.
+  - Eviction never re-renders the visible page; pair with
+    `data-fui-rpc-navigate` (or the new `__gofastr.refresh()`, which
+    re-fetches the current screen without touching history, `#fragment`
+    included) when the user should also see fresh state now. Scope is the
+    requesting tab: the cache is browser memory, other tabs and the
+    server are unaffected, and cross-tab freshness stays on the polling
+    rung.
+  - The JS mirror is `__gofastr.invalidate(...selectors)` with the same
+    selector rules.
+
+### Fixed
+
+- **SPA re-bind hooks in twenty demand modules never fired.** `nav.js`
+  dispatches `gofastr:navigate` on `window`; dropdown, carousel,
+  lightbox, taginput, toggleaction and fifteen more listened on
+  `document`, which a window-dispatched event never reaches. Components
+  bound at initial load worked; after a SPA navigation swapped in fresh
+  DOM they were inert until a hard reload. All twenty now listen on
+  `window`. The one test covering a navigate-dismissal simulated the
+  event on `document` — matching the broken listener instead of the
+  runtime — and now dispatches on `window`.
+- The initial page was cached under `pathname` without its query string,
+  while every other cache key (and `currentPath`) is `pathname+search` —
+  landing on `/orders?page=2` cached page-2 HTML under `/orders`.
+- A redirect-followed cross-layout fetch dropped the redirect target's
+  query string from both the URL bar and the cache key
+  (`/login?next=/admin` became `/login`).
+- The widget RPC's inline `X-Gofastr-Toast` parse now delegates to the
+  kernel dispatcher, so a toast survives a failed `toasts` module load
+  via the fallback renderer (previously it was silently dropped).
+
 ## [0.49.0] - 2026-07-27
 
 Two features that turned out to share one piece of plumbing. Embeddable
