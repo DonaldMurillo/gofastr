@@ -205,7 +205,7 @@ renders, and hydrates. The module never emits raw HTML/CSS/JS or
 `data-fui-*` attributes; action references resolve to installed routes,
 which the host maps to the real runtime RPC URLs.
 
-The closed validator lives in [`core-ui/uinodev1`](../../core-ui/uinodev1)
+The closed validator lives in [`core-ui/uinodev1`](../../../core-ui/uinodev1)
 (`uinodev1.Validate`): it enforces the whole-tree caps (depth ≈ 32, nodes ≈
 500, per-prop strings ≈ 4 KiB), the closed component enum, typed scalar
 props (no `id`/`class`/`style`/`data-*` passthrough — `data-fui-*` and `on*`
@@ -227,10 +227,10 @@ to real design-system markup (200 `text/html`), a forged tree is rejected
 ## Building a module
 
 A module child is a plain Go binary that speaks moduleproto over stdio. It
-depends only on [`core/moduleproto`](../../core/moduleproto) plus the
+depends only on [`core/moduleproto`](../../../core/moduleproto) plus the
 standard library — no `framework/*`, no MCP, no DB driver. The canonical,
 runnable example is
-[`examples/processmodule-demo/main.go`](../../examples/processmodule-demo/main.go),
+[`examples/processmodule-demo/main.go`](../../../examples/processmodule-demo/main.go),
 which is also the child the go/no-go gate suite
 (`framework/processmodule_gate_test.go`) drives end to end. Read it alongside
 this section.

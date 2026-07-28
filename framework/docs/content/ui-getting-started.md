@@ -131,7 +131,7 @@ func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 > **Prefer the typed `core-ui/html` config structs over raw `render.Tag`.**
 > `render.Tag` works, but it's the escape hatch — the typed vocabulary in
-> [`core-ui/html`](../core-ui/html) (`html.Div`, `html.Heading`,
+> [`core-ui/html`](../../../core-ui/html) (`html.Div`, `html.Heading`,
 > `html.Paragraph`, …) gives you a config struct per tag with named fields
 > for the common attributes, so editors autocomplete them and typos surface
 > as compile errors. Use `render.Tag` only for cases the typed vocab doesn't
@@ -150,7 +150,7 @@ func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 > ```
 >
 > Composition intent (a card, a hero, a data table, a form field) lives one
-> layer up in [`framework/ui`](../framework/ui) — see
+> layer up in [`framework/ui`](../../../framework/ui) — see
 > [ui-composition-recipes](ui-composition-recipes.md).
 
 Register it in `main.go`:

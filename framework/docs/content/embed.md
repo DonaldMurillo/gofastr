@@ -543,22 +543,36 @@ You find out at **boot**, not in a customer's page. Two gates back that up, and
 each sees a different slice — neither is total on its own:
 
 - **`gofastr build` (the `check-embed` analyzer)** resolves
-  `embed.Surface{…}` → `app.NewScreen` → the component type → its `On(...)`
-  registrations statically. It reports only what it can prove: a screen built
-  in a loop, or a component whose type lives in another package, it stays
-  silent about, because a false positive in a build gate is worse than a miss.
-- **The boot walk (`enforceNoServerActionsOnEmbeds`)** runs on `Mount` and sees
-  whatever actually registered at runtime — so nothing dynamic slips past — but
-  only for surfaces whose screen is a `*app.Screen` (every production surface),
-  the concrete type whose component tree it can reach. A surface carrying a
-  screen that is not a `*app.Screen` is invisible to this walk and falls to the
-  static analyzer above.
+  `embed.Surface{…}` → `app.NewScreen` → the component type → the whole tree
+  that type renders → each component's `On(...)` registrations. The tree, not
+  just the root: a root that renders a child ships the *child's* compiled
+  actions into the frame, so a gate that stopped at the root passed a surface
+  whose button fails in the customer's page. It follows struct fields,
+  components handed to the constructor expression, and components named in
+  `Render` / `RenderCtx`. Where it cannot follow — an interface-typed field, a
+  component type from another package, ClientJS that is not a literal — it
+  prints a note saying so instead of passing in silence. Notes do not fail the
+  build; a violation does.
+- **The boot walk (`enforceNoServerActionsOnEmbeds`)** runs on `Mount` and is
+  exact, because the tree is built by then: it matches every *compiled* action
+  registry that carries a server action against every component reachable from
+  the surface's screen, reading the live values with reflection. Nothing
+  dynamic slips past, and it never calls `Actions` a second time.
 
 Both panic naming the surface, the component and the action, and point at
 island RPC, a form POST, or polling.
 
-Everything else works in a frame: island RPC, form posts, `data-fui-poll`, and
-SSE. Only the `serverAction` escape hatch is closed.
+Everything else works in a frame: island RPC, form posts, and `data-fui-poll`.
+Only the `serverAction` escape hatch is closed.
+
+**SSE does not work inside a frame**, and it is the one exception to that list.
+`EventSource` cannot set a request header, so `X-Gofastr-Embed` — the frame's
+only credential, a header precisely so nothing about it is ambient — can never
+travel on the connection; putting the grant in the query string instead would
+write a bearer token into access logs, `Referer` and history. `/__gofastr/sse`
+therefore refuses any request carrying a grant, with a message that says so.
+Use `data-fui-poll` (or `widget Builder.Poll`) for live updates in a frame: it
+is an ordinary `fetch`, which the frame's wrapper does put the grant on.
 
 ## Multi-tenant surfaces
 

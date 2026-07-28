@@ -18,7 +18,7 @@
 // framework/ARCHITECTURE.md — so it introduces no cycle and is safely
 // importable from cmd/gofastr, examples/site, and host apps alike.
 //
-// Three of the 139 entries (sortablelist, optimisticcreate, optimisticdelete)
+// Three of the 141 entries (sortablelist, optimisticcreate, optimisticdelete)
 // have a live demo that is normally backed by per-visitor session state on
 // the docs site. The gallery catalog ships self-contained seed-rendering
 // Demo closures for them so a theme previewer or static export gets a

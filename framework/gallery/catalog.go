@@ -16,7 +16,7 @@ package gallery
 // every page has SOMETHING that works. Comments call out the simplification.
 //
 // This file is a faithful move of the original examples/site/components.go
-// catalog (139 entries, 16 categories). The closure bodies are unchanged —
+// catalog (141 entries, 16 categories). The closure bodies are unchanged —
 // they reference the same framework/ui + core-ui/* primitives the site did.
 
 import (

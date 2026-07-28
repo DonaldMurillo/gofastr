@@ -337,7 +337,7 @@ toasts, and endpoints. `appLayout`/`marketingLayout` are package-level vars
 assigned in `RegisterGenerated`, which calls `mountGenerated(fwApp, site, db)`
 and names no screen type or `appResources` entry. The generated screen order is
 recovered by `gofastr pack` from each file's `screenRegistrar{order: …}` — see
-[Packing](#packing-gofastr-pack-the-inverse-of-generate).
+[Packing](#packing-gofastr-pack-lossy-appblueprint-snapshot).
 
 
 ## Additive generation (`--add`)

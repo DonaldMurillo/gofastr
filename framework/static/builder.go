@@ -100,7 +100,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	// Security headers for hosts that read a `_headers` file (Netlify,
 	// Cloudflare Pages). Pages also carry the policy as an in-document
-	// meta, so a host that ignores this file is still covered.
+	// meta: that enforces the fetch directives on a host that ignores
+	// this file, but CSP Level 3 §3.1 ignores `frame-ancestors` in a
+	// meta (alongside `sandbox`/`report-uri`), so the clickjacking guard
+	// only lands where the header is read.
 	if err := writeHeadersFile(b.OutDir); err != nil {
 		return res, fmt.Errorf("static: write _headers: %w", err)
 	}
@@ -948,9 +951,12 @@ func applyStaticCSP(page string) string {
 }
 
 // writeHeadersFile emits a Netlify / Cloudflare Pages `_headers` file so
-// the policy arrives as a REAL header on hosts that read one. The meta
-// above covers every other host; both ship because neither alone covers
-// the field.
+// the policy arrives as a REAL header on hosts that read one. Both ship
+// because neither alone covers the field — but they do NOT cover the same
+// directives: per CSP L3 §3.1 a <meta>-delivered policy ignores
+// frame-ancestors (as well as report-uri and sandbox), so the meta covers
+// the fetch directives everywhere while the clickjacking guard lands only
+// on hosts that read this file.
 func writeHeadersFile(outDir string) error {
 	body := "/*\n" +
 		"  Content-Security-Policy: " + staticExportCSP + "\n" +

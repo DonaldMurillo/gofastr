@@ -28,7 +28,7 @@ results, the harness contract) are exempt — the exemption list lives in
   SSR/hydration/island/SSE model + `data-fui-*` attribute reference.
   **Mandatory reading** before any UI or runtime change. (Embedded
   extract; the repo's source of truth is `core-ui/ARCHITECTURE.md`.)
-- [`ROADMAP.md`](../ROADMAP.md) — forward-looking work (proposals,
+- [`ROADMAP.md`](../../../ROADMAP.md) — forward-looking work (proposals,
   performance opportunities, in-flight plans).
 
 ## Entity APIs
