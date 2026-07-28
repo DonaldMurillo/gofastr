@@ -1,6 +1,6 @@
 # Background compute with Web Workers and WebAssembly
 
-GoFastr keeps the core browser runtime within a 12 KB gzip budget. CPU-heavy
+GoFastr keeps the core browser runtime within a 12.5 KB gzip budget. CPU-heavy
 work does not belong in that core or on the main thread: register a
 self-contained Web Worker, optionally register a WebAssembly module, and let
 the demand-loaded `compute` module dispatch structured-clone messages to it.
