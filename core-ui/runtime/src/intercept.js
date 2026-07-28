@@ -124,6 +124,9 @@
       credentials: 'same-origin',
     })
       .then((r) => {
+        // An intercepted response can invalidate regular screens even
+        // though the overlay itself is never cached.
+        if (r.ok) NS._inval?.(r);
         const as = r.headers.get('X-Gofastr-Overlay');
         // The server declined to intercept (or redirected). Fall back to
         // the ordinary navigation rather than guessing.

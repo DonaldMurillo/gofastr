@@ -186,6 +186,26 @@ to close it. The actual save uses `interactive.OnSubmit`.
 
 `interactive.OnClick` with a `Navigate` effect replaces the page
 content via the runtime's SPA navigation — no full browser reload.
+The navigation bypasses the screen cache, so the destination always
+shows post-mutation state.
+
+Navigate covers the screen the user lands on; a mutation that also
+stales *other* cached screens names them on the response:
+
+```go
+func createOrder(w http.ResponseWriter, r *http.Request) {
+    // …write the order…
+    // Drop every cached query variant of /orders in this tab, so
+    // back-nav re-fetches instead of showing the pre-create list.
+    ui.InvalidateScreens(w, "/orders")
+    w.WriteHeader(http.StatusNoContent)
+}
+```
+
+The two compose: `InvalidateScreens` evicts, `Navigate` (or
+`data-fui-rpc-navigate`) fetches the destination fresh. Eviction alone
+never re-renders the visible page. Selector rules and scope are in
+[the runtime contract](runtime-contract.md).
 
 ### Confirm (pre-flight confirmation dialog)
 

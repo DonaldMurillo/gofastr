@@ -246,6 +246,7 @@
         restoreFn();
         announce(is409 ? 'Conflict. Reverted.' : 'Save failed. Reverted.');
       } else {
+        window.__gofastr._inval?.(res);
         announce('Order saved.');
       }
     }).catch(function () { restoreFn(); announce('Save failed. Reverted.'); });

@@ -326,8 +326,11 @@ Details worth knowing:
   drawer → open a results sheet), `data-fui-rpc-navigate="/path"` does
   an SPA navigation (cache-bypassing, and it re-renders even when the
   path is the page the widget floats over — so a quick-add modal can
-  refresh the list it inserts into), and an `X-Gofastr-Toast` response
-  header shows a toast.
+  refresh the list it inserts into), an `X-Gofastr-Toast` response
+  header shows a toast, and an `X-Gofastr-Invalidate` header (set via
+  `ui.InvalidateScreens`) evicts other screens from the SPA cache —
+  applied before `data-fui-rpc-navigate` runs, so the destination is
+  fetched fresh.
 - `data-fui-rpc-close` also works on a plain button RPC — "Confirm →
   do the thing → dismiss" needs no form at all (that's how
   `ui.ConfirmAction` is built).

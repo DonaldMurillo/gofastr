@@ -303,6 +303,23 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
 | `X-Gofastr-Push-State: <path>` | Apply via `history.pushState` after the RPC succeeds (URL update without re-fetch) |
 | `X-Gofastr-Partial: true` | Body is a screen-partial (used by the cross-page nav path) |
 | `X-Gofastr-Title: <text>` | Percent-encoded title — `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) |
+| `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders — never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching — `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
+
+**Screen cache + invalidation.** The router keeps a 20-entry LRU of
+rendered screens keyed by `pathname+search` (the initial page included)
+so back/forward is instant. Eviction never re-renders the visible page —
+an RPC that changed what the *current* screen shows should return island
+HTML or use `data-fui-rpc-navigate`; the header exists for screens you
+are **not** on (an admin action that stales `/pricing`, a create that
+stales every page of a list). The JS mirrors are
+`__gofastr.invalidate(...selectors)` (same selector rules as the header)
+and `__gofastr.refresh()` (re-fetch and re-render the current screen,
+bypassing the cache). Scope is per tab: the header only reaches the tab
+whose request carried it, and an evicted entry costs nothing until that
+tab actually navigates — surfaces that must stay fresh across tabs
+belong on the polling rung (`data-fui-poll`), not on cache eviction.
+The embed composition ships no nav fragment, hence no cache — the
+header is a no-op there by construction.
 
 **The flow for an in-page update** (e.g. clicking "page 2" on a pagination island):
 
