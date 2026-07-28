@@ -73,13 +73,74 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 		// (the blueprint's screens, kiln's tool delegator), never by the
 		// runtime. Blocking these would break every generator that renders
 		// through this IR without closing any of the gadgets above.
+		//
+		// data-kiln-tool is safe here: the delegator additionally
+		// requires a data-fui-trusted ancestor, which this IR cannot
+		// produce. data-action is NOT in this list — see
+		// TestIRCannotFireActions.
 		"data-field": "title", "data-entity-list-body": "posts",
-		"data-action": "save", "data-kiln-tool": "chat",
+		"data-kiln-tool": "chat",
 	}, nil))
 	for _, want := range []string{`id="card"`, `class="row"`, `role="region"`, `aria-label="Card"`, `data-testid="card"`, `title="hi"`,
-		`data-field="title"`, `data-entity-list-body="posts"`, `data-action="save"`, `data-kiln-tool="chat"`} {
+		`data-field="title"`, `data-entity-list-body="posts"`, `data-kiln-tool="chat"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("allow-list dropped legitimate attribute %s. Rendered: %s", want, got)
 		}
+	}
+}
+
+// The IR is agent-authored and untrusted (see node.go's package doc). An
+// element it renders sits inside a real island, so core-ui/runtime's
+// boot.js — which resolves the nearest [data-component] ancestor — would
+// happily fire a compiled server action on that island's behalf.
+//
+// data-action-mount is the worst shape: boot.js runs it at hydration and
+// again on every gofastr:navigate, with no user interaction, and
+// data-param-* lets the IR choose the arguments.
+func TestIRCannotFireActions(t *testing.T) {
+	privileged := []string{
+		"data-island",        // SSE swap target — hydration identity
+		"data-action",        // click-handler form
+		"data-action-mount",  // fires at hydration, unprompted
+		"data-action-type",   // selects the event to bind
+		"data-action-click",  // per-event variant
+		"data-action-submit", // per-event variant
+		"data-param-id",      // argument smuggling into the same trigger
+	}
+	for _, attr := range privileged {
+		t.Run(attr, func(t *testing.T) {
+			got := string(RenderKind("div", map[string]any{attr: "deleteAllRecords"}, nil))
+			if strings.Contains(got, attr) {
+				t.Errorf("SECURITY: untrusted IR emitted runtime-privileged %s — the runtime acts on it. Rendered: %s", attr, got)
+			}
+		})
+	}
+}
+
+// The blueprint compiles a developer's own YAML and wires button actions
+// through exactly the attributes the untrusted path strips. If the
+// trusted variant ever stops passing them, every generated action goes
+// silently dead — no error, just a button that does nothing.
+func TestTrustedIRKeepsActions(t *testing.T) {
+	props := map[string]any{
+		"data-action":       "refresh",
+		"data-action-type":  "submit",
+		"data-param-entity": "posts",
+	}
+	got := string(RenderTrustedKind("button", props, nil))
+	for _, want := range []string{`data-action="refresh"`, `data-action-type="submit"`, `data-param-entity="posts"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("trusted IR dropped %s. Rendered: %s", want, got)
+		}
+	}
+}
+
+// Stripping must not mutate the caller's map — the blueprint reuses prop
+// maps across renders, and a silent delete would break the second use.
+func TestUntrustedRenderLeavesPropsIntact(t *testing.T) {
+	props := map[string]any{"data-action": "save", "class": "row"}
+	_ = RenderKind("div", props, nil)
+	if _, ok := props["data-action"]; !ok {
+		t.Fatal("RenderKind deleted data-action from the caller's map")
 	}
 }
