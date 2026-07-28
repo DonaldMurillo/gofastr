@@ -499,16 +499,16 @@ GET /.well-known/agent.json`,
 			},
 			{
 				Title:    "Local semantic search",
-				Body:     []render.HTML{hubP("battery/embed indexes a corpus locally and answers similarity queries — no external API key, works offline.")},
+				Body:     []render.HTML{hubP("battery/semantic indexes a corpus locally and answers similarity queries — no external API key, works offline.")},
 				CodeFile: "search.go",
 				CodeLang: "go",
-				Code: `idx, _ := embed.Open(embed.Options{
-    Embedder: embed.NewStubEmbedder(128),
-    Keyword:  embed.NewMemoryKeyword(),
+				Code: `idx, _ := semantic.Open(semantic.Options{
+    Embedder: semantic.NewStubEmbedder(128),
+    Keyword:  semantic.NewMemoryKeyword(),
 })
 idx.Add(ctx, docs...)
-hits, _ := idx.Query(ctx, embed.Query{Text: "how do hooks work", K: 5, Hybrid: true})`,
-				RefSlug: "embed",
+hits, _ := idx.Query(ctx, semantic.Query{Text: "how do hooks work", K: 5, Hybrid: true})`,
+				RefSlug: "semantic-search",
 			},
 		},
 		Next: []hubNextLink{

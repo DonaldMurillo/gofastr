@@ -107,7 +107,12 @@ r.Use(cache.CacheMiddlewareWithLimit(c, 30*time.Second, 2<<20)) // 2 MiB
 The middleware is RFC 9111-compliant by default:
 
 - Only `GET` requests are cached.
-- Requests with `Authorization` or `Cookie` headers bypass the cache.
+- Requests with `Authorization`, `Cookie`, or `X-Gofastr-Embed` headers bypass
+  the cache. The last one is an embeddable surface's grant: it authenticates a
+  request exactly as the other two do, and it deliberately travels without
+  either of them, so a credential check that looked only for cookies and bearer
+  tokens saw a per-subject response as anonymous and served it to the next
+  grant holder.
 - `Cache-Control: no-cache` / `no-store` directives are honoured.
 - `Set-Cookie` responses and non-2xx/3xx responses are never stored.
 - `Vary` headers are respected; `Vary: *` disables caching.

@@ -58,6 +58,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **linkbutton** — `framework/ui.LinkButton` — anchor styled as a Button, for CTAs that navigate
 - **toggle** — `framework/ui.Checkbox` / `Radio` / `Switch` — labelled native inputs, FieldErrors-aware
 - **checkboxgroup** — `framework/ui.CheckboxGroup` / `RadioGroup` — `<fieldset>` of checkboxes / radios with shared label + errors
+- **colorfield** — `framework/ui.ColorField` — colour swatch beside a text input holding the same value, as one control; the text input is the source of truth, so values the native picker cannot represent (`transparent`, `var(--x)`) survive. Use `ColorPicker` when a swatch + label is enough
 - **segmented** — `framework/ui.SegmentedControl` — radio-group styled as a sliding pill bar
 - **counter** — `framework/ui.Counter` — signal-driven numeric counter with +/− buttons
 - **signaltoggle** — `framework/ui.SignalToggle` — `role="switch"` button bound to a boolean signal
@@ -140,6 +141,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 - **responsive** — `framework/ui.Responsive` — viewport-swap pair (independent desktop / mobile variants)
 - **panehost** — `framework/ui.PaneHost` — primary pane + openable secondary/tertiary side panes with a responsive overlay-drawer collapse
 - **themed** — `framework/ui.Themed` — wraps a subtree in a registered section-level theme override
+- **workbench** — `framework/ui.Workbench` — viewport-height inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest (an `<iframe>` in the pane fills it edge to edge); stacks below 720px
 - **card** — `framework/ui.Card` — labelled `<section>` with header/body/footer
 - **sticky** — `framework/ui.Sticky` — theme-token sticky wrapper for top or bottom edge pinning
 - **aspectratio** — `framework/ui.AspectRatio` — CLS-safe aspect-ratio wrapper for media and embeds

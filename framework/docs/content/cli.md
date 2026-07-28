@@ -19,6 +19,8 @@ each command to the doc that covers it.
   one handler or route registration into an existing app.
 - `gofastr agents init|sync|skill` — generate or refresh `AGENTS.md`
   and the per-battery detail files under `agents/`.
+- `gofastr theme edit` — a local theme configurator: every token as a control,
+  the whole component gallery as a live preview, write-back to `theme/theme.go`.
 - `gofastr theme init` — scaffold a typed `theme/theme.go` you own.
 
 ## Blueprints
@@ -69,8 +71,8 @@ each command to the doc that covers it.
 
 ## Extras
 
-- `gofastr embed index|watch|query|stats|clear` — the local semantic
-  index ([embed](embed.md)).
+- `gofastr semantic index|watch|query|stats|clear` — the local semantic
+  index ([semantic search](semantic-search.md)).
 - `gofastr harness` — the experimental agent harness (`harness mcp`
   runs it as a stdio MCP server; `harness creds` manages encrypted API
   keys).

@@ -8,6 +8,14 @@
 - Next time: Cross-check status docs against implementation first, then prioritize external adoption and the v1 public-API freeze over adding surface area.
 - Status: active
 
+## 2026-07-26 - Codex backend vertical-slice benchmark
+- Scope: backend framework behavior and AI-assisted workflow
+- Trigger: Compare real non-deterministic agent outcomes, token use, and maintenance behavior across GoFastr, Gin, and `net/http`.
+- Approach: Treat the result as a backend-heavy vertical-slice study; do not infer full-stack adoptability without equivalent UI/product requirements and scoring.
+- Evidence: `evals/backend-adoption/results/2026-07-26-codex.md`; GoFastr averaged 95 cold-start points and 313,579 tokens versus Gin's 100 and 72,172.
+- Next time: Fix API-prefix/OpenAPI parity, then run separate backend-only and full-stack product lanes with equivalent guidance and 10+ repetitions.
+- Status: active
+
 ## 2026-07-22 - Audit skips must distinguish lane boundaries from drift
 - Scope: `gofastr audit lint`, browser E2E
 - Trigger: Missing gallery fixtures were silently hidden behind `t.Skip`, while legitimate `testing.Short()` guards produced noise.
@@ -62,4 +70,12 @@
 - Approach: Test public configuration through rendered markup, demand-loaded runtime behavior, a real browser, and the complete middleware stack.
 - Evidence: Focused auth, runtime, component, and sidebar browser tests cover every corrected boundary.
 - Next time: Attack the configured surface rather than a convenient default, and require behavioral E2E coverage before calling an exported variant implemented.
+- Status: active
+
+## 2026-07-26 - Make alternative security controls visible to audit lint
+- Scope: `gofastr audit lint`, auth form security
+- Trigger: Whole-repo lint flagged the magic-link confirmation form even though `rejectCrossSiteForm` and hostile tests protect its POST.
+- Approach: Keep the behavioral security test and place the supported `csrf-exempt:` explanation beside forms protected by an equivalent control.
+- Evidence: `go run ./cmd/gofastr audit lint .` reports `battery/auth/magiclink.go:415`; `TestMagicLinkConfirmRejectsCrossSite` pins the guard.
+- Next time: Run audit lint at repository scope and document intentional alternative controls where the heuristic can verify them.
 - Status: active
