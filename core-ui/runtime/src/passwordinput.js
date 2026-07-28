@@ -28,7 +28,7 @@
   };
 
   wire(document);
-  document.addEventListener('gofastr:navigate', () => wire(document));
+  window.addEventListener('gofastr:navigate', () => wire(document));
 
   // Register for SPA rescan.
   (window.__gofastr = window.__gofastr || {});

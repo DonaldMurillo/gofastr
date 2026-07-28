@@ -124,7 +124,7 @@
   };
 
   requestAnimationFrame(() => scan(document));
-  document.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', () => {
     requestAnimationFrame(() => scan(document));
   });
 

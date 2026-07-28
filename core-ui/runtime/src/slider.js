@@ -28,5 +28,5 @@
       .forEach(syncOutput);
   }
   refresh();
-  document.addEventListener('gofastr:navigate', refresh);
+  window.addEventListener('gofastr:navigate', refresh);
 })();

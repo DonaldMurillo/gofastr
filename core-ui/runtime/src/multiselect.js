@@ -94,7 +94,7 @@
     scope.querySelectorAll('[data-fui-comp="ui-multiselect"]').forEach(renderChips);
   }
   scan(document);
-  document.addEventListener('gofastr:navigate', function () { scan(document); });
+  window.addEventListener('gofastr:navigate', function () { scan(document); });
 
   window.__gofastr = window.__gofastr || {};
   window.__gofastr.multiselect = { rescan: scan };

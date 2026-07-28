@@ -228,7 +228,7 @@
     scope.querySelectorAll('[data-fui-carousel]').forEach(attach);
   }
   scan(document);
-  document.addEventListener('gofastr:navigate', function () {
+  window.addEventListener('gofastr:navigate', function () {
     // Tear down auto-rotate timers from the previous page before
     // rescanning so stale setIntervals don't accumulate across SPA nav.
     // attach() stores stop() on _fuiCarouselStop for exactly this path.

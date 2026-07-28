@@ -76,7 +76,7 @@
 
   // Initial pass — wait one rAF so the page DOM has settled.
   requestAnimationFrame(function () { scan(document); });
-  document.addEventListener('gofastr:navigate', function () {
+  window.addEventListener('gofastr:navigate', function () {
     // Disconnect all active IntersectionObservers before the page DOM
     // is replaced so stale observers don't hold detached element refs.
     while (activeNavEls.length) {

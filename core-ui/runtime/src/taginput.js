@@ -134,7 +134,7 @@
     });
   }
   hydrate(document);
-  document.addEventListener('gofastr:navigate', function () { hydrate(document); });
+  window.addEventListener('gofastr:navigate', function () { hydrate(document); });
 
   window.__gofastr = window.__gofastr || {};
   window.__gofastr.taginput = { rescan: hydrate };
