@@ -52,6 +52,7 @@ func SchemaHash(named []NamedConfig) string {
 		Unique   bool     `json:"unique"`
 		ReadOnly bool     `json:"readOnly"`
 		Auto     bool     `json:"auto"`
+		NoQuery  bool     `json:"noQuery,omitempty"`
 		Values   []string `json:"values,omitempty"`
 		Default  any      `json:"default,omitempty"`
 		To       string   `json:"to,omitempty"`
@@ -104,6 +105,11 @@ func SchemaHash(named []NamedConfig) string {
 				Unique:   f.Unique,
 				ReadOnly: f.ReadOnly,
 				Auto:     f.AutoGenerate != schema.AutoNone,
+				// NoQuery changes the generated client's filter surface
+				// (CLI flags, the <entity>Fields constant, OpenAPI query
+				// params), so flipping it has to move the hash or the
+				// drift banner reports "in sync" for a stale SDK.
+				NoQuery:  f.NoQuery,
 				To:       f.To,
 				Many:     f.Many,
 				WireName: f.WireName,

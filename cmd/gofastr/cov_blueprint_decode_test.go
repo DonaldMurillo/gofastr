@@ -86,7 +86,7 @@ entities:
     timestamps: true
     crud: true
     cursor_field: id
-    cursor_fields: [a, b]
+    cursor_fields: [id]
     properties:
       key: value
     fields:

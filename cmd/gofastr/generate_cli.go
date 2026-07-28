@@ -58,6 +58,7 @@ type cliField struct {
 	Type       string // normalized declaration type
 	GoType     string // string|int|float64|bool|map[string]any
 	ReadOnly   bool   // excluded from mutation flags
+	NoQuery    bool   // excluded from ALL filter flags (server rejects them)
 	Comparable bool   // gets -gt/-gte/-lt/-lte range filter flags
 	Likeable   bool   // gets a -like filter flag
 	Values     []string
@@ -484,13 +485,19 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 			Type:     typ,
 			GoType:   goTypeForField(fd.Type),
 			ReadOnly: fd.ReadOnly,
+			NoQuery:  fd.NoQuery,
 			Values:   fd.Values,
 		}
-		switch typ {
-		case "int", "integer", "float", "number", "decimal", "timestamp", "datetime", "date":
-			f.Comparable = true
-		case "string", "text":
-			f.Likeable = true
+		// A NoQuery field stays on the CLI for reads and writes; only its
+		// filter flags are suppressed, because the server answers every one
+		// of them with 400 "cannot be filtered".
+		if !f.NoQuery {
+			switch typ {
+			case "int", "integer", "float", "number", "decimal", "timestamp", "datetime", "date":
+				f.Comparable = true
+			case "string", "text":
+				f.Likeable = true
+			}
 		}
 		ent.Fields = append(ent.Fields, f)
 	}
@@ -1396,6 +1403,9 @@ func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
 	}
 	// Filter flags: eq per field, plus range/like variants.
 	for _, f := range ent.Fields {
+		if f.NoQuery {
+			continue
+		}
 		help := "filter: " + f.Snake + " equals (comma list = IN)"
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
@@ -1436,6 +1446,9 @@ func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
 		sb.WriteString("\tif *trashed {\n\t\tq.Set(\"trashed\", \"true\")\n\t}\n")
 	}
 	for _, f := range ent.Fields {
+		if f.NoQuery {
+			continue
+		}
 		fmt.Fprintf(sb, "\tset(%q, *flt%s)\n", f.Snake, toCamelCase(f.Flag))
 		if f.Comparable {
 			for _, op := range []string{"gt", "gte", "lt", "lte"} {

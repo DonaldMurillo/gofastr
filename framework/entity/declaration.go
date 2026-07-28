@@ -101,6 +101,7 @@ type FieldDeclaration struct {
 	AutoGenerate string   `json:"auto_generate,omitempty"`
 	ReadOnly     bool     `json:"read_only,omitempty"`
 	Hidden       bool     `json:"hidden,omitempty"`
+	NoQuery      bool     `json:"no_query,omitempty"`
 	Max          *float64 `json:"max,omitempty"`
 	Min          *float64 `json:"min,omitempty"`
 	Pattern      string   `json:"pattern,omitempty"`
@@ -199,6 +200,7 @@ func (fd FieldDeclaration) Field() (schema.Field, error) {
 		AutoGenerate: auto,
 		ReadOnly:     fd.ReadOnly,
 		Hidden:       fd.Hidden,
+		NoQuery:      fd.NoQuery,
 		Max:          fd.Max,
 		Min:          fd.Min,
 		Pattern:      fd.Pattern,

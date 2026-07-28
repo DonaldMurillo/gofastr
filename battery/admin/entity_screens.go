@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -96,11 +97,15 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	}
 	cols := listColumns(ent)
 
-	// Sort state. Only honor a sort on a column we actually display (the
-	// CrudHandler validates too, but a bad value would surface as an empty
-	// table rather than silently). Direction defaults to ascending.
+	// Sort state. Only honor a sort on a column that is both displayed and
+	// actually sortable (the CrudHandler validates too, but a bad value would
+	// surface as an empty table rather than silently). Validating against
+	// sortableColumns rather than the display set matters for a hand-typed or
+	// bookmarked ?sort=<NoQuery column>: rendering the header unsortable stops
+	// the app producing that link, but not a caller supplying it directly, and
+	// forwarding it earns a 400 that blanks the whole grid.
 	sortCol := q.Get("sort")
-	if sortCol != "" && !containsStr(cols, sortCol) {
+	if sortCol != "" && !containsStr(sortableColumns(ent), sortCol) {
 		sortCol = ""
 	}
 	sortDir := SortDirOf(q.Get("dir"))
@@ -136,9 +141,12 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	ftypes := fieldTypeMap(ent)
 	relLabels := b.relationLabelMaps(ctx, ent)
 
+	noQuery := noQueryColumns(ent)
 	columns := make([]ui.Column, 0, len(cols)+1)
 	for _, c := range cols {
-		columns = append(columns, ui.Column{Key: c, Header: prettyLabel(c), Sortable: true})
+		// A NoQuery column still shows its (masked) value, but ?sort= on it
+		// is a 400 that blanks the grid — so it renders unsortable.
+		columns = append(columns, ui.Column{Key: c, Header: prettyLabel(c), Sortable: !noQuery[c]})
 	}
 	columns = append(columns, ui.Column{Key: "_actions", Header: "", Align: "end"})
 
@@ -275,7 +283,7 @@ func plural(n int, one, many string) string {
 // active search. Clicking the current sort field flips its direction.
 func (b *Battery) sortControl(ent *entity.Entity, q url.Values) render.HTML {
 	base := b.entityBase(ent)
-	cols := listColumns(ent)
+	cols := sortableColumns(ent)
 	curSort := q.Get("sort")
 	if curSort != "" && !containsStr(cols, curSort) {
 		curSort = ""
@@ -352,7 +360,34 @@ func containsStr(ss []string, want string) bool {
 	return false
 }
 
-// searchField picks the column a quick-search box filters on: a conventional
+// labelField picks the column used to LABEL a row — an FK cell in the grid,
+// an <option> in a relation picker. Display only: the value is read out of a
+// row the API already returned, never put in a query, so a NoQuery column is
+// a perfectly good label and excluding it only downgrades the label to a raw
+// UUID. Hidden columns are excluded because they are genuinely absent from
+// the row. Returns "" when nothing suitable exists (callers fall back to id).
+func labelField(ent *entity.Entity) string {
+	byName := map[string]schema.Field{}
+	for _, f := range ent.GetFields() {
+		byName[f.Name] = f
+	}
+	for _, pref := range []string{"name", "title", "label", "email", "slug"} {
+		if f, ok := byName[pref]; ok && isTextLike(f) && !f.Hidden {
+			return pref
+		}
+	}
+	for _, f := range ent.GetFields() {
+		if f.Hidden || f.Name == "id" || isTimestampCol(f.Name) {
+			continue
+		}
+		if isTextLike(f) {
+			return f.Name
+		}
+	}
+	return ""
+}
+
+// searchField picks the column a quick-search box FILTERS on: a conventional
 // label field if present (name/title/label/email/slug), else the first
 // text-like, non-hidden, non-id column. Returns "" when nothing is searchable
 // (the search box is then omitted).
@@ -361,13 +396,20 @@ func searchField(ent *entity.Entity) string {
 	for _, f := range ent.GetFields() {
 		byName[f.Name] = f
 	}
+	// Hidden and NoQuery are both refused by ParseFilters, so picking one
+	// here renders a search box whose every query 400s and blanks the grid.
+	// The preferred-name pass has to check them too — a Hidden "email" or a
+	// masked "name" is exactly the kind of column that lands in this list.
+	//
+	// Use labelField, not this, to choose a column for DISPLAY: a NoQuery
+	// value is present in the row and reads fine as a label.
 	for _, pref := range []string{"name", "title", "label", "email", "slug"} {
-		if f, ok := byName[pref]; ok && isTextLike(f) {
+		if f, ok := byName[pref]; ok && isTextLike(f) && !f.Hidden && !f.NoQuery {
 			return pref
 		}
 	}
 	for _, f := range ent.GetFields() {
-		if f.Hidden || f.Name == "id" || isTimestampCol(f.Name) {
+		if f.Hidden || f.NoQuery || f.Name == "id" || isTimestampCol(f.Name) {
 			continue
 		}
 		if isTextLike(f) {
@@ -411,7 +453,7 @@ func (b *Battery) relationLabelMaps(ctx context.Context, ent *entity.Entity) map
 		if err != nil {
 			continue
 		}
-		labelField := searchField(target)
+		labelField := labelField(target)
 		m := make(map[string]string, len(rows))
 		for _, row := range rows {
 			id := cellText(row["id"])
@@ -563,7 +605,7 @@ func (b *Battery) relationOptions(ctx context.Context, ent *entity.Entity, selec
 		if err != nil {
 			continue
 		}
-		labelField := searchField(target)
+		labelField := labelField(target)
 		cur := selected[fkField]
 		opts := make([]ui.SelectOption, 0, len(rows))
 		for _, row := range rows {
@@ -627,7 +669,18 @@ type entityFormScreen struct {
 	// relOpts holds, per BelongsTo FK column, the related records to offer as
 	// <select> options (loaded owner/tenant-scoped in Load).
 	relOpts map[string][]ui.SelectOption
+	// masked marks columns an AfterGet hook rewrites, which the form renders
+	// empty and write-only. See getRowForEdit.
+	masked map[string]bool
 }
+
+// maskedHint is the placeholder and help text on a write-only field.
+const maskedHint = "hidden — leave blank to keep the stored value"
+
+// maskedUnchanged is the blank option on a write-only select. It has to be a
+// real, selectable option: a masked select has nothing preselected, so without
+// it the browser posts the first entry and silently rewrites the column.
+const maskedUnchanged = "— unchanged —"
 
 func (s *entityFormScreen) SetParams(p map[string]string) { s.id = p["id"] }
 
@@ -636,13 +689,21 @@ func (s *entityFormScreen) Load(ctx context.Context) error {
 	values := map[string]string{}
 
 	if s.edit {
-		row, err := s.b.getRow(ctx, s.ent, s.id)
+		// getRowForEdit, not getRow: these values round-trip back on submit.
+		// It also reports which columns an AfterGet hook masks — those render
+		// empty, so the admin neither reads the stored value nor writes a mask
+		// over it by pressing Save.
+		row, masked, err := s.b.getRowForEdit(ctx, s.ent, s.id)
 		if err != nil {
 			s.loadErr = true
 			return nil
 		}
+		s.masked = masked
 		for _, f := range editableFields(s.ent) {
-			values[f.Name] = cellText(row[f.Name])
+			if masked[f.Name] {
+				continue
+			}
+			values[f.Name] = formValueText(f, row[f.Name])
 		}
 	}
 
@@ -712,6 +773,8 @@ func (s *entityFormScreen) field(f schema.Field, errs ui.FieldErrors) render.HTM
 	val := s.values[f.Name]
 	id := "f_" + f.Name
 
+	masked := s.masked[f.Name]
+
 	// BelongsTo FK columns render as a relationship picker (<select> of related
 	// records) instead of a raw FK text box. Options were loaded in Load.
 	if opts, ok := s.relOpts[f.Name]; ok {
@@ -719,14 +782,37 @@ func (s *entityFormScreen) field(f schema.Field, errs ui.FieldErrors) render.HTM
 		if !f.Required {
 			ph = "— none —"
 		}
+		if masked {
+			// Nothing is preselected, so the browser would post the first
+			// option and silently reassign the row's foreign key. An explicit
+			// blank placeholder — which formToJSON drops — is the only choice
+			// that means "leave it".
+			ph = maskedUnchanged
+		}
 		return ui.Select(ui.SelectConfig{
 			Name: f.Name, Label: prettyLabel(f.Name), ID: id, Options: opts,
-			Placeholder: ph, Required: f.Required, Error: errs[f.Name],
+			Placeholder: ph, Required: f.Required && !masked, Error: errs[f.Name],
+			Help: s.maskedPlaceholder(f.Name),
 		})
 	}
 
 	switch f.Type {
 	case schema.Bool:
+		if masked {
+			// A checkbox cannot express "unchanged": unchecked and absent look
+			// identical, and formToJSON emits a bool either way — so a masked
+			// bool was written back as false on every save. A three-state
+			// select can, and blank is the default.
+			return ui.Select(ui.SelectConfig{
+				Name: f.Name, Label: prettyLabel(f.Name), ID: id,
+				Options: []ui.SelectOption{
+					{Value: "true", Text: "true"},
+					{Value: "false", Text: "false"},
+				},
+				Placeholder: maskedUnchanged, Required: false,
+				Help: s.maskedPlaceholder(f.Name), Error: errs[f.Name],
+			})
+		}
 		return ui.Checkbox(ui.ToggleConfig{
 			Name: f.Name, Label: prettyLabel(f.Name), ID: id, Value: "on",
 			Checked: truthy(val), Error: errs[f.Name],
@@ -740,23 +826,62 @@ func (s *entityFormScreen) field(f schema.Field, errs ui.FieldErrors) render.HTM
 		if !f.Required {
 			ph = "—"
 		}
+		if masked {
+			ph = maskedUnchanged
+		}
 		return ui.Select(ui.SelectConfig{
 			Name: f.Name, Label: prettyLabel(f.Name), ID: id, Options: opts,
-			Placeholder: ph, Required: f.Required, Error: errs[f.Name],
+			Placeholder: ph, Required: f.Required && !masked, Error: errs[f.Name],
+			Help: s.maskedPlaceholder(f.Name),
 		})
 	case schema.Text, schema.JSON:
 		return ui.TextArea(ui.TextAreaConfig{
 			Name: f.Name, Label: prettyLabel(f.Name), ID: id, Value: val, Rows: 4,
-			Required: f.Required, Error: errs[f.Name],
+			Placeholder: s.maskedPlaceholder(f.Name),
+			// A masked column can't be Required on this form: there is
+			// nothing to submit when the intent is "leave it alone".
+			Required: f.Required && !masked, Error: errs[f.Name],
 		})
 	default:
 		return ui.FormFieldFor(errs, f.Name, ui.FormFieldConfig{
-			Label: prettyLabel(f.Name), For: id, Required: f.Required,
+			Label: prettyLabel(f.Name), For: id, Required: f.Required && !masked,
+			Help: s.maskedPlaceholder(f.Name),
 			Input: html.Input(html.InputConfig{
 				Type: inputType(f.Type), Name: f.Name, ID: id, Value: val,
+				Placeholder: s.maskedPlaceholder(f.Name),
 			}),
 		})
 	}
+}
+
+// formValueText renders a stored value for an <input> of the given field type.
+//
+// It exists because cellText is shared with the list and detail screens, where
+// a full RFC 3339 timestamp is the right thing to show, while
+// <input type="date"> accepts ONLY yyyy-mm-dd and silently blanks itself on
+// anything else — so a date column round-tripped through the edit form came
+// back empty and the save wiped it.
+func formValueText(f schema.Field, v any) string {
+	if f.Type == schema.Date {
+		switch t := v.(type) {
+		case time.Time:
+			return t.Format("2006-01-02")
+		case *time.Time:
+			if t == nil {
+				return ""
+			}
+			return t.Format("2006-01-02")
+		}
+	}
+	return cellText(v)
+}
+
+// maskedPlaceholder returns the write-only hint for a masked column, or "".
+func (s *entityFormScreen) maskedPlaceholder(name string) string {
+	if s.masked[name] {
+		return maskedHint
+	}
+	return ""
 }
 
 // ----- detail (read-only show) screen ---------------------------------------
@@ -874,6 +999,20 @@ func cellText(v any) string {
 		return strconv.FormatFloat(t, 'f', -1, 64)
 	case string:
 		return t
+	case time.Time:
+		// RFC 3339, because this text goes straight into the edit form's
+		// <input> and posts back on submit. The in-process read API hands
+		// back what the driver scanned — a time.Time for date/timestamp
+		// columns, where the JSON round-trip used to hand back a string — and
+		// fmt.Sprint renders Go's default layout ("2026-01-02 03:04:05 +0000
+		// UTC"), which the validator then rejects. The user's other edits on
+		// that form were lost with it.
+		return t.Format(time.RFC3339)
+	case *time.Time:
+		if t == nil {
+			return ""
+		}
+		return t.Format(time.RFC3339)
 	default:
 		return fmt.Sprint(t)
 	}

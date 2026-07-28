@@ -170,6 +170,33 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 				}
 			}
 		}
+
+		// AfterGet over each item body — after the transaction has committed
+		// and the RAW record has gone to the bus, exactly as the single-record
+		// routes do it. Running it inside the closure (as the first version of
+		// this did) put a read hook in the write transaction: a hook that
+		// touches the DB deadlocks against a single-connection pool, a hook
+		// error rolls the whole batch back, and the bus received the redacted
+		// clone instead of the stored row.
+		// Skipped entirely when the transaction rolled back: writeBatchResponse
+		// scrubs every item's Data in that case, so hooking it is wasted work
+		// whose error path replaced a per-item failure report with an opaque
+		// 500.
+		if txErr == nil {
+			for i, res := range results {
+				if res.Data == nil {
+					continue
+				}
+				body, hookErr := ch.runResponseHooks(r, res.Data)
+				if hookErr != nil {
+					// Degrade this item to its id — the batch is committed, and
+					// a 500 would lose the ids of rows already in the table.
+					log.Printf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
+					body = ch.identityOnly(res.Data)
+				}
+				results[i].Data = body
+			}
+		}
 		writeBatchResponse(w, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
@@ -248,6 +275,33 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 				if res.Data != nil {
 					ch.EmitEvent(r.Context(), event.EntityUpdated, res.Data)
 				}
+			}
+		}
+
+		// AfterGet over each item body — after the transaction has committed
+		// and the RAW record has gone to the bus, exactly as the single-record
+		// routes do it. Running it inside the closure (as the first version of
+		// this did) put a read hook in the write transaction: a hook that
+		// touches the DB deadlocks against a single-connection pool, a hook
+		// error rolls the whole batch back, and the bus received the redacted
+		// clone instead of the stored row.
+		// Skipped entirely when the transaction rolled back: writeBatchResponse
+		// scrubs every item's Data in that case, so hooking it is wasted work
+		// whose error path replaced a per-item failure report with an opaque
+		// 500.
+		if txErr == nil {
+			for i, res := range results {
+				if res.Data == nil {
+					continue
+				}
+				body, hookErr := ch.runResponseHooks(r, res.Data)
+				if hookErr != nil {
+					// Degrade this item to its id — the batch is committed, and
+					// a 500 would lose the ids of rows already in the table.
+					log.Printf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
+					body = ch.identityOnly(res.Data)
+				}
+				results[i].Data = body
 			}
 		}
 		writeBatchResponse(w, BatchResponse{Committed: txErr == nil, Results: results})

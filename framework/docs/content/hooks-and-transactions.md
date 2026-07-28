@@ -220,7 +220,51 @@ paths that skip hooks entirely — by design, not accident:
 | Upsert (`UpsertOne`) that inserts | BeforeCreate/AfterCreate fire | An upsert-as-insert IS a Create |
 | Upsert (`UpsertOne`) that updates | BeforeUpdate/AfterUpdate **do not fire** | Indistinguishable from create at the DB level; use Create/Update if you need update hooks |
 | Streaming list (`?stream=true`) | AfterList (blocked when any AfterList hook is registered; auto-falls back to buffered path for large `limit`) | Rows stream directly to wire; slice unavailable for redaction |
-| `_batch` requests | none — per-item Before/After* all fire | Each item runs its hooks before the batch tx commits |
+| Cursor list (`?cursor=`) | none — AfterList fires over the page | The continue-cursor is derived from the stored keyset values first, so a hook that masks the keyset column cannot corrupt paging |
+| Eager-loaded rows (`?include=`) | none — the **child** entity's hooks fire over its rows: AfterList always, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |
+| `_events` payloads | none — AfterGet fires at delivery | Redacting per subscriber keeps the hook out of the write transaction and runs it once per delivery. Delete stubs pass through untouched; a hook error omits the record rather than publishing it raw. |
+| Create/update/patch responses | none — AfterGet fires over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. A hook error here degrades the body to the new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. |
+| In-process reads (`ListAll`, `CountAll`, `GetOne`) | AfterList/AfterGet, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user. |
+| `_batch` requests | none — per-item Before/After* all fire | Each item runs its hooks before the batch tx commits. AfterGet runs over each item body after the commit, and is skipped entirely when the batch rolled back. |
+
+**Redaction implication.** A hook that masks a column protects every HTTP
+path that returns the row: List, Get, keyset pages, `?include=` children,
+`_events` deliveries, and create/update response bodies. Register it on
+BOTH `AfterGet` and `AfterList` — each path runs the one that matches the
+shape it serves, exactly as the entity's own routes do, so a mask that
+exists on only one surface has a gap on the paths that use the other. The
+in-process Go API still returns stored values unless the caller passes
+`crud.WithReadHooks(ctx)` — that is what makes read-modify-write, seed
+lookups and aggregates correct, and generated blueprint screens opt in.
+
+On `?include=`, a child hook may redact in place or by replacing a row
+with a projection — both are folded back into the attached row. Sorting
+`Results` is harmless: the order the client sees comes from the
+attachment the loader built, so a hook that sorts (correct on the
+child's own route) neither changes the include payload nor fails it.
+
+Rows are matched by primary key, so a projection may also reorder — the
+two together fold correctly. Keep the id when projecting: it is what
+identifies which attached row a replacement stands for.
+
+It may not change the row COUNT — the loader has already keyed each row
+to its parent, so a hook that drops rows fails the request rather than
+quietly serving the ones it tried to remove. Filter in the child's own
+`BeforeList` instead, which changes the query itself. Returning a row
+the query never produced, or returning one row more often than the query
+did, fails for the same reason.
+
+`?stream=true` still refuses when an `AfterList` hook is registered
+rather than bypassing it. The durable outbox row stores the unredacted
+record, since it is server-side state used for replay; redaction happens
+on the way out. `webhook.Bridge` POSTs to third-party URLs and has no
+handler to redact through — pass `webhook.WithBridgeRedactor` if masked
+fields must not leave that way.
+
+If a value must never leave the server in raw form at all, mark it
+`Hidden`: that is enforced in the SQL projection, so no path can return
+it. Reserve `AfterGet`/`AfterList` masking plus `NoQuery` for values that
+may be shown in a reduced form on the paths listed above.
 
 Keep this matrix in mind when writing bulk operations or tests that
 assert side-effect counts.

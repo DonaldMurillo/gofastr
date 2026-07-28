@@ -294,6 +294,60 @@ never sees tenant B rows. The widening is fail-closed: no access policy
 in context ⇒ no widening. See
 [entity-declarations](entity-declarations.md) → "CrossOwnerRead".
 
+## Masked fields and the query surface
+
+Redacting a field in an `AfterGet` / `AfterList` hook changes what the
+caller reads. It does not change what the database filtered and sorted
+on, so the stored value stays reachable through the query surface:
+
+```
+GET /cards?number_like=4111    → 1 row    every response still
+GET /cards?number_like=4112    → 0 rows   reads "****1111"
+```
+
+Repeat that a character at a time and the masked value comes back in
+full. `?sort=number` leaks relative ordering the same way.
+
+Mark such a column `NoQuery` (`no_query: true` in a declaration). The
+field stays in responses, and every query surface refuses it: flat
+filters, `?sort=` (including alongside `?cursor=`, where the sort is
+ignored but still validated), `?where=` predicate trees, nested
+`?rel.field=` filters, scoped include filters, and the DSL all return a
+400 naming the field. `?q=` search is refused earlier still — listing a
+`NoQuery` column in `SearchFields` panics at `Define`, so the app fails
+to start rather than serving a searchable mask, as does naming one as a
+cursor field.
+
+A nested `?rel.field=` filter needs the target entity's schema to run
+that check, so an unresolvable target refuses the filter rather than
+skipping the check. A relation may legitimately point at a table no
+entity registers — the auth battery self-migrates `auth_users` — and
+trusting the column name there meant any column of that table could be
+predicated on. `?include=` has always refused the same shape.
+
+Blueprint screens are checked at generate time, because several of them
+reach the database without passing through the HTTP filter parser: an
+`entity_list` `search:` or `filters:`, a `stat_card` `source.filter` or
+summed `source.field`, and a chart's `group_by`. The chart is the
+sharpest of these — `group_by` renders each distinct stored value as a
+bar or slice LABEL, so a masked column would print in full on a page
+whose table shows the mask.
+
+`Hidden` already implies all of this — it removes the column from
+responses *and* from every query surface. `NoQuery` is the option for
+values the caller must still see in some form.
+
+`NoQuery` does not mask anything on its own; the hook does. Register it
+on `AfterGet` **and** `AfterList`, since each response path runs the one
+that matches the shape it serves — a to-one `?include=` runs `AfterGet`
+because that is what the child's own `GET /child/{id}` runs.
+
+The rejection deliberately names a `NoQuery` field, unlike a `Hidden`
+one. A hidden column's existence is itself the secret, so it has to be
+indistinguishable from a column that does not exist; a `NoQuery` column
+is right there in the response, so a precise error costs nothing and
+saves a developer hunting for a typo.
+
 ## Default CRUD authentication
 
 Prior to this section's introduction, an entity declaring **neither**

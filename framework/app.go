@@ -188,6 +188,7 @@ type App struct {
 	serverMu   sync.Mutex // guards server + appCtx/appCancel — Start writes, Shutdown reads/nils
 	server     *http.Server
 	events     *event.EventBus
+	hooksMu    sync.RWMutex // guards hooks: kiln's build-mode runtime registers while the app serves
 	hooks      map[string]*hook.HookRegistry
 	mountables []Mountable
 	noDefaults bool
@@ -1157,6 +1158,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		crudHandler = crud.NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
+		crudHandler.ChildHooks = a.lookupHookRegistry
 		crudHandler.Storage = a.Storage
 		crudHandler.ImageDeriver = a.imageDeriver
 		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
@@ -1580,6 +1582,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		crudHandler = crud.NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
+		crudHandler.ChildHooks = a.lookupHookRegistry
 		crudHandler.Storage = a.Storage
 		crudHandler.ImageDeriver = a.imageDeriver
 		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
@@ -1640,6 +1643,7 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 		ch.Outbox = a.outbox
 	}
 	ch.Registry = a.Registry
+	ch.ChildHooks = a.lookupHookRegistry
 	return ch, nil
 }
 
@@ -1764,6 +1768,7 @@ func (a *App) View(v migrate.View) *App {
 		ch := crud.NewCrudHandler(ent, a.DB)
 		ch.JSONCase = a.JSONCasing()
 		ch.Registry = a.Registry
+		ch.ChildHooks = a.lookupHookRegistry
 		// Views mount under the API prefix like entities do, so BasePath must
 		// match or anything deriving a URL from the handler addresses the
 		// wrong path. mcpBase() is BasePath + "/" + table, so an empty value
@@ -2042,12 +2047,28 @@ func (a *App) Outbox() *outbox.Outbox {
 
 // HookRegistry returns (or creates) the hook registry for a named entity.
 func (a *App) HookRegistry(entityName string) *hook.HookRegistry {
+	a.hooksMu.Lock()
+	defer a.hooksMu.Unlock()
 	if a.hooks == nil {
 		a.hooks = make(map[string]*hook.HookRegistry)
 	}
 	if _, ok := a.hooks[entityName]; !ok {
 		a.hooks[entityName] = hook.NewHookRegistry()
 	}
+	return a.hooks[entityName]
+}
+
+// lookupHookRegistry returns an entity's hook registry, or nil when it has
+// none. Unlike HookRegistry it never creates one, so calling it on the
+// request path cannot grow the map. Used to give ?include= children their
+// own entity's read hooks.
+//
+// It still takes the read lock: kiln's build-mode runtime calls
+// HookRegistry (the creating variant) from a live server, so registration is
+// not strictly setup-only and an unguarded read would race a lazy create.
+func (a *App) lookupHookRegistry(entityName string) *hook.HookRegistry {
+	a.hooksMu.RLock()
+	defer a.hooksMu.RUnlock()
 	return a.hooks[entityName]
 }
 
