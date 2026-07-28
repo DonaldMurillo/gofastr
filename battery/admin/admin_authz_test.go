@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"context"
+	"github.com/DonaldMurillo/gofastr/framework/embed"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -53,5 +55,31 @@ func TestAdmin_AdminRoleAllowed(t *testing.T) {
 	rr := adminReq(h, roleUser{roles: []string{"admin"}})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("admin /admin = %d, want 200. body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// Round 4 added an embed-grant refusal to authorized() and shipped it without a
+// test; round 5 then found it sat below the custom-Authorize early return. Both
+// directions are pinned here.
+func TestAuthorizedRefusesAnEmbedGrant(t *testing.T) {
+	admin := roleUser{roles: []string{"admin"}}
+	grantCtx := embed.WithGrant(handler.SetUser(context.Background(), admin), embed.Grant{
+		Surface: "reports", Subject: "root", Scopes: []string{"reports:read"},
+		Origin: "https://acme.com",
+	})
+
+	b := &Battery{}
+	if b.authorized(grantCtx) {
+		t.Error("an embed grant reached the admin back office; past this gate every " +
+			"route runs under a wildcard access policy")
+	}
+	// And still below a custom Authorize hook, which is where it was skipped.
+	b2 := &Battery{cfg: Config{Authorize: func(context.Context) bool { return true }}}
+	if b2.authorized(grantCtx) {
+		t.Error("a custom Authorize hook bypassed the embed refusal")
+	}
+	// An ordinary admin session still gets in.
+	if !(&Battery{}).authorized(handler.SetUser(context.Background(), admin)) {
+		t.Error("an ordinary admin session was refused")
 	}
 }

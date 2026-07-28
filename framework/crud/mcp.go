@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -198,6 +199,15 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 		}
 		if authz := orig.Header.Get("Authorization"); authz != "" {
 			req.Header.Set("Authorization", authz)
+		}
+		// The embed grant is a credential like the two above, and copying it
+		// is what keeps the re-dispatched path GATED rather than merely
+		// authenticated. The grant survives on ctx either way, so the user
+		// re-resolves — but embed.Host.Middleware short-circuits on a missing
+		// header, so without this the reach allow-list and the grant's expiry
+		// are never evaluated for the path being re-dispatched to.
+		if grant := orig.Header.Get(fembed.GrantHeader); grant != "" {
+			req.Header.Set(fembed.GrantHeader, grant)
 		}
 	}
 	rec := httptest.NewRecorder()

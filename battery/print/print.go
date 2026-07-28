@@ -134,6 +134,17 @@ func (b *Battery) Document(doc Document) *Battery {
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "print" }
 
+// ReservedEmbedPrefixes reports the prefix this battery actually mounted. Each
+// request under it spawns headless Chrome, so a grant living in a stranger's
+// page must never reach it — an unbounded amplification primitive behind a
+// credential anyone with devtools can read. See framework.EmbedReserving.
+func (b *Battery) ReservedEmbedPrefixes() []string {
+	if b.cfg.PathPrefix == "" {
+		return []string{"/print"}
+	}
+	return []string{b.cfg.PathPrefix}
+}
+
 // Init implements framework.Battery. Mounts every declared document's
 // HTML route, its sibling PDF route, and the shared auto-print script.
 func (b *Battery) Init(app *framework.App) error {

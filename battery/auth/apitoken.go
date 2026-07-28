@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
 // TokenPrefix marks every plaintext API token. The "gfsk_" prefix makes
@@ -272,12 +273,28 @@ func TokenID(ctx context.Context) (string, bool) {
 	return id, ok
 }
 
-// TokenScopes returns (scopes, true) only for token-authenticated requests;
-// (nil, false) for sessions/JWT (which carry full user capability and are
-// unrestricted by the scope model).
+// TokenScopes returns (scopes, true) for any request whose authority is
+// SCOPED — an API token, or an embed grant. It returns (nil, false) for
+// sessions/JWT, which carry full user capability and are unrestricted by the
+// scope model.
+//
+// The embed case is not an afterthought; leaving it out was a hole. The embed
+// middleware deletes Authorization and X-API-Key, so TokenMiddleware never
+// runs and no token scopes are ever set. Every gate built on this function
+// then read "not scoped" as "session — full user capability", and a grant
+// minted for a read-only reporting surface passed RequireScope("orders:write")
+// and RequireAPIScopes on a DELETE. A grant carries Scopes in the same
+// resource:verb grammar, so the right answer was always to report them.
 func TokenScopes(ctx context.Context) ([]string, bool) {
-	s, ok := ctx.Value(tokenScopesKey{}).([]string)
-	return s, ok
+	if s, ok := ctx.Value(tokenScopesKey{}).([]string); ok {
+		return s, true
+	}
+	if g, ok := embed.GrantFromContext(ctx); ok {
+		// A grant with no scopes is maximally restricted, not unrestricted —
+		// the same reading an empty-scopes token gets.
+		return g.Scopes, true
+	}
+	return nil, false
 }
 
 // HasScope reports whether the request may exercise the given scope. It is
