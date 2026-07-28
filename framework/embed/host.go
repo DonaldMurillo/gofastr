@@ -375,6 +375,15 @@ func (s *ResolvedSurface) AllowsOrigin(candidate string) bool { return s.origins
 // GrantTTL exposes the configured grant lifetime.
 func (h *Host) GrantTTL() time.Duration { return h.grantTTL }
 
+// TenantResolver returns the configured tenant resolver, or nil.
+//
+// The embed content route resolves identity itself — it builds a fresh context
+// rather than passing through Middleware — so it needs this the same way it
+// needs Resolver(). Without it, ResolveTenant reached every island RPC and not
+// the first paint, so a multi-tenant surface rendered untenanted and then
+// tenanted one swap later.
+func (h *Host) TenantResolver() TenantResolver { return h.resolveTenant }
+
 // Resolver returns the configured subject resolver, or nil.
 func (h *Host) Resolver() SubjectResolver { return h.resolve }
 

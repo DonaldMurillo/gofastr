@@ -103,8 +103,18 @@ func TestResolveTenantErrorFailsClosed(t *testing.T) {
 	}
 }
 
-// Nil ResolveTenant behaves exactly as before: no tenant, and the cookie's
-// tenant still does not leak in.
+// Nil ResolveTenant installs nothing.
+//
+// Scope note, because the earlier version of this test overclaimed: it set a
+// `tenant=` COOKIE and said it proved the cookie's tenant "does not leak in".
+// Nothing in the fixture parses a cookie into a context tenant, so that held
+// vacuously. It cannot be fixed by seeding the context either — the ordering
+// guard 500s on any request that already carries a tenant, so the clearing in
+// Middleware is unreachable and unpinnable by construction.
+//
+// What this test does pin: with no resolver, neither tenant value is set.
+// The clearing that IS reachable lives on the embed content route and is
+// pinned by TestEmbedContentDoesNotInheritTheAmbientTenant in framework/uihost.
 func TestWithoutResolveTenantNothingIsInstalled(t *testing.T) {
 	h := testHost(t)
 	grant := grantFor(t, h)
@@ -112,7 +122,6 @@ func TestWithoutResolveTenantNothingIsInstalled(t *testing.T) {
 	p := &tenantProbe{}
 	req := httptest.NewRequest(http.MethodGet, "/embed/dashboard", nil)
 	req.Header.Set(GrantHeader, grant)
-	req.Header.Set("Cookie", "tenant=attacker-tenant")
 	h.Middleware()(p.handler()).ServeHTTP(httptest.NewRecorder(), req)
 
 	if !p.reached {
@@ -120,6 +129,9 @@ func TestWithoutResolveTenantNothingIsInstalled(t *testing.T) {
 	}
 	if p.tenantID != "" {
 		t.Fatalf("tenant = %q, want empty when no resolver is configured", p.tenantID)
+	}
+	if p.ctxValue != nil {
+		t.Fatalf("handler.GetTenant = %v, want nil when no resolver is configured", p.ctxValue)
 	}
 }
 

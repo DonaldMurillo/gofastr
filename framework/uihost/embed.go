@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // Embed route paths. The two API endpoints deliberately sit OUTSIDE the
@@ -934,10 +935,35 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	// it would render the surface as the cookie's user. Reset first; the grant
 	// is the only identity an embedded surface may have.
 	ctx = handler.SetUser(ctx, nil)
+	// The TENANT too, and for the same reason.
+	//
+	// Clearing the user and leaving the tenant is the worst of both: the
+	// surface then renders as the GRANT's subject scoped to the COOKIE
+	// visitor's tenant, which is the pairing Host.Middleware names as tenant
+	// isolation off. The island path refuses that combination outright; this
+	// route was serving it, on the first paint.
+	ctx = handler.SetTenant(ctx, nil)
+	ctx = tenant.SetTenantID(ctx, "")
+
 	// Install the granted identity so the screen's policies and its
 	// ContextComponents see a logged-in user exactly as they would on a
 	// first-party page. Without a resolver the surface renders anonymously,
 	// which is the right shape for a public pricing table or status widget.
+	//
+	// Tenant first: the subject lookup is then tenant-scoped, matching the
+	// order Host.Middleware uses, so a subject that does not belong to the
+	// resolved tenant fails closed here rather than rendering.
+	if resolveTenant := ds.embedHost.TenantResolver(); resolveTenant != nil && grant.Subject != "" {
+		tid, err := resolveTenant(ctx, grant.Subject)
+		if err != nil {
+			embedError(w, http.StatusForbidden, "tenant did not resolve", err)
+			return
+		}
+		if tid != "" {
+			ctx = handler.SetTenant(ctx, tid)
+			ctx = tenant.SetTenantID(ctx, tid)
+		}
+	}
 	if resolve := ds.embedHost.Resolver(); resolve != nil && grant.Subject != "" {
 		user, err := resolve(ctx, grant.Subject)
 		if err != nil {
@@ -947,7 +973,13 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 			embedError(w, http.StatusForbidden, "subject did not resolve", err)
 			return
 		}
-		if user != nil {
+		// isNilValue, not user != nil: a resolver written as
+		// func(...) (*User, error) returning a nil *User yields a non-nil
+		// interface wrapping nil, and installing it makes every "is a user
+		// present" gate downstream report authenticated for a subject that
+		// does not exist. Host.Middleware has guarded this since v0.49.0; this
+		// route was still using the bare comparison.
+		if !fembed.IsNilValue(user) {
 			ctx = handler.SetUser(ctx, user)
 		}
 	}

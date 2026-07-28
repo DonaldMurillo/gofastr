@@ -200,6 +200,16 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			w.Header().Set("Cache-Control", "private, no-store")
 
 			ctx := WithGrant(r.Context(), g)
+			// Belt and braces. The ordering guard above already refuses any
+			// request that arrives with a user or a tenant, so these three
+			// clears are unreachable while it holds — no test can pin them,
+			// and one that claims to is asserting nothing. They stay because
+			// the guard is the thing that would have to be wrong, and the
+			// cost of being wrong here is a cross-tenant read.
+			//
+			// The reachable clearing is on the embed CONTENT route, which
+			// builds its own context and has no such guard; see
+			// framework/uihost/embed.go.
 			ctx = handler.SetUser(ctx, nil)
 			ctx = handler.SetTenant(ctx, nil)
 			ctx = tenant.SetTenantID(ctx, "")
@@ -246,7 +256,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 					http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 					return
 				}
-				if !isNilValue(user) {
+				if !IsNilValue(user) {
 					ctx = handler.SetUser(ctx, user)
 				}
 			}
@@ -320,12 +330,18 @@ func misordered(w http.ResponseWriter, what string) {
 		http.StatusInternalServerError)
 }
 
-// isNilValue reports whether v is nil, including a non-nil interface wrapping a
-// nil pointer. A SubjectResolver written as `func(...) (*User, error)` and
+// IsNilValue reports whether v is nil, including a non-nil interface wrapping a
+// nil pointer.
+//
+// Exported because framework/uihost's embed content route installs a resolved
+// subject on its own — it builds a fresh context rather than going through
+// Middleware — and needs the identical check. Two call sites disagreeing about
+// what "no user" means is how the content route ended up installing typed nils
+// after Middleware had stopped. A SubjectResolver written as `func(...) (*User, error)` and
 // returning a nil *User produces exactly that: `user != nil` is true, the nil
 // pointer is installed, and every "is a user present" gate downstream reports
 // authenticated for a subject that does not exist.
-func isNilValue(v any) bool {
+func IsNilValue(v any) bool {
 	if v == nil {
 		return true
 	}

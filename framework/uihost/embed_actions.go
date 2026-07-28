@@ -3,9 +3,10 @@ package uihost
 import (
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core-ui/component"
 )
 
 // enforceNoServerActionsOnEmbeds walks every declared embed surface's screen
@@ -21,11 +22,10 @@ import (
 // page. Everything an embed needs instead — island RPC, a form POST, polling,
 // SSE — works in a frame, so failing at boot costs nothing.
 //
-// This is the backstop, not the only gate: the separate check-embed analyzer
-// catches the statically-resolvable cases at build time. This walk sees what
-// actually registered, so nothing dynamic slips past it — but only for
-// surfaces whose screen is a *app.Screen (every production surface), the
-// concrete type whose component tree it can reach.
+// This is the runtime backstop for cases the static analyzer cannot resolve.
+// It resolves each surface route through the app router, then inspects the
+// action registry AutoCompileActions cached for the screen that will render.
+// It never calls Actions a second time.
 func (ds *UIHost) enforceNoServerActionsOnEmbeds() {
 	if ds.embedHost == nil {
 		return
@@ -35,20 +35,27 @@ func (ds *UIHost) enforceNoServerActionsOnEmbeds() {
 		if !ok {
 			continue
 		}
-		// fembed.Screen is the minimal interface (RoutePath only); uihost is
-		// the layer that knows *app.Screen and its component tree, so the walk
-		// type-asserts here. A surface carrying a screen that is not a
-		// *app.Screen is invisible to this backstop — reported in the design,
-		// not silently covered — and falls to the static analyzer.
-		scr, ok := resolved.Screen.(*app.Screen)
+		path := resolved.Path()
+		// embed.Screen is intentionally structural. Request handling renders
+		// the app-router screen at RoutePath, so inspect that same screen
+		// instead of trusting the surface's concrete Screen value.
+		scr, ok := ds.App.Router.ScreenByPattern(path)
 		if !ok || scr.Component == nil {
 			continue
 		}
-		// ExtractActions runs the component's Actions() exactly as
-		// AutoCompileActions does, capturing what really registers. That is
-		// the same set the action compiler ships with a componentID, i.e. the
-		// only set that can reach /__gofastr/action — so it is the right scope.
-		for _, def := range component.ExtractActions(scr.Component).All() {
+		var componentID string
+		if cid, ok := scr.Component.(app.ScreenComponentID); ok {
+			componentID = cid.ComponentID()
+		} else {
+			componentID = pathToActionID(scr.Path)
+		}
+		ds.mu.Lock()
+		actions := ds.actionHandlers[componentID]
+		ds.mu.Unlock()
+		if actions == nil {
+			continue
+		}
+		for _, def := range actions.All() {
 			if serverActionCall(def.ClientJS) {
 				panic(fmt.Sprintf(
 					"uihost: embed surface %q renders screen %q whose component "+
@@ -56,29 +63,44 @@ func (ds *UIHost) enforceNoServerActionsOnEmbeds() {
 						"inside a frame (the action registry is app-global with no "+
 						"relationship to any surface, so honouring a grant would let "+
 						"a credential minted for one surface invoke any action in "+
-						"the app). Use an island RPC, a form POST, or polling "+
-						"instead — all three work in a frame.",
-					name, resolved.Path(), def.Event,
+						"the app). The compiler accepts only the canonical call "+
+						"spelling G.serverAction(...), with no whitespace before "+
+						"'('. Use an island RPC, a form POST, or polling instead — "+
+						"all three work in a frame.",
+					name, path, def.Event,
 				))
 			}
 		}
 	}
 }
 
-// serverActionCall reports whether clientJS contains a G.serverAction( call.
+// serverActionCall reports whether clientJS contains a G.serverAction call,
+// including legal JavaScript whitespace before the opening parenthesis.
 //
-// This is the honest signal. The action compiler (actionsToJS) recognises a
-// server action by string-replacing the literal "G.serverAction(" with
-// "G._serverActionFor(<id>, ", and the runtime ships that to POST
-// /__gofastr/action — so the property "this action posts to the server" is
-// carried solely by the ClientJS the component registers. ActionDef.Server
-// exists as a field but is dead: On() never sets it and the compiler never
-// reads it, so trusting it would record a declaration, not the property (the
-// exact failure mode issue #150 rejected a marker interface for).
-//
-// The limit mirrors the compiler's: a call assembled by string concatenation
-// (G[...] or "G." + "serverAction(") is not seen by either. That is a
-// deliberate dynamic escape, not an ordinary component.
+// The action compiler rewrites only the canonical "G.serverAction(" spelling.
+// The embed gate rejects the whitespace form instead of shipping a call with
+// no component ID. Calls assembled dynamically through computed properties or
+// string concatenation remain outside both this scan and the compiler.
 func serverActionCall(clientJS string) bool {
-	return strings.Contains(clientJS, "G.serverAction(")
+	const name = "G.serverAction"
+	for offset := 0; offset < len(clientJS); {
+		i := strings.Index(clientJS[offset:], name)
+		if i < 0 {
+			return false
+		}
+		match := offset + i
+		after := match + len(name)
+		for after < len(clientJS) {
+			r, size := utf8.DecodeRuneInString(clientJS[after:])
+			if !unicode.IsSpace(r) {
+				break
+			}
+			after += size
+		}
+		if after < len(clientJS) && clientJS[after] == '(' {
+			return true
+		}
+		offset = match + len(name)
+	}
+	return false
 }

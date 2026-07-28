@@ -182,7 +182,27 @@ type originSet struct {
 // this core is what makes a runtime OriginSource go through the SAME
 // normalization as a boot-time Surface.Origins: a store is not a trusted
 // input, and the two paths must reject the same wildcard or userinfo string.
+// maxSourceRows bounds how many rows a source may return before any of them is
+// normalized.
+//
+// The response cap counts DE-DUPLICATED output bytes, so a source returning
+// 100,000 copies of one valid origin passed it: the directive was one origin
+// long, and normalizing the list first cost ~23ms and ~31MB per call. On the
+// unauthenticated shell route, with no cache in front of it, that is an
+// amplification primitive rather than a slow path. Bound the raw count before
+// preallocating anything from it.
+//
+// Generous on purpose: a surface legitimately serving hundreds of origins hits
+// the byte cap long before this.
+const maxSourceRows = 4096
+
 func normalizeOrigins(raw []string) (*originSet, int, error) {
+	// Bound the RAW count before anything is sized or normalized from it. The
+	// byte cap below counts de-duplicated output, so it cannot see a list of
+	// duplicates — and normalizing one is where the work actually goes.
+	if len(raw) > maxSourceRows {
+		return nil, 0, fmt.Errorf("embed: origin list has %d entries, over the %d-row limit", len(raw), maxSourceRows)
+	}
 	s := &originSet{set: make(map[string]struct{}, len(raw))}
 	bytes := len("frame-ancestors")
 	for _, r := range raw {

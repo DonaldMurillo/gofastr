@@ -71,9 +71,21 @@ func TestResolveCustomerOriginsFailsClosedOnUnknownCustomer(t *testing.T) {
 // An app that opts into a source commits to sending a customer id. A request
 // without one is a misconfigured snippet, and the safe answer is no framing.
 func TestResolveCustomerOriginsFailsClosedOnEmptyCustomerID(t *testing.T) {
-	src := &stubOriginSource{byCustomer: map[string][]string{"acme": {"https://acme.com"}}}
+	// "" is REGISTERED with a real origin. Without that the stub returns
+	// nothing for it and the empty-list fail-closed path rescues the
+	// assertion — the guard could be deleted entirely and this test would
+	// still pass, which is what it did before.
+	src := &stubOriginSource{byCustomer: map[string][]string{
+		"acme": {"https://acme.com"},
+		"":     {"https://empty-key.example"},
+	}}
 	if _, err := ResolveCustomerOrigins(context.Background(), src, "reports", ""); err == nil {
 		t.Fatal("an empty customer id must fail closed, never widen to allow everyone")
+	}
+	// And the source is never asked. The guard exists to stop the id before it
+	// reaches the app's lookup, not merely to discard the answer.
+	if src.calls != 0 {
+		t.Fatalf("the source was called %d time(s) for an empty customer id", src.calls)
 	}
 }
 
@@ -93,10 +105,27 @@ func TestResolveCustomerOriginsFailsClosedOnSourceError(t *testing.T) {
 // id would ride into the app's lookup at request-line length; bound it and
 // fail closed past the bound.
 func TestResolveCustomerOriginsFailsClosedOnOverlongCustomerID(t *testing.T) {
-	src := &stubOriginSource{byCustomer: map[string][]string{"acme": {"https://acme.com"}}}
 	huge := strings.Repeat("a", maxCustomerIDBytes+1)
+	// REGISTERED, for the same reason as the empty-id case: an unregistered id
+	// fails closed on the empty list regardless of the length bound, so the
+	// bound itself would go unpinned.
+	src := &stubOriginSource{byCustomer: map[string][]string{
+		"acme": {"https://acme.com"},
+		huge:   {"https://overlong.example"},
+	}}
 	if _, err := ResolveCustomerOrigins(context.Background(), src, "reports", huge); err == nil {
 		t.Fatal("an over-long customer id must fail closed")
+	}
+	// The point of the bound is that the attacker-chosen id never reaches the
+	// app's lookup at request-line length.
+	if src.calls != 0 {
+		t.Fatalf("the source was called %d time(s) with an over-long customer id", src.calls)
+	}
+	// One byte under the bound is served, so the guard bounds rather than bans.
+	ok := strings.Repeat("a", maxCustomerIDBytes)
+	src2 := &stubOriginSource{byCustomer: map[string][]string{ok: {"https://ok.example"}}}
+	if _, err := ResolveCustomerOrigins(context.Background(), src2, "reports", ok); err != nil {
+		t.Fatalf("a customer id exactly at the bound was refused: %v", err)
 	}
 }
 
@@ -137,4 +166,29 @@ func (s *stubOriginSource) Allows(_ context.Context, _, origin string) (bool, er
 		}
 	}
 	return false, nil
+}
+
+// A source returning a huge list of DUPLICATES used to pass every guard: the
+// response cap counts de-duplicated output, so the directive was one origin
+// long, while normalizing the list first cost ~23ms and ~31MB per call. On the
+// unauthenticated shell route with no cache in front of it, that is an
+// amplification primitive rather than a slow path.
+func TestResolveCustomerOriginsBoundsRawRowCount(t *testing.T) {
+	huge := make([]string, maxSourceRows+1)
+	for i := range huge {
+		huge[i] = "https://same.example" // every row identical, one origin after dedup
+	}
+	src := &stubOriginSource{byCustomer: map[string][]string{"dup": huge}}
+	if _, err := ResolveCustomerOrigins(context.Background(), src, "reports", "dup"); err == nil {
+		t.Fatalf("%d duplicate rows were accepted; the byte cap only ever sees one origin", len(huge))
+	}
+	// A list at the bound still works, so this bounds rather than bans.
+	ok := make([]string, maxSourceRows)
+	for i := range ok {
+		ok[i] = "https://same.example"
+	}
+	src2 := &stubOriginSource{byCustomer: map[string][]string{"dup": ok}}
+	if _, err := ResolveCustomerOrigins(context.Background(), src2, "reports", "dup"); err != nil {
+		t.Fatalf("a list exactly at the row bound was refused: %v", err)
+	}
 }

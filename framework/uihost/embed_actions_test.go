@@ -40,6 +40,36 @@ func (c *plainActionScreenComp) Actions() {
 		component.WithClientJS(`G.setState("n", 1)`))
 }
 
+type changingActionScreenComp struct {
+	calls int
+}
+
+func (changingActionScreenComp) Render() render.HTML { return render.HTML("<p>save</p>") }
+
+func (c *changingActionScreenComp) Actions() {
+	c.calls++
+	js := `G.setState("saved", true)`
+	if c.calls == 1 {
+		js = `G.serverAction("save")`
+	}
+	component.On("save", func(_ *component.ComponentContext) {}, component.WithClientJS(js))
+}
+
+type whitespaceServerActionScreenComp struct{}
+
+func (whitespaceServerActionScreenComp) Render() render.HTML {
+	return render.HTML("<p>save</p>")
+}
+
+func (c *whitespaceServerActionScreenComp) Actions() {
+	component.On("save", func(_ *component.ComponentContext) {},
+		component.WithClientJS(`G.serverAction ("save")`))
+}
+
+type routeOnlyEmbedScreen string
+
+func (s routeOnlyEmbedScreen) RoutePath() string { return string(s) }
+
 func buildEmbedHostWithScreen(t *testing.T, comp component.Component, route string) (*app.App, *fembed.Host) {
 	t.Helper()
 	application := app.NewApp("server-action embed")
@@ -89,6 +119,61 @@ func TestEmbedSurfaceWithPlainActionBootsCleanly(t *testing.T) {
 	if got := panicFromMount(t, ds); got != "" {
 		t.Fatalf("Mount panicked for a surface whose component registers no "+
 			"server action — the walk flagged a plain client action:\n%s", got)
+	}
+}
+
+func TestEmbedGateInspectsCompiledActionRegistry(t *testing.T) {
+	comp := &changingActionScreenComp{}
+	application, eh := buildEmbedHostWithScreen(t, comp, "/reports")
+	ds := New(application, WithEmbed(eh))
+
+	got := panicFromMount(t, ds)
+	if got == "" {
+		t.Fatal("Mount did not reject the server action from the registry compiled into actions.js")
+	}
+	if comp.calls != 1 {
+		t.Fatalf("Actions called %d times, want 1; the gate must inspect the compiled registry", comp.calls)
+	}
+}
+
+func TestEmbedGateResolvesCustomScreenThroughRouter(t *testing.T) {
+	application := app.NewApp("custom embed screen")
+	application.RegisterScreen(app.NewScreen("/reports", &serverActionScreenComp{}), nil)
+	eh, err := fembed.New(fembed.Config{
+		Surfaces: []fembed.Surface{{
+			Name:    "reports",
+			Screen:  routeOnlyEmbedScreen("/reports"),
+			Origins: []string{embedTestOrigin},
+		}},
+		BurnStore: fembed.NewMemoryBurnStore(),
+	})
+	if err != nil {
+		t.Fatalf("embed.New: %v", err)
+	}
+	eh.SetKeys([]byte("nonce-key-nonce-key-nonce-key-32"), []byte("grant-key-grant-key-grant-key-32"))
+
+	got := panicFromMount(t, New(application, WithEmbed(eh)))
+	if got == "" {
+		t.Fatal("Mount did not reject the server action rendered at a custom embed screen's route")
+	}
+}
+
+func TestEmbedGateRejectsWhitespaceServerActionCall(t *testing.T) {
+	application, eh := buildEmbedHostWithScreen(t, &whitespaceServerActionScreenComp{}, "/reports")
+
+	got := panicFromMount(t, New(application, WithEmbed(eh)))
+	if got == "" {
+		t.Fatal("Mount did not reject G.serverAction with whitespace before the opening parenthesis")
+	}
+	if !strings.Contains(got, "G.serverAction(") {
+		t.Fatalf("panic must name the canonical spelling G.serverAction(:\n%s", got)
+	}
+}
+
+func TestServerActionCallScansPastNonCallAndUnicodeWhitespace(t *testing.T) {
+	clientJS := "// G.serverAction helper\nG.serverAction\u00a0(\"save\")"
+	if !serverActionCall(clientJS) {
+		t.Fatal("serverActionCall missed a later call separated by Unicode whitespace")
 	}
 }
 
