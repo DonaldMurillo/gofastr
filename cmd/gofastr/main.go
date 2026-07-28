@@ -114,6 +114,7 @@ func printHelp() {
   pack [app-dir]        Snapshot a generated app into a best-effort gofastr.yml (lossy; not an inverse of generate)
   validate <yml>        Validate a blueprint without generating (exit 0 = valid)
   theme init            Scaffold theme/theme.go for a UI project
+  theme edit            Live theme configurator with a component preview
   build                 Run codegen + go vet + accessibility lint + go build
                         --no-a11y skips the accessibility gate
                         --pkg=<path> selects the main package built after the
@@ -190,6 +191,7 @@ var ownsHelp = map[string]bool{
 	"gen":      true,
 	"g":        true,
 	"validate": true,
+	"theme":    true,
 	"semantic": true,
 }
 

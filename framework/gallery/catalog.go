@@ -219,6 +219,20 @@ var Catalog = []Entry{
 			html.Div(html.DivConfig{Class: "fact full"}, render.Text("16:9 box")),
 		)
 	}},
+	{"workbench", "Workbench", "Layout", "Inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest. An <iframe> in the pane fills it edge to edge. Stacks below 720px.", func() render.HTML {
+		rail := ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+			html.Strong(html.TextConfig{}, render.Text("Controls")),
+			ui.ColorField(ui.ColorFieldConfig{Value: "#4F46E5", SwatchValue: "#4F46E5", SwatchLabel: "Primary"}),
+			ui.ColorField(ui.ColorFieldConfig{Value: "#0891B2", SwatchValue: "#0891B2", SwatchLabel: "Accent"}),
+		)
+		pane := html.Div(html.DivConfig{Class: "demo-row"},
+			html.Paragraph(html.TextConfig{}, render.Text("The pane fills the remaining space.")))
+		// A short rail width and the .demo-viewport wrapper: the component is
+		// viewport-height by design, which inside a catalog card would eat the
+		// page. Both the class and its rule live in this package (css.go).
+		return html.Div(html.DivConfig{Class: "demo-viewport"},
+			ui.Workbench(ui.WorkbenchConfig{RailWidth: "220px", Rail: rail, Pane: pane}))
+	}},
 	{"panehost", "PaneHost", "Layout", "Master-detail shell: a primary pane plus openable side panes that collapse to an overlay drawer on narrow screens.", func() render.HTML {
 		primary := html.Div(html.DivConfig{},
 			html.Div(html.DivConfig{Class: "demo-row"},
@@ -767,6 +781,20 @@ const page = await api.posts.list({ limit: 25 });`},
 	}},
 	{"colorpicker", "ColorPicker", "Inputs", "Native swatch picker.", func() render.HTML {
 		return ui.ColorPicker(ui.ColorPickerConfig{Name: "accent", Label: "Accent", Value: "#e0a040"})
+	}},
+	{"colorfield", "ColorField", "Inputs", "Swatch beside a text input holding the same value. The text input is the source of truth, so values a native picker cannot represent survive.", func() render.HTML {
+		return ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+			ui.ColorField(ui.ColorFieldConfig{
+				Value:       "#4F46E5",
+				SwatchValue: "#4F46E5",
+				SwatchLabel: "Brand colour",
+			}),
+			ui.ColorField(ui.ColorFieldConfig{
+				Value:       "var(--color-accent)",
+				SwatchValue: "#0891B2",
+				SwatchLabel: "Accent colour",
+			}),
+		)
 	}},
 	{"toggle", "Toggle Switch", "Inputs", "Boolean toggle — client-side signal flip, no RPC.", func() render.HTML {
 		row := html.Div(html.DivConfig{Class: "demo-row"},
