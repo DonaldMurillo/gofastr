@@ -231,15 +231,27 @@ type pipelineGroup struct {
 // contain raw commas (presigned URLs, keys with comma-separated
 // segments) would otherwise be split into multiple malformed
 // candidates and the wrong (or no) image would be fetched.
+// A data: URI is the one shape whose comma is STRUCTURAL — it separates
+// the media type from the payload, so escaping it yields a candidate no
+// browser can decode. It is also safe to leave: the srcset grammar splits
+// a candidate on whitespace before it looks for a descriptor, so a comma
+// inside an otherwise whitespace-free URL stays part of the URL token.
+// safeImageURL admits inline raster data: URIs for <img src> AND srcsets,
+// so this path is reachable by design.
 func encodeSrcsetURL(url string) string {
 	if !strings.ContainsAny(url, ", \t\n\r") {
 		return url
 	}
+	escapeComma := !strings.HasPrefix(strings.ToLower(url), "data:")
 	var b strings.Builder
 	b.Grow(len(url) + 8)
 	for i := 0; i < len(url); i++ {
 		switch url[i] {
 		case ',':
+			if !escapeComma {
+				b.WriteByte(',')
+				continue
+			}
 			b.WriteString("%2C")
 		case ' ':
 			b.WriteString("%20")
