@@ -119,7 +119,13 @@ func LintNoInlineScripts(dir string) (*Result, error) {
 
 // LintNoInlineScriptsRecursive walks dir and every subdirectory,
 // running LintNoInlineScripts on each. Skips vendor/, node_modules/,
-// hidden dirs, and testdata/.
+// hidden dirs, testdata/, and dist/.
+//
+// dist/ is the repo's sanctioned build-output directory and is gitignored, so
+// what lives there is generated — including whole example workspaces written by
+// the evaluation harness. Linting it means the repo-cleanliness gate fails on
+// any machine that has run `make build-all` or an eval, pointing at a file
+// nobody wrote and nobody ships.
 func LintNoInlineScriptsRecursive(root string) (*Result, error) {
 	result := &Result{}
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -131,7 +137,8 @@ func LintNoInlineScriptsRecursive(root string) (*Result, error) {
 		}
 		base := filepath.Base(path)
 		if path != root && (strings.HasPrefix(base, ".") ||
-			base == "vendor" || base == "node_modules" || base == "testdata") {
+			base == "vendor" || base == "node_modules" || base == "testdata" ||
+			base == "dist") {
 			return filepath.SkipDir
 		}
 		sub, err := LintNoInlineScripts(path)

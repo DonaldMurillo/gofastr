@@ -42,6 +42,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
 )
 
@@ -108,6 +109,8 @@ type UIHost struct {
 	strict          bool                                 // WithStrict — Mount refuses to serve an app that fails the strict checks (strict.go)
 	strictConfig    StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
 	siteDescription bool                                 // set by WithDescription; read by the strict site-surface check
+	embedHost       *fembed.Host                         // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
+	embedThemes     embedThemeState                      // per-surface cap on distinct customer theme variants
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -1823,6 +1826,59 @@ func (ds *UIHost) requireValidSession(w http.ResponseWriter, r *http.Request) (s
 	return id, true
 }
 
+// widgetNameFromPath pulls the widget name out of /core-ui/widget/<name>/<leaf>.
+// Returns "" for anything that is not that shape, so a caller cannot smuggle a
+// traversal or an empty name past a lookup.
+func widgetNameFromPath(p string) string {
+	const prefix = "/core-ui/widget/"
+	if !strings.HasPrefix(p, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(p, prefix)
+	name, _, ok := strings.Cut(rest, "/")
+	if !ok || name == "" || strings.Contains(name, ".") {
+		return ""
+	}
+	return name
+}
+
+// requireSessionOrEmbedGrant gates a /__gofastr/* endpoint that an embedded
+// surface must also be able to reach.
+//
+// These endpoints were written when the session cookie was the only way to be
+// somebody, and they all failed the same way once surfaces could be framed: a
+// frame carries no cookie, so cross-site the endpoint refused it and the
+// feature was dead, while same-site an unrelated ambient session answered it —
+// making "does my embed work" depend on whether the viewer happens to be logged
+// into the app in another tab.
+//
+// When the grant is what authorises the request, the cookie is discarded first.
+// A same-site frame really does send one, and answering on the strength of a
+// credential the caller did not present is the identity confusion the embed
+// routes strip cookies to prevent.
+func (ds *UIHost) requireSessionOrEmbedGrant(w http.ResponseWriter, r *http.Request) bool {
+	if token := r.Header.Get(embedGrantHeader); token != "" {
+		// A grant was PRESENTED. Its verdict is final — refuse rather than fall
+		// back to whatever else the request happens to carry.
+		//
+		// Falling through was the bug: the runtime deliberately keeps sending an
+		// expired grant so the server answers 401 instead of silently serving an
+		// anonymous render. In a same-site framing the browser also sends the
+		// viewer's Strict session cookie, so the fallback answered that expired
+		// embed request on the strength of an unrelated logged-in session — the
+		// identity confusion the whole feature strips cookies to prevent, and
+		// the opposite of the rule Host.Middleware states for the same case.
+		if !ds.embedGrantOK(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return false
+		}
+		stripCookies(r)
+		return true
+	}
+	_, ok := ds.requireValidSession(w, r)
+	return ok
+}
+
 // rejectCrossOrigin returns true (and has already written a 403) when
 // the request carries an Origin header whose host differs from r.Host.
 // Used by mutating /__gofastr/* endpoints to deny CSRF from
@@ -1865,12 +1921,18 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 
 // handleActionsJS serves all compiled action JS. The output enumerates
 // every registered server-action and component id on the host — useful
-// surface for an attacker mapping the app, so we require a session
-// before serving it. The runtime fetches this script after first paint
-// from a same-origin page, by which point the session cookie has been
-// minted.
+// surface for an attacker mapping the app, so we require a session or an
+// embed grant before serving it. The runtime fetches this script after
+// first paint from a same-origin page, by which point the session cookie
+// has been minted; inside a frame there is no cookie and the grant is
+// what the caller has.
+//
+// A frame that cannot fetch this script has no action handlers at all:
+// nothing else calls __gofastr.register, so every data-action click is
+// preventDefault()ed and then dropped, and every data-action-mount node
+// stays empty.
 func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
-	if _, ok := ds.requireValidSession(w, r); !ok {
+	if !ds.requireSessionOrEmbedGrant(w, r) {
 		return
 	}
 	js := ds.GetActionJS()
@@ -1884,6 +1946,22 @@ func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
 // a same-origin caller needs (the cookie rides along automatically).
 func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossOrigin(w, r) {
+		return
+	}
+	// Not from inside a frame.
+	//
+	// This route mints an anonymous session to anyone who asks — that is its
+	// job, since island state needs an id before any user exists. But
+	// handleServerAction gates on "has a valid session", so a frame that could
+	// mint one would defeat that gate in one extra request: POST here, then
+	// POST /__gofastr/action with the cookie. Refusing here is what makes the
+	// refusal there mean something.
+	//
+	// It does not make server actions privileged — any anonymous same-origin
+	// caller can still do both requests. It makes the grant confer nothing
+	// extra, which is the actual claim.
+	if r.Header.Get(fembed.GrantHeader) != "" {
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 	sess := ds.CreateSession()
@@ -1941,6 +2019,31 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Auth required to actually invoke a known action.
+	//
+	// A session, and deliberately NOT an embed grant. The action registry is
+	// app-global and keyed by (componentID, action) with no relationship to any
+	// surface, so accepting a grant here would let a credential minted for one
+	// surface invoke any action registered anywhere in the app — including from
+	// a surface with no subject at all, which is the shape a public pricing
+	// table takes. There is no surface a component belongs to for this code to
+	// check against, and the embed runtime publishes every compiled action name,
+	// so obscurity constrains nothing either.
+	//
+	// The consequence is that a component whose client handler calls
+	// G.serverAction does not work inside a frame. That was already true before
+	// embeds existed and is not a regression; what IS fixed is the separate bug
+	// that left the client half dead too (see handleEmbedRuntimeJS). Making this
+	// work needs the app to say which surfaces may invoke which actions, which
+	// is an API decision, not something to infer here.
+	//
+	// Read the guarantee narrowly. A uihost session is SELF-MINTED: any
+	// same-origin caller can POST /__gofastr/session and get one with no
+	// credential, because island state needs an id before any user exists. So
+	// this check does not make server actions privileged, and a server action
+	// is NOT an authorization boundary — a handler that mutates anything must
+	// check authorization itself. What the check does buy is that a grant
+	// confers nothing here that an anonymous visitor did not already have,
+	// which is exactly what handleCreateSession's matching refusal preserves.
 	if _, ok := ds.requireValidSession(w, r); !ok {
 		return
 	}
@@ -2004,6 +2107,10 @@ func (ds *UIHost) Mount(r *router.Router) {
 	ds.AutoCompileActions()
 
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))
+	// Embeddable surfaces. Registered only when WithEmbed configured a host,
+	// so an app that hands out no pieces of itself serves no embed route at
+	// all — not even a 404 that would confirm the feature exists.
+	ds.mountEmbed(r)
 	r.Get("/__gofastr/color-scheme.js", http.HandlerFunc(ds.handleColorSchemeJS))
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
 	r.Get("/__gofastr/app.css", http.HandlerFunc(ds.handleAppCSS))
@@ -2031,6 +2138,45 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// — useful infrastructure for the runtime, but a recon target for
 	// anonymous callers. Gate behind the session cookie.
 	r.Get("/__gofastr/widgets", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// An embedded surface has no session cookie — none is ever sent from
+		// inside a frame — so a cookie-only gate meant every widget in an
+		// embed silently did nothing: the catalog 401'd, _widgetCatalog stayed
+		// empty, and a modal trigger was dead DOM. Worse, in a same-site
+		// framing an ambient cookie COULD satisfy it, so whether an embed's
+		// widgets worked depended on the viewer's unrelated app session.
+		//
+		// A grant answers only for ITS OWN surface. The caller supplies the
+		// page to filter by, and a grant proves nothing about any page but the
+		// one its surface renders — so the grant's path is substituted rather
+		// than trusted from the query. Without that, a grant for a public
+		// pricing surface (no subject, handed to every anonymous visitor) asked
+		// for ?page=/admin, or omitted the parameter entirely and read the
+		// unfiltered registry.
+		if token := req.Header.Get(embedGrantHeader); token != "" {
+			// A presented grant's verdict is final here too. Falling through to
+			// the cookie let an EXPIRED embed request — which the runtime keeps
+			// sending on purpose so the server 401s — be answered on the
+			// strength of the viewer's unrelated session in a same-site framing,
+			// skipping the per-surface scoping entirely.
+			g, ok := ds.embedGrant(req)
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			stripCookies(req)
+			path := ds.embedSurfacePath(g)
+			if path == "" {
+				// The surface vanished after the grant was minted. Answer the
+				// empty catalog rather than the whole one.
+				path = "\x00none"
+			}
+			q := req.URL.Query()
+			q.Set("page", path)
+			scoped := req.Clone(req.Context())
+			scoped.URL.RawQuery = q.Encode()
+			widget.ServeWidgetList(w, scoped)
+			return
+		}
 		if _, ok := ds.requireValidSession(w, req); !ok {
 			return
 		}
@@ -2042,7 +2188,38 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// asked for a session would 403 forever — the gate fails closed by
 	// design, and this is what makes it usable. Same signature check as
 	// requireValidSession, minus the response write.
+	//
+	// An embed grant satisfies it too, and has to: the catalog above already
+	// lists RequireSession widgets to a frame, so without this the frame
+	// fetched the widget's chrome with the only credential it has and got 403
+	// — dead DOM one hop further along than the bug the catalog branch fixed.
 	widget.SetSessionCheck(func(req *http.Request) bool {
+		if token := req.Header.Get(embedGrantHeader); token != "" {
+			// Same rule as the catalog: a presented grant decides this request,
+			// and a refused one does not fall back to an ambient cookie.
+			g, ok := ds.embedGrant(req)
+			if !ok {
+				return false
+			}
+			// A grant satisfies the gate only for widgets that actually belong
+			// to its own surface.
+			//
+			// Scoping the CATALOG was not enough: /core-ui/widget/<name>/state
+			// and /chrome are predictable URLs, so filtering discovery only
+			// hides names from a caller who does not need them. Reducing the
+			// grant to a boolean here let anyone with devtools on a legitimate
+			// customer page read the state of a widget scoped to /admin.
+			name := widgetNameFromPath(req.URL.Path)
+			if name == "" {
+				return false
+			}
+			def, found := widget.Lookup(name)
+			if !found {
+				return false
+			}
+			path := ds.embedSurfacePath(g)
+			return path != "" && def.IsAvailableOn(path)
+		}
 		_, ok := ds.verifySessionToken(readSessionCookie(req))
 		return ok
 	})
@@ -2601,15 +2778,30 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 //	const el = document.getElementById('gofastr-catalog');
 //	if (el) window.__gofastr_catalog = JSON.parse(el.textContent);
 func catalogJSONScript(ds *UIHost) string {
+	return catalogJSONScriptFor(ds, ds.activeTheme(), "")
+}
+
+// catalogJSONScriptFor builds the catalog against a specific theme.
+//
+// variantKey, when set, is appended to every stylePath so the runtime's CSS
+// scanner fetches each component's stylesheet under the SAME theme the page was
+// rendered with. Without it an embed served the customer's palette in app.css
+// and the app's palette in every component stylesheet — and only components
+// whose StyleFn reads theme values directly showed it, so the page came back
+// half-rebranded in a way no DOM assertion can see.
+func catalogJSONScriptFor(ds *UIHost, theme style.Theme, variantKey string) string {
 	all := registry.All()
 	if len(all) == 0 {
 		return ""
 	}
-	theme := ds.activeTheme()
+	suffix := ""
+	if variantKey != "" {
+		suffix = "?t=" + url.QueryEscape(variantKey)
+	}
 	cat := make(map[string]map[string]any, len(all))
 	for _, e := range all {
 		cat[e.Name] = map[string]any{
-			"stylePath": "/__gofastr/comp/" + e.Name + ".css",
+			"stylePath": "/__gofastr/comp/" + e.Name + ".css" + suffix,
 			"version":   e.VersionFor(theme),
 			"loadMode":  loadModeString(e.Load),
 		}
@@ -2923,7 +3115,7 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	theme := ds.activeTheme()
+	theme := ds.requestTheme(r)
 	css := e.CSSFor(theme)
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	if v := r.URL.Query().Get("v"); v != "" && v == e.VersionFor(theme) {
@@ -2952,7 +3144,15 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	names := strings.Split(namesParam, ",")
-	theme := ds.activeTheme()
+	// requestTheme, not activeTheme — the SAME rule handleComponentCSS
+	// follows. The single-component handler was converted to per-request
+	// theming and this one, which serves the identical CSS in bulk, was left
+	// reading the boot-time theme. A component whose StyleFn reads
+	// style.Theme directly (rather than emitting a var(--*) token) then kept
+	// painting the base palette under a requested variant, so both the embed
+	// frame and the theme editor's preview showed a half-applied theme — and
+	// the editor could write a theme its operator had never actually seen.
+	theme := ds.requestTheme(r)
 	versions := make([]string, 0, len(names))
 	bodies := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))

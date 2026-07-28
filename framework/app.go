@@ -2,7 +2,9 @@ package framework
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,6 +38,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -147,6 +150,11 @@ type App struct {
 	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
 
 	Batteries *BatteryManager
+
+	// embedHost is the mounted embeddable-surface host, if any. Captured at
+	// Mount so InitPlugins can register the reserved prefixes of whatever
+	// batteries this app actually mounted.
+	embedHost *fembed.Host
 
 	// modules manages registered modules and their enable/disable state.
 	// Created in NewApp; nil-safe (NewModuleManager always returns non-nil).
@@ -722,7 +730,58 @@ func ownerPrincipal(r *http.Request) string {
 	if id, ok := owner.Get(r.Context()); ok && id != nil {
 		return fmt.Sprintf("%v", id)
 	}
+	// No resolved owner — and on the default wiring there never is one.
+	//
+	// NewApp installs this middleware, and the router makes the first-added
+	// middleware outermost, so idempotency runs BEFORE any authentication the
+	// app adds with Use(). owner.Get resolves through GetCurrentUser, which
+	// that inner middleware has not populated yet. So the branch above is inert
+	// for the default install and every caller landed in one "anon" namespace:
+	// two different users sending the same Idempotency-Key — "order-1" is
+	// enough — meant the second received the first's stored response and its
+	// own handler never ran.
+	//
+	// The credential itself is the only identity visible this early, so key on
+	// it. Different credentials can never share a namespace; the cost is that
+	// re-authenticating starts a new one, so a retry that straddles a login or
+	// a token refresh is treated as a fresh request rather than a replay. That
+	// is the right trade against serving one caller's response to another.
+	if k := credentialFingerprint(r); k != "" {
+		return k
+	}
 	return "anon"
+}
+
+// credentialFingerprint derives a stable, opaque namespace from whatever
+// credential the request carries, without interpreting any of them. It is used
+// only to keep distinct callers in distinct namespaces, never to authenticate.
+func credentialFingerprint(r *http.Request) string {
+	h := sha256.New()
+	wrote := false
+	for _, name := range []string{"Authorization", "X-API-Key", fembed.GrantHeader, "Cookie"} {
+		// Values, not Get. Get returns only the FIRST field, and Cookie is
+		// routinely sent as several: a proxy prepends its own
+		// "Cookie: edge=blue" and forwards the browser's "Cookie: session_id=…"
+		// as a second field. Session auth scans every cookie, so it can
+		// authenticate two different users from a field this hash never saw,
+		// and both of them landed in one namespace keyed on the shared first
+		// field — one caller's stored response served to another, which is the
+		// exact failure this function exists to prevent.
+		for _, v := range r.Header.Values(name) {
+			if v == "" {
+				continue
+			}
+			_, _ = h.Write([]byte(name))
+			_, _ = h.Write([]byte{0})
+			_, _ = h.Write([]byte(v))
+			_, _ = h.Write([]byte{0})
+			wrote = true
+		}
+	}
+	if !wrote {
+		return ""
+	}
+	return "cred:" + hex.EncodeToString(h.Sum(nil)[:8])
 }
 
 // WithMetrics enables HTTP request metrics (per-route counts, status classes,
@@ -967,7 +1026,67 @@ func (a *App) Mount(m Mountable) *App {
 			sk.SetSessionKey(key)
 		}
 	}
+	// Same seam for embeddable surfaces, with a stricter rule: an embed host
+	// gets no per-boot fallback, so a host configured without an app secret
+	// fails at boot. See embedKeysForMount.
+	if eh, ok := m.(interface{ EmbedHost() *fembed.Host }); ok {
+		if host := eh.EmbedHost(); host != nil {
+			nonceKey, grantKey, err := embedKeysForMount(a.secret)
+			if err != nil {
+				panic(err.Error())
+			}
+			host.SetKeys(nonceKey, grantKey)
+			a.embedHost = host
+		}
+	}
 	return a
+}
+
+// EmbedReserving is implemented by anything that mounts routes an embed grant
+// must never reach, under a prefix the app can change.
+//
+// framework/embed ships a list of reserved prefixes, but it can only name
+// DEFAULTS: an app that sets admin.Config.PathPrefix = "/back-office" keeps the
+// protection on "/admin", which it no longer serves, and loses it on the prefix
+// it does. A battery that implements this reports the prefix it ACTUALLY
+// mounted, and the protection moves with it.
+type EmbedReserving interface {
+	ReservedEmbedPrefixes() []string
+}
+
+// reserveEmbedPrefixes registers every mounted battery's actual privileged
+// prefix with the embed host and re-validates the declared surfaces.
+//
+// Surfaces are declared before anything is mounted, so a Path or Reach that
+// only becomes reserved once a battery is present has to be caught here or not
+// at all. A conflict is a wiring mistake with a security consequence, so it
+// stops the boot rather than logging.
+func (a *App) reserveEmbedPrefixes() {
+	if a.embedHost == nil {
+		return
+	}
+	var prefixes []string
+	for _, m := range a.mountables {
+		if er, ok := m.(EmbedReserving); ok {
+			prefixes = append(prefixes, er.ReservedEmbedPrefixes()...)
+		}
+	}
+	for _, p := range a.Plugins.All() {
+		if er, ok := p.(EmbedReserving); ok {
+			prefixes = append(prefixes, er.ReservedEmbedPrefixes()...)
+		}
+	}
+	for _, b := range a.Batteries.All() {
+		if er, ok := b.(EmbedReserving); ok {
+			prefixes = append(prefixes, er.ReservedEmbedPrefixes()...)
+		}
+	}
+	if len(prefixes) == 0 {
+		return
+	}
+	if err := a.embedHost.AddReservedPrefixes(prefixes...); err != nil {
+		panic(err.Error())
+	}
 }
 
 // Mountables returns the Mountables registered via Mount, in registration
@@ -1860,6 +1979,12 @@ func (a *App) InitPlugins() error {
 		a.initialized.Store(false)
 		return err
 	}
+	// Now that every plugin and battery has run Init and settled its own
+	// prefix, tell the embed host which paths a grant must never reach.
+	// Panics on a conflict — a surface declared over a battery's routes is a
+	// wiring mistake that must not boot.
+	a.reserveEmbedPrefixes()
+
 	// Probe both plugins and batteries for the optional
 	// ReadinessRegistrar interface so they can publish health checks
 	// before /readyz mounts in Start.

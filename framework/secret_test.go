@@ -70,3 +70,53 @@ func TestSessionKeyDerivedWhenSecretSet(t *testing.T) {
 		t.Fatal("session key is the raw secret — must be derived")
 	}
 }
+
+// An embed host gets no per-boot fallback key. A session that fails to verify
+// is re-minted on the next render and nobody notices; an embed nonce that fails
+// to verify is gone — single-use, one-minute life, already rendered into a page
+// on someone else's site that this app cannot re-render. So the secret is
+// required, and its absence is a boot failure rather than embeds that break on
+// every restart and on every second replica.
+func TestEmbedKeysRequireASecret(t *testing.T) {
+	if _, _, err := embedKeysForMount(nil); err == nil {
+		t.Fatal("embed keys were derived without an app secret")
+	}
+
+	secret := []byte("test-secret-test-secret-test-sec")
+	nonceKey, grantKey, err := embedKeysForMount(secret)
+	if err != nil {
+		t.Fatalf("embedKeysForMount: %v", err)
+	}
+	if len(nonceKey) != 32 || len(grantKey) != 32 {
+		t.Fatalf("key lengths = %d / %d, want 32 / 32", len(nonceKey), len(grantKey))
+	}
+	// The two must differ from each other and from the session key, or a
+	// credential minted for one purpose verifies for another.
+	sessionKey, err := sessionKeyForMount(secret, false)
+	if err != nil {
+		t.Fatalf("sessionKeyForMount: %v", err)
+	}
+	keys := map[string]string{
+		"nonce":   string(nonceKey),
+		"grant":   string(grantKey),
+		"session": string(sessionKey),
+	}
+	seen := map[string]string{}
+	for name, k := range keys {
+		if other, dup := seen[k]; dup {
+			t.Fatalf("the %s and %s keys are identical — HKDF domain separation is not doing anything", name, other)
+		}
+		seen[k] = name
+	}
+
+	// Derivation is deterministic: the same secret on another replica must
+	// produce the same keys, or a nonce minted on one never verifies on the
+	// other.
+	n2, g2, err := embedKeysForMount(secret)
+	if err != nil {
+		t.Fatalf("embedKeysForMount: %v", err)
+	}
+	if string(n2) != string(nonceKey) || string(g2) != string(grantKey) {
+		t.Fatal("key derivation is not deterministic — replicas would not accept each other's tokens")
+	}
+}
