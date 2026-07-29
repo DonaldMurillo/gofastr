@@ -1,6 +1,9 @@
 package app
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // patternRedirect is a dynamic redirect (RedirectPattern): a from-pattern
 // whose params are passed through to a to-pattern. segments are the
@@ -70,6 +73,25 @@ func (a *App) RedirectPattern(from, to string) {
 	if _, ok := a.Router.screens[from]; ok {
 		panic("app: redirect from " + from + " collides with a registered screen")
 	}
+	// Exact screens are covered by the same overlap rule as dynamic ones:
+	// a from-pattern that matches a registered literal path shadows it,
+	// because ResolveRedirect runs before screen resolution. (The reverse
+	// carve-out in ResolveRedirect's doc — an EXACT redirect shadowing one
+	// concrete path of a dynamic screen — stays: that follows the router's
+	// own exact-beats-dynamic contract. A pattern redirect swallowing a
+	// more specific exact screen inverts it.) Sorted so the reported
+	// collision is deterministic when several screens overlap.
+	var shadowed []string
+	for path := range a.Router.screens {
+		if patternsOverlap(fromSegs, strings.Split(strings.Trim(path, "/"), "/")) {
+			shadowed = append(shadowed, path)
+		}
+	}
+	if len(shadowed) > 0 {
+		sort.Strings(shadowed)
+		panic("app: redirect from " + from + " overlaps registered screen " + shadowed[0] +
+			" — redirects are consulted before screens, so the overlap would silently shadow it")
+	}
 	for _, dr := range a.Router.dynamic {
 		if patternsOverlap(dr.segments, fromSegs) {
 			panic("app: redirect from " + from + " overlaps registered screen " + dr.screen.Path +
@@ -92,11 +114,13 @@ func (a *App) RedirectPattern(from, to string) {
 // hop; a chain that hasn't terminated after 10 hops (a cycle, since
 // registration is finite) fails closed and reports no redirect.
 //
-// Collision checks at registration keep same-shape duplicates out
-// (exact-vs-exact, pattern-vs-pattern, and redirect-vs-screen of the
-// same shape). Cross-shape shadowing follows the router's exact-first
-// contract: an exact redirect may shadow one concrete path of a dynamic
-// screen, exactly as an exact screen registration would.
+// Collision checks at registration keep duplicates out (exact-vs-exact,
+// pattern-vs-pattern) and panic whenever a PATTERN redirect overlaps a
+// screen — dynamic or exact, in either registration order. One
+// cross-shape case is deliberately allowed: an EXACT redirect may shadow
+// one concrete path of a dynamic screen, exactly as an exact screen
+// registration would, because that follows the router's own
+// exact-beats-dynamic contract rather than inverting it.
 func (a *App) ResolveRedirect(path string) (string, bool) {
 	return a.Router.resolveRedirect(path)
 }

@@ -1042,6 +1042,46 @@ func TestEmbedGrantOpensTheWidgetCatalog(t *testing.T) {
 	}
 }
 
+// SSE is the exception to "a grant opens the infrastructure endpoints", and the
+// refusal has to name the reason.
+//
+// EventSource sends no request headers, so the grant cannot reach the endpoint
+// at all; a grant-authenticated stream is not something the client can ask for.
+// Guards two regressions: a silent "unknown session" that sent developers
+// looking for a session bug that does not exist, and — worse — answering the
+// request on the ambient cookie a SAME-SITE framing still sends, which would
+// stream one identity's island updates into a frame authenticated as another.
+func TestEmbedGrantIsRefusedOnSSE(t *testing.T) {
+	f := newEmbedFixture(t)
+	grant := f.grantFor(t, "reports")
+
+	// A same-site framing really does send a Strict session cookie, and this one
+	// is a REAL minted session whose id matches the requested stream — exactly
+	// the request the cookie gate accepts. Presenting a grant must still refuse
+	// it, or the frame would be streaming the ambient viewer's island updates.
+	sess := f.host.CreateSession()
+	if sess.Token == "" || sess.ID == "" {
+		t.Fatal("could not mint a session for the same-site cookie case")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/__gofastr/sse?session="+sess.ID, nil).WithContext(ctx)
+	req.Header.Set(embedGrantHeader, grant)
+	req.AddCookie(&http.Cookie{Name: sessionCookieSecureName, Value: sess.Token})
+	rec := httptest.NewRecorder()
+	f.host.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("grant-bearing SSE request: status = %d, want 401; body = %q", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{"EventSource", "data-fui-poll"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("refusal body missing %q — the developer is left guessing:\n%s", want, rec.Body.String())
+		}
+	}
+}
+
 // The frame has to announce the SURFACE's app route. A widget scoped with
 // .Pages("/reports") is not scoped to /__gofastr/embed/reports, so discovery
 // keyed on the shell's own URL would exclude exactly the widgets the surface

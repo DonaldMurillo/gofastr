@@ -543,22 +543,54 @@ You find out at **boot**, not in a customer's page. Two gates back that up, and
 each sees a different slice — neither is total on its own:
 
 - **`gofastr build` (the `check-embed` analyzer)** resolves
-  `embed.Surface{…}` → `app.NewScreen` → the component type → its `On(...)`
-  registrations statically. It reports only what it can prove: a screen built
-  in a loop, or a component whose type lives in another package, it stays
-  silent about, because a false positive in a build gate is worse than a miss.
-- **The boot walk (`enforceNoServerActionsOnEmbeds`)** runs on `Mount` and sees
-  whatever actually registered at runtime — so nothing dynamic slips past — but
-  only for surfaces whose screen is a `*app.Screen` (every production surface),
-  the concrete type whose component tree it can reach. A surface carrying a
-  screen that is not a `*app.Screen` is invisible to this walk and falls to the
-  static analyzer above.
+  `embed.Surface{…}` → `app.NewScreen` → the component type → the whole tree
+  that type renders → each component's `On(...)` registrations. The tree, not
+  just the root: a root that renders a child ships the *child's* compiled
+  actions into the frame, so a gate that stopped at the root passed a surface
+  whose button fails in the customer's page. It follows struct fields,
+  components handed to the constructor expression, and components named in
+  `Render` / `RenderCtx`. Where it cannot follow — an interface-typed field, a
+  component type from another package, a child built inside `Render` whose type
+  lives elsewhere, ClientJS that is not a literal — it prints a note saying so
+  instead of passing in silence. Most notes are advisory — the boot walk below
+  covers the shape they describe. **One class fails the build**: a child built
+  inside `Render` whose type lives in another package, which neither gate can
+  see. Fix it by holding the child in a field rather than building it in
+  `Render`, or by moving its type into the surface's package. For a surface
+  that genuinely cannot be analysed and has been checked by hand,
+  `gofastr build --allow-unverified-embeds` keeps violations fatal and
+  downgrades that note.
+- **The boot walk (`enforceNoServerActionsOnEmbeds`)** runs on `Mount` and
+  matches every *compiled* action registry carrying a server action against
+  every component reachable from the surface's screen, reading the live values
+  with reflection — struct fields, slices, arrays, map keys and values, and
+  through island wrappers. It never calls `Actions` a second time.
 
-Both panic naming the surface, the component and the action, and point at
-island RPC, a form POST, or polling.
+Neither gate is total on its own. The boot walk reads values, so it sees a
+child a component *holds* but not one it *builds* inside `Render` — that child
+does not exist when the walk runs. The analyzer reads syntax, so it sees a
+child built in `Render` but not one whose `Actions()` body is in another
+package. The shapes they each miss are covered by the other, which is why an
+unresolved note is fatal rather than advisory: a note is the analyzer saying
+the boot walk is on its own here, and for a render-built child it is not
+there either.
 
-Everything else works in a frame: island RPC, form posts, `data-fui-poll`, and
-SSE. Only the `serverAction` escape hatch is closed.
+They fail differently, and it is worth knowing which you are looking at. The
+analyzer reports a diagnostic and `gofastr build` exits non-zero — no stack
+trace. The boot walk panics at `Mount`. Both name the surface, the component
+and the action, and point at island RPC, a form POST, or polling.
+
+Everything else works in a frame: island RPC, form posts, and `data-fui-poll`.
+Only the `serverAction` escape hatch is closed.
+
+**SSE does not work inside a frame**, and it is the one exception to that list.
+`EventSource` cannot set a request header, so `X-Gofastr-Embed` — the frame's
+only credential, a header precisely so nothing about it is ambient — can never
+travel on the connection; putting the grant in the query string instead would
+write a bearer token into access logs, `Referer` and history. `/__gofastr/sse`
+therefore refuses any request carrying a grant, with a message that says so.
+Use `data-fui-poll` (or `widget Builder.Poll`) for live updates in a frame: it
+is an ordinary `fetch`, which the frame's wrapper does put the grant on.
 
 ## Multi-tenant surfaces
 

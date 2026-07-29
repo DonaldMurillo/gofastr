@@ -18,7 +18,7 @@
 // framework/ARCHITECTURE.md — so it introduces no cycle and is safely
 // importable from cmd/gofastr, examples/site, and host apps alike.
 //
-// Three of the 139 entries (sortablelist, optimisticcreate, optimisticdelete)
+// Three of the 141 entries (sortablelist, optimisticcreate, optimisticdelete)
 // have a live demo that is normally backed by per-visitor session state on
 // the docs site. The gallery catalog ships self-contained seed-rendering
 // Demo closures for them so a theme previewer or static export gets a
@@ -42,8 +42,9 @@ type Entry struct {
 	// configured with sensible defaults so the page works without setup.
 	// Closures that need backend wiring (DataTable's RPC island,
 	// ConfirmAction's modal) render a smaller stand-alone variant or a
-	// static note — see NoteOnlySlugs for the set that renders an
-	// explanatory note instead of a live instance.
+	// static note — IsNoteOnly reports whether a slug renders an
+	// explanatory note instead of a live instance (the set itself is
+	// private; that accessor is the only way in).
 	Demo func() render.HTML
 }
 

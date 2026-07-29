@@ -597,12 +597,19 @@ HTTPS — including behind a TLS-terminating proxy that sets
 **Login/register/logout carry their own cross-site guard.** Those
 endpoints can't rely on the CSRF cookie — a login CSRF needs no
 pre-existing cookie, so an attacker's page could silently log a victim
-into an attacker-controlled account. The core plugin refuses a **form**
-(`application/x-www-form-urlencoded` / `multipart`) POST whose `Origin`
-(or `Sec-Fetch-Site: cross-site`) says it came from another site. JSON
-posts are exempt (a cross-site JSON POST needs a CORS preflight these
-routes never answer), and requests with no `Origin` (curl, native apps)
-pass. This is on by default; no configuration required.
+into an attacker-controlled account. The guard refuses any POST a
+cross-site page can send without a CORS preflight — the three HTML form
+enctypes (`application/x-www-form-urlencoded`, `multipart/form-data`, and
+`text/plain`), plus a bodyless `fetch()` that carries no `Content-Type`
+at all — when `Origin` (or `Sec-Fetch-Site: cross-site`) names another
+site. `text/plain` and the missing `Content-Type` are the two shapes the
+old `urlencoded`/`multipart`-only check missed, and both are preflight-free
+— which is why a `text/plain` cross-site form could complete a magic-link
+sign-in before this guard widened. JSON stays exempt on purpose: a
+cross-site JSON POST is preflighted, and these routes answer no preflight,
+so a cross-origin SPA reaching them through configured CORS depends on the
+exemption. Requests with no `Origin` (curl, native apps) pass. This is on
+by default; no configuration required.
 
 ## Browser-backend (BFF) posture
 
@@ -888,12 +895,37 @@ auth.MagicLinkConfig{
     ConfirmPage: func(d auth.ConfirmPageData) []byte {
         return render(ui.AuthCard(ui.AuthCardConfig{
             Title: "Confirm sign-in",
-            Body:  "Continue as " + d.Email + "?",
-            // form posts `token` back to d.Action
+            Body: ui.Form(ui.FormConfig{
+                Action:      d.Action,
+                SubmitLabel: "Sign in",
+            },
+                // Email and Token are escaped, never concatenated into
+                // render.HTML. A magic-link request accepts any address, so
+                // d.Email is caller-supplied: pasting it into trusted HTML
+                // reflects whatever the requester typed into the page.
+                html.Paragraph(html.TextConfig{}, render.Text("Continue as "+d.Email+"?")),
+                // token is the credential, posted back to d.Action.
+                html.Input(html.InputConfig{
+                    Type:  "hidden",
+                    Name:  "token",
+                    Value: d.Token,
+                }),
+                // CSRFField is required: ConfirmPageData carries no
+                // request, so this is the only way to reach the _csrf
+                // input. Without it the submit 403s under auth.CSRF(),
+                // which WithBFFPosture mounts app-wide.
+                render.HTML(d.CSRFField)),
         }))
     },
 }
 ```
+
+Render `d.CSRFField` inside the form. `ConfirmPageData` carries no
+request and no context, so this is the only way to reach the `_csrf`
+input — omit it and the submit 403s under `auth.CSRF()`, which
+`WithBFFPosture` mounts app-wide. A custom `ConfirmPage` written before
+this field existed must add it, or passwordless sign-in stops at the
+confirmation step.
 
 Leave it nil and you get an unstyled but correct fallback. The battery
 does not import `framework/ui` itself — API-only apps use auth too and

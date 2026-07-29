@@ -43,9 +43,18 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
   so on a public endpoint a request-selected block mode is an
   unauthenticated DoS. See "Default oldest-drop versus `?slow=block`" in
   `live-dashboards.md`.
-- `subscriber_id` is honoured, but a reconnect only replaces an existing
-  subscriber when it comes from the same caller — one client cannot
-  evict another's stream by guessing its id.
+- `subscriber_id` is honoured. A reconnect replaces an existing
+  subscriber only when the broker can identify the caller through
+  `SSEBrokerConfig.Principal` — a subscriber id is a client-chosen
+  label, not an identity. With no `Principal` the broker evicts nothing,
+  so a reconnect does not drop the previous entry, and one client cannot
+  evict another's stream by guessing its id. `MaxSubscribers` is exact:
+  past the cap `Subscribe` rejects rather than evicting. A client whose
+  previous connection is half-open keeps its seat until the next
+  heartbeat write fails and that stream unregisters itself — which
+  reclaims the seat for every client, including the ones that send no
+  `subscriber_id`. See `live-dashboards.md` for the `Principal`
+  rationale.
 - The stream returns `503 Service Unavailable` if the entity has no
   event bus configured (the default `framework.NewApp` wires one).
 

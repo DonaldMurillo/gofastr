@@ -81,7 +81,7 @@ func runBuild(args []string) {
 
 	if !opts.noEmbedCheck {
 		info("Checking embed surfaces for server actions...")
-		if !buildEmbedGate("./...") {
+		if !buildEmbedGate("./...", opts.allowUnverifiedEmbeds) {
 			fail("check-embed failed — an embeddable surface registers a G.serverAction, which is refused inside a frame. Fix the findings above, or skip once with --no-embed-check")
 			osExit(1)
 		}
@@ -108,18 +108,48 @@ func runBuild(args []string) {
 // graph being built) via the shared embedcheck driver — the same one the
 // standalone cmd/check-embed CLI uses — so build-time and CLI findings are
 // identical. On a violation it prints each finding with its fix hint.
-func buildEmbedGate(pattern string) bool {
-	findings, fset, err := embedcheck.Check(pattern)
+func buildEmbedGate(pattern string, allowUnverified bool) bool {
+	findings, unresolved, fset, err := embedcheck.CheckAll(pattern)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "check-embed: %v\n", err)
 		return false
 	}
-	if len(findings) == 0 {
+	// Print every note; fail only on the BLOCKING class.
+	//
+	// The boot-time walk in framework/uihost reads live component values, so a
+	// child held in a field — through an interface, a map key, or an island
+	// wrapper — is checked at Mount, and a note describing one is advisory.
+	// The exception is a child CONSTRUCTED inside Render() whose type is in
+	// another package: it does not exist as a value when the walk runs, and
+	// its Actions() body is not in the analyzer's syntax tree. Neither gate
+	// can vouch for it, so that one stops the build.
+	//
+	// Failing on every note was tried and reverted: it also rejected clean
+	// island surfaces (the shape the blueprint emits for every island block),
+	// interface-typed fields the analyzer had already resolved, and the
+	// fixture named for false positives — with no remedy available, since
+	// "hold the child in a field" is impossible for a wrapper.
+	var blocking int
+	for _, u := range unresolved {
+		fmt.Fprintf(os.Stderr, "check-embed: %s: %s\n", fset.Position(u.Pos), u.Format())
+		if u.Blocking {
+			blocking++
+		}
+	}
+	if len(findings) == 0 && (blocking == 0 || allowUnverified) {
 		return true
 	}
-	fmt.Fprintf(os.Stderr, "check-embed: %d embed surface(s) register a server action:\n\n", len(findings))
-	for _, f := range findings {
-		fmt.Fprintf(os.Stderr, "%s: %s\n\n", fset.Position(f.Pos), f.Format())
+	if len(findings) > 0 {
+		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface(s) register a server action:\n\n", len(findings))
+		for _, f := range findings {
+			fmt.Fprintf(os.Stderr, "%s: %s\n\n", fset.Position(f.Pos), f.Format())
+		}
+	}
+	if blocking > 0 && !allowUnverified {
+		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface path(s) could not be verified — see the notes above.\n"+
+			"Hold the child in a field rather than building it in Render, or move its type into the surface's package. "+
+			"If the surface genuinely cannot be analysed and you have verified it by hand, pass --allow-unverified-embeds.\n\n",
+			blocking)
 	}
 	return false
 }

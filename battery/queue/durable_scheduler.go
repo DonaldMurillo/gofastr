@@ -58,6 +58,7 @@ type DurableScheduleBuilder struct {
 	cronSpec    string
 	jobType     string
 	payload     json.RawMessage
+	payloadErr  error
 	lane        string
 	priority    int
 	maxAttempts int
@@ -122,8 +123,11 @@ func (s *DurableScheduler) Cron(id, spec string) *DurableScheduleBuilder {
 }
 
 // Job sets the queue job type and JSON payload for a durable schedule.
+// Payload encoding errors are returned by Register or RegisterAt so the
+// builder remains fluent.
 func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableScheduleBuilder {
 	b.jobType = jobType
+	b.payloadErr = nil
 	if payload == nil {
 		b.payload = json.RawMessage("null")
 		return b
@@ -136,8 +140,32 @@ func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableSchedu
 	case string:
 		b.payload = json.RawMessage(v)
 	default:
-		data, _ := json.Marshal(payload)
+		data, err := json.Marshal(payload)
+		if err != nil {
+			b.payload = nil
+			b.payloadErr = fmt.Errorf("queue: marshal durable schedule payload: %w", err)
+			return b
+		}
 		b.payload = data
+	}
+	// An EMPTY payload is "no payload", not malformed JSON — a nil or empty
+	// []byte / json.RawMessage / "" is what the common conditional-marshal
+	// shape produces:
+	//
+	//	var body []byte
+	//	if opts != nil { body, _ = json.Marshal(opts) }
+	//	sched.Job("email", body)
+	//
+	// It means exactly what Job(jobType, nil) means, so it stores as JSON
+	// null. Validating it as JSON would reject a schedule that registered
+	// fine before, which is a behaviour break rather than a hardening.
+	if len(b.payload) == 0 {
+		b.payload = json.RawMessage("null")
+		return b
+	}
+	if !json.Valid(b.payload) {
+		b.payload = nil
+		b.payloadErr = errors.New("queue: durable schedule payload is not valid JSON")
 	}
 	return b
 }
@@ -189,6 +217,9 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 	if b.jobType == "" {
 		return errors.New("queue: durable schedule requires a job type")
 	}
+	if b.payloadErr != nil {
+		return b.payloadErr
+	}
 	var next time.Time
 	if b.cronSpec != "" {
 		sc, err := cron.Parse(b.cronSpec)
@@ -207,9 +238,6 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 		next = base.Add(b.interval)
 	}
 	payload := string(b.payload)
-	if payload == "" {
-		payload = "null"
-	}
 	_, err := b.scheduler.queue.db.Exec(
 		fmt.Sprintf(`INSERT INTO %s
 			(id, job_type, payload, interval_ns, cron_spec, tz,

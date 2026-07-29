@@ -43,8 +43,20 @@ it — and only when SSR hasn't already inlined the element. The state endpoint
 is omitted entirely when the widget declared no signals.
 
 **When you add a new field to the registry**: add it to `serveWidgetList` in
-`core-ui/widget/server.go`, mirror it on the runtime catalog in
-`core-ui/runtime/runtime.js`, and document it.
+`core-ui/widget/server.go`, then to the runtime consumers that read the
+catalog JSON — `core-ui/runtime/frag/widgets-boot.js` (the boot catalog
+fetch and auto-mount pass; `widgets-boot-static.js` is its static-export
+twin) and `core-ui/runtime/src/widgets.js` (the demand module that fetches
+chrome from `chromePath`). Then document the field.
+
+`core-ui/runtime/runtime.js` is GENERATED: `composeFull()` in
+`core-ui/runtime/runtime.go` stitches `frag/*.js` into one IIFE, so an edit
+to `runtime.js` never reaches the browser. Edit the fragments, then regenerate
+the on-disk file:
+
+```
+GOFASTR_UPDATE_RUNTIME_JS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeMatchesOnDiskFile
+```
 
 ### 2. SSR-inline whenever the URL says the surface should be open
 

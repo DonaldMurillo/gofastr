@@ -328,10 +328,22 @@ func deepCopyRecord(row map[string]any) map[string]any {
 // map writes", a runtime throw no recover() catches. Hence the reflective
 // fallback: unknown container, still copied.
 //
-// Pointers and structs are deliberately NOT traversed. Copying an arbitrary
-// struct means copying whatever it embeds — a mutex, a file handle, a driver
-// connection — and a value that reaches a record as a pointer is not something
-// this package can safely clone. Scalars need no copy.
+// Structs are deliberately NOT traversed, and neither is a pointer TO one.
+// Copying an arbitrary struct means copying whatever it embeds — a mutex, a
+// file handle, a driver connection — and this package cannot know which of
+// those a host's hook put in the record. Scalars need no copy.
+//
+// That rationale covers opaque shapes; it does not cover a pointer to a plain
+// container. *map[string]any, *[]any and *[]map[string]any are still the
+// record's own data, just one indirection out, and leaving them aliased
+// reproduced the exact bug the reflective fallback was added for: a redaction
+// hook mutating the response copy wrote through into the record already handed
+// to the event goroutine, so two subscribers masking concurrently raced on one
+// map — "concurrent map writes", a runtime throw no recover() catches. So
+// deepCopyReflect DOES traverse a pointer whose element is a map, slice or
+// array: it copies the pointee and allocates a fresh pointer to it. Every
+// other pointer element kind (struct above all, but also chan/func/unsafe)
+// is returned as-is.
 func deepCopyValue(v any) any {
 	switch t := v.(type) {
 	case nil:
@@ -360,11 +372,31 @@ func deepCopyValue(v any) any {
 }
 
 // deepCopyReflect handles the container shapes the type switch above does not
-// name. It copies maps, slices and arrays element-wise and returns anything
+// name. It copies maps, slices and arrays element-wise — plus pointers TO
+// those three, which alias the record just as directly — and returns anything
 // else unchanged.
 func deepCopyReflect(v any) any {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
+	case reflect.Pointer:
+		// A pointer to a container is still the record's data. A pointer to a
+		// struct (or anything else) is not something this package can clone —
+		// see deepCopyValue's comment.
+		if rv.IsNil() {
+			return v
+		}
+		switch rv.Type().Elem().Kind() {
+		case reflect.Map, reflect.Slice, reflect.Array:
+		default:
+			return v
+		}
+		cp := reflect.ValueOf(deepCopyValue(rv.Elem().Interface()))
+		if !cp.IsValid() || !cp.Type().AssignableTo(rv.Type().Elem()) {
+			return v
+		}
+		out := reflect.New(rv.Type().Elem())
+		out.Elem().Set(cp)
+		return out.Interface()
 	case reflect.Map:
 		if rv.IsNil() {
 			return v
@@ -404,7 +436,10 @@ func deepCopyReflectValue(elem reflect.Value) reflect.Value {
 			return elem
 		}
 		return reflect.ValueOf(deepCopyValue(elem.Interface())).Convert(elem.Type())
-	case reflect.Map, reflect.Slice, reflect.Array:
+	case reflect.Map, reflect.Slice, reflect.Array, reflect.Pointer:
+		// Pointer is here for the same reason it is in deepCopyReflect: a
+		// []*map[string]any element aliases the record too. deepCopyReflect
+		// returns non-container pointers unchanged, so structs stay opaque.
 		cp := deepCopyReflect(elem.Interface())
 		return reflect.ValueOf(cp)
 	default:

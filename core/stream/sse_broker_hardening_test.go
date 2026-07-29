@@ -188,18 +188,94 @@ func TestSSESubscriberIDCollision(t *testing.T) {
 		close(done2)
 	}()
 
-	// Either:
-	//  - the second subscribe is rejected (done2 returns quickly, count stays 1)
-	//  - the first subscribe is cleanly evicted (done1 returns, count == 1 for second)
-	// In both cases, the previous subscriber must NOT be silently leaked.
+	// With no Config.Principal the broker cannot tell the two callers
+	// apart, so it evicts NOTHING: the newcomer is registered under a
+	// freshly generated id and the incumbent keeps streaming. The
+	// original concern still holds — neither subscriber may be silently
+	// leaked — so assert both are registered, and that both unregister
+	// when their requests end.
+	deadline = time.Now().Add(500 * time.Millisecond)
+	for broker.SubscriberCount() != 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("second subscriber never registered: count = %d", broker.SubscriberCount())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
 	select {
 	case <-done1:
-		// previous was cleanly evicted — good
-	case <-done2:
-		// new one was rejected — also good
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("collision caused orphan: neither subscriber returned")
+		t.Fatal("incumbent was evicted by a caller the broker cannot prove is the same")
+	case <-time.After(50 * time.Millisecond):
 	}
+
+	cancel1()
+	cancel2()
+	<-done1
+	<-done2
+	if got := broker.SubscriberCount(); got != 0 {
+		t.Fatalf("subscribers leaked after both requests ended: count = %d", got)
+	}
+}
+
+// With a Principal the broker CAN tell callers apart, so the eviction
+// subscriber_id was designed for comes back: a reconnect replaces its own
+// entry, and a different caller asking for that id does not.
+func TestSSEEvictionScopedByPrincipal(t *testing.T) {
+	broker := NewSSEBroker(SSEBrokerConfig{
+		Topic:     "t",
+		Principal: func(r *http.Request) string { return r.Header.Get("X-User") },
+	})
+
+	start := func(user string) (chan struct{}, context.CancelFunc) {
+		ctx, cancel := context.WithCancel(context.Background())
+		r := httptest.NewRequest("GET", "/events?subscriber_id=dup", nil).WithContext(ctx)
+		r.Header.Set("X-User", user)
+		done := make(chan struct{})
+		go func() {
+			broker.Subscribe(httptest.NewRecorder(), r)
+			close(done)
+		}()
+		return done, cancel
+	}
+	waitCount := func(want int) {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for broker.SubscriberCount() != want {
+			if time.Now().After(deadline) {
+				t.Fatalf("subscriber count = %d, want %d", broker.SubscriberCount(), want)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	alice1, cancelA1 := start("alice")
+	defer cancelA1()
+	waitCount(1)
+
+	// A different principal must NOT displace alice.
+	bob, cancelB := start("bob")
+	defer cancelB()
+	waitCount(2)
+	select {
+	case <-alice1:
+		t.Fatal("bob evicted alice's stream by guessing her subscriber_id")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Alice reconnecting with the same id replaces her own entry.
+	alice2, cancelA2 := start("alice")
+	defer cancelA2()
+	select {
+	case <-alice1:
+	case <-time.After(time.Second):
+		t.Fatal("alice's reconnect did not replace her own entry")
+	}
+	waitCount(2)
+
+	cancelA2()
+	cancelB()
+	<-alice2
+	<-bob
 }
 
 // Finding 11: Publish must not deadlock or panic under concurrent fan-out

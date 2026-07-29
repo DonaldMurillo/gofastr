@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -167,6 +168,138 @@ func TestEmbedGateRejectsWhitespaceServerActionCall(t *testing.T) {
 	}
 	if !strings.Contains(got, "G.serverAction(") {
 		t.Fatalf("panic must name the canonical spelling G.serverAction(:\n%s", got)
+	}
+}
+
+// childActionComp is registered as a screen of its own AND rendered inside an
+// embeddable root. AutoCompileActions compiles it under its own id, and
+// handleEmbedRuntimeJS ships every compiled registry into the frame — so its
+// server action reaches the customer's page even though the embeddable root
+// declares none.
+type childActionComp struct{}
+
+func (*childActionComp) Render() render.HTML {
+	return render.HTML(`<button data-component="child-action" data-action="save">Save</button>`)
+}
+
+func (*childActionComp) Actions() {
+	component.On("save", func(*component.ComponentContext) {},
+		component.WithClientJS(`G.serverAction("save")`))
+}
+
+type parentOfActionComp struct{ child *childActionComp }
+
+func (c *parentOfActionComp) Render() render.HTML { return c.child.Render() }
+
+// Guards the gate that only inspected the SURFACE ROOT's own action registry: a
+// root that renders a child passed boot while the child's server action shipped
+// to the frame and failed in the customer's page.
+func TestEmbedGateFlagsRenderedChildAction(t *testing.T) {
+	child := &childActionComp{}
+	application := app.NewApp("embed child action")
+	screen := app.NewScreen("/reports", &parentOfActionComp{child: child})
+	application.RegisterScreen(screen, nil)
+	application.RegisterScreen(app.NewScreen("/child-action", child), nil)
+
+	eh, err := fembed.New(fembed.Config{
+		Surfaces: []fembed.Surface{{
+			Name:    "reports",
+			Screen:  screen,
+			Origins: []string{embedTestOrigin},
+		}},
+		BurnStore: fembed.NewMemoryBurnStore(),
+	})
+	if err != nil {
+		t.Fatalf("embed.New: %v", err)
+	}
+	eh.SetKeys([]byte("nonce-key-nonce-key-nonce-key-32"), []byte("grant-key-grant-key-grant-key-32"))
+
+	host := New(application, WithEmbed(eh))
+	got := panicFromMount(t, host)
+	if got == "" {
+		if js := host.GetActionJS(); !strings.Contains(js, `G._serverActionFor("child-action"`) {
+			t.Fatalf("test setup: the child's server action was not compiled into the runtime:\n%s", js)
+		}
+		t.Fatal("Mount accepted an embeddable screen whose rendered child has a registered server action")
+	}
+	// The panic has to name the CHILD, not just the surface — "somewhere in
+	// this tree" is not a message anyone can act on.
+	for _, want := range []string{"reports", "/reports", "child-action", "save", "island"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("panic message missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// A component that is NOT in the surface's tree keeps its server action, even
+// though its compiled JS sits in the same app-global bundle. The gate keys on
+// reachability from the surface; flagging every server action in the app would
+// make an embeddable surface anywhere ban them everywhere.
+func TestEmbedGateIgnoresUnreachedServerAction(t *testing.T) {
+	application := app.NewApp("embed unreached action")
+	screen := app.NewScreen("/reports", &plainActionScreenComp{})
+	application.RegisterScreen(screen, nil)
+	application.RegisterScreen(app.NewScreen("/elsewhere", &serverActionScreenComp{}), nil)
+
+	eh, err := fembed.New(fembed.Config{
+		Surfaces: []fembed.Surface{{
+			Name:    "reports",
+			Screen:  screen,
+			Origins: []string{embedTestOrigin},
+		}},
+		BurnStore: fembed.NewMemoryBurnStore(),
+	})
+	if err != nil {
+		t.Fatalf("embed.New: %v", err)
+	}
+	eh.SetKeys([]byte("nonce-key-nonce-key-nonce-key-32"), []byte("grant-key-grant-key-grant-key-32"))
+
+	if got := panicFromMount(t, New(application, WithEmbed(eh))); got != "" {
+		t.Fatalf("Mount panicked for a server action on an unrelated screen:\n%s", got)
+	}
+}
+
+// The walk follows values, not types: a nil child contributes nothing. A gate
+// that walked declared FIELD TYPES would refuse to boot on a component that
+// merely can hold a child it does not hold.
+func TestEmbedGateSkipsNilChild(t *testing.T) {
+	application := app.NewApp("embed nil child")
+	screen := app.NewScreen("/reports", &parentOfActionComp{})
+	application.RegisterScreen(screen, nil)
+	application.RegisterScreen(app.NewScreen("/child-action", &childActionComp{}), nil)
+
+	eh, err := fembed.New(fembed.Config{
+		Surfaces: []fembed.Surface{{
+			Name:    "reports",
+			Screen:  screen,
+			Origins: []string{embedTestOrigin},
+		}},
+		BurnStore: fembed.NewMemoryBurnStore(),
+	})
+	if err != nil {
+		t.Fatalf("embed.New: %v", err)
+	}
+	eh.SetKeys([]byte("nonce-key-nonce-key-nonce-key-32"), []byte("grant-key-grant-key-grant-key-32"))
+
+	if got := panicFromMount(t, New(application, WithEmbed(eh))); got != "" {
+		t.Fatalf("Mount panicked for a child field that is nil:\n%s", got)
+	}
+}
+
+// A cycle between two components must not hang the boot walk.
+type cyclicComp struct {
+	peer *cyclicComp
+	kid  *childActionComp
+}
+
+func (c *cyclicComp) Render() render.HTML { return render.HTML("<p>cycle</p>") }
+
+func TestReachWalkTerminatesOnCycle(t *testing.T) {
+	a, b := &cyclicComp{}, &cyclicComp{kid: &childActionComp{}}
+	a.peer, b.peer = b, a
+	got := reachableComponentTypes(a)
+	if !got[reflect.TypeOf(childActionComp{})] {
+		t.Fatal("walk did not reach the child on the far side of a cycle")
 	}
 }
 

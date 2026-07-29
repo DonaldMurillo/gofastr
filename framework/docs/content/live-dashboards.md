@@ -223,8 +223,22 @@ stream.NewSSEBroker(stream.SSEBrokerConfig{
     AllowClientSlowMode: true,          // else ?slow=block is ignored
     BlockTimeout:        2 * time.Second, // bound on one blocked send (default 5s)
     MaxSubscribers:      500,             // reject past the cap (default unlimited)
+    Principal:           principalFromRequest, // nil = no eviction (see below)
 })
 ```
+
+**`Principal` decides who may evict a subscriber id.** A `?subscriber_id`
+is a label a client chooses; it is not an identity. With no `Principal`,
+the broker evicts nothing — a reconnect with the same id does not drop
+the previous entry, because the broker cannot tell whether the same
+caller came back. Set `Principal` to a function returning something the
+caller cannot choose and another caller cannot guess (a session user id
+is the usual answer), and a reconnect with the same id replaces only its
+own entry. The old default keyed on `RemoteAddr`'s host, which behind any
+reverse proxy is the proxy for every request — so every subscriber
+collapsed into one principal and `?subscriber_id=<victim>` dropped a
+stranger's stream. Evicting nothing costs nothing: delivery is a
+broadcast, and a dropped connection already unregisters itself.
 
 Block mode is off by default because `deliver` walks subscribers
 sequentially on the publisher's goroutine: a block-mode subscriber that

@@ -131,7 +131,7 @@ func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 > **Prefer the typed `core-ui/html` config structs over raw `render.Tag`.**
 > `render.Tag` works, but it's the escape hatch — the typed vocabulary in
-> [`core-ui/html`](../core-ui/html) (`html.Div`, `html.Heading`,
+> [`core-ui/html`](../../../core-ui/html) (`html.Div`, `html.Heading`,
 > `html.Paragraph`, …) gives you a config struct per tag with named fields
 > for the common attributes, so editors autocomplete them and typos surface
 > as compile errors. Use `render.Tag` only for cases the typed vocab doesn't
@@ -150,7 +150,7 @@ func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 > ```
 >
 > Composition intent (a card, a hero, a data table, a form field) lives one
-> layer up in [`framework/ui`](../framework/ui) — see
+> layer up in [`framework/ui`](../../../framework/ui) — see
 > [ui-composition-recipes](ui-composition-recipes.md).
 
 Register it in `main.go`:
@@ -297,14 +297,19 @@ declared in `from`. The `from` pattern obeys the same grammar as a route
 (constraints, trailing catch-all).
 
 Because redirects are consulted **before** screen resolution, a redirect
-whose `from` **overlaps** a registered dynamic screen — shares even one
-matching URL — panics at registration (and vice versa): param names are
-irrelevant, so `/users/{n:int}` overlaps `/users/{id}`, while genuinely
-disjoint constraints (`{n:int}` vs `{h:alpha}`) coexist. An *exact*
-redirect may still shadow one concrete path of a dynamic screen — the
-router's normal exact-first rule. Redirect entries appear in `Routes()`
-with a non-empty `RedirectTo`; they render no page, so static export,
-sitemap, and llm.md skip them.
+whose `from` **overlaps** a registered screen — dynamic or exact — panics
+at registration (and vice versa). Param names are irrelevant, so
+`/users/{n:int}` overlaps `/users/{id}`, while genuinely disjoint
+constraints (`{n:int}` vs `{h:alpha}`) coexist. A *pattern* redirect
+overlaps an exact screen the same way: `/old/{x}` covers the literal
+path `/old/special`, so registering `/old/special` as a screen after a
+`/old/{x}` redirect panics too, in either registration order —
+`ResolveRedirect` runs before screen resolution and would 308 the screen
+away forever with no diagnostic. An *exact* redirect may still shadow
+one concrete path of a dynamic screen — the router's normal exact-first
+rule. Redirect entries appear in `Routes()` with a non-empty
+`RedirectTo`; they render no page, so static export, sitemap, and llm.md
+skip them.
 
 **Intercepting routes — a detail that opens over its list.** Clicking a row
 should slide the detail over the list; the detail URL should still be a real

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -340,6 +341,17 @@ type ConfirmPageData struct {
 
 	// Action is the path the confirmation form submits to.
 	Action string
+
+	// CSRFField is a ready-to-embed hidden input carrying the CSRF
+	// token, or "" when the route is not behind CSRF middleware.
+	//
+	// A custom ConfirmPage MUST render this inside its form. It exists
+	// because ConfirmPageData carries no request and no context, so a
+	// custom page had no way to reach CSRFInputHTML — which meant that
+	// with auth.CSRF() mounted (WithBFFPosture does this app-wide), the
+	// only button on the confirmation page returned 403, and passwordless
+	// sign-in was unreachable.
+	CSRFField template.HTML
 }
 
 // confirmHandler handles GET {basePath}/magic-link/verify?token=xxx.
@@ -375,7 +387,20 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 		email = got
 	}
 
-	data := ConfirmPageData{Email: email, Token: token, Action: p.basePath + "/magic-link/verify"}
+	// Read the token from the context first: this GET may be the very
+	// request that mints the CSRF cookie, in which case it is not yet in
+	// r.Cookies(). Fall back to the cookie for a route whose middleware
+	// stashed nothing on ctx.
+	csrfField := CSRFInputFromCtx(r.Context())
+	if csrfField == "" {
+		csrfField = CSRFInputHTML(r)
+	}
+	data := ConfirmPageData{
+		Email:     email,
+		Token:     token,
+		Action:    p.basePath + "/magic-link/verify",
+		CSRFField: csrfField,
+	}
 	var body []byte
 	if p.config.ConfirmPage != nil {
 		body = p.config.ConfirmPage(data)
@@ -414,6 +439,7 @@ func defaultConfirmPage(d ConfirmPageData) []byte {
 <p>If you did not request this link, close this page — someone else may be trying to sign you into their account.</p>
 <form method="post" action="` + html.EscapeString(d.Action) + `">
 <input type="hidden" name="token" value="` + html.EscapeString(d.Token) + `">
+` + string(d.CSRFField) + `
 <button type="submit">Sign in</button>
 </form>
 </main>

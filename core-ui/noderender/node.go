@@ -17,12 +17,42 @@ import (
 //
 // Unknown / forbidden elements (or elements missing required ARIA
 // fields) fall back to a comment in dev so the gap is visible.
+// RenderNode treats the IR as UNTRUSTED. See RenderTrustedNode for the
+// first-party counterpart, and actionAttrs for what that distinction
+// costs an untrusted tree.
 func RenderNode(n node.Node) render.HTML {
+	return renderNode(n, false)
+}
+
+// RenderTrustedNode is RenderNode for a FIRST-PARTY IR — one whose props
+// were authored by the developer, not by an agent or by anything derived
+// from user input.
+//
+// The only difference is that a trusted tree may name the action
+// attributes actionAttrs strips: data-action, data-action-* and
+// data-param-*. cmd/gofastr's blueprint generator is the caller this
+// exists for — it compiles a developer's own YAML into IR and wires
+// button actions through exactly those attributes.
+//
+// Do NOT reach for this to silence a dropped attribute. If the IR came
+// from Kiln, a process module, an LLM, or any user-supplied document, it
+// is untrusted no matter how convenient the attribute would be.
+func RenderTrustedNode(n node.Node) render.HTML {
+	return renderNode(n, true)
+}
+
+func renderNode(n node.Node, trusted bool) render.HTML {
 	children := make([]render.HTML, 0, len(n.Children))
 	for _, c := range n.Children {
-		children = append(children, RenderNode(c))
+		// Trust flows down the whole tree: a trusted root's children
+		// came from the same first-party document.
+		children = append(children, renderNode(c, trusted))
 	}
-	return renderKind(n.Kind, n.Props, children)
+	props := n.Props
+	if !trusted {
+		props = withoutActionAttrs(props)
+	}
+	return renderKind(n.Kind, props, children)
 }
 
 // RenderKind renders a single node's own element from pre-rendered children,
@@ -31,7 +61,54 @@ func RenderNode(n node.Node) render.HTML {
 // the one-to-one semantic HTML shell, so a typed kind nested inside a leaf
 // container still renders through its component.
 func RenderKind(kind string, props map[string]any, children []render.HTML) render.HTML {
+	return renderKind(kind, withoutActionAttrs(props), children)
+}
+
+// RenderTrustedKind is RenderKind for a first-party IR. See
+// RenderTrustedNode for when that is and is not appropriate.
+func RenderTrustedKind(kind string, props map[string]any, children []render.HTML) render.HTML {
 	return renderKind(kind, props, children)
+}
+
+// actionAttrs are the runtime-privileged attributes that only a
+// first-party IR may name. They are stripped at the untrusted entry
+// point rather than inside attrAllowed because the blueprint generator
+// legitimately emits all three through the SAME renderer that Kiln uses
+// for agent-authored IR — the attribute name alone cannot tell the two
+// apart, so the caller has to.
+//
+// Why they matter: core-ui/runtime/frag/boot.js resolves the nearest
+// [data-component] ancestor and calls window.__gofastr.trigger() with
+// the action name and the data-param-* map. data-action-mount fires at
+// hydration and again on every gofastr:navigate, with no user
+// interaction. So an untrusted IR naming these picks a compiled server
+// action AND its arguments, and runs it on the host island's behalf.
+func withoutActionAttrs(props map[string]any) map[string]any {
+	if len(props) == 0 {
+		return props
+	}
+	var out map[string]any
+	for k := range props {
+		lower := strings.ToLower(k)
+		if lower != "data-action" &&
+			!strings.HasPrefix(lower, "data-action-") &&
+			!strings.HasPrefix(lower, "data-param-") {
+			continue
+		}
+		// Copy lazily: the overwhelming majority of nodes name none of
+		// these, and rewriting every props map would be pure garbage.
+		if out == nil {
+			out = make(map[string]any, len(props))
+			for k2, v2 := range props {
+				out[k2] = v2
+			}
+		}
+		delete(out, k)
+	}
+	if out == nil {
+		return props
+	}
+	return out
 }
 
 // renderKind dispatches each known IR kind to the matching
@@ -443,8 +520,10 @@ var allowedAttrs = map[string]bool{
 // on, and therefore the ones an untrusted IR must never name:
 //
 //   - data-behavior becomes a <script src> — arbitrary code
-//   - data-widget / data-component are hydration identity: naming one
-//     makes the element impersonate a registered island
+//   - data-widget / data-component / data-island are hydration identity:
+//     naming one makes the element impersonate a registered island, and
+//     data-island is what core-ui/runtime/src/sse.js targets when it
+//     swaps server-pushed content into a region
 //   - data-bind writes into the client state store
 //   - the whole data-fui-* family drives signals, RPC, polling and
 //     navigation
@@ -453,9 +532,39 @@ var allowedAttrs = map[string]bool{
 // the host's own code (the blueprint's data-field / data-entity-list-*,
 // kiln's data-kiln-tool, test hooks), so it passes. That split is the
 // point: the IR may describe UI, it may not reach the runtime.
+//
+// Keep this in sync with what the runtime actually reads. The list is a
+// claim about core-ui/runtime, and it was wrong once: data-action* and
+// data-param-* were treated as inert host markers while
+// core-ui/runtime/frag/boot.js was dispatching them into
+// window.__gofastr.trigger() — at hydration and again on every
+// gofastr:navigate — with the IR choosing both the compiled action and,
+// via data-param-*, its arguments. To re-derive the set:
+//
+//	grep -ohE "(getAttribute|hasAttribute|closest|querySelector[All]*|matches)\(['\"][^'\"]*data-[a-z-]+" \
+//	  core-ui/runtime/frag/*.js core-ui/runtime/src/*.js | grep -oE 'data-[a-z-]+' | sort -u
 var privilegedDataAttrs = map[string]bool{
 	"data-behavior": true, "data-widget": true,
 	"data-component": true, "data-bind": true,
+	"data-island": true,
+}
+
+// privilegedDataPrefixes are runtime-privileged data-* FAMILIES. An
+// untrusted IR must not name any attribute starting with one of these.
+//
+// NOT yet listed here, and it is a known hole: data-action-* and
+// data-param-*. core-ui/runtime/frag/boot.js resolves the nearest
+// [data-component] and calls G.trigger() with the action name and the
+// data-param-* map — at hydration for data-action-mount, and again on
+// every gofastr:navigate — so an untrusted IR can pick a compiled action
+// AND its arguments. They cannot simply be added, because this renderer
+// serves two callers with different trust: cmd/gofastr's blueprint
+// (developer-authored YAML, first party) emits exactly these attributes
+// through RenderNode, while kiln renders agent-authored IR through the
+// same function. Closing it needs a trust split — see the note in
+// TestIRCannotFireActions.
+var privilegedDataPrefixes = []string{
+	"data-fui-",
 }
 
 // extraAttrs collects element props that should pass through as raw
@@ -516,7 +625,15 @@ func attrAllowed(name string) bool {
 		return true
 	}
 	if strings.HasPrefix(lower, "data-") {
-		return !privilegedDataAttrs[lower] && !strings.HasPrefix(lower, "data-fui-")
+		if privilegedDataAttrs[lower] {
+			return false
+		}
+		for _, p := range privilegedDataPrefixes {
+			if strings.HasPrefix(lower, p) {
+				return false
+			}
+		}
+		return true
 	}
 	return allowedAttrs[lower]
 }

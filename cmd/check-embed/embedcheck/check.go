@@ -16,6 +16,18 @@ import (
 // type-check and no findings were produced, Check returns that as an error so
 // the caller can surface an infrastructure failure rather than a false "clean".
 func Check(pattern string) ([]Finding, *token.FileSet, error) {
+	findings, _, fset, err := CheckAll(pattern)
+	return findings, fset, err
+}
+
+// CheckAll is Check plus the places the static walk could not follow.
+//
+// The two are separate returns because they mean different things to a build:
+// a Finding is a violation and must fail it; an Unresolved is the analyzer
+// saying "I could not look here", which the boot walk covers and which must
+// never be mistaken for a clean result. Callers that gate a build print both
+// and fail on the first.
+func CheckAll(pattern string) ([]Finding, []Unresolved, *token.FileSet, error) {
 	fset := token.NewFileSet()
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
@@ -26,7 +38,7 @@ func Check(pattern string) ([]Finding, *token.FileSet, error) {
 	}
 	pkgs, err := packages.Load(cfg, pattern)
 	if err != nil {
-		return nil, fset, err
+		return nil, nil, fset, err
 	}
 	var firstErr error
 	for _, p := range pkgs {
@@ -39,14 +51,17 @@ func Check(pattern string) ([]Finding, *token.FileSet, error) {
 		}
 	}
 	var out []Finding
+	var notes []Unresolved
 	for _, p := range pkgs {
 		if p.Types == nil || p.TypesInfo == nil || len(p.Syntax) == 0 {
 			continue
 		}
-		out = append(out, findFindings(p.Types, p.TypesInfo, p.Syntax)...)
+		f, u := analyze(p.Types, p.TypesInfo, p.Syntax)
+		out = append(out, f...)
+		notes = append(notes, u...)
 	}
 	if len(out) > 0 {
-		return out, fset, nil
+		return out, notes, fset, nil
 	}
-	return out, fset, firstErr
+	return out, notes, fset, firstErr
 }

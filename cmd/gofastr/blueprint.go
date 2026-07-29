@@ -4722,7 +4722,7 @@ func renderBlueprintScreens(bp Blueprint) string {
 	writeScreenImportBlock(&sb, needs, anyCtx, false, true)
 	if needs.node {
 		sb.WriteString("type nodeComponent struct { node uinode.Node }\n\n")
-		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderNode(c.node) }\n\n")
+		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNode(c.node) }\n\n")
 	}
 	for _, screen := range bp.Screens {
 		sb.WriteString(blueprintScreenBody(screen, entityMap, apiBase))
@@ -4970,7 +4970,7 @@ import (
 // Shared by every screen that mounts a node tree inside an island/widget.
 type nodeComponent struct{ node uinode.Node }
 
-func (c nodeComponent) Render() render.HTML { return noderender.RenderNode(c.node) }
+func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNode(c.node) }
 `
 
 // screenFileName maps a screen (or entity-crud) base name to its generated
@@ -6213,7 +6213,7 @@ func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock,
 		if block.Widget != "" {
 			return fmt.Sprintf("component.NewWidget(%q, nodeComponent{node: %s}).Render()", block.Widget, expr)
 		}
-		return "noderender.RenderNode(" + expr + ")"
+		return "noderender.RenderTrustedNode(" + expr + ")"
 	}
 	attrs := "nil"
 	if block.Class != "" {

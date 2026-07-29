@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -16,11 +17,18 @@ import (
 type NamedConfig struct {
 	Name string
 	// Version is the route-group prefix the entity is mounted at (e.g.
-	// "/api/v1"), or "" for the unversioned App.Entity path. It is part
-	// of the hash identity so two versions of one entity — which expose
-	// different route paths — produce distinct hashes and signal drift.
-	// The generation side (gofastr generate sdk) leaves this "" until it
-	// learns about versions; the serving side fills it from the entity.
+	// "/api/v1"), or "" for the unversioned App.Entity path. The serving
+	// side fills it from the entity; the generation side leaves it "",
+	// because a declaration does not know where the app will mount it.
+	//
+	// It is NOT part of the hash. It used to be, and that made the check
+	// unusable for the apps it mattered most to: App.GroupEntity stamps
+	// the group prefix as Version, so any app using a route group reported
+	// drift that regenerating could never clear, and a permanently-on
+	// drift signal is one nobody reads. The hash answers "does the
+	// generated SDK reflect the live schema?" — where a thing is mounted
+	// is routing, not schema. Two versions whose schemas genuinely differ
+	// still hash differently, because both projections are included.
 	Version string
 	Config  entity.EntityConfig
 }
@@ -71,7 +79,6 @@ func SchemaHash(named []NamedConfig) string {
 	}
 	type hashEntity struct {
 		Name         string         `json:"name"`
-		Version      string         `json:"version,omitempty"`
 		Table        string         `json:"table"`
 		Public       bool           `json:"public"`
 		SoftDelete   bool           `json:"softDelete"`
@@ -86,7 +93,6 @@ func SchemaHash(named []NamedConfig) string {
 
 		he := hashEntity{
 			Name:       cfg.Name,
-			Version:    n.Version,
 			Table:      cfg.Table,
 			Public:     cfg.Public,
 			SoftDelete: cfg.SoftDelete,
@@ -141,12 +147,55 @@ func SchemaHash(named []NamedConfig) string {
 
 		entities = append(entities, he)
 	}
-	sort.Slice(entities, func(i, j int) bool {
+	// Sort and collapse on the entity's CANONICAL JSON — the same encoding the
+	// digest is taken over.
+	//
+	// This used to use fmt.Sprint, which is not an injective encoding: %v
+	// renders []string{"draft ready"} and []string{"draft","ready"} both as
+	// [draft ready]. Enum Values are in the projection (they change the
+	// generated client's constants) and registry.columnSchemaEqual does not
+	// compare them, so two versions may legally declare different enum sets —
+	// and a real divergence collapsed silently. It also made the digest
+	// depend on input order, since the secondary sort key could not separate
+	// the entries it could not tell apart.
+	encoded := make([][]byte, len(entities))
+	for i, he := range entities {
+		b, err := json.Marshal(he)
+		if err != nil {
+			// Same fallback as the final marshal below: keep the result
+			// stable rather than panicking on an unmarshalable default.
+			b = []byte(fmt.Sprintf("marshal-error:%v", err))
+		}
+		encoded[i] = b
+	}
+	order := make([]int, len(entities))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(a, b int) bool {
+		i, j := order[a], order[b]
 		if entities[i].Name != entities[j].Name {
 			return entities[i].Name < entities[j].Name
 		}
-		return entities[i].Version < entities[j].Version
+		return bytes.Compare(encoded[i], encoded[j]) < 0
 	})
+
+	// Collapse versions that project to the same schema. The serving side
+	// contributes one entry per registered version of a name while the
+	// generation side has one declaration; without this, an app whose v1 and
+	// v2 expose the same shape could never match its own manifest. Two
+	// versions that genuinely differ survive as separate entries and still
+	// signal drift, which is the case worth reporting.
+	sorted := make([]hashEntity, 0, len(order))
+	var prev []byte
+	for _, idx := range order {
+		if prev != nil && bytes.Equal(encoded[idx], prev) {
+			continue
+		}
+		sorted = append(sorted, entities[idx])
+		prev = encoded[idx]
+	}
+	entities = sorted
 
 	raw, err := json.Marshal(entities)
 	if err != nil {

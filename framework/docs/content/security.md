@@ -59,12 +59,22 @@ a custom `ContentSecurityPolicy` should keep both directives.
 
 ### Static exports
 
-`gofastr export` writes the same policy into every page as an
-in-document `<meta http-equiv="Content-Security-Policy">` and emits a
-`_headers` file for hosts that read one (Netlify, Cloudflare Pages).
-Response headers are a server's job, and a static export has no server —
-without this the export would be the one deployment target shipping the
-runtime with no CSP at all.
+`gofastr export` writes the policy into every page as an in-document
+`<meta http-equiv="Content-Security-Policy">` and emits a `_headers`
+file for hosts that read one (Netlify, Cloudflare Pages). Response
+headers are a server's job, and a static export has no server — without
+this the export would be the one deployment target shipping the runtime
+with no CSP at all.
+
+**The meta does not carry the clickjacking guard.** Per CSP Level 3
+§3.1, a `<meta>`-delivered policy ignores `frame-ancestors` (alongside
+`report-uri` and `sandbox`), so the meta enforces the fetch directives
+but not `frame-ancestors 'none'`. That directive reaches the browser
+only through the `_headers` file — and the export emits no
+`X-Frame-Options` header either, so a host that ignores `_headers` (S3,
+GitHub Pages) serves the pages with no clickjacking guard at all. On
+those hosts, configure the CDN to send `Content-Security-Policy` (or
+`X-Frame-Options: DENY`) as a real response header.
 
 **HSTS is on by default.** `Strict-Transport-Security` is emitted with a
 one-year `max-age` whenever the request is HTTPS — direct TLS, or a
@@ -309,7 +319,7 @@ Repeat that a character at a time and the masked value comes back in
 full. `?sort=number` leaks relative ordering the same way.
 
 Mark such a column `NoQuery` (`no_query: true` in a declaration). The
-field stays in responses, and every query surface refuses it: flat
+field stays in responses, and every wire query surface refuses it: flat
 filters, `?sort=` (including alongside `?cursor=`, where the sort is
 ignored but still validated), `?where=` predicate trees, nested
 `?rel.field=` filters, scoped include filters, and the DSL all return a
@@ -317,6 +327,14 @@ ignored but still validated), `?where=` predicate trees, nested
 `NoQuery` column in `SearchFields` panics at `Define`, so the app fails
 to start rather than serving a searchable mask, as does naming one as a
 cursor field.
+
+The in-process Go API is deliberately not gated. `TypedQuery.Where`
+accepts a caller-built condition on a `NoQuery` column and returns the
+stored value, because read-modify-write, seed lookups, and aggregates
+all need the real row — the server cannot tell those apart from a
+rendered list. Where rows reach an end user, pass
+`crud.WithReadHooks(ctx)` so the same `AfterList`/`AfterGet` chain the
+HTTP surface runs applies (see `hooks-and-transactions.md`).
 
 A nested `?rel.field=` filter needs the target entity's schema to run
 that check, so an unresolvable target refuses the filter rather than

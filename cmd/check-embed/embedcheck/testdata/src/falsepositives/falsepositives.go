@@ -21,7 +21,11 @@ func (*cleanComp) Actions() {
 	`))
 
 	unused := func() {
-		component.On("dead", func(_ *component.ComponentContext) {},
+		// A registration inside a function literal is not a violation — the body
+		// does not execute merely by being declared — but the walk cannot tell an
+		// unused closure from an immediately-invoked one, so it says so instead of
+		// passing in silence.
+		component.On("dead", func(_ *component.ComponentContext) {}, // want `inside a function literal`
 			component.WithClientJS(`G.serverAction("dead")`))
 	}
 	_ = unused

@@ -40,9 +40,12 @@ each command to the doc that covers it.
   tools for your coding agent ([dev-livereload](dev-livereload.md)).
   `--dir` sets the watch root, `--pkg` the main package under it,
   `--addr`/`-p` the port.
-- `gofastr build` — codegen + `go vet` + accessibility lint + `go
-  build` (`--no-a11y` skips the lint, `--pkg` selects the main
-  package).
+- `gofastr build` — codegen + `go vet` + accessibility lint + the embed
+  server-action gate + `go build` (`--no-a11y` skips the lint, `--pkg`
+  selects the main package, `--no-embed-check` skips the embed gate, and
+  `--allow-unverified-embeds` keeps proven violations fatal while
+  downgrading a surface the analyzer cannot follow — see
+  [embed](embed.md)).
 - `gofastr test` — run the project's tests.
 - `gofastr docs [topic]` — these docs, offline, versioned with the
   binary (`--list` every topic, `--grep <term>` to search).

@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.51.0
+through: v0.52.0
 
 releases:
   - version: v0.3.0
@@ -76,6 +76,13 @@ releases:
       - change: gofastr migrate diff removed
         breaking: true
         guidance: "Use `gofastr migrate generate` for versioned migrations; dev-mode auto-migrate covers the inner loop."
+  - version: v0.7.0
+    title: Generated apps serve entity JSON under an API prefix
+    notes:
+      - change: Regenerated blueprint apps serve entity JSON at /api/<table>, not /<table>
+        breaking: true
+        guidance: "A regenerated app moves every entity route under the api_prefix. Clients calling the bare path get 404. Update them, or set `app.api_prefix: \"\"` in the blueprint to keep the old paths. MCP tools and the OpenAPI spec follow the prefix automatically."
+        detect: "api_prefix"
   - version: v0.11.0
     title: Multi-replica + security remediation
     notes:
@@ -445,3 +452,31 @@ releases:
         breaking: true
         guidance: "Every caller must thread a context through — the grant path consults the OriginSource (and any store) on each call, and a context carries the deadline and trace. Add ctx (or r.Context()) as the first argument: embeds.MintNonce(ctx, surface, subject, origin, scopes), embeds.VerifyGrant(ctx, token), embeds.Refresh(ctx, token)."
         detect: "\\.MintNonce\\(|\\.VerifyGrant\\(|\\.Refresh\\("
+  - version: v0.52.0
+    title: Review sweep — row-reachability parity, trusted IR rendering, embed CSRF narrowing
+    notes:
+      - change: Untrusted IR no longer renders action attributes
+        breaking: true
+        guidance: "core-ui/noderender's RenderNode/RenderKind now strip data-action, data-action-*, and data-param-*, and refuse data-island — frag/boot.js turns those into a __gofastr.trigger() call, so an untrusted tree naming them picks the action and its arguments. First-party IR (the blueprint generator's) must call RenderTrustedNode/RenderTrustedKind instead; on RenderNode it still renders, silently inert."
+        detect: "noderender\\.RenderNode\\(|noderender\\.RenderKind\\("
+      - change: Versions of one entity must agree on row reachability
+        breaking: true
+        guidance: "MultiTenant, OwnerField, SoftDelete, Public, Access, and CrossOwnerRead must match across every version of one entity name, or registration panics. The versions share one physical table, so the weaker version was a bypass of the stronger. Per-version Hidden/WireName/ReadOnly still vary freely — column projection is presentation, row reachability is authorization."
+      - change: The embed CSRF path exemption covers safe methods only
+        breaking: true
+        guidance: "It exempted the whole /__gofastr/embed/ prefix; the framework mounts exactly two GET routes there. A host that added its own POST under that prefix and relied on the exemption must now send the CSRF token."
+      - change: A pattern redirect that covers an exact screen panics at registration
+        breaking: true
+        guidance: "RedirectScreen(\"/old/{x}\", ...) beside a screen at /old/special now panics in either registration order, like every other route collision. It used to register cleanly and 308 the screen away forever with no diagnostic. Narrow the redirect's constraint, or drop the screen."
+        detect: "RedirectScreen\\("
+      - change: A custom magic-link ConfirmPage must render ConfirmPageData.CSRFField
+        breaking: true
+        guidance: "Omit it and the confirmation button 403s under auth.CSRF(), which WithBFFPosture mounts app-wide — passwordless sign-in stops at the confirm step. Render render.HTML(d.CSRFField) inside the form. ConfirmPageData carries no request, so this field is the only way to reach the _csrf input."
+        detect: "ConfirmPage:"
+      - change: Generated SDK manifests carry SchemaVersion 2
+        breaking: false
+        guidance: "The route-group prefix left the schema-hash identity, so a manifest written by an older gofastr cannot match a hash computed now. Re-run `gofastr generate sdk`; until then sdkdocs reports unknown provenance rather than drift."
+      - change: SSEBrokerConfig.Principal decides who may evict a subscriber id
+        breaking: false
+        guidance: "The old default keyed on RemoteAddr's host, which behind any reverse proxy is the proxy for every request — so ?subscriber_id=<victim> dropped a stranger's stream. Left nil the broker now evicts nothing, which is the right default. Set Principal to something the caller cannot choose (a session user id) if you rely on same-id reconnect replacing the previous entry."
+        detect: "SSEBrokerConfig\\{"

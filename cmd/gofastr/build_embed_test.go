@@ -54,8 +54,19 @@ func main() { _ = surfaces }
 func TestBuildEmbedGateFailsOnFinding(t *testing.T) {
 	dir, _ := embedGateModule(t)
 	covT_chdir(t, dir)
-	if buildEmbedGate("./...") {
+	if buildEmbedGate("./...", false) {
 		t.Fatal("buildEmbedGate returned success for an embeddable server action")
+	}
+}
+
+// --allow-unverified-embeds downgrades the unresolved notes, never a provable
+// violation: the escape hatch exists for surfaces static analysis cannot read,
+// not for ones it read and found guilty.
+func TestAllowUnverifiedStillFailsOnFinding(t *testing.T) {
+	dir, _ := embedGateModule(t)
+	covT_chdir(t, dir)
+	if buildEmbedGate("./...", true) {
+		t.Fatal("--allow-unverified-embeds let a proven server action through")
 	}
 }
 

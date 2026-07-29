@@ -127,7 +127,7 @@ reconciles a column, including to zero items). A general-purpose
 compose it from an island RPC that returns the authoritative row HTML and
 a signal swap (`data-fui-rpc-signal` with `data-fui-signal-mode="html"`).
 The temp-ID discipline is a contract between your handler and your island
-code; see [Recipe 3](#recipe-3-optimistic-create-with-a-temporary-row).
+code; see [Recipe 3](#recipe-3--optimistic-create-with-a-temporary-row).
 
 ### Idempotency and mutation keys
 
@@ -160,7 +160,7 @@ server-rendered `<li>` HTML that replaces the destination column. The
 409 body is read under hard safety bounds — `Content-Type: application/json`,
 at most ~4 KB, must parse as `{"error":{"code","message"}}` — and the
 `message`, when valid, is surfaced through the polite `aria-live` region.
-See [Recipe 5](#recipe-5-sortablekanban-move-with-version-aware-409) and
+See [Recipe 5](#recipe-5--sortablekanban-move-with-version-aware-409) and
 [Interactive patterns → Sortable List](interactive-patterns.md#sortable-list-single--kanban).
 
 ### Rollback vs authoritative refresh

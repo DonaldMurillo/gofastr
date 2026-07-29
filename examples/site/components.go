@@ -3,7 +3,7 @@ package main
 // =============================================================================
 // /components — the showcase screens.
 //
-// The catalog itself (the 139 entries, the code snippets, the note-only
+// The catalog itself (the 141 entries, the code snippets, the note-only
 // set, the demo support code for the three stateful demos) now lives in
 // framework/gallery, so the theme-configuration tool inside cmd/gofastr
 // can render every component without importing examples/. This file keeps

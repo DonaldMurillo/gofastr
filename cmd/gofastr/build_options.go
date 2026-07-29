@@ -11,6 +11,12 @@ type buildOptions struct {
 	noGenerate   bool
 	noA11y       bool
 	noEmbedCheck bool
+	// allowUnverifiedEmbeds downgrades check-embed's unresolved notes from
+	// fatal back to advisory, without disabling the check the way
+	// --no-embed-check does. It exists for the surface that genuinely cannot
+	// be analysed statically and has been verified by hand; provable
+	// violations still fail the build.
+	allowUnverifiedEmbeds bool
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
@@ -24,6 +30,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 			opts.noA11y = true
 		case arg == "--no-embed-check":
 			opts.noEmbedCheck = true
+		case arg == "--allow-unverified-embeds":
+			opts.allowUnverifiedEmbeds = true
 		case arg == "--pkg":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				return buildOptions{}, errors.New("build: --pkg requires a package path")

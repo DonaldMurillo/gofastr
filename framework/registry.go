@@ -439,7 +439,8 @@ func autoGenName(a schema.AutoGenerate) string {
 // checkVersionCompat enforces the SAME-NAME structural invariants that make
 // the multi-version union sound: two versions of one entity name share one
 // physical table, so they MUST agree on which table (F5), whether the
-// framework manages its DDL (F10), and at most one may declare a Seed (F11).
+// framework manages its DDL (F10), how rows are isolated from each other
+// (F12), and at most one may declare a Seed (F11).
 // The caller already holds r.mu. This is distinct from checkColumnConflicts,
 // which is table-keyed and compares column/index/FK definitions; these are
 // name-keyed and compare the entity-level shape.
@@ -471,6 +472,17 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 				versionLabel(existing.Version), managedLabel(existing.Config.Unmanaged),
 				versionLabel(newEnt.Version), managedLabel(newEnt.Config.Unmanaged))
 		}
+		// F12: same name → same row-isolation policy. The three settings below
+		// decide WHICH ROWS of the shared table a request may see or destroy,
+		// and every one of them is enforced per-version at query time. A
+		// tenant-scoped version beside an unscoped one means the unscoped one
+		// reads every tenant's rows out of the same table; the same holds for
+		// OwnerField and per-user rows. SoftDelete is the destructive twin: a
+		// hard-delete version physically removes rows the soft-delete version
+		// is still counting on being there to restore.
+		if err := checkRowIsolationCompat(existing, newEnt); err != nil {
+			return err
+		}
 		// F11: at most one version may declare a Seed. Two Seeds cannot be
 		// compared for equality (they are funcs), so the second is ambiguous.
 		if existing.Config.Seed != nil && newEnt.Config.Seed != nil {
@@ -482,6 +494,134 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 		}
 	}
 	return nil
+}
+
+// checkRowIsolationCompat rejects two versions of one entity name that
+// disagree on who may reach the shared table's rows.
+//
+// None of these are cosmetic per-version options. MultiTenant, OwnerField and
+// SoftDelete are the predicates CRUD adds to every SELECT/UPDATE/DELETE;
+// Access, Public and CrossOwnerRead are the gates it runs before issuing one.
+// Letting any of them differ makes the weaker version a bypass of the stronger
+// one — read another tenant's rows through /api/v2, read another user's rows
+// through the version without OwnerField, hard-delete rows the soft-delete
+// version expects to restore, skip the RBAC permission the other version
+// requires, or read the whole table anonymously through a version that
+// declared Public. The framework is fail-closed about row scoping everywhere
+// else; a version prefix must not be the way around it.
+//
+// Note the deliberate line between this and conflictingColumns, which
+// permits Hidden/WireName/ReadOnly to differ: per-version COLUMN projection is
+// a supported feature (see framework/experimental/apiversions), per-version
+// ROW reachability is not. Visibility of a field is presentation; visibility
+// of a row is authorization.
+func checkRowIsolationCompat(existing, newEnt *entity.Entity) error {
+	mismatch := func(setting, existingVal, newVal string) error {
+		return fmt.Errorf(
+			"registry: entity %q (table %q) mixes %s across versions — "+
+				"%s is %s, %s is %s; versions of one entity share one table, so they must agree "+
+				"on which rows a request may see. Use distinct entity names if the versions really "+
+				"need different row scoping",
+			newEnt.Config.Name, newEnt.GetTable(), setting,
+			versionLabel(existing.Version), existingVal,
+			versionLabel(newEnt.Version), newVal)
+	}
+	if existing.Config.MultiTenant != newEnt.Config.MultiTenant {
+		return mismatch("tenant scoping",
+			multiTenantLabel(existing.Config.MultiTenant),
+			multiTenantLabel(newEnt.Config.MultiTenant))
+	}
+	if existing.Config.OwnerField != newEnt.Config.OwnerField {
+		return mismatch("owner scoping",
+			ownerFieldLabel(existing.Config.OwnerField),
+			ownerFieldLabel(newEnt.Config.OwnerField))
+	}
+	if existing.Config.SoftDelete != newEnt.Config.SoftDelete {
+		return mismatch("delete semantics",
+			softDeleteLabel(existing.Config.SoftDelete),
+			softDeleteLabel(newEnt.Config.SoftDelete))
+	}
+	if existing.Config.Public != newEnt.Config.Public {
+		return mismatch("public access",
+			publicLabel(existing.Config.Public),
+			publicLabel(newEnt.Config.Public))
+	}
+	if existing.Config.Access != newEnt.Config.Access {
+		return mismatch("access control",
+			accessLabel(existing.Config.Access),
+			accessLabel(newEnt.Config.Access))
+	}
+	if existing.Config.CrossOwnerRead != newEnt.Config.CrossOwnerRead {
+		return mismatch("cross-owner read",
+			crossOwnerReadLabel(existing.Config.CrossOwnerRead),
+			crossOwnerReadLabel(newEnt.Config.CrossOwnerRead))
+	}
+	return nil
+}
+
+// publicLabel describes an entity's Public flag for the mismatch error.
+// Public is the full opt-out of the secure-by-default session requirement, so
+// a version that sets it while its sibling does not is an anonymous read of
+// the sibling's rows.
+func publicLabel(public bool) string {
+	if public {
+		return "public (no session required)"
+	}
+	return "session-required"
+}
+
+// accessLabel describes an AccessControl block for the mismatch error. The
+// whole struct is compared, not just Declared(): two versions that both gate
+// reads but on DIFFERENT permissions are the same bypass as one that does not
+// gate at all.
+func accessLabel(a entity.AccessControl) string {
+	if !a.Declared() {
+		return "un-gated"
+	}
+	parts := make([]string, 0, 4)
+	for _, p := range []struct{ op, perm string }{
+		{"read", a.Read}, {"create", a.Create},
+		{"update", a.Update}, {"delete", a.Delete},
+	} {
+		if p.perm != "" {
+			parts = append(parts, p.op+"="+p.perm)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// crossOwnerReadLabel describes the CrossOwnerRead permission for the
+// mismatch error. It lifts owner scoping for whoever holds it, so a version
+// that names one reads every owner's rows through that prefix.
+func crossOwnerReadLabel(perm string) string {
+	if perm == "" {
+		return "owner-scoped"
+	}
+	return "lifted by " + perm
+}
+
+// multiTenantLabel renders the tenant-scoping posture for error messages.
+func multiTenantLabel(on bool) string {
+	if on {
+		return "MultiTenant (rows scoped to the request's tenant)"
+	}
+	return "not MultiTenant (rows unscoped)"
+}
+
+// ownerFieldLabel renders the owner-scoping posture for error messages.
+func ownerFieldLabel(field string) string {
+	if field == "" {
+		return "no OwnerField (rows unscoped)"
+	}
+	return fmt.Sprintf("OwnerField %q (rows scoped to their owner)", field)
+}
+
+// softDeleteLabel renders the delete posture for error messages.
+func softDeleteLabel(on bool) string {
+	if on {
+		return "SoftDelete (deletes stamp deleted_at)"
+	}
+	return "not SoftDelete (deletes remove the row)"
 }
 
 // conflictingMandatoryFields rejects a column that is physically mandatory

@@ -5,6 +5,233 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+## [0.52.0] - 2026-07-29
+
+Security and correctness fixes across everything v0.42.0 through v0.51.0
+shipped. Five entries are BREAKING; `gofastr upgrade` lists the ones that
+touch your project, with the change to make in each.
+
+Two of them stop an app at startup rather than at runtime — a registration
+panic when two versions of one entity disagree about who reaches its rows,
+and another when a pattern redirect covers an exact screen. Both used to be
+silent.
+
+### Security
+
+- **A cross-site `enctype="text/plain"` form could complete a magic-link
+  sign-in.** `rejectCrossSiteForm` only ran for `x-www-form-urlencoded` and
+  `multipart/form-data` bodies. `text/plain` is the third enctype an HTML form
+  can send and needs no CORS preflight, and `verifyHandler` reads its token
+  from the query string — so an attacker could auto-submit their OWN magic-link
+  token from their page and land the victim's browser in the attacker's
+  account, which is precisely what the confirmation step exists to prevent. The
+  guard now keys on whether a cross-site page could have sent the request at all
+  (the three CORS-simple content types, plus an absent `Content-Type` for a
+  bodyless `fetch`). JSON stays exempt, deliberately: it is preflighted, and a
+  cross-origin SPA reaching these routes through configured CORS depends on it.
+- **`EagerLoad` disabled every hidden-column scrub when a relation target had
+  two API versions.** It called `registry.Get`, discarded the error, and treated
+  a nil target as "no columns to hide" — turning off the `Hidden` scrub and the
+  soft-delete filter together. `framework/entity`'s own doc comment already said
+  `Get` is unsafe for relation targets and to use `ResolveTarget`; it now does,
+  against the source entity's version, and fails closed when the target cannot
+  be resolved.
+- **BREAKING: untrusted IR could name the attributes the runtime dispatches actions
+  from.** `core-ui/noderender` treated `data-action*` and `data-param-*` as inert
+  host markers while `frag/boot.js` was resolving the nearest `[data-component]`
+  and calling `__gofastr.trigger()` with them — at hydration for
+  `data-action-mount`, and again on every `gofastr:navigate`, with the IR
+  choosing the arguments. `RenderNode`/`RenderKind` now strip them, and
+  `RenderTrustedNode`/`RenderTrustedKind` are the first-party entry points the
+  blueprint generator uses. `data-island` is refused outright — it is the SSE
+  swap target, which is hydration identity.
+- **BREAKING: versions of one entity may no longer disagree about who reaches
+  its rows.** Two versions share one physical table, so a tenant-scoped v1
+  beside an unscoped v2 meant v2 read what v1 hid. The registry now rejects a
+  mismatch in `MultiTenant`, `OwnerField`, or `SoftDelete` — the predicates
+  CRUD adds to every statement — and in `Public`, `Access`, or
+  `CrossOwnerRead`, the gates it runs before issuing one. A v2 declaring
+  `Public: true` beside a session-required v1 made the whole table anonymously
+  readable; a v2 with a blank `Access` block skipped the permission v1
+  required. Per-version *column* projection still varies freely: visibility of
+  a field is presentation, visibility of a row is authorization.
+- **`VerifyAuthEntitiesPrivate` went quiet on exactly the apps that need it.**
+  It called `reg.Get(name)`, which reports an ambiguity error once a name is
+  mounted under several versions with none unversioned — which is what
+  `App.GroupEntity` produces — and that error was indistinguishable from "not
+  found". A versioned app exposing its users table through auto-CRUD got the
+  "entity not registered" hint instead of the warning. It now audits every
+  version registered under the name, and names the mount in the warning.
+- **BREAKING: the embed CSRF path exemption is safe methods only.** It covered the whole
+  `/__gofastr/embed/` prefix; the framework mounts exactly two `GET` routes
+  there, so the breadth bought nothing and pre-approved any future POST.
+- **An embed grant is refused on `/__gofastr/sse` instead of falling through.**
+  A presented grant used to fall through to the ambient session cookie, so a
+  framed page could stream the viewer's island updates while authenticated as
+  someone else.
+
+### Added
+
+- **`gofastr build --allow-unverified-embeds`** keeps a provable embed
+  violation fatal while downgrading the one note class that otherwise stops the
+  build. For a surface that genuinely cannot be analysed statically and has
+  been checked by hand, this is the narrow escape hatch; `--no-embed-check`
+  remains the blunt one.
+
+### Fixed
+
+- **`TypedQuery.Find`/`First` ignored `crud.WithReadHooks`**, returning stored
+  values from the one API whose entire purpose is to match what the HTTP surface
+  shows. `Find` now runs `AfterList` and `First` runs `AfterGet`, mirroring the
+  routes.
+- **Event records no longer alias containers reached through a pointer.** The
+  reflective deep copy skipped every pointer; a hook injecting `*map[string]any`
+  still shared storage with the record handed to the event goroutine — the
+  concurrent-map-write race the copy was written to prevent.
+- **Both embed server-action gates follow the rendered component tree.** An
+  embeddable root whose CHILD registered `G.serverAction` passed the build-time
+  analyzer and the boot walk, and failed only in the customer's page. The boot
+  walk no longer stops at `core-ui/island` — a one-field wrapper around the
+  component it renders, and the shape the blueprint emits for every island
+  block, so stopping there hid the child the wrapper exists to render — and it
+  now walks map keys as well as values. The analyzer reports what it cannot
+  follow statically instead of passing silently, and `gofastr build` prints
+  those notes. One class of note fails the build: a child built inside
+  `Render()` whose type lives in another package, which the boot walk cannot
+  see (it does not exist as a value) and the analyzer cannot either (its
+  `Actions()` body is in another syntax tree). The rest stay advisory, because
+  the boot walk covers them. `cmd/check-embed` exits non-zero on the blocking
+  class too, rather than printing a green tick for a tree `gofastr build`
+  refuses.
+- **A versioned relation target no longer degrades the admin screens or
+  contradicts the startup warning.** `App.warnUnresolvableRelations` and both
+  relation lookups in `battery/admin` called `Registry.Get`, which errors on a
+  name mounted under several versions — so the framework warned that
+  `?include=` would be refused on a relation the request path resolves fine,
+  and the admin's relation labels silently fell back to raw UUIDs and its
+  pickers to bare text inputs. All three now use `entity.ResolveTarget`
+  against the source entity's version, the same call `framework/crud` makes.
+- **The SDK schema hash no longer reports drift that regenerating cannot
+  clear.** The route-group prefix was part of the hash identity, and
+  `App.GroupEntity` stamps that prefix as the entity's `Version` — so every
+  app using a route group saw a permanent drift banner. Where a thing is
+  mounted is routing, not schema. Versions that project to the same schema now
+  collapse, compared on their canonical JSON rather than `fmt.Sprint`, which
+  renders `[]string{"draft ready"}` and `[]string{"draft","ready"}`
+  identically and so could silently merge two versions with genuinely
+  different enum sets. `SchemaVersion` is 2: a manifest from an older
+  `gofastr` encodes the prefix, and is reported as unknown provenance
+  (regenerate it) rather than as a drifted schema.
+- **A malformed durable-scheduler payload is refused at enqueue** rather than
+  stored and failed at every dispatch. An empty payload still means JSON
+  `null`, which is what the column held before.
+- **BREAKING: a pattern redirect that covers an exact screen now panics at registration**
+  in both orders, like every other collision. It used to register cleanly and
+  308 the screen away forever, with no diagnostic.
+- **The disclosure focus trap releases `inert` on detach.** Opening a mobile
+  drawer and navigating across layouts detached the `<details>` without firing
+  `toggle`, leaving every other `<body>` child out of the focus order and the
+  accessibility tree for the life of the tab.
+- **A wildcard CORS response strips `Access-Control-Allow-Credentials` even when
+  the handler writes nothing** — an ordinary shape for an empty `DELETE` — and
+  while a panicking handler unwinds to `Recovery`. The strip is now keyed on
+  the `Access-Control-Allow-Origin` value actually on the response rather than
+  the one in config, because a downstream handler can replace it: a handler
+  that narrowed ACAO to a real origin used to lose the credentials header it
+  was entitled to set.
+- **An inline `data:` URI survives into a srcset.** The comma separating media
+  type from payload was percent-escaped along with candidate separators, so a
+  URI the allow-list admits was destroyed by the emitter. Only that first comma
+  is preserved; every later one belongs to the payload and is still escaped,
+  because a trailing raw comma ends the candidate before its width descriptor.
+- **Only a pending outbox delivery may record a handler failure.** Both
+  `markDeliveryFailure` updates guarded on `status<>'dispatched'`, so a worker
+  whose lease had expired could overwrite a dead or abandoned delivery with a
+  fresh `last_error` and push it back to pending — resurrecting a delivery an
+  operator had already triaged. They now guard on `status='pending'`; every
+  other state is terminal until an explicit `Replay`.
+- **A local RBAC revoke is no longer undone by the next reconcile.**
+  `GrantStore` rebuilds each role as `baseline ∪ DB`, where `baseline` is the
+  code-declared grants captured at boot — so revoking a permission that was
+  seeded in code took effect in memory and then came back on the next
+  peer-driven reload. `Revoke` now narrows the baseline as well. (Peers that
+  captured their own baseline at boot still merge it back; that half is
+  tracked separately.)
+- **`PgVectorStore.Add` threads its context** instead of discarding it and
+  calling `Exec`, so a cancelled request no longer keeps writing chunks.
+
+### Changed
+
+- **`SSEBrokerConfig.Principal`** decides who may evict a subscriber id. The
+  principal used to be `RemoteAddr`'s host, which behind any reverse proxy is
+  the proxy for every request — so all callers collapsed into one principal and
+  `?subscriber_id=<victim>` dropped a stranger's stream. With no `Principal` the
+  broker now evicts nothing, which costs nothing: subscriber ids address no one
+  (delivery is a broadcast) and a dropped connection already unregisters.
+  `MaxSubscribers` stays exact — past the cap `Subscribe` rejects. A half-open
+  connection keeps its seat until the next heartbeat write fails and that
+  stream unregisters itself, which reclaims seats for every client rather than
+  only the ones that send a `subscriber_id` (none of the framework's own do).
+- **BREAKING: `ConfirmPageData.CSRFField` is required for a custom `ConfirmPage`.** The
+  default magic-link confirmation page rendered no `_csrf` field, so with
+  `auth.CSRF()` mounted — which `WithBFFPosture` does app-wide — its own button
+  returned 403 and passwordless sign-in was unreachable. `ConfirmPageData` had
+  no request and no context, so a custom page could not supply one either.
+- **The runtime gzip budget is 12.5 KB, measured at gzip level 6.** It was 12 KB
+  measured at level 9, which nothing ships at: GoFastr installs no compression
+  middleware, so the wire bytes come from a proxy at its own setting. The same
+  artifact measures 12287 at level 9 and 12317 at level 6 — the code did not
+  grow, the ruler was wrong.
+- **The fragment symbol gate compares against a checked-in manifest**
+  (`core-ui/runtime/frag/SYMBOLS.txt`) instead of `git show HEAD:runtime.js`.
+  Since `runtime.js` is generated from the fragments, the old gate compared the
+  artifact to itself and could not fail.
+- **The doc gate resolves every relative link and anchor** across
+  `framework/docs/content/`, which is how a batch of links pointing one
+  directory short went unnoticed.
+
+### Documentation
+
+- The gallery catalog is 141 entries, not 139 (`catalog.go`, `gallery.go`,
+  `agents.md`, and the v0.49.0 note all said 139).
+- `framework/gallery/agents.md` documented `gallery.CodeSnippets["button"]`,
+  which does not exist and never compiled — the accessor is
+  `CodeSnippet(slug)`, and the map is private on purpose.
+- `component-build`'s skill told maintainers to mirror registry fields into
+  `core-ui/runtime/runtime.js`, a generated file, so the edit would not ship.
+- The `Field.NoQuery` entry claimed "every query surface"; it is every *wire*
+  query surface. The in-process Go API is deliberately ungated, as the entry
+  beside it already said.
+- The static exporter's CSP comment claimed the in-document `<meta>` covers
+  hosts that ignore `_headers`. Per CSP L3 §3.1 a meta-delivered policy ignores
+  `frame-ancestors`, so the fetch directives carry but the clickjacking guard
+  needs the header. `security.md` now says which hosts that leaves uncovered
+  and what to set there.
+- The `auth.md` `ConfirmPage` example concatenated `d.Email` and `d.Token` into
+  a body string. A magic-link request accepts any address, so `d.Email` is
+  whatever the requester typed; the example now uses the escaping builders and
+  renders `d.CSRFField`, which a custom page must include or its own submit
+  403s under `auth.CSRF()`.
+- `ui-getting-started.md` described redirect/screen overlap as a dynamic-screen
+  rule. A *pattern* redirect overlaps an *exact* screen the same way, in either
+  registration order.
+- `api-versioning.md` promised "four structural invariants" and listed them by
+  count, which went stale as soon as one was added. It now reads as a rule, and
+  covers row reachability and the gate in front of it.
+- `events.md` and `live-dashboards.md` document `SSEBrokerConfig.Principal` —
+  what it must return, and why leaving it nil costs nothing.
+- `framework/gallery/agents.md` pointed agents at `NoteOnlySlugs`, which is not
+  exported. The accessor is `IsNoteOnly(slug)`.
+- The `hooks-and-transactions.md` table of hook-skipping read paths omitted
+  `TypedQuery.Find`/`First`, which are now in it.
+- `embed.md` said both gates panic. The analyzer reports a diagnostic and
+  `gofastr build` exits non-zero; only the boot walk panics.
+- `core-ui/ARCHITECTURE.md` documented one `noderender` entry point. There are
+  four, split by trust, and picking the untrusted one for first-party IR
+  silently drops every action attribute.
+
 ## [0.51.0] - 2026-07-28
 
 The SPA screen cache gained eviction, and its e2e test caught a
@@ -262,7 +489,7 @@ palette per request without mutating process-global state.
   `RegisterThemeVariant`, served at `/__gofastr/app.css?t=<key>`. A request
   names a pre-registered key; it never describes a theme, which is what makes
   CSS injection unrepresentable and bounds cache cardinality.
-- **`framework/gallery`** — the 139-entry component catalog, extracted from
+- **`framework/gallery`** — the 141-entry component catalog, extracted from
   `examples/site` so a CLI binary can render it. It now also ships the layout
   classes its own demos emit (`ContributeCSS`), which the docs site had been
   defining on its behalf.
@@ -677,14 +904,18 @@ renders its own screens through. All are closed.
 ### Added
 
 - **`schema.Field.NoQuery`** — a column that stays in API responses but
-  is refused by every query surface: flat filters, `?sort=`, `?where=`
+  is refused by every wire query surface: flat filters, `?sort=`, `?where=`
   predicate trees, nested `?rel.field=` filters, scoped `?include=`
-  filters, and the DSL. `Hidden` already closed this by removing the
-  column from responses; `NoQuery` is for values the caller must still
-  see in a reduced form. Declarations use `no_query: true`. The
-  rejection names the field, unlike `Hidden`'s — a `NoQuery` column is
-  visible in the response, so its existence is not a secret worth
-  protecting and a precise error saves a developer hunting for a typo.
+  filters, and the DSL. The in-process Go API (`ListAll`, `CountAll`,
+  `TypedQuery.Where`/`Order`) is not gated — a caller-built filter on a
+  NoQuery column still runs there, so server-side read-modify-write and
+  aggregates keep working (stored values stay the default for the Go API,
+  as the next entry spells out). `Hidden` already closed this by removing
+  the column from responses; `NoQuery` is for values the caller must still
+  see in a reduced form. Declarations use `no_query: true`. The rejection
+  names the field, unlike `Hidden`'s — a `NoQuery` column is visible in
+  the response, so its existence is not a secret worth protecting and a
+  precise error saves a developer hunting for a typo.
 - **`crud.WithReadHooks(ctx)`** (also `framework.WithReadHooks`) — makes
   an in-process read apply `AfterList`/`AfterGet`. Generated blueprint
   list, detail, and related-list screens use it, so an app's own pages
@@ -2106,7 +2337,7 @@ capability map (#102).
   contain emails) or join/leave events. Rejection is silent (the topic is
   simply not joined), so the gate is not a private-topic existence oracle. A
   nil hook (the default) authorizes every topic — presence stays public unless
-  an app opts in, so existing apps are unaffected. See [presence](presence.md)
+  an app opts in, so existing apps are unaffected. See [presence](framework/docs/content/presence.md)
   → "Topic authorization".
 
 ### Changed
@@ -2140,7 +2371,7 @@ capability map (#102).
   `EntityConfig.LenientFilters: true`, or per call with
   `filter.ParseFilters(r, fields, filter.Lenient())`. Prefer the narrow
   options — a dropped filter is a data-exposure hazard. See
-  [entity declarations → Flat filters](entity-declarations.md).
+  [entity declarations → Flat filters](framework/docs/content/entity-declarations.md).
 
 ### Fixed
 
@@ -2215,7 +2446,7 @@ scheduler (#94); fixes ScreenGroup sibling navigation under a default layout
   redundant evaluation while unique occurrences + transactionally enqueued
   jobs are the deduplication authority. `DurableSchedulerConfig` sets the
   replica `OwnerID` (defaults to a random process-local ID) and `LeaseDuration`
-  (defaults to 30s). See [queue](queue.md).
+  (defaults to 30s). See [queue](framework/docs/content/queue.md).
 - **MCP Apps in `core/mcp`** (#90). The tools-only server now speaks the
   richer surface MCP Apps and modern clients expect:
   - **Rich tool results.** A `ToolHandler` can return `mcp.ImageResult`

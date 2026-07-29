@@ -117,6 +117,10 @@ func printHelp() {
   theme edit            Live theme configurator with a component preview
   build                 Run codegen + go vet + accessibility lint + go build
                         --no-a11y skips the accessibility gate
+                        --no-embed-check skips the embed server-action gate
+                        --allow-unverified-embeds keeps proven violations fatal
+                        but downgrades an embed surface the analyzer cannot
+                        follow
                         --pkg=<path> selects the main package built after the
                         project-root vet and accessibility gates (default .);
                         for example --pkg ./cmd/server

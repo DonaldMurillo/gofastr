@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -55,9 +54,16 @@ type SSEBroker struct {
 	fanoutCancel func()
 	fanoutOnce   sync.Once
 	closed       atomic.Bool
+
+	// principal resolves a request to a caller identity for
+	// subscriber-id eviction scoping. nil disables eviction.
+	principal func(*http.Request) string
 }
 
 type subscriber struct {
+	// requestedID is the stable client-supplied id. The map key may be a
+	// generated id when callers collide without a trustworthy principal.
+	requestedID string
 	// principal identifies the caller that registered this subscriber,
 	// so a client-supplied subscriber_id can only evict an entry the
 	// same caller created. See Subscribe.
@@ -114,9 +120,36 @@ type SSEBrokerConfig struct {
 	// A blocking send with no timeout is unbounded backpressure.
 	BlockTimeout time.Duration
 
-	// MaxSubscribers caps concurrent subscribers; 0 = unlimited.
-	// Subscribe rejects past the cap rather than evicting, so an
-	// attacker cannot displace live subscribers by reconnecting.
+	// Principal identifies the caller behind a request, so a reconnect
+	// with the same ?subscriber_id replaces its OWN entry and nobody
+	// else's. Return "" for "cannot tell", which is treated as "not the
+	// same caller".
+	//
+	// Set this to something the caller cannot choose and another caller
+	// cannot guess — a session user id is the usual answer.
+	//
+	// Left nil, the broker never evicts. The old default keyed on
+	// RemoteAddr's host, which is honest only on a direct connection:
+	// behind nginx, an ALB, Cloudflare or a k8s ingress, every request's
+	// TCP peer is the proxy, so all subscribers collapsed to one
+	// principal and `?subscriber_id=<victim>` dropped the victim's
+	// stream — repeatably. Nothing is lost by not evicting: subscriber
+	// ids address nothing (deliver() broadcasts), and a dropped
+	// connection already unregisters itself.
+	Principal func(*http.Request) string
+
+	// MaxSubscribers caps concurrent subscribers; 0 = unlimited. Subscribe
+	// rejects past the cap rather than evicting, and the cap is exact.
+	//
+	// A client whose previous connection is half-open (mobile handoff, laptop
+	// sleep, an LB idle-kill the server has not noticed) still holds a seat
+	// until HeartbeatInterval's next write fails and the stream unregisters
+	// itself. That heartbeat is what reclaims the seat — for every client,
+	// including the ones that send no subscriber_id, which is all of the
+	// framework's own. A reserved slot keyed on the requested id was tried
+	// and removed: nothing in the client runtime sends an id, so it could
+	// never fire, while costing a scan of every subscriber under the write
+	// lock and letting the cap be exceeded by one.
 	MaxSubscribers int
 }
 
@@ -144,6 +177,7 @@ func NewSSEBroker(cfg SSEBrokerConfig) *SSEBroker {
 		maxBuf:            maxBuf,
 		heartbeatInterval: hb,
 		fanoutTopic:       "gofastr.sse." + cfg.Topic,
+		principal:         cfg.Principal,
 
 		allowClientSlowMode: cfg.AllowClientSlowMode,
 		blockTO:             cfg.BlockTimeout,
@@ -243,45 +277,59 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	filter := r.URL.Query().Get("event")
 
 	sub := &subscriber{
-		ch:       make(chan sseEvent, bufSize),
-		filter:   filter,
-		done:     make(chan struct{}),
-		slowMode: b.parseSlowMode(r),
+		requestedID: subID,
+		ch:          make(chan sseEvent, bufSize),
+		filter:      filter,
+		done:        make(chan struct{}),
+		slowMode:    b.parseSlowMode(r),
 	}
 
-	// Register, evicting any prior subscriber with the same ID so it does
-	// not leak. Closing the prior sub.done signals its Subscribe loop to
-	// exit cleanly.
-	//
 	// Eviction is scoped to the SAME principal. subscriber_id exists so
 	// apps can pass a meaningful id (user, tab, device), but it is
 	// attacker-supplied, and evicting on a bare id match let
-	// `?subscriber_id=<victim>` close the victim's done channel and
-	// drop their stream — repeatably, for a permanent denial. A
-	// reconnect from the same principal still replaces its own entry,
-	// which is the case the eviction was written for.
-	sub.principal = ssePrincipal(r)
+	// `?subscriber_id=<victim>` drop the victim's stream. Without a
+	// Principal, colliding callers therefore keep separate map entries.
+	sub.principal = b.principalFor(r)
 
 	b.mu.Lock()
-	prev, collision := b.subscribers[subID]
-	if collision && prev.principal != sub.principal {
-		// Different caller, same requested id: leave the incumbent
-		// alone and give the newcomer an id of its own.
-		subID = generateSubscriberID()
-		prev, collision = nil, false
+	registrationID := subID
+	var prev *subscriber
+	if sub.principal != "" {
+		// Only a caller the host can identify may replace a stream. A bare
+		// subscriber_id is attacker-supplied, so colliding anonymous callers
+		// keep separate map entries rather than evicting each other.
+		for id, incumbent := range b.subscribers {
+			if incumbent.requestedID == sub.requestedID && incumbent.principal == sub.principal {
+				registrationID = id
+				prev = incumbent
+				break
+			}
+		}
 	}
-	// Cap BEFORE evicting: rejecting the newcomer keeps live streams
-	// alive, whereas evicting would let a reconnect loop displace them.
-	if b.maxSubs > 0 && !collision && len(b.subscribers) >= b.maxSubs {
+
+	replacing := prev != nil
+	if !replacing {
+		if _, used := b.subscribers[registrationID]; used {
+			for {
+				registrationID = generateSubscriberID()
+				if _, exists := b.subscribers[registrationID]; !exists {
+					break
+				}
+			}
+		}
+	}
+
+	if b.maxSubs > 0 && !replacing && len(b.subscribers) >= b.maxSubs {
 		b.mu.Unlock()
 		http.Error(w, "too many subscribers", http.StatusServiceUnavailable)
 		return
 	}
-	if collision {
+	if replacing {
 		close(prev.done)
 	}
-	b.subscribers[subID] = sub
+	b.subscribers[registrationID] = sub
 	b.mu.Unlock()
+	subID = registrationID
 
 	defer func() {
 		b.mu.Lock()
@@ -468,18 +516,15 @@ func (b *SSEBroker) parseSlowMode(r *http.Request) sseSlowMode {
 	return sseSlowDropOldest
 }
 
-// ssePrincipal derives the caller identity used to namespace
-// subscriber ids. RemoteAddr's host is a coarse but honest default:
-// it is not spoofable by the request body or query string.
-func ssePrincipal(r *http.Request) string {
-	if r == nil {
+// principalFor derives the caller identity used to scope subscriber-id
+// eviction, or "" when the host gave the broker no way to tell callers
+// apart. "" is never treated as equal to another principal, so it
+// disables eviction rather than widening it.
+func (b *SSEBroker) principalFor(r *http.Request) string {
+	if b.principal == nil || r == nil {
 		return ""
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return b.principal(r)
 }
 
 // blockTimeout is the bound on a block-mode send. Never zero, so a

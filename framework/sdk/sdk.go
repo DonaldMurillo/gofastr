@@ -32,7 +32,13 @@ const (
 	// and understands. A manifest with a different SchemaVersion is
 	// treated as unknown provenance, not as stale (the hash algorithm may
 	// have changed between gofastr versions).
-	SchemaVersion = 1
+	//
+	// Bumped to 2 when the mount point left the hash identity: a manifest
+	// written by an older gofastr encodes the version prefix, so its hash
+	// cannot match one computed now. Reporting that as unknown provenance
+	// asks the operator to regenerate, which is true, instead of claiming
+	// a schema drifted when it did not.
+	SchemaVersion = 2
 )
 
 // File is one generated file: a dist-relative path and its bytes. Data is

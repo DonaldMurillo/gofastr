@@ -164,8 +164,12 @@ because neither changes the physical column. (`String.Max` is the one
 validation knob that DOES reach the DDL — `VARCHAR(n)` — so it is
 compared; `Min`, `Pattern`, and `Values` do not.)
 
-Beyond column definitions, four structural invariants also panic at
-registration, because a silent violation would corrupt the shared table:
+Beyond column definitions, structural invariants also panic at
+registration, because a silent violation would corrupt the shared table
+or the rows in it. The set is whatever one physical table cannot survive
+the versions disagreeing about — read it as a rule, not a count: adding
+a check does not retire the ones already here, so a numbered list goes
+stale the moment it is written.
 
 - **Same table.** Two versions of one name MUST target the same physical
   table. Registering `posts` at `Table: "posts_v1"` and `Table: "posts_v2"`
@@ -184,6 +188,23 @@ registration, because a silent violation would corrupt the shared table:
   never be created. (A view or external table that legitimately shares a
   managed table is a different shape — distinct entity name, exempt from
   the column check by design.)
+- **Same row reachability.** Two versions must agree on which rows a
+  request can see: `MultiTenant`, `OwnerField`, and `SoftDelete` must
+  match across versions of one name. The versions share one physical
+  table and therefore one row set, so a tenant-scoped v1 beside an
+  unscoped v2 meant v2 read what v1 hid, an `OwnerField`-free version
+  read other users' rows, and a non-soft-delete version hard-deleted
+  rows the other version expects to restore. The weaker version is a
+  bypass of the stronger one; the registry rejects the mismatch at
+  registration.
+- **Same reachability gate.** For the same reason, two versions must
+  agree on `Access`, `Public`, and `CrossOwnerRead`. These decide
+  whether a request is allowed to ask at all, and they are enforced
+  per-version against that one shared table — so a v2 declaring
+  `Public: true` beside a session-required v1 makes every row of the
+  table anonymously readable, and a v2 with a blank `Access` block
+  skips the RBAC permission v1 requires. Row scoping and the gate in
+  front of it are the same property from two directions.
 - **At most one Seed.** Two versions may not both declare a `Seed` —
   functions cannot be compared for equality, so the second is ambiguous.
   The sole seed runs regardless of which version declares it.

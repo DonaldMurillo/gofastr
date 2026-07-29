@@ -17,10 +17,12 @@ import (
 // target entity is resolved and the same scrubbing the live include path
 // applies (eager_filtered.go) is applied here too — soft-deleted target
 // rows are excluded (`deleted_at IS NULL`) and Hidden columns (e.g.
-// password_hash) are never populated. Without a registry the target
-// schema is unknown, so no per-target scrub can be applied; callers that
-// load relations whose targets are soft-deletable or carry Hidden fields
-// MUST pass the registry.
+// password_hash) are never populated. Resolution is version-aware
+// (entity.ResolveTarget against the source entity) and fails closed: a
+// target that cannot be resolved is an ERROR, not a load with the scrubs
+// turned off. Without a registry the target schema is unknown, so no
+// per-target scrub can be applied; callers that load relations whose
+// targets are soft-deletable or carry Hidden fields MUST pass the registry.
 func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations []entity.Relation, ids []string, reg ...entity.Registry) (map[string]map[string]any, error) {
 	if len(ids) == 0 || len(relations) == 0 {
 		return make(map[string]map[string]any), nil
@@ -57,12 +59,28 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 
 		// Resolve the relation's target entity (when a registry is given) so
 		// we can scrub soft-deleted rows + Hidden columns, exactly like the
-		// live include path. nil target → no scrub (unknown schema).
+		// live include path.
+		//
+		// Resolution goes through entity.ResolveTarget against the SOURCE
+		// entity, not registry.Get: Get prefers the unversioned declaration
+		// and errors on ambiguity, so a v1 relation either adopted an
+		// unrelated version's Hidden set or resolved to nothing at all.
+		//
+		// And it fails CLOSED. Swallowing the error left target nil, which
+		// makes hiddenColumns(nil) empty and drops the soft-delete predicate
+		// — both scrubs silently off, which is the disclosure this block
+		// exists to prevent. An unresolvable target means we do not know the
+		// schema, so we refuse rather than serve the raw row.
 		var target *entity.Entity
 		if registry != nil {
-			if t, err := registry.Get(rel.Entity); err == nil {
-				target = t
+			t, err := entity.ResolveTarget(registry, ent, rel.Entity)
+			if err != nil {
+				return nil, fmt.Errorf("eager load %s: cannot resolve relation target %q: %w", rel.Name, rel.Entity, err)
 			}
+			if t == nil {
+				return nil, fmt.Errorf("eager load %s: relation target %q resolved to no entity", rel.Name, rel.Entity)
+			}
+			target = t
 		}
 		softDeleteFilter := ""
 		if target != nil && target.Config.SoftDelete {

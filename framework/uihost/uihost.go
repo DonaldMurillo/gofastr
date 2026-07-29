@@ -89,6 +89,7 @@ type UIHost struct {
 	sessionKey      []byte
 	actionJS        map[string]string                    // componentID → compiled JS
 	actionHandlers  map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
+	actionComps     map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
 	customCSS       string                               // extra CSS to inject (e.g. demo.css)
 	extraScripts    []string                             // extra <script src="…"> URLs to inject before </body>
 	staticDir       string                               // directory to serve static files from
@@ -707,6 +708,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 		sessionKey:     selfMintedSessionKey(),
 		actionJS:       make(map[string]string),
 		actionHandlers: make(map[string]*component.ActionRegistry),
+		actionComps:    make(map[string]component.Component),
 	}
 	for _, opt := range opts {
 		opt(ds)
@@ -741,6 +743,11 @@ func (ds *UIHost) CompileActions(componentID string, comp component.Component) s
 			js := actionsToJS(componentID, actions)
 			ds.actionJS[componentID] = js
 			ds.actionHandlers[componentID] = actions
+			// Keep the component the registry came from. The embed boot walk
+			// asks "is a component that ships a server action reachable from
+			// an embeddable screen", and that question needs the component
+			// value, not just the id it was filed under.
+			ds.actionComps[componentID] = comp
 			return js
 		}
 	}
@@ -1726,6 +1733,34 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 
 // handleSSE streams island updates to the client.
 func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
+	// A grant PRESENTED here is refused, and the refusal says why.
+	//
+	// SSE is the one item on the "works inside a frame" list that does not.
+	// EventSource is the only client of this endpoint and it cannot set a
+	// request header, so X-Gofastr-Embed — the frame's ONLY credential, a
+	// header precisely so nothing about it is ambient — can never travel on the
+	// connection. Moving it into the query string would put a bearer token in
+	// access logs, Referer and history, which is the property the header
+	// spelling exists to keep. The client half agrees: the embed runtime
+	// composition ships no session id and the content route emits no
+	// <meta name="gofastr-sse">, so nothing in a frame opens this stream.
+	//
+	// Refusing outright — rather than falling through to the cookie check
+	// below — is the same rule requireSessionOrEmbedGrant states: a presented
+	// credential's verdict is final. In a same-site framing the browser really
+	// does send the viewer's Strict cookie, and answering on it would stream
+	// one identity's island updates into a frame authenticated as another.
+	//
+	// Passive freshness inside a frame is data-fui-poll / widget Builder.Poll:
+	// an ordinary fetch, which the frame's fetch wrapper does put the grant on.
+	// See framework/docs/content/embed.md.
+	if r.Header.Get(embedGrantHeader) != "" {
+		http.Error(w, "embed: SSE cannot be authenticated by a grant — EventSource "+
+			"sends no request headers, so the frame's grant never reaches this "+
+			"endpoint. Use data-fui-poll (or widget Builder.Poll) for live updates "+
+			"inside a frame.", http.StatusUnauthorized)
+		return
+	}
 	sessionID := r.URL.Query().Get("session")
 	if sessionID == "" {
 		http.Error(w, "missing session parameter", http.StatusBadRequest)

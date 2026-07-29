@@ -185,3 +185,30 @@ func TestCSRFExemptRejectsPathTraversal(t *testing.T) {
 		t.Fatal("CSRFExempt exempted a traversal path that escapes the embed prefix")
 	}
 }
+
+// The surface prefix is exempt for the two GET routes the framework mounts
+// there and nothing else. A blanket prefix exemption handed CSRF-free status to
+// unsafe methods that do not exist yet — an app mounting its own POST under
+// /__gofastr/embed/ would have inherited an exemption argued only for
+// credential-free handshake endpoints.
+func TestCSRFExemptSurfacePrefixIsSafeMethodsOnly(t *testing.T) {
+	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodOptions} {
+		req := httptest.NewRequest(m, "/__gofastr/embed/reports", nil)
+		if !CSRFExempt(req) {
+			t.Errorf("%s on the surface prefix was not exempt — the shell and content routes would 403", m)
+		}
+	}
+	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		req := httptest.NewRequest(m, "/__gofastr/embed/reports/export", nil)
+		if CSRFExempt(req) {
+			t.Errorf("%s under the surface prefix was exempted from CSRF", m)
+		}
+	}
+	// The grant branch is separate and stays: an embed's island RPC posts to an
+	// ordinary route with the grant header and no cookie.
+	req := httptest.NewRequest(http.MethodPost, "/__gofastr/embed/reports/export", nil)
+	req.Header.Set(GrantHeader, "emg_whatever")
+	if !CSRFExempt(req) {
+		t.Error("a grant-bearing POST lost its exemption — that branch is justified on its own terms")
+	}
+}

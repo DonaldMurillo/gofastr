@@ -152,6 +152,94 @@ func TestUnion_RejectsMixedManagedUnmanaged(t *testing.T) {
 	}.WithTimestamps(false))
 }
 
+// TestUnion_RejectsMismatchedRowScopes (F12): MultiTenant, OwnerField and
+// SoftDelete decide WHICH ROWS of the shared table a request may see or
+// destroy, and each is enforced per-version at query time. An unscoped version
+// beside a scoped one is a read of every tenant's (or every user's) rows
+// through the weaker prefix; a hard-delete version physically removes rows the
+// soft-delete version expects to be able to restore.
+//
+// Asserted at the Registry rather than through GroupEntity: Register is where
+// checkVersionCompat runs, and the error carries more than the panic text.
+func TestUnion_RejectsMismatchedRowScopes(t *testing.T) {
+	titleOnly := []schema.Field{{Name: "title", Type: schema.String}}
+	withOwner := []schema.Field{
+		{Name: "title", Type: schema.String},
+		{Name: "owner_id", Type: schema.String, Hidden: true},
+	}
+	tests := []struct {
+		name string
+		v1   entity.EntityConfig
+		v2   entity.EntityConfig
+		want string
+	}{
+		{
+			name: "tenant-scoped beside unscoped",
+			v1:   entity.EntityConfig{Fields: titleOnly},
+			v2:   entity.EntityConfig{Fields: titleOnly, MultiTenant: true},
+			want: "tenant scoping",
+		},
+		{
+			name: "soft-delete beside hard-delete",
+			v1:   entity.EntityConfig{Fields: titleOnly},
+			v2:   entity.EntityConfig{Fields: titleOnly, SoftDelete: true},
+			want: "delete semantics",
+		},
+		{
+			name: "owner-scoped beside unscoped",
+			v1:   entity.EntityConfig{Fields: withOwner},
+			v2:   entity.EntityConfig{Fields: withOwner, OwnerField: "owner_id"},
+			want: "owner scoping",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := NewRegistry()
+			v1 := entity.Define("records", tc.v1.WithTimestamps(false))
+			v1.Version = "/api/v1"
+			v2 := entity.Define("records", tc.v2.WithTimestamps(false))
+			v2.Version = "/api/v2"
+			if err := reg.Register(v1); err != nil {
+				t.Fatalf("register v1: %v", err)
+			}
+			err := reg.Register(v2)
+			if err == nil {
+				t.Fatal("registry accepted versions with incompatible row-isolation policy")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error should name %q:\n%s", tc.want, err)
+			}
+		})
+	}
+}
+
+// The mirror of F12: versions that AGREE on all three still register.
+func TestUnion_AcceptsMatchingRowScopes(t *testing.T) {
+	cfg := func() entity.EntityConfig {
+		return entity.EntityConfig{
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String},
+				{Name: "owner_id", Type: schema.String, Hidden: true},
+			},
+			MultiTenant: true,
+			OwnerField:  "owner_id",
+			SoftDelete:  true,
+		}
+	}
+	reg := NewRegistry()
+	v1 := entity.Define("records", cfg().WithTimestamps(false))
+	v1.Version = "/api/v1"
+	v2 := entity.Define("records", cfg().WithTimestamps(false))
+	v2.Version = "/api/v2"
+	if err := reg.Register(v1); err != nil {
+		t.Fatalf("register v1: %v", err)
+	}
+	if err := reg.Register(v2); err != nil {
+		t.Fatalf("versions agreeing on row scoping must register: %v", err)
+	}
+}
+
 // --- helpers ---
 
 // expectPanic returns a deferred func that fails the test if no panic occurred.

@@ -267,26 +267,38 @@ func heroCodeTabs() render.HTML {
 
 // measuredRuntimeGz is the gzipped size of the core client runtime,
 // measured at first render from the same embedded source this site
-// serves — e.g. "12.2 KB". BestCompression matches the size-budget test
-// (core-ui/runtime/budget_test.go) so the page and the gate report the
-// same number.
-var measuredRuntimeGz = sync.OnceValue(func() string {
+// serves — e.g. "12.0 KB". DefaultCompression matches the size-budget
+// test (core-ui/runtime/budget_test.go), so the page and the gate report
+// the same number.
+var runtimeGzBytes = sync.OnceValue(func() int {
 	src, err := runtime.RuntimeJS()
 	if err != nil {
-		return "n/a"
+		return 0
 	}
 	var buf bytes.Buffer
-	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	zw, err := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
 	if err != nil {
-		return "n/a"
+		return 0
 	}
 	if _, err := zw.Write([]byte(src)); err != nil {
-		return "n/a"
+		return 0
 	}
 	if err := zw.Close(); err != nil {
+		return 0
+	}
+	return buf.Len()
+})
+
+// The byte count is kept separate from its rendering because the two levels
+// this could be measured at differ by only 30 bytes, and both round to
+// "12.0 KB" — so a parity test written against the STRING cannot tell them
+// apart. numbers_gate_test.go compares runtimeGzBytes directly.
+var measuredRuntimeGz = sync.OnceValue(func() string {
+	n := runtimeGzBytes()
+	if n == 0 {
 		return "n/a"
 	}
-	return fmt.Sprintf("%.1f KB", float64(buf.Len())/1024)
+	return fmt.Sprintf("%.1f KB", float64(n)/1024)
 })
 
 // embeddedDocCount counts the docs corpus this binary carries, minus the

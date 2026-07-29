@@ -17,7 +17,7 @@ component catalog, "what does the system look like with this theme".
 ```go
 import "github.com/DonaldMurillo/gofastr/framework/gallery"
 
-// Iterate the catalog (139 entries, 16 categories, display order).
+// Iterate the catalog (141 entries, 16 categories, display order).
 for _, e := range gallery.Catalog {
     fmt.Println(e.Slug, e.Name, e.Category)
     html := e.Demo() // render.HTML — self-contained, no host wiring
@@ -32,17 +32,18 @@ categories := gallery.Categories()
 // Helpers.
 gallery.PkgForSlug("button")          // "framework/ui" — for pkg.go.dev links
 gallery.IsNoteOnly("datatable")       // true — needs backend wiring
-gallery.CodeSnippets["button"]        // example Go source
+gallery.CodeSnippet("modal")          // example Go source for that slug
 gallery.CategorySlug("Buttons & links") // "buttons-links" — fragment-safe
 ```
 
 ## What's where
 
 - **`Catalog`** — the source-of-truth `[]Entry`. Every host iterates this.
-- **`CodeSnippets`** — per-slug example Go source for showcase pages.
-- **`NoteOnlySlugs`** — components whose showcase shows an explanatory note
-  instead of a live demo (need per-page backend wiring: DataTable,
-  ConfirmAction, Gallery, Lightbox, etc.).
+- **`CodeSnippet`** — `func CodeSnippet(slug string) string` — a slug's example Go source. The map it reads is private.
+- **`IsNoteOnly`** — `func IsNoteOnly(slug string) bool` — true when a
+  component's showcase renders an explanatory note instead of a live demo
+  (it needs per-page backend wiring: DataTable, ConfirmAction, Gallery,
+  Lightbox, etc.). The set itself is private; this is the only accessor.
 - **`PkgForSlug`** — maps a slug to its Go source package for deep-linking
   the showcase header to pkg.go.dev.
 - **Demo support**: `InitialKanbanColumns`, `RenderKanbanBoard`,
