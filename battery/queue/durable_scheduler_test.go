@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -63,6 +64,64 @@ func occurrenceStatuses(t *testing.T, q *DBQueue) map[string]int {
 		t.Fatalf("occurrence rows: %v", err)
 	}
 	return got
+}
+
+func TestScheduleRejectsBadPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload any
+	}{
+		{name: "unsupported", payload: make(chan string)},
+		{name: "raw", payload: json.RawMessage(`{"broken":`)},
+		{name: "bytes", payload: []byte(`{"broken":`)},
+		{name: "string", payload: `{"broken":`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openDurableSchedulerDB(t)
+			q := newDurableTestQueue(t, db)
+			scheduler, err := NewDurableScheduler(q, DurableSchedulerConfig{OwnerID: "bad-payload"})
+			if err != nil {
+				t.Fatalf("NewDurableScheduler: %v", err)
+			}
+
+			err = scheduler.Every("bad-payload", time.Minute).
+				Job("email", tc.payload).
+				RegisterAt(time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+			if err == nil {
+				t.Fatal("RegisterAt accepted an invalid payload")
+			}
+			var count int
+			if err := db.QueryRow("SELECT COUNT(*) FROM " + q.schedulerSchedulesTable()).
+				Scan(&count); err != nil {
+				t.Fatalf("count schedules: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("invalid payload persisted %d schedules", count)
+			}
+		})
+	}
+}
+
+func TestScheduleStoresNilAsNull(t *testing.T) {
+	db := openDurableSchedulerDB(t)
+	q := newDurableTestQueue(t, db)
+	scheduler, err := NewDurableScheduler(q, DurableSchedulerConfig{OwnerID: "nil-payload"})
+	if err != nil {
+		t.Fatalf("NewDurableScheduler: %v", err)
+	}
+	if err := scheduler.Every("nil-payload", time.Minute).
+		Job("email", nil).
+		RegisterAt(time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("RegisterAt: %v", err)
+	}
+	var payload string
+	if err := db.QueryRow("SELECT payload FROM "+q.schedulerSchedulesTable()+" WHERE id=$1", "nil-payload").
+		Scan(&payload); err != nil {
+		t.Fatalf("read payload: %v", err)
+	}
+	if payload != "null" {
+		t.Fatalf("payload = %q, want null", payload)
+	}
 }
 
 func TestDurableSchedulerReplicasEnqueueOneOccurrence(t *testing.T) {
