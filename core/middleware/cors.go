@@ -89,29 +89,19 @@ func CORS(cfg CORSConfig) Middleware {
 			}
 
 			// SECURITY: wildcard ACAO is incompatible with credentialed
-			// responses — browsers reject the combo. Strip the header so
-			// a downstream handler can't accidentally enable it.
-			if allowAll {
-				next.ServeHTTP(stripCredsWriter{ResponseWriter: w}, r)
-				// A handler that sets the header and returns without
-				// writing reaches none of the wrapper's strip points:
-				// net/http's implicit WriteHeader(200) runs on the real
-				// response object, not on the wrapper. Nothing has been
-				// committed to the wire yet at this point, so a final
-				// strip closes that gap. Harmless when the handler did
-				// write — the header map was already cleaned then.
-				w.Header().Del("Access-Control-Allow-Credentials")
-				return
-			}
-			next.ServeHTTP(w, r)
+			// responses — browsers reject the combo. Defer the final check
+			// so it also runs while a panicking handler unwinds to Recovery.
+			sw := stripCredsWriter{ResponseWriter: w}
+			defer sw.stripCredentialsForWildcard()
+			next.ServeHTTP(sw, r)
 		})
 	}
 }
 
 // stripCredsWriter prevents Access-Control-Allow-Credentials from being
-// emitted by a downstream handler when the configured ACAO is "*". Browsers
-// reject that combination, and a handler that sets it is asking for a
-// credentialed cross-origin read.
+// emitted when the response's actual ACAO value is "*". A downstream handler
+// can replace the value set from config, so the emitted header is the only
+// reliable gate.
 //
 // It forwards Flush and Hijack like every other wrapper in this package
 // (metrics, logging, tracing, timeout). It did not, so behind a wildcard CORS
@@ -122,20 +112,26 @@ type stripCredsWriter struct {
 	http.ResponseWriter
 }
 
+func (s stripCredsWriter) stripCredentialsForWildcard() {
+	if s.ResponseWriter.Header().Get("Access-Control-Allow-Origin") == "*" {
+		s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
+	}
+}
+
 func (s stripCredsWriter) WriteHeader(code int) {
-	s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
+	s.stripCredentialsForWildcard()
 	s.ResponseWriter.WriteHeader(code)
 }
 
 func (s stripCredsWriter) Write(b []byte) (int, error) {
-	s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
+	s.stripCredentialsForWildcard()
 	return s.ResponseWriter.Write(b)
 }
 
 // Flush strips before flushing: a streaming handler that sets the header and
 // flushes before its first Write would otherwise commit it to the wire.
 func (s stripCredsWriter) Flush() {
-	s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
+	s.stripCredentialsForWildcard()
 	if f, ok := s.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

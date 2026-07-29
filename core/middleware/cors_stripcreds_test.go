@@ -69,3 +69,38 @@ func TestStripCredsCoversWrittenResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestCORSStripsCredsAfterPanic(t *testing.T) {
+	h := Recovery()(CORS(CORSConfig{AllowedOrigins: []string{"*"}})(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			panic("boom")
+		})))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/thing", nil)
+	req.Header.Set("Origin", "https://app.example")
+	h.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("credentials header survived panic recovery with wildcard ACAO: %q", got)
+	}
+}
+
+func TestCORSStripsHandlerWildcard(t *testing.T) {
+	h := CORS(CORSConfig{AllowedOrigins: []string{"https://app.example"}})(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.WriteHeader(http.StatusOK)
+		}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/thing", nil)
+	req.Header.Set("Origin", "https://app.example")
+	h.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("credentials header survived handler-emitted wildcard ACAO: %q", got)
+	}
+}
