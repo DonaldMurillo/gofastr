@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -55,16 +56,49 @@ func TestRegistryNamedConfigsResolvesVersionedEntity(t *testing.T) {
 	}
 }
 
-// TestSchemaHashIncludesVersion pins that Version is part of the hash
-// identity: two entities with the same fields but different route prefixes
-// produce different hashes. Without this, a version rename (same fields,
-// new mount point) would not signal drift even though every generated
-// client URL changed.
-func TestSchemaHashIncludesVersion(t *testing.T) {
+// The mount point is not part of the hash identity. It was, and that made
+// the drift check fire forever on any app using a route group: the serving
+// side reads Version off the entity (App.GroupEntity stamps the group
+// prefix) while the generation side only ever sees a declaration, which has
+// no mount. The two halves could not agree, so regenerating never cleared
+// the warning.
+func TestSchemaHashIgnoresMountPoint(t *testing.T) {
 	base := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
 	versioned := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig(), Version: "/api/v1"}})
-	if base == versioned {
-		t.Fatal("versioned entity hashed same as unversioned — Version not in hash identity")
+	if base != versioned {
+		t.Fatal("same schema hashed differently because of its mount point")
+	}
+}
+
+// Versions that expose the SAME shape collapse to one entry, so a live
+// registry holding two mounts still matches a manifest built from the one
+// declaration behind them.
+func TestSchemaHashCollapsesIdenticalVersions(t *testing.T) {
+	cfg := postsConfig()
+	one := SchemaHash([]NamedConfig{{Name: "posts", Config: cfg}})
+	two := SchemaHash([]NamedConfig{
+		{Name: "posts", Config: cfg, Version: "/api/v1"},
+		{Name: "posts", Config: cfg, Version: "/api/v2"},
+	})
+	if one != two {
+		t.Fatal("two mounts of one unchanged schema did not match the single declaration behind them")
+	}
+}
+
+// Versions that expose DIFFERENT shapes must still signal drift — that is
+// the case the check exists for, and collapsing identical ones must not
+// swallow it.
+func TestSchemaHashKeepsDivergentVersions(t *testing.T) {
+	v2 := postsConfig()
+	v2.Fields = append(v2.Fields, schema.Field{Name: "subtitle", Type: schema.String})
+
+	one := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
+	diverged := SchemaHash([]NamedConfig{
+		{Name: "posts", Config: postsConfig(), Version: "/api/v1"},
+		{Name: "posts", Config: v2, Version: "/api/v2"},
+	})
+	if one == diverged {
+		t.Fatal("a version exposing an extra field hashed the same as one that does not")
 	}
 }
 
