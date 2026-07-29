@@ -497,15 +497,24 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 }
 
 // checkRowIsolationCompat rejects two versions of one entity name that
-// disagree on MultiTenant, OwnerField, or SoftDelete (F12).
+// disagree on who may reach the shared table's rows.
 //
-// These three are not cosmetic per-version options: they are the predicates
-// CRUD adds to every SELECT/UPDATE/DELETE against the shared table. Letting
-// them differ makes the weaker version a bypass of the stronger one — read
-// another tenant's rows through /api/v2, read another user's rows through the
-// version without OwnerField, hard-delete rows the soft-delete version
-// expects to be able to restore. The framework is fail-closed about row
-// scoping everywhere else; a version prefix must not be the way around it.
+// None of these are cosmetic per-version options. MultiTenant, OwnerField and
+// SoftDelete are the predicates CRUD adds to every SELECT/UPDATE/DELETE;
+// Access, Public and CrossOwnerRead are the gates it runs before issuing one.
+// Letting any of them differ makes the weaker version a bypass of the stronger
+// one — read another tenant's rows through /api/v2, read another user's rows
+// through the version without OwnerField, hard-delete rows the soft-delete
+// version expects to restore, skip the RBAC permission the other version
+// requires, or read the whole table anonymously through a version that
+// declared Public. The framework is fail-closed about row scoping everywhere
+// else; a version prefix must not be the way around it.
+//
+// Note the deliberate line between this and conflictingColumns, which
+// permits Hidden/WireName/ReadOnly to differ: per-version COLUMN projection is
+// a supported feature (see framework/experimental/apiversions), per-version
+// ROW reachability is not. Visibility of a field is presentation; visibility
+// of a row is authorization.
 func checkRowIsolationCompat(existing, newEnt *entity.Entity) error {
 	mismatch := func(setting, existingVal, newVal string) error {
 		return fmt.Errorf(
@@ -532,7 +541,63 @@ func checkRowIsolationCompat(existing, newEnt *entity.Entity) error {
 			softDeleteLabel(existing.Config.SoftDelete),
 			softDeleteLabel(newEnt.Config.SoftDelete))
 	}
+	if existing.Config.Public != newEnt.Config.Public {
+		return mismatch("public access",
+			publicLabel(existing.Config.Public),
+			publicLabel(newEnt.Config.Public))
+	}
+	if existing.Config.Access != newEnt.Config.Access {
+		return mismatch("access control",
+			accessLabel(existing.Config.Access),
+			accessLabel(newEnt.Config.Access))
+	}
+	if existing.Config.CrossOwnerRead != newEnt.Config.CrossOwnerRead {
+		return mismatch("cross-owner read",
+			crossOwnerReadLabel(existing.Config.CrossOwnerRead),
+			crossOwnerReadLabel(newEnt.Config.CrossOwnerRead))
+	}
 	return nil
+}
+
+// publicLabel describes an entity's Public flag for the mismatch error.
+// Public is the full opt-out of the secure-by-default session requirement, so
+// a version that sets it while its sibling does not is an anonymous read of
+// the sibling's rows.
+func publicLabel(public bool) string {
+	if public {
+		return "public (no session required)"
+	}
+	return "session-required"
+}
+
+// accessLabel describes an AccessControl block for the mismatch error. The
+// whole struct is compared, not just Declared(): two versions that both gate
+// reads but on DIFFERENT permissions are the same bypass as one that does not
+// gate at all.
+func accessLabel(a entity.AccessControl) string {
+	if !a.Declared() {
+		return "un-gated"
+	}
+	parts := make([]string, 0, 4)
+	for _, p := range []struct{ op, perm string }{
+		{"read", a.Read}, {"create", a.Create},
+		{"update", a.Update}, {"delete", a.Delete},
+	} {
+		if p.perm != "" {
+			parts = append(parts, p.op+"="+p.perm)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// crossOwnerReadLabel describes the CrossOwnerRead permission for the
+// mismatch error. It lifts owner scoping for whoever holds it, so a version
+// that names one reads every owner's rows through that prefix.
+func crossOwnerReadLabel(perm string) string {
+	if perm == "" {
+		return "owner-scoped"
+	}
+	return "lifted by " + perm
 }
 
 // multiTenantLabel renders the tenant-scoping posture for error messages.
