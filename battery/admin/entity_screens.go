@@ -442,8 +442,13 @@ func (b *Battery) relationLabelMaps(ctx context.Context, ent *entity.Entity) map
 	}
 	out := make(map[string]map[string]string, len(rels))
 	for fkField, targetName := range rels {
-		target, err := b.registry.Get(targetName)
-		if err != nil {
+		// Resolve at the SOURCE entity's version. b.registry.Get reports an
+		// ambiguity error for a name mounted under several versions, and the
+		// `continue` below turns that into a silently degraded screen —
+		// relation labels fall back to raw UUIDs and relation pickers to bare
+		// text inputs, with nothing in the log to explain it.
+		target, err := entity.ResolveTarget(b.registry, ent, targetName)
+		if err != nil || target == nil {
 			continue
 		}
 		q := url.Values{}
@@ -594,8 +599,13 @@ func (b *Battery) relationOptions(ctx context.Context, ent *entity.Entity, selec
 	}
 	out := make(map[string][]ui.SelectOption, len(rels))
 	for fkField, targetName := range rels {
-		target, err := b.registry.Get(targetName)
-		if err != nil {
+		// Resolve at the SOURCE entity's version. b.registry.Get reports an
+		// ambiguity error for a name mounted under several versions, and the
+		// `continue` below turns that into a silently degraded screen —
+		// relation labels fall back to raw UUIDs and relation pickers to bare
+		// text inputs, with nothing in the log to explain it.
+		target, err := entity.ResolveTarget(b.registry, ent, targetName)
+		if err != nil || target == nil {
 			continue
 		}
 		q := url.Values{}

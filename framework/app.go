@@ -2342,7 +2342,14 @@ func (a *App) warnUnresolvableRelations() {
 	log := a.Logger()
 	for _, ent := range a.Registry.AllSorted() {
 		for _, rel := range ent.Config.Relations {
-			if _, err := a.Registry.Get(rel.Entity); err == nil {
+			// Resolve the way the request path does (framework/crud's
+			// include.go and nested_filter.go both use ResolveTarget), or the
+			// warning contradicts the runtime: Registry.Get reports an
+			// ambiguity error for a name mounted under several versions, which
+			// is exactly what App.GroupEntity produces, while ResolveTarget
+			// picks the target matching the SOURCE entity's version and
+			// resolves it fine.
+			if _, err := entity.ResolveTarget(a.Registry, ent, rel.Entity); err == nil {
 				continue
 			}
 			log.Warn("relation target is not a registered entity; ?include= on it will be refused",
