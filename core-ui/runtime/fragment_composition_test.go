@@ -5,31 +5,37 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// fragmentSymbolDecl matches a top-level (IIFE-body-level) function/const/let
-// declaration inside the runtime IIFE. Indent is exactly two spaces — the
-// indent of every declaration that lives directly inside `(() => { … })`.
-// Deeper-indented declarations (block-scoped helpers like _kilnOK inside the
-// delegator `if`, or consts inside a function body) are intentionally NOT
-// matched: they are not part of the IIFE's top-level symbol table and are not
-// what the spec's "every top-level symbol" bar protects against.
-//
-// Method shorthand inside the namespace literal (`navigate(p){…}`) is also not
-// matched — it is an object property, not a function/const/let declaration.
-// The namespace members are guarded separately by the attr/doc parity gate.
+// fragmentSymbolDecl matches function/const/let/var declarations at every
+// indentation depth. boot-embed has a nested IIFE, and rpc-stub declares its
+// event-local values inside callbacks, so a fixed two-space prefix would leave
+// both fragments unrepresented in the manifest.
 var fragmentSymbolDecl = regexp.MustCompile(
-	`(?m)^  (?:async\s+)?(?:function|const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)`,
+	`(?m)^( +)(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)`,
 )
 
-// declaredSymbols returns the set of top-level IIFE-body declaration names
-// found in src. This is the "symbol table" the symbol-completeness gate
-// compares between the pre-split runtime.js and the composed output.
+// declaredSymbols returns every declaration name found in src, regardless of
+// nesting. Anti-vacuity checks compare names; the manifest also records each
+// declaration's indentation so nesting changes remain visible.
 func declaredSymbols(src string) map[string]struct{} {
 	out := map[string]struct{}{}
 	for _, m := range fragmentSymbolDecl.FindAllStringSubmatch(src, -1) {
+		out[m[2]] = struct{}{}
+	}
+	return out
+}
+
+var iifeBodySymbolDecl = regexp.MustCompile(
+	`(?m)^  (?:async\s+)?(?:function|const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)`,
+)
+
+func iifeBodySymbols(src string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, m := range iifeBodySymbolDecl.FindAllStringSubmatch(src, -1) {
 		out[m[1]] = struct{}{}
 	}
 	return out
@@ -40,10 +46,10 @@ func declaredSymbols(src string) map[string]struct{} {
 const symbolManifestPath = "frag/SYMBOLS.txt"
 
 // fragmentSymbolIndex renders the manifest form of what frag/*.js declares
-// right now: one "<fragment>\t<symbol>" line per top-level declaration,
-// sorted. Every fragment is covered, not just the ones the `full`
-// composition uses — losing a symbol out of rpc-stub or boot-embed breaks
-// the static / embed bundles just as badly.
+// right now: one "<fragment>\t<indent>\t<symbol>" line per declaration,
+// sorted. Declarations at every indentation depth are included, so nested
+// fragments such as boot-embed and callback-only fragments such as rpc-stub
+// cannot disappear from the gate.
 func fragmentSymbolIndex(t *testing.T) string {
 	t.Helper()
 	entries, err := fs.ReadDir(fragFS, "frag")
@@ -60,17 +66,36 @@ func fragmentSymbolIndex(t *testing.T) string {
 			t.Fatalf("read fragment %q: %v", e.Name(), err)
 		}
 		frag := strings.TrimSuffix(e.Name(), ".js")
-		for name := range declaredSymbols(string(src)) {
-			lines = append(lines, frag+"\t"+name)
+		for _, m := range fragmentSymbolDecl.FindAllStringSubmatch(string(src), -1) {
+			lines = append(lines, frag+"\t"+strconv.Itoa(len(m[1]))+"\t"+m[2])
 		}
 	}
 	sort.Strings(lines)
 	return symbolManifestHeader + strings.Join(lines, "\n") + "\n"
 }
 
-const symbolManifestHeader = `# Top-level symbol manifest for core-ui/runtime/frag/*.js — the reference
-# for TestComposedRuntimeIsSymbolComplete. One "<fragment>\t<symbol>" line
-# per IIFE-body-level function/const/let/var declaration, sorted.
+func TestEveryFragmentHasSymbols(t *testing.T) {
+	entries, err := fs.ReadDir(fragFS, "frag")
+	if err != nil {
+		t.Fatalf("read frag dir: %v", err)
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".js") {
+			continue
+		}
+		src, err := fs.ReadFile(fragFS, "frag/"+e.Name())
+		if err != nil {
+			t.Fatalf("read fragment %q: %v", e.Name(), err)
+		}
+		if len(declaredSymbols(string(src))) == 0 {
+			t.Errorf("%s contributes no symbols, so the manifest gate would pass vacuously", e.Name())
+		}
+	}
+}
+
+const symbolManifestHeader = `# Symbol manifest for core-ui/runtime/frag/*.js — the reference for
+# TestComposedRuntimeIsSymbolComplete. One "<fragment>\t<indent>\t<symbol>"
+# line per function/const/let/var declaration at any indentation depth, sorted.
 #
 # This file is the gate's whole point: it is checked in, so DELETING a
 # declaration from a fragment shows up here as a removed line that a human
@@ -82,22 +107,21 @@ const symbolManifestHeader = `# Top-level symbol manifest for core-ui/runtime/fr
 `
 
 // TestComposedRuntimeIsSymbolComplete guards against silent code loss in the
-// fragments: every top-level function/const/let they declare is pinned in a
-// checked-in manifest, and a declaration that disappears fails the build.
+// fragments: every function/const/let/var declaration is pinned by fragment,
+// indentation depth, and name in a checked-in manifest.
 //
-// What it catches: deleting (or typo-renaming) a top-level declaration in any
-// frag/*.js. Regenerating runtime.js with GOFASTR_UPDATE_RUNTIME_JS=1 does not
-// launder that away — the manifest is a separate artifact with a separate
-// regeneration flag, so the loss stays visible as a removed line in the diff
-// that a reviewer has to accept.
+// What it catches: deleting or typo-renaming a declaration in any frag/*.js,
+// including declarations nested inside functions or callbacks. Regenerating
+// runtime.js with GOFASTR_UPDATE_RUNTIME_JS=1 does not launder that away — the
+// manifest is a separate artifact with a separate regeneration flag, so the
+// loss stays visible as a removed line in the diff that a reviewer has to
+// accept.
 //
 // What it does NOT catch, and never claimed to: deleting the BODY of a
-// declaration while keeping its name; anything block-scoped or nested (the
-// regex deliberately matches only two-space indent, the IIFE body's own
-// level); object-literal method shorthand on the namespace (the attr/doc
-// parity gate covers those); and any semantic regression at all. It is a
-// "nothing vanished" check, not a behaviour check — the chromedp e2e suite is
-// what covers behaviour.
+// declaration while keeping its name; object-literal method shorthand on the
+// namespace (the attr/doc parity gate covers those); or any semantic
+// regression. It is a "nothing vanished" check, not a behaviour check — the
+// chromedp e2e suite is what covers behaviour.
 //
 // Its previous reference was `git show HEAD:core-ui/runtime/runtime.js`, which
 // stopped meaning anything the moment runtime.js became a generated artifact
@@ -123,35 +147,41 @@ func TestComposedRuntimeIsSymbolComplete(t *testing.T) {
 		return
 	}
 
-	inHave := map[string]bool{}
+	inHave := map[string]int{}
 	for _, l := range manifestLines(have) {
-		inHave[l] = true
+		inHave[l]++
 	}
 	var gone, added []string
 	for _, l := range manifestLines(want) {
-		if !inHave[l] {
+		if inHave[l] == 0 {
 			gone = append(gone, l)
+			continue
 		}
+		inHave[l]--
 	}
-	inWant := map[string]bool{}
+	inWant := map[string]int{}
 	for _, l := range manifestLines(want) {
-		inWant[l] = true
+		inWant[l]++
 	}
 	for _, l := range manifestLines(have) {
-		if !inWant[l] {
+		if inWant[l] == 0 {
 			added = append(added, l)
+			continue
 		}
+		inWant[l]--
 	}
 	if len(gone) > 0 {
-		t.Errorf("%d top-level symbol(s) pinned in %s are GONE from frag/*.js — either "+
+		t.Errorf("%d symbol declaration(s) pinned in %s are GONE from frag/*.js — either "+
 			"code was silently lost, or the removal is deliberate and the manifest has to say so:\n  %s",
 			len(gone), symbolManifestPath, strings.Join(gone, "\n  "))
 	}
 	if len(added) > 0 {
-		t.Errorf("%d top-level symbol(s) in frag/*.js are missing from %s:\n  %s",
+		t.Errorf("%d symbol declaration(s) in frag/*.js are missing from %s:\n  %s",
 			len(added), symbolManifestPath, strings.Join(added, "\n  "))
 	}
-	t.Logf("Regenerate with:\n  GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete")
+	if len(gone) == 0 {
+		t.Logf("Regenerate with:\n  GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete")
+	}
 }
 
 // manifestLines strips comments and blanks so the diff below reports symbols,
@@ -220,7 +250,7 @@ func TestEmbedCompositionOmitsNav(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read nav fragment: %v", err)
 	}
-	navSymbols := declaredSymbols(string(navSrc))
+	navSymbols := iifeBodySymbols(string(navSrc))
 	if len(navSymbols) == 0 {
 		t.Fatal("no symbols parsed out of nav.js — the guard below would pass vacuously")
 	}
@@ -229,7 +259,7 @@ func TestEmbedCompositionOmitsNav(t *testing.T) {
 	if err != nil {
 		t.Fatalf("composeEmbed: %v", err)
 	}
-	composed := declaredSymbols(embedded)
+	composed := iifeBodySymbols(embedded)
 
 	var leaked []string
 	for name := range navSymbols {

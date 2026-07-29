@@ -1,6 +1,6 @@
-# Top-level symbol manifest for core-ui/runtime/frag/*.js — the reference
-# for TestComposedRuntimeIsSymbolComplete. One "<fragment>\t<symbol>" line
-# per IIFE-body-level function/const/let/var declaration, sorted.
+# Symbol manifest for core-ui/runtime/frag/*.js — the reference for
+# TestComposedRuntimeIsSymbolComplete. One "<fragment>\t<indent>\t<symbol>"
+# line per function/const/let/var declaration at any indentation depth, sorted.
 #
 # This file is the gate's whole point: it is checked in, so DELETING a
 # declaration from a fragment shows up here as a removed line that a human
@@ -9,66 +9,356 @@
 # Regenerate (only when the change to the fragments is intentional):
 #   GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete
 #
-boot	_bootstrapComponentCSS
-boot	_initialPass
-boot	_injectSignalAria
-boot	_moduleManifest
-boot	_moduleMarkers
-boot	_modulePromises
-boot	_prefetch
-boot	_prefetchAttempted
-boot	_runMountActions
-boot	_scanForModules
-boot	_scheduleIdleModules
-boot	hydrate
-boot	hydrated
-boot	loadModule
-boot	setupMutationObserver
-kernel	M
-kernel	_dc
-kernel	_locks
-kernel	_readInlineJSON
-kernel	_single
-kernel	closestAttr
-kernel	collectParams
-kernel	currentPath
-kernel	doc
-kernel	docEl
-kernel	handlers
-kernel	registerRoutes
-kernel	routes
-kernel	state
-nav	MAX_CACHE_SIZE
-nav	_announceTimer
-nav	_pendingNav
-nav	_showNavToast
-nav	announceRoute
-nav	cacheScreen
-nav	domLayout
-nav	findCommonScreenGroup
-nav	getCachedScreen
-nav	initialMain
-nav	isInternalLink
-nav	isKnownRoute
-nav	layoutWillChange
-nav	loadPage
-nav	mergeSeedFromDOM
-nav	resolvePath
-nav	screenCache
-nav	scrollToHash
-nav	sseMeta
-nav	swapLayoutShell
-nav	swapMainContent
-nav	swapScreenGroupContent
-nav	updateActiveLink
-rpc	_csrf
-rpc	_idt
-rpc	_rpcInFlight
-rpc	dispatchRPC
-signals	isReservedSignalKey
-widgets-boot	_installEagerWidgetDelegators
-widgets-boot	_wcr
-widgets-boot	_wready
-widgets-boot-static	_installEagerWidgetDelegators
-widgets-boot-static	_wcr
-widgets-boot-static	_wready
+boot	10	cfg
+boot	2	_bootstrapComponentCSS
+boot	2	_initialPass
+boot	2	_injectSignalAria
+boot	2	_moduleManifest
+boot	2	_moduleMarkers
+boot	2	_modulePromises
+boot	2	_prefetch
+boot	2	_prefetchAttempted
+boot	2	_runMountActions
+boot	2	_scanForModules
+boot	2	_scheduleIdleModules
+boot	2	hydrate
+boot	2	hydrated
+boot	2	loadModule
+boot	2	setupMutationObserver
+boot	4	G
+boot	4	G
+boot	4	G
+boot	4	G
+boot	4	action
+boot	4	componentId
+boot	4	el
+boot	4	idleQueue
+boot	4	key
+boot	4	names
+boot	4	node
+boot	4	observeNode
+boot	4	path
+boot	4	rIC
+boot	4	scope
+boot	4	scope
+boot	4	scriptSrc
+boot	4	setupHydration
+boot	4	target
+boot	4	target
+boot	6	G
+boot	6	action
+boot	6	action
+boot	6	componentId
+boot	6	componentId
+boot	6	el
+boot	6	id
+boot	6	mode
+boot	6	names
+boot	6	s
+boot	6	script
+boot	6	target
+boot	6	url
+boot	6	v
+boot	8	G
+boot	8	params
+boot-embed	4	PROTO
+boot-embed	4	REQUEST_TIMEOUT_MS
+boot-embed	4	_fetch
+boot-embed	4	applyGrant
+boot-embed	4	blockFormNavigation
+boot-embed	4	blockLinkNavigation
+boot-embed	4	cfg
+boot-embed	4	exchange
+boot-embed	4	expire
+boot-embed	4	fail
+boot-embed	4	grant
+boot-embed	4	heightPending
+boot-embed	4	lastHeight
+boot-embed	4	loadContent
+boot-embed	4	meta
+boot-embed	4	parentOrigin
+boot-embed	4	post
+boot-embed	4	refresh
+boot-embed	4	refreshFailures
+boot-embed	4	refreshTimer
+boot-embed	4	reportHeight
+boot-embed	4	root
+boot-embed	4	showBlockedNavigation
+boot-embed	4	started
+boot-embed	4	withDeadline
+boot-embed	6	NS
+boot-embed	6	code
+boot-embed	6	controller
+boot-embed	6	d
+boot-embed	6	delay
+boot-embed	6	enctype
+boot-embed	6	form
+boot-embed	6	headers
+boot-embed	6	href
+boot-embed	6	link
+boot-embed	6	ms
+boot-embed	6	noHistory
+boot-embed	6	opts
+boot-embed	6	target
+boot-embed	6	timeout
+boot-embed	6	url
+boot-embed	8	G
+boot-embed	8	backoff
+boot-embed	8	body
+boot-embed	8	body
+boot-embed	8	h
+boot-embed	8	html
+boot-embed	8	notice
+boot-embed	8	opened
+boot-embed	8	original
+boot-embed	8	r
+boot-embed	8	r
+boot-embed	8	r
+boot-embed	8	rect
+boot-embed	8	surfacePath
+kernel	10	n
+kernel	2	M
+kernel	2	_dc
+kernel	2	_locks
+kernel	2	_readInlineJSON
+kernel	2	_single
+kernel	2	closestAttr
+kernel	2	collectParams
+kernel	2	currentPath
+kernel	2	doc
+kernel	2	docEl
+kernel	2	handlers
+kernel	2	registerRoutes
+kernel	2	routes
+kernel	2	state
+kernel	4	c
+kernel	4	el
+kernel	4	node
+kernel	4	params
+kernel	4	r
+kernel	4	sg
+kernel	4	ua
+kernel	6	a
+kernel	6	arr
+kernel	6	cat
+kernel	6	container
+kernel	6	dismiss
+kernel	6	e
+kernel	6	el
+kernel	6	el
+kernel	6	el
+kernel	6	el
+kernel	6	html
+kernel	6	html
+kernel	6	isAssertive
+kernel	6	item
+kernel	6	link
+kernel	6	mk
+kernel	6	r
+kernel	6	rIC
+kernel	6	resp
+kernel	6	self
+kernel	6	session
+kernel	6	sessionCookie
+kernel	6	text
+kernel	6	trimmed
+kernel	6	variant
+kernel	8	c
+kernel	8	el
+kernel	8	key
+kernel	8	n
+kernel	8	parsed
+kernel	8	result
+nav	2	MAX_CACHE_SIZE
+nav	2	_announceTimer
+nav	2	_pendingNav
+nav	2	_showNavToast
+nav	2	announceRoute
+nav	2	cacheScreen
+nav	2	domLayout
+nav	2	findCommonScreenGroup
+nav	2	getCachedScreen
+nav	2	initialMain
+nav	2	isInternalLink
+nav	2	isKnownRoute
+nav	2	layoutWillChange
+nav	2	loadPage
+nav	2	mergeSeedFromDOM
+nav	2	resolvePath
+nav	2	screenCache
+nav	2	scrollToHash
+nav	2	sseMeta
+nav	2	swapLayoutShell
+nav	2	swapMainContent
+nav	2	swapScreenGroupContent
+nav	2	updateActiveLink
+nav	4	anchor
+nav	4	best
+nav	4	clean
+nav	4	cur
+nav	4	data
+nav	4	doScroll
+nav	4	el
+nav	4	el
+nav	4	el
+nav	4	fullPath
+nav	4	glob
+nav	4	groups
+nav	4	href
+nav	4	id
+nav	4	innerLC
+nav	4	main
+nav	4	main
+nav	4	navHash
+nav	4	navLinks
+nav	4	page
+nav	4	parsed
+nav	4	parts
+nav	4	path
+nav	4	prevPath
+nav	4	r
+nav	4	r
+nav	4	store
+nav	4	swapHTML
+nav	4	t
+nav	4	target
+nav	4	to
+nav	4	v
+nav	6	G
+nav	6	active
+nav	6	cached
+nav	6	d
+nav	6	grp
+nav	6	href
+nav	6	html
+nav	6	oldest
+nav	6	pp
+nav	6	pre
+nav	6	redirectTo
+nav	6	resp
+nav	6	rs
+nav	6	title
+nav	6	u
+nav	8	a
+nav	8	dest
+nav	8	doc
+nav	8	doc
+nav	8	el
+nav	8	fm
+nav	8	fr
+nav	8	hrefPath
+nav	8	nm
+nav	8	nm
+nav	8	pathOnly
+nav	8	shell
+nav	8	t
+rpc	10	cur
+rpc	10	cur
+rpc	10	delta
+rpc	10	n
+rpc	10	params
+rpc	10	sep
+rpc	10	sep
+rpc	2	_csrf
+rpc	2	_idt
+rpc	2	_rpcInFlight
+rpc	2	dispatchRPC
+rpc	4	_kilnOK
+rpc	4	_kilnPost
+rpc	4	body
+rpc	4	bodyIsFormData
+rpc	4	closeOnSuccess
+rpc	4	confirmMsg
+rpc	4	ctl
+rpc	4	headers
+rpc	4	method
+rpc	4	path
+rpc	4	resetOnSuccess
+rpc	4	resolvedPath
+rpc	4	responseSignal
+rpc	4	token
+rpc	4	wantDisable
+rpc	4	widgetEl
+rpc	6	action
+rpc	6	body
+rpc	6	btn
+rpc	6	combo
+rpc	6	ct
+rpc	6	data
+rpc	6	enctype
+rpc	6	explicitSPA
+rpc	6	fd
+rpc	6	fd
+rpc	6	form
+rpc	6	form
+rpc	6	legacy
+rpc	6	ms
+rpc	6	navigatePath
+rpc	6	openWidgetName
+rpc	6	prev
+rpc	6	prev
+rpc	6	pushState
+rpc	6	r
+rpc	6	scrollSel
+rpc	6	signalEl
+rpc	6	sticky
+rpc	6	toastHeader
+rpc	6	wantsForm
+rpc	6	wantsJSON
+rpc	8	G
+rpc	8	afterText
+rpc	8	g
+rpc	8	inc
+rpc	8	lb
+rpc	8	lbId
+rpc	8	obj
+rpc	8	obj
+rpc	8	obj
+rpc	8	params
+rpc	8	params
+rpc	8	qs
+rpc	8	resp
+rpc	8	set
+rpc	8	target
+rpc	8	tog
+rpc	8	txt
+rpc-stub	6	form
+rpc-stub	6	rpc
+signals	10	attr
+signals	10	prefersReduced
+signals	10	sel
+signals	10	target
+signals	10	v
+signals	12	dur
+signals	12	s
+signals	12	t
+signals	2	isReservedSignalKey
+signals	4	seed
+signals	4	store
+signals	6	s
+signals	6	s
+signals	8	mode
+widgets-boot	10	eq
+widgets-boot	12	cfg
+widgets-boot	2	_installEagerWidgetDelegators
+widgets-boot	2	_wcr
+widgets-boot	2	_wready
+widgets-boot	6	anchorPref
+widgets-boot	6	btn
+widgets-boot	6	name
+widgets-boot	6	overrides
+widgets-boot	6	raw
+widgets-boot	6	toastBtn
+widgets-boot	6	tryMount
+widgets-boot-static	10	eq
+widgets-boot-static	12	cfg
+widgets-boot-static	2	_installEagerWidgetDelegators
+widgets-boot-static	2	_wcr
+widgets-boot-static	2	_wready
+widgets-boot-static	6	anchorPref
+widgets-boot-static	6	btn
+widgets-boot-static	6	name
+widgets-boot-static	6	overrides
+widgets-boot-static	6	raw
+widgets-boot-static	6	toastBtn
+widgets-boot-static	6	tryMount

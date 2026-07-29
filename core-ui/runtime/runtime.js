@@ -47,7 +47,7 @@
   // runtime hung on <body>.
   // docEl is the shared <html> handle for the whole core runtime —
   // every documentElement touch goes through it (keeps the minified
-  // bundle inside the 12 KB gz budget).
+  // bundle inside the 12.5 KB gz budget).
   const docEl = document.documentElement;
   // M is the manifest (frozen); _dc is the dev-guard: an unmanifested
   // name still writes (never break the page) but warns so the drift is

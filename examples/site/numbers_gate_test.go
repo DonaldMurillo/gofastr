@@ -7,11 +7,15 @@ package main
 // entity and 0 npm packages in the repo.
 
 import (
+	"bytes"
+	"compress/gzip"
 	"io/fs"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -86,5 +90,40 @@ func TestNumbersStripZeroNpmPackages(t *testing.T) {
 	}
 	if len(found) > 0 {
 		t.Fatalf("the home page claims 0 npm packages, but the repo contains: %v", found)
+	}
+}
+
+// The site and the size gate must measure the same way, or the page
+// publishes a friendlier number than the one CI enforces.
+//
+// They diverged once: budget_test.go moved to DefaultCompression when the
+// gate was corrected to the level browsers actually receive, while this page
+// stayed on BestCompression and kept publishing the smaller figure. Comparing
+// the rendered string against a fresh DefaultCompression measurement pins the
+// two together, so the next level change has to move both.
+func TestStripMeasuresAtTheGatesLevel(t *testing.T) {
+	src, err := runtime.RuntimeJS()
+	if err != nil {
+		t.Fatalf("RuntimeJS: %v", err)
+	}
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
+	if err != nil {
+		t.Fatalf("gzip writer: %v", err)
+	}
+	if _, err := zw.Write([]byte(src)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+
+	// Compare BYTES, not the rendered string: 12287 (BestCompression) and
+	// 12317 (DefaultCompression) both render as "12.0 KB", so a string
+	// comparison here would pass at either level and gate nothing.
+	if got := runtimeGzBytes(); got != buf.Len() {
+		t.Errorf("the strip measures %d gzip bytes but DefaultCompression is %d — "+
+			"the page and core-ui/runtime's budget gate are measuring at different levels",
+			got, buf.Len())
 	}
 }

@@ -6,6 +6,56 @@ import (
 	"testing"
 )
 
+const (
+	coreGoalGZ             = 12*1024 + 512
+	coreCongestionWindowGZ = 14 * 1024
+)
+
+func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {
+	t.Helper()
+	if got := gzipSize(t, src); got > budget {
+		return gzip.DefaultCompression, got, budget
+	}
+	if got := gzipSizeAt(t, src, gzip.BestSpeed); got > coreCongestionWindowGZ {
+		return gzip.BestSpeed, got, coreCongestionWindowGZ
+	}
+	return 0, 0, 0
+}
+func TestCoreBudgetRejectsCliffOverflow(t *testing.T) {
+	core, err := RuntimeJS()
+	if err != nil {
+		t.Fatalf("RuntimeJS: %v", err)
+	}
+	filler, ok := Module("sortablelist")
+	if !ok {
+		t.Fatal("sortablelist module not embedded")
+	}
+
+	grown := core
+	const step = 64
+	for i := 0; i+step <= len(filler); i += step {
+		candidate := grown + filler[i:i+step]
+		if gzipSize(t, candidate) > coreGoalGZ {
+			break
+		}
+		grown = candidate
+	}
+	defaultSize := gzipSize(t, grown)
+	bestSpeedSize := gzipSizeAt(t, grown, gzip.BestSpeed)
+	if defaultSize > coreGoalGZ {
+		t.Fatalf("fixture exceeds the level-6 budget: %d > %d", defaultSize, coreGoalGZ)
+	}
+	if bestSpeedSize <= coreCongestionWindowGZ {
+		t.Fatalf("fixture does not cross the level-1 congestion window: %d <= %d", bestSpeedSize, coreCongestionWindowGZ)
+	}
+
+	level, _, _ := coreBudgetViolation(t, grown, coreGoalGZ)
+	if level != gzip.BestSpeed {
+		t.Fatalf("core budget accepted %d bytes at level 6 although level 1 is %d bytes, past the %d-byte congestion window",
+			defaultSize, bestSpeedSize, coreCongestionWindowGZ)
+	}
+}
+
 // Per-module gzip size budget.
 //
 // Two purposes:
@@ -13,7 +63,8 @@ import (
 //  1. Catch regressions: if a module grows past its current high-water
 //     mark, fail loudly. Cheaper than waiting for a Lighthouse drop.
 //  2. Pin the runtime-size goals from runtime-minification.md:
-//     core ≤ 12 KB gz and every demand module ≤ 3 KB gz.
+//     core ≤ 12.5 KB at gzip level 6, core ≤ 14 KB at level 1, and every
+//     demand module ≤ 3 KB at level 6.
 //
 // Never add or raise an override to silence a regression: split or shrink the
 // module instead.
@@ -24,10 +75,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	// to 12317 bytes — the code did not grow, the ruler was wrong. The
 	// line is set where it covers the real number with room to work
 	// rather than where it silently passed.
-	const (
-		coreGoalGZ   = 12*1024 + 512
-		moduleGoalGZ = 3 * 1024
-	)
+	const moduleGoalGZ = 3 * 1024
 
 	// No overrides: optional widget form helpers and shortcut/autogrow
 	// behavior live in marker-driven demand modules, keeping both core and
@@ -43,8 +91,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	if coreBudget == 0 {
 		coreBudget = coreGoalGZ
 	}
-	if got := gzipSize(t, core); got > coreBudget {
-		t.Errorf("core runtime.js gzip = %d bytes — exceeds %d byte budget (goal %d)", got, coreBudget, coreGoalGZ)
+	level, got, limit := coreBudgetViolation(t, core, coreBudget)
+	switch level {
+	case gzip.DefaultCompression:
+		t.Errorf("core runtime.js gzip = %d bytes — exceeds %d byte budget (goal %d)", got, limit, coreGoalGZ)
+	case gzip.BestSpeed:
+		t.Errorf("core runtime.js gzip at level 1 = %d bytes — exceeds the %d-byte initial congestion window; carve a feature into a demand module, do not raise the line", got, limit)
 	}
 
 	for _, name := range ModuleNames() {
@@ -99,10 +151,10 @@ func TestComputeModuleSizeBudget(t *testing.T) {
 // corrected from gzip level 9 to level 6 (see gzipSize). That was a
 // ruler correction, not a concession — the artifact did not grow. Treat
 // it as the last one: the cliff is a property of TCP, not of taste.
-// Worth knowing where the real edge is: at nginx's gzip_comp_level
-// default of 1 the same core is 14156 bytes, which still fits ~14 KB,
-// but only just. A deploy compressing at level 1 has no headroom at
-// all.
+// At nginx's default gzip level 1 the core is 14156 bytes. The binding
+// assertion in TestRuntimeModuleSizeBudgets caps that wire form at 14336 bytes,
+// so the level-6 budget's remaining slack cannot carry core past the cliff
+// unnoticed.
 func TestTypicalPagePayloadBudget(t *testing.T) {
 	const typicalBudgetGZ = 20 * 1024
 
@@ -128,9 +180,13 @@ func TestTypicalPagePayloadBudget(t *testing.T) {
 // here on purpose: crossing it means behaviour was added to the loader that
 // belongs inside the frame, where it costs the host page nothing.
 //
+// The loader is currently 1586 bytes at gzip level 1. Its 1536-byte level-6
+// line is a discipline budget, not a transport cliff, so applying core's
+// level-1 rule here would invent a second limit with no physical basis.
+//
 // The frame runtime blocks nothing on the host page, so it is not bound by the
-// initial-congestion-window argument that sets core's 12 KB. It is still capped
-// at the same number for a simpler reason: an embedded surface has no business
+// initial-congestion-window argument that sets core's line. It is still capped
+// at 12 KB for a simpler reason: an embedded surface has no business
 // shipping MORE javascript than a first-party page does. It ships less today
 // (no nav fragment).
 func TestEmbedSizeBudgets(t *testing.T) {
@@ -183,10 +239,15 @@ func TestEmbedSizeBudgets(t *testing.T) {
 // budget while the level-6 artifact was already 12317.
 func gzipSize(t *testing.T, s string) int {
 	t.Helper()
+	return gzipSizeAt(t, s, gzip.DefaultCompression)
+}
+
+func gzipSizeAt(t *testing.T, s string, level int) int {
+	t.Helper()
 	var buf bytes.Buffer
-	w, err := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
+	w, err := gzip.NewWriterLevel(&buf, level)
 	if err != nil {
-		t.Fatalf("gzip writer: %v", err)
+		t.Fatalf("gzip writer at level %d: %v", level, err)
 	}
 	if _, err := w.Write([]byte(s)); err != nil {
 		t.Fatalf("gzip write: %v", err)
