@@ -141,6 +141,44 @@ func TestPoisonConsumer_DeadLettersWithoutBlockingSibling(t *testing.T) {
 	}
 }
 
+func TestStaleFailureKeepsTerminal(t *testing.T) {
+	for _, tc := range []struct {
+		status   string
+		attempts int
+	}{
+		{status: "dead", attempts: 3},
+		{status: "abandoned", attempts: 0},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
+			ctx := context.Background()
+			db, o := openOutbox(t, WithMaxAttempts(3))
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatalf("begin: %v", err)
+			}
+			rowID, err := o.Append(ctx, tx, "type", nil)
+			if err != nil {
+				_ = tx.Rollback()
+				t.Fatalf("Append: %v", err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("commit: %v", err)
+			}
+			insertDelivery(t, db, o, rowID, "c", tc.status, tc.attempts, "settled")
+
+			o.markDeliveryFailure(ctx, claimedDelivery{
+				RowID: rowID, Consumer: "c", Attempts: 0,
+			}, errors.New("stale failure"))
+
+			got := mustDeliveries(t, o, rowID)[0]
+			if got.Status != tc.status || got.Attempts != tc.attempts {
+				t.Fatalf("terminal delivery changed from %s/%d to %s/%d",
+					tc.status, tc.attempts, got.Status, got.Attempts)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Per-delivery attempts are independent: a failing consumer accrues
 // attempts while a succeeding sibling stays at zero.

@@ -482,14 +482,15 @@ func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) 
 // this attempt exhausts MaxAttempts the delivery is marked dead; otherwise
 // it returns to pending with an exponential backoff (next_attempt_at) so a
 // flapping consumer can't burn through every attempt in a tight loop.
-// status<>'dispatched' guards the lease-reclaim race.
+// Only pending deliveries may record a handler failure; every other state is
+// terminal until an explicit Replay.
 func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cause error) {
 	newAttempts := d.Attempts + 1
 	if newAttempts >= o.maxAttempts {
 		if _, err := o.db.ExecContext(ctx,
 			fmt.Sprintf(`UPDATE %s
 				SET status='dead', attempts=$1, last_error=$2, claimed_until=NULL, next_attempt_at=NULL
-				WHERE row_id=$3 AND consumer=$4 AND status<>'dispatched'`, o.qd()),
+				WHERE row_id=$3 AND consumer=$4 AND status='pending'`, o.qd()),
 			newAttempts, truncateError(cause), d.RowID, d.Consumer); err != nil {
 			slog.Default().Error("outbox: mark delivery dead failed; lease recovery will retry",
 				"row_id", d.RowID, "consumer", d.Consumer, "error", err)
@@ -500,7 +501,7 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='pending', attempts=$1, last_error=$2, next_attempt_at=$3, claimed_until=NULL
-			WHERE row_id=$4 AND consumer=$5 AND status<>'dispatched'`, o.qd()),
+			WHERE row_id=$4 AND consumer=$5 AND status='pending'`, o.qd()),
 		newAttempts, truncateError(cause), next, d.RowID, d.Consumer); err != nil {
 		slog.Default().Error("outbox: requeue failed delivery failed; lease recovery will retry",
 			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
