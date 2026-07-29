@@ -39,8 +39,10 @@ type GrantStore struct {
 	// baseline holds the CODE-defined grants captured at LoadInto time,
 	// before DB rows are overlaid. Every reload rebuilds a role as
 	// baseline ∪ DB, so a cross-replica refresh (or a local reconcile)
-	// never wipes grants an app declared in code with policy.Grant. Read
-	// under fanoutMu (written once in LoadInto, read in reloadRole).
+	// never wipes grants an app declared in code with policy.Grant. Local
+	// revokes remove entries so a later reconcile cannot undo them. Access
+	// under fanoutMu; replacements use fresh slices so reload snapshots remain
+	// safe after releasing the lock.
 	baseline map[string][]Permission
 
 	// Cross-replica fanout plumbing, wired by SetFanout. All of it is nil
@@ -259,6 +261,29 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 			return fmt.Errorf("access: persist revoke %q→%q: %w", role, p, err)
 		}
 	}
+	// A local revoke must also narrow the captured code baseline. Otherwise
+	// the next peer-driven reconcile would merge the revoked grant back in.
+	s.fanoutMu.Lock()
+	base := s.baseline[role]
+	filtered := make([]Permission, 0, len(base))
+	for _, candidate := range base {
+		revoked := false
+		for _, permission := range perms {
+			if candidate == permission {
+				revoked = true
+				break
+			}
+		}
+		if !revoked {
+			filtered = append(filtered, candidate)
+		}
+	}
+	if len(filtered) == 0 {
+		delete(s.baseline, role)
+	} else {
+		s.baseline[role] = filtered
+	}
+	s.fanoutMu.Unlock()
 	// DB write succeeded — remove from the live policy DIRECTLY. A local
 	// revoke is authoritative and removes the permission from memory even if
 	// it was seeded in code (never in the DB), so an admin revoke takes effect
