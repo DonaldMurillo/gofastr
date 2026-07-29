@@ -61,6 +61,9 @@ type SSEBroker struct {
 }
 
 type subscriber struct {
+	// requestedID is the stable client-supplied id. The map key may be a
+	// generated id when callers collide without a trustworthy principal.
+	requestedID string
 	// principal identifies the caller that registered this subscriber,
 	// so a client-supplied subscriber_id can only evict an entry the
 	// same caller created. See Subscribe.
@@ -135,9 +138,18 @@ type SSEBrokerConfig struct {
 	// connection already unregisters itself.
 	Principal func(*http.Request) string
 
-	// MaxSubscribers caps concurrent subscribers; 0 = unlimited.
-	// Subscribe rejects past the cap rather than evicting, so an
-	// attacker cannot displace live subscribers by reconnecting.
+	// MaxSubscribers caps concurrent subscribers; 0 = unlimited. Subscribe
+	// rejects past the cap rather than evicting, and the cap is exact.
+	//
+	// A client whose previous connection is half-open (mobile handoff, laptop
+	// sleep, an LB idle-kill the server has not noticed) still holds a seat
+	// until HeartbeatInterval's next write fails and the stream unregisters
+	// itself. That heartbeat is what reclaims the seat — for every client,
+	// including the ones that send no subscriber_id, which is all of the
+	// framework's own. A reserved slot keyed on the requested id was tried
+	// and removed: nothing in the client runtime sends an id, so it could
+	// never fire, while costing a scan of every subscriber under the write
+	// lock and letting the cap be exceeded by one.
 	MaxSubscribers int
 }
 
@@ -265,53 +277,59 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	filter := r.URL.Query().Get("event")
 
 	sub := &subscriber{
-		ch:       make(chan sseEvent, bufSize),
-		filter:   filter,
-		done:     make(chan struct{}),
-		slowMode: b.parseSlowMode(r),
+		requestedID: subID,
+		ch:          make(chan sseEvent, bufSize),
+		filter:      filter,
+		done:        make(chan struct{}),
+		slowMode:    b.parseSlowMode(r),
 	}
 
-	// Register, evicting any prior subscriber with the same ID so it does
-	// not leak. Closing the prior sub.done signals its Subscribe loop to
-	// exit cleanly.
-	//
 	// Eviction is scoped to the SAME principal. subscriber_id exists so
 	// apps can pass a meaningful id (user, tab, device), but it is
 	// attacker-supplied, and evicting on a bare id match let
-	// `?subscriber_id=<victim>` close the victim's done channel and
-	// drop their stream — repeatably, for a permanent denial. A
-	// reconnect from the same principal still replaces its own entry,
-	// which is the case the eviction was written for.
-	//
-	// "Same principal" is only meaningful if the host can actually tell
-	// callers apart, so it comes from Config.Principal. With no such
-	// function, every principal is "" — deliberately never equal to
-	// another (see below), so nothing is ever evicted. That is the safe
-	// default: the previous RemoteAddr-based guess collapsed every
-	// caller behind a reverse proxy into one principal and re-opened the
-	// exact denial this scoping exists to prevent.
+	// `?subscriber_id=<victim>` drop the victim's stream. Without a
+	// Principal, colliding callers therefore keep separate map entries.
 	sub.principal = b.principalFor(r)
 
 	b.mu.Lock()
-	prev, collision := b.subscribers[subID]
-	if collision && (sub.principal == "" || prev.principal != sub.principal) {
-		// Different caller, same requested id: leave the incumbent
-		// alone and give the newcomer an id of its own.
-		subID = generateSubscriberID()
-		prev, collision = nil, false
+	registrationID := subID
+	var prev *subscriber
+	if sub.principal != "" {
+		// Only a caller the host can identify may replace a stream. A bare
+		// subscriber_id is attacker-supplied, so colliding anonymous callers
+		// keep separate map entries rather than evicting each other.
+		for id, incumbent := range b.subscribers {
+			if incumbent.requestedID == sub.requestedID && incumbent.principal == sub.principal {
+				registrationID = id
+				prev = incumbent
+				break
+			}
+		}
 	}
-	// Cap BEFORE evicting: rejecting the newcomer keeps live streams
-	// alive, whereas evicting would let a reconnect loop displace them.
-	if b.maxSubs > 0 && !collision && len(b.subscribers) >= b.maxSubs {
+
+	replacing := prev != nil
+	if !replacing {
+		if _, used := b.subscribers[registrationID]; used {
+			for {
+				registrationID = generateSubscriberID()
+				if _, exists := b.subscribers[registrationID]; !exists {
+					break
+				}
+			}
+		}
+	}
+
+	if b.maxSubs > 0 && !replacing && len(b.subscribers) >= b.maxSubs {
 		b.mu.Unlock()
 		http.Error(w, "too many subscribers", http.StatusServiceUnavailable)
 		return
 	}
-	if collision {
+	if replacing {
 		close(prev.done)
 	}
-	b.subscribers[subID] = sub
+	b.subscribers[registrationID] = sub
 	b.mu.Unlock()
+	subID = registrationID
 
 	defer func() {
 		b.mu.Lock()
