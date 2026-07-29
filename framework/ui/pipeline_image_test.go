@@ -284,3 +284,42 @@ func TestSrcsetKeepsDataURIDelimiter(t *testing.T) {
 		t.Errorf("data: URI did not survive into the srcset. Rendered: %s", out)
 	}
 }
+
+func TestSrcsetEscapesDataPayloadCommas(t *testing.T) {
+	const dataURL = "data:image/png,payload,"
+	if safeImageURL(dataURL) == "" {
+		t.Fatal("precondition: safeImageURL must admit the inline raster data URI")
+	}
+
+	tests := map[string]string{
+		"optimized": string(OptimizedImage(OptimizedImageConfig{
+			Src:    "/fallback.png",
+			Alt:    "x",
+			Width:  10,
+			Height: 10,
+			Sources: []ImageSource{
+				{URL: dataURL, Width: 640},
+				{URL: "/real-1280.png", Width: 1280},
+			},
+		})),
+		"pipeline": string(PipelineImage(PipelineImageConfig{
+			Fallback: "/fallback.png",
+			Alt:      "x",
+			Width:    10,
+			Height:   10,
+			Sources: []PipelineSource{
+				{URL: dataURL, Width: 640, Type: "image/png"},
+				{URL: "/real-1280.png", Width: 1280, Type: "image/png"},
+			},
+		})),
+	}
+
+	for name, out := range tests {
+		t.Run(name, func(t *testing.T) {
+			const want = `srcset="data:image/png,payload%2C 640w, /real-1280.png 1280w"`
+			if !strings.Contains(out, want) {
+				t.Fatalf("data payload comma was not escaped:\n%s", out)
+			}
+		})
+	}
+}
