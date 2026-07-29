@@ -3,6 +3,7 @@ package semantic
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -125,6 +126,25 @@ func newPgStore(t *testing.T, dim int) *PgVectorStore {
 func vec3(a, b, c float32) []float32 { return []float32{a, b, c} }
 
 func approxEqual(a, b float64) bool { return math.Abs(a-b) < 1e-4 }
+
+func TestPgVectorAddHonorsContext(t *testing.T) {
+	store := newPgStore(t, 3)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := store.Add(ctx, []Chunk{{
+		ID:    "cancelled-write",
+		DocID: "doc-1",
+		Text:  "must not be persisted after cancellation",
+		Vec:   vec3(1, 0, 0),
+	}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Add with a canceled context returned %v, want context.Canceled", err)
+	}
+	if _, ok := store.ChunkByID("cancelled-write"); ok {
+		t.Fatal("Add persisted a chunk after context cancellation")
+	}
+}
 
 func TestPgVectorAddCandidates(t *testing.T) {
 	s := newPgStore(t, 3)

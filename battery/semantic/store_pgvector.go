@@ -149,7 +149,7 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 // Add inserts (or replaces by id) chunks. Vectors are L2-normalized in place
 // so cosine similarity reduces to a dot product, mirroring [FlatStore.Add].
 // A vector whose length differs from the configured dimension is rejected.
-func (s *PgVectorStore) Add(_ context.Context, chunks []Chunk) error {
+func (s *PgVectorStore) Add(ctx context.Context, chunks []Chunk) error {
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -181,7 +181,7 @@ func (s *PgVectorStore) Add(_ context.Context, chunks []Chunk) error {
 			return fmt.Errorf("semantic: marshal meta for chunk %q: %w", c.ID, err)
 		}
 		kind, _ := c.Metadata["kind"].(string)
-		if _, err := s.db.Exec(stmt,
+		if _, err := s.db.ExecContext(ctx, stmt,
 			c.ID, c.DocID, c.Source, kind, c.Text,
 			c.Offset[0], c.Offset[1], meta, encodeVector(c.Vec),
 		); err != nil {
