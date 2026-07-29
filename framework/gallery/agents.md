@@ -40,9 +40,10 @@ gallery.CategorySlug("Buttons & links") // "buttons-links" — fragment-safe
 
 - **`Catalog`** — the source-of-truth `[]Entry`. Every host iterates this.
 - **`CodeSnippet`** — `func CodeSnippet(slug string) string` — a slug's example Go source. The map it reads is private.
-- **`NoteOnlySlugs`** — components whose showcase shows an explanatory note
-  instead of a live demo (need per-page backend wiring: DataTable,
-  ConfirmAction, Gallery, Lightbox, etc.).
+- **`IsNoteOnly`** — `func IsNoteOnly(slug string) bool` — true when a
+  component's showcase renders an explanatory note instead of a live demo
+  (it needs per-page backend wiring: DataTable, ConfirmAction, Gallery,
+  Lightbox, etc.). The set itself is private; this is the only accessor.
 - **`PkgForSlug`** — maps a slug to its Go source package for deep-linking
   the showcase header to pkg.go.dev.
 - **Demo support**: `InitialKanbanColumns`, `RenderKanbanBoard`,

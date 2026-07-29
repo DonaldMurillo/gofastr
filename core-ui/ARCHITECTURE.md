@@ -72,9 +72,20 @@ The framework primitives live in:
   used to live under `kiln/`, forcing first-party callers to import the Kiln
   namespace — it was moved down into `core-ui` so the dependency points the
   right way (Kiln consumes core-ui, like any other caller).
-- `core-ui/noderender` — `RenderNode(node.Node) render.HTML`: walks a node
-  tree and emits HTML via `core-ui/html`. The leaf renderer the blueprint's
-  generated screens use.
+- `core-ui/noderender` — walks a node tree and emits HTML via
+  `core-ui/html`. Two entry points, split by trust. `RenderNode` (and
+  `RenderKind`, which renders one element from pre-rendered children)
+  treats the IR as UNTRUSTED and strips `data-action`, `data-action-*`,
+  and `data-param-*` — the attributes `frag/boot.js` resolves into a
+  `__gofastr.trigger()` call at hydration and on every `gofastr:navigate`,
+  so an untrusted IR naming them picks a compiled server action and its
+  arguments. `data-island` is refused outright: it is the SSE swap target,
+  so naming it lets an element impersonate a registered island.
+  `RenderTrustedNode` and `RenderTrustedKind` are the first-party pair —
+  they keep the action attributes — and are what the blueprint generator
+  emits. The attribute name alone cannot tell a trusted tree from an
+  untrusted one, so the caller picks the entry point; picking `RenderNode`
+  for first-party IR silently drops every action attribute.
 - `core-ui/island` — the runtime-side island manager (registration, SSE push, slot lookup)
 - `core-ui/interactive` — declarative interactivity primitives (`OnClick/OnSubmit` wrapping for in-page RPC, signal binding, widget chaining)
 - `core-ui/runtime/runtime.js` — the client-side hydration runtime
