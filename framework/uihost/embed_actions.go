@@ -163,10 +163,17 @@ const reachWalkDepth = 64
 // the frame's chrome is fixed (app.EmbedLayout), so a layout's own components
 // never render inside it either. The rest are large runtime graphs with no
 // components in them, skipped to keep the walk cheap.
+//
+// core-ui/island is deliberately NOT here, though it was. island.Island is a
+// one-field wrapper around the component it renders, and islands are the
+// framework's main composition primitive — the blueprint emits
+// island.NewIsland(...).Render() for every island block. Stopping at it meant
+// an action-bearing child inside an island was never seen, which is the
+// opposite of a host back-reference: the wrapper's whole purpose is to render
+// that child into this frame.
 var reachStopPackages = map[string]bool{
-	"github.com/DonaldMurillo/gofastr/core-ui/app":    true,
-	"github.com/DonaldMurillo/gofastr/core-ui/island": true,
-	"github.com/DonaldMurillo/gofastr/core/router":    true,
+	"github.com/DonaldMurillo/gofastr/core-ui/app": true,
+	"github.com/DonaldMurillo/gofastr/core/router": true,
 	"database/sql": true,
 	"net/http":     true,
 	"context":      true,
@@ -291,12 +298,15 @@ func (w *reachWalker) walk(v reflect.Value, depth int) {
 		if v.IsNil() || !w.mark(t, v.Pointer()) {
 			return
 		}
-		// Values only. A component as a map KEY would have to be comparable,
-		// which rules out every component that holds a slice or a map — the
-		// shape is not reachable in practice, and iterating keys doubles the
-		// walk for it.
+		// Keys as well as values. A component used as a map KEY has to be
+		// comparable, which rules out any component holding a slice or map —
+		// but "rare" is not "impossible", and a struct of scalars with a
+		// Render method qualifies. Skipping keys let exactly that shape ship
+		// an action to a customer's frame, so the gate pays the second
+		// iteration.
 		iter := v.MapRange()
 		for iter.Next() {
+			w.walk(iter.Key(), depth+1)
 			w.walk(iter.Value(), depth+1)
 		}
 	default:

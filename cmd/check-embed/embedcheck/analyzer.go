@@ -60,10 +60,22 @@
 // exactly like a gate that checked and found nothing, which is how the
 // rendered-child hole survived a release.
 //
-// Unresolved notes do not fail a build: they say which surfaces the boot walk
-// (framework/uihost/embed_actions.go), which sees the built tree, is the only
-// thing covering. [Check] returns violations alone so `gofastr build` keeps
-// failing on violations only; [CheckAll] returns both.
+// Most Unresolved notes are advisory: the boot walk in framework/uihost reads
+// live component VALUES, so a child held in a field — through an interface, a
+// map key, or an island wrapper — is checked at Mount. One class is not, and
+// carries Blocking: a child built inside Render() whose type lives in another
+// package. It does not exist as a value when the walk runs, and its Actions()
+// body is not in this syntax tree, so neither gate can vouch for it and
+// `gofastr build` stops.
+//
+// Failing on EVERY note was tried and reverted. It rejected clean island
+// surfaces — the shape the blueprint emits for every island block — plus
+// interface-typed fields the analyzer had already resolved and the fixture
+// named for false positives, and the advertised remedy ("hold the child in a
+// field") is impossible for a wrapper.
+//
+// [Check] returns violations alone for callers that want only those;
+// [CheckAll] returns both and is what the build gate uses.
 package embedcheck
 
 import (
@@ -78,6 +90,15 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 )
+
+// renderWrapperPackages hold components that WRAP another component rather
+// than being a leaf: the value walk at Mount descends through them into the
+// child, so seeing one built inside Render is not a place analysis gave up.
+var renderWrapperPackages = map[string]bool{
+	"github.com/DonaldMurillo/gofastr/core-ui/island":    true,
+	"github.com/DonaldMurillo/gofastr/core-ui/component": true,
+	"github.com/DonaldMurillo/gofastr/core-ui/app":       true,
+}
 
 const (
 	embedPkgPath     = "github.com/DonaldMurillo/gofastr/framework/embed"
@@ -109,23 +130,35 @@ func runPass(pass *analysis.Pass) (any, error) {
 // Unresolved is one place the static walk could not follow, on the path from an
 // embeddable surface to the components it renders.
 //
-// It is not a violation and never fails a build. It is the analyzer refusing to
-// let "I found nothing" and "I could not look" be the same output — the surface
-// it names is covered only by the boot-time walk in
-// framework/uihost/embed_actions.go, which sees the built tree.
+// It is never a violation — the surface may well be clean. It exists so that
+// "I found nothing" and "I could not look" are not the same output.
+//
+// Most notes are advisory, because the boot-time walk in
+// framework/uihost/embed_actions.go covers what they describe: it reads live
+// component VALUES, so a child held in a field — including through an
+// interface, a map key, or an island wrapper — is checked at Mount.
+//
+// Blocking is the exception: a child CONSTRUCTED inside Render() whose type
+// lives in another package is visible to neither gate. It does not exist as a
+// value when the boot walk runs, and its Actions() body is not in this syntax
+// tree. Only that class fails the build.
 type Unresolved struct {
 	Pos     token.Pos
 	Surface string // the surface Name; "<dynamic>" when not a string literal
 	Reason  string
+	// Blocking marks the note class no gate can cover, which is what
+	// `gofastr build` refuses to build past.
+	Blocking bool
 }
 
 // Format renders the human-facing note.
 func (u Unresolved) Format() string {
 	return fmt.Sprintf(
 		"embed surface %q: %s — check-embed cannot prove this surface is free of "+
-			"server actions. The boot walk (framework/uihost/embed_actions.go) "+
-			"inspects the built component tree and covers it; this note exists so "+
-			"a silent pass is not mistaken for a clean one.",
+			"server actions, and the boot walk cannot cover a child that does not "+
+			"exist until Render runs. Hold the child in a field instead of "+
+			"building it in Render, or move its type into this package, so the "+
+			"surface can be verified.",
 		u.Surface, u.Reason)
 }
 
@@ -180,6 +213,9 @@ func analyze(pkg *types.Package, info *types.Info, files []*ast.File) ([]Finding
 			note := func(pos token.Pos, reason string) {
 				notes = append(notes, Unresolved{Pos: pos, Surface: surfName, Reason: reason})
 			}
+			blockingNote := func(pos token.Pos, reason string) {
+				notes = append(notes, Unresolved{Pos: pos, Surface: surfName, Reason: reason, Blocking: true})
+			}
 			comp := r.resolveScreenToComponent(screenExpr)
 			if comp == nil {
 				note(lit.Pos(), "the Screen field does not resolve to an app.NewScreen(...) "+
@@ -191,7 +227,7 @@ func analyze(pkg *types.Package, info *types.Info, files []*ast.File) ([]Finding
 				note(comp.Pos(), "the screen's component has no concrete type visible in this package")
 				return true
 			}
-			for _, reached := range r.reachableComponents(named, comp, note) {
+			for _, reached := range r.reachableComponents(named, comp, note, blockingNote) {
 				acts, actNotes := r.serverActions(reached)
 				for _, act := range acts {
 					findings = append(findings, Finding{
@@ -229,7 +265,7 @@ const maxReachDepth = 12
 //     interface-typed;
 //   - the root's Render / RenderCtx body — `return c.child.Render()`, and any
 //     child built inline there.
-func (r *resolver) reachableComponents(root *types.Named, rootExpr ast.Expr, note func(token.Pos, string)) []*types.Named {
+func (r *resolver) reachableComponents(root *types.Named, rootExpr ast.Expr, note, blockingNote func(token.Pos, string)) []*types.Named {
 	var out []*types.Named
 	seen := map[*types.Named]bool{}
 	var queue []*types.Named
@@ -254,7 +290,7 @@ func (r *resolver) reachableComponents(root *types.Named, rootExpr ast.Expr, not
 		cur := queue[0]
 		queue = queue[1:]
 		r.walkComponentType(cur, push, note)
-		for _, n := range r.componentsInRenderBodies(cur) {
+		for _, n := range r.componentsInRenderBodies(cur, blockingNote) {
 			push(n)
 		}
 	}
@@ -361,8 +397,9 @@ func (r *resolver) componentsInExpr(expr ast.Expr) []*types.Named {
 // cur's Render / RenderCtx bodies. `return c.child.Render()` is the plainest
 // spelling of "this root renders that child", and it carries no field the type
 // walk could have found when the child is reached through an interface.
-func (r *resolver) componentsInRenderBodies(cur *types.Named) []*types.Named {
+func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(token.Pos, string)) []*types.Named {
 	var out []*types.Named
+	noted := map[*types.Named]bool{}
 	for _, m := range []string{"Render", "RenderCtx"} {
 		decl := r.funcDeclForMethod(cur, m)
 		if decl == nil || decl.Body == nil {
@@ -373,10 +410,42 @@ func (r *resolver) componentsInRenderBodies(cur *types.Named) []*types.Named {
 			if !ok {
 				return true
 			}
-			if named := namedOf(r.info.Types[e].Type); named != nil && hasRenderMethod(named) {
-				if named.Obj() != nil && named.Obj().Pkg() == r.pkg && named != cur {
-					out = append(out, named)
-				}
+			named := namedOf(r.info.Types[e].Type)
+			if named == nil || named == cur || !hasRenderMethod(named) || named.Obj() == nil {
+				return true
+			}
+			if named.Obj().Pkg() == r.pkg {
+				out = append(out, named)
+				return true
+			}
+			// A named INTERFACE (component.Component itself) is not a child
+			// built here — it is the static type of one held elsewhere, and
+			// walkComponentType already notes it as runtime-chosen. Noting it
+			// again would double every interface-typed field.
+			if _, isIface := named.Underlying().(*types.Interface); isIface {
+				return true
+			}
+			// Known composition wrappers are not a give-up: the boot walk
+			// descends THROUGH them into the child they hold (island is in
+			// neither reachStopPackages nor this list), so the child is
+			// covered at Mount and there is nothing to warn about. Noting
+			// them turned every island-rendering surface — the shape the
+			// blueprint emits for every island block — into a build failure.
+			if renderWrapperPackages[named.Obj().Pkg().Path()] {
+				return true
+			}
+			// A child BUILT here whose type comes from another package is the
+			// one shape NEITHER gate can clear: it does not exist as a value
+			// until Render runs, so the boot-time walk in framework/uihost
+			// cannot see it, and its Actions() body is not in this syntax
+			// tree, so nothing here can read it either. Dropping it silently
+			// is what let a child's server action reach a customer's frame
+			// with both gates green.
+			if !noted[named] {
+				noted[named] = true
+				blockingNote(e.Pos(), fmt.Sprintf("%s.%s builds component %s from another package, "+
+					"whose Actions() body is not visible here",
+					cur.Obj().Name(), m, named.String()))
 			}
 			return true
 		})

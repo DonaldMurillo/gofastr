@@ -33,18 +33,30 @@ func main() {
 		os.Exit(2)
 	}
 	// Printed before the verdict, and printed even when the verdict is clean:
-	// "found nothing" and "could not look" must not read the same. These do not
-	// affect the exit code — the boot walk covers them.
+	// "found nothing" and "could not look" must not read the same.
+	//
+	// Advisory notes do not change the exit code — the boot walk in
+	// framework/uihost covers the shapes they describe. A BLOCKING note does,
+	// and must, or this CLI prints a green tick for a tree `gofastr build`
+	// refuses to build.
+	var blocking int
 	for _, u := range unresolved {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", fset.Position(u.Pos), u.Format())
+		if u.Blocking {
+			blocking++
+		}
 	}
-	if len(findings) == 0 {
+	if len(findings) == 0 && blocking == 0 {
 		if len(unresolved) > 0 {
 			fmt.Printf("  ✓ no embeddable surface registers a server action (%d place(s) not statically followable — see above)\n", len(unresolved))
 			return
 		}
 		fmt.Println("  ✓ no embeddable surface registers a server action")
 		return
+	}
+	if len(findings) == 0 {
+		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface path(s) could not be verified — neither this analyzer nor the boot walk can see a child built inside Render() whose type is in another package.\n", blocking)
+		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stderr, "check-embed: %d embed surface(s) register a server action:\n\n", len(findings))
 	for _, f := range findings {

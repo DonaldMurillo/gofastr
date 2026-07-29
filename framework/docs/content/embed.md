@@ -550,17 +550,35 @@ each sees a different slice — neither is total on its own:
   whose button fails in the customer's page. It follows struct fields,
   components handed to the constructor expression, and components named in
   `Render` / `RenderCtx`. Where it cannot follow — an interface-typed field, a
-  component type from another package, ClientJS that is not a literal — it
-  prints a note saying so instead of passing in silence. Notes do not fail the
-  build; a violation does.
-- **The boot walk (`enforceNoServerActionsOnEmbeds`)** runs on `Mount` and is
-  exact, because the tree is built by then: it matches every *compiled* action
-  registry that carries a server action against every component reachable from
-  the surface's screen, reading the live values with reflection. Nothing
-  dynamic slips past, and it never calls `Actions` a second time.
+  component type from another package, a child built inside `Render` whose type
+  lives elsewhere, ClientJS that is not a literal — it prints a note saying so
+  instead of passing in silence. Most notes are advisory — the boot walk below
+  covers the shape they describe. **One class fails the build**: a child built
+  inside `Render` whose type lives in another package, which neither gate can
+  see. Fix it by holding the child in a field rather than building it in
+  `Render`, or by moving its type into the surface's package. For a surface
+  that genuinely cannot be analysed and has been checked by hand,
+  `gofastr build --allow-unverified-embeds` keeps violations fatal and
+  downgrades that note.
+- **The boot walk (`enforceNoServerActionsOnEmbeds`)** runs on `Mount` and
+  matches every *compiled* action registry carrying a server action against
+  every component reachable from the surface's screen, reading the live values
+  with reflection — struct fields, slices, arrays, map keys and values, and
+  through island wrappers. It never calls `Actions` a second time.
 
-Both panic naming the surface, the component and the action, and point at
-island RPC, a form POST, or polling.
+Neither gate is total on its own. The boot walk reads values, so it sees a
+child a component *holds* but not one it *builds* inside `Render` — that child
+does not exist when the walk runs. The analyzer reads syntax, so it sees a
+child built in `Render` but not one whose `Actions()` body is in another
+package. The shapes they each miss are covered by the other, which is why an
+unresolved note is fatal rather than advisory: a note is the analyzer saying
+the boot walk is on its own here, and for a render-built child it is not
+there either.
+
+They fail differently, and it is worth knowing which you are looking at. The
+analyzer reports a diagnostic and `gofastr build` exits non-zero — no stack
+trace. The boot walk panics at `Mount`. Both name the surface, the component
+and the action, and point at island RPC, a form POST, or polling.
 
 Everything else works in a frame: island RPC, form posts, and `data-fui-poll`.
 Only the `serverAction` escape hatch is closed.
