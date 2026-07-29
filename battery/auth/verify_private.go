@@ -32,8 +32,16 @@ func VerifyAuthEntitiesPrivate(reg entity.Registry, usersName, sessionsName stri
 		if name == "" {
 			continue
 		}
-		ent, err := reg.Get(name)
-		if err != nil || ent == nil {
+		// Audit EVERY version registered under this name, not reg.Get(name).
+		// Get returns an ambiguity error once a name is mounted under several
+		// versions with none unversioned — which is what App.GroupEntity
+		// produces — and that error is indistinguishable here from "not
+		// found". The audit would then go quiet on exactly the app that most
+		// needs it and tell the operator to fix a registration order that was
+		// never wrong. Every version shares the one table, so every version's
+		// CRUD/MCP posture can expose the password hashes.
+		versions := versionsNamed(reg, name)
+		if len(versions) == 0 {
 			// Don't silently skip — the host explicitly passed this
 			// name and expects an audit. A missing entity is almost
 			// always "VerifyAuthEntitiesPrivate called before
@@ -43,18 +51,40 @@ func VerifyAuthEntitiesPrivate(reg entity.Registry, usersName, sessionsName stri
 				"entity", name)
 			continue
 		}
-		// CRUD=nil means "auto" (defaults to true when DB is set).
-		// CRUD=&true is explicit on.
-		// CRUD=&false is the safe state.
-		crudOn := ent.Config.CRUD == nil || (ent.Config.CRUD != nil && *ent.Config.CRUD)
-		mcpOn := ent.Config.MCP
-		if !crudOn && !mcpOn {
-			continue
+		for _, ent := range versions {
+			// CRUD=nil means "auto" (defaults to true when DB is set).
+			// CRUD=&true is explicit on.
+			// CRUD=&false is the safe state.
+			crudOn := ent.Config.CRUD == nil || (ent.Config.CRUD != nil && *ent.Config.CRUD)
+			mcpOn := ent.Config.MCP
+			if !crudOn && !mcpOn {
+				continue
+			}
+			attrs := []any{
+				"entity", name,
+				"crud_enabled", crudOn,
+				"mcp_enabled", mcpOn,
+				"fix", "app.Entity(\"" + name + "\", auth.UserEntityConfig())",
+			}
+			if ent.Version != "" {
+				// Name the mount, or an operator running several versions
+				// cannot tell which one to change.
+				attrs = append(attrs, "version", ent.Version)
+			}
+			logger.Warn("auth entity exposed via auto-CRUD/MCP — switch to auth.UserEntityConfig() / auth.SessionEntityConfig() to make it private by default",
+				attrs...)
 		}
-		logger.Warn("auth entity exposed via auto-CRUD/MCP — switch to auth.UserEntityConfig() / auth.SessionEntityConfig() to make it private by default",
-			"entity", name,
-			"crud_enabled", crudOn,
-			"mcp_enabled", mcpOn,
-			"fix", "app.Entity(\""+name+"\", auth.UserEntityConfig())")
 	}
+}
+
+// versionsNamed returns every entity registered under name, across all
+// versions, in the registry's stable order. Empty when the name is unknown.
+func versionsNamed(reg entity.Registry, name string) []*entity.Entity {
+	var out []*entity.Entity
+	for _, ent := range reg.AllSorted() {
+		if ent != nil && ent.Config.Name == name {
+			out = append(out, ent)
+		}
+	}
+	return out
 }
