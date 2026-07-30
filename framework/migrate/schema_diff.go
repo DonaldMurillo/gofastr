@@ -251,13 +251,22 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 // framework (timestamps, tenant_id, deleted_at) and should NOT be dropped
 // just because it isn't declared on the entity.
 func isFrameworkManagedColumn(name string, ent *entity.Entity) bool {
+	// Key the tenant arm off TenantColumn(), not the literal "tenant_id".
+	// TenantField exists precisely so the column can be renamed, and
+	// tenant.WithMultiTenant sets it AFTER entity.Define has already
+	// injected the default-named field — so the entity declares
+	// "tenant_id" while CRUD reads and writes the renamed column, and
+	// the diff emitted a data-losing DROP COLUMN on the column the app
+	// actually uses. Protect both names: the configured one, and the
+	// default that Define may have injected before the rename.
+	if ent.Config.MultiTenant && (name == ent.Config.TenantColumn() || name == "tenant_id") {
+		return true
+	}
 	switch name {
 	case "created_at", "updated_at":
 		return ent.Config.Timestamps
 	case "deleted_at":
 		return ent.Config.SoftDelete
-	case "tenant_id":
-		return ent.Config.MultiTenant
 	}
 	return false
 }
@@ -317,8 +326,21 @@ func ReadLiveColumnsSQLite(ctx context.Context, db *sql.DB, table string) (map[s
 }
 
 func readLiveColumnsSQLiteQ(ctx context.Context, q queryer, table string) (map[string]string, error) {
-	// PRAGMA can't be parameterised; the table name is taken from our own
-	// registry, not user input, so injection isn't a concern.
+	// PRAGMA can't be parameterised, so the identifier must be validated
+	// instead. The previous comment here claimed the table name "is taken
+	// from our own registry, not user input" — that is false: kiln's
+	// add_entity / update_entity ops accept a `table` override in their
+	// HTTP JSON payload and replay validates only the entity Name. This
+	// read also runs at AutoMigratePlanContext BEFORE any other SafeIdent
+	// call in the plan path, so it is the FIRST place a hostile name
+	// lands. Every sibling validates (the Postgres twin parameterises,
+	// tableExistsBulkSQLite parameterises, buildCreateTableSQL /
+	// diffEntityFromLive / migrateEntity all call SafeIdent); this was
+	// the lone exception, relying on database/sql executing a single
+	// statement — a driver property, not ours.
+	if _, err := query.SafeIdent(table); err != nil {
+		return nil, err
+	}
 	rows, err := q.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return nil, err

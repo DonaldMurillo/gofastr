@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -29,14 +30,55 @@ const (
 // DetectDialect returns the dialect of an open *sql.DB. It probes for
 // PostgreSQL via SELECT version() (cheap, no side effects) and falls back to
 // SQLite when that fails. The probe runs once per AutoMigrate call.
+//
+// The probe is RETRIED before it concludes SQLite. Its answer decides
+// whether the cross-replica advisory lock is taken at all
+// (core/migrate/lock.go skips the lock for any non-Postgres dialect),
+// so a single transient failure — a statement timeout, "too many
+// connections", a pooler in statement mode, a connection reset — used
+// to silently downgrade an N-replica Postgres boot to unlocked
+// concurrent DDL emitted in SQLite syntax: exactly the race the lock
+// exists to prevent, reached by making one probe fail.
 func DetectDialect(db *sql.DB) Dialect {
-	var v string
-	if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
-		if strings.Contains(strings.ToLower(v), "postgresql") {
-			return DialectPostgres
+	const attempts = 3
+	for i := 0; i < attempts; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		var v string
+		err := db.QueryRowContext(ctx, "SELECT version()").Scan(&v)
+		cancel()
+		if err == nil {
+			if strings.Contains(strings.ToLower(v), "postgresql") {
+				return DialectPostgres
+			}
+			return DialectSQLite
+		}
+		// A engine that genuinely lacks version() answers immediately
+		// and deterministically; only retry what looks transient.
+		if !isTransientProbeErr(err) {
+			return DialectSQLite
+		}
+		if i < attempts-1 {
+			time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
 		}
 	}
+	slog.Default().Warn("migrate: dialect probe failed repeatedly; assuming SQLite. " +
+		"If this is Postgres, the cross-replica advisory lock will NOT be taken " +
+		"and concurrent replicas may race the same DDL.")
 	return DialectSQLite
+}
+
+// isTransientProbeErr reports whether a failed `SELECT version()` looks
+// like a transport / availability problem rather than "this engine has
+// no such function". SQLite reports the latter as a parse-time "no such
+// function" and is not worth retrying.
+func isTransientProbeErr(err error) bool {
+	msg := strings.ToLower(err.Error())
+	for _, deterministic := range []string{"no such function", "unknown function", "syntax error"} {
+		if strings.Contains(msg, deterministic) {
+			return false
+		}
+	}
+	return true
 }
 
 // execQueryer is the subset of *sql.DB / *sql.Tx the migrator needs: Exec for
@@ -840,10 +882,24 @@ func ColumnDefaultClause(f schema.Field, dialect Dialect) string {
 // TRUE/FALSE for Postgres and 1/0 for SQLite (both engines accept either,
 // but emitting the native form keeps DDL idiomatic and avoids surprises in
 // pg_dump output).
+//
+// SECURITY: anything that isn't a recognised scalar is rendered as a
+// single-quoted string literal with interior quotes DOUBLED — the same
+// escaping the `case string` arm has always applied.
+//
+// The fallback used to be fmt.Sprintf("'%v'", v) with no escaping at
+// all. schema.Field.Default is `any`, so a named string type, a
+// fmt.Stringer, or a []any / map[string]any decoded from JSON all
+// missed `case string` and took that arm, letting the value close the
+// literal and append arbitrary DDL. The output feeds
+// ColumnDefaultClause → both columnDefs (CREATE TABLE) and
+// diffEntityFromLive (ALTER TABLE ADD COLUMN), and a JSON array
+// default reaches here from kiln's add_entity op over HTTP — a
+// verified payload created and COMMITTED an extra column.
 func SQLDefault(f schema.Field, dialect Dialect) string {
 	switch v := f.Default.(type) {
 	case string:
-		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
+		return quoteSQLLiteral(v)
 	case int:
 		return fmt.Sprintf("%d", v)
 	case float64:
@@ -860,6 +916,13 @@ func SQLDefault(f schema.Field, dialect Dialect) string {
 		}
 		return "0"
 	default:
-		return fmt.Sprintf("'%v'", v)
+		// Render, then escape. Never splice the rendering raw.
+		return quoteSQLLiteral(fmt.Sprintf("%v", v))
 	}
+}
+
+// quoteSQLLiteral wraps s in single quotes and doubles every interior
+// quote, producing a literal that cannot be terminated from inside.
+func quoteSQLLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
