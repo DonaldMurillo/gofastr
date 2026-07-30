@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/effect"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
@@ -174,8 +175,15 @@ func applyEntities(app *framework.App, w *world.World) error {
 // JSON round-trip silently drifted as the framework surface evolved.
 func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
 	decl := framework.EntityDeclaration{
-		// Kiln has no session hook, so preserve its pre-existing open CRUD explicitly.
-		// TODO(kiln): grow an auth/access concept in the IR.
+		// Every kiln entity is public, even one declaring OwnerField or
+		// MultiTenant, which hard rule 6 forbids anywhere else. Kiln has no
+		// session concept to scope against, and this is a deliberate
+		// exception rather than an oversight: kiln is the in-app build-mode
+		// runtime for someone assembling a world over HTTP, not a way to
+		// serve an application. A kiln world is a preview — treat its
+		// database as readable by anyone who can reach the port, and freeze
+		// to a real app (which does honour these fields) before it holds
+		// anything that matters.
 		Public:         true,
 		Name:           e.Name,
 		Table:          e.Table,
@@ -267,12 +275,19 @@ func insertSeed(db *sql.DB, s *world.Seed) error {
 	if s.Entity == "" {
 		return fmt.Errorf("empty entity")
 	}
+	table, err := query.SafeIdent(s.Entity)
+	if err != nil {
+		return fmt.Errorf("seed entity: %w", err)
+	}
 	for _, row := range s.Rows {
 		if len(row) == 0 {
 			continue
 		}
 		cols := make([]string, 0, len(row))
 		for k := range row {
+			if _, err := query.SafeIdent(k); err != nil {
+				return fmt.Errorf("seed column: %w", err)
+			}
 			cols = append(cols, k)
 		}
 		sort.Strings(cols)
@@ -282,55 +297,36 @@ func insertSeed(db *sql.DB, s *world.Seed) error {
 			placeholders[i] = "?"
 			args[i] = row[c]
 		}
-		query := buildInsert(s.Entity, cols, placeholders)
-		if _, err := db.Exec(query, args...); err != nil {
+		q := buildInsert(table, cols, placeholders)
+		if _, err := db.Exec(q, args...); err != nil {
 			return fmt.Errorf("insert %v: %w", row, err)
 		}
 	}
 	return nil
 }
 
+// buildInsert assumes table and cols have already cleared query.SafeIdent —
+// insertSeed is the only caller and validates both up front. Seed entity
+// names and row keys are agent-authored world IR, so validation (not just
+// quoting) is the contract: kiln used to carry a private quoteIdent that
+// escaped `"` and then wrote each rune with `append(out, byte(r))`,
+// truncating to the low byte AFTER the escape test — so U+2022 and every
+// other rune ending in 0x22 became a literal quote that closed the
+// identifier. core/query is the one correct implementation; there is no
+// second copy here any more.
 func buildInsert(table string, cols, placeholders []string) string {
-	return "INSERT INTO " + quoteIdent(table) + " (" + joinIdents(cols) + ") VALUES (" + join(placeholders) + ")"
+	return "INSERT INTO " + query.QuoteIdent(table) + " (" + joinIdents(cols) + ") VALUES (" + join(placeholders) + ")"
 }
 
 func joinIdents(cols []string) string {
-	out := make([]byte, 0, 32)
+	out := make([]string, len(cols))
 	for i, c := range cols {
-		if i > 0 {
-			out = append(out, ',', ' ')
-		}
-		out = append(out, []byte(quoteIdent(c))...)
+		out[i] = query.QuoteIdent(c)
 	}
-	return string(out)
+	return strings.Join(out, ", ")
 }
 
-func join(parts []string) string {
-	out := make([]byte, 0, 32)
-	for i, p := range parts {
-		if i > 0 {
-			out = append(out, ',', ' ')
-		}
-		out = append(out, []byte(p)...)
-	}
-	return string(out)
-}
-
-// quoteIdent applies SQL identifier quoting. SQLite accepts double quotes;
-// Kiln's runtime DB target is SQLite (Phase 4), so this is sufficient.
-func quoteIdent(s string) string {
-	out := make([]byte, 0, len(s)+2)
-	out = append(out, '"')
-	for _, r := range s {
-		if r == '"' {
-			out = append(out, '"', '"')
-			continue
-		}
-		out = append(out, byte(r))
-	}
-	out = append(out, '"')
-	return string(out)
-}
+func join(parts []string) string { return strings.Join(parts, ", ") }
 
 func applyMiddleware(app *framework.App, w *world.World) error {
 	for _, mw := range w.Middleware {
