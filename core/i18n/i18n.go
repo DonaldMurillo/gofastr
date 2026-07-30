@@ -30,7 +30,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"path/filepath"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -188,6 +188,11 @@ func englishPlural(n int) string {
 // MapCatalog is the simplest in-memory Catalog — useful in tests and
 // for embedding small string sets directly in code.
 type MapCatalog struct {
+	// mu guards Entries. Set is documented as a test convenience, but
+	// MapCatalog is also the type LoadJSONCatalog returns, so a host can
+	// hold a live one and call Set while request goroutines are in Get.
+	// The Translator's own mutex guards only its plural rules.
+	mu      sync.RWMutex
 	Entries map[string]map[string]Message // locale → key → message
 }
 
@@ -199,6 +204,11 @@ func NewMapCatalog() *MapCatalog {
 // Set writes a message into the catalog. Convenience for tests.
 func (c *MapCatalog) Set(locale, key string, m Message) {
 	tag := normalize(locale)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.Entries == nil {
+		c.Entries = map[string]map[string]Message{}
+	}
 	if c.Entries[tag] == nil {
 		c.Entries[tag] = map[string]Message{}
 	}
@@ -210,6 +220,8 @@ func (c *MapCatalog) Get(locale, key string) (Message, bool) {
 	if c == nil {
 		return Message{}, false
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if m, ok := c.Entries[normalize(locale)][key]; ok {
 		return m, true
 	}
@@ -218,6 +230,8 @@ func (c *MapCatalog) Get(locale, key string) (Message, bool) {
 
 // Locales implements Catalog.
 func (c *MapCatalog) Locales() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	out := make([]string, 0, len(c.Entries))
 	for k := range c.Entries {
 		out = append(out, k)
@@ -254,7 +268,9 @@ func LoadJSONCatalog(fsys fs.FS, dir string) (*MapCatalog, error) {
 			continue
 		}
 		locale := normalize(strings.TrimSuffix(e.Name(), ".json"))
-		raw, err := fs.ReadFile(fsys, filepath.Join(dir, e.Name()))
+		// io/fs paths are always slash-separated; filepath.Join would
+		// emit backslashes on Windows and fail every lookup.
+		raw, err := fs.ReadFile(fsys, path.Join(dir, e.Name()))
 		if err != nil {
 			return nil, fmt.Errorf("i18n: read %s: %w", e.Name(), err)
 		}
@@ -418,16 +434,23 @@ func CookieLocale(name string) func(*http.Request) (string, bool) {
 	}
 }
 
-// maxResolverTagLen bounds how long an attacker-controlled resolver
-// value (cookie) may be before it is rejected. Mirrors the Accept-
-// Language bounding: real BCP 47 tags are well under this.
+// maxResolverTagLen bounds how long an attacker-controlled tag may be
+// before it is rejected. Mirrors the Accept-Language bounding: real
+// BCP 47 tags are well under this.
 const maxResolverTagLen = 35
 
-// sanitizeResolverTag normalises a resolver-supplied tag and rejects
+// sanitizeTag normalises an attacker-controlled locale tag and rejects
 // values that are empty, too long, or contain characters outside the
 // BCP 47 subset (lowercase letters, digits, hyphen). Returns "" on
 // rejection so the caller falls through to the next source.
-func sanitizeResolverTag(tag string) string {
+//
+// EVERY externally-supplied tag goes through this — resolver values
+// (cookies), the X-Locale header, and Accept-Language entries — because
+// each of them can become the Locale.Tag that a host's Catalog.Get
+// receives as a lookup key, and Catalog is a documented third-party
+// extension point. Bounding only the cookie left the two header
+// sources, which are equally attacker-controlled, unguarded.
+func sanitizeTag(tag string) string {
 	tag = normalize(tag)
 	if tag == "" || len(tag) > maxResolverTagLen {
 		return ""
@@ -513,7 +536,7 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 		if !ok {
 			continue
 		}
-		tag = sanitizeResolverTag(tag)
+		tag = sanitizeTag(tag)
 		if tag == "" {
 			continue
 		}
@@ -527,14 +550,31 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 		}
 	}
 
-	// 2. X-Locale header — wins outright (backward-compatible).
-	if forced := normalize(r.Header.Get("X-Locale")); forced != "" {
+	// 2. X-Locale header — wins outright (backward-compatible), but is
+	//    bounded exactly like a resolver value first. X-Locale is just as
+	//    attacker-controlled as a cookie and it short-circuits every
+	//    later check, so an unbounded value here becomes the Locale.Tag
+	//    that flows to tagFallbacks → Catalog.Get. Catalog is a
+	//    third-party extension point (the documented wiring is
+	//    LoadJSONCatalog over an fs.FS), so a host with a lazily-loading
+	//    FS/DB catalog would receive "../../etc/passwd" as a lookup key.
+	//    Rejected values fall through to Accept-Language rather than
+	//    becoming the tag.
+	if forced := sanitizeTag(r.Header.Get("X-Locale")); forced != "" {
 		return Locale{Tag: forced}
 	}
 
 	// 3. Accept-Language.
 	if tr == nil {
-		return Locale{Tag: normalize(r.Header.Get("Accept-Language"))}
+		// No catalog to match against. Take the highest-quality entry
+		// that survives bounding — NOT the whole raw header, which used
+		// to be handed back as a "tag" verbatim.
+		for _, want := range parseAcceptLanguage(r.Header.Get("Accept-Language")) {
+			if tag := sanitizeTag(want); tag != "" {
+				return Locale{Tag: tag}
+			}
+		}
+		return Locale{}
 	}
 	for _, want := range parseAcceptLanguage(r.Header.Get("Accept-Language")) {
 		if hit := matchCatalog(want, available); hit != "" {
@@ -562,24 +602,43 @@ func parseAcceptLanguage(header string) []string {
 		q   float64
 	}
 	// Bound the work an attacker-controlled header can force: RFC-realistic
-	// clients send a handful of language ranges. Cap the number of accepted
-	// entries so a header packed with commas (up to MaxHeaderBytes) cannot
-	// amplify into hundreds of thousands of allocations + an O(n log n) sort.
-	const maxEntries = 32
+	// clients send a handful of language ranges.
+	//
+	// Capping len(out) alone was not enough. strings.Split materialises
+	// the ENTIRE comma-separated slice before the cap is ever consulted,
+	// so a ~600KB header still allocated ~3.2MB and ~500k strings per
+	// request — 12000x a normal header — and the inner ";" split was
+	// uncapped on top of that. Scan the header in place instead, and
+	// bound the number of segments EXAMINED, not just accepted.
+	const (
+		maxEntries  = 32
+		maxSegments = 512
+		maxParams   = 8
+	)
 	var out []entry
-	for _, part := range strings.Split(header, ",") {
-		if len(out) >= maxEntries {
-			break
+	rest := header
+	for segments := 0; rest != "" && len(out) < maxEntries && segments < maxSegments; segments++ {
+		part := rest
+		if i := strings.IndexByte(rest, ','); i >= 0 {
+			part, rest = rest[:i], rest[i+1:]
+		} else {
+			rest = ""
 		}
 		seg := strings.TrimSpace(part)
 		if seg == "" {
 			continue
 		}
 		tag, q := seg, 1.0
-		if i := strings.Index(seg, ";"); i >= 0 {
+		if i := strings.IndexByte(seg, ';'); i >= 0 {
 			tag = strings.TrimSpace(seg[:i])
 			params := seg[i+1:]
-			for _, kv := range strings.Split(params, ";") {
+			for n := 0; params != "" && n < maxParams; n++ {
+				kv := params
+				if j := strings.IndexByte(params, ';'); j >= 0 {
+					kv, params = params[:j], params[j+1:]
+				} else {
+					params = ""
+				}
 				kv = strings.TrimSpace(kv)
 				if strings.HasPrefix(kv, "q=") {
 					if f, err := strconv.ParseFloat(kv[2:], 64); err == nil {
