@@ -74,10 +74,17 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 		// runtime. Blocking these would break every generator that renders
 		// through this IR without closing any of the gadgets above.
 		//
-		// data-kiln-tool is safe here: the delegator additionally
-		// requires a data-fui-trusted ancestor, which this IR cannot
-		// produce. data-action is NOT in this list — see
-		// TestIRCannotFireActions.
+		// data-kiln-tool stays allowed because an agent-authored button
+		// that fires a kiln tool is a deliberate kiln feature
+		// (kiln/integration's TestBrowser_ButtonToolCallFires). This
+		// used to claim the delegator's data-fui-trusted ancestor was
+		// something "this IR cannot produce" — that was false:
+		// kiln/render/uihost.go wraps the whole agent tree in one. The
+		// value, not the attribute, is what has to be bounded, so kiln
+		// validates the tool name against ^[a-z][a-z0-9_]*$ before it
+		// reaches the IR (kiln/render/node.go safeToolName), which is
+		// what stops "../../api/posts" escaping /kiln/tool/.
+		// data-action is NOT in this list — see TestIRCannotFireActions.
 		"data-field": "title", "data-entity-list-body": "posts",
 		"data-kiln-tool": "chat",
 	}, nil))

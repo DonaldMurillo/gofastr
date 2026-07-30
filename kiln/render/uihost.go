@@ -136,10 +136,66 @@ type routerMounter struct{ r *corerouter.Router }
 
 func (m routerMounter) MountWidget(def *widget.Definition) { widget.Mount(m.r, def) }
 
+// safeThemeValue reports whether an agent-authored theme token value can be
+// interpolated into the app stylesheet.
+//
+// core-ui/style emits `--color-<name>: <value>;` (tokens.go darkSchemeCSS,
+// CSSCustomPropertiesOf) with NO escaping on either side, and the result is
+// served as the app stylesheet. An unfiltered value closes its declaration
+// and appends arbitrary rules — which is a privilege escalation relative to
+// the node renderer, whose whole job is to strip `class` and inline styles
+// from this same untrusted IR. Escaping belongs upstream in core-ui/style;
+// this is the ingestion-side guard for the one caller that feeds it
+// request-authored input.
+//
+// The allowed shape is a CSS color or font stack: alphanumerics plus the
+// punctuation those need. Everything that could start a new declaration,
+// rule, or at-rule (`;{}@\<>`), a comment (`/*`), or a network fetch
+// (`url(`, `image(`) is rejected outright.
+func safeThemeValue(v string) bool {
+	if v == "" || len(v) > 128 {
+		return false
+	}
+	for _, r := range v {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case strings.ContainsRune(" #%.,-+()/'\"_", r):
+		default:
+			return false
+		}
+	}
+	lower := strings.ToLower(v)
+	for _, bad := range []string{"url(", "image(", "expression(", "/*", "*/", "//"} {
+		if strings.Contains(lower, bad) {
+			return false
+		}
+	}
+	return true
+}
+
+// safeThemeKey bounds an agent-authored DARK token name. Unlike the light
+// palette (a closed switch below), DarkColors is a free map whose key lands
+// directly in `--color-<key>:`, so a key of `x: y; } :root { --color-primary`
+// injects a rule of its own.
+func safeThemeKey(k string) bool {
+	if k == "" || len(k) > 64 {
+		return false
+	}
+	for i, r := range k {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case r == '-' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func worldTheme(c world.AppConfig) style.Theme {
 	t := uitheme.Default()
 	for key, value := range c.Theme {
-		if value == "" {
+		if !safeThemeValue(value) {
 			continue
 		}
 		switch key {
@@ -182,7 +238,7 @@ func worldTheme(c world.AppConfig) style.Theme {
 		}
 	}
 	for key, value := range c.ThemeDark {
-		if value != "" {
+		if safeThemeKey(key) && safeThemeValue(value) {
 			t.DarkColors[key] = value
 		}
 	}

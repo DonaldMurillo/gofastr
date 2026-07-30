@@ -242,10 +242,27 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) []SchemaChang
 	}
 	sort.Strings(removed)
 	for _, name := range removed {
+		// A Routine's Down is optional (see routine.go), so a routine
+		// removed without one used to emit an EMPTY statement here. The
+		// generated migration then contained nothing but ";": the drop
+		// silently did nothing while the snapshot advanced to record the
+		// routine as gone, and a rollback would CREATE OR REPLACE it
+		// back. Surface it as a change the author must resolve instead
+		// of writing a no-op that looks applied.
+		drop := strings.TrimSpace(prev[name].Down)
+		if drop == "" {
+			changes = append(changes, SchemaChange{
+				Summary: fmt.Sprintf("routine %s: drop SKIPPED — the routine declares no Down; "+
+					"add one (e.g. DROP FUNCTION ...) so the removal actually runs", name),
+				SQL:  "",
+				Down: prev[name].Up,
+			})
+			continue
+		}
 		changes = append(changes, SchemaChange{
 			Summary: fmt.Sprintf("routine %s: drop", name),
-			SQL:     prev[name].Down, // the drop
-			Down:    prev[name].Up,   // recreate on rollback
+			SQL:     drop,          // the drop
+			Down:    prev[name].Up, // recreate on rollback
 		})
 	}
 	return changes

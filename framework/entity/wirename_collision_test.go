@@ -48,6 +48,19 @@ func TestValidate_RejectsWireKeyCollision(t *testing.T) {
 			},
 			want: "secret",
 		},
+		{
+			// The wire key a bare column actually gets is the CASE-CONVERTED
+			// name — camelCase by default — not the literal column name. A
+			// WireName matching that converted form collides at runtime while
+			// the literal names differ, which is exactly the silent read/write
+			// split this guard exists to stop.
+			name: "WireName collides with a column's camelCase form",
+			fields: []schema.Field{
+				{Name: "author_id", Type: schema.String},
+				{Name: "shadow", Type: schema.String, WireName: "authorId"},
+			},
+			want: "authorId",
+		},
 	}
 
 	for _, tc := range cases {

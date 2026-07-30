@@ -17,7 +17,6 @@ package agentsinv
 import (
 	"sort"
 	"sync"
-	"testing"
 )
 
 // Kind discriminates framework-root helpers from individual batteries.
@@ -102,10 +101,19 @@ func All() []Entry {
 	return out
 }
 
-// Reset clears the registry. The *testing.T parameter is a discipline
-// marker — production code can technically pass nil since `testing`
-// is in stdlib, so this is convention, not enforcement.
-func Reset(_ *testing.T) {
+// TestingT is the discipline marker [Reset] takes. *testing.T satisfies it,
+// so `agentsinv.Reset(t)` compiles unchanged.
+//
+// It is an interface rather than *testing.T so this package does not import
+// `testing`. agentsinv is imported by the gofastr CLI and by every host app
+// that pulls in a battery, and an import of `testing` from a non-test file
+// links the whole testing/flag/pprof/regexp tree into those binaries.
+type TestingT interface{ Helper() }
+
+// Reset clears the registry. The TestingT parameter is a discipline marker —
+// production code can technically pass any Helper()er, so this is
+// convention, not enforcement.
+func Reset(_ TestingT) {
 	mu.Lock()
 	entries = entries[:0]
 	missing = missing[:0]

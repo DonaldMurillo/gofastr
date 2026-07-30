@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -271,5 +272,188 @@ func TestRouter_CustomNotFoundKeeps405(t *testing.T) {
 	r.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNotFound || !strings.Contains(rr.Body.String(), "nf") {
 		t.Fatalf("[router] genuine 404 did not reach custom NotFound, got code=%d body=%q", rr.Code, rr.Body.String())
+	}
+}
+
+// --- internal-redirect responses ------------------------------------------
+//
+// Property: a response the mux synthesises itself (trailing-slash
+// completion, "//" collapse, "/./" and "/../" cleaning) is still a
+// response from this router, so it must be subject to the SAME route
+// gate and the SAME middleware chain as a matched route. Before this
+// was pinned, net/http's RedirectHandler was served directly out of
+// ServeHTTP, which skipped the gate (turning the documented "plain
+// 404, existence must not leak" contract into a 307-vs-404 oracle)
+// and skipped every middleware — security headers, recovery, request
+// logging, CORS and rate limiting. Same class as CVE-2026-15704
+// (Eclipse BaSyx) and CVE-2026-33808 (@fastify/express).
+
+// redirectingPaths are the four ways net/http's mux synthesises a
+// redirect to the same canonical target.
+func redirectingPaths() []string {
+	return []string{"/admin/panel", "//admin/panel/", "/admin/./panel/", "/x/../admin/panel/"}
+}
+
+func TestRedirectRunsMiddlewareChain(t *testing.T) {
+	r := New()
+	var ran int
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ran++
+			w.Header().Set("X-Sec", "on")
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.Get("/admin/panel/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {}))
+
+	for _, p := range redirectingPaths() {
+		ran = 0
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, p, nil))
+		if ran == 0 || rr.Header().Get("X-Sec") != "on" {
+			t.Errorf("SECURITY: [router] %s bypassed the middleware chain (code=%d ran=%d). "+
+				"Attack: unauthenticated request served with no security headers, "+
+				"logging, recovery or rate limiting.", p, rr.Code, ran)
+		}
+	}
+}
+
+func TestRedirectToGatedRouteIs404(t *testing.T) {
+	r := New()
+	r.SetRouteGate(func(string) bool { return false })
+	r.Get("/admin/panel/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {}))
+	r.Post("/admin/wipe/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {}))
+
+	// Baseline: the canonical path on a fully gated router is a plain 404.
+	base := httptest.NewRecorder()
+	r.ServeHTTP(base, httptest.NewRequest(http.MethodGet, "/admin/panel/", nil))
+	if base.Code != http.StatusNotFound {
+		t.Fatalf("[router] gated canonical path returned %d, want 404", base.Code)
+	}
+
+	for _, p := range redirectingPaths() {
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, p, nil))
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("SECURITY: [router] gated %s answered %d (Location=%q) instead of 404. "+
+				"Attack: unauthenticated redirect-vs-404 oracle enumerates every "+
+				"gated subtree, contradicting SetRouteGate's documented contract.",
+				p, rr.Code, rr.Header().Get("Location"))
+		}
+	}
+
+	// 307 preserves method AND body, so the POST shape is the sharp one.
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/admin/wipe", strings.NewReader("x=1")))
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("SECURITY: [router] gated POST /admin/wipe answered %d (Location=%q), want 404. "+
+			"Attack: method+body-preserving 307 confirms a disabled module's route exists.",
+			rr.Code, rr.Header().Get("Location"))
+	}
+}
+
+func TestRedirectStillRedirectsWhenLive(t *testing.T) {
+	// Keep the useful half of the behaviour: an ungated trailing-slash
+	// completion must still redirect, not 404.
+	r := New()
+	r.Get("/admin/panel/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {}))
+	for _, p := range redirectingPaths() {
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, p, nil))
+		if rr.Code < 300 || rr.Code >= 400 {
+			t.Errorf("[router] ungated %s returned %d, want a redirect", p, rr.Code)
+		}
+		if loc := rr.Header().Get("Location"); loc != "/admin/panel/" {
+			t.Errorf("[router] %s redirected to %q, want /admin/panel/", p, loc)
+		}
+	}
+}
+
+// TestUnmatchedPathWorkIsBounded pins that the 404/405 fallback does not
+// do work proportional to the route table on every unmatched request.
+// It used to clone the request and rebuild an entire http.ServeMux —
+// parsing and tree-inserting every registered pattern — which measured
+// ~1200x a matched request (205us / 3704 allocs against 300 routes) on
+// a fully attacker-controlled URL, ahead of the rate limiter.
+func TestUnmatchedPathWorkIsBounded(t *testing.T) {
+	r := New()
+	const routes = 300
+	for i := 0; i < routes; i++ {
+		r.Get(fmt.Sprintf("/route%d/{id}", i), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	}
+	miss := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	got := testing.AllocsPerRun(50, func() {
+		r.ServeHTTP(httptest.NewRecorder(), miss)
+	})
+	// A constant-work fallback allocates on the order of tens; a rebuild
+	// allocates on the order of the route count.
+	if got > routes {
+		t.Errorf("SECURITY: [router] unmatched request allocated %.0f objects against %d routes. "+
+			"Attack: unauthenticated request amplifies into route-table-proportional "+
+			"work ahead of the rate limiter.", got, routes)
+	}
+}
+
+// --- path-parameter canonicalisation --------------------------------------
+//
+// Property: a path parameter never carries a byte sequence that Go's own
+// mux would have refused to route. The mux cleans dot-segments and
+// collapses slashes in the REQUEST path (redirecting when it has to), so
+// a "/" inside a single-segment {name}, or a ".." segment in either
+// form, can only have arrived percent-encoded — i.e. deliberately
+// smuggled past segment matching. Surfaces: single-segment {name},
+// catch-all {name...}, via Param and via Params.
+
+func TestParamRejectsEncodedSlash(t *testing.T) {
+	r := New()
+	var one, rest string
+	r.Get("/f/{name}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		one = Param(req, "name")
+	}))
+	r.Get("/g/{rest...}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		rest = Param(req, "rest")
+	}))
+
+	r.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/f/%2e%2e%2f%2e%2e%2fetc%2fpasswd", nil))
+	if strings.Contains(one, "/") {
+		t.Errorf("SECURITY: [router] single-segment Param returned %q containing a path separator. "+
+			"Attack: %%2F-smuggled traversal reaches file/proxy/key sinks that trust Param.", one)
+	}
+
+	r.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/g/a/%2e%2e/%2e%2e/etc/passwd", nil))
+	if strings.Contains(rest, "..") {
+		t.Errorf("SECURITY: [router] catch-all Param returned %q containing a dot segment. "+
+			"Attack: %%2E-smuggled traversal escapes the catch-all's intended subtree.", rest)
+	}
+
+	// The legitimate catch-all contract survives: multi-segment values
+	// still span segments (see TestRouter_ParamsCatchAll).
+	rest = ""
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/g/a/b/c", nil))
+	if rest != "a/b/c" {
+		t.Errorf("[router] catch-all lost its multi-segment value, got %q want a/b/c", rest)
+	}
+}
+
+// TestParamsKeepsDeclaredKeys pins that Params exposes every parameter
+// the matched pattern declares, even when the value scrubs down to
+// empty. Callers gate on `if _, ok := p["id"]; !ok { ...collection... }`,
+// so a silently-absent key sends a scrubbed single-item request down the
+// collection branch instead of rejecting it.
+func TestParamsKeepsDeclaredKeys(t *testing.T) {
+	r := New()
+	var got map[string]string
+	r.Get("/users/{id}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		got = Params(req)
+	}))
+	for _, u := range []string{"/users/%0Aadmin", "/users/%00", "/users/%2fadmin"} {
+		got = nil
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, u, nil))
+		if _, ok := got["id"]; !ok {
+			t.Errorf("SECURITY: [router] Params(%s) omitted the declared {id} key entirely (got %#v). "+
+				"Attack: callers keyed on presence fail open into the collection branch.", u, got)
+		}
 	}
 }

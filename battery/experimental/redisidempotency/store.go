@@ -1,6 +1,28 @@
-// Package redisidempotency provides a Redis-backed store for the
-// idempotency middleware. Complements the existing in-memory and SQL
-// stores in core/middleware.
+// Package redisidempotency provides a Redis-backed reserve/replay keystore
+// for at-most-once request handling.
+//
+// # It is NOT a drop-in core/middleware.IdempotencyStore
+//
+// The middleware's interface is
+// `Begin(ctx, key, fingerprint) (*IdempotentResponse, bool, error)` plus
+// `Finish(ctx, key, *IdempotentResponse)`. This Store's shape is
+// `CheckAndReserve(ctx, key) ([]byte, error)` / `Store(ctx, key, []byte)`,
+// which cannot express two of the middleware's security controls:
+//
+//   - No fingerprint parameter, so it can never return
+//     [middleware.ErrFingerprintMismatch] — the check that turns "same
+//     Idempotency-Key, different request body" into a 422 instead of
+//     replaying an unrelated response to it.
+//   - It stores only a raw body, with no status or headers, so a replay
+//     cannot reproduce the original status code and cannot participate in
+//     the middleware's strip-hop-by-hop-headers-on-replay handling.
+//
+// The signatures differ, so the mismatch is a compile error rather than a
+// silent downgrade — but do not "adapt" this type onto the middleware
+// without adding fingerprint storage and a full response snapshot, or the
+// adapter will fail open on both controls. Until then, use the in-memory
+// or SQL stores in core/middleware for the middleware, and this package
+// only for direct reserve/replay use.
 package redisidempotency
 
 import (

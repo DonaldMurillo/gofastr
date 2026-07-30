@@ -49,14 +49,28 @@ func (s *CSRFSkipper) Add(prefixes ...string) {
 	s.mu.Unlock()
 }
 
-// Skip reports whether r.URL.Path starts with any registered prefix.
-// Use as CSRFConfig.Skip directly when no other predicates apply, or
-// compose with SkipAny.
+// Skip reports whether the request path starts with any registered
+// prefix. Use as CSRFConfig.Skip directly when no other predicates
+// apply, or compose with SkipAny.
+//
+// SECURITY: the comparison is against r.URL.EscapedPath() — the path AS
+// SENT — not the percent-decoded r.URL.Path. An exemption decision has
+// to be made on the same bytes the router matched, and those differ:
+// Go's mux matches on decoded segments but does not redirect when %2F
+// or %2E leave the raw and decoded forms different. Matching the
+// decoded path let "POST /api%2f..%2f..%2fadmin/wipe" present
+// "/api/../../admin/wipe" here — inheriting the "/api/" exemption —
+// while the mux dispatched whatever wildcard route actually matched.
+// Comparing the escaped form fails closed: an encoded separator no
+// longer reads as a directory boundary, so the request keeps its CSRF
+// requirement. Ordinary encodings inside a genuinely-matching prefix
+// (e.g. "/api/foo%20bar") are unaffected.
 func (s *CSRFSkipper) Skip(r *http.Request) bool {
+	path := r.URL.EscapedPath()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, p := range s.prefixes {
-		if strings.HasPrefix(r.URL.Path, p) {
+		if strings.HasPrefix(path, p) {
 			return true
 		}
 	}

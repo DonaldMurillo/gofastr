@@ -335,13 +335,17 @@ func TestEntityOp_verbMapping(t *testing.T) {
 
 // ---- parseEntityCall ----
 
+// This used to round-trip a Subject. It cannot any more: an inbound reverse
+// call carries [moduleproto.CallerRef], which has only Delegation, so there is
+// no child-supplied subject for the broker to read even by mistake. Delegation
+// is the sole authority on this direction — see TestInboundCallerCarriesNoSubject.
 func TestParseEntityCall_queryShape(t *testing.T) {
 	params, _ := json.Marshal(moduleproto.EntityQueryParams{
 		Entity: "articles",
-		Caller: moduleproto.Caller{Subject: "u1"},
+		Caller: moduleproto.CallerRef{Delegation: "h1"},
 	})
 	name, caller, err := parseEntityCall(opQuery, params)
-	if err != nil || name != "articles" || caller.Subject != "u1" {
+	if err != nil || name != "articles" || caller.Delegation != "h1" {
 		t.Fatalf("parseEntityCall query = %q %+v %v", name, caller, err)
 	}
 }

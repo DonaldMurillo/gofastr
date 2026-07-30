@@ -158,9 +158,12 @@ func foldNumeric(args []any, op func(a, b float64) float64) (any, error) {
 			intValues[i] = v
 			values[i] = float64(v)
 		case int:
+			// Must NOT set allInt=true: the flag is monotone-downward, and
+			// re-raising it after a float64 argument sent the fold down the
+			// all-int path with intValues holding an unassigned zero for the
+			// float element — min(1.5, 7) returned 0.
 			intValues[i] = int64(v)
 			values[i] = float64(v)
-			allInt = true
 		case float64:
 			values[i] = v
 			allInt = false

@@ -1,10 +1,13 @@
 package file_test
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 )
 
@@ -145,5 +148,105 @@ func TestFileField_AcceptsLegitimate(t *testing.T) {
 		if err := ff.Validate(); err != nil {
 			t.Errorf("legitimate field rejected: %v", err)
 		}
+	}
+}
+
+// TestPlaceholderAllowListsAgree is the cross-check the comment on
+// file.isRasterDataURL promises: the LQIP allow-list enforced when a
+// FileField is validated must accept exactly what the render sink will
+// actually paint. The sink is framework/ui.placeholderUsable, which is
+// core-ui/urlsafe's ImageSource policy restricted to the data: scheme.
+// Asserting against urlsafe directly (rather than framework/ui) keeps
+// framework/file a leaf — this is a test-only edge.
+//
+// The two must agree in BOTH directions. A value this package accepts
+// but the sink drops is a silently broken placeholder; a value this
+// package accepts that the sink would paint from the network is a
+// tracking beacon persisted through an image column.
+func TestPlaceholderAllowListsAgree(t *testing.T) {
+	t.Parallel()
+	corpus := []string{
+		"data:image/jpeg;base64,AAAA",
+		"data:image/png;base64,AAAA",
+		"data:image/gif;base64,AAAA",
+		"data:image/webp;base64,AAAA",
+		"data:image/avif;base64,AAAA",
+		"data:image/svg+xml;base64,AAAA",
+		"data:text/html,<script>alert(1)</script>",
+		"javascript:alert(1)",
+		"https://evil.example/px.gif",
+		"HTTPS://evil.example/px.gif",
+		"//evil.example/px.gif",
+		"/uploads/px.gif",
+		"px.gif",
+	}
+	for _, c := range corpus {
+		d := &file.ImageDerivatives{Placeholder: c}
+		accepted := d.Validate() == nil
+		// The render sink: data: scheme AND urlsafe.ImageSource.
+		painted := strings.HasPrefix(strings.ToLower(c), "data:") &&
+			urlsafe.OK(c, urlsafe.ImageSource)
+		if accepted != painted {
+			t.Fatalf("SECURITY: [filefield] placeholder %q: Validate accepted=%v but render sink paints=%v. The two allow-lists must agree; a remote URL stored as a placeholder is a beacon, and a rejected-at-render value is a silently dead LQIP.", c, accepted, painted)
+		}
+	}
+}
+
+// TestFileFieldRejectsControlBytes pins one property — no C0 control
+// byte or DEL survives validation — across every FileField string
+// surface that is persisted and later echoed into a header, an HTML
+// attribute, or a log line. mime_type is already covered by its
+// charset filter; url, filename, and storage_ref were not.
+func TestFileFieldRejectsControlBytes(t *testing.T) {
+	t.Parallel()
+	payloads := map[string]string{
+		"cr":  "ok\rinjected",
+		"lf":  "ok\ninjected",
+		"nul": "ok\x00.jpg",
+		"del": "ok\x7finjected",
+	}
+	surfaces := map[string]func(string) *file.FileField{
+		"url":         func(v string) *file.FileField { return &file.FileField{URL: v} },
+		"filename":    func(v string) *file.FileField { return &file.FileField{Filename: v} },
+		"mime_type":   func(v string) *file.FileField { return &file.FileField{MimeType: v} },
+		"storage_ref": func(v string) *file.FileField { return &file.FileField{StorageRef: v} },
+	}
+	for sname, mk := range surfaces {
+		for pname, payload := range payloads {
+			if mk(payload).Validate() == nil {
+				t.Errorf("SECURITY: [filefield] Validate accepted %s control byte in %s. Attack: the stored value is echoed into Content-Disposition / a log line / an HTML attribute and splits it.", pname, sname)
+			}
+		}
+	}
+}
+
+// TestFileFieldRejectsFilenameTraversal pins that Filename is held to
+// the same traversal rule as url and storage_ref. A `..` filename
+// reaches Content-Disposition and any host that joins it onto a path.
+func TestFileFieldRejectsFilenameTraversal(t *testing.T) {
+	t.Parallel()
+	for _, n := range []string{"../../etc/passwd", "a/../../b.png", ".."} {
+		ff := &file.FileField{Filename: n}
+		if err := ff.Validate(); !errors.Is(err, file.ErrFileFieldTraversal) {
+			t.Errorf("SECURITY: [filefield] Validate accepted traversal filename %q (err=%v)", n, err)
+		}
+	}
+}
+
+// TestProcessFileFieldStripsCtrlInName pins the doc claim at
+// FileField.Validate that "the constructors in this package
+// (ProcessFileField) already produce valid FileFields" — a hostile
+// multipart filename must not be able to produce a FileField that
+// Validate would reject.
+func TestProcessFileFieldStripsCtrlInName(t *testing.T) {
+	t.Parallel()
+	png := []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 'I', 'H', 'D', 'R'}
+	ff, err := file.ProcessFileField(context.Background(), &captureStorage{},
+		bytes.NewReader(png), "a\r\nContent-Disposition: x\x00.png", "posts", "cover")
+	if err != nil {
+		t.Fatalf("legitimate PNG upload rejected: %v", err)
+	}
+	if verr := ff.Validate(); verr != nil {
+		t.Fatalf("SECURITY: [filefield] ProcessFileField produced a FileField its own Validate rejects (%v) for filename %q. Attack: CRLF in the echoed filename splits Content-Disposition.", verr, ff.Filename)
 	}
 }

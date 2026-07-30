@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 )
@@ -79,7 +81,13 @@ func runDocsList() {
 		// Trim long summaries to fit ~120-col terminals.
 		const lineCap = 100
 		if len(summary) > lineCap {
-			summary = summary[:lineCap] + "…"
+			// Back off to a rune boundary — a byte slice can land mid-rune
+			// and emit invalid UTF-8 to the terminal.
+			cut := lineCap
+			for cut > 0 && !utf8.RuneStart(summary[cut]) {
+				cut--
+			}
+			summary = summary[:cut] + "…"
 		}
 		fmt.Printf("  %s%s  %s\n",
 			green(t.Name),
@@ -137,22 +145,47 @@ func pluralS(n int) string {
 
 // highlight wraps each case-insensitive occurrence of `term` in `s`
 // with ANSI bold so the matching word stands out in --grep output.
+//
+// It scans s directly, rune by rune, rather than locating the match in
+// strings.ToLower(s) and slicing the original. strings.ToLower is not
+// length-preserving — U+0130 'İ' lowers to a single-byte 'i', shrinking
+// 2 bytes to 1 — so the two strings' byte offsets diverge and the old
+// `s[i+idx : i+idx+len(term)]` either sliced mid-rune (emitting invalid
+// UTF-8) or ran past the end. `gofastr docs --grep 'entİty'` panicked
+// with "slice bounds out of range".
 func highlight(s, term string) string {
 	if term == "" {
 		return s
 	}
-	lower := strings.ToLower(s)
-	lowerTerm := strings.ToLower(term)
 	var b strings.Builder
-	i := 0
-	for {
-		idx := strings.Index(lower[i:], lowerTerm)
-		if idx < 0 {
-			b.WriteString(s[i:])
-			return b.String()
+	for i := 0; i < len(s); {
+		if end, ok := foldPrefixLen(s[i:], term); ok {
+			b.WriteString(bold(s[i : i+end]))
+			i += end
+			continue
 		}
-		b.WriteString(s[i : i+idx])
-		b.WriteString(bold(s[i+idx : i+idx+len(term)]))
-		i += idx + len(term)
+		_, size := utf8.DecodeRuneInString(s[i:])
+		b.WriteString(s[i : i+size])
+		i += size
 	}
+	return b.String()
+}
+
+// foldPrefixLen reports the byte length of s's leading run of runes that
+// case-folds equal to term, and whether such a prefix exists. Because it
+// advances by whole runes in both strings, the returned length is always a
+// valid slice bound into s.
+func foldPrefixLen(s, term string) (int, bool) {
+	i := 0
+	for _, tr := range term {
+		if i >= len(s) {
+			return 0, false
+		}
+		sr, size := utf8.DecodeRuneInString(s[i:])
+		if unicode.ToLower(sr) != unicode.ToLower(tr) {
+			return 0, false
+		}
+		i += size
+	}
+	return i, i > 0
 }

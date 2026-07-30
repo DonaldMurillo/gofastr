@@ -26,6 +26,7 @@ var (
 	ErrFileFieldOversize      = errors.New("filefield: field exceeds length limit")
 	ErrFileFieldTooLarge      = errors.New("filefield: file exceeds maximum size")
 	ErrFileFieldUnsafeContent = errors.New("filefield: file content is unsafe by default")
+	ErrFileFieldControlBytes  = errors.New("filefield: field contains control bytes")
 )
 
 // MaxFileFieldStringBytes caps the length of any FileField string field
@@ -71,8 +72,13 @@ type FileField struct {
 // Rejected inputs:
 //   - URL with javascript:, vbscript:, or data: scheme — would XSS when
 //     rendered as href/src by a downstream consumer.
-//   - URL or StorageRef containing `..` segments — would escape the
-//     storage root on a vulnerable filesystem backend.
+//   - URL, StorageRef, or Filename containing `..` segments — would
+//     escape the storage root on a vulnerable filesystem backend, and
+//     Filename reaches `Content-Disposition: attachment; filename=…`.
+//   - Any C0 control byte or DEL in URL, Filename, or StorageRef. These
+//     are persisted and later echoed into a response header, an HTML
+//     attribute, or a log line, each of which a CR/LF splits. MimeType
+//     is covered by its charset filter, which admits no control byte.
 //   - MimeType containing characters outside the MIME-safe set —
 //     normal MIME types are `type/subtype` with letters, digits,
 //     `+`, `-`, `.`; angle brackets / quotes indicate an XSS attempt.
@@ -103,6 +109,21 @@ func (f *FileField) Validate() error {
 	}
 	if hasTraversal(f.StorageRef) {
 		return fmt.Errorf("%w: storage_ref %q", ErrFileFieldTraversal, f.StorageRef)
+	}
+	if hasTraversal(f.Filename) {
+		return fmt.Errorf("%w: filename %q", ErrFileFieldTraversal, f.Filename)
+	}
+	// Checked after the scheme guard so a control byte smuggled into a
+	// javascript: URL still reports as ErrFileFieldURLScheme — that is the
+	// actionable diagnosis, and TestFileField_RejectsJavaScriptScheme pins it.
+	for name, v := range map[string]string{
+		"url":         f.URL,
+		"filename":    f.Filename,
+		"storage_ref": f.StorageRef,
+	} {
+		if i := indexControlByte(v); i >= 0 {
+			return fmt.Errorf("%w: %s contains %#x at offset %d", ErrFileFieldControlBytes, name, v[i], i)
+		}
 	}
 	if !isSafeMIMEString(f.MimeType) {
 		return fmt.Errorf("%w: %q", ErrFileFieldMimeUnsafe, f.MimeType)
@@ -141,6 +162,37 @@ func isUnsafeURLScheme(url string) bool {
 		}
 	}
 	return false
+}
+
+// indexControlByte returns the offset of the first C0 control byte
+// (0x00-0x1F) or DEL (0x7F) in s, or -1 when s is clean. Byte-wise on
+// purpose: every such byte is a single byte in UTF-8, and a multi-byte
+// rune can never contain one, so no decoding is needed.
+func indexControlByte(s string) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return i
+		}
+	}
+	return -1
+}
+
+// stripControlBytes removes every C0 control byte and DEL from s. Used on
+// the multipart filename before it becomes FileField.Filename, so the
+// constructor keeps the invariant its doc claims: a FileField that
+// ProcessFileField returns always passes Validate.
+func stripControlBytes(s string) string {
+	if indexControlByte(s) < 0 {
+		return s
+	}
+	b := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			continue
+		}
+		b = append(b, s[i])
+	}
+	return string(b)
 }
 
 // hasTraversal reports whether s contains a `..` segment. We're
@@ -182,12 +234,13 @@ func isSafeMIMEString(s string) bool {
 //
 //   - Size is capped at [MaxProcessFileSize]. Anything larger returns
 //     [ErrFileFieldTooLarge] without buffering the rest of the body.
-//   - Content is sniffed from the first 512 bytes (and an XML/HTML probe
-//     of the leading non-whitespace) and rejected when it matches a
-//     known-dangerous shape: SVG / XML, HTML, or executable magic bytes
-//     (MZ for PE, 0x7fELF for ELF, Mach-O headers). The filename
-//     extension and any client-supplied Content-Type are ignored —
-//     attackers can lie about both.
+//   - Content is scanned for active markup in two tiers: HARD tokens
+//     (<script, <svg, <iframe, <html, <!doctype, <object, <embed, <base)
+//     are matched anywhere in the body, and SOFT tokens (<img, <?xml,
+//     <style, <link, javascript:) only in the leading 512 bytes. Executable
+//     magic bytes (MZ for PE, 0x7fELF for ELF, Mach-O headers) are also
+//     rejected. The filename extension and any client-supplied
+//     Content-Type are ignored — attackers can lie about both.
 //
 // The ctx parameter should come from the HTTP request so cancellation and
 // deadlines are respected during slow uploads.
@@ -241,7 +294,7 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 
 	ff := &FileField{
 		URL:        path,
-		Filename:   filepath.Base(filename),
+		Filename:   filepath.Base(stripControlBytes(filename)),
 		MimeType:   mimeType,
 		Size:       size,
 		StorageRef: path,
@@ -282,12 +335,25 @@ type readerAdapter struct {
 
 func (a readerAdapter) Read(p []byte) (int, error) { return a.r.Read(p) }
 
-// rejectUnsafeContent inspects the first bytes of an upload and returns
+// rejectUnsafeContent inspects an upload's bytes and returns
 // [ErrFileFieldUnsafeContent] when the content matches a known-dangerous
 // shape. We do this in addition to [http.DetectContentType] because the
 // stdlib sniffer is permissive — e.g. an SVG body with a leading `<svg`
 // tag is reported as text/plain, but rendered as active content by any
 // browser that resolves the extension or sniffs harder.
+//
+// Active-content scanning is two-tier:
+//
+//   - HARD tokens (hardActiveTokens) are matched across the WHOLE body
+//     case-insensitively, regardless of sniffed type. They never
+//     legitimately appear in raster/PDF/font bytes, so a match anywhere —
+//     including past the 512-byte sniff window or behind valid raster
+//     magic (the GIFAR polyglot class) — is markup and is rejected.
+//   - SOFT tokens (softActiveTokens) are matched only in the 512-byte sniff
+//     window and only when the content does not sniff as a confirmed-inert
+//     binary. They genuinely appear in EXIF/XMP/comment metadata of real
+//     images and in PDF/font streams, so a whole-body scan would reject
+//     legitimate uploads.
 func rejectUnsafeContent(data []byte) error {
 	head := data
 	if len(head) > 512 {
@@ -311,45 +377,31 @@ func rejectUnsafeContent(data []byte) error {
 		}
 	}
 
-	// XML / HTML / SVG. http.DetectContentType returns text/html for
-	// most HTML inputs, but classifies SVG (and any markup that is not
-	// the leading token) as text/plain. The leading-token heuristic is
-	// trivially bypassed: a DOCTYPE/BOM/comment/arbitrary prefix pushes
-	// the dangerous tag off offset 0, and DetectContentType then reports
-	// text/plain. So we strip a leading byte-order mark and scan the
-	// whole sniff window (case-insensitive) for any active-content token
-	// anywhere.
-	//
-	// But that broad scan can false-positive: a legitimate raster image,
-	// PDF, or font whose bytes happen to contain an ASCII sequence like
-	// "<img" or "javascript:" (e.g. in a metadata/comment segment) would
-	// be wrongly rejected. To avoid that without weakening the block, we
-	// only run the token scan when the content is NOT a confirmed binary
-	// type. http.DetectContentType recognises raster images, PDF, fonts,
-	// archives, and audio/video by magic bytes — those can never be
-	// "active content" served as markup, so skipping the token scan for
-	// them is safe. SVG, HTML, plain text, and unknown
-	// (application/octet-stream) all still go through the full scan.
+	// HARD active-content tokens — scan the WHOLE body. These (<script,
+	// <svg, <iframe, <html, <!doctype, <object, <embed, <base) never
+	// legitimately appear in raster/PDF/font bytes, so a match anywhere is
+	// markup: a polyglot that leads with valid raster magic and stashes its
+	// payload past the 512-byte sniff window is still rejected (the GIFAR
+	// class). The body is resident and bounded by MaxProcessFileSize, so a
+	// whole-body scan is affordable; containsTokenFold matches
+	// case-insensitively without lowercasing (and reallocating) the body.
+	for _, tok := range hardActiveTokens {
+		if containsTokenFold(data, tok) {
+			return fmt.Errorf("%w: HTML/XML/SVG content", ErrFileFieldUnsafeContent)
+		}
+	}
+
+	// SOFT active-content tokens — keep the windowed, binary-skipped scan.
+	// These (<img, <?xml, <style, <link, javascript:) genuinely turn up in
+	// EXIF/XMP/comment metadata of real raster images and in PDF/font
+	// streams, so scanning the whole body for them would false-positive. We
+	// scan only the 512-byte sniff window, and only for content that does
+	// NOT sniff as a confirmed-inert binary. SVG, HTML, XML, plain text, and
+	// unknown (application/octet-stream) all still go through this scan.
 	if !isConfirmedInertBinary(head) {
 		trim := bytes.TrimLeft(stripBOM(head), " \t\r\n\f\v")
-		lower := bytes.ToLower(trim)
-		for _, tok := range [][]byte{
-			[]byte("<svg"),
-			[]byte("<?xml"),
-			[]byte("<html"),
-			[]byte("<!doctype"),
-			[]byte("<script"),
-			[]byte("<iframe"),
-			[]byte("<img"),
-			[]byte("<math"),
-			[]byte("<object"),
-			[]byte("<embed"),
-			[]byte("<link"),
-			[]byte("<base"),
-			[]byte("<style"),
-			[]byte("javascript:"),
-		} {
-			if bytes.Contains(lower, tok) {
+		for _, tok := range softActiveTokens {
+			if containsTokenFold(trim, tok) {
 				return fmt.Errorf("%w: HTML/XML/SVG content", ErrFileFieldUnsafeContent)
 			}
 		}
@@ -371,11 +423,11 @@ func rejectUnsafeContent(data []byte) error {
 // isConfirmedInertBinary reports whether http.DetectContentType
 // classifies head as a binary type that can never be rendered as active
 // HTML/SVG markup — raster images, PDF, fonts, archives, and audio/video.
-// For these the active-content token scan would only produce false
-// positives (a token in a metadata segment is just bytes, not markup),
-// so the scan is skipped. Crucially this NEVER returns true for SVG,
-// HTML, XML, plain text, or unknown content (application/octet-stream),
-// so the active-content block is not weakened for the shapes that matter.
+// It gates only the SOFT active-content token scan: the HARD scan runs
+// over the whole body regardless, so a polyglot that leads with valid
+// raster magic cannot stash its markup past the sniff window. Crucially
+// this NEVER returns true for SVG, HTML, XML, plain text, or unknown
+// content (application/octet-stream).
 func isConfirmedInertBinary(head []byte) bool {
 	ct := http.DetectContentType(head)
 	// Strip any "; charset=" parameter for prefix matching.
@@ -421,6 +473,88 @@ func stripBOM(b []byte) []byte {
 		return b[2:] // UTF-16 LE
 	}
 	return b
+}
+
+// hardActiveTokens are active-content markup tokens scanned for across the
+// WHOLE upload body regardless of sniffed type. None of them legitimately
+// appears in raster/PDF/font bytes, so a match anywhere is treated as
+// markup. See rejectUnsafeContent.
+var hardActiveTokens = [][]byte{
+	[]byte("<script"),
+	[]byte("<iframe"),
+	[]byte("<html"),
+	[]byte("<!doctype"),
+	[]byte("<object"),
+	[]byte("<embed"),
+	[]byte("<base"),
+	[]byte("<svg"),
+	// MathML is the other foreign-content root HTML parses as markup, and
+	// it belongs beside <svg for the same reason: neither shows up in
+	// raster, PDF, or font bytes, so a match is never a metadata false
+	// positive.
+	[]byte("<math"),
+}
+
+// softActiveTokens are active-content tokens scanned for only in the
+// 512-byte sniff window and only for content that does not sniff as a
+// confirmed-inert binary. They genuinely appear in image/PDF/font metadata,
+// so a whole-body scan would false-positive. See rejectUnsafeContent.
+var softActiveTokens = [][]byte{
+	[]byte("<img"),
+	[]byte("<?xml"),
+	[]byte("<style"),
+	[]byte("<link"),
+	[]byte("javascript:"),
+}
+
+// containsTokenFold reports whether haystack contains needle, comparing
+// ASCII bytes case-insensitively. It allocates nothing, so it is safe for
+// the whole-body hard-token scan where bytes.ToLower would double resident
+// memory for a 32 MiB upload.
+func containsTokenFold(haystack, needle []byte) bool {
+	nl := len(needle)
+	if nl == 0 {
+		return true
+	}
+	hl := len(haystack)
+	if hl < nl {
+		return false
+	}
+	// Fold the first needle byte for a cheap per-byte rejection.
+	first := needle[0]
+	firstUp := first
+	if first >= 'a' && first <= 'z' {
+		firstUp = first - 32
+	}
+	for i := 0; i+nl <= hl; i++ {
+		c := haystack[i]
+		if c != first && c != firstUp {
+			continue
+		}
+		match := true
+		for j := 1; j < nl; j++ {
+			a := haystack[i+j]
+			b := needle[j]
+			if a == b {
+				continue
+			}
+			// Fold ASCII letters to lower; the needles are all ASCII.
+			if a >= 'A' && a <= 'Z' {
+				a += 32
+			}
+			if b >= 'A' && b <= 'Z' {
+				b += 32
+			}
+			if a != b {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 // DeleteFileField removes a previously stored file from the storage backend.

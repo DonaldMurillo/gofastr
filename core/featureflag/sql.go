@@ -158,6 +158,10 @@ func (s *SQLStore) Delete(key string) error {
 }
 
 // All returns every defined flag — used by admin tooling.
+//
+// SECURITY: as with [MemoryStore.All], the rows carry each flag's raw
+// Users / Tenants allow-lists. Gate this behind admin auth; cohort
+// membership is PII and a signal in its own right.
 func (s *SQLStore) All(ctx context.Context) ([]Flag, error) {
 	rows, err := s.db.QueryContext(ctx,
 		fmt.Sprintf("SELECT key, enabled, rollout, users, tenants, envs FROM %s ORDER BY key", s.table),

@@ -303,10 +303,25 @@ Uploads are bounded and content-checked before anything is stored:
   multipart parser buffers at most `crud.MaxMultipartMemory` (32 MiB) in
   memory before spilling to a temp file. An oversize body returns
   `file.ErrFileFieldTooLarge` without reading past the limit.
-- **Content shape** is sniffed from the bytes — never the filename or the
-  client's `Content-Type`, both of which an attacker controls. SVG/XML,
-  HTML, and executable magic bytes (PE, ELF, Mach-O) are rejected with
-  `file.ErrFileFieldUnsafeContent`.
+- **Content shape** is checked from the bytes — never the filename or the
+  client's `Content-Type`, both of which an attacker controls. Executable
+  magic bytes (PE, ELF, Mach-O) are rejected outright. Active-content
+  markup is scanned in two tiers: hard tokens (`<script`, `<svg`,
+  `<iframe`, `<html`, `<!doctype`, `<object`, `<embed`, `<base`) are
+  matched anywhere in the body, so they are caught even when buried past
+  the leading bytes; soft tokens (`<img`, `<?xml`, `<style`, `<link`,
+  `javascript:`) are matched only in the leading 512 bytes and skipped for
+  confirmed binary types, which legitimately carry them in metadata. A
+  rejection returns `file.ErrFileFieldUnsafeContent`.
+- **Metadata shape** is enforced by `FileField.Validate` for callers that
+  accept a `FileField` from a request body. Beyond the scheme and `..`
+  checks on `URL` and `StorageRef`, `Filename` is held to the same
+  traversal rule, and a C0 control byte or DEL anywhere in `URL`,
+  `Filename`, or `StorageRef` returns `file.ErrFileFieldControlBytes` —
+  those fields are echoed into `Content-Disposition`, HTML attributes,
+  and log lines, each of which a CR/LF splits. `ProcessFileField` strips
+  control bytes from the multipart filename, so the metadata it returns
+  always passes its own `Validate`.
 - **Required** is enforced from the field declaration, like any other
   field.
 

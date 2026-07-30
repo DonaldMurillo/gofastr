@@ -82,6 +82,16 @@ type HandshakeExpected struct {
 	// Version is the module's operator-approved semantic version.
 	Version string `json:"version"`
 	// ArtifactSHA256 is the SHA-256 of the approved executable, hex-encoded.
+	//
+	// Unlike every other field here it is NOT round-trip-verified:
+	// [HandshakeResult] has no corresponding field and crossCheck never
+	// looks at it. That is deliberate — asking the child to echo the hash
+	// of its own binary proves nothing, since a substituted binary echoes
+	// whatever it was handed. Executable integrity is verified by the
+	// supervisor hashing the file BEFORE spawn (see
+	// framework/processmodule_store.go). This field is informational on
+	// the wire; do not read its presence here as evidence that the
+	// artifact was checked.
 	ArtifactSHA256 string `json:"artifact_sha256"`
 	// SurfaceSHA256 is the digest of the approved surface descriptor
 	// (routes + tool list + requested permissions). Mismatch with the
@@ -173,18 +183,47 @@ type HTTPRequestParams struct {
 	DeadlineUnixMs int64 `json:"deadline_unix_ms"`
 }
 
-// Caller is the resolved end-user context attached to a proxied call (and
-// echoed by the child on reverse host.* requests so the host re-attaches the
-// right request context to internal re-dispatch). The Delegation handle is an
-// in-memory, replica-local opaque string minted by the host (§5: v1 needs no
-// signed token; the handle never leaves shared memory).
+// Caller is the resolved end-user context the host attaches to an OUTBOUND
+// proxied call — [HTTPRequestParams] and [ToolCallParams]. The host fills
+// every field, so the child may trust all of them.
+//
+// It is deliberately NOT the type on inbound reverse calls; those carry
+// [CallerRef], which has no Subject or Tenant to read. See CallerRef for why.
 type Caller struct {
 	// Subject is the resolved caller subject (user id, service id, …).
 	Subject string `json:"subject,omitempty"`
 	// Tenant is the resolved tenant id, if any.
 	Tenant string `json:"tenant,omitempty"`
-	// Delegation is the in-memory handle the host uses to re-attach the
-	// originating request's context to a reverse host.* call.
+	// Delegation is the handle the child echoes back on a reverse host.*
+	// call so the host can re-attach the originating request's context.
+	//
+	// It is a JSON field on the wire, not a shared-memory handle: it is
+	// minted in host memory but SENT to the child, so it is a bearer
+	// capability — unguessable, per-request, and invalidated when the
+	// originating request completes.
+	Delegation string `json:"delegation,omitempty"`
+}
+
+// CallerRef is the caller context on an INBOUND reverse call —
+// host.entity.*, host.search.query, host.event.emit. It carries the
+// delegation handle and nothing else.
+//
+// The child is the untrusted party here, and on the inbound direction it
+// writes this struct. A broker that read a child-supplied Subject or Tenant
+// and dispatched under it would be a confused deputy: a compromised module
+// could name any subject or tenant it liked and the host's own CRUD scoping
+// would honour it. Documenting "do not trust these fields" is not enough
+// while the fields sit right there on the decoded struct — so the inbound
+// type does not have them, and the broker has nothing to resolve a principal
+// from except Delegation.
+//
+// The child's own Subject/Tenant, for its logging and its own policy, are
+// the ones the host already sent it in the outbound [Caller]. It does not
+// need to send them back.
+type CallerRef struct {
+	// Delegation is the handle minted by the host for the originating
+	// request. It is the sole authority on this direction: the broker
+	// resolves the principal from it and from nothing else.
 	Delegation string `json:"delegation,omitempty"`
 }
 
@@ -293,7 +332,7 @@ type EntityQueryParams struct {
 	Sort   json.RawMessage `json:"sort,omitempty"`
 	Limit  int             `json:"limit,omitempty"`
 	Offset int             `json:"offset,omitempty"`
-	Caller Caller          `json:"caller"`
+	Caller CallerRef       `json:"caller"`
 }
 
 // EntityQueryResult is the result of host.entity.query.
@@ -311,7 +350,7 @@ type EntityMutationParams struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 	Filter  json.RawMessage `json:"filter,omitempty"`
 	IDs     []string        `json:"ids,omitempty"`
-	Caller  Caller          `json:"caller"`
+	Caller  CallerRef       `json:"caller"`
 }
 
 // EntityMutationResult reports what changed.
@@ -325,7 +364,7 @@ type SearchQueryParams struct {
 	Query  string          `json:"query"`
 	Filter json.RawMessage `json:"filter,omitempty"`
 	Limit  int             `json:"limit,omitempty"`
-	Caller Caller          `json:"caller"`
+	Caller CallerRef       `json:"caller"`
 }
 
 // SearchQueryResult is the result of host.search.query.
@@ -339,7 +378,7 @@ type SearchQueryResult struct {
 type EventEmitParams struct {
 	Topic   string          `json:"topic"`
 	Payload json.RawMessage `json:"payload"`
-	Caller  Caller          `json:"caller"`
+	Caller  CallerRef       `json:"caller"`
 }
 
 // EventEmitResult is the (currently empty) result of host.event.emit.
