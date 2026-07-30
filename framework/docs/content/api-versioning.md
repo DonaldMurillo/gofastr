@@ -304,6 +304,15 @@ stays in the shared table, just hidden from that version's wire output).
 changing the DB column name. Both versions read and write the same
 underlying table; the projection is purely a wire-level concern.
 
+A `Rename` target must not collide with the wire key another column
+already claims, or the entity is refused at `Define` time. Note that the
+key a bare column claims is its **case-converted** name — `author_id`
+claims `authorId` under the default camelCase — so renaming a field to
+`authorId` alongside an `author_id` column is a collision even though the
+column names differ. Two fields sharing one wire key would split reads
+from writes silently: a body posted under that key lands on whichever
+column the handler cached first, while filters resolve it independently.
+
 ---
 
 ## Choosing an approach

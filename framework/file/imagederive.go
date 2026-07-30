@@ -76,12 +76,17 @@ func (d *ImageDerivatives) Validate() error {
 		return fmt.Errorf("%w: blurhash is %d bytes (max %d)",
 			ErrFileFieldOversize, len(d.BlurHash), MaxFileFieldStringBytes)
 	}
-	if d.Placeholder != "" && isUnsafeURLScheme(d.Placeholder) {
-		// isUnsafeURLScheme rejects bare `data:`, so an LQIP has to be
-		// checked against the narrower raster allow-list instead.
-		if !isRasterDataURL(d.Placeholder) {
-			return fmt.Errorf("%w: placeholder is not an inline raster image", ErrFileFieldURLScheme)
-		}
+	// An LQIP is an inline raster data: URI and nothing else — that is what
+	// image.Placeholder produces and the only thing the render sink
+	// (framework/ui.placeholderUsable) will paint. Gating this on
+	// isUnsafeURLScheme, as this once did, only ran the allow-list for
+	// values that already looked like a scheme attack, so a remote
+	// "https://tracker.example/px.gif" sailed through: never painted, but
+	// persisted through an image column and handed to any host that renders
+	// the raw value. Check unconditionally; the two allow-lists are pinned
+	// against each other by TestPlaceholderAllowListsAgree.
+	if d.Placeholder != "" && !isRasterDataURL(d.Placeholder) {
+		return fmt.Errorf("%w: placeholder is not an inline raster image", ErrFileFieldURLScheme)
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // EntityConfig holds the declarative configuration for an entity.
@@ -653,16 +654,31 @@ func (e *Entity) Validate() error {
 		// Hidden fields are included deliberately: they are excluded from
 		// responses but still resolve on write and filter paths, so letting a
 		// visible field alias a hidden column would be worse, not harmless.
-		wk := f.WireName
-		if wk == "" {
-			wk = f.Name
+		//
+		// A bare column does not claim its literal name on the wire — it
+		// claims the CASE-CONVERTED form (crud.wireKeyOfField), camelCase by
+		// default. Validate cannot read JSONCase, which App assigns after
+		// registration, so a bare column claims BOTH spellings and a clash
+		// under either one is refused. Comparing only the literal name let
+		// `author_id` and `WireName: "authorId"` through, which is the same
+		// silent read/write split this guard exists to stop.
+		claims := []string{f.WireName}
+		if f.WireName == "" {
+			claims = []string{f.Name}
+			if camel := casing.ToCamel(f.Name); camel != f.Name {
+				claims = append(claims, camel)
+			}
 		}
-		if owner, clash := wireKeys[wk]; clash {
-			return fmt.Errorf(
-				"entity %q: fields %q and %q both resolve to wire key %q — a wire key addresses exactly one column; change one field's WireName",
-				e.Config.Name, owner, f.Name, wk)
+		for _, wk := range claims {
+			if owner, clash := wireKeys[wk]; clash {
+				return fmt.Errorf(
+					"entity %q: fields %q and %q both resolve to wire key %q — a wire key addresses exactly one column; change one field's WireName",
+					e.Config.Name, owner, f.Name, wk)
+			}
 		}
-		wireKeys[wk] = f.Name
+		for _, wk := range claims {
+			wireKeys[wk] = f.Name
+		}
 
 		if f.Type == schema.Relation && f.To == "" {
 			return fmt.Errorf("entity %q: relation field %q must specify To", e.Config.Name, f.Name)
