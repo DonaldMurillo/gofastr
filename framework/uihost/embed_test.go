@@ -36,13 +36,28 @@ func (c *embedSubjectComp) RenderCtx(ctx context.Context) render.HTML {
 			viewer = s
 		}
 	}
-	// Also report whether a cookie was still visible on the request this
-	// screen rendered from. That is what "embed routes do not honour cookies"
-	// has to mean in practice: not merely that the handler ignores one, but
-	// that no code downstream of it can see one either.
+	// Also report which ambient credentials were still visible on the request
+	// this screen rendered from. That is what "embed routes honour no ambient
+	// credential" has to mean in practice: not merely that the handler ignores
+	// one, but that no code downstream of it can see one either. Cookie is the
+	// original case (a SameSite cookie rides a same-site frame); Authorization
+	// and X-API-Key are the same channel — a cached Basic credential or an
+	// API-key header attaches to same-origin subresource fetches automatically
+	// — and the embed routes must strip all three, matching
+	// framework/embed/middleware.go.
 	cookie := "none"
-	if r := app.RequestFromContext(ctx); r != nil && r.Header.Get("Cookie") != "" {
-		cookie = "present"
+	auth := "none"
+	apiKey := "none"
+	if r := app.RequestFromContext(ctx); r != nil {
+		if r.Header.Get("Cookie") != "" {
+			cookie = "present"
+		}
+		if r.Header.Get("Authorization") != "" {
+			auth = "present"
+		}
+		if r.Header.Get("X-API-Key") != "" {
+			apiKey = "present"
+		}
 	}
 	// And whether the screen can see the grant that authorised this render.
 	// A screen branching on "am I embedded" reads this; if it is absent on the
@@ -52,7 +67,7 @@ func (c *embedSubjectComp) RenderCtx(ctx context.Context) render.HTML {
 	if g, ok := fembed.GrantFromContext(ctx); ok {
 		grant = "present/" + g.Surface + "/" + strings.Join(g.Scopes, ",")
 	}
-	return render.HTML("<p>viewer:" + viewer + "</p><p>cookie:" + cookie + "</p><p>grant:" + grant + "</p>")
+	return render.HTML("<p>viewer:" + viewer + "</p><p>cookie:" + cookie + "</p><p>authorization:" + auth + "</p><p>x-api-key:" + apiKey + "</p><p>grant:" + grant + "</p>") // not-a-secret: echoes request headers into test HTML so assertions see what survived the strip
 }
 
 // Actions makes this an InteractiveComponent, so the host compiles action JS
@@ -779,7 +794,7 @@ func TestEmbedWithoutKeysRefuses(t *testing.T) {
 var _ = style.DefaultTheme
 
 // Session middleware runs BEFORE this handler, on the app's own router, and
-// this package does not control that ordering — so stripCookies inside the
+// this package does not control that ordering — so stripAmbientCredentials inside the
 // handler is too late to stop a middleware from having already installed a user
 // from a cookie. That happens for real in the same-site framing case
 // (app.acme.com inside www.acme.com), where a Strict cookie really is sent.
@@ -1091,5 +1106,59 @@ func TestEmbedShellAnnouncesTheSurfacePath(t *testing.T) {
 	body := f.do(t, http.MethodGet, "/__gofastr/embed/reports", "").Body.String()
 	if !strings.Contains(body, "&#34;path&#34;:&#34;/reports&#34;") {
 		t.Fatalf("the shell config does not carry the surface's app route:\n%s", body)
+	}
+}
+
+// The embed routes must honour NO ambient credential — not only the cookie.
+// A cached HTTP Basic credential or an API-key header attaches to same-origin
+// subresource fetches automatically, the exact channel the cookie defence
+// exists for, so all three must be stripped before any downstream code runs.
+// Today only the cookie is removed; Authorization and X-API-Key survive.
+func TestEmbedStripsAuthHeaders(t *testing.T) {
+	f := newEmbedFixture(t)
+	grant := f.grantFor(t, "reports")
+
+	rec := f.do(t, http.MethodGet, "/__gofastr/embed/reports/content", "", func(req *http.Request) {
+		req.Header.Set(embedGrantHeader, grant)
+		req.Header.Set("Cookie", "session=ambient-session")
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("u:p")))
+		req.Header.Set("X-API-Key", "ambient-key")
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"cookie:none", "authorization:none", "x-api-key:none"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ambient credential survived into the embed render — body should contain %q:\n%s", want, body)
+		}
+	}
+}
+
+// The content route answers the very next response of the same handshake as the
+// shell, and it used to publish the surface's WHOLE static origin allowlist as
+// frame-ancestors — every customer, on every content response. The grant is
+// bound to exactly one origin, so the directive must name that origin alone.
+// The "reports" surface allows acme.com (X) and shop.acme.com (Y); a grant
+// minted for X must frame as X only, never Y.
+func TestContentFramingIsGrantOrigin(t *testing.T) {
+	f := newEmbedFixture(t)
+	grant := f.grantFor(t, "reports") // minted for embedTestOrigin = https://acme.com
+
+	rec := f.do(t, http.MethodGet, "/__gofastr/embed/reports/content", "", func(req *http.Request) {
+		req.Header.Set(embedGrantHeader, grant)
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	ancestors := frameAncestorsOf(t, rec.Header().Get("Content-Security-Policy"))
+	if !strings.Contains(ancestors, embedTestOrigin) {
+		t.Errorf("frame-ancestors %q omits the grant's own origin %q", ancestors, embedTestOrigin)
+	}
+	if strings.Contains(ancestors, embedTestOrigin2) {
+		t.Errorf("frame-ancestors %q leaked an origin the grant was NOT minted for (%q) — the content route published the whole allowlist", ancestors, embedTestOrigin2)
+	}
+	if strings.Contains(ancestors, "'none'") || strings.Contains(ancestors, "*") {
+		t.Errorf("frame-ancestors must name the one grant origin, got %q", ancestors)
 	}
 }
