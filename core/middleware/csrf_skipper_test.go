@@ -117,3 +117,44 @@ func TestCSRFSkipper_ConcurrentAddAndSkip(t *testing.T) {
 	}
 	<-done
 }
+
+// TestSkipMatchesEncodedPathLiterally pins that the CSRF exemption
+// decision is made on the path AS SENT, not on its percent-decoded form.
+//
+// Property: an authz/exemption decision keyed on a URL must be made on
+// the same bytes the router matched. Go's mux matches on decoded
+// segments but does NOT redirect when %2F/%2E keep the raw and decoded
+// forms different, so r.URL.Path could read "/api/../../admin/wipe" —
+// granting the "/api/" exemption — while the mux dispatched a wildcard
+// route somewhere else entirely. Matching EscapedPath() fails closed:
+// an encoded separator no longer looks like a directory boundary, so
+// the request keeps its CSRF requirement.
+//
+// Precondition for exploitation was a registered skip prefix plus a
+// state-changing {param} route reachable under it — both ordinary.
+func TestSkipMatchesEncodedPathLiterally(t *testing.T) {
+	s := NewCSRFSkipper()
+	s.Add("/api/", "/health")
+
+	cases := []struct {
+		path string
+		want bool
+		why  string
+	}{
+		{"/api/orders", true, "plain path under the prefix still skips"},
+		{"/api/foo%20bar", true, "ordinary encoding inside the prefix still skips"},
+		{"/health", true, "non-directory prefix still skips"},
+		{"/admin/wipe", false, "unrelated path is not exempt"},
+		{"/api%2f..%2f..%2fadmin/wipe", false, "%2F-smuggled traversal must not inherit the exemption"},
+		{"/%61pi/orders", false, "%61-encoded prefix must not inherit the exemption"},
+	}
+	for _, tc := range cases {
+		r := httptest.NewRequest(http.MethodPost, tc.path, nil)
+		if got := s.Skip(r); got != tc.want {
+			t.Errorf("SECURITY: [middleware] Skip(%q) = %v, want %v (%s). "+
+				"URL.Path=%q EscapedPath=%q. Attack: a state-changing request "+
+				"routed outside the API surface inherits the API's CSRF exemption.",
+				tc.path, got, tc.want, tc.why, r.URL.Path, r.URL.EscapedPath())
+		}
+	}
+}
