@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-07-30
+
 The eleven pre-existing bugs the v0.52.0 review pass found in shipped code
 but deliberately left out of that release, plus a security audit of the
 packages no previous pass had ever read — kiln's expression and render

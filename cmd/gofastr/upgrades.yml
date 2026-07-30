@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.52.0
+through: v0.53.0
 
 releases:
   - version: v0.3.0
@@ -480,3 +480,10 @@ releases:
         breaking: false
         guidance: "The old default keyed on RemoteAddr's host, which behind any reverse proxy is the proxy for every request — so ?subscriber_id=<victim> dropped a stranger's stream. Left nil the broker now evicts nothing, which is the right default. Set Principal to something the caller cannot choose (a session user id) if you rely on same-id reconnect replacing the previous entry."
         detect: "SSEBrokerConfig\\{"
+  - version: v0.53.0
+    title: Security audit of the never-audited packages
+    notes:
+      - change: A module's reverse calls carry only the delegation handle
+        breaking: true
+        guidance: "EntityQueryParams, EntityMutationParams, SearchQueryParams and EventEmitParams now take moduleproto.CallerRef (Delegation only) instead of moduleproto.Caller. A child echoing back its own Subject/Tenant is a confused-deputy shape — the host must resolve the principal from Delegation alone. Drop the two fields from the reverse call; the host already sent them outbound and does not need them back. Compile errors point at each construction site."
+        detect: "moduleproto\\.Caller\\{"
