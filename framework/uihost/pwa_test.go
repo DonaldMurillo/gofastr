@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -677,8 +678,10 @@ func TestStaticServiceWorkerReviewContracts(t *testing.T) {
 	if !strings.Contains(sw, "matchPage") || !strings.Contains(sw, `pathname + "/"`) {
 		t.Errorf("navigation lookup must tolerate trailing-slash redirects:\n%s", sw)
 	}
-	// Prefix isolation: the live worker cleans caches under
-	// "gofastr-pwa-<slug>-"; the static prefix must NOT fall under it.
+	// Prefix isolation: each worker deletes only caches under its own
+	// "gofastr-pwa-<slug>.<hash>." delete-prefix (a dot-terminated hash,
+	// so one app's prefix can never be a prefix of a sibling's name);
+	// the live and static prefixes must not overlap either.
 	liveSW, err := ds.PWAServiceWorkerJS("")
 	if err != nil {
 		t.Fatal(err)
@@ -699,5 +702,141 @@ func TestStaticServiceWorkerReviewContracts(t *testing.T) {
 	}
 	if prefix(swSub) == staticPrefix {
 		t.Errorf("static exports at different basePaths must not share a cache prefix")
+	}
+}
+
+// pwaSWVar extracts the quoted string literal assigned to `var <name>`
+// in a generated service worker (CACHE_NAME / CACHE_PREFIX / OLD_PREFIX).
+func pwaSWVar(t *testing.T, sw, name string) string {
+	t.Helper()
+	needle := "var " + name + " = \""
+	i := strings.Index(sw, needle)
+	if i < 0 {
+		t.Fatalf("var %s not found in worker:\n%s", name, sw)
+	}
+	rest := sw[i+len(needle):]
+	return rest[:strings.Index(rest, `"`)]
+}
+
+// pwaLiveWorker builds the live service worker for an app of the given
+// name (an empty PWAConfig{}.Name defaults to the app name).
+func pwaLiveWorker(t *testing.T, name string) string {
+	t.Helper()
+	a := app.NewApp(name)
+	a.Register("/", &plainComp{}, nil)
+	ds := New(a, WithPWA(PWAConfig{}))
+	sw, err := ds.PWAServiceWorkerJS("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sw
+}
+
+var pwaHexRe = regexp.MustCompile(`^[0-9a-f]+$`)
+
+// TestPWAPrefixNotPrefixOfSibling: a live worker's activate must delete
+// only caches under its own delete-prefix. App "Acme" and "Acme Docs"
+// slugged to nested prefixes under the old format ("acme-" was a prefix
+// of "acme-docs-"), so Acme's activate wiped Acme Docs' caches. The
+// dot-terminated hash discriminator makes neither delete-prefix a prefix
+// of the other's full cache name.
+func TestPWAPrefixNotPrefixOfSibling(t *testing.T) {
+	acme := pwaLiveWorker(t, "Acme")
+	acmeDocs := pwaLiveWorker(t, "Acme Docs")
+	for _, p := range [][2]string{{acme, acmeDocs}, {acmeDocs, acme}} {
+		delPrefix := pwaSWVar(t, p[0], "CACHE_PREFIX")
+		otherCache := pwaSWVar(t, p[1], "CACHE_NAME")
+		if strings.HasPrefix(otherCache, delPrefix) {
+			t.Errorf("delete-prefix %q is a prefix of sibling cache name %q — activate would delete a sibling's cache", delPrefix, otherCache)
+		}
+	}
+}
+
+// TestPWAStaticPrefixNotPrefixOfSibling: the same prefix-isolation
+// property for static exports — the canonical target is several
+// sibling static sites under one user.github.io origin. Covers the
+// prefix-of-prefix case ("/gofastr" vs "/gofastr-docs") AND the
+// identical-slug case ("/a/b" vs "/ab", both slugging to "ab"). All
+// four must be pairwise safe.
+func TestPWAStaticPrefixNotPrefixOfSibling(t *testing.T) {
+	build := func(basePath string) string {
+		a := app.NewApp("Acme")
+		a.Register("/", &plainComp{}, nil)
+		ds := New(a, WithPWA(PWAConfig{}))
+		sw, err := ds.PWAStaticServiceWorkerJS(basePath, PWAStaticExport{Pages: []string{"/"}, ContentHash: "h"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sw
+	}
+	sws := map[string]string{
+		"/gofastr":      build("/gofastr"),
+		"/gofastr-docs": build("/gofastr-docs"),
+		"/a/b":          build("/a/b"),
+		"/ab":           build("/ab"),
+	}
+	for aPath, aSW := range sws {
+		for bPath, bSW := range sws {
+			if aPath == bPath {
+				continue
+			}
+			delPrefix := pwaSWVar(t, aSW, "CACHE_PREFIX")
+			otherCache := pwaSWVar(t, bSW, "CACHE_NAME")
+			if strings.HasPrefix(otherCache, delPrefix) {
+				t.Errorf("static basePath %q delete-prefix %q is a prefix of basePath %q cache name %q", aPath, delPrefix, bPath, otherCache)
+			}
+		}
+	}
+}
+
+// TestPWAMigrationReapsOnlyOwnOldCache: a deploy of the new worker
+// leaves the old-format own cache ("gofastr-pwa-<slug>-<hex-version>")
+// orphaned — activate's new delete-prefix no longer matches it. The
+// migration guard deletes such a cache only when it starts with this
+// worker's OLD_PREFIX AND the remainder is pure hex (the old version
+// was exactly 12 lowercase hex chars). The hex-remainder test is what
+// keeps a sibling ("Acme Docs" → "...acme-docs-<hex>") safe: its
+// remainder carries non-hex. The identical-slug case (static "/a/b"
+// vs "/ab") slugged identically and cannot be migrated apart — those
+// caches were already mutually wiping before the hash existed.
+func TestPWAMigrationReapsOnlyOwnOldCache(t *testing.T) {
+	sw := pwaLiveWorker(t, "Acme")
+	oldPrefix := pwaSWVar(t, sw, "OLD_PREFIX")
+	// OLD_PREFIX must be the pre-hash own-format: "gofastr-pwa-<slug>-".
+	wantOld := "gofastr-pwa-acme-"
+	if oldPrefix != wantOld {
+		t.Fatalf("OLD_PREFIX = %q, want %q", oldPrefix, wantOld)
+	}
+	// The worker must carry the all-hex remainder guard on the migration path.
+	if !strings.Contains(sw, "/^[0-9a-f]+$/") || !strings.Contains(sw, "OLD_PREFIX.length") {
+		t.Errorf("migration guard (OLD_PREFIX + all-hex remainder check) missing from worker:\n%s", sw)
+	}
+	// Mirror the worker's migration predicate exactly, then prove it
+	// reaps only this app's own old cache — never a sibling's, and never
+	// the new-format cache.
+	migrate := func(cacheName string) bool {
+		return strings.HasPrefix(cacheName, oldPrefix) && pwaHexRe.MatchString(cacheName[len(oldPrefix):])
+	}
+	newCache := pwaSWVar(t, sw, "CACHE_NAME")                        // current new-format own cache
+	ownOld := wantOld + strings.Repeat("a", 12)                      // old-format own cache (<hex> version)
+	siblingOld := "gofastr-pwa-acme-docs-" + strings.Repeat("f", 12) // old cache of sibling "Acme Docs"
+	if migrate(newCache) {
+		t.Errorf("migration must not touch the new-format own cache %q", newCache)
+	}
+	if !migrate(ownOld) {
+		t.Errorf("migration must reap own old-format cache %q", ownOld)
+	}
+	if migrate(siblingOld) {
+		t.Errorf("migration must NOT reap sibling old-format cache %q (remainder carries non-hex)", siblingOld)
+	}
+	// The static worker carries the same migration guard.
+	a := app.NewApp("Acme")
+	a.Register("/", &plainComp{}, nil)
+	staticSW, err := New(a, WithPWA(PWAConfig{})).PWAStaticServiceWorkerJS("/gofastr", PWAStaticExport{Pages: []string{"/"}, ContentHash: "h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(staticSW, "/^[0-9a-f]+$/") || !strings.Contains(staticSW, "OLD_PREFIX.length") {
+		t.Errorf("static worker missing migration guard:\n%s", staticSW)
 	}
 }
