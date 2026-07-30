@@ -92,8 +92,16 @@ type Peer struct {
 	inflight      int
 	serveInflight int
 	handlers      map[string]Handler
-	cancels       map[uint64]context.CancelFunc // inbound-request id → cancel
+	// cancels maps an inbound-request id to every handler currently serving
+	// it. A counterparty is free to reuse ids — nothing on the wire forbids
+	// it — so this cannot be a 1:1 map: keyed by id alone, a second request
+	// with the same id overwrote the first's entry, and then the FIRST
+	// handler's deferred delete removed the SECOND's, leaving a live handler
+	// that neither module.cancel nor Peer.Close could reach. Entries are
+	// removed by pointer identity, so each handler only ever retires its own.
+	cancels map[uint64][]*cancelSlot
 
+	started   atomic.Bool
 	closed    atomic.Bool
 	closeOnce sync.Once
 	closeCh   chan struct{} // closed once on Close(); unblocks in-flight Calls
@@ -124,6 +132,12 @@ func WithMaxInflight(n int) PeerOption {
 // spawn one handler goroutine per frame it writes. Overflow requests are
 // answered immediately with a [CodeInflightCap] error response — never
 // silently dropped (a drop would hang the caller) and never queued.
+//
+// The same cap bounds served NOTIFICATIONS, with the opposite overflow
+// policy: a notification is unacknowledged, so over-cap ones are dropped
+// (there is no response frame to write and no caller to hang).
+// [MethodCancel] is exempt — its built-in handler does no I/O, so it runs on
+// the read loop and a flood can never starve cancellation.
 func WithMaxServeInflight(n int) PeerOption {
 	return func(p *Peer) {
 		if n > 0 {
@@ -152,7 +166,7 @@ func NewPeer(codec *Codec, role Role, opts ...PeerOption) *Peer {
 		maxServeInflight: DefaultMaxInflight,
 		pending:          make(map[uint64]chan *Frame),
 		handlers:         make(map[string]Handler),
-		cancels:          make(map[uint64]context.CancelFunc),
+		cancels:          make(map[uint64][]*cancelSlot),
 		closeCh:          make(chan struct{}),
 		done:             make(chan struct{}),
 		fatalCh:          make(chan struct{}),
@@ -189,6 +203,9 @@ func (p *Peer) Handle(method string, h Handler) error {
 // Start launches the read loop. It panics if called twice (the read loop must
 // be single-threaded — see [Codec]).
 func (p *Peer) Start() {
+	if !p.started.CompareAndSwap(false, true) {
+		panic("moduleproto: Peer.Start called twice")
+	}
 	go p.readLoop()
 }
 
@@ -377,8 +394,10 @@ func (p *Peer) Close() error {
 	}
 	// Cancel any in-flight inbound handlers so they don't linger.
 	p.mu.Lock()
-	for id, cancel := range p.cancels {
-		cancel()
+	for id, slots := range p.cancels {
+		for _, slot := range slots {
+			slot.cancel()
+		}
 		delete(p.cancels, id)
 	}
 	p.mu.Unlock()
@@ -387,6 +406,30 @@ func (p *Peer) Close() error {
 	// observe the transport teardown.
 	close(p.closeCh)
 	return nil
+}
+
+// cancelSlot is one served request's cancel function, held by pointer so a
+// handler can retire its own registration by identity even when another
+// request shares its id.
+type cancelSlot struct{ cancel context.CancelFunc }
+
+// retireCancel removes exactly this slot from the id's list.
+func (p *Peer) retireCancel(id uint64, slot *cancelSlot) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	slots := p.cancels[id]
+	for i, s := range slots {
+		if s != slot {
+			continue
+		}
+		slots = append(slots[:i], slots[i+1:]...)
+		break
+	}
+	if len(slots) == 0 {
+		delete(p.cancels, id)
+		return
+	}
+	p.cancels[id] = slots
 }
 
 // ----- read loop -----
@@ -460,11 +503,46 @@ func (p *Peer) dispatch(f *Frame) {
 			}
 		}()
 	case f.Method != "" && f.ID == nil:
-		// Inbound NOTIFICATION. Dispatch in its own goroutine too —
-		// notifications should not block the read loop either. module.cancel
-		// is handled here via the built-in handler.
+		// Inbound NOTIFICATION. module.cancel runs INLINE: its built-in
+		// handler is a map lookup plus a cancel() with no I/O, so it cannot
+		// stall the read loop, and running it here means a flood can never
+		// starve cancellation of the slot it needs.
+		if f.Method == MethodCancel {
+			p.serveNotification(f)
+			return
+		}
+		// Everything else is dispatched in its own goroutine so a slow
+		// handler cannot stall the read loop — but under the SAME serve cap
+		// the request branch uses. Without it a flooding counterparty spawns
+		// one goroutine per frame it writes, which is precisely the threat
+		// WithMaxServeInflight documents; the request branch was bounded and
+		// this one was not. The lookup happens BEFORE the goroutine so a
+		// stream of frames naming unregistered methods costs nothing.
+		//
+		// Overflow is dropped, not queued and not answered: JSON-RPC
+		// notifications are unacknowledged, so there is no frame to write
+		// and no caller left hanging by the drop.
+		p.mu.Lock()
+		_, known := p.handlers[f.Method]
+		if !known {
+			p.mu.Unlock()
+			return
+		}
+		if p.serveInflight >= p.maxServeInflight {
+			p.mu.Unlock()
+			return
+		}
+		p.serveInflight++
+		p.mu.Unlock()
 		f := f
-		go p.serveNotification(f)
+		go func() {
+			defer func() {
+				p.mu.Lock()
+				p.serveInflight--
+				p.mu.Unlock()
+			}()
+			p.serveNotification(f)
+		}()
 	case f.Method == "" && f.ID != nil:
 		// Inbound RESPONSE. Deliver to our pending map. This is the ONLY
 		// branch that touches p.pending, and it only ever looks up ids WE
@@ -497,14 +575,11 @@ func (p *Peer) buildResponse(f *Frame) *Frame {
 	// can abort it and so Peer.Close cancels all in-flight handlers.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	slot := &cancelSlot{cancel: cancel}
 	p.mu.Lock()
-	p.cancels[id] = cancel
+	p.cancels[id] = append(p.cancels[id], slot)
 	p.mu.Unlock()
-	defer func() {
-		p.mu.Lock()
-		delete(p.cancels, id)
-		p.mu.Unlock()
-	}()
+	defer p.retireCancel(id, slot)
 
 	result, err := h(ctx, f.Params)
 	if err != nil {
@@ -631,10 +706,14 @@ func builtinCancelHandler(p *Peer) Handler {
 			return nil, nil
 		}
 		p.mu.Lock()
-		cancel, ok := p.cancels[id]
+		slots := append([]*cancelSlot(nil), p.cancels[id]...)
 		p.mu.Unlock()
-		if ok {
-			cancel()
+		// If the counterparty reused an id across concurrent requests it
+		// has told us only which id to abort, so abort every handler
+		// serving it. Cancelling too much is recoverable; leaving one
+		// uncancellable is not.
+		for _, slot := range slots {
+			slot.cancel()
 		}
 		return nil, nil
 	}
