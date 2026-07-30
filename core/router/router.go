@@ -29,15 +29,28 @@ type Middleware = middleware.Middleware
 // plugins / batteries / OnStart hooks contribute middleware while
 // requests are already flowing.
 type Router struct {
-	mux              *http.ServeMux
-	prefix           string
-	notFound         http.Handler
-	methodNotAllowed http.Handler
-	parent           *Router
+	mux    *http.ServeMux
+	prefix string
+	parent *Router
 
 	mu          sync.RWMutex
 	middlewares []Middleware
 	patterns    []RegisteredRoute // populated by Handle for introspection
+
+	// notFound / methodNotAllowed are read on the request path by
+	// effectiveNotFound / effectiveMethodNotAllowed and written by the
+	// NotFound / MethodNotAllowed setters, which the package doc says
+	// may run from OnStart while requests are already flowing. Both
+	// sides go through mu.
+	notFound         http.Handler
+	methodNotAllowed http.Handler
+
+	// probe* memoise the cold-path 404/405 mux. Guarded by probeMu, not
+	// mu, so a rebuild never blocks route registration. See probe().
+	probeMu      sync.Mutex
+	probeMux     *http.ServeMux
+	probeMethods map[string][]string
+	probeN       int
 
 	// root is the topmost ancestor; chainVersion lives there. Any Use
 	// anywhere in the tree bumps root.chainVersion atomically, which
@@ -176,19 +189,46 @@ func (r *Router) Patch(pattern string, handler http.Handler) {
 // Param extracts a single path parameter by name from the request.
 // It uses the Go 1.22+ r.PathValue() method.
 //
-// SECURITY: the returned value is truncated at the first CR, LF, or
-// NUL byte so a path-parameter payload can't be smuggled into
-// downstream headers, log lines, SSE frames, or query strings.
+// SECURITY: the returned value is truncated at the first byte that
+// could not have arrived through normal path routing:
+//
+//   - CR, LF or NUL — so a payload can't be smuggled into downstream
+//     headers, log lines, SSE frames, or query strings.
+//   - "/" in a single-segment {name} — the mux matches one segment, so
+//     a separator can only have arrived percent-encoded as %2F.
+//   - a ".." path segment, in single-segment AND catch-all {name...}
+//     form — the mux cleans dot segments out of the request path and
+//     redirects, so a ".." that survives into a value likewise only
+//     arrives %2E-encoded.
+//
+// A catch-all {name...} still spans segments: "a/b/c" is returned
+// intact. That's the one form allowed to contain "/".
+//
+// This bounds — but does not replace — validation at the sink. A value
+// that is safe as a header byte-string is not automatically safe as a
+// filesystem path, an object-store key, or a map lookup; sinks still
+// own their own allow-listing.
 func Param(r *http.Request, name string) string {
-	return sanitizeParam(r.PathValue(name))
+	return sanitizePathParam(r.PathValue(name), isCatchAll(r.Pattern, name))
+}
+
+// isCatchAll reports whether pattern declares name as a {name...}
+// multi-segment wildcard rather than a single-segment {name}.
+func isCatchAll(pattern, name string) bool {
+	return pattern != "" && strings.Contains(pattern, "{"+name+"...}")
 }
 
 // Params extracts all path parameters from the request.
 // It scans the registered pattern for {name} placeholders and extracts
 // each value using r.PathValue().
 //
-// SECURITY: every value is truncated at the first CR / LF / NUL byte
-// — see [Param].
+// SECURITY: every value is sanitized exactly as [Param] does.
+//
+// Every parameter the pattern declares is present in the map, even when
+// its value sanitizes down to "". Omitting a scrubbed key made callers
+// written as `if _, ok := p["id"]; !ok { ...treat as collection... }`
+// fail OPEN: a scrubbed single-item request took the collection branch.
+// Presence now means "declared", and the caller checks the value.
 func Params(r *http.Request) map[string]string {
 	pattern := r.Pattern
 	if pattern == "" {
@@ -209,31 +249,53 @@ func Params(r *http.Request) map[string]string {
 			// map exposes the param under its plain name — otherwise a
 			// catch-all value is silently dropped and callers driving
 			// auth/path logic off Params() fail open.
+			catchAll := strings.HasSuffix(name, "...")
 			name = strings.TrimSuffix(name, "...")
 			if name == "$" {
 				i += end
 				continue
 			}
-			val := sanitizeParam(r.PathValue(name))
-			if val != "" {
-				params[name] = val
-			}
+			params[name] = sanitizePathParam(r.PathValue(name), catchAll)
 			i += end
 		}
 	}
 	return params
 }
 
-// sanitizeParam truncates s at the first CR, LF, or NUL byte so a
-// path-parameter value cannot be used to inject header lines, log
-// lines, SSE frames, or any other line-delimited downstream protocol.
-func sanitizeParam(s string) string {
+// sanitizePathParam truncates s at the first byte a path parameter must
+// never carry. See [Param] for the full contract.
+//
+// catchAll relaxes the "/" rule only — a {name...} wildcard is defined
+// to span segments. The dot-segment rule applies to both forms: Go's
+// mux resolves "." and ".." out of the request path (redirecting when
+// it must), so a surviving ".." segment is always percent-encoded
+// smuggling, never a legitimate route match.
+func sanitizePathParam(s string, catchAll bool) string {
 	for i := 0; i < len(s); i++ {
-		if c := s[i]; c == '\n' || c == '\r' || c == 0 {
+		switch c := s[i]; {
+		case c == '\n' || c == '\r' || c == 0:
+			return s[:i]
+		case c == '/' && !catchAll:
+			return s[:i]
+		case c == '.' && isDotDotSegment(s, i):
 			return s[:i]
 		}
 	}
 	return s
+}
+
+// isDotDotSegment reports whether a ".." path segment starts at i —
+// that is, s[i:i+2] == ".." and it is bounded by "/" or the ends of the
+// string on both sides. "..." and "a..b" are ordinary characters and
+// are left alone.
+func isDotDotSegment(s string, i int) bool {
+	if i+2 > len(s) || s[i+1] != '.' {
+		return false
+	}
+	if i > 0 && s[i-1] != '/' {
+		return false
+	}
+	return i+2 == len(s) || s[i+2] == '/'
 }
 
 // Routes returns the set of (method, pattern) pairs registered via
@@ -365,8 +427,11 @@ func (r *Router) Group(prefix string, mw ...Middleware) *Router {
 // a sub-router served standalone falls back to the parent's NotFound
 // even when set after Group.
 func (r *Router) effectiveNotFound() http.Handler {
-	if r.notFound != nil {
-		return r.notFound
+	r.mu.RLock()
+	own := r.notFound
+	r.mu.RUnlock()
+	if own != nil {
+		return own
 	}
 	if r.parent != nil {
 		return r.parent.effectiveNotFound()
@@ -382,7 +447,10 @@ func (r *Router) effectiveNotFound() http.Handler {
 // Internally wrapped in a cachedRoute so the chain composition is
 // memoised between Use bumps.
 func (r *Router) NotFound(handler http.Handler) {
-	r.notFound = &cachedRoute{raw: handler, router: r}
+	route := &cachedRoute{raw: handler, router: r}
+	r.mu.Lock()
+	r.notFound = route
+	r.mu.Unlock()
 }
 
 // effectiveMethodNotAllowed returns the nearest non-nil
@@ -390,8 +458,11 @@ func (r *Router) NotFound(handler http.Handler) {
 // → ...). Mirrors effectiveNotFound so a sub-router served standalone
 // falls back to the parent's handler even when set after Group.
 func (r *Router) effectiveMethodNotAllowed() http.Handler {
-	if r.methodNotAllowed != nil {
-		return r.methodNotAllowed
+	r.mu.RLock()
+	own := r.methodNotAllowed
+	r.mu.RUnlock()
+	if own != nil {
+		return own
 	}
 	if r.parent != nil {
 		return r.parent.effectiveMethodNotAllowed()
@@ -410,7 +481,10 @@ func (r *Router) effectiveMethodNotAllowed() http.Handler {
 // MethodNotAllowed still applies. Mirrors [NotFound] exactly, including
 // the cachedRoute memoisation.
 func (r *Router) MethodNotAllowed(handler http.Handler) {
-	r.methodNotAllowed = &cachedRoute{raw: handler, router: r}
+	route := &cachedRoute{raw: handler, router: r}
+	r.mu.Lock()
+	r.methodNotAllowed = route
+	r.mu.Unlock()
 }
 
 // NOTE: Go 1.22+ ServeMux handles 405 Method Not Allowed responses
@@ -425,9 +499,38 @@ func (r *Router) MethodNotAllowed(handler http.Handler) {
 // otherwise it falls through to the custom NotFound handler (if any)
 // or the mux's native 404.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	_, pattern := r.mux.Handler(req)
+	h, pattern := r.mux.Handler(req)
 
-	if pattern == "" {
+	if pattern != "" {
+		if _, matched := h.(*cachedRoute); matched {
+			r.mux.ServeHTTP(w, req)
+			return
+		}
+		// A non-empty pattern with a handler that ISN'T one of our routes
+		// means net/http synthesised an internal redirect: trailing-slash
+		// completion ("/a" → "/a/"), or path cleaning ("//a", "/a/./b",
+		// "/a/../b"). Serving that straight out of the mux skips BOTH the
+		// route gate and the entire middleware chain, which the 404 and
+		// 405 branches below both honour. Two consequences, both real:
+		//
+		//   - The gate's documented contract is "returning false produces
+		//     a plain 404 — a disabled module's existence must not leak".
+		//     A 307 here is exactly that leak, and Go's redirect preserves
+		//     method and body, so it answers POSTs too.
+		//   - No security headers, recovery, timeout, request-ID/logging,
+		//     CORS or rate limiting run on the response.
+		//
+		// So: gate the redirect on its target route's key, and when it
+		// survives, run it through the chain like any other response.
+		if r.gateAllows(pattern) {
+			r.wrap(h).ServeHTTP(w, req)
+			return
+		}
+		// Gated target — fall through to the unmatched path so the reply
+		// is byte-identical to a genuine 404.
+	}
+
+	{
 		// ServeMux returns an empty pattern for BOTH a genuine 404 and a
 		// method mismatch (405). allowedMethods resolves the path against
 		// non-gated routes only: a non-empty set means the path exists
@@ -469,8 +572,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		})).ServeHTTP(w, req)
 		return
 	}
+}
 
-	r.mux.ServeHTTP(w, req)
+// gateAllows reports whether the route gate permits the given
+// "METHOD /path" key. No gate installed = allow.
+func (r *Router) gateAllows(key string) bool {
+	r.root.mu.RLock()
+	gate := r.root.routeGate
+	r.root.mu.RUnlock()
+	return gate == nil || gate(key)
 }
 
 // allowedMethods returns the set of HTTP methods registered for the
@@ -483,28 +593,70 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // This runs only on the cold 404/405 fallback path, never on a matched
 // route, so the per-call mux build is not on the request hot path.
 func (r *Router) allowedMethods(req *http.Request) []string {
-	r.root.mu.RLock()
-	allPatterns := make([]RegisteredRoute, len(r.root.patterns))
-	copy(allPatterns, r.root.patterns)
-	gate := r.root.routeGate
-	r.root.mu.RUnlock()
-	if len(allPatterns) == 0 {
+	probeMux, methodsByPath := r.probe()
+	if probeMux == nil {
 		return nil
 	}
 
-	// Build a method-agnostic probe mux from non-gated patterns only,
-	// and track which methods each path pattern has.
+	probe := req.Clone(req.Context())
+	probe.Method = http.MethodGet
+	_, matchedPattern := probeMux.Handler(probe)
+	if matchedPattern == "" {
+		return nil // path doesn't match any registered route
+	}
+
+	// Gate-filter only the handful of methods on the matched pattern —
+	// NOT every route in the table. An empty result means the path
+	// exists but every method on it is gated off, which is a 404 by
+	// design (advertising Allow for a method that answers 404 would be
+	// a lie, and would leak the disabled module).
+	var methods []string
+	for _, m := range methodsByPath[matchedPattern] {
+		if r.gateAllows(m + " " + matchedPattern) {
+			methods = append(methods, m)
+		}
+	}
+	sort.Strings(methods)
+	return methods
+}
+
+// probe returns the memoised method-agnostic probe mux and its
+// pattern→methods index, rebuilding only when new routes have been
+// registered since the last build.
+//
+// This used to be rebuilt from scratch on EVERY unmatched request —
+// cloning the request and re-parsing plus tree-inserting every
+// registered pattern. Against 300 routes that measured ~205us and 3704
+// allocations versus 170ns for a matched request: a ~1200x
+// amplification driven entirely by an attacker-supplied URL, and it ran
+// AHEAD of the rate limiter (which lives in the middleware chain the
+// fallback only enters afterwards). r.root.patterns is append-only, so
+// its length is a sufficient cache version.
+func (r *Router) probe() (*http.ServeMux, map[string][]string) {
+	root := r.root
+	root.probeMu.Lock()
+	defer root.probeMu.Unlock()
+
+	root.mu.RLock()
+	n := len(root.patterns)
+	r.root.mu.RUnlock()
+	if n == 0 {
+		return nil, nil
+	}
+	if root.probeMux != nil && root.probeN == n {
+		return root.probeMux, root.probeMethods
+	}
+
+	root.mu.RLock()
+	allPatterns := make([]RegisteredRoute, n)
+	copy(allPatterns, root.patterns[:n])
+	root.mu.RUnlock()
+
 	probeMux := http.NewServeMux()
 	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	methodsByPath := make(map[string][]string)
 	registered := make(map[string]bool)
 	for _, rt := range allPatterns {
-		if gate != nil {
-			key := rt.Method + " " + rt.Pattern
-			if !gate(key) {
-				continue // gated route excluded from Allow set
-			}
-		}
 		methodsByPath[rt.Pattern] = append(methodsByPath[rt.Pattern], rt.Method)
 		if !registered[rt.Pattern] {
 			registered[rt.Pattern] = true
@@ -515,16 +667,10 @@ func (r *Router) allowedMethods(req *http.Request) []string {
 		}
 	}
 
-	probe := req.Clone(req.Context())
-	probe.Method = http.MethodGet
-	_, matchedPattern := probeMux.Handler(probe)
-	if matchedPattern == "" {
-		return nil // path doesn't match any non-gated route
-	}
-
-	methods := methodsByPath[matchedPattern]
-	sort.Strings(methods)
-	return methods
+	root.probeMux = probeMux
+	root.probeMethods = methodsByPath
+	root.probeN = n
+	return probeMux, methodsByPath
 }
 
 // Use adds middleware to the router. Middleware is applied in the order
