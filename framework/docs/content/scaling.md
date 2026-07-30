@@ -25,7 +25,7 @@ shared store) or run on exactly one replica.
 | Live events / SSE / island push | in-process `EventBus` + `island.Manager` | an event emitted on A never reaches a browser connected to B | `framework.WithFanout(fanout.NewPostgres(dsn, db))` — see "SSE across replicas" below |
 | `battery/cache` memory backend | per-process | stale reads after another replica writes | `cache.NewRedisCache(client)`, or accept per-replica caching for derived-only data |
 | File uploads on local storage | per-replica disk (`storage.NewLocalStorage`, `upload.NewLocalStorage`) | upload lands on A, download from B 404s | S3-compatible backend (`battery/storage`'s S3 client), or a shared volume mounted on every replica |
-| Runtime RBAC grants (`access.GrantStore`) | in-memory `RolePolicy` cache per process | editor granted on A still denied on B until B restarts | `framework.WithGrantStore(store)` + `framework.WithFanout(...)` — grant/revoke publishes a refresh-signal on the `gofastr.access` lane; every replica re-reads the role's grants from `access_grants` |
+| Runtime RBAC grants (`access.GrantStore`) | in-memory `RolePolicy` cache per process | editor granted on A still denied on B until B restarts; a revoked code-seeded grant re-appears on peers and on restart | `framework.WithGrantStore(store)` + `framework.WithFanout(...)` — grant/revoke publishes a refresh-signal on the `gofastr.access` lane; every replica re-reads the role's grants from `access_grants`. A revoke also writes a revocation tombstone to `access_grants_revoked`, so revokes propagate to peers AND survive replica restarts even for grants declared in code; re-granting via `GrantStore.Grant` lifts the tombstone |
 
 Auth enforces the first two at boot in production mode (`DevMode:
 false`): the in-memory session store logs a WARN; the in-memory 2FA
@@ -167,8 +167,10 @@ route the request to whichever replica the load balancer picks.
       Required with `WithFanout` — the app refuses to boot otherwise.
 - [ ] Runtime RBAC grants propagate: `WithGrantStore` attached when
       `access.GrantStore` is in use, so grant/revoke reaches every
-      replica's `RolePolicy` without a restart. (Code-defined-only
-      policies — `policy.Grant` at boot — need nothing extra.)
+      replica's `RolePolicy` without a restart. A revoke persists a
+      revocation tombstone (`access_grants_revoked`), so it propagates to
+      peers and survives replica restarts even for grants declared in
+      code; re-granting lifts the tombstone.
 - [ ] Cache backend shared (Redis) if cached data must be coherent across replicas.
 - [ ] `AuthConfig.AllowInMemoryStores` **removed** — the boot warning is
       your regression test for the first two items.

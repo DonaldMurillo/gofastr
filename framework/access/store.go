@@ -36,6 +36,15 @@ type GrantStore struct {
 	table  string
 	policy *RolePolicy
 
+	// transitionMu serialises every policy transition — Grant, Revoke,
+	// reloadRole, reloadAll, LoadInto — across its full read→mutate span,
+	// so a reload that read a stale DB snapshot can never run its
+	// ReplaceRole after a newer local Grant/Revoke and silently undo it.
+	// Deliberately NOT fanoutMu: fanoutMu guards transport state (send
+	// queue, node id) and stays narrow. Lock ordering is always
+	// transitionMu → fanoutMu; never the reverse.
+	transitionMu sync.Mutex
+
 	// baseline holds the CODE-defined grants captured at LoadInto time,
 	// before DB rows are overlaid. Every reload rebuilds a role as
 	// baseline ∪ DB, so a cross-replica refresh (or a local reconcile)
@@ -129,18 +138,33 @@ func (s *GrantStore) Policy() *RolePolicy {
 	return s.policy
 }
 
-// EnsureSchema creates the grants table if it does not already exist.
-// Idempotent (CREATE TABLE IF NOT EXISTS). The column types (TEXT) are
-// portable across SQLite and PostgreSQL. The (role, permission) pair has
-// a UNIQUE constraint so INSERT ... ON CONFLICT DO NOTHING is a no-op for
-// duplicates.
+// EnsureSchema creates the grants table (and the revocation-tombstone table
+// that backs cross-replica revocation) if they do not already exist.
+// Idempotent (CREATE TABLE IF NOT EXISTS), so existing deployments need no
+// migration. The column types (TEXT) are portable across SQLite and
+// PostgreSQL. The (role, permission) pair has a UNIQUE constraint so
+// INSERT ... ON CONFLICT DO NOTHING is a no-op for duplicates.
 func (s *GrantStore) EnsureSchema(ctx context.Context) error {
 	stmt := fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (role TEXT NOT NULL, permission TEXT NOT NULL, UNIQUE(role, permission))",
 		query.QuoteIdent(s.table),
 	)
-	_, err := s.db.ExecContext(ctx, stmt)
-	return err
+	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+		return err
+	}
+	// Revocation tombstones share the grants table's shape. A Revoke
+	// inserts a row here; reloads and fresh boots subtract these from the
+	// baseline ∪ DB union so a revoked grant stays revoked on every replica
+	// and survives restarts. Derived from the configured grants table
+	// (WithGrantTable) so a custom name gets a matching tombstone table.
+	revStmt := fmt.Sprintf(
+		"CREATE TABLE IF NOT EXISTS %s (role TEXT NOT NULL, permission TEXT NOT NULL, UNIQUE(role, permission))",
+		query.QuoteIdent(s.revokedTable()),
+	)
+	if _, err := s.db.ExecContext(ctx, revStmt); err != nil {
+		return err
+	}
+	return nil
 }
 
 // LoadInto reads all persisted grant rows and calls policy.Grant for each,
@@ -148,6 +172,10 @@ func (s *GrantStore) EnsureSchema(ctx context.Context) error {
 // retained as the store's active policy (overwriting any previously bound
 // one) so subsequent Grant/Revoke calls mutate it. Call once at boot,
 // after constructing the policy and after EnsureSchema.
+//
+// Revocation tombstones are subtracted BOTH from the captured code baseline
+// and from the installed DB grants, so a replica booting after a revoke does
+// not resurrect the permission from its code seed.
 //
 // If the store was constructed with a policy and policy is nil, the
 // store's existing policy is used.
@@ -158,11 +186,27 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 	if s.policy == nil {
 		return fmt.Errorf("access: GrantStore.LoadInto called with no policy (pass a *RolePolicy or construct with NewGrantStore(db, policy))")
 	}
-	// Capture the code-defined baseline BEFORE overlaying DB grants, so a
-	// later reload merges baseline ∪ DB instead of replacing a role with only
-	// its DB rows (which would drop grants an app declared with policy.Grant).
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
+
+	// Read tombstones under the transition lock so a concurrent Grant/Revoke
+	// cannot change them between this read and the install (the stale-reload
+	// race): a boot and a transition never interleave.
+	tombstones, err := s.allTombstones(ctx)
+	if err != nil {
+		return err
+	}
+	// Capture the code-defined baseline BEFORE overlaying DB grants, then
+	// subtract tombstones — a code-seeded grant revoked on another replica
+	// must stay revoked on this one too.
+	snap := s.policy.Snapshot()
+	for role, ts := range tombstones {
+		if base, ok := snap[role]; ok {
+			snap[role] = subtractPerms(base, ts)
+		}
+	}
 	s.fanoutMu.Lock()
-	s.baseline = s.policy.Snapshot()
+	s.baseline = snap
 	s.fanoutMu.Unlock()
 	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteIdent(s.table))
 	rows, err := s.db.QueryContext(ctx, q)
@@ -175,11 +219,36 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 		if err := rows.Scan(&role, &perm); err != nil {
 			return fmt.Errorf("access: scan grant row: %w", err)
 		}
+		// A grant row with a live tombstone is an inconsistent write —
+		// fail closed: the tombstone wins.
+		if permIn(tombstones[role], Permission(perm)) {
+			continue
+		}
 		if err := s.policy.Grant(role, Permission(perm)); err != nil {
 			return fmt.Errorf("access: load grant %q→%q: %w", role, perm, err)
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("access: iterate grants: %w", err)
+	}
+	// Apply tombstones to the LIVE policy too: the baseline above already
+	// excludes them for future reloads, but a code-seeded grant is already
+	// in the in-memory policy at boot — a replica booting after a revoke
+	// must not resurrect it. Revoke any tombstoned permission the policy
+	// currently holds.
+	for role, ts := range tombstones {
+		held := s.policy.PermissionsOf(role)
+		toRevoke := make([]Permission, 0, len(ts))
+		for _, p := range ts {
+			if permIn(held, p) {
+				toRevoke = append(toRevoke, p)
+			}
+		}
+		if len(toRevoke) > 0 {
+			s.policy.Revoke(role, toRevoke...)
+		}
+	}
+	return nil
 }
 
 // Grant validates and expands permissions, persists the resulting
@@ -187,6 +256,11 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 // and then updates the live policy. Idempotent: granting an already-held
 // permission is a no-op in both layers. In strict capability mode, validation
 // happens before any database write.
+//
+// Grant also DELETES any matching revocation tombstone for the granted
+// (role, perm) pairs — a re-grant is the ONE way to lift a prior revocation.
+// A tombstoned permission stays revoked across replicas and restarts until
+// Grant removes the tombstone, even if the code keeps declaring it.
 //
 // Role and permission are bound as $n parameters — never interpolated.
 func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission) error {
@@ -210,6 +284,11 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	if err != nil {
 		return err
 	}
+	// Hold the transition lock across the DB writes and the policy mutation
+	// so a concurrent reload reading a stale DB snapshot cannot land its
+	// ReplaceRole after this grant and undo it.
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
 	// One INSERT per (role, perm) with ON CONFLICT DO NOTHING. A batch
 	// VALUES clause would be marginally faster but complicates the
 	// placeholder math; the grant matrix is small and admin-driven, so
@@ -221,6 +300,18 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 		)
 		if _, err := s.db.ExecContext(ctx, q, role, string(permission)); err != nil {
 			return fmt.Errorf("access: persist grant %q→%q: %w", role, permission, err)
+		}
+	}
+	// A re-grant lifts a prior revocation: delete any tombstone for these
+	// (role, perm) pairs so the next reload (on this replica or a peer) no
+	// longer subtracts them.
+	for _, permission := range prepared {
+		q := fmt.Sprintf(
+			"DELETE FROM %s WHERE role = $1 AND permission = $2",
+			query.QuoteIdent(s.revokedTable()),
+		)
+		if _, err := s.db.ExecContext(ctx, q, role, string(permission)); err != nil {
+			return fmt.Errorf("access: clear revoke tombstone %q→%q: %w", role, permission, err)
 		}
 	}
 	// The DB write succeeded — apply the grant DIRECTLY to the live policy. A
@@ -237,9 +328,10 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	return nil
 }
 
-// Revoke deletes (role, permission) rows from the database and then calls
-// policy.Revoke on the live policy. Idempotent: revoking a permission the
-// role doesn't hold is a no-op in both layers.
+// Revoke deletes (role, permission) rows from the database, records a
+// revocation tombstone for each, and then calls policy.Revoke on the live
+// policy. Idempotent: revoking a permission the role doesn't hold is a
+// no-op in both layers.
 //
 // Role and permission are bound as $n parameters — never interpolated.
 func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permission) error {
@@ -252,6 +344,11 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	if len(perms) == 0 {
 		return nil
 	}
+	// Hold the transition lock across the DB writes and the policy mutation
+	// so a concurrent reload cannot land its ReplaceRole after this revoke
+	// and undo it.
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
 	for _, p := range perms {
 		q := fmt.Sprintf(
 			"DELETE FROM %s WHERE role = $1 AND permission = $2",
@@ -259,6 +356,20 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 		)
 		if _, err := s.db.ExecContext(ctx, q, role, string(p)); err != nil {
 			return fmt.Errorf("access: persist revoke %q→%q: %w", role, p, err)
+		}
+	}
+	// Record a tombstone for each revoked permission. The tombstone is shared
+	// DB state, so every replica's reload (baseline ∪ DB) − tombstones and
+	// every fresh boot's LoadInto subtracts it — a code-SEEDED grant revoked
+	// here stays revoked on peers and on replicas that boot later. ON CONFLICT
+	// DO NOTHING mirrors Grant's duplicate posture.
+	for _, p := range perms {
+		q := fmt.Sprintf(
+			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+			query.QuoteIdent(s.revokedTable()),
+		)
+		if _, err := s.db.ExecContext(ctx, q, role, string(p)); err != nil {
+			return fmt.Errorf("access: persist revoke tombstone %q→%q: %w", role, p, err)
 		}
 	}
 	// A local revoke must also narrow the captured code baseline. Otherwise
@@ -286,11 +397,16 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	s.fanoutMu.Unlock()
 	// DB write succeeded — remove from the live policy DIRECTLY. A local
 	// revoke is authoritative and removes the permission from memory even if
-	// it was seeded in code (never in the DB), so an admin revoke takes effect
-	// immediately. NOTE: a code-SEEDED grant lives only in this replica's
-	// memory, so its revocation does not propagate to peers via the DB
-	// refresh-signal — seed store-managed grants via GrantStore.Grant (which
-	// persists them) if they must be revocable across replicas.
+	// it was seeded in code (never in the DB), so an admin revoke takes
+	// effect immediately. NOTE: with revocation tombstones, a code-seeded
+	// grant's revocation DOES propagate to peers and DOES survive peer boots
+	// — the tombstone row is shared DB state, subtracted by every reload and
+	// every fresh LoadInto. Re-granting via GrantStore.Grant deletes the
+	// tombstone and lifts the revocation (the one way to un-revoke); a
+	// tombstoned permission stays revoked even if the code keeps declaring
+	// it, until Grant() is called. DB intent outlives code declarations —
+	// the same precedence the store already gives DB grants over the
+	// baseline.
 	s.policy.Revoke(role, perms...)
 	// Signal other replicas to re-read (non-blocking).
 	s.publish(role)
@@ -470,32 +586,57 @@ func (s *GrantStore) drainDirty() (anyFailed bool) {
 	}
 }
 
-// reloadRole rebuilds role's effective permissions as baseline ∪ DB and
-// atomically replaces the live policy's view via [RolePolicy.ReplaceRole].
-// The code-defined baseline (captured at LoadInto) is always merged back, so
-// a refresh never drops grants declared in code. An empty role triggers a
-// convergent full reload. On DB error the policy is left unchanged and the
-// error is returned (fail-safe: a missed reload is retried by the worker).
+// reloadRole rebuilds role's effective permissions as
+// (baseline ∪ DB) − tombstones and atomically replaces the live policy's
+// view via [RolePolicy.ReplaceRole]. The code-defined baseline (captured at
+// LoadInto) is always merged back, so a refresh never drops grants declared
+// in code — but a revocation tombstone subtracts a permission from the
+// union, so a revoke propagates to peers and stays revoked. An empty role
+// triggers a convergent full reload. On DB error the policy is left
+// unchanged and the error is returned (fail-safe: a missed reload is
+// retried by the worker).
+//
+// The whole read→mutate span runs under transitionMu so a reload that read
+// a stale DB snapshot cannot land after a newer local Grant/Revoke.
 func (s *GrantStore) reloadRole(ctx context.Context, role string) error {
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
 	if s.policy == nil || s.db == nil {
 		return nil
 	}
 	if role == "" {
-		return s.reloadAll(ctx)
+		return s.reloadAllLocked(ctx)
 	}
 	dbPerms, err := s.dbPermsForRole(ctx, role)
 	if err != nil {
 		return err
 	}
-	return s.policy.ReplaceRole(role, s.mergeBaseline(role, dbPerms)...)
+	tombstones, err := s.tombstonesForRole(ctx, role)
+	if err != nil {
+		return err
+	}
+	return s.policy.ReplaceRole(role, s.mergeBaseline(role, dbPerms, tombstones)...)
 }
 
 // reloadAll rebuilds every role that has a baseline or DB grant as
-// baseline ∪ DB. Convergent (removes deleted DB grants), unlike additive
-// LoadInto. Never published in practice (Grant/Revoke reject empty roles) —
-// kept as a defensive full-reconcile path.
+// (baseline ∪ DB) − tombstones. Convergent (removes deleted DB grants and
+// honours tombstones), unlike additive LoadInto. Never published in practice
+// (Grant/Revoke reject empty roles) — kept as a defensive full-reconcile
+// path. reloadAll takes transitionMu and delegates to reloadAllLocked so
+// reloadRole's empty-role branch can reuse it without re-locking.
 func (s *GrantStore) reloadAll(ctx context.Context) error {
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
+	return s.reloadAllLocked(ctx)
+}
+
+// reloadAllLocked is reloadAll assuming transitionMu is already held.
+func (s *GrantStore) reloadAllLocked(ctx context.Context) error {
 	byRole, err := s.allDBPerms(ctx)
+	if err != nil {
+		return err
+	}
+	tombstones, err := s.allTombstones(ctx)
 	if err != nil {
 		return err
 	}
@@ -509,7 +650,7 @@ func (s *GrantStore) reloadAll(ctx context.Context) error {
 		roles[r] = true
 	}
 	for r := range roles {
-		if err := s.policy.ReplaceRole(r, s.mergeBaseline(r, byRole[r])...); err != nil {
+		if err := s.policy.ReplaceRole(r, s.mergeBaseline(r, byRole[r], tombstones[r])...); err != nil {
 			return err
 		}
 	}
@@ -557,9 +698,11 @@ func (s *GrantStore) allDBPerms(ctx context.Context) (map[string][]Permission, e
 	return out, rows.Err()
 }
 
-// mergeBaseline returns baseline[role] ∪ dbPerms, de-duplicated, baseline
-// first. The result is what ReplaceRole installs for the role.
-func (s *GrantStore) mergeBaseline(role string, dbPerms []Permission) []Permission {
+// mergeBaseline returns (baseline[role] ∪ dbPerms) − tombstones, de-duplicated,
+// baseline first. The result is what ReplaceRole installs for the role. If a
+// permission is somehow both granted and tombstoned (inconsistent write), the
+// tombstone wins — fail closed.
+func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission) []Permission {
 	s.fanoutMu.Lock()
 	base := s.baseline[role]
 	s.fanoutMu.Unlock()
@@ -577,5 +720,88 @@ func (s *GrantStore) mergeBaseline(role string, dbPerms []Permission) []Permissi
 			out = append(out, p)
 		}
 	}
+	return subtractPerms(out, tombstones)
+}
+
+// revokedTable is the revocation-tombstone table name, derived from the
+// configured grants table. The grants table is validated at construction
+// (query.MustIdent) and the "_revoked" suffix is all safe-identifier
+// characters, so the result is safe to pass to query.QuoteIdent.
+func (s *GrantStore) revokedTable() string {
+	return s.table + "_revoked"
+}
+
+// tombstonesForRole reads one role's revocation tombstones. Mirrors
+// dbPermsForRole against the <table>_revoked table.
+func (s *GrantStore) tombstonesForRole(ctx context.Context, role string) ([]Permission, error) {
+	q := fmt.Sprintf("SELECT permission FROM %s WHERE role = $1", query.QuoteIdent(s.revokedTable()))
+	rows, err := s.db.QueryContext(ctx, q, role)
+	if err != nil {
+		return nil, fmt.Errorf("access: reload tombstones %q: %w", role, err)
+	}
+	defer rows.Close()
+	var perms []Permission
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, fmt.Errorf("access: scan tombstone %q: %w", role, err)
+		}
+		perms = append(perms, Permission(p))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("access: iterate tombstones %q: %w", role, err)
+	}
+	return perms, nil
+}
+
+// allTombstones reads every revocation tombstone grouped by role. Mirrors
+// allDBPerms against the <table>_revoked table.
+func (s *GrantStore) allTombstones(ctx context.Context) (map[string][]Permission, error) {
+	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteIdent(s.revokedTable()))
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("access: load tombstones: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string][]Permission)
+	for rows.Next() {
+		var role, perm string
+		if err := rows.Scan(&role, &perm); err != nil {
+			return nil, fmt.Errorf("access: scan tombstone row: %w", err)
+		}
+		out[role] = append(out[role], Permission(perm))
+	}
+	return out, rows.Err()
+}
+
+// subtractPerms returns perms with every element also in remove dropped,
+// preserving order. Used to apply revocation tombstones to a merged
+// permission set (baseline ∪ DB). Reuses perms' backing array, so the
+// caller must not keep aliasing the input slice after this returns.
+func subtractPerms(perms, remove []Permission) []Permission {
+	if len(remove) == 0 {
+		return perms
+	}
+	drop := make(map[Permission]bool, len(remove))
+	for _, p := range remove {
+		drop[p] = true
+	}
+	out := perms[:0]
+	for _, p := range perms {
+		if !drop[p] {
+			out = append(out, p)
+		}
+	}
 	return out
+}
+
+// permIn reports whether want appears in perms (linear scan; grant and
+// tombstone sets are small and admin-driven).
+func permIn(perms []Permission, want Permission) bool {
+	for _, p := range perms {
+		if p == want {
+			return true
+		}
+	}
+	return false
 }
