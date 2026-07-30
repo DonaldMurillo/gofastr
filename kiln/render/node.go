@@ -45,11 +45,11 @@ func RenderNode(n world.Node) render.HTML {
 			Heading:      propString(n.Props, "heading", "title"),
 			Description:  propString(n.Props, "description", "subtitle"),
 			HeadingLevel: propInt(n.Props, "heading_level", "level"),
-			Href:         propString(n.Props, "href"), Variant: cardVariant(propString(n.Props, "variant")),
+			Href:         safeHref(propString(n.Props, "href")), Variant: cardVariant(propString(n.Props, "variant")),
 			ID: propString(n.Props, "id"),
 		}, withTextFallback(children, propString(n.Props, "text"))...)
 	case "link_button":
-		label, href := propString(n.Props, "label", "text"), propString(n.Props, "href")
+		label, href := propString(n.Props, "label", "text"), safeHref(propString(n.Props, "href"))
 		if label == "" || href == "" {
 			return renderLeaf(n, children)
 		}
@@ -114,13 +114,93 @@ func renderLeaf(n world.Node, children []render.HTML) render.HTML {
 	if len(props) > 0 {
 		props = make(map[string]any, len(n.Props))
 		for key, value := range n.Props {
+			// Structural styling belongs to the typed design-system kinds.
 			if strings.EqualFold(key, "class") {
 				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(key), "data-kiln-tool") {
+				name, _ := value.(string)
+				if !safeToolName(name) {
+					continue
+				}
 			}
 			props[key] = value
 		}
 	}
 	return noderender.RenderKind(n.Kind, props, children)
+}
+
+// safeToolName bounds the value of data-kiln-tool to a bare tool
+// identifier.
+//
+// The runtime's delegator builds `fetch('/kiln/tool/' + attr)` with no
+// encodeURIComponent (core-ui/runtime frag/rpc.js), and dispatch is gated
+// only on a data-fui-trusted ancestor — which worldScreen.Render puts around
+// the entire agent-authored tree. core-ui/noderender allows data-kiln-tool
+// through its data-* rule on the stated grounds that "the delegator
+// additionally requires a data-fui-trusted ancestor, which this IR cannot
+// produce" (noderender_security_test.go); in kiln's only render path the IR
+// always produces one, so that justification does not hold here and the
+// value has to be checked at ingestion.
+//
+// Unchecked, a tool name of "../../api/posts" has its dot-segments removed
+// by the URL parser and the click becomes a same-origin POST to /api/posts —
+// carrying the operator's cookies and the page's CSRF token — against routes
+// the kiln tool API does not otherwise expose. "x?y=z" and "x#f" inject a
+// query and a fragment the same way.
+//
+// A real kiln tool name is a lowercase identifier (chat, add_page,
+// update_page_element), so anything else is dropped rather than rendered.
+// The attribute itself stays supported: TestBrowser_ButtonToolCallFires
+// pins that an agent-authored button naming a genuine tool still fires it.
+func safeToolName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '_' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// safeHref filters an agent-authored href before it reaches a design-system
+// component. The components disagree on what to do with a hostile scheme —
+// ui.Card drops to "#" while ui.LinkButton panics (framework/ui:
+// components.go) — and a panic on the typed path 500s the page on every
+// request until the IR is edited. Both contracts are right for a Go author
+// passing a literal; neither is right for request-authored IR, so the
+// scheme decision happens here instead. Mirrors the degrade-don't-panic
+// choice core-ui/noderender already made for the leaf path.
+func safeHref(href string) string {
+	trimmed := strings.TrimSpace(href)
+	if trimmed == "" {
+		return ""
+	}
+	// Strip the C0 range + DEL before testing: a browser ignores them when
+	// resolving a scheme, so "\tjava\nscript:" is still javascript:.
+	var b strings.Builder
+	for _, r := range trimmed {
+		if r <= 0x20 || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	clean := strings.ToLower(b.String())
+	scheme, _, hasScheme := strings.Cut(clean, ":")
+	if !hasScheme || strings.ContainsAny(scheme, "/?#") {
+		return trimmed // relative, absolute-path, query, or fragment
+	}
+	switch scheme {
+	case "http", "https", "mailto", "tel":
+		return trimmed
+	}
+	return ""
 }
 
 func renderChildren(nodes []world.Node) []render.HTML {
