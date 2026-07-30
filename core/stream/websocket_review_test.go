@@ -179,6 +179,123 @@ func TestCloseEchoesPeerStatus(t *testing.T) {
 	}
 }
 
+// driveCloseEcho performs one close handshake end-to-end: it feeds the
+// peer's masked Close frame (with the given body; nil = bodyless) into
+// conn, drives readFrame, and returns the full Close frame our side
+// writes back (including the 2-byte unmasked header).
+func driveCloseEcho(t *testing.T, peerBody []byte) []byte {
+	t.Helper()
+	srv, cli := net.Pipe()
+	t.Cleanup(func() { srv.Close(); cli.Close() })
+
+	conn := &WebSocketConn{
+		conn:       srv,
+		sendBuffer: make(chan []byte, 1),
+		closed:     make(chan struct{}),
+		peerClosed: make(chan struct{}),
+		config:     WSConfig{CloseTimeout: 500 * time.Millisecond, requireMask: true},
+	}
+	go conn.writePump()
+
+	// Peer sends a masked Close frame with the given body.
+	go func() {
+		mask := [4]byte{0x01, 0x02, 0x03, 0x04}
+		masked := make([]byte, len(peerBody))
+		for i, b := range peerBody {
+			masked[i] = b ^ mask[i%4]
+		}
+		frame := []byte{0x80 | wsopcodeClose, 0x80 | byte(len(peerBody))}
+		frame = append(frame, mask[:]...)
+		frame = append(frame, masked...)
+		cli.Write(frame)
+	}()
+
+	// Drive readFrame so the peer's Close is parsed and captured.
+	readDone := make(chan struct{})
+	go func() {
+		_, _ = conn.readFrame()
+		close(readDone)
+	}()
+
+	// Capture our echo Close frame from the peer side.
+	gotEcho := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 32)
+		if n, _ := cli.Read(buf); n > 0 {
+			gotEcho <- buf[:n]
+		}
+	}()
+
+	<-readDone
+	conn.Close()
+
+	select {
+	case frame := <-gotEcho:
+		return frame
+	case <-time.After(1 * time.Second):
+		t.Fatal("never received echo Close frame")
+		return nil
+	}
+}
+
+// echo1002 is the 2-byte big-endian encoding of close code 1002
+// (protocol error), the code a strict peer expects when the inbound
+// code is reserved or invalid.
+var echo1002 = []byte{0x03, 0xEA}
+
+// Item 1g: reserved close codes MUST NOT be echoed on the wire. RFC
+// 6455 §7.4.1 reserves 1005/1006/1015 (MUST NOT appear in a Close
+// frame) and 1004; codes below 1000 are outside the code space. If the
+// peer sends any of these, our echo Close frame must carry 1002, not
+// the reserved code — otherwise a strict peer answers 1002 and a clean
+// close turns abnormal.
+func TestCloseEchoSanitizesReserved(t *testing.T) {
+	cases := []struct {
+		name string
+		code uint16
+	}{
+		{"1005 no-status", 1005},
+		{"1006 abnormal", 1006},
+		{"sub-1000 (999)", 999},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := []byte{byte(tc.code >> 8), byte(tc.code)}
+			frame := driveCloseEcho(t, body)
+			if len(frame) < 4 || frame[0]&0x0F != wsopcodeClose {
+				t.Fatalf("expected Close echo, got %x", frame)
+			}
+			if frame[2] != echo1002[0] || frame[3] != echo1002[1] {
+				t.Fatalf("echo status = %02x %02x, want 03 EA (1002)", frame[2], frame[3])
+			}
+		})
+	}
+}
+
+// Item 1h: a 1-byte Close body is illegal (RFC 6455 §5.5.1: if there
+// is a body, the first two bytes are the status). It must not be
+// silently treated as "no status"; the echo must carry 1002.
+func TestOneByteCloseBodyEchoes1002(t *testing.T) {
+	frame := driveCloseEcho(t, []byte{0x42})
+	if len(frame) < 4 || frame[0]&0x0F != wsopcodeClose {
+		t.Fatalf("expected Close echo, got %x", frame)
+	}
+	if frame[2] != echo1002[0] || frame[3] != echo1002[1] {
+		t.Fatalf("echo status = %02x %02x, want 03 EA (1002)", frame[2], frame[3])
+	}
+}
+
+// Item 1i (no-regression): a bodyless peer Close means "no status"
+// (1005) and must echo as a bodyless Close — a 2-byte header with no
+// payload — never a frame carrying a reserved code. (The 1001→1001
+// regression is already pinned by TestCloseEchoesPeerStatus above.)
+func TestBodylessCloseEchoesBodyless(t *testing.T) {
+	frame := driveCloseEcho(t, nil)
+	if len(frame) != 2 || frame[0]&0x0F != wsopcodeClose {
+		t.Fatalf("expected bodyless Close echo (2-byte header), got %x", frame)
+	}
+}
+
 // Item 1e: Hub.Broadcast must skip dead conns instead of queueing
 // messages to their sendBuffer (where they'd sit until GC).
 func TestBroadcastSkipsDeadConn(t *testing.T) {

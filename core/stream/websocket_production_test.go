@@ -177,6 +177,9 @@ func TestWSPongKeepsAlive(t *testing.T) {
 		conn:       srv,
 		sendBuffer: make(chan []byte, 4),
 		closed:     make(chan struct{}),
+		peerClosed: make(chan struct{}),
+		readMsgs:   make(chan []byte, 8),
+		readDone:   make(chan struct{}),
 		config: WSConfig{
 			ReadLimit:       1 << 20,
 			ReadIdleTimeout: 80 * time.Millisecond,
@@ -186,12 +189,14 @@ func TestWSPongKeepsAlive(t *testing.T) {
 	}
 	go conn.writePump()
 	conn.startKeepalive()
-	// Background reader so pong frames get consumed and reset the
-	// awaiting-pong flag.
+	// The internal read pump now owns the wire: it consumes the peer's
+	// Pongs and resets the awaiting-pong flag itself, so this connection
+	// stays alive with no application Read loop at all. The drain loop
+	// below exercises the Read() consumer concurrently with the pump.
+	conn.startReadPump()
 	go func() {
 		for {
-			_, err := conn.Read()
-			if err != nil {
+			if _, err := conn.Read(); err != nil {
 				return
 			}
 		}
