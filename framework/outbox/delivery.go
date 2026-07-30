@@ -271,22 +271,39 @@ func joinPlaceholders(ph []string) string {
 
 // purgeExpired deletes fully-settled (dispatched) parent rows and their
 // deliveries once older than the retention window. No-op when retention is
-// unset (0). Only dispatched parents are eligible, so a pending, dead, or
-// abandoned delivery a consumer might still act on (or replay) is never
-// deleted out from under it.
+// unset (0). A parent is eligible only when it is dispatched, past the
+// cutoff, AND has no dead or abandoned delivery — the NOT EXISTS guard on
+// both DELETEs excludes any parent still carrying a terminal delivery, so
+// the dead-letter (its last_error, attempts, and the parent payload) that
+// Replay/ReplayConsumer need to resurrect it is kept. Retention is therefore
+// not a dead-letter TTL: a parent with a terminal delivery is retained
+// indefinitely until that delivery is replayed to completion.
 func (o *Outbox) purgeExpired(ctx context.Context) error {
 	if o.retention <= 0 {
 		return nil
 	}
 	cutoff := o.now().UTC().Add(-o.retention)
+	// Deliveries first: drop a dispatched parent's deliveries only when the
+	// parent has no terminal (dead/abandoned) child to preserve.
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE row_id IN (
-			SELECT id FROM %s WHERE status='dispatched' AND created_at <= $1)`, o.qd(), o.qt()),
+			SELECT p.id FROM %s p
+			WHERE p.status='dispatched' AND p.created_at <= $1
+			  AND NOT EXISTS (
+			      SELECT 1 FROM %s d
+			      WHERE d.row_id = p.id AND d.status IN ('dead','abandoned')
+			  ))`, o.qd(), o.qt(), o.qd()),
 		cutoff); err != nil {
 		return err
 	}
+	// Parents: same NOT EXISTS guard so the parent payload survives
+	// alongside its terminal delivery.
 	_, err := o.db.ExecContext(ctx,
-		fmt.Sprintf(`DELETE FROM %s WHERE status='dispatched' AND created_at <= $1`, o.qt()),
+		fmt.Sprintf(`DELETE FROM %s WHERE status='dispatched' AND created_at <= $1
+		  AND NOT EXISTS (
+		      SELECT 1 FROM %s d
+		      WHERE d.row_id = %s.id AND d.status IN ('dead','abandoned')
+		  )`, o.qt(), o.qd(), o.qt()),
 		cutoff)
 	return err
 }
@@ -464,14 +481,21 @@ func scanClaimedDelivery(row interface {
 	return d, nil
 }
 
-// markDeliveryDispatched settles a successful delivery. status<>'dispatched'
-// keeps a settled delivery sticky: if this delivery raced a lease-expiry
-// reclaim that already dispatched it, don't clobber that.
+// markDeliveryDispatched settles a successful delivery. Only a pending
+// delivery may settle, symmetric with markDeliveryFailure: a dispatched row
+// stays sticky (a pending-only guard still never clobbers one), and dead or
+// abandoned deliveries are terminal until an explicit Replay. This stops a
+// worker whose lease expired from resurrecting a delivery an operator already
+// triaged — flipping it straight to dispatched, clearing last_error, and
+// burying the dead-letter as a clean success. The outbox is at-least-once, so
+// a stale success whose handler genuinely ran is simply lost credit; a later
+// Replay may duplicate, and that is the documented contract — the terminal
+// record wins.
 func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) {
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='dispatched', dispatched_at=$1, claimed_until=NULL, next_attempt_at=NULL, last_error=''
-			WHERE row_id=$2 AND consumer=$3 AND status<>'dispatched'`, o.qd()),
+			WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
 		o.now().UTC(), d.RowID, d.Consumer); err != nil {
 		slog.Default().Error("outbox: mark delivery dispatched failed; lease recovery will retry",
 			"row_id", d.RowID, "consumer", d.Consumer, "error", err)

@@ -438,6 +438,77 @@ func TestRetention_PurgesDispatchedOnly(t *testing.T) {
 	}
 }
 
+// WithRetention must NOT purge a dispatched parent that still carries a
+// dead or abandoned delivery: the dead-letter — its last_error, attempts,
+// and the parent payload Replay needs — survives until the delivery is
+// replayed to completion. Retention is not a dead-letter TTL. A fully-
+// dispatched parent past the window is still purged (control), and the
+// retained dead-letter remains actionable via ReplayConsumer.
+func TestRetentionKeepsDeadLetterParent(t *testing.T) {
+	db, o := openOutbox(t, WithRetention(time.Hour))
+	ctx := context.Background()
+
+	// The retention cutoff is now-1h. The package has no clock-advance
+	// helper, so — like TestRetention_PurgesDispatchedOnly — we set
+	// created_at directly to age rows past the window.
+	past := o.now().UTC().Add(-2 * time.Hour)
+	ageParent := func(id string) {
+		t.Helper()
+		if _, err := db.Exec(fmt.Sprintf(
+			"UPDATE %s SET status='dispatched', created_at=? WHERE id=?", o.qt()),
+			past, id); err != nil {
+			t.Fatalf("age parent %s: %v", id, err)
+		}
+	}
+
+	// (1) Dispatched parent carrying a DEAD delivery: purgeExpired must
+	// NOT take it — the dead-letter and the parent payload Replay needs
+	// all survive.
+	tx, _ := db.BeginTx(ctx, nil)
+	deadID, _ := o.Append(ctx, tx, "t", nil)
+	tx.Commit()
+	ageParent(deadID)
+	insertDeliveryAged(t, db, o, deadID, "svc", "dead", o.maxAttempts, "boom", 2*time.Hour)
+
+	// (2) Control: fully-dispatched parent past the window — purge takes it.
+	tx, _ = db.BeginTx(ctx, nil)
+	doneID, _ := o.Append(ctx, tx, "t", nil)
+	tx.Commit()
+	ageParent(doneID)
+	insertDeliveryAged(t, db, o, doneID, "svc", "dispatched", 0, "", 2*time.Hour)
+
+	if err := o.purgeExpired(ctx); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+
+	rows := mustList(t, o, "", 0)
+	if findRowMaybe(rows, deadID) == nil {
+		t.Error("dispatched parent carrying a dead delivery was purged (dead-letter lost)")
+	}
+	if findRowMaybe(rows, doneID) != nil {
+		t.Error("fully-dispatched parent past retention was not purged")
+	}
+	dDead := findDelivery(t, mustDeliveries(t, o, deadID), "svc")
+	if dDead.Status != "dead" || dDead.LastError != "boom" || dDead.Attempts != o.maxAttempts {
+		t.Errorf("dead delivery after purge = status=%q last_error=%q attempts=%d, want dead/boom/%d",
+			dDead.Status, dDead.LastError, dDead.Attempts, o.maxAttempts)
+	}
+
+	// The retained dead-letter is still actionable: register the consumer,
+	// replay the dead delivery, and run one relay cycle. The parent is
+	// pending post-replay, so this pump's purge (which runs first) skips it;
+	// the claim then delivers the resurrected delivery and settles it before
+	// any re-purge could reclaim the now-fully-dispatched old row.
+	o.Consume("svc", "t", noopHandler)
+	if err := o.ReplayConsumer(ctx, deadID, "svc"); err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	o.pump(ctx)
+	if d := findDelivery(t, mustDeliveries(t, o, deadID), "svc"); d.Status != "dispatched" {
+		t.Errorf("replayed dead delivery status = %q, want dispatched", d.Status)
+	}
+}
+
 // findRowMaybe returns a pointer to the row with id, or nil.
 func findRowMaybe(rows []Row, id string) *Row {
 	for i := range rows {

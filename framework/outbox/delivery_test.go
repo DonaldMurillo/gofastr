@@ -179,6 +179,55 @@ func TestStaleFailureKeepsTerminal(t *testing.T) {
 	}
 }
 
+// markDeliveryDispatched must only settle a PENDING delivery, symmetric
+// with markDeliveryFailure: a worker whose lease expired cannot flip a
+// dead or abandoned delivery straight to dispatched. That would resurrect
+// a delivery an operator already triaged, clear last_error, and bury the
+// dead-letter as a clean success. The terminal record wins.
+func TestStaleSuccessKeepsTerminal(t *testing.T) {
+	for _, tc := range []struct {
+		status   string
+		attempts int
+	}{
+		{status: "dead", attempts: 3},
+		{status: "abandoned", attempts: 0},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
+			ctx := context.Background()
+			db, o := openOutbox(t, WithMaxAttempts(3))
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatalf("begin: %v", err)
+			}
+			rowID, err := o.Append(ctx, tx, "type", nil)
+			if err != nil {
+				_ = tx.Rollback()
+				t.Fatalf("Append: %v", err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("commit: %v", err)
+			}
+			insertDelivery(t, db, o, rowID, "c", tc.status, tc.attempts, "settled")
+
+			// A stale claim whose lease expired attempting to settle a
+			// delivery that already went terminal.
+			o.markDeliveryDispatched(ctx, claimedDelivery{
+				RowID: rowID, Consumer: "c", Attempts: 0,
+			})
+
+			got := mustDeliveries(t, o, rowID)[0]
+			if got.Status != tc.status || got.Attempts != tc.attempts {
+				t.Fatalf("terminal delivery changed from %s/%d to %s/%d",
+					tc.status, tc.attempts, got.Status, got.Attempts)
+			}
+			if got.LastError != "settled" {
+				t.Fatalf("last_error = %q, want %q (a stale success must not clear it)",
+					got.LastError, "settled")
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Per-delivery attempts are independent: a failing consumer accrues
 // attempts while a succeeding sibling stays at zero.

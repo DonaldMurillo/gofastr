@@ -326,8 +326,12 @@ handler)` + `ob.StartRelay(ctx)`.
   declared at all, the relay logs a Warn at start.
 - **Retention (optional).** `WithRetention(d)` makes the relay purge
   fully-settled (`dispatched`) parent rows and their deliveries once older
-  than `d`. Pending, dead, and abandoned rows are never purged. Unset
-  (default) keeps every row forever.
+  than `d`. Pending, dead, and abandoned rows are never purged — and a
+  dispatched parent still carrying a dead or abandoned delivery is
+  retained with it, so `Replay` keeps the payload and `last_error` it
+  needs. Retention is not a dead-letter TTL: such a parent lives until
+  its delivery is replayed to completion. Unset (default) keeps every
+  row forever.
 - **Stalled relays are logged.** If the relay can't claim/expand (missing
   table under `WithoutEnsureTable`, a renamed table, or a DB outage) it
   keeps polling rather than crashing, and logs once at Error on onset and

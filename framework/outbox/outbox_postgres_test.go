@@ -199,3 +199,61 @@ func TestPostgres_ClaimDeliveryLeaseExpiry(t *testing.T) {
 		t.Fatalf("claim2 after expiry: err=%v n=%d", err, len(b2))
 	}
 }
+
+// TestPostgres_RetentionKeepsDeadLetterParent mirrors the SQLite
+// TestRetentionKeepsDeadLetterParent on live Postgres: the NOT EXISTS guard
+// in purgeExpired must keep a dispatched parent that carries a dead delivery
+// (and its dead-letter), while a fully-dispatched parent past the window is
+// purged. Proves the guarded DELETEs execute on Postgres, not just SQLite.
+func TestPostgres_RetentionKeepsDeadLetterParent(t *testing.T) {
+	db, o := pgOutbox(t, WithRetention(time.Hour))
+	ctx := context.Background()
+
+	past := o.now().UTC().Add(-2 * time.Hour)
+	ageParent := func(id string) {
+		t.Helper()
+		if _, err := db.Exec(`UPDATE event_outbox SET status='dispatched', created_at=$1 WHERE id=$2`,
+			past, id); err != nil {
+			t.Fatalf("age parent %s: %v", id, err)
+		}
+	}
+	seedDelivery := func(rowID, consumer, status string, attempts int, lastErr string, age time.Duration) {
+		t.Helper()
+		if _, err := db.Exec(
+			`INSERT INTO event_outbox_delivery (row_id, consumer, status, attempts, last_error, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+			rowID, consumer, status, attempts, lastErr, o.now().UTC().Add(-age)); err != nil {
+			t.Fatalf("seed delivery: %v", err)
+		}
+	}
+
+	// (1) Dispatched parent carrying a DEAD delivery — must survive purge.
+	tx, _ := db.BeginTx(ctx, nil)
+	deadID, _ := o.Append(ctx, tx, "t", nil)
+	tx.Commit()
+	ageParent(deadID)
+	seedDelivery(deadID, "svc", "dead", o.maxAttempts, "boom", 2*time.Hour)
+
+	// (2) Control: fully-dispatched parent past the window — must purge.
+	tx, _ = db.BeginTx(ctx, nil)
+	doneID, _ := o.Append(ctx, tx, "t", nil)
+	tx.Commit()
+	ageParent(doneID)
+	seedDelivery(doneID, "svc", "dispatched", 0, "", 2*time.Hour)
+
+	if err := o.purgeExpired(ctx); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+
+	rows := mustList(t, o, "", 0)
+	if findRowMaybe(rows, deadID) == nil {
+		t.Error("dispatched parent carrying a dead delivery was purged (dead-letter lost)")
+	}
+	if findRowMaybe(rows, doneID) != nil {
+		t.Error("fully-dispatched parent past retention was not purged")
+	}
+	dDead := findDelivery(t, mustDeliveries(t, o, deadID), "svc")
+	if dDead.Status != "dead" || dDead.LastError != "boom" || dDead.Attempts != o.maxAttempts {
+		t.Errorf("dead delivery after purge = status=%q last_error=%q attempts=%d, want dead/boom/%d",
+			dDead.Status, dDead.LastError, dDead.Attempts, o.maxAttempts)
+	}
+}
