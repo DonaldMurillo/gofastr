@@ -47,15 +47,24 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 
 // OnAfterCreate registers a typed AfterCreate hook. The callback receives
 // the just-inserted row (already includes server-generated fields like id).
-// Mutations are not reflected — Create has already committed the row's
-// shape; modifying the struct is harmless but pointless.
+// Mutations are reflected back into the response body: the hook payload is
+// the live result map the crud layer serialises into the HTTP response, so
+// clearing a field here (e.g. redacting a secret) changes what the caller
+// reads. The stored row is unaffected — Create has already committed it.
 func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
 		}
-		return fn(ctx, &v)
+		before := v
+		if err := fn(ctx, &v); err != nil {
+			return err
+		}
+		if m, ok := data.(map[string]any); ok {
+			return mergeStructIntoMap(&before, &v, m)
+		}
+		return nil
 	})
 }
 
@@ -79,14 +88,24 @@ func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, v
 }
 
 // OnAfterUpdate registers a typed AfterUpdate hook receiving the post-update
-// row.
+// row. Mutations are reflected back into the response body, exactly like
+// OnAfterCreate: the hook payload is the live result map the crud layer
+// serialises into the HTTP response, so clearing a field here redacts it from
+// what the caller reads. The stored row is unaffected.
 func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
 		}
-		return fn(ctx, &v)
+		before := v
+		if err := fn(ctx, &v); err != nil {
+			return err
+		}
+		if m, ok := data.(map[string]any); ok {
+			return mergeStructIntoMap(&before, &v, m)
+		}
+		return nil
 	})
 }
 

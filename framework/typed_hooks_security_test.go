@@ -21,6 +21,7 @@ type hookSecPost struct {
 	IsAdmin bool   `json:"isAdmin,omitempty"`
 	Balance int    `json:"balance,omitempty"`
 	Role    string `json:"role,omitempty"`
+	Secret  string `json:"secret,omitempty"`
 }
 
 // TestTypedHook_ForcedZeroOverrides asserts a Before-hook that forces a
@@ -118,6 +119,72 @@ func TestTypedHook_UpdateNoForcedFieldUnchanged(t *testing.T) {
 	if body["title"] != "updated" {
 		t.Fatalf("title corrupted: %v", body["title"])
 	}
+}
+
+// TestTypedAfterHooksCanRedact pins the property that a typed AfterCreate /
+// AfterUpdate hook can redact a field from the HTTP response body. The crud
+// layer hands ExecuteHooks the live result map — the very map serialised into
+// the create/update response — so an untyped After-hook redacts by mutating
+// that map directly. The typed wrappers must merge the mutated *T back into
+// the same map, or a host that redacts via the ergonomic typed API ships the
+// secret while believing it is masked. One redaction shape per surface; both
+// drifted together, so both are asserted here.
+func TestTypedAfterHooksCanRedact(t *testing.T) {
+	runTypedAfter := func(t *testing.T, label string, phase hook.HookType, register func(*App)) {
+		t.Helper()
+		app := NewApp(WithoutDefaultMiddleware())
+		register(app)
+		body := map[string]any{"id": "1", "title": "t", "secret": "topsecret"}
+		if err := app.HookRegistry("posts").ExecuteHooks(context.Background(), phase, body); err != nil {
+			t.Fatalf("%s: ExecuteHooks: %v", label, err)
+		}
+		if got := body["secret"]; got != "" {
+			t.Fatalf("%s: typed After-hook did not redact response body: secret=%v (want empty)", label, got)
+		}
+		// Merge-back must touch only the redacted field; the row's other
+		// columns (server-generated id, untouched title) survive intact.
+		if body["id"] != "1" || body["title"] != "t" {
+			t.Fatalf("%s: typed After-hook clobbered unrelated fields: %v", label, body)
+		}
+	}
+
+	t.Run("create", func(t *testing.T) {
+		runTypedAfter(t, "AfterCreate", hook.AfterCreate, func(app *App) {
+			OnAfterCreate[hookSecPost](app, "posts", func(_ context.Context, v *hookSecPost) error {
+				v.Secret = ""
+				return nil
+			})
+		})
+	})
+
+	t.Run("update", func(t *testing.T) {
+		runTypedAfter(t, "AfterUpdate", hook.AfterUpdate, func(app *App) {
+			OnAfterUpdate[hookSecPost](app, "posts", func(_ context.Context, v *hookSecPost) error {
+				v.Secret = ""
+				return nil
+			})
+		})
+	})
+
+	// Regression guard: the untyped After-hook path (the one the masking
+	// guidance in framework/hook/payload.go describes) redacts by mutating the
+	// live map directly. It must keep doing so.
+	t.Run("untyped_no_regression", func(t *testing.T) {
+		app := NewApp(WithoutDefaultMiddleware())
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(_ context.Context, data any) error {
+			if m, ok := data.(map[string]any); ok {
+				m["secret"] = ""
+			}
+			return nil
+		})
+		body := map[string]any{"id": "1", "title": "t", "secret": "topsecret"}
+		if err := app.HookRegistry("posts").ExecuteHooks(context.Background(), hook.AfterCreate, body); err != nil {
+			t.Fatalf("untyped ExecuteHooks: %v", err)
+		}
+		if got := body["secret"]; got != "" {
+			t.Fatalf("untyped After-hook regression: secret=%v (want empty)", got)
+		}
+	})
 }
 
 // A panic inside a third-party or buggy hook must NOT propagate out of
