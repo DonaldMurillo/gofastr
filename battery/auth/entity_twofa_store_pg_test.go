@@ -225,6 +225,71 @@ func TestEntityTwoFA_Postgres_RoundTripAndConsume(t *testing.T) {
 	}
 }
 
+// ABA regression on real Postgres (lib/pq): a consume that read the OLD
+// codes, racing a delete + re-enrol (version wraps back to 0 on the fresh
+// INSERT), must NOT pass its CAS against the NEW row. The CAS predicates on
+// the raw backup_codes bytes this round read, so the re-enrolled row fails
+// and the fresh code list survives. Mirrors TestEntityTwoFA_ReenrolKeepsNewCodes.
+func TestEntityTwoFA_Postgres_ReenrolKeepsNewCodes(t *testing.T) {
+	db := openPGForBattery(t)
+	ctx := context.Background()
+	s := NewEntityTwoFAStore(db, "auth_twofa")
+	if err := s.EnsureSchema(ctx); err != nil {
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+
+	// Enrolment A: codes A1, A2.
+	if err := s.SetTwoFA(ctx, "u1", &TwoFAState{
+		Enabled:     true,
+		BackupCodes: []string{hashCode(t, "A1"), hashCode(t, "A2")},
+	}); err != nil {
+		t.Fatalf("SetTwoFA A: %v", err)
+	}
+
+	// Between ConsumeBackupCode's read and its UPDATE, simulate a
+	// disable-and-re-enrol: delete the row, then re-create it with fresh
+	// codes B1, B2 at version 0. Fires once.
+	var hookFired bool
+	s.casTestHook = func() {
+		if hookFired {
+			return
+		}
+		hookFired = true
+		if err := s.DeleteTwoFA(ctx, "u1"); err != nil {
+			t.Fatalf("hook DeleteTwoFA: %v", err)
+		}
+		if err := s.SetTwoFA(ctx, "u1", &TwoFAState{
+			Enabled:     true,
+			BackupCodes: []string{hashCode(t, "B1"), hashCode(t, "B2")},
+		}); err != nil {
+			t.Fatalf("hook SetTwoFA B: %v", err)
+		}
+	}
+
+	ok, err := s.ConsumeBackupCode(ctx, "u1", "A1")
+	if err != nil {
+		t.Fatalf("ConsumeBackupCode(A1) after re-enrol on PG: %v", err)
+	}
+	if ok {
+		t.Fatal("stale code A1 must not consume after delete + re-enrol on PG (ABA resurrection)")
+	}
+
+	ok, err = s.ConsumeBackupCode(ctx, "u1", "B1")
+	if err != nil {
+		t.Fatalf("ConsumeBackupCode(B1) on PG: %v", err)
+	}
+	if !ok {
+		t.Fatal("fresh code B1 must still consume on PG after a stale consume was rejected")
+	}
+	got, err := s.GetTwoFA(ctx, "u1")
+	if err != nil {
+		t.Fatalf("GetTwoFA on PG: %v", err)
+	}
+	if len(got.BackupCodes) != 1 {
+		t.Fatalf("after consuming B1 of {B1,B2} on PG: %d codes remain, want 1", len(got.BackupCodes))
+	}
+}
+
 // The CAS single-use guarantee under concurrency, on real Postgres:
 // N goroutines racing to consume the SAME code must yield exactly one
 // success and zero corruption of the remaining codes.

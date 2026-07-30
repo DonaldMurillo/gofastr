@@ -111,13 +111,18 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
   reference a target and are simply omitted for rows that don't.
 
 > **Low-level helper:** the HTTP `?include=` path scrubs soft-deleted
-> rows and Hidden columns automatically. The exported `EagerLoad` helper
+> rows and Hidden columns and scopes related rows to the ctx owner and
+> tenant automatically. The exported `EagerLoad` helper
 > (`framework.EagerLoad`) only does so when you pass the optional
 > `entity.Registry` argument — `EagerLoad(ctx, db, ent, rels, ids, registry)`
 > — which lets it resolve each relation's target to apply the
-> `deleted_at IS NULL` filter and exclude Hidden fields. Always pass the
-> registry when loading relations whose targets are soft-deletable or
-> carry Hidden columns; without it the helper returns unscrubbed rows.
+> `deleted_at IS NULL` filter, exclude Hidden fields, and AND in the
+> owner (`OwnerField`) and tenant (`MultiTenant`) predicates from ctx,
+> exactly as the include path does. With no user or tenant in ctx those
+> predicates match nothing — fail closed. Always pass the registry when
+> loading relations whose targets are soft-deletable, carry Hidden
+> columns, are owner-scoped, or are multi-tenant; without it the helper
+> returns unscrubbed, unscoped rows.
 
 ## Not supported with streaming
 

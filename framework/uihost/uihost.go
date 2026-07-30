@@ -1907,7 +1907,7 @@ func (ds *UIHost) requireSessionOrEmbedGrant(w http.ResponseWriter, r *http.Requ
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return false
 		}
-		stripCookies(r)
+		stripAmbientCredentials(r)
 		return true
 	}
 	_, ok := ds.requireValidSession(w, r)
@@ -2203,7 +2203,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			stripCookies(req)
+			stripAmbientCredentials(req)
 			path := ds.embedSurfacePath(g)
 			if path == "" {
 				// The surface vanished after the grant was minted. Answer the
@@ -2655,6 +2655,19 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	return md, true
 }
 
+// PolicyBlockedError reports a static render refused by the screen's
+// policy — a redirect or a block, never a render failure. The static
+// builder skips such routes (with a warning) instead of aborting the
+// whole export. The route stays reachable via SSR on the live server.
+type PolicyBlockedError struct {
+	Path     string
+	Decision string // "redirect to "/login"" or "block status 403"
+}
+
+func (e *PolicyBlockedError) Error() string {
+	return fmt.Sprintf("uihost: static render %q: policy returned %s", e.Path, e.Decision)
+}
+
 // RenderStaticPage produces a fully-rendered page suitable for static-site
 // generation: it runs the screen's Load(ctx) hook, applies layout/theme,
 // and injects runtime.js, compiled actions, custom CSS, and the route
@@ -2674,9 +2687,9 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 	switch res.Kind {
 	case app.DecisionAllow, app.DecisionRenderAlt:
 	case app.DecisionRedirect:
-		return "", fmt.Errorf("uihost: static render %q: policy returned redirect to %q", path, res.URL)
+		return "", &PolicyBlockedError{Path: path, Decision: fmt.Sprintf("redirect to %q", res.URL)}
 	default:
-		return "", fmt.Errorf("uihost: static render %q: policy returned block status %d", path, res.Status)
+		return "", &PolicyBlockedError{Path: path, Decision: fmt.Sprintf("block status %d", res.Status)}
 	}
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead

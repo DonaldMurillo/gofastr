@@ -35,6 +35,12 @@ import (
 type EntityTwoFAStore struct {
 	db    *sql.DB
 	table string
+
+	// casTestHook, when set, fires inside ConsumeBackupCode between the read
+	// and the compare-and-swap UPDATE. It is nil in production; tests use it
+	// to mutate the row under an in-flight consume (e.g. delete + re-enrol)
+	// to exercise the CAS's ABA handling without contorting the call sites.
+	casTestHook func()
 }
 
 // NewEntityTwoFAStore creates a TwoFAStore backed by a database table.
@@ -145,10 +151,11 @@ func (s *EntityTwoFAStore) GetTwoFA(ctx context.Context, userID string) (*TwoFAS
 	return &TwoFAState{Enabled: enabled, Secret: secret, BackupCodes: codes, Verified: verified}, nil
 }
 
-// getWithVersion is GetTwoFA plus the optimistic-concurrency version, used
-// by ConsumeBackupCode's compare-and-swap. Returns nil state (and leaves
-// *version untouched) when the user is not enrolled.
-func (s *EntityTwoFAStore) getWithVersion(ctx context.Context, userID string, version *int64) (*TwoFAState, error) {
+// getWithVersion is GetTwoFA plus the optimistic-concurrency version and the
+// raw backup_codes bytes scanned this round, used by ConsumeBackupCode's
+// compare-and-swap. Returns nil state (and leaves *version and *codesRaw
+// untouched) when the user is not enrolled.
+func (s *EntityTwoFAStore) getWithVersion(ctx context.Context, userID string, version *int64, codesRaw *string) (*TwoFAState, error) {
 	q := s.qTable("SELECT enabled, secret, backup_codes, verified, version FROM %s WHERE user_id = $1")
 	var enabled, verified bool
 	var secret, codesJSON string
@@ -159,6 +166,7 @@ func (s *EntityTwoFAStore) getWithVersion(ctx context.Context, userID string, ve
 	if err != nil {
 		return nil, err
 	}
+	*codesRaw = codesJSON
 	var codes []string
 	if err := json.Unmarshal([]byte(codesJSON), &codes); err != nil {
 		return nil, fmt.Errorf("auth: EntityTwoFAStore: corrupt backup_codes row for user %s: %w", userID, err)
@@ -201,11 +209,22 @@ func (s *EntityTwoFAStore) DeleteTwoFA(ctx context.Context, userID string) error
 
 // ConsumeBackupCode checks the given code against the stored bcrypt hashes
 // and, on a match, removes that code atomically. Concurrency-safe across
-// replicas via an optimistic compare-and-swap on an integer version
-// column (NOT the JSON bytes — so a non-canonically-formatted row can't
-// wedge consumption): if two replicas race to consume the SAME code,
-// exactly one CAS wins; the loser re-reads, no longer finds the code, and
-// returns false.
+// replicas via an optimistic compare-and-swap on the version column AND the
+// raw backup_codes bytes this round's SELECT returned: if two replicas race
+// to consume the SAME code, exactly one CAS wins; the loser re-reads, no
+// longer finds the code, and returns false.
+//
+// The bytes predicate is what makes the CAS ABA-proof. version is NOT
+// monotonic across a row's lifetime — DeleteTwoFA drops the row and
+// SetTwoFA's INSERT arm recreates it at version 0 — so a CAS on version
+// alone would let a consume that read the OLD row pass against a row that
+// was since deleted and re-enrolled (version wrapped back to 0),
+// overwriting the freshly issued code list with the stale one. Predicating
+// on the raw bytes this round read makes the re-enrolled row fail the CAS
+// (its bytes differ) so the loop re-reads the fresh codes. Comparing the
+// stored bytes against themselves — the exact string this round's SELECT
+// returned — is formatting-proof: a non-canonically-formatted row matches
+// itself, so such a row still consumes.
 func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string, code string) (bool, error) {
 	// A lost CAS means the row changed under us (another code consumed, or a
 	// SetTwoFA) — re-read and retry. Bound the loop by the initial code
@@ -216,7 +235,8 @@ func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string,
 	maxRounds := 8
 	for round := 0; ; round++ {
 		var version int64
-		state, err := s.getWithVersion(ctx, userID, &version)
+		var rawCodes string
+		state, err := s.getWithVersion(ctx, userID, &version, &rawCodes)
 		if err != nil {
 			return false, err
 		}
@@ -230,6 +250,12 @@ func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string,
 			// Extreme contention: fail closed (the code is NOT burned — no
 			// UPDATE we ran removed it — so a client retry still works).
 			return false, nil
+		}
+
+		// Test seam: lets a test mutate the row (e.g. delete + re-enrol) under
+		// an in-flight consume to exercise the CAS. Nil in production.
+		if s.casTestHook != nil {
+			s.casTestHook()
 		}
 
 		// Bcrypt comparisons happen against a snapshot, outside any
@@ -250,8 +276,8 @@ func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string,
 		if err != nil {
 			return false, err
 		}
-		q := s.qTable("UPDATE %s SET backup_codes = $1, version = version + 1 WHERE user_id = $2 AND version = $3")
-		res, err := s.db.ExecContext(ctx, q, string(newJSON), userID, version)
+		q := s.qTable("UPDATE %s SET backup_codes = $1, version = version + 1 WHERE user_id = $2 AND version = $3 AND backup_codes = $4")
+		res, err := s.db.ExecContext(ctx, q, string(newJSON), userID, version, rawCodes)
 		if err != nil {
 			return false, err
 		}

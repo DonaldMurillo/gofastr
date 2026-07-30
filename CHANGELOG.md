@@ -7,6 +7,115 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+The eleven pre-existing bugs the v0.52.0 review pass found in shipped code
+but deliberately left out of that release. Every fix landed with a test
+that failed first.
+
+### Security
+
+- **A revoked 2FA backup code went live again after re-enrolment.**
+  `EntityTwoFAStore.ConsumeBackupCode`'s CAS keyed on `(user_id, version)`,
+  and `version` is not monotonic across a row's lifetime: `DeleteTwoFA`
+  drops the row and `SetTwoFA`'s INSERT arm recreates it at version 0. A
+  consume in flight during a disable-and-re-enrol passed its CAS against
+  the new row and overwrote the freshly issued code sheet with the stale
+  one — new codes silently dead, old sheet still working. The CAS now also
+  predicates on the raw `backup_codes` bytes that round's SELECT returned.
+  Bytes compared against themselves are formatting-proof, so the
+  non-canonical-row case that ruled out a re-marshal comparison does not
+  apply. `MemoryTwoFAStore` was never affected; the two stores agree again.
+- **A revoked RBAC grant survived on every peer replica and came back on
+  restart.** Each replica rebuilds a role as `baseline ∪ DB`, where
+  `baseline` is the code-declared grants it captured at its own boot — so a
+  revoke took effect locally and was merged back by every peer's next
+  reconcile, and by any replica that booted later. `Revoke` now writes a
+  revocation tombstone (`<grants-table>_revoked`, created by
+  `EnsureSchema`, no migration needed); every reload and every `LoadInto`
+  computes `(baseline ∪ DB) − tombstones`, so the revoke propagates and
+  survives boots even for grants declared in code. Re-granting via
+  `GrantStore.Grant` deletes the tombstone — the one way to un-revoke. A
+  permission both granted and tombstoned resolves to revoked: fail closed.
+  A new `transitionMu` serialises Grant/Revoke/reload/LoadInto so a reload
+  that read a stale DB snapshot can no longer overwrite a newer local
+  transition. `scaling.md`'s claim that `WithGrantStore + WithFanout`
+  propagates revokes is now true.
+- **`EagerLoad` applied no tenant or owner scope.** Its SECURITY block
+  enumerated the scrubs it applies (soft-delete, Hidden columns) and read
+  as exhaustive; a `MultiTenant` or `OwnerField` target loaded every
+  tenant's and every owner's rows. It now ANDs in the same owner and
+  tenant predicates the `?include=` path applies, from the same ctx
+  sources, with the same fail-closed empty-ctx behavior — and, like the
+  include path, never consults `CrossOwnerRead` for related rows. Zero
+  callers in the repo; this was an exported-API footgun for host apps.
+- **The embed routes stripped only the cookie.** `framework/embed`'s
+  middleware deletes `Cookie`, `Authorization`, and `X-API-Key` — cached
+  Basic credentials attach `Authorization` to same-origin subresource
+  fetches, the exact channel the cookie defence exists for — but the
+  uihost embed routes deleted `Cookie` alone. `stripAmbientCredentials`
+  now strips all three, so the two surfaces agree on what "no ambient
+  credential" means.
+- **The embed content route published the whole static origin allowlist.**
+  The shell resolves per-customer origins precisely so `frame-ancestors`
+  does not enumerate every customer; the content response of the same
+  handshake then used the static list. It now names exactly
+  `grant.Origin` — the one origin the verified grant was minted for.
+
+### Fixed
+
+- **Sibling apps on one origin deleted each other's PWA caches.** The
+  cache prefix joined slugs with `-` and `pwaSlug` maps `/`, space, `-`,
+  `_` all to `-` — so app "Acme"'s activate prefix was a prefix of "Acme
+  Docs"'s cache names, static exports at `/gofastr` and `/gofastr-docs` on
+  one `user.github.io` wiped each other's offline mode, and `/a/b` vs
+  `/ab` collapsed to the same prefix outright. Cache names now carry a
+  fixed-length hash discriminator dot-separated from the slug
+  (`gofastr-pwa-<slug>.<12hex>.<version>`; the static hash covers the raw
+  basePath before slugging), so no app's delete-prefix can prefix a
+  sibling's cache name. Activate also reaps the orphaned old-format own
+  cache — the all-hex remainder test keeps sibling old caches safe.
+- **One auth-gated screen aborted the whole static export**, leaving a
+  partially written OutDir; marketing pages plus one `/dashboard` behind
+  auth could not be exported at all. `RenderStaticPage` now returns a
+  typed `PolicyBlockedError` for Redirect/Block decisions and the builder
+  skips the route with a WARN naming path and decision — mirroring the
+  llm.md loop, which already handled gated screens gracefully. RenderAlt
+  screens export their alternate, as before. Skipped pages never enter
+  `res.Pages`, so the static service worker's precache cannot 404 on them.
+- **A push-only WebSocket was closed by its own keepalive.** `awaitingPong`
+  cleared only inside `readFrame`, which ran only when the app called
+  `Read()` — a server that only pushes never did, so a healthy connection
+  whose peer answered every Ping was force-closed every
+  `ReadIdleTimeout + PongTimeout` (70s at defaults). An internal read pump
+  now owns all socket reads from Upgrade: control frames are processed
+  even if the app never reads, `Read()` consumes complete messages from
+  the pump, concurrent `Read` callers became safe, and `Close()`'s
+  handshake completes as soon as the peer reciprocates instead of burning
+  `CloseTimeout`. The keepalive skips its tick while a message handoff to
+  a slow consumer is pending — a stalled app is not a dead peer.
+- **Retention deleted dead-letters and silently disarmed `Replay`.**
+  `completeParent` marks a parent dispatched with dead/abandoned
+  deliveries outstanding (by design — they await Replay), and
+  `purgeExpired` deleted by parent status alone, taking the dead-letter,
+  its `last_error`, and the parent payload with it: an operator who fixed
+  a consumer and called `ReplayConsumer` got nil and nothing replayed.
+  Both purge DELETEs now exclude any parent still carrying a dead or
+  abandoned delivery, which is what both functions' comments already
+  promised. Retention is not a dead-letter TTL.
+- **A stale success resurrected a terminal outbox delivery.**
+  `markDeliveryDispatched` guarded on `status<>'dispatched'` while both
+  failure updates had been fixed to `status='pending'` — so a worker with
+  an expired lease could flip a dead or abandoned delivery to dispatched,
+  clearing `last_error` and burying the dead-letter as a clean first-try
+  success. Now symmetric: only pending settles; dead and abandoned are
+  terminal until an explicit `Replay`.
+- **WebSocket close-code echo obeys RFC 6455 §7.4.1.** The peer's first
+  two Close bytes were stored and echoed verbatim, so 1005/1006 — codes
+  reserved as never-on-the-wire — could appear in our Close frame and turn
+  a clean close into a 1002 from a strict peer; an illegal 1-byte Close
+  body read as "no status". Received codes are sanitized at capture:
+  reserved, sub-1000, and undefined-range codes echo as 1002, a bodyless
+  Close still echoes bodyless.
+
 ## [0.52.0] - 2026-07-29
 
 Security and correctness fixes across everything v0.42.0 through v0.51.0

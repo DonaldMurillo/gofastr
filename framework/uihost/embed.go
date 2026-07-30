@@ -309,21 +309,34 @@ func (ds *UIHost) mountEmbed(r *router.Router) {
 	r.Get(embedContentPath, http.HandlerFunc(ds.handleEmbedContent))
 }
 
-// stripCookies discards every cookie before an embed handler can read one.
+// stripAmbientCredentials discards every ambient credential before an embed
+// handler can read one: Cookie, Authorization and X-API-Key.
 //
-// Embed routes must not HONOUR a cookie, and this is how that is enforced:
-// the credential is removed, so no downstream code — the session reader, the
-// CSRF middleware, an app's own handler — can act on it.
+// Embed routes must not HONOUR any of these, and this is how that is enforced:
+// the credentials are removed, so no downstream code — the session reader, the
+// CSRF middleware, a bearer/API-token authenticator, an app's own handler — can
+// act on them.
 //
-// It is not a 4xx, and that is deliberate. Normally no cookie arrives at all:
+// It is not a 4xx, and that is deliberate. Normally none arrive at all:
 // SameSite is computed against the top-level browsing context, so inside a
 // customer's frame the session cookie is never sent. But there is one real case
 // where it IS sent — an app at app.acme.com framed by www.acme.com is
 // SAME-SITE, so a Strict cookie rides along. Rejecting the request would make
 // same-site embedding impossible; discarding the cookie makes it behave exactly
 // like the cross-site case, which is the behaviour the whole design assumes.
-func stripCookies(r *http.Request) {
+// Authorization and X-API-Key ride the same channel: a cached HTTP Basic
+// credential (or a Basic-auth proxy in front of the app) and an API-key header
+// a fetch adapter attaches are sent automatically on same-origin subresource
+// fetches from the frame — the exact path the cookie defence exists for — so
+// they are stripped for the same reason.
+//
+// This mirrors Host.Middleware's strip in framework/embed/middleware.go so the
+// two surfaces — the uihost embed routes and the app's own authenticated router
+// — cannot drift on what "no ambient credential" means.
+func stripAmbientCredentials(r *http.Request) {
 	r.Header.Del("Cookie")
+	r.Header.Del("Authorization")
+	r.Header.Del("X-API-Key")
 }
 
 // applyEmbedFraming relaxes the app's anti-framing headers for one response.
@@ -427,7 +440,7 @@ func (ds *UIHost) embedShellOrigins(r *http.Request, s *fembed.ResolvedSurface) 
 }
 
 func (ds *UIHost) handleEmbedLoaderJS(w http.ResponseWriter, r *http.Request) {
-	stripCookies(r)
+	stripAmbientCredentials(r)
 	js, err := runtime.EmbedLoaderJS()
 	if err != nil {
 		http.Error(w, "embed loader unavailable", http.StatusInternalServerError)
@@ -465,7 +478,7 @@ func (ds *UIHost) handleEmbedLoaderJS(w http.ResponseWriter, r *http.Request) {
 // which already carries the full component catalog. Configuring an embed host
 // is the opt-in.
 func (ds *UIHost) handleEmbedRuntimeJS(w http.ResponseWriter, r *http.Request) {
-	stripCookies(r)
+	stripAmbientCredentials(r)
 	js, err := runtime.EmbedJS()
 	if err != nil {
 		http.Error(w, "embed runtime unavailable", http.StatusInternalServerError)
@@ -513,7 +526,7 @@ func embedError(w http.ResponseWriter, status int, reason string, err error) {
 }
 
 func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
-	stripCookies(r)
+	stripAmbientCredentials(r)
 	if !ds.embedHost.Ready() {
 		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
 		return
@@ -558,7 +571,7 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 // It cannot extend a grant forever: the grant carries an absolute deadline set
 // when it was first issued, and a refresh past that deadline is refused.
 func (ds *UIHost) handleEmbedRefresh(w http.ResponseWriter, r *http.Request) {
-	stripCookies(r)
+	stripAmbientCredentials(r)
 	if !ds.embedHost.Ready() {
 		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
 		return
@@ -663,7 +676,7 @@ func (ds *UIHost) resolveEmbedSurface(w http.ResponseWriter, r *http.Request) (*
 // element. Every layout decision inside the frame comes from the design system
 // by way of the screen the content endpoint renders under app.EmbedLayout.
 func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
-	stripCookies(r)
+	stripAmbientCredentials(r)
 	s, ok := ds.resolveEmbedSurface(w, r)
 	if !ok {
 		return
@@ -883,10 +896,11 @@ func (ds *UIHost) resolveEmbedTheme(s *fembed.ResolvedSurface, encoded string) (
 // handleEmbedContent renders the surface's screen as the granted subject.
 //
 // This is the only embed route that carries identity, and the grant header is
-// the only place identity can come from: no cookie reaches here (stripCookies),
-// and none would have been sent anyway.
+// the only place identity can come from: stripAmbientCredentials has already
+// removed every ambient credential, and a cookie would not have been sent
+// anyway.
 func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
-	stripCookies(r)
+	stripAmbientCredentials(r)
 	s, ok := ds.resolveEmbedSurface(w, r)
 	if !ok {
 		return
@@ -927,7 +941,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	// Clear any identity the app's own middleware installed before this
 	// handler ran.
 	//
-	// stripCookies runs here, inside the handler — but session middleware runs
+	// stripAmbientCredentials runs here, inside the handler — but session middleware runs
 	// BEFORE it, on the app's router, and this package does not control that
 	// ordering. So a same-site framing (app.acme.com inside www.acme.com, where
 	// a Strict cookie really is sent) could otherwise reach this point with a
@@ -1005,7 +1019,14 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	applyEmbedFraming(w, s.AllowedOrigins())
+	// The grant is bound to exactly one origin (the one it was minted for, and
+	// a verified grant's Origin is never empty — see MintNonce/VerifyGrant in
+	// framework/embed/token.go), so the directive names exactly the framer this
+	// response was minted for — not the surface's whole static allowlist. The
+	// shell already stopped publishing the list (see embedShellOrigins); this
+	// closes the same leak on the content response, the very next answer of the
+	// same handshake.
+	applyEmbedFraming(w, []string{grant.Origin})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Rendered for one subject. Never cache, never share.
 	w.Header().Set("Cache-Control", "no-store")

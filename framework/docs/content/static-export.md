@@ -114,6 +114,17 @@ empty slice) are **skipped** at build time, but the builder now logs a
 than dropping it silently — the missing pages are a build-time signal, not a
 silent gap. The route is still reachable via SSR if the server is running.
 
+A screen whose policy **Redirects** or **Blocks** (the two non-`Allow`
+decisions) is skipped too — there is no request or session at build time, so
+a redirect to `/login` or a hard 403 has nothing to render. The builder logs
+a `WARN` naming the route and the policy decision and continues; the page is
+simply absent from the export, and the route stays reachable via SSR on the
+live server. A screen that should ship in the export behind a gate uses a
+**`RenderAlt`** policy instead: the alt component (a login prompt, a public
+teaser) renders in place of the gated screen and is exported like any other
+page. `Allow` and `RenderAlt` are the only decisions a static export can
+materialize, so a Redirect/Block screen is never written to disk.
+
 ## Static mode: what works, what's disabled
 
 Every exported page is stamped with `<html data-fui-static>`. The runtime

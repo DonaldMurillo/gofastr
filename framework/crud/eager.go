@@ -8,21 +8,44 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // EagerLoad fetches related data for a set of parent IDs in batched queries,
 // avoiding N+1 problems. Returns a map keyed by parent ID to relation name to related data.
 //
 // SECURITY: when an optional entity.Registry is supplied, each relation's
-// target entity is resolved and the same scrubbing the live include path
-// applies (eager_filtered.go) is applied here too — soft-deleted target
-// rows are excluded (`deleted_at IS NULL`) and Hidden columns (e.g.
-// password_hash) are never populated. Resolution is version-aware
-// (entity.ResolveTarget against the source entity) and fails closed: a
-// target that cannot be resolved is an ERROR, not a load with the scrubs
-// turned off. Without a registry the target schema is unknown, so no
-// per-target scrub can be applied; callers that load relations whose
-// targets are soft-deletable or carry Hidden fields MUST pass the registry.
+// target entity is resolved and the SAME row-scoping the live include path
+// applies (eager_filtered.go + include.go) is applied here. Four scrubs run,
+// each keyed off the resolved target's EntityConfig:
+//
+//  1. Soft-delete exclusion — a soft-deletable target gets
+//     `deleted_at IS NULL` on its SELECT so trashed rows never resurface.
+//  2. Hidden-column scrub — columns flagged Hidden on the target (e.g.
+//     password_hash) are dropped from every loaded row.
+//  3. Owner scope — an owner-scoped target (OwnerField set) gets
+//     `owner_field = <ctx owner>` ANDed in, exactly like the include path's
+//     applyRelatedOwnerScope. With no user in context the predicate becomes
+//     `owner_field = ""`, matching no real row (fail-closed).
+//  4. Tenant scope — a MultiTenant target gets `tenant_id = <ctx tenant>`
+//     ANDed in, exactly like applyRelatedTenantScope. With no tenant in
+//     context it likewise matches nothing.
+//
+// Owner and tenant scopes are ALWAYS ANDed: CrossOwnerRead and the
+// owner.AllowCrossOwner / tenant.AllowCrossTenant escapes are NOT consulted
+// here, mirroring the include path's related-row scoping. The cross-table
+// predicate is the IDOR back-door control — lifting it would let an
+// ?include= (or an EagerLoad caller) reach across tenants/owners, so it is
+// unconditional on the read path just as it is on the include path.
+//
+// Resolution is version-aware (entity.ResolveTarget against the source
+// entity) and fails closed: a target that cannot be resolved is an ERROR,
+// not a load with the scrubs turned off. Without a registry the target
+// schema is unknown, so none of the four per-target scrubs can be applied;
+// callers that load relations whose targets are soft-deletable, carry
+// Hidden fields, are owner-scoped, or are multi-tenant MUST pass the registry.
 func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations []entity.Relation, ids []string, reg ...entity.Registry) (map[string]map[string]any, error) {
 	if len(ids) == 0 || len(relations) == 0 {
 		return make(map[string]map[string]any), nil
@@ -87,14 +110,19 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			softDeleteFilter = " AND deleted_at IS NULL"
 		}
 		hidden := hiddenColumns(target)
+		// Row-scope predicates for the target (owner + tenant), mirroring
+		// the include path's applyRelatedOwnerScope/applyRelatedTenantScope.
+		// Empty when the target is neither owner-scoped nor multi-tenant, so
+		// an unscoped relation is untouched.
+		scopeFilters := eagerScopeFilters(ctx, target)
 
 		switch rel.Type {
 		case entity.RelHasOne, entity.RelHasMany:
-			if err := eagerLoadHasMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, softDeleteFilter, hidden); err != nil {
+			if err := eagerLoadHasMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, softDeleteFilter, scopeFilters, hidden); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		case entity.RelManyToOne:
-			if err := eagerLoadBelongsTo(ctx, db, tableName, safeRelEntity, safeFK, rel, ids, result, softDeleteFilter, hidden); err != nil {
+			if err := eagerLoadBelongsTo(ctx, db, tableName, safeRelEntity, safeFK, rel, ids, result, softDeleteFilter, scopeFilters, hidden); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		case entity.RelManyToMany:
@@ -104,7 +132,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 				// `deleted_at` would be ambiguous — qualify it with the target.
 				mtmSoftDelete = " AND " + query.QuoteIdent(safeRelEntity) + ".deleted_at IS NULL"
 			}
-			if err := eagerLoadManyToMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, mtmSoftDelete, hidden); err != nil {
+			if err := eagerLoadManyToMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, mtmSoftDelete, scopeFilters, hidden); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		}
@@ -114,7 +142,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 }
 
 // eagerLoadHasMany handles HasOne and HasMany: target table has a FK pointing back to us.
-func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool) error {
+func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, scopeFilters []filter.ParsedFilter, hidden map[string]bool) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -122,8 +150,10 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK str
 		args[i] = id
 	}
 
-	q := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)%s",
-		query.QuoteIdent(safeEntity), query.QuoteIdent(safeFK), strings.Join(placeholders, ", "), softDeleteFilter)
+	scopeClause, scopeArgs := filterClause(scopeFilters, len(ids)+1)
+	q := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)%s%s",
+		query.QuoteIdent(safeEntity), query.QuoteIdent(safeFK), strings.Join(placeholders, ", "), softDeleteFilter, scopeClause)
+	args = append(args, scopeArgs...)
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -177,7 +207,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK str
 }
 
 // eagerLoadBelongsTo handles BelongsTo (ManyToOne): we hold a FK pointing to the target.
-func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, safeFK string, rel entity.Relation, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool) error {
+func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, safeFK string, rel entity.Relation, ids []string, result map[string]map[string]any, softDeleteFilter string, scopeFilters []filter.ParsedFilter, hidden map[string]bool) error {
 	pkCol := "id"
 
 	placeholders := make([]string, len(ids))
@@ -239,8 +269,11 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, s
 		fkArgs[i] = fk
 	}
 
-	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE id IN (%s)%s",
-		query.QuoteIdent(safeEntity), strings.Join(fkPlaceholders, ", "), softDeleteFilter)
+	// Owner/tenant scope applies to the TARGET rows, not the source SELECT.
+	scopeClause, scopeArgs := filterClause(scopeFilters, len(uniqueFKs)+1)
+	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE id IN (%s)%s%s",
+		query.QuoteIdent(safeEntity), strings.Join(fkPlaceholders, ", "), softDeleteFilter, scopeClause)
+	fkArgs = append(fkArgs, scopeArgs...)
 
 	tgtRows, err := db.QueryContext(ctx, tgtQuery, fkArgs...)
 	if err != nil {
@@ -292,7 +325,7 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, s
 }
 
 // eagerLoadManyToMany handles ManyToMany through a pivot table.
-func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool) error {
+func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, scopeFilters []filter.ParsedFilter, hidden map[string]bool) error {
 	safeThrough, err := query.SafeIdent(rel.Through)
 	if err != nil {
 		return fmt.Errorf("invalid through table %q: %w", rel.Through, err)
@@ -313,8 +346,13 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 		args[i] = id
 	}
 
+	// The M2M SELECT JOINs target + pivot, so scope columns MUST be
+	// qualified with the target table (filterClauseQualified) — bare owner
+	// /tenant columns would be ambiguous, exactly like the soft-delete
+	// qualification below.
+	scopeClause, scopeArgs := filterClauseQualified(scopeFilters, safeEntity, len(ids)+1)
 	q := fmt.Sprintf(
-		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s IN (%s)",
+		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s IN (%s)%s",
 		query.QuoteIdent(safeEntity),
 		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
 		query.QuoteIdent(safeEntity),
@@ -322,7 +360,9 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 		query.QuoteIdent(safeEntity), query.QuoteIdent(safeThrough), query.QuoteIdent(safeFKTarget),
 		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
 		strings.Join(placeholders, ", "),
+		scopeClause,
 	) + softDeleteFilter
+	args = append(args, scopeArgs...)
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -366,4 +406,46 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	}
 
 	return rows.Err()
+}
+
+// eagerScopeFilters builds the owner/tenant row-scope predicates for a
+// relation target, mirroring the include path's applyRelatedOwnerScope and
+// applyRelatedTenantScope (include.go) exactly. The result is rendered into
+// each loader's WHERE via filterClause/filterClauseQualified.
+//
+//   - OwnerField set ⇒ `owner_field = <ctx owner>` (OpEq). With no owner in
+//     context the value is "" so the predicate matches no real row —
+//     fail-closed, identical to the include path.
+//   - MultiTenant ⇒ `tenant_id = <ctx tenant>` (OpEq), likewise fail-closed
+//     on an empty ctx tenant.
+//
+// Both scopes are ALWAYS emitted; CrossOwnerRead and the
+// owner.AllowCrossOwner / tenant.AllowCrossTenant escapes are deliberately
+// NOT consulted — this is the cross-table IDOR back-door control, so it is
+// unconditional here just as it is in the include path's related-row scoping.
+// A nil target (no registry) yields no filters.
+func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.ParsedFilter {
+	if target == nil {
+		return nil
+	}
+	var out []filter.ParsedFilter
+	if ownerField := target.Config.OwnerField; ownerField != "" {
+		var val string
+		if id, ok := owner.Get(ctx); ok && id != nil {
+			val = fmt.Sprintf("%v", id)
+		}
+		out = append(out, filter.ParsedFilter{
+			Field: ownerField,
+			Op:    filter.OpEq,
+			Value: val,
+		})
+	}
+	if target.Config.MultiTenant {
+		out = append(out, filter.ParsedFilter{
+			Field: target.Config.TenantColumn(),
+			Op:    filter.OpEq,
+			Value: tenant.GetTenantID(ctx),
+		})
+	}
+	return out
 }

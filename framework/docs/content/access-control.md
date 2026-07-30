@@ -370,18 +370,45 @@ app := framework.NewApp(
 
 On every `Grant`/`Revoke`, the store publishes a refresh-signal on the
 `gofastr.access` lane naming the role whose grants changed. Each
-subscriber re-reads that role's rows from `access_grants` and atomically
-swaps them into its local policy via `RolePolicy.ReplaceRole`. The
-message body is never trusted — a crafted payload can only trigger a
+subscriber re-reads that role's grants from `access_grants` and atomically
+swaps them into its local policy via `RolePolicy.ReplaceRole` (the store
+rebuilds the role as `(code baseline ∪ DB grants) − revocation tombstones`).
+The message body is never trusted — a crafted payload can only trigger a
 re-read, never pollute the policy directly.
+
+### Revocation tombstones
+
+A `Revoke` does more than delete the grant row: it also inserts a
+**revocation tombstone** into a parallel `access_grants_revoked` table
+(created by `EnsureSchema`, same shape as the grants table). Reloads and
+fresh boots subtract tombstones from the `(baseline ∪ DB)` union, so a
+revoked grant stays revoked on every replica:
+
+- **Revokes propagate to peers.** A peer's fanout-driven reload reads the
+  tombstone from the shared DB, so it no longer merges a revoked
+  code-seeded grant back in — even though the peer's own code baseline
+  still declares it.
+- **Revokes survive restarts.** A replica that boots after the revoke runs
+  `LoadInto`, which subtracts tombstones from both the captured baseline
+  and the installed DB grants (and revokes them from the live policy), so
+  a re-seeded code grant does not resurrect the permission.
+- **Re-granting lifts a tombstone.** `GrantStore.Grant` deletes any
+  matching tombstone — it is the ONE way to un-revoke. A tombstoned
+  permission stays revoked even if the code keeps declaring it, until
+  `Grant()` is called. DB intent outlives code declarations, the same
+  precedence the store already gives DB grants over the code baseline.
+- **Tombstone wins on conflict.** If a permission is somehow both granted
+  and tombstoned (an inconsistent write), reloads fail closed: the
+  tombstone wins.
 
 **Consistency window.** Fanout is lossy best-effort. A publish that
 doesn't reach a peer (the peer's queue overflowed, the bus was briefly
 down) leaves that peer stale until the NEXT grant/revoke on the same
-role, or until restart (when `LoadInto` re-hydrates authoritative
-state). The store itself remains correct — it always reads from and
-writes to the DB; only the in-memory cache lags. A reconnecting
-replica's `LoadInto` reloads authoritative state on boot.
+role, or until restart. The store itself remains correct — it always
+reads from and writes to the DB; only the in-memory cache lags. A
+reconnecting replica's `LoadInto` reloads authoritative state on boot,
+and because tombstones live in the DB, a missed revoke signal does not
+resurrect on restart — the boot re-applies the tombstone.
 
 Capability validation happens before `GrantStore` writes. A strict rejection
 therefore leaves both the database and live policy unchanged. In warning mode,

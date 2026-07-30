@@ -139,7 +139,7 @@ func TestPWAChromeE2E(t *testing.T) {
 		return keys
 	}
 	v1Keys := cacheKeys()
-	if len(v1Keys) != 1 || !strings.HasPrefix(v1Keys[0], "gofastr-pwa-pwa-demo-") {
+	if len(v1Keys) != 1 || !strings.HasPrefix(v1Keys[0], "gofastr-pwa-pwa-demo.") {
 		t.Fatalf("expected one owned cache, got %v", v1Keys)
 	}
 	v1Cache := v1Keys[0]
@@ -210,7 +210,7 @@ func TestPWAChromeE2E(t *testing.T) {
 			if keys[0] == v1Cache {
 				t.Fatalf("v2 activation kept the OLD cache: %v", keys)
 			}
-			if !strings.HasPrefix(keys[0], "gofastr-pwa-pwa-demo-") {
+			if !strings.HasPrefix(keys[0], "gofastr-pwa-pwa-demo.") {
 				t.Fatalf("surviving cache not owned by the app: %v", keys)
 			}
 			break

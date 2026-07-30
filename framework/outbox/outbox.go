@@ -164,7 +164,10 @@ func WithHandlerGrace(d time.Duration) Option {
 // rows and their deliveries once they are older than d. The relay runs the
 // purge as part of its poll cycle. Zero (the default) disables purging —
 // rows are kept forever. Only dispatched parents are ever purged; pending or
-// dead/abandoned deliveries are never deleted out from under a consumer.
+// dead/abandoned deliveries are never deleted out from under a consumer. A
+// parent that still carries a dead or abandoned delivery is retained
+// indefinitely until that delivery is replayed to completion — retention is
+// not a dead-letter TTL.
 func WithRetention(d time.Duration) Option {
 	return func(o *Outbox) { o.retention = d }
 }

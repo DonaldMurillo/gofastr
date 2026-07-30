@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -83,6 +84,12 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		for _, p := range paths {
 			html, err := b.Host.RenderStaticPage(ctx, p)
 			if err != nil {
+				var blocked *uihost.PolicyBlockedError
+				if errors.As(err, &blocked) {
+					slog.Warn("static: skipped gated screen — policy refused the static render; the route stays reachable via the live server. Use a policy that RenderAlts (e.g. a login prompt) to keep the page in the export.",
+						"path", p, "decision", blocked.Decision)
+					continue
+				}
 				return res, fmt.Errorf("static: render %q: %w", p, err)
 			}
 			html = b.applyStaticMode(html)
