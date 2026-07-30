@@ -109,6 +109,63 @@ func TestBuildGatedScreenExportsWithheldDoc(t *testing.T) {
 	}
 }
 
+// A static route whose policy Redirects or Blocks (the two non-Allow
+// branches RenderStaticPage can hit) is skipped with a WARN naming the
+// route and the decision — it must NOT abort the whole export. The public
+// page still writes; the gated page is absent from OutDir and res.Pages.
+// Mirrors the llm.md loop, which already handles gates gracefully.
+func TestGatedScreenSkippedNotFatal(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		decision coreapp.Decision
+		wantSubs []string // quote-free tokens the warning's decision must carry
+	}{
+		{"redirect", coreapp.Decision{Kind: coreapp.DecisionRedirect, URL: "/login"}, []string{"redirect to", "/login"}},
+		{"block", coreapp.Decision{Kind: coreapp.DecisionBlock, Status: 403}, []string{"block status 403"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := captureSlog(t)
+
+			a := coreapp.NewApp("t")
+			a.Register("/", &homeScreen{}, nil) // public page must still export
+			gate := coreapp.PolicyFunc(func(ctx context.Context) coreapp.Decision { return tc.decision })
+			scr := coreapp.NewScreen("/dashboard", &homeScreen{}).WithPolicy(gate)
+			a.RegisterScreen(scr, nil)
+
+			out := t.TempDir()
+			res, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background())
+			if err != nil {
+				t.Fatalf("gated screen must not abort the export: %v", err)
+			}
+
+			// Public page exported.
+			if _, e := os.ReadFile(filepath.Join(out, "index.html")); e != nil {
+				t.Errorf("public page not written: %v", e)
+			}
+			// Gated page absent from disk.
+			if _, e := os.ReadFile(filepath.Join(out, "dashboard", "index.html")); !os.IsNotExist(e) {
+				t.Errorf("gated page must not be written to OutDir; got err=%v", e)
+			}
+			// Gated page absent from Result.
+			for _, p := range res.Pages {
+				if p == "/dashboard" {
+					t.Errorf("gated page must not appear in res.Pages; got %v", res.Pages)
+				}
+			}
+			// Warning names the route + decision.
+			logged := buf.String()
+			if !strings.Contains(logged, "/dashboard") {
+				t.Errorf("warn must name the skipped route; log was:\n%s", logged)
+			}
+			for _, sub := range tc.wantSubs {
+				if !strings.Contains(logged, sub) {
+					t.Errorf("warn must carry decision token %q; log was:\n%s", sub, logged)
+				}
+			}
+		})
+	}
+}
+
 // A StaticPaths value that violates the route's constraint fails the
 // build loudly (the expanded path resolves to nothing) — never a silent
 // skip, never an ungated fallback doc.
