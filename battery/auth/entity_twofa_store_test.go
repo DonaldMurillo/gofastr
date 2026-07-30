@@ -178,6 +178,76 @@ func TestEntityTwoFA_NonCanonicalJSONStillConsumes(t *testing.T) {
 	}
 }
 
+// ABA regression: ConsumeBackupCode's CAS must not let a stale enrolment
+// resurrect itself over a fresh one. version is NOT monotonic across a
+// row's lifetime — DeleteTwoFA drops the row and SetTwoFA's INSERT arm
+// recreates it at version 0 — so a CAS on version alone is ABA-vulnerable:
+// a consume that read the OLD codes, racing a disable-and-re-enrol (delete
+// + insert, version back to 0), would pass its CAS against the NEW row and
+// clobber the freshly issued code list. The CAS also predicates on the raw
+// backup_codes bytes this round read, so the re-enrolled row (different
+// bytes) fails the CAS and the loop re-reads the fresh codes instead.
+func TestEntityTwoFA_ReenrolKeepsNewCodes(t *testing.T) {
+	s := newTwoFAStore(t)
+	ctx := context.Background()
+
+	// Enrolment A: codes A1, A2.
+	if err := s.SetTwoFA(ctx, "u1", &TwoFAState{
+		Enabled:     true,
+		BackupCodes: []string{hashCode(t, "A1"), hashCode(t, "A2")},
+	}); err != nil {
+		t.Fatalf("SetTwoFA A: %v", err)
+	}
+
+	// Between ConsumeBackupCode's read and its UPDATE, simulate a
+	// disable-and-re-enrol: delete the row, then re-create it with fresh
+	// codes B1, B2 at version 0. Fires once (guarded) so the retry round is
+	// unaffected.
+	var hookFired bool
+	s.casTestHook = func() {
+		if hookFired {
+			return
+		}
+		hookFired = true
+		if err := s.DeleteTwoFA(ctx, "u1"); err != nil {
+			t.Fatalf("hook DeleteTwoFA: %v", err)
+		}
+		if err := s.SetTwoFA(ctx, "u1", &TwoFAState{
+			Enabled:     true,
+			BackupCodes: []string{hashCode(t, "B1"), hashCode(t, "B2")},
+		}); err != nil {
+			t.Fatalf("hook SetTwoFA B: %v", err)
+		}
+	}
+
+	// A1 belonged to enrolment A, which was deleted. The consume must not
+	// succeed against enrolment B: under the ABA bug it returned true and
+	// clobbered B's codes with A's.
+	ok, err := s.ConsumeBackupCode(ctx, "u1", "A1")
+	if err != nil {
+		t.Fatalf("ConsumeBackupCode(A1) after re-enrol: %v", err)
+	}
+	if ok {
+		t.Fatal("stale code A1 must not consume after delete + re-enrol (ABA resurrection)")
+	}
+
+	// Enrolment B's codes must be intact and consumable.
+	ok, err = s.ConsumeBackupCode(ctx, "u1", "B1")
+	if err != nil {
+		t.Fatalf("ConsumeBackupCode(B1): %v", err)
+	}
+	if !ok {
+		t.Fatal("fresh code B1 must still consume after a stale consume was rejected")
+	}
+	got, err := s.GetTwoFA(ctx, "u1")
+	if err != nil {
+		t.Fatalf("GetTwoFA: %v", err)
+	}
+	if len(got.BackupCodes) != 1 {
+		t.Fatalf("after consuming B1 of {B1,B2}: %d codes remain, want 1", len(got.BackupCodes))
+	}
+}
+
 // Regression (A-F1): EnsureSchema must self-heal a table created before the
 // version column existed — CREATE TABLE IF NOT EXISTS no-ops on it, so the
 // column would be missing and every 2FA op would error.
