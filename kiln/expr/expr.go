@@ -44,6 +44,12 @@ var (
 	ErrType  = errors.New("expr: wrong argument type")
 )
 
+// MaxSourceBytes is the largest expression source [Compile] accepts.
+// Expression strings arrive from the world IR, which kiln's build mode
+// accepts over HTTP, so the lexer's allocation must be bounded before it
+// runs.
+const MaxSourceBytes = 64 << 10
+
 // Expression is a compiled, ready-to-evaluate expression tree.
 type Expression struct {
 	root node
@@ -58,6 +64,13 @@ func (e *Expression) Source() string { return e.src }
 func Compile(src string) (*Expression, error) {
 	if src == "" {
 		return nil, fmt.Errorf("expr: empty source")
+	}
+	// Bound the input before lexing. lex allocates a token per lexeme, so a
+	// multi-megabyte source costs hundreds of MB before the parser's node
+	// budget ever gets a vote. World-IR conditions are one-liners; 64 KiB
+	// is far above anything an author writes by hand.
+	if len(src) > MaxSourceBytes {
+		return nil, fmt.Errorf("expr: source too large (%d bytes, limit %d)", len(src), MaxSourceBytes)
 	}
 	tokens, err := lex(src)
 	if err != nil {

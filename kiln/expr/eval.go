@@ -1,6 +1,9 @@
 package expr
 
-import "fmt"
+import (
+	"fmt"
+	"reflect"
+)
 
 func (n *literalNode) eval(_ Scope, _ *Env) (any, error) { return n.value, nil }
 
@@ -43,7 +46,9 @@ func (n *indexNode) eval(scope Scope, env *Env) (any, error) {
 		if !ok {
 			return nil, fmt.Errorf("expr: list index must be int, got %T", idx)
 		}
-		if i < 0 || int(i) >= len(t) {
+		// Compare at int64 width: int(i) truncates on a 32-bit build, so
+		// a large index could clear the guard and then panic in t[i].
+		if i < 0 || i >= int64(len(t)) {
 			return nil, fmt.Errorf("expr: index %d out of range", i)
 		}
 		return t[i], nil
@@ -253,7 +258,26 @@ func equals(l, r any) bool {
 		}
 		return lf == rf
 	}
+	// Comparing two interface values panics at runtime when either dynamic
+	// type is uncomparable (slice, map, func). Those arrive routinely here:
+	// a list literal, or any JSON array decoded into []any. The panic is not
+	// containable — kiln's applyRoutes installs raw http.HandlerFuncs and
+	// panic recovery is an opt-in catalog entry the world must declare — so
+	// guard the comparison instead. Uncomparable operands are not equal.
+	//
+	// reflect covers every shape reachable from a world IR (JSON scalars,
+	// []any, map[string]any) plus int64. A struct type whose field is an
+	// interface reports Comparable()==true and could still panic, but no
+	// such value can enter an expression scope.
+	if !isComparable(l) || !isComparable(r) {
+		return false
+	}
 	return l == r
+}
+
+func isComparable(v any) bool {
+	t := reflect.TypeOf(v)
+	return t != nil && t.Comparable()
 }
 
 func compare(op string, l, r any) (any, error) {

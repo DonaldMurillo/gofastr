@@ -34,10 +34,34 @@ type listNode struct{ items []node }
 // instead of exhausting the goroutine stack.
 const maxDepth = 256
 
+// maxNodes caps the total AST size. maxDepth alone is not enough: the
+// precedence loops (parseOr/parseAnd/parseAdd/parseMul) and the postfix
+// chain iterate rather than recurse, so `1+1+1+…` and `a.b.c.d…` build a
+// LEFT-DEEP tree of depth O(n) while the parser's own recursion — and
+// therefore its depth counter — stays flat. The crash lands later, in the
+// recursive evaluator, as a goroutine stack overflow: a FATAL runtime
+// error recover() cannot catch, so no middleware can contain it.
+//
+// Node depth is bounded by node count, so capping the count caps eval
+// recursion. 10k nodes is orders of magnitude above any real world-IR
+// condition and evaluates in a few hundred KB of stack.
+const maxNodes = 10_000
+
 type parser struct {
 	tokens []token
 	pos    int
 	depth  int
+	nodes  int
+}
+
+// count charges one AST node against the budget. Every node constructor
+// goes through it, including the ones the iterative loops build.
+func (p *parser) count() error {
+	p.nodes++
+	if p.nodes > maxNodes {
+		return fmt.Errorf("expr: expression too large (limit %d nodes)", maxNodes)
+	}
+	return nil
 }
 
 // enter increments the recursion depth and reports an error once the
@@ -108,6 +132,9 @@ func (p *parser) parseOr() (node, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := p.count(); err != nil {
+			return nil, err
+		}
 		left = &binaryNode{op: "||", left: left, right: right}
 	}
 	return left, nil
@@ -122,6 +149,9 @@ func (p *parser) parseAnd() (node, error) {
 		p.advance()
 		right, err := p.parseComp()
 		if err != nil {
+			return nil, err
+		}
+		if err := p.count(); err != nil {
 			return nil, err
 		}
 		left = &binaryNode{op: "&&", left: left, right: right}
@@ -141,6 +171,9 @@ func (p *parser) parseComp() (node, error) {
 			p.advance()
 			right, err := p.parseAdd()
 			if err != nil {
+				return nil, err
+			}
+			if err := p.count(); err != nil {
 				return nil, err
 			}
 			return &binaryNode{op: t.value, left: left, right: right}, nil
@@ -164,6 +197,9 @@ func (p *parser) parseAdd() (node, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := p.count(); err != nil {
+			return nil, err
+		}
 		left = &binaryNode{op: t.value, left: left, right: right}
 	}
 }
@@ -183,6 +219,9 @@ func (p *parser) parseMul() (node, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := p.count(); err != nil {
+			return nil, err
+		}
 		left = &binaryNode{op: t.value, left: left, right: right}
 	}
 }
@@ -197,6 +236,9 @@ func (p *parser) parseUnary() (node, error) {
 		p.advance()
 		inner, err := p.parseUnary()
 		if err != nil {
+			return nil, err
+		}
+		if err := p.count(); err != nil {
 			return nil, err
 		}
 		return &unaryNode{op: t.value, expr: inner}, nil
@@ -222,6 +264,9 @@ func (p *parser) parsePostfix() (node, error) {
 				return nil, fmt.Errorf("expr: expected identifier after '.' at %d", t.pos)
 			}
 			p.advance()
+			if err := p.count(); err != nil {
+				return nil, err
+			}
 			primary = &memberNode{target: primary, field: id.value}
 		case "[":
 			p.advance()
@@ -230,6 +275,9 @@ func (p *parser) parsePostfix() (node, error) {
 				return nil, err
 			}
 			if err := p.expectPunct("]"); err != nil {
+				return nil, err
+			}
+			if err := p.count(); err != nil {
 				return nil, err
 			}
 			primary = &indexNode{target: primary, index: idx}
@@ -242,6 +290,9 @@ func (p *parser) parsePostfix() (node, error) {
 			p.advance()
 			args, err := p.parseArgList(")")
 			if err != nil {
+				return nil, err
+			}
+			if err := p.count(); err != nil {
 				return nil, err
 			}
 			primary = &callNode{name: id.name, args: args}
@@ -277,6 +328,9 @@ func (p *parser) parseArgList(closer string) ([]node, error) {
 }
 
 func (p *parser) parsePrimary() (node, error) {
+	if err := p.count(); err != nil {
+		return nil, err
+	}
 	t := p.peek()
 	switch t.kind {
 	case tokNumber:
