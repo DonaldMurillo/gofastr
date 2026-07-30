@@ -355,6 +355,13 @@ func (m *MemoryStore) Delete(key string) error {
 
 // All returns a snapshot of every defined flag, suitable for /admin
 // listings. The result is a copy — mutations don't affect the store.
+//
+// SECURITY: the snapshot includes each flag's full definition — the
+// Users and Tenants allow-lists carry raw subject ids / emails. That is
+// PII, and the list of who is inside a gated cohort is itself a signal.
+// Gate this behind admin auth before rendering it; do not hand the
+// result to an anonymous introspection endpoint. Compare
+// router.Routes(), which carries the same warning.
 func (m *MemoryStore) All() []Flag {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

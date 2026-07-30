@@ -76,7 +76,27 @@ func (s *Store) Get(ctx context.Context, key string) (*Flag, error) {
 	if err := json.Unmarshal([]byte(val), &flag); err != nil {
 		return nil, fmt.Errorf("redisflags: unmarshal %q: %w", key, err)
 	}
+	if err := validateFlag(&flag); err != nil {
+		return nil, fmt.Errorf("redisflags: get %q: %w", key, err)
+	}
 	return &flag, nil
+}
+
+// validateFlag enforces the RolloutPct bound on the READ path as well as
+// the write path. Set is not the only writer Redis has: another replica, an
+// older binary, or an ops script can put a value there directly, so a bound
+// checked only in Set is a bound checked only on the caller that was
+// already going to behave. Consumers evaluate rollout as
+// `hash % 100 < RolloutPct`, where a stored 10000 is a silent 100% rollout
+// and a stored -1 inverts the comparison.
+//
+// Rejecting (rather than clamping) surfaces the corruption, and because
+// IsEnabled maps a Get error to false, the failure direction is closed.
+func validateFlag(f *Flag) error {
+	if f.RolloutPct < 0 || f.RolloutPct > 100 {
+		return fmt.Errorf("stored RolloutPct %d out of range (must be 0..100)", f.RolloutPct)
+	}
+	return nil
 }
 
 // Set saves a flag. Validates RolloutPct ∈ [0, 100].
@@ -131,6 +151,9 @@ func (s *Store) List(ctx context.Context) ([]*Flag, error) {
 		var flag Flag
 		if err := json.Unmarshal([]byte(v), &flag); err != nil {
 			continue
+		}
+		if err := validateFlag(&flag); err != nil {
+			continue // same skip-the-bad-entry policy as a decode failure
 		}
 		flags = append(flags, &flag)
 	}

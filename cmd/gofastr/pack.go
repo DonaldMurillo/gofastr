@@ -2665,6 +2665,14 @@ func buttonVariant(e ast.Expr) string {
 }
 
 // packBlueprint reconstructs a full Blueprint from a generated app directory.
+// secretsInBlueprint reports whether the packed blueprint carries any of
+// the three values packReadDotEnv recovers from .env.
+func secretsInBlueprint(bp Blueprint) bool {
+	return bp.App.Auth.JWTSecret != "" ||
+		bp.App.Admin.SeedPassword != "" ||
+		strings.Contains(bp.App.DBURL, "@")
+}
+
 func packBlueprint(dir string) (Blueprint, error) {
 	var bp Blueprint
 	app, err := packReadApp(dir)
@@ -2720,11 +2728,21 @@ func runPack(args []string) {
 		return
 	}
 	yml := encodeBlueprintYAML(bp)
+	// packReadDotEnv rehydrates JWT_SECRET / ADMIN_SEED_PASSWORD /
+	// DATABASE_URL from the app's .env so the packed blueprint round-trips
+	// (see the comment on packReadDotEnv). That reverses the generator's
+	// own "secrets never land in committed source" rule, which
+	// TestBlueprintNeverInlinesSecrets pins — and unlike `.env`, an
+	// arbitrary `-o` path is not covered by the generated .gitignore. Warn
+	// loudly and write 0600 rather than 0644.
+	if secretsInBlueprint(bp) {
+		warn("pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url) — do NOT commit it")
+	}
 	if out == "" {
 		fmt.Print(yml)
 		return
 	}
-	if err := os.WriteFile(out, []byte(yml), 0o644); err != nil {
+	if err := os.WriteFile(out, []byte(yml), 0o600); err != nil {
 		fail("pack: write %s: %v", out, err)
 		osExit(1)
 		return

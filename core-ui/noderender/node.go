@@ -552,17 +552,14 @@ var privilegedDataAttrs = map[string]bool{
 // privilegedDataPrefixes are runtime-privileged data-* FAMILIES. An
 // untrusted IR must not name any attribute starting with one of these.
 //
-// NOT yet listed here, and it is a known hole: data-action-* and
-// data-param-*. core-ui/runtime/frag/boot.js resolves the nearest
-// [data-component] and calls G.trigger() with the action name and the
-// data-param-* map — at hydration for data-action-mount, and again on
-// every gofastr:navigate — so an untrusted IR can pick a compiled action
-// AND its arguments. They cannot simply be added, because this renderer
-// serves two callers with different trust: cmd/gofastr's blueprint
-// (developer-authored YAML, first party) emits exactly these attributes
-// through RenderNode, while kiln renders agent-authored IR through the
-// same function. Closing it needs a trust split — see the note in
-// TestIRCannotFireActions.
+// data-action-* and data-param-* are deliberately NOT here: they are
+// stripped a layer earlier, by withoutActionAttrs at the untrusted entry
+// point. They cannot be handled by name alone, because this renderer
+// serves two callers with different trust — cmd/gofastr's blueprint
+// compiles developer-authored YAML and legitimately emits them, while
+// kiln renders agent-authored IR through the same code. The trust split
+// (RenderNode vs RenderTrustedNode) is what tells the two apart. See
+// actionAttrs for why they matter and TestIRCannotFireActions for the pin.
 var privilegedDataPrefixes = []string{
 	"data-fui-",
 }
