@@ -8,10 +8,95 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 The eleven pre-existing bugs the v0.52.0 review pass found in shipped code
-but deliberately left out of that release. Every fix landed with a test
+but deliberately left out of that release, plus a security audit of the
+packages no previous pass had ever read — kiln's expression and render
+layers, the module wire protocol, the router, config, i18n, migrations,
+file handling, and the SDK and pack tooling. Every fix landed with a test
 that failed first.
 
 ### Security
+
+- **BREAKING: a module's reverse calls now carry only the delegation
+  handle.** `EntityQueryParams`, `EntityMutationParams`,
+  `SearchQueryParams` and `EventEmitParams` take a `moduleproto.CallerRef`
+  — `Delegation` and nothing else — in place of `moduleproto.Caller`.
+  `Caller` travels in both directions: outbound the host fills it, inbound
+  the child writes it, and the child is the untrusted party. A broker
+  reading a child-supplied `Subject` or `Tenant` and dispatching under it
+  is a confused deputy. The shipped `Broker` never did — it resolves from
+  `Delegation` alone — so nothing was exploitable, but a comment telling
+  future authors not to trust those fields is weak protection while the
+  fields sit on the decoded struct. Anyone implementing a process module
+  gets a compile error and drops the two fields from the reverse call; the
+  host already sent them outbound and does not need them back.
+- **A trailing-slash redirect skipped the route gate and every
+  middleware.** `core/router` handed net/http's synthesized redirect
+  straight to the mux, so a path needing completion or dot-segment
+  cleaning bypassed the gate the 404 and 405 branches both honour. Against
+  a gate rejecting everything, `/admin/panel/` answered 404 while
+  `/admin/panel` answered 307 — the disabled-module existence leak the
+  gate's contract explicitly promises not to produce — and `//admin/panel/`,
+  `/admin/./panel/` and `/x/../admin/panel/` reached it too. Those
+  responses also carried no security headers, recovery, timeout, request
+  logging, CORS or rate limiting, and Go's 307 preserves method and body,
+  so it answered POSTs. Redirects are now gated on the target route and run
+  through the chain; a gated target falls through to an identical 404.
+- **A DEFAULT clause could close its own literal.** `SQLDefault`'s
+  fallback arm rendered `fmt.Sprintf("'%v'", v)` unescaped, and
+  `Field.Default` is `any`, so a named string type, `[]byte`, a
+  `fmt.Stringer` or a decoded map took that arm. A kiln `add_entity`
+  payload over HTTP created and committed an extra column. Both arms share
+  one escaper now.
+- **kiln quoted SQL identifiers with a third, broken copy.** It escaped
+  `"` and then wrote each rune as `byte(r)`, truncating after the escape
+  test, so `U+2022` and every other rune ending in `0x22` became a real
+  quote. Seed entity names and row keys are agent-authored, so it was
+  reachable. The private copy is deleted in favour of `core/query`, which
+  was always correct.
+- **A kiln expression could kill the process.** The depth guard counted
+  only grouping and prefix recursion, so a flat `1+1+1…` chain built a
+  depth-O(n) tree and overflowed the stack during eval — fatal, and
+  `recover()` cannot catch it. Comparing two uncomparable operands
+  (`[1] == [2]`) panicked outright. Both are bounded now, and `Compile`
+  caps source size.
+- **The CSRF exemption keyed on the decoded path.** The mux matches the
+  escaped path segment-wise, so `POST /api%2f..%2f..%2fadmin/wipe`
+  presented `/api/../../admin/wipe` to the skipper — granting the `/api`
+  exemption — while dispatch went to whatever wildcard route matched.
+- **`required:"true"` was satisfied by an empty value.** A var that exists
+  but is blank reports `("", true)`, so a blank `SECRET=`, a ConfigMap key
+  with no value, or a secret-manager miss silently produced an empty
+  signing key. Separately, a `sensitive` value survived verbatim in a
+  `ConfigValidator`'s error, leaking a full DSN through `MustLoad`'s panic.
+- **An attacker-chosen locale reached the catalog extension point.**
+  Cookie-supplied tags were length- and charset-bounded; `X-Locale` was
+  not, and won outright, and the nil-translator branch passed the entire
+  raw `Accept-Language` header through. Both flow to `Catalog.Get`, whose
+  documented wiring example is an `os.DirFS`, so a host with a lazily
+  loading catalog received `../../etc/passwd` as a locale.
+- **Uploads accepted magic-byte polyglots.** The content scan was skipped
+  entirely for anything sniffing as a raster, PDF or font, so `GIF89a`
+  followed by `<script>` passed wherever it sat. Tokens that never appear
+  in binary media are now matched across the whole body; the ones that do
+  appear in EXIF and XMP keep the windowed scan.
+- **Typed After-hooks could not redact the response body.** `OnAfterCreate`
+  and `OnAfterUpdate` unmarshalled into a fresh value and never merged
+  back, while the untyped path mutates the live map that becomes the
+  response. Identical redaction code worked untyped and silently no-opped
+  typed. Both now merge back like their Before counterparts.
+- Also: an uncapped goroutine spawn on the module notification branch
+  (the request branch had the cap its own doc describes), a second
+  `Peer.Start` crashing on a double channel close, duplicate inbound
+  request ids clobbering each other's cancel, `PRAGMA table_info`
+  interpolating an unvalidated identifier while every sibling call site
+  validates, a dialect probe falling back to SQLite on any transient
+  error and thereby skipping the cross-replica DDL lock, `Entity.Validate`
+  missing case-folded wire-key collisions, unvalidated file metadata and
+  LQIP placeholders, `pack` writing recovered secrets at mode 0644, a
+  Redis flag store validating its rollout percentage on write but not on
+  read, and a `docs --grep` panic on folding runes.
+
+### Security (v0.52.0 review backlog)
 
 - **A revoked 2FA backup code went live again after re-enrolment.**
   `EntityTwoFAStore.ConsumeBackupCode`'s CAS keyed on `(user_id, version)`,
