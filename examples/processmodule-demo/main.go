@@ -267,13 +267,17 @@ func registerHandlers(peer *moduleproto.Peer) error {
 }
 
 // reverseQuery issues a host.entity.query for the configured entity, echoing
-// the caller block so the host re-attaches the originating end-user's context
-// to the CRUD re-dispatch. A broker denial returns as a per-call error.
+// back the delegation handle so the host re-attaches the originating end-user's
+// context to the CRUD re-dispatch. A broker denial returns as a per-call error.
+//
+// Only the handle goes back. The subject and tenant the host sent us are ours
+// to log and reason about; the host derives authority from the handle alone,
+// which is why the reverse call takes a [moduleproto.CallerRef].
 func reverseQuery(ctx context.Context, peer *moduleproto.Peer, caller moduleproto.Caller) (json.RawMessage, int, error) {
 	qp := moduleproto.EntityQueryParams{
 		Entity: cfg.queryEntity,
 		Limit:  100,
-		Caller: caller,
+		Caller: moduleproto.CallerRef{Delegation: caller.Delegation},
 	}
 	raw, err := peer.Call(ctx, moduleproto.MethodHostEntityQuery, qp)
 	if err != nil {

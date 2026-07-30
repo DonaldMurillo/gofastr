@@ -238,19 +238,19 @@ func (b *Broker) entityHandler(view ModuleGrantView, op entityOp) moduleproto.Ha
 }
 
 // parseEntityCall unmarshals the op's params shape and returns the canonical
-// entity name + the echoed Caller. query uses EntityQueryParams; the three
+// entity name + the echoed CallerRef. query uses EntityQueryParams; the three
 // mutations share EntityMutationParams.
-func parseEntityCall(op entityOp, params json.RawMessage) (entityName string, caller moduleproto.Caller, err error) {
+func parseEntityCall(op entityOp, params json.RawMessage) (entityName string, caller moduleproto.CallerRef, err error) {
 	if op == opQuery {
 		var p moduleproto.EntityQueryParams
 		if err = unmarshalParams(params, &p); err != nil {
-			return "", moduleproto.Caller{}, err
+			return "", moduleproto.CallerRef{}, err
 		}
 		return p.Entity, p.Caller, nil
 	}
 	var p moduleproto.EntityMutationParams
 	if err = unmarshalParams(params, &p); err != nil {
-		return "", moduleproto.Caller{}, err
+		return "", moduleproto.CallerRef{}, err
 	}
 	return p.Entity, p.Caller, nil
 }
@@ -269,7 +269,7 @@ func parseEntityCall(op entityOp, params json.RawMessage) (entityName string, ca
 //
 // It returns the resolved entity (for the re-dispatch path) and the
 // re-dispatch context with the caller's identity re-attached.
-func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleGrantView, caller moduleproto.Caller) (*entity.Entity, context.Context, error) {
+func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleGrantView, caller moduleproto.CallerRef) (*entity.Entity, context.Context, error) {
 	// Trust boundary: a child cannot name an arbitrary resource. The resource
 	// is the entity it asked for, resolved through the HOST's registry — a
 	// name the registry does not know is denied, never silently empty.
@@ -319,7 +319,7 @@ func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleG
 // the CRUD permission gate can consult the module's grants; owner/tenant
 // gates then fail closed (no owner id). A non-empty handle is looked up; an
 // unknown/expired/released handle denies.
-func (b *Broker) resolveCaller(ctx context.Context, caller moduleproto.Caller, view ModuleGrantView) (context.Context, *delegationEntry, error) {
+func (b *Broker) resolveCaller(ctx context.Context, caller moduleproto.CallerRef, view ModuleGrantView) (context.Context, *delegationEntry, error) {
 	if caller.Delegation == "" {
 		// Ambient. Attach the synthetic role; the design's safe-by-construction
 		// proof (RequireOwner/RequireTenant refuse without an owner id) holds

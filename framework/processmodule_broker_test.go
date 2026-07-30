@@ -265,7 +265,7 @@ func TestBrokerStripsCrossOwnerRead(t *testing.T) {
 	h := b.entityHandler(view, opQuery)
 	_, err := callReverse(t, h, moduleproto.EntityQueryParams{
 		Entity: "tix",
-		Caller: moduleproto.Caller{Delegation: handle},
+		Caller: moduleproto.CallerRef{Delegation: handle},
 	})
 	if err == nil {
 		t.Fatal("expected CrossOwnerRead carve-out denial, got nil")
@@ -319,7 +319,7 @@ func TestBrokerUnknownHandleDenies(t *testing.T) {
 	h := b.entityHandler(view, opQuery)
 	_, err := callReverse(t, h, moduleproto.EntityQueryParams{
 		Entity: "articles",
-		Caller: moduleproto.Caller{Delegation: "deadbeef-not-a-real-handle"},
+		Caller: moduleproto.CallerRef{Delegation: "deadbeef-not-a-real-handle"},
 	})
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
@@ -337,7 +337,7 @@ func TestBrokerReleasedHandleDenies(t *testing.T) {
 	h := b.entityHandler(view, opQuery)
 	_, err := callReverse(t, h, moduleproto.EntityQueryParams{
 		Entity: "articles",
-		Caller: moduleproto.Caller{Delegation: handle},
+		Caller: moduleproto.CallerRef{Delegation: handle},
 	})
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
@@ -359,7 +359,7 @@ func TestBrokerExpiredHandleDenies(t *testing.T) {
 	h := b.entityHandler(view, opQuery)
 	_, err := callReverse(t, h, moduleproto.EntityQueryParams{
 		Entity: "articles",
-		Caller: moduleproto.Caller{Delegation: handle},
+		Caller: moduleproto.CallerRef{Delegation: handle},
 	})
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
@@ -384,7 +384,7 @@ func TestBrokerCallerAuthorityDenies(t *testing.T) {
 	h := b.entityHandler(view, opQuery)
 	_, err := callReverse(t, h, moduleproto.EntityQueryParams{
 		Entity: "logs",
-		Caller: moduleproto.Caller{Delegation: handle},
+		Caller: moduleproto.CallerRef{Delegation: handle},
 	})
 	wantDenied(t, err) // 403 → CodeCapabilityDenied
 }
@@ -430,7 +430,7 @@ func TestBrokerDelegatedReadSucceeds(t *testing.T) {
 	h := b.entityHandler(view, opQuery)
 	res, err := callReverse(t, h, moduleproto.EntityQueryParams{
 		Entity: "logs",
-		Caller: moduleproto.Caller{Delegation: handle},
+		Caller: moduleproto.CallerRef{Delegation: handle},
 	})
 	wantOK(t, err)
 	qr, ok := res.(moduleproto.EntityQueryResult)
