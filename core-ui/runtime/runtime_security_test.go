@@ -90,7 +90,11 @@ func TestSchemeGuardStripsInteriorControls(t *testing.T) {
 func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 	surfaces := []string{
 		"runtime.js",
-		filepath.Join("src", "widgets.js"),
+		// widgets.js used to be here: its RPC POST was the surface. That
+		// dispatch is now the shared window.__gofastr.dispatchRPC in
+		// runtime.js (rpc fragment), so the CSRF requirement is checked
+		// once there. widgets.js's remaining fetches are GETs (chrome +
+		// /state hydration) — idempotent reads, no CSRF needed.
 		filepath.Join("src", "infinitescroll.js"),
 		filepath.Join("src", "sortablelist.js"),
 	}

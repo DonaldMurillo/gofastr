@@ -58,7 +58,12 @@
       for (const fn of s.listeners) {
         try { fn(value); } catch (_) {}
       }
-      document.querySelectorAll('[data-fui-signal="' + name + '"]').forEach((node) => {
+      // Escape the signal name before it enters the selector — a name
+      // containing selector metacharacters (e.g. '"]') would otherwise
+      // produce an invalid selector and querySelectorAll would THROW,
+      // taking setSignal (and every listener it drives) down with it.
+      // Same shape as sse.js:76.
+      document.querySelectorAll('[data-fui-signal="' + CSS.escape(String(name)) + '"]').forEach((node) => {
         const mode = node.getAttribute('data-fui-signal-mode') || 'text';
         if (mode === 'html') {
           // The html escape hatch is for TRUSTED HTML *strings* only.

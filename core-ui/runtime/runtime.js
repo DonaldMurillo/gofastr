@@ -609,72 +609,100 @@
     return headers;
   }
 
+  // dispatchRPC is the ONE RPC dispatch implementation, shared by the
+  // global click/submit delegators below AND by the widget-scoped
+  // dispatcher in src/widgets.js (which calls window.__gofastr.dispatchRPC
+  // with no opts — widget context is derived from the DOM). One impl means
+  // every rpc-* primitive (confirm, push-state, after-*, GET-encoding,
+  // abort-dedup, scroll-to) reaches both paths; the widget copy used to
+  // fork and drift.
   async function dispatchRPC(node) {
     const path = node.getAttribute('data-fui-rpc');
     const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
     const responseSignal = node.getAttribute('data-fui-rpc-signal');
     const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
     const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
-    // Abort any in-flight dispatch for this signal. The previous
-    // fetch will reject with AbortError; we ignore that branch below.
+
+    // Pre-flight confirm for destructive RPCs (delete, revoke, drop).
+    // MUST run before the in-flight abort/setup below: the widget path
+    // used to skip this entirely (a destructive drawer delete fired
+    // unconfirmed), and even on the global path a cancel left a stale
+    // AbortController behind — the early return here preceded the
+    // try/finally that owns _rpcInFlight, so the slot leaked and the
+    // previous request was aborted for nothing.
+    const confirmMsg = node.getAttribute('data-fui-confirm');
+    if (confirmMsg && typeof window.confirm === 'function') {
+      if (!window.confirm(confirmMsg)) return;
+    }
+
+    // Abort any in-flight dispatch for this signal. The previous fetch
+    // rejects with AbortError; we ignore that branch below. Per-signal
+    // dedup so rapid clicks on the same region settle on the last
+    // response (pagination spam-click protection) — last-click wins by
+    // the time the runtime sees the response, not by arrival order.
     if (responseSignal) {
       const prev = _rpcInFlight.get(responseSignal);
       if (prev) prev.abort();
     }
     const ctl = new AbortController();
     if (responseSignal) _rpcInFlight.set(responseSignal, ctl);
+
     let body = node.getAttribute('data-fui-rpc-body');
     let resolvedPath = path;
     let bodyIsFormData = false;
     if (!body && node.tagName === 'FORM') {
       const fd = new FormData(node);
-      // For GET, encode form data as the query string of the RPC
-      // path. POST/PUT/PATCH send as JSON body so the server reads
-      // r.Body. This matches normal HTML form semantics.
+      // For GET, encode the form as the query string of the RPC path.
+      // append (not set) so multi-value fields survive as repeated keys
+      // — the same shape the urlencoded path and r.Form[] produce. The
+      // widget path used to serialize a JSON body for every method, and
+      // fetch(GET, body) throws "GET/HEAD cannot have body".
       if (method === 'GET') {
         const params = new URLSearchParams();
-        fd.forEach((v, k) => { if (v != null) params.set(k, String(v)); });
+        fd.forEach((v, k) => { if (v != null) params.append(k, String(v)); });
         const qs = params.toString();
-        if (qs) {
-          resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
-        }
+        if (qs) resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
       } else if (node.enctype === 'multipart/form-data' || node.querySelector('input[type="file"]')) {
-        // Forms with files OR an explicit multipart enctype need to
-        // ship as multipart/form-data so File objects survive. fetch
-        // sets the right Content-Type (with boundary) automatically
-        // when body is a FormData instance.
+        // Forms with files OR an explicit multipart enctype ship as
+        // multipart/form-data so File objects survive. fetch sets the
+        // right Content-Type (with boundary) when body is a FormData.
         body = fd;
         bodyIsFormData = true;
       } else {
-        const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+        // JSON: a repeated key becomes an array; a single occurrence
+        // stays a scalar. `obj[k] = v` (last-wins) used to drop every
+        // value but the last of a multi-value field. Array-when-repeated
+        // matches the repeated-key shape the GET + urlencoded paths emit.
+        // (FormData never yields undefined, so obj[k] === undefined is a
+        // correct first-occurrence test.)
+        const obj = {};
+        fd.forEach((v, k) => {
+          if (obj[k] === undefined) obj[k] = v;
+          else if (Array.isArray(obj[k])) obj[k].push(v);
+          else obj[k] = [obj[k], v];
+        });
         body = JSON.stringify(obj);
       }
     }
-    const widgetEl = node.closest('[data-fui-widget]');
-    const headers = _csrf({});
-    if (widgetEl) headers['X-FUI-Widget'] = widgetEl.getAttribute('data-fui-widget') || '';
-    if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
-    // CSRF: forward the page's <meta name="csrf-token"> via the
-    // X-CSRF-Token header. A JSON/multipart RPC body can't carry the
-    // urlencoded `_csrf` field the auth.CSRF middleware parses, so the
-    // header is the only channel that works for these requests. Mirrors
-    // toggleaction.js / optimisticaction.js — see core-ui/ARCHITECTURE.md.
-    // Optional pre-flight confirm — useful for destructive RPCs
-    // (delete, revoke, drop). The user gets a native browser confirm
-    // dialog with the supplied message; cancel aborts the dispatch.
-    const confirmMsg = node.getAttribute('data-fui-confirm');
-    if (confirmMsg && typeof window.confirm === 'function') {
-      if (!window.confirm(confirmMsg)) return;
-    }
 
-    // Disable the trigger during the in-flight request — but only
-    // when we DON'T have abort-dedup via a signal. Signal-based RPCs
-    // (pagination buttons, etc.) need the user to be able to click
-    // again instantly; the AbortController guarantees only the last
-    // click's response reaches setSignal.
+    // Widget context — derived from the DOM so data-fui-rpc works the
+    // same inside a [data-fui-widget] (the widget-scoped click/submit
+    // delegator in src/widgets.js calls this with no opts) and on a
+    // bare island. wentry is the containing widget's registry entry; it
+    // carries the dismiss closure and pollNow.
+    const widgetEl = node.closest('[data-fui-widget]');
+    const widgetName = (widgetEl && widgetEl.getAttribute('data-fui-widget')) || '';
+    const wentry = widgetName && window.__gofastr._widgets && window.__gofastr._widgets[widgetName];
+    const headers = _csrf({});
+    if (widgetName) headers['X-FUI-Widget'] = widgetName;
+    if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
+
+    // Disable the trigger during the in-flight request — but only when
+    // we DON'T have abort-dedup via a signal. Signal-based RPCs need
+    // the user to be able to click again instantly; the AbortController
+    // guarantees only the last click's response reaches setSignal.
     const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
     if (wantDisable) node.disabled = true;
-    // Task C: add fui-loading CSS class and aria-busy for styling during in-flight RPC.
     node.classList.add('fui-loading');
     node.setAttribute('aria-busy', 'true');
     try {
@@ -686,14 +714,12 @@
         return;
       }
       // Server-named stale screens (X-Gofastr-Invalidate) — evicted
-      // before any post-success effect (data-fui-rpc-navigate must see
-      // the eviction). The consumer lives in nav; optional because the
-      // embed composition ships rpc without nav (no screen cache).
+      // before any post-success effect. Optional: the embed composition
+      // ships rpc without nav (no screen cache).
       window.__gofastr._inval?.(r);
-      // URL state update (no re-fetch). Either the server hands us the
-      // canonical URL via X-Gofastr-Push-State, or the triggering
-      // element declares it via data-fui-push-state. Header takes
-      // precedence so the server can override.
+      // URL state update (no re-fetch). X-Gofastr-Push-State header
+      // takes precedence over data-fui-push-state so the server can
+      // override. Both paths (global + widget) now honor this.
       const pushState = r.headers.get('X-Gofastr-Push-State')
         || node.getAttribute('data-fui-push-state');
       if (pushState) {
@@ -702,28 +728,20 @@
           currentPath = location.pathname + location.search;
         } catch (_) {}
       }
-      // X-Gofastr-Toast header fires toasts on success — same
-      // contract as the widget-scoped dispatchRPC. The server emits a
-      // JSON array of ToastTrigger objects (single object tolerated);
-      // each fires through __gofastr.toast().
+      // X-Gofastr-Toast header fires toasts on success.
       const toastHeader = r.headers.get('X-Gofastr-Toast');
       if (toastHeader) {
-        // Await the toasts module. If it fails to load (deploy mid-
-        // flight, CDN 5xx, network hiccup) we still need to show the
-        // user something — a silently dropped "Save failed" toast is
-        // a real bug.
         window.__gofastr._dispatchToastHeader(toastHeader);
       }
       const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
       if (responseSignal) window.__gofastr.setSignal(responseSignal, data);
-      // Widget-scoped helpers (close/reset) — only valid when inside a widget.
-      if (closeOnSuccess && widgetEl && widgetEl.__fuiDismiss) widgetEl.__fuiDismiss();
+      // Close the containing widget on success — wentry.dismiss is the
+      // closure the widget runtime installs on its registry entry.
+      if (closeOnSuccess && wentry && wentry.dismiss) wentry.dismiss();
       if (resetOnSuccess) node.reset();
-      // Post-success primitives — declared on the trigger so app code
-      // never has to ship JS for "show 'Done ✓' on the button" or
-      // "scroll to the new content". Idempotent (afterText only sets
-      // once via data-fui-rpc-after-done="1").
+      // Post-success primitives — "Saved ✓" / "Revealed ✓" feedback and
+      // scroll-to-new-content. Idempotent via data-fui-rpc-after-done.
       if (!node.dataset.fuiRpcAfterDone) {
         const afterText = node.getAttribute('data-fui-rpc-after-text');
         if (afterText !== null) node.textContent = afterText;
@@ -741,9 +759,14 @@
           catch (_) {}
         });
       }
+      // Polling refresh: a successful RPC likely changed server state a
+      // polling widget renders, so re-fetch /state now instead of
+      // waiting out the cadence. Default target is the containing widget
+      // (wentry); data-fui-rpc-refresh overrides it to refresh a DIFFERENT
+      // widget (e.g. a confirm modal refreshing the panel).
+      const rentry = window.__gofastr._widgets && window.__gofastr._widgets[node.getAttribute('data-fui-rpc-refresh') || widgetName];
+      if (rentry && rentry.pollNow) rentry.pollNow();
       // Open a widget on success (e.g. "submit form → open results drawer").
-      // Delegates to the widget module's openWidget — if the module hasn't
-      // loaded yet, loadModule handles it.
       const openWidgetName = node.getAttribute('data-fui-rpc-open');
       if (openWidgetName) {
         window.__gofastr.loadModule('widgets').then(() => {
@@ -751,11 +774,9 @@
         }).catch(() => {});
       }
       // SPA navigate on success — swaps <main> without full page reload.
-      // Routes through navigate() so the unsafe-scheme guard
-      // (_isUnsafeSignalUrl) applies here too — the widget path
-      // already does (src/widgets.js). force:true re-renders even
-      // when the destination IS the current page: the RPC just
-      // changed server state, so a cached copy is stale by definition.
+      // force:true re-renders even when the destination IS the current
+      // page: the RPC just mutated server state, so a cached copy is
+      // stale by definition.
       const navigatePath = node.getAttribute('data-fui-rpc-navigate');
       if (navigatePath) {
         try {
@@ -763,8 +784,7 @@
         } catch (_) {}
       }
     } catch (err) {
-      // Swallow AbortError — it just means a newer dispatch superseded
-      // us before the response arrived.
+      // Swallow AbortError — a newer dispatch superseded us.
       if (err && err.name === 'AbortError') return;
       // Network error (fetch threw): write a human-readable error into
       // the signal so the user sees feedback instead of a stale value.
@@ -773,16 +793,12 @@
       }
     } finally {
       // Clear the in-flight slot only if WE are still the latest
-      // dispatch — a later click may have replaced us, in which case
-      // _rpcInFlight already holds its controller.
+      // dispatch — a later click may have replaced us.
       if (responseSignal && _rpcInFlight.get(responseSignal) === ctl) {
         _rpcInFlight.delete(responseSignal);
       }
-      // Re-enable unless data-fui-rpc-after-disable wanted a sticky
-      // disabled state (e.g. "Revealed ✓" demo button).
       const sticky = node.hasAttribute('data-fui-rpc-after-disable') && node.dataset.fuiRpcAfterDone === '1';
       if (!sticky && wantDisable) node.disabled = false;
-      // Task C: remove fui-loading CSS class after RPC completes.
       node.classList.remove('fui-loading');
       node.removeAttribute('aria-busy');
     }
@@ -999,7 +1015,9 @@
 
   // rpc namespace members (extracted from the kernel literal for incremental
   // assembly). _csrf/_sameOrigin/_originOK are the origin + CSRF guards every
-  // runtime fetch funnels through; dispatchRPC lives in the rpc fragment body.
+  // runtime fetch funnels through; dispatchRPC is the shared dispatch (called
+  // directly by the delegators below AND exposed on the namespace so the
+  // widget-scoped dispatcher in src/widgets.js can reuse the same impl).
   Object.assign(window.__gofastr, {
     /*  _sameOrigin(u) resolves u against the current page and compares
         origins. _originOK is the refuse-and-warn wrapper every runtime
@@ -1013,6 +1031,9 @@
         _kilnOK); this applies the same reasoning to the rest. Same shape
         as navigate(): warn on the console, then do nothing. */
     _csrf,
+    // Shared dispatch: global delegators call dispatchRPC(node); the widget
+    // dispatcher calls it with {widget, dismiss, refreshDefault}.
+    dispatchRPC,
 
     _sameOrigin(u) {
       try { return new URL(String(u ?? ''), location.href).origin === location.origin; }
@@ -1085,7 +1106,12 @@
       for (const fn of s.listeners) {
         try { fn(value); } catch (_) {}
       }
-      document.querySelectorAll('[data-fui-signal="' + name + '"]').forEach((node) => {
+      // Escape the signal name before it enters the selector — a name
+      // containing selector metacharacters (e.g. '"]') would otherwise
+      // produce an invalid selector and querySelectorAll would THROW,
+      // taking setSignal (and every listener it drives) down with it.
+      // Same shape as sse.js:76.
+      document.querySelectorAll('[data-fui-signal="' + CSS.escape(String(name)) + '"]').forEach((node) => {
         const mode = node.getAttribute('data-fui-signal-mode') || 'text';
         if (mode === 'html') {
           // The html escape hatch is for TRUSTED HTML *strings* only.
@@ -1319,6 +1345,13 @@
   // running, drop the redundant call. Matches the DataTable + search
   // dedup pattern (one click = one request).
   const _pendingNav = new Set();
+  // Monotonic nav generation. Captured at the start of each loadPage
+  // call; after any await, a response whose epoch is no longer the
+  // latest MUST NOT touch the DOM, currentPath, or history. Without
+  // this, a rapid A→B where A's fetch resolves last swaps <main> back
+  // to A's content while the URL bar already says B — and a repeat
+  // click on B no-ops (fullPath === currentPath), stranding the user.
+  let _navEpoch = 0;
   // Mini toast used by loadPage failures — strict-CSP-clean (no
   // inline styles since the .fui-nav-toast class is shipped via
   // frameworkBuiltinCSS).
@@ -1405,6 +1438,7 @@
     // Drop redundant in-flight nav to the same URL (10 clicks → 1 fetch).
     if (_pendingNav.has(path)) return;
     _pendingNav.add(path);
+    const myEpoch = ++_navEpoch;
     const prevPath = currentPath;
     currentPath = path;
     // Surface "I heard you" feedback to assistive tech and screen
@@ -1448,9 +1482,11 @@
       // A shared screen group means the shell is shared → never swap it.
       if (!grp && layoutWillChange(path)) {
         const fr = await fetch(path);
+      if (myEpoch !== _navEpoch) return;
         if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
         window.__gofastr._inval(fr);
         const doc = new DOMParser().parseFromString(await fr.text(), 'text/html');
+      if (myEpoch !== _navEpoch) return;
         let dest = path;
         // resolvePath keeps the search string — the cache key and the
         // URL bar must carry a redirect-added query (e.g. ?next=/admin).
@@ -1482,6 +1518,7 @@
       const resp = await fetch(path, {
         headers: { 'X-Gofastr-Navigate': '1' },
       });
+      if (myEpoch !== _navEpoch) return;
       // Apply a session rollover BEFORE the ok-check: the server re-mints
       // (and names the fresh stream id) on 404 / policy-block partials
       // too, and the browser has already stored the new cookie — if we
@@ -1517,6 +1554,7 @@
       }
 
       const html = await resp.text();
+      if (myEpoch !== _navEpoch) return;
 
       // Compute title BEFORE swapping content so document.title is
       // already correct when AT or extensions observe the new state.
@@ -1545,6 +1583,7 @@
       scrollToHash();
       window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: false } }));
     } catch (err) {
+      if (myEpoch !== _navEpoch) return;
       // CLAUDE.md hard rule 4 — no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
       // pushState'd by the click handler so revert it.
@@ -1554,7 +1593,9 @@
       currentPath = prevPath;
     } finally {
       _pendingNav.delete(path);
-      doc.removeHtmlAttr('aria-busy');
+      // Only the latest nav owns the aria-busy flag; a superseded nav
+      // that bailed early must leave it for the in-flight one to clear.
+      if (myEpoch === _navEpoch) doc.removeHtmlAttr('aria-busy');
     }
   };
 

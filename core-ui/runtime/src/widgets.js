@@ -303,98 +303,19 @@
       }).catch(() => {});
     }
 
-    async function dispatchRPC(node) {
-      const path = node.getAttribute('data-fui-rpc');
-      const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
-      const sig = node.getAttribute('data-fui-rpc-signal');
-      const close = node.hasAttribute('data-fui-rpc-close');
-      const reset = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
-      let body = node.getAttribute('data-fui-rpc-body');
-      let formData = false;
-      if (!body && node.tagName === 'FORM') {
-        const fd = new FormData(node);
-        if (node.enctype === 'multipart/form-data' || node.querySelector('input[type="file"]')) {
-          body = fd;
-          formData = true;
-        } else {
-          const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
-          body = JSON.stringify(obj);
-        }
-      }
-      // CSRF: forward the page's <meta name="csrf-token"> via the
-      // X-CSRF-Token header. JSON/multipart RPC bodies can't carry the
-      // urlencoded `_csrf` field the auth.CSRF middleware parses, so the
-      // header is the only working channel. NS._csrf is core's — this
-      // module used to carry its own copy of the same six lines.
-      const headers = NS._csrf({ 'X-FUI-Widget': cfg.name });
-      if (body && !formData) headers['Content-Type'] = 'application/json';
-      if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
-      // Task C: add fui-loading CSS class and aria-busy for styling during in-flight RPC.
-      node.classList.add('fui-loading');
-      node.setAttribute('aria-busy', 'true');
-      try {
-        if (!NS._originOK?.(path)) return;
-        const r = await fetch(path, { method, headers, body: body || undefined, credentials: 'same-origin' });
-        if (!r.ok) {
-          const txt = await r.text();
-          if (sig) NS.setSignal(sig, { ok: false, status: r.status, text: txt });
-          return;
-        }
-        NS._inval?.(r);
-        // Kernel's dispatcher — same parse as the old inline version
-        // plus the module-load-failure fallback renderer.
-        const toast = r.headers.get('X-Gofastr-Toast');
-        if (toast) NS._dispatchToastHeader(toast);
-        const ct = r.headers.get('content-type') || '';
-        const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
-        if (sig) NS.setSignal(sig, data);
-        // Mutation → authoritative refresh: a successful RPC likely
-        // changed server state a polling widget renders, so re-fetch
-        // /state now instead of waiting out the cadence. Default target
-        // is the widget the button lives in; data-fui-rpc-refresh names
-        // a DIFFERENT widget — e.g. a Reset button inside a confirm
-        // modal (kiln-reset-confirm) refreshing the chat panel
-        // (kiln-panel), which its own closure would never reach.
-        const refresh = node.getAttribute('data-fui-rpc-refresh') || cfg.name;
-        const wentry = NS._widgets[refresh];
-        if (wentry && wentry.pollNow) wentry.pollNow();
-        if (close) dismiss();
-        if (reset) node.reset();
-        // Open a widget on success (e.g. "save in drawer → open results sheet").
-        const open = node.getAttribute('data-fui-rpc-open');
-        if (open) NS.openWidget(open);
-        // SPA navigate on success. force: the RPC mutated server state,
-        // so bypass the screen cache and re-render even when the
-        // destination is the page the widget floats over (quick-add
-        // modal on the list it inserts into).
-        const nav = node.getAttribute('data-fui-rpc-navigate');
-        if (nav) {
-          // Guarded like the sibling call in rpc.js. NS.navigate exists only
-          // when the nav fragment is composed, and the `embed` composition
-          // omits it — an unguarded call throws AFTER the RPC has already
-          // succeeded, lands in the catch below, and reports "Network error"
-          // for a write that went through. The user retries and writes twice.
-          try { if (NS.navigate) NS.navigate(nav, { force: true }); } catch (_) {}
-        }
-      } catch (err) {
-        // Network error: write human-readable feedback to the signal.
-        if (sig) {
-          NS.setSignal(sig, { ok: false, status: 0, text: 'Network error \u2014 please try again' });
-        }
-      } finally {
-        if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
-        // Task C: remove fui-loading CSS class and aria-busy after RPC completes.
-        node.classList.remove('fui-loading');
-        node.removeAttribute('aria-busy');
-      }
-    }
+    // RPC dispatch is shared with the global path: window.__gofastr.dispatchRPC
+    // (frag/rpc.js) is the ONE implementation. It derives the widget context
+    // (name, dismiss, default refresh target) from the DOM, so the widget
+    // path needs no opts — yet gains every rpc-* primitive (confirm,
+    // push-state, after-*, GET-encoding, abort-dedup, scroll-to) the global
+    // path has. The local copy here used to fork and drift.
 
     // Widget-scoped click + submit.
     w.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-fui-rpc]');
       if (btn && w.contains(btn) && btn.tagName !== 'FORM') {
         e.preventDefault();
-        await dispatchRPC(btn);
+        await NS.dispatchRPC(btn);
         return;
       }
       const closeBtn = e.target.closest('[data-fui-action="close"]');
@@ -407,7 +328,7 @@
       const form = e.target.closest('form[data-fui-rpc]');
       if (form && w.contains(form)) {
         e.preventDefault();
-        await dispatchRPC(form);
+        await NS.dispatchRPC(form);
       }
     });
 

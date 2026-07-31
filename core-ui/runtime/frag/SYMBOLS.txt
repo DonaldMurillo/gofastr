@@ -171,6 +171,7 @@ kernel	8	parsed
 kernel	8	result
 nav	2	MAX_CACHE_SIZE
 nav	2	_announceTimer
+nav	2	_navEpoch
 nav	2	_pendingNav
 nav	2	_showNavToast
 nav	2	announceRoute
@@ -209,6 +210,7 @@ nav	4	id
 nav	4	innerLC
 nav	4	main
 nav	4	main
+nav	4	myEpoch
 nav	4	navHash
 nav	4	navLinks
 nav	4	page
@@ -278,7 +280,9 @@ rpc	4	resolvedPath
 rpc	4	responseSignal
 rpc	4	token
 rpc	4	wantDisable
+rpc	4	wentry
 rpc	4	widgetEl
+rpc	4	widgetName
 rpc	6	action
 rpc	6	body
 rpc	6	btn
@@ -299,6 +303,7 @@ rpc	6	prev
 rpc	6	prev
 rpc	6	pushState
 rpc	6	r
+rpc	6	rentry
 rpc	6	scrollSel
 rpc	6	signalEl
 rpc	6	sticky

@@ -240,7 +240,10 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"widgethelpers",
 		"widgetfocus",
 		"widgetlinks",
-		"X-Gofastr-Toast", // header path awaits toasts
+		// "X-Gofastr-Toast" used to be checked here: the widget RPC path
+		// awaited the toasts module on the header. That handling moved to
+		// the shared dispatchRPC in runtime.js (rpc fragment) when the
+		// widget dispatcher was unified with the global one.
 		"loadedModules",
 		// `data-fui-copy-text-from` was previously checked here but
 		// only lives in a comment now (the delegated handler moved

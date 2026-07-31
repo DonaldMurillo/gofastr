@@ -21,11 +21,28 @@
 (function () {
   'use strict';
 
-  // Per-open state. Reset whenever the modal opens or closes.
-  let state = null;
+  // Per-instance open state, keyed by the lightbox's modal element
+  // ([data-fui-widget]). The previous single module-scoped `state` plus
+  // a first-match findViewer() made two Lightbox widgets on one page
+  // cross-talk: Prev/Next on widget B resolved to whichever viewer came
+  // first in DOM order (often closed widget A), leaving B's nav dead.
+  // Each open lightbox now owns its own entry.
+  const states = new WeakMap(); // modal element → state
 
-  function findViewer() {
-    return document.querySelector('[data-fui-comp="ui-lightbox"][data-fui-lightbox]');
+  function viewerOfModal(modal) {
+    return modal && modal.querySelector('[data-fui-comp="ui-lightbox"][data-fui-lightbox]');
+  }
+
+  // The topmost OPEN lightbox modal — last open one in DOM order, which
+  // is the topmost paint. Used by keyboard nav, which has no clicked-in
+  // element to resolve the active lightbox from.
+  function findOpenModal() {
+    let open = null;
+    document.querySelectorAll('[data-fui-comp="ui-lightbox"][data-fui-lightbox]').forEach(function (v) {
+      const m = modalOf(v);
+      if (isOpen(m)) open = m;
+    });
+    return open;
   }
 
   function modalOf(viewer) {
@@ -50,18 +67,18 @@
     return s.replace(/[^a-zA-Z0-9_\-]/g, '\\$&');
   }
 
-  function preloadAdjacent() {
-    if (!state || state.siblings.length < 2) return;
-    const n = state.siblings.length;
-    const prev = state.siblings[(state.index - 1 + n) % n];
-    const next = state.siblings[(state.index + 1) % n];
+  function preloadAdjacent(st) {
+    if (!st || st.siblings.length < 2) return;
+    const n = st.siblings.length;
+    const prev = st.siblings[(st.index - 1 + n) % n];
+    const next = st.siblings[(st.index + 1) % n];
     [prev, next].forEach(function (a) {
       const src = srcOf(a);
       if (!src) return;
-      if (state.preloaded[src]) return;
+      if (st.preloaded[src]) return;
       const img = new Image();
       img.src = src;
-      state.preloaded[src] = true;
+      st.preloaded[src] = true;
     });
   }
 
@@ -89,7 +106,8 @@
     return out;
   }
 
-  function step(delta) {
+  function step(modal, delta) {
+    const state = states.get(modal);
     if (!state) return;
     const n = state.siblings.length;
     if (n < 2) return;
@@ -115,14 +133,13 @@
     if (ns && typeof ns.openWidget === 'function' && widgetName) {
       ns.openWidget(widgetName, { params: params, pushUrl: false });
     }
-    requestAnimationFrame(preloadAdjacent);
+    requestAnimationFrame(function () { preloadAdjacent(state); });
   }
 
-  function recordOpen() {
-    const viewer = findViewer();
-    if (!viewer) { state = null; return; }
-    const modal = modalOf(viewer);
-    if (!isOpen(modal)) { state = null; return; }
+  function recordOpen(modal) {
+    if (!modal || !isOpen(modal)) { if (modal) states.delete(modal); return; }
+    const viewer = viewerOfModal(modal);
+    if (!viewer) { states.delete(modal); return; }
 
     // group signal is mirrored into a hidden element via
     // data-fui-signal="group" — but we read directly from the global
@@ -131,7 +148,7 @@
     const groupSig = ns._signals && ns._signals.group ? ns._signals.group.value : '';
     const group = String(groupSig || '');
     const siblings = siblingsFor(group);
-    if (siblings.length === 0) { state = null; return; }
+    if (siblings.length === 0) { states.delete(modal); return; }
     const curSrc = ns._signals && ns._signals.src ? String(ns._signals.src.value || '') : '';
     // Match by deeplink src value to find current index. Falls back
     // to 0 when no match (group out of sync).
@@ -139,14 +156,15 @@
     for (let i = 0; i < siblings.length; i++) {
       if (srcOf(siblings[i]) === curSrc) { idx = i; break; }
     }
-    state = {
+    const st = {
       modal: modal,
       siblings: siblings,
       index: idx,
       loop: viewer.getAttribute('data-fui-lightbox-nav') === 'true', // arrow nav opt-in implies loop
       preloaded: {},
     };
-    preloadAdjacent();
+    states.set(modal, st);
+    preloadAdjacent(st);
   }
 
   // Watch for modal open / close. The widget runtime toggles `hidden`
@@ -161,9 +179,9 @@
           if (isOpen(modal)) {
             // Defer one tick so deeplink-driven signal updates land
             // before we measure.
-            setTimeout(recordOpen, 0);
+            setTimeout(function () { recordOpen(modal); }, 0);
           } else {
-            state = null;
+            states.delete(modal);
           }
           break;
         }
@@ -180,35 +198,40 @@
     if (typeof pinchScannerHook === 'function') pinchScannerHook(root);
   }
 
-  // Prev/Next button clicks.
-  // State may be null when the modal mounted catalog-lazily AFTER
-  // this module's initial scan (no MutationObserver was attached
-  // because the modal didn't exist yet). Bootstrap on-demand by
-  // calling recordOpen() before stepping.
-  //
-  // TODO(security/correctness): the click + keydown handlers are
-  // attached on document and the shared `state` is module-scoped,
-  // so two Lightbox widgets on one page can cross-talk (Prev on
-  // widget B steps widget A's group). The signal names src/group/
-  // alt/caption are also unnamespaced — opening lightbox A leaves
-  // lightbox B's bound nodes flashing. Scope handlers to the
-  // closest `[data-fui-lightbox]` ancestor and namespace signals
-  // per-widget when a real two-instance use case lands.
+  // Prev/Next button clicks — scoped to the lightbox the clicked button
+  // lives in (its [data-fui-widget] modal), so two Lightbox widgets on
+  // one page cannot cross-talk. State may be missing when the modal
+  // mounted catalog-lazily after this module's initial scan; bootstrap
+  // on-demand by calling recordOpen(modal) before stepping.
   document.addEventListener('click', function (ev) {
     const prev = ev.target && ev.target.closest && ev.target.closest('[data-fui-lightbox-prev]');
-    if (prev) { ev.preventDefault(); if (!state) recordOpen(); step(-1); return; }
+    if (prev) {
+      const m = modalOf(prev);
+      ev.preventDefault();
+      if (m) { if (!states.get(m)) recordOpen(m); step(m, -1); }
+      return;
+    }
     const next = ev.target && ev.target.closest && ev.target.closest('[data-fui-lightbox-next]');
-    if (next) { ev.preventDefault(); if (!state) recordOpen(); step(1); return; }
+    if (next) {
+      const m = modalOf(next);
+      ev.preventDefault();
+      if (m) { if (!states.get(m)) recordOpen(m); step(m, 1); }
+      return;
+    }
   });
 
-  // ArrowLeft / ArrowRight while modal is open. Same bootstrap-on-
-  // demand behaviour as the Prev/Next click handler.
+  // ArrowLeft / ArrowRight while a lightbox is open. Keyboard nav has no
+  // clicked-in element to resolve context from, so operate on the
+  // topmost OPEN lightbox modal (findOpenModal — last open in DOM order).
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
-    if (!state) recordOpen();
-    if (!state || !isOpen(state.modal)) return;
+    const m = findOpenModal();
+    if (!m) return;
+    if (!states.get(m)) recordOpen(m);
+    const st = states.get(m);
+    if (!st || !isOpen(st.modal)) return;
     ev.preventDefault();
-    step(ev.key === 'ArrowLeft' ? -1 : 1);
+    step(m, ev.key === 'ArrowLeft' ? -1 : 1);
   });
 
   // ─── Pinch-to-zoom ─────────────────────────────────────────────────

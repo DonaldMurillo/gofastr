@@ -102,6 +102,13 @@
   // running, drop the redundant call. Matches the DataTable + search
   // dedup pattern (one click = one request).
   const _pendingNav = new Set();
+  // Monotonic nav generation. Captured at the start of each loadPage
+  // call; after any await, a response whose epoch is no longer the
+  // latest MUST NOT touch the DOM, currentPath, or history. Without
+  // this, a rapid A→B where A's fetch resolves last swaps <main> back
+  // to A's content while the URL bar already says B — and a repeat
+  // click on B no-ops (fullPath === currentPath), stranding the user.
+  let _navEpoch = 0;
   // Mini toast used by loadPage failures — strict-CSP-clean (no
   // inline styles since the .fui-nav-toast class is shipped via
   // frameworkBuiltinCSS).
@@ -188,6 +195,7 @@
     // Drop redundant in-flight nav to the same URL (10 clicks → 1 fetch).
     if (_pendingNav.has(path)) return;
     _pendingNav.add(path);
+    const myEpoch = ++_navEpoch;
     const prevPath = currentPath;
     currentPath = path;
     // Surface "I heard you" feedback to assistive tech and screen
@@ -231,9 +239,11 @@
       // A shared screen group means the shell is shared → never swap it.
       if (!grp && layoutWillChange(path)) {
         const fr = await fetch(path);
+      if (myEpoch !== _navEpoch) return;
         if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
         window.__gofastr._inval(fr);
         const doc = new DOMParser().parseFromString(await fr.text(), 'text/html');
+      if (myEpoch !== _navEpoch) return;
         let dest = path;
         // resolvePath keeps the search string — the cache key and the
         // URL bar must carry a redirect-added query (e.g. ?next=/admin).
@@ -265,6 +275,7 @@
       const resp = await fetch(path, {
         headers: { 'X-Gofastr-Navigate': '1' },
       });
+      if (myEpoch !== _navEpoch) return;
       // Apply a session rollover BEFORE the ok-check: the server re-mints
       // (and names the fresh stream id) on 404 / policy-block partials
       // too, and the browser has already stored the new cookie — if we
@@ -300,6 +311,7 @@
       }
 
       const html = await resp.text();
+      if (myEpoch !== _navEpoch) return;
 
       // Compute title BEFORE swapping content so document.title is
       // already correct when AT or extensions observe the new state.
@@ -328,6 +340,7 @@
       scrollToHash();
       window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: false } }));
     } catch (err) {
+      if (myEpoch !== _navEpoch) return;
       // CLAUDE.md hard rule 4 — no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
       // pushState'd by the click handler so revert it.
@@ -337,7 +350,9 @@
       currentPath = prevPath;
     } finally {
       _pendingNav.delete(path);
-      doc.removeHtmlAttr('aria-busy');
+      // Only the latest nav owns the aria-busy flag; a superseded nav
+      // that bailed early must leave it for the in-flight one to clear.
+      if (myEpoch === _navEpoch) doc.removeHtmlAttr('aria-busy');
     }
   };
 
