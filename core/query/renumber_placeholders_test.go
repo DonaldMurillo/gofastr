@@ -76,3 +76,59 @@ func TestWhere_RenumberStartsFromBuilderOffset(t *testing.T) {
 		t.Errorf("args = %v, want [x y z]", args)
 	}
 }
+
+// A $N inside a string literal is data, not a placeholder. Renumbering it
+// corrupts the literal AND shifts the real placeholders, so the statement
+// ends up wanting more parameters than the caller bound.
+func TestRenumberLeavesLiteralsAlone(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			"single-quoted literal",
+			`note = '$5 off' AND id = $1`,
+			`note = '$5 off' AND id = $1`,
+		},
+		{
+			"doubled quote inside a literal",
+			`note = 'it''s $5 off' AND id = $1`,
+			`note = 'it''s $5 off' AND id = $1`,
+		},
+		{
+			// E'…' honours backslash escapes, so \' does not end the
+			// literal. Treating it as a terminator dropped the lexer out
+			// early and renumbered the rest of the string.
+			"E-string with an escaped quote",
+			`note = E'it\'s $5 off' AND id = $1`,
+			`note = E'it\'s $5 off' AND id = $1`,
+		},
+		{
+			"bare dollar-quoted body",
+			`body = $$price $5$$ AND id = $1`,
+			`body = $$price $5$$ AND id = $1`,
+		},
+		{
+			"tagged dollar-quoted body",
+			`body = $tag$price $5$tag$ AND id = $1`,
+			`body = $tag$price $5$tag$ AND id = $1`,
+		},
+		{
+			"real placeholders around a literal still renumber positionally",
+			`a = $1 AND note = '$9' AND b = $1`,
+			`a = $1 AND note = '$9' AND b = $2`,
+		},
+		{
+			"unterminated dollar quote runs to the end",
+			`body = $$never closed $1`,
+			`body = $$never closed $1`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := renumberPlaceholders(tc.in, 1); got != tc.want {
+				t.Errorf("got  %s\nwant %s", got, tc.want)
+			}
+		})
+	}
+}

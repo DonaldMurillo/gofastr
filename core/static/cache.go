@@ -21,14 +21,17 @@ func generateETag(data []byte) string {
 	return `"` + hex.EncodeToString(h[:16]) + `"`
 }
 
-// digestCache memoises file content digests so the ETag is not recomputed
-// (a full SHA-256 read of the file) on every request. The key is
-// (name, modtime, size): if the file is edited or replaced the key
-// changes and a fresh digest is computed. Bounded by the distinct set of
-// served files × (modtime,size) revisions — for an embed.FS that is a
-// small, fixed set.
-var digestCache sync.Map
-
+// digestKey identifies a file revision within ONE filesystem. The cache
+// holding it is per-handler (Config.digests), never process-wide: an
+// embed.FS reports the zero time.Time as the modtime of every file, so a
+// shared cache would collapse to (name, size) across every embed in the
+// process. Two handlers backed by different filesystems — a site embed
+// and an admin embed both serving "app.css" — would then hand the second
+// one the first one's ETag, and answer 304 Not Modified for content the
+// client has never seen.
+//
+// Within one filesystem the (name, modtime, size) key is sound: edit or
+// replace the file and the key changes, so a fresh digest is computed.
 type digestKey struct {
 	name    string
 	modTime int64
@@ -45,17 +48,23 @@ type digestKey struct {
 // hit nothing is read and the handle is still at offset 0; on a miss the
 // handle is exhausted and the caller must rewind (or reopen) before
 // serving the body.
-func fileETag(f fs.File, stat fs.FileInfo, name string) (string, bool, error) {
+// The cache is the calling handler's own; a nil cache computes the digest
+// without memoising it.
+func fileETag(cache *sync.Map, f fs.File, stat fs.FileInfo, name string) (string, bool, error) {
 	key := digestKey{name: name, modTime: stat.ModTime().UnixNano(), size: stat.Size()}
-	if v, ok := digestCache.Load(key); ok {
-		return v.(string), false, nil
+	if cache != nil {
+		if v, ok := cache.Load(key); ok {
+			return v.(string), false, nil
+		}
 	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", true, err
 	}
 	etag := `"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`
-	digestCache.Store(key, etag)
+	if cache != nil {
+		cache.Store(key, etag)
+	}
 	return etag, true, nil
 }
 
