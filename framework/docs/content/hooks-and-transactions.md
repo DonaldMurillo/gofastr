@@ -9,9 +9,9 @@ effect SQL atomic with the change that triggered them.
 
 | Constant       | Fires                                              | `data` argument             |
 |----------------|----------------------------------------------------|------------------------------|
-| `BeforeCreate` | After validation, before INSERT                    | `map[string]any` (body)     |
+| `BeforeCreate` | Before validation and INSERT                       | `map[string]any` (body)     |
 | `AfterCreate`  | After INSERT, before tx commit                     | `map[string]any` (record)    |
-| `BeforeUpdate` | After validation, before UPDATE                    | `map[string]any` (patch)    |
+| `BeforeUpdate` | Before validation and UPDATE                       | `map[string]any` (patch)    |
 | `AfterUpdate`  | After UPDATE, before tx commit                     | `map[string]any` (record)    |
 | `BeforeDelete` | Before DELETE / soft-delete                        | `string` (record id)        |
 | `AfterDelete`  | After DELETE, before tx commit                     | `string` (record id)        |
@@ -23,6 +23,11 @@ effect SQL atomic with the change that triggered them.
 Hooks run in registration order. The first error stops execution and
 returns to the caller. For `Before*` hooks the error cancels the
 operation. For `After*` hooks the error rolls back the transaction.
+
+`BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
+hook that fills in or normalizes a field mutates the body the validator
+then checks — use them to supply server-derived values that must pass
+validation.
 
 ## Registering hooks
 

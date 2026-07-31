@@ -709,7 +709,7 @@ the pool above 1 connection.)
 
 `WithoutAutoMigrate` suppresses **entity** DDL. A few framework-owned
 bookkeeping tables are still created on demand regardless — the seed
-ledger (`seed_ledger`), and, when you enable `WithOutbox`, the outbox
+ledger (`_gofastr_seeded`), and, when you enable `WithOutbox`, the outbox
 table (`event_outbox`), which is ensured when the outbox is constructed
 at `NewApp` time. These aren't entity schema and aren't emitted by
 `migrate generate`; if your policy needs every table to originate from a

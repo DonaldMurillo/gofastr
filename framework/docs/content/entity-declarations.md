@@ -51,10 +51,11 @@ app.Entity("tickets", framework.EntityConfig{
 ```
 
 Blueprint entities accept the same `scope:`, `pagination:`, and `exposure:`
-maps. The historical flat fields remain source-compatible through the v0.40
-line and are marked deprecated in Go docs; grouped values are authoritative
-when both forms are present. Flat fields are removable no earlier than v0.41,
-under the [stability policy](stability.md).
+maps. In Go, the grouped sub-configs (`ScopeConfig`, `PaginationConfig`,
+`ExposureConfig`) are the only form — the historical flat `EntityConfig`
+fields were removed. In a blueprint YAML you may still use the flat
+shorthand keys, but declaring a flat key and its grouped key with
+*different* values is a hard decode error, not a silent precedence rule.
 This is the primary, fully-supported way to declare an entity:
 
 ```go
@@ -106,6 +107,12 @@ if err := app.TryEntity(name, cfg); err != nil {
 ```
 
 `Entity` is a thin panicking wrapper over `TryEntity`.
+
+Registration is atomic with respect to configuration errors: every
+check that can reject a declaration runs before the registry, router,
+or MCP server is touched. A rejected declaration leaves no registry
+entry, no route, and no MCP tool, and a corrected retry under the same
+name succeeds — the property the authoring loop above depends on.
 
 ## Seeding
 

@@ -66,8 +66,10 @@ Start at `core/mcp/server.go` — `Server`.
 
 An OpenAPI 3.1 builder plus serving handlers. A `Spec` accumulates
 paths, schemas, and security schemes and `Build()` emits the doc;
-`Handler` serves it (auth-gated by default) and `SwaggerUIHandler`
-serves a landing page. Mostly indirect — the framework generates the
+`Handler` serves it (auth-gated by default) and `DocsHandler` serves a
+landing page whose `public` flag gates both the page and its nested
+spec route (the framework passes its `PublicOpenAPI` setting, so a
+public spec gets a public browse page). Mostly indirect — the framework generates the
 spec from your routes and entities. Reach for it directly to add custom
 operations or mount the docs endpoint. Start at `core/openapi/spec.go` —
 `Spec`.

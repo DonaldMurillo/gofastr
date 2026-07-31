@@ -426,9 +426,13 @@ payment backend), WebMCP (client-side browser API), ap2 (server-only).
 
 All absolute discovery URLs (agent card `url`, `Link` header targets) use one
 canonical origin, resolved in this order: `WithAgentReady{BaseURL}`, then
-`WithSitemap{BaseURL}`, then the per-request scheme + forwarded `Host`. Set one
-origin and every artifact stays consistent, including behind a proxy that sets
-`X-Forwarded-Proto` / `X-Forwarded-Host`.
+`WithSitemap{BaseURL}`, then the per-request scheme + the request's own `Host`.
+Set one origin and every artifact stays consistent. Behind a proxy,
+`X-Forwarded-Proto` is honored for the scheme, but `X-Forwarded-Host` is
+deliberately **not** — it is client-settable and reflecting it into the
+`Link: rel="service"` header would be a cache-poisoning primitive, so the
+addressed `Host` is used instead. Set `BaseURL` explicitly when your proxy
+rewrites the host.
 
 ## Granular options
 

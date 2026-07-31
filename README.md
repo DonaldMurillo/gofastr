@@ -420,7 +420,7 @@ large alongside AI. A few things I wanted to dig into:
 
 This repo is a personal research tree at the moment. Issues and PRs are welcome but expect strong opinions about scope: the goal is a framework an AI agent can drive end-to-end, not a kitchen-sink CMS.
 
-Before pushing, the `.githooks/pre-push` gate runs `go test -race -count=1 ./...` and `govulncheck`. Enable hooks once with:
+Before pushing, the `.githooks/pre-push` gate re-runs the deterministic CI test sweep (when a commit skipped it), module-integrity checks, and `govulncheck`. The race pass is separate — run `make test-race` for that. Enable hooks once with:
 
 ```bash
 git config core.hooksPath .githooks
