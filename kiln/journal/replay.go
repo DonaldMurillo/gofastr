@@ -2,6 +2,8 @@ package journal
 
 import (
 	"fmt"
+
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // Replay reads every entry from j and applies it to a fresh Session.
@@ -27,7 +29,7 @@ func ReplayEntries(entries []Entry) (*Session, error) {
 }
 
 // Apply applies a single Entry to a Session. Exposed so the live mutator
-// (Phase 2) can share the same dispatch table used by replay.
+// (kiln/live.Live.Apply) can share the same dispatch table used by replay.
 func Apply(s *Session, e Entry) error {
 	switch e.Kind {
 	case KindWorldEdit:
@@ -163,6 +165,9 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if p.Entity.MultiTenant {
 			return fmt.Errorf("add_entity: entity %q sets multi_tenant, which kiln cannot honour (it cannot choose the app-specific tenant resolver) — use owner_field, or add tenant middleware in owned Go after freeze", p.Entity.Name)
 		}
+		if err := validateEntityEndpoints("add_entity", p.Entity); err != nil {
+			return err
+		}
 		if _, exists := w.Entities[p.Entity.Name]; exists {
 			return fmt.Errorf("add_entity: %q already exists", p.Entity.Name)
 		}
@@ -179,6 +184,9 @@ func applyWorldEdit(s *Session, e Entry) error {
 		}
 		if p.Entity.MultiTenant {
 			return fmt.Errorf("update_entity: entity %q sets multi_tenant, which kiln cannot honour (it cannot choose the app-specific tenant resolver) — use owner_field, or add tenant middleware in owned Go after freeze", p.Entity.Name)
+		}
+		if err := validateEntityEndpoints("update_entity", p.Entity); err != nil {
+			return err
 		}
 		if _, exists := w.Entities[p.Entity.Name]; !exists {
 			return fmt.Errorf("update_entity: %q not found", p.Entity.Name)
@@ -247,8 +255,8 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if p.Page == nil {
 			return fmt.Errorf("add_page: nil page")
 		}
-		if p.Page.Path == "" {
-			return fmt.Errorf("add_page: empty path")
+		if err := world.ValidatePageActions(p.Page); err != nil {
+			return fmt.Errorf("add_page %q: %w", p.Page.Path, err)
 		}
 		if _, exists := w.Pages[p.Page.Path]; exists {
 			return fmt.Errorf("add_page: %q already exists", p.Page.Path)
@@ -276,8 +284,8 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
-		if p.New == nil {
-			return fmt.Errorf("update_page_element: nil new page")
+		if err := world.ValidatePageActions(p.New); err != nil {
+			return fmt.Errorf("update_page_element %q: %w", p.Path, err)
 		}
 		if _, exists := w.Pages[p.Path]; !exists {
 			return fmt.Errorf("update_page_element: page %q not found", p.Path)
@@ -292,6 +300,9 @@ func applyWorldEdit(s *Session, e Entry) error {
 		}
 		if p.Hook == nil || p.Hook.ID == "" {
 			return fmt.Errorf("add_hook: nil or unidentified hook")
+		}
+		if err := world.ValidateAction(p.Hook.Action); err != nil {
+			return fmt.Errorf("add_hook %q: %w", p.Hook.ID, err)
 		}
 		for _, h := range w.Hooks {
 			if h.ID == p.Hook.ID {
@@ -324,6 +335,9 @@ func applyWorldEdit(s *Session, e Entry) error {
 		}
 		if p.Route == nil {
 			return fmt.Errorf("add_route: nil route")
+		}
+		if err := world.ValidateAction(p.Route.Action); err != nil {
+			return fmt.Errorf("add_route %s %s: %w", p.Route.Method, p.Route.Path, err)
 		}
 		for _, r := range w.Routes {
 			if r.Method == p.Route.Method && r.Path == p.Route.Path {
@@ -374,6 +388,20 @@ func applyWorldEdit(s *Session, e Entry) error {
 	default:
 		return fmt.Errorf("unknown world edit op %q", e.Op)
 	}
+}
+
+// validateEntityEndpoints rejects an entity whose custom endpoints carry an
+// action kind kiln/effect cannot run. It mirrors the per-op action screams
+// (hooks, routes, page trees): entity endpoints are part of the world IR and
+// graduate to owned-Go stubs via freeze, so an unsupported action is caught
+// here rather than landing as a stub that never had an implementation.
+func validateEntityEndpoints(op string, ent *world.Entity) error {
+	for _, ep := range ent.Endpoints {
+		if err := world.ValidateAction(ep.Action); err != nil {
+			return fmt.Errorf("%s: endpoint %s %s: %w", op, ep.Method, ep.Path, err)
+		}
+	}
+	return nil
 }
 
 // spendPlan is the single authorization check for a destructive world edit:

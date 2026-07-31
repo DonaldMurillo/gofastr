@@ -329,13 +329,11 @@ func TestPG_IncludeBelongsTo(t *testing.T) {
 }
 
 func TestPG_SoftDelete(t *testing.T) {
-	ch, db := pgCrudSetup(t, entity.EntityConfig{
-		Name:  "pgd_docs",
+	ch, db := pgCrudSetup(t, entity.EntityConfig{Name: "pgd_docs",
 		Table: "pgd_docs",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
-		},
-		SoftDelete: true,
+		}, Scope: &entity.ScopeConfig{SoftDelete: true},
 	}.WithTimestamps(false),
 		`CREATE TABLE pgd_docs (id TEXT PRIMARY KEY, title TEXT, deleted_at TIMESTAMPTZ)`)
 
@@ -368,15 +366,12 @@ func TestPG_SoftDelete(t *testing.T) {
 }
 
 func TestPG_OwnerTenantFailClosed(t *testing.T) {
-	ch, db := pgCrudSetup(t, entity.EntityConfig{
-		Name:  "pgn_notes",
+	ch, db := pgCrudSetup(t, entity.EntityConfig{Name: "pgn_notes",
 		Table: "pgn_notes",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.String},
-		},
-		OwnerField:  "user_id",
-		MultiTenant: true,
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id", MultiTenant: true},
 	}.WithTimestamps(false),
 		`CREATE TABLE pgn_notes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, tenant_id TEXT NOT NULL, body TEXT)`)
 

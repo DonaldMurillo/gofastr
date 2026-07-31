@@ -48,7 +48,7 @@ func TestUploadHandler_MetadataMimeTypeUsesDetectedContent_NotPartHeaderDangerou
 		t.Fatalf("decode metadata: %v", err)
 	}
 	if meta.MimeType != "text/plain; charset=utf-8" {
-		t.Fatalf("SECURITY: [upload] metadata mime_type trusted multipart header %q, want detected text/plain; charset=utf-8. Attack: MIME spoofing through stored upload metadata.", meta.MimeType)
+		t.Fatalf("SECURITY: [upload] metadata mimeType trusted multipart header %q, want detected text/plain; charset=utf-8. Attack: MIME spoofing through stored upload metadata.", meta.MimeType)
 	}
 }
 
@@ -71,6 +71,6 @@ func TestUploadHandler_MetadataMimeTypeUsesDetectedContent_NotPartHeaderBenign(t
 		t.Fatalf("decode metadata: %v", err)
 	}
 	if meta.MimeType != "image/png" {
-		t.Fatalf("SECURITY: [upload] metadata mime_type trusted multipart header %q, want detected image/png. Attack: safe content mislabeled through attacker-controlled upload metadata.", meta.MimeType)
+		t.Fatalf("SECURITY: [upload] metadata mimeType trusted multipart header %q, want detected image/png. Attack: safe content mislabeled through attacker-controlled upload metadata.", meta.MimeType)
 	}
 }

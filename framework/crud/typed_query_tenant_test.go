@@ -108,12 +108,10 @@ func setupTenantScopedHandlerTQ(t *testing.T) (*CrudHandler, *sql.DB) {
 	if _, err := db.Exec(`CREATE TABLE tnotes (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, notes TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	ent := entity.Define("tnotes", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String, Required: true},
-			{Name: "notes", Type: schema.String},
-		},
-		MultiTenant: true,
+	ent := entity.Define("tnotes", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "tenant_id", Type: schema.String, Required: true},
+		{Name: "notes", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{MultiTenant: true},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	return NewCrudHandler(ent, db).WithJSONCase(CaseSnake), db

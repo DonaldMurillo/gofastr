@@ -100,13 +100,11 @@ func TestMCPListToolDropsNoQueryArguments(t *testing.T) {
 }
 
 func TestLLMMDFilterExampleSkipsLeadingNoQueryField(t *testing.T) {
-	ent := entity.Define("llm_noquery_order", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Hidden: true},
-			{Name: "secret", Type: schema.String, NoQuery: true},
-			{Name: "name", Type: schema.String},
-		},
-		CursorField: "name",
+	ent := entity.Define("llm_noquery_order", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "id", Type: schema.UUID, Hidden: true},
+		{Name: "secret", Type: schema.String, NoQuery: true},
+		{Name: "name", Type: schema.String},
+	}, Pagination: &entity.PaginationConfig{CursorField: "name"},
 	}.WithTimestamps(false))
 
 	doc := EntityLLMMD(ent)

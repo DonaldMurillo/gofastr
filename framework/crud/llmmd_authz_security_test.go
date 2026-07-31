@@ -59,12 +59,10 @@ func TestLLMMDServesPermittedCaller(t *testing.T) {
 
 func ordersHandlerWithReadPermission(t *testing.T) *CrudHandler {
 	t.Helper()
-	ent := entity.Define("orders", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "total", Type: schema.Int},
-			{Name: "internal_note", Type: schema.String},
-		},
-		Access: entity.AccessControl{Read: "orders:read"},
+	ent := entity.Define("orders", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "total", Type: schema.Int},
+		{Name: "internal_note", Type: schema.String},
+	}, Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: "orders:read"}},
 	})
 	return &CrudHandler{Entity: ent}
 }

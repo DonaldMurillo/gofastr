@@ -747,7 +747,7 @@ func applyRelatedOwnerScope(ctx context.Context, node *IncludeNode) {
 	if node == nil || node.Target == nil {
 		return
 	}
-	ownerField := node.Target.Config.OwnerField
+	ownerField := node.Target.Config.Scope.OwnerField
 	if ownerField == "" {
 		return
 	}
@@ -786,7 +786,7 @@ func applyRelatedTenantScope(ctx context.Context, node *IncludeNode) {
 	if node == nil || node.Target == nil {
 		return
 	}
-	if !node.Target.Config.MultiTenant {
+	if !node.Target.Config.Scope.MultiTenant {
 		return
 	}
 	node.Filters = append([]filter.ParsedFilter{{

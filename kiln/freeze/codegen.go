@@ -8,11 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
-// ErrGenerateViaBlueprint remains as a source-compatible sentinel for callers
-// compiled against the old deferred pipeline. FreezeAndGenerate no longer
-// returns it: Kiln now emits and invokes the blueprint directly.
-var ErrGenerateViaBlueprint = errors.New("kiln freeze: generate via blueprint")
-
 // FreezeAndGenerate writes gofastr.yml + world.json, then invokes the current
 // one-shot generator. pkgPath is an optional relative --out directory.
 func FreezeAndGenerate(w *world.World, dir, pkgPath string) error {

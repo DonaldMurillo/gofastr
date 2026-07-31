@@ -87,10 +87,7 @@ func TestInProcessBatch_RollbackErrors(t *testing.T) {
 
 func TestInProcess_TenantGuards(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE tg (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
-	ent := entity.Define("tg", entity.EntityConfig{
-		Name: "tg", Table: "tg", MultiTenant: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("tg", entity.EntityConfig{Name: "tg", Table: "tg", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	ctx := context.Background() // no tenant
@@ -104,10 +101,7 @@ func TestInProcess_TenantGuards(t *testing.T) {
 
 func TestHTTPCreate_MultiTenantStampsColumn(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE htc (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
-	ent := entity.Define("htc", entity.EntityConfig{
-		Name: "htc", Table: "htc", MultiTenant: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("htc", entity.EntityConfig{Name: "htc", Table: "htc", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	// In-process create with a tenant in ctx exercises the cols/vals tenant append.
@@ -171,10 +165,7 @@ func TestMCP_RegisterToolDuplicateError(t *testing.T) {
 
 func TestTypedQuery_DeleteAllSoftDelete(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE sd (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
-	ent := entity.Define("sd", entity.EntityConfig{
-		Name: "sd", Table: "sd", SoftDelete: true,
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("sd", entity.EntityConfig{Name: "sd", Table: "sd", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	_, _ = ch.CreateOne(context.Background(), map[string]any{"title": "a"})
@@ -208,9 +199,16 @@ func TestTypedQuery_FindIncludeError(t *testing.T) {
 
 func TestDecodeCursorAny_FieldNotInSet(t *testing.T) {
 	// A composite cursor whose decoded field isn't in the expected set.
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq", "id"} }, 4)
-	// Build a forward page to get a real composite cursor, then ask the
-	// decoder to validate it against a DIFFERENT field set.
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{
+				// Build a forward page to get a real composite cursor, then ask the
+				// decoder to validate it against a DIFFERENT field set.
+			}
+		}
+		c.Pagination.CursorFields = []string{"seq", "id"}
+	}, 4)
+
 	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)

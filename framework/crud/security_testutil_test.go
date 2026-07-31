@@ -208,11 +208,9 @@ func decodeSingleResponse(t *testing.T, body []byte) map[string]any {
 
 // makeEntityConfig creates an EntityConfig with the given parameters.
 func makeEntityConfig(name, table, ownerField string, fields []schema.Field, mutators ...func(*entity.EntityConfig)) entity.EntityConfig {
-	cfg := entity.EntityConfig{
-		Name:       name,
-		Table:      table,
-		Fields:     fields,
-		OwnerField: ownerField,
+	cfg := entity.EntityConfig{Name: name,
+		Table:  table,
+		Fields: fields, Scope: &entity.ScopeConfig{OwnerField: ownerField},
 	}.WithTimestamps(false)
 	for _, m := range mutators {
 		m(&cfg)

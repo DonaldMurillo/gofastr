@@ -192,7 +192,11 @@ Freeze writes exactly:
 Declarative Kiln hook/route actions remain exact in `world.json`. Where the
 current blueprint requires a Go function, freeze emits an owned-Go handler
 stub with a description naming the declarative action; implement that behavior
-after generation. The removed pre-v0.1 `entities/*.json` format is not emitted.
+after generation. Entity endpoints graduate the same way: they are part of the
+world IR but are not served by the live build-mode app (rendering one needs
+run-then-respond semantics kiln/effect does not provide), so they surface as
+owned-Go handler stubs after generation. The removed pre-v0.1 `entities/*.json`
+format is not emitted.
 
 Freeze fails loudly, naming the offending key, when world data cannot
 round-trip through the blueprint's YAML subset — a seed row whose every value

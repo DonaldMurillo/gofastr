@@ -62,8 +62,8 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		// double-add the column. Every OTHER ReadOnly/Hidden field is
 		// client-unsettable and skipped unless the caller opted in to
 		// server writes via WithServerWrites(ctx).
-		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.OwnerField {
-			isTenantCol := ch.Entity.Config.MultiTenant && f.Name == ch.Entity.Config.TenantColumn()
+		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
+			isTenantCol := ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn()
 			if isTenantCol || !serverWrites(ctx) {
 				continue
 			}
@@ -80,7 +80,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		vals = append(vals, val)
 	}
 
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(ctx)
 		if tenantID == "" {
 			// Refuse to write an orphan row. Without a tenant in the
@@ -150,7 +150,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
-	ownerField := ch.Entity.Config.OwnerField
+	ownerField := ch.Entity.Config.Scope.OwnerField
 	for _, f := range ch.Entity.GetFields() {
 		if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone {
 			continue
@@ -170,7 +170,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			continue
 		}
 		// Same hazard for tenant_id when MultiTenant is on.
-		if ch.Entity.Config.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
+		if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
 			continue
 		}
 		val, ok := body[f.Name]
@@ -201,7 +201,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// system considers deleted, which the upsert path already refuses
 	// (errSoftDeletedResurrection). Match-nothing ⇒ scanRow gets ErrNoRows
 	// ⇒ errNotFound, same 404 a deleted row gives on Get.
-	if ch.Entity.Config.SoftDelete {
+	if ch.Entity.Config.Scope.SoftDelete {
 		ub.Where("deleted_at IS NULL")
 	}
 	visFields := ch.visibleFields()
@@ -258,7 +258,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	var affected int64
-	if ch.Entity.Config.SoftDelete {
+	if ch.Entity.Config.Scope.SoftDelete {
 		ub := query.Update(ch.Entity.GetTable()).
 			Set("deleted_at", time.Now().UTC()).
 			Where(ch.PrimaryKey+" = $1", id)

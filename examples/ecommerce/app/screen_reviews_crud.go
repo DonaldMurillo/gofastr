@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
 type ReviewsScreen struct{ component.ContextOnly }
@@ -25,10 +26,10 @@ func (s *ReviewsScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountReviewsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	appResources["reviews"] = ResourceConfig{
-		Title: "Reviews", Singular: "Review", BasePath: "/reviews", APIPath: "/api/reviews",
+	appResources["reviews"] = resource.Config{
+		Entity: "reviews", Title: "Reviews", Singular: "Review", BasePath: "/reviews", APIPath: "/api/reviews",
 		Crud: fwApp.MustCrudHandler("reviews"),
-		Fields: []ResField{
+		Fields: []resource.Field{
 			{Key: "product_id", Label: "Product", Type: "relation"},
 			{Key: "author_name", Label: "Author Name", Type: "string"},
 			{Key: "rating", Label: "Rating", Type: "int"},
@@ -36,7 +37,7 @@ func mountReviewsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 			{Key: "body", Label: "Body", Type: "text"},
 			{Key: "verified", Label: "Verified", Type: "bool"},
 		},
-		Relations: map[string]RelSource{
+		Relations: map[string]resource.Relation{
 			"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
 		},
 	}

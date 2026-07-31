@@ -575,53 +575,63 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 	out := make([]framework.EntityDeclaration, 0, len(list))
 	var endpointStubs []BlueprintEndpoint
 	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("entities[%d]", i))
+		context := fmt.Sprintf("entities[%d]", i)
+		m, err := expectMap(item, context)
 		if err != nil {
 			return nil, nil, err
 		}
-		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "scope": true, "pagination": true, "exposure": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "cross_owner_read": true, "search_fields": true, "access": true, "public": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
-		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("entities[%d]", i)); err != nil {
+		allowed := map[string]bool{
+			"name": true, "table": true, "fields": true, "relations": true,
+			"endpoints": true, "scope": true, "pagination": true, "exposure": true,
+			"soft_delete": true, "multi_tenant": true, "tenant_field": true,
+			"owner_field": true, "cross_owner_read": true, "search_fields": true,
+			"access": true, "public": true, "timestamps": true, "crud": true,
+			"mcp": true, "cursor_field": true, "cursor_fields": true,
+			"max_list_limit": true, "indices": true, "properties": true,
+		}
+		if err := rejectUnknownKeys(m, allowed, context); err != nil {
 			return nil, nil, err
 		}
 		decl := framework.EntityDeclaration{
-			Name:           stringValue(m["name"]),
-			Table:          stringValue(m["table"]),
-			SoftDelete:     boolValue(m["soft_delete"]),
-			MultiTenant:    boolValue(m["multi_tenant"]),
-			OwnerField:     stringValue(m["owner_field"]),
-			CrossOwnerRead: stringValue(m["cross_owner_read"]),
-			SearchFields:   stringListValue(m["search_fields"]),
-			Public:         boolValue(m["public"]),
-			MCP:            boolValue(m["mcp"]),
-			CursorField:    stringValue(m["cursor_field"]),
-			CursorFields:   stringListValue(m["cursor_fields"]),
-			Properties:     mapValue(m["properties"]),
+			Name:         stringValue(m["name"]),
+			Table:        stringValue(m["table"]),
+			SearchFields: stringListValue(m["search_fields"]),
+			Properties:   mapValue(m["properties"]),
 		}
 		if m["timestamps"] != nil {
 			v := boolValue(m["timestamps"])
 			decl.Timestamps = &v
 		}
-		if m["crud"] != nil {
-			v := boolValue(m["crud"])
-			decl.CRUD = &v
-		}
-		scope, err := decodeEntityScope(m["scope"], fmt.Sprintf("entities[%d].scope", i))
+
+		scope, err := decodeEntityScope(m["scope"], context+".scope")
 		if err != nil {
 			return nil, nil, err
 		}
-		if scope != nil {
-			decl.Scope = scope
-			decl.SoftDelete, decl.MultiTenant = scope.SoftDelete, scope.MultiTenant
-			decl.OwnerField, decl.CrossOwnerRead = scope.OwnerField, scope.CrossOwnerRead
-		}
-		pagination, err := decodeEntityPagination(m["pagination"], fmt.Sprintf("entities[%d].pagination", i))
+		decl.Scope, err = mergeEntityScopeDeclaration(decl.Name, m, scope, context)
 		if err != nil {
 			return nil, nil, err
 		}
-		if pagination != nil {
-			decl.Pagination = pagination
-			decl.CursorField, decl.CursorFields = pagination.CursorField, pagination.CursorFields
+		pagination, err := decodeEntityPagination(m["pagination"], context+".pagination")
+		if err != nil {
+			return nil, nil, err
 		}
+		decl.Pagination, err = mergeEntityPaginationDeclaration(decl.Name, m, pagination, context)
+		if err != nil {
+			return nil, nil, err
+		}
+		flatAccess, err := decodeEntityAccess(m["access"], context+".access")
+		if err != nil {
+			return nil, nil, err
+		}
+		exposure, err := decodeEntityExposure(m["exposure"], context+".exposure")
+		if err != nil {
+			return nil, nil, err
+		}
+		decl.Exposure, err = mergeEntityExposureDeclaration(decl.Name, m, exposure, flatAccess, context)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		fields, err := decodeFields(m["fields"])
 		if err != nil {
 			return nil, nil, err
@@ -631,23 +641,21 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		// string column so AutoMigrate creates it and auto-CRUD can stamp/scope
 		// it, without the author hand-declaring a field they never want shown in
 		// a form or table. pack drops this synthesized column on the way back.
-		if decl.OwnerField != "" && !blueprintEntityHasField(decl, decl.OwnerField) {
+		if decl.Scope != nil && decl.Scope.OwnerField != "" &&
+			!blueprintEntityHasField(decl, decl.Scope.OwnerField) {
 			decl.Fields = append(decl.Fields, framework.FieldDeclaration{
-				Name:   decl.OwnerField,
+				Name:   decl.Scope.OwnerField,
 				Type:   "string",
 				Hidden: true,
 			})
 		}
-		// cross_owner_read lifts owner scoping for reads only — it only
-		// makes sense on an owner-scoped entity. Catch the misconfiguration
-		// here with an actionable message rather than letting the knob
-		// silently do nothing at runtime.
-		if decl.CrossOwnerRead != "" && decl.OwnerField == "" {
-			return nil, nil, fmt.Errorf("blueprint: entity %q sets cross_owner_read %q but has no owner_field (cross-owner read only applies to owner-scoped entities)", decl.Name, decl.CrossOwnerRead)
+		// cross_owner_read only applies to an owner-scoped entity.
+		if decl.Scope != nil && decl.Scope.CrossOwnerRead != "" && decl.Scope.OwnerField == "" {
+			return nil, nil, fmt.Errorf(
+				"blueprint: entity %q sets cross_owner_read %q but has no owner_field (cross-owner read only applies to owner-scoped entities)",
+				decl.Name, decl.Scope.CrossOwnerRead,
+			)
 		}
-		// search_fields must reference known, non-hidden, string/text
-		// columns. entity.Define panics on these too, but the blueprint
-		// decoder returns a friendlier error before code generation.
 		for _, sf := range decl.SearchFields {
 			var found *framework.FieldDeclaration
 			for j := range decl.Fields {
@@ -669,12 +677,12 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
 			}
 		}
-		// Cursor columns get the same treatment. entity.Define panics on a
-		// Hidden or no_query keyset column — correct, since the cursor token
-		// carries its value — but a generated app that dies at boot is a much
-		// worse diagnostic than the error search_fields gets here. Both
-		// spellings, and the framework-managed columns resolve as unflagged.
-		for _, cf := range append(append([]string{}, decl.CursorFields...), decl.CursorField) {
+		var cursorFields []string
+		if decl.Pagination != nil {
+			cursorFields = append(cursorFields, decl.Pagination.CursorFields...)
+			cursorFields = append(cursorFields, decl.Pagination.CursorField)
+		}
+		for _, cf := range cursorFields {
 			if cf == "" {
 				continue
 			}
@@ -702,19 +710,6 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			return nil, nil, err
 		}
 		decl.Indices = indices
-		access, err := decodeEntityAccess(m["access"], fmt.Sprintf("entities[%d].access", i))
-		if err != nil {
-			return nil, nil, err
-		}
-		decl.Access = access
-		exposure, err := decodeEntityExposure(m["exposure"], fmt.Sprintf("entities[%d].exposure", i))
-		if err != nil {
-			return nil, nil, err
-		}
-		if exposure != nil {
-			decl.Exposure = exposure
-			decl.CRUD, decl.MCP, decl.Public, decl.Access = exposure.CRUD, exposure.MCP, exposure.Public, exposure.Access
-		}
 		endpoints, stubs, err := decodeEntityEndpoints(decl.Name, m["endpoints"])
 		if err != nil {
 			return nil, nil, err
@@ -724,6 +719,176 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		out = append(out, decl)
 	}
 	return out, endpointStubs, nil
+}
+
+func mergeEntityScopeDeclaration(
+	name string,
+	root map[string]*coreyaml.Node,
+	grouped *fwentity.ScopeDeclaration,
+	context string,
+) (*fwentity.ScopeDeclaration, error) {
+	groupMap, err := optionalEntityGroupMap(root["scope"], context+".scope")
+	if err != nil {
+		return nil, err
+	}
+	keys := []string{"soft_delete", "multi_tenant", "tenant_field", "owner_field", "cross_owner_read"}
+	if grouped == nil && !hasEntityDeclarationKey(root, keys...) {
+		return nil, nil
+	}
+	if grouped == nil {
+		grouped = &fwentity.ScopeDeclaration{}
+	}
+	if node := root["soft_delete"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["soft_delete"] != nil && flat != grouped.SoftDelete {
+			return nil, entityDeclarationConflict(name, "soft_delete", "scope.soft_delete", flat, grouped.SoftDelete)
+		}
+		grouped.SoftDelete = flat
+	}
+	if node := root["multi_tenant"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["multi_tenant"] != nil && flat != grouped.MultiTenant {
+			return nil, entityDeclarationConflict(name, "multi_tenant", "scope.multi_tenant", flat, grouped.MultiTenant)
+		}
+		grouped.MultiTenant = flat
+	}
+	for key, target := range map[string]*string{
+		"tenant_field": &grouped.TenantField, "owner_field": &grouped.OwnerField,
+		"cross_owner_read": &grouped.CrossOwnerRead,
+	} {
+		if node := root[key]; node != nil {
+			flat := stringValue(node)
+			if groupMap[key] != nil && flat != *target {
+				return nil, entityDeclarationConflict(name, key, "scope."+key, flat, *target)
+			}
+			*target = flat
+		}
+	}
+	return grouped, nil
+}
+
+func mergeEntityPaginationDeclaration(
+	name string,
+	root map[string]*coreyaml.Node,
+	grouped *fwentity.PaginationDeclaration,
+	context string,
+) (*fwentity.PaginationDeclaration, error) {
+	groupMap, err := optionalEntityGroupMap(root["pagination"], context+".pagination")
+	if err != nil {
+		return nil, err
+	}
+	keys := []string{"cursor_field", "cursor_fields", "max_list_limit"}
+	if grouped == nil && !hasEntityDeclarationKey(root, keys...) {
+		return nil, nil
+	}
+	if grouped == nil {
+		grouped = &fwentity.PaginationDeclaration{}
+	}
+	if node := root["cursor_field"]; node != nil {
+		flat := stringValue(node)
+		if groupMap["cursor_field"] != nil && flat != grouped.CursorField {
+			return nil, entityDeclarationConflict(name, "cursor_field", "pagination.cursor_field", flat, grouped.CursorField)
+		}
+		grouped.CursorField = flat
+	}
+	if node := root["cursor_fields"]; node != nil {
+		flat := stringListValue(node)
+		if groupMap["cursor_fields"] != nil && !stringSlicesEqual(flat, grouped.CursorFields) {
+			return nil, entityDeclarationConflict(name, "cursor_fields", "pagination.cursor_fields", flat, grouped.CursorFields)
+		}
+		grouped.CursorFields = flat
+	}
+	if node := root["max_list_limit"]; node != nil {
+		flat := intValue(node)
+		if groupMap["max_list_limit"] != nil && flat != grouped.MaxListLimit {
+			return nil, entityDeclarationConflict(name, "max_list_limit", "pagination.max_list_limit", flat, grouped.MaxListLimit)
+		}
+		grouped.MaxListLimit = flat
+	}
+	return grouped, nil
+}
+
+func mergeEntityExposureDeclaration(
+	name string,
+	root map[string]*coreyaml.Node,
+	grouped *fwentity.ExposureDeclaration,
+	flatAccess *fwentity.AccessDeclaration,
+	context string,
+) (*fwentity.ExposureDeclaration, error) {
+	groupMap, err := optionalEntityGroupMap(root["exposure"], context+".exposure")
+	if err != nil {
+		return nil, err
+	}
+	keys := []string{"crud", "mcp", "public", "access"}
+	if grouped == nil && !hasEntityDeclarationKey(root, keys...) {
+		return nil, nil
+	}
+	if grouped == nil {
+		grouped = &fwentity.ExposureDeclaration{}
+	}
+	if node := root["crud"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["crud"] != nil && (grouped.CRUD == nil || flat != *grouped.CRUD) {
+			return nil, entityDeclarationConflict(name, "crud", "exposure.crud", flat, grouped.CRUD)
+		}
+		grouped.CRUD = &flat
+	}
+	if node := root["mcp"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["mcp"] != nil && flat != grouped.MCP {
+			return nil, entityDeclarationConflict(name, "mcp", "exposure.mcp", flat, grouped.MCP)
+		}
+		grouped.MCP = flat
+	}
+	if node := root["public"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["public"] != nil && flat != grouped.Public {
+			return nil, entityDeclarationConflict(name, "public", "exposure.public", flat, grouped.Public)
+		}
+		grouped.Public = flat
+	}
+	if flatAccess != nil {
+		if groupMap["access"] != nil && (grouped.Access == nil || *flatAccess != *grouped.Access) {
+			return nil, entityDeclarationConflict(name, "access", "exposure.access", flatAccess, grouped.Access)
+		}
+		grouped.Access = flatAccess
+	}
+	return grouped, nil
+}
+
+func optionalEntityGroupMap(node *coreyaml.Node, context string) (map[string]*coreyaml.Node, error) {
+	if node == nil {
+		return map[string]*coreyaml.Node{}, nil
+	}
+	return expectMap(node, context)
+}
+
+func hasEntityDeclarationKey(root map[string]*coreyaml.Node, keys ...string) bool {
+	for _, key := range keys {
+		if root[key] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func entityDeclarationConflict(name, flatPath, groupedPath string, flat, grouped any) error {
+	return fmt.Errorf(
+		"blueprint: entity %q has conflicting values for %s and %s (%v != %v)",
+		name, flatPath, groupedPath, flat, grouped,
+	)
 }
 
 func decodeEntityScope(node *coreyaml.Node, context string) (*fwentity.ScopeDeclaration, error) {
@@ -784,12 +949,31 @@ func decodeEntityExposure(node *coreyaml.Node, context string) (*fwentity.Exposu
 	return &fwentity.ExposureDeclaration{CRUD: crud, MCP: boolValue(m["mcp"]), Public: boolValue(m["public"]), Access: access}, nil
 }
 
+func entityDeclarationScope(decl framework.EntityDeclaration) fwentity.ScopeDeclaration {
+	if decl.Scope == nil {
+		return fwentity.ScopeDeclaration{}
+	}
+	return *decl.Scope
+}
+
+func entityDeclarationExposure(decl framework.EntityDeclaration) fwentity.ExposureDeclaration {
+	if decl.Exposure == nil {
+		return fwentity.ExposureDeclaration{}
+	}
+	return *decl.Exposure
+}
+
+func entityDeclarationCRUDEnabled(decl framework.EntityDeclaration) bool {
+	exposure := entityDeclarationExposure(decl)
+	return exposure.CRUD == nil || *exposure.CRUD
+}
+
 // blueprintHasEntityAccess reports whether any entity declares an `access:`
 // block — i.e. its auto-CRUD API is permission-gated and therefore needs a
 // RolePolicy installed for the signed-in user, or every write 403s.
 func blueprintHasEntityAccess(bp Blueprint) bool {
 	for _, e := range bp.Entities {
-		if e.Access != nil {
+		if entityDeclarationExposure(e).Access != nil {
 			return true
 		}
 	}
@@ -873,7 +1057,7 @@ func blueprintEntityHasField(decl framework.EntityDeclaration, name string) bool
 
 func blueprintHasOwnerScopedEntity(bp Blueprint) bool {
 	for _, e := range bp.Entities {
-		if e.OwnerField != "" {
+		if entityDeclarationScope(e).OwnerField != "" {
 			return true
 		}
 	}
@@ -1575,7 +1759,7 @@ func validateBlueprint(bp Blueprint) error {
 	// empty tenant on writes: silently broken while looking secure. Refuse
 	// to generate rather than ship that.
 	for _, decl := range bp.Entities {
-		if decl.MultiTenant {
+		if entityDeclarationScope(decl).MultiTenant {
 			return fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy — subdomain, JWT claim, user's org — is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name)
 		}
 	}
@@ -1783,7 +1967,7 @@ func validateBlueprint(bp Blueprint) error {
 func blueprintCRUDRoutes(entities []framework.EntityDeclaration) map[string]bool {
 	out := map[string]bool{}
 	for _, decl := range entities {
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			continue
 		}
 		root := "/" + blueprintEntityTable(decl)
@@ -1862,7 +2046,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !ok {
 			return fmt.Errorf("blueprint: screen %q entity_list targets unknown entity %q", screenName, block.Entity)
 		}
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q entity_list target %q must enable crud", screenName, block.Entity)
 		}
 		if len(block.Fields) == 0 {
@@ -1949,7 +2133,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !ok {
 			return fmt.Errorf("blueprint: screen %q entity_form targets unknown entity %q", screenName, block.Entity)
 		}
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q entity_form target %q must enable crud", screenName, block.Entity)
 		}
 		mode := strings.ToLower(strings.TrimSpace(block.Mode))
@@ -1964,7 +2148,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !ok {
 			return fmt.Errorf("blueprint: screen %q entity_detail targets unknown entity %q", screenName, block.Entity)
 		}
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q entity_detail target %q must enable crud", screenName, block.Entity)
 		}
 	case "login_form", "signup_form":
@@ -1990,7 +2174,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !known {
 			return fmt.Errorf("blueprint: screen %q %s source targets unknown entity %q", screenName, kind, srcEntity)
 		}
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q %s source entity %q must enable crud (the chart reads its rows via the CRUD handler)", screenName, kind, srcEntity)
 		}
 		// group_by is the chart's LABEL, not an aggregate: groupCounts reads
@@ -2019,7 +2203,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 			if !known {
 				return fmt.Errorf("blueprint: screen %q stat_card source targets unknown entity %q", screenName, srcEntity)
 			}
-			if decl.CRUD != nil && !*decl.CRUD {
+			if !entityDeclarationCRUDEnabled(decl) {
 				return fmt.Errorf("blueprint: screen %q stat_card source entity %q must enable crud", screenName, srcEntity)
 			}
 			// source.filter is split on "=" and handed to CountAll as a raw
@@ -2344,9 +2528,8 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 	if emitsApp {
 		files = append(files, generatedFile{name: "app.go", content: renderBlueprintApp(bp)})
 	}
-	if blueprintUsesEntityScreens(bp) {
+	if blueprintNeedsResource(bp) {
 		files = append(files, generatedFile{name: "resource.go", content: blueprintResourceGo})
-		files = append(files, generatedFile{name: "resource_test.go", content: blueprintResourceTestGo})
 	}
 	if bp.App.Module != "" && len(bp.Screens) > 0 {
 		files = append(files, generatedFile{name: "e2e_test.go", content: renderBlueprintE2ETest(bp)})
@@ -2553,68 +2736,6 @@ func splitDSNFields(dsn string) []string {
 	return fields
 }
 
-// blueprintResourceTestGo is the emitted unit test for the resource engine's
-// formatting helpers — owned, runs under `go test`.
-const blueprintResourceTestGo = `// Code generated by gofastr. Owned — safe to edit.
-package main
-
-import (
-	"strings"
-	"testing"
-)
-
-func TestResMoney(t *testing.T) {
-	for in, want := range map[string]string{"1234.5": "$1,234.50", "99": "$99.00", "0": "$0.00", "1000000": "$1,000,000.00"} {
-		if got := resMoney(in); got != want {
-			t.Errorf("resMoney(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestResTitle(t *testing.T) {
-	if got := resTitle("past_due"); got != "Past Due" {
-		t.Errorf("resTitle(past_due) = %q", got)
-	}
-}
-
-func TestResCamel(t *testing.T) {
-	if got := resCamel("generic_name"); got != "genericName" {
-		t.Errorf("resCamel(generic_name) = %q", got)
-	}
-}
-
-func TestResTruthy(t *testing.T) {
-	if !resTruthy("true") || !resTruthy("1") || resTruthy("false") || resTruthy("") {
-		t.Error("resTruthy mismatch")
-	}
-}
-
-func TestResInputType(t *testing.T) {
-	for in, want := range map[string]string{
-		"decimal": "number", "int": "number", "date": "date",
-		"timestamp": "datetime-local", "email": "email", "string": "text",
-	} {
-		if got := resInputType(in); got != want {
-			t.Errorf("resInputType(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestResDate(t *testing.T) {
-	if got := resDate(nil, "2025-01-02", "Jan 2, 2006"); got != "Jan 2, 2025" {
-		t.Errorf("resDate = %q, want Jan 2, 2025", got)
-	}
-}
-
-func TestResFormatEnum(t *testing.T) {
-	// enum cells render as a status badge containing the humanized value.
-	h := resFormat(ResField{Key: "status", Type: "enum"}, "past_due", nil)
-	if !strings.Contains(string(h), "Past Due") {
-		t.Errorf("enum cell missing humanized label: %s", string(h))
-	}
-}
-`
-
 // blueprintE2EScreenRoutes splits the blueprint's STATIC screen routes (those
 // without a `{param}`) into public (anonymous-renderable) and gated (auth) sets.
 // Dynamic routes are exercised by the CRUD lifecycle, which has a real id.
@@ -2685,7 +2806,7 @@ func blueprintE2EWritableTarget(bp Blueprint) (blueprintCRUDTarget, bool) {
 			createJSON:  createJSON,
 			updateJSON:  updateJSON,
 			probe:       probe,
-			accessGated: decl.Access != nil || decl.OwnerField != "",
+			accessGated: entityDeclarationExposure(decl).Access != nil || entityDeclarationScope(decl).OwnerField != "",
 		}
 		if dr, ok := detailOf[e]; ok {
 			r := dr
@@ -3313,13 +3434,16 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	return b.String()
 }
 
-// blueprintUsesEntityScreens reports whether any screen renders a data-bound
-// entity block (list/detail/form), which need the emitted resource engine.
-func blueprintUsesEntityScreens(bp Blueprint) bool {
+// blueprintNeedsResource reports whether generated screens need the thin
+// appResources/auth hook seam.
+func blueprintNeedsResource(bp Blueprint) bool {
+	if len(blueprintSourceEntities(bp)) > 0 {
+		return true
+	}
 	var any func([]BlueprintBlock) bool
 	any = func(blocks []BlueprintBlock) bool {
 		for _, b := range blocks {
-			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityFormBlock(b) {
+			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityFormBlock(b) || isLoginFormBlock(b) || isSignupFormBlock(b) {
 				return true
 			}
 			if any(b.Children) {
@@ -3336,830 +3460,27 @@ func blueprintUsesEntityScreens(bp Blueprint) bool {
 	return false
 }
 
-// blueprintResourceGo is the owned, self-contained server-render engine emitted
-// into every blueprint app that has entity screens. It renders entity list and
-// detail views by composing framework/ui (DataTable, PageHeader, StatusBadge,
-// SearchInput, Pagination, EmptyState) over the entity's CrudHandler — humanized
-// labels, formatted cells, resolved relations, server-side search/sort/paging.
-// It is generated code you OWN: edit freely.
+// blueprintResourceGo is the thin owned seam emitted for apps with entity
+// resources, dashboard data sources, or auth forms. Generic resource behavior
+// lives in framework/ui/resource; the app keeps its registry and auth copy hook.
 const blueprintResourceGo = `// Code generated by gofastr. Owned — safe to edit.
 package main
 
 import (
 	"context"
-	"fmt"
-	"math"
-	"net/url"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/filter"
-	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
-// appResources holds one ResourceConfig per entity, populated by
-// RegisterGenerated once the CrudHandlers exist. Screens look entities up by
-// name to render their server-side list/detail views.
-var appResources = map[string]ResourceConfig{}
+// appResources holds the app's resource configs. Per-entity generated files
+// populate it without changing this owned seam, so generate --add stays
+// additive.
+var appResources = resource.Registry{}
 
-// ResField is one displayed entity field.
-type ResField struct {
-	Key     string
-	Label   string
-	Type    string   // string,text,int,float,decimal,bool,enum,date,timestamp,uuid,relation,...
-	Values  []string // enum: the allowed values (drives <option>s on the form)
-	NoQuery bool     // shown in the grid, but the API refuses to filter or sort on it
-}
-
-// RelSource resolves a foreign-key column to a related record's label.
-type RelSource struct {
-	Crud    *framework.CrudHandler
-	Display string
-}
-
-// ResFilter is one facet-filter dimension on the list screen: a column the
-// user can narrow the list by. Type is "enum", "bool", or "relation" — it
-// selects both the facet control (pills vs select) and how options are
-// sourced (Values for enums, yes/no for bools, related rows for relations).
-type ResFilter struct {
-	Key    string
-	Label  string
-	Type   string   // "enum" | "bool" | "relation"
-	Values []string // enum: the allowed values
-}
-
-// Transition is a status-change workflow action shown on a detail page — a
-// button that PUTs {status: Status} to the entity, then refreshes (Mark paid).
-type Transition struct {
-	Label   string
-	Status  string
-	Variant string // "primary" | "secondary" | "danger" | "ghost" (default secondary)
-	Stamp   string // optional date field stamped with today on transition
-}
-
-// RelatedList is a reverse relation surfaced on a detail page: the records of
-// another entity that point back at this one via ForeignKey. Turns a detail
-// page from a row editor into an account view (a customer + their invoices).
-type RelatedList struct {
-	Title      string // e.g. "Invoices"
-	ForeignKey string // the FK column on the related entity, e.g. "customer_id"
-	BasePath   string // the related entity's app route, e.g. "/app/invoices"
-	Crud       *framework.CrudHandler
-	Fields     []ResField
-	Relations  map[string]RelSource // for resolving the related rows' own FKs
-}
-
-// ResourceConfig drives the server-rendered list + detail + form screens for
-// one entity.
-type ResourceConfig struct {
-	Title     string
-	Singular  string
-	BasePath  string // app route, e.g. "/app/customers"
-	APIPath   string // auto-CRUD JSON endpoint, e.g. "/api/customers"
-	Crud      *framework.CrudHandler
-	Fields    []ResField
-	Search    string
-	Filters   []ResFilter // facet filters rendered as a toolbar above the table
-	PageSize  int
-	Relations map[string]RelSource
-	CanCreate bool // List shows "New"; a /new create form is mounted
-	CanEdit   bool   // Detail shows Edit + Delete; a /{id}/edit form is mounted
-	Heading     string        // overrides the list's title (the block's text:)
-	EmptyText   string        // overrides the empty-state description (the block's empty_text:)
-	Related     []RelatedList // reverse relations surfaced on the detail page
-	Transitions []Transition  // status-transition workflow buttons on the detail page
-}
-
-// WithTransitions sets the detail-page status-transition workflow buttons.
-func (c ResourceConfig) WithTransitions(ts ...Transition) ResourceConfig {
-	c.Transitions = ts
-	return c
-}
-
-func (c ResourceConfig) pageSize() int {
-	if c.PageSize > 0 {
-		return c.PageSize
-	}
-	return 25
-}
-
-// sortable reports whether a column may be used in ORDER BY. Displayed and
-// sortable are not the same set: a NoQuery column shows its (masked) value
-// but the API rejects sorting on it.
-func (c ResourceConfig) sortable(k string) bool {
-	for _, f := range c.Fields {
-		if f.Key == k {
-			return !f.NoQuery
-		}
-	}
-	return false
-}
-
-func (c ResourceConfig) hasField(k string) bool {
-	for _, f := range c.Fields {
-		if f.Key == k {
-			return true
-		}
-	}
-	return false
-}
-
-func (c ResourceConfig) field(k string) (ResField, bool) {
-	for _, f := range c.Fields {
-		if f.Key == k {
-			return f, true
-		}
-	}
-	return ResField{}, false
-}
-
-// WithColumns returns a copy showing only the named fields, in the given order.
-func (c ResourceConfig) WithColumns(keys ...string) ResourceConfig {
-	fields := make([]ResField, 0, len(keys))
-	for _, k := range keys {
-		if f, ok := c.field(k); ok {
-			fields = append(fields, f)
-		}
-	}
-	c.Fields = fields
-	return c
-}
-
-// WithSearch sets the LIKE-search field. WithLimit sets the page size.
-// WithCreate shows a "New" action linking to BasePath/new.
-func (c ResourceConfig) WithSearch(field string) ResourceConfig { c.Search = field; return c }
-func (c ResourceConfig) WithLimit(n int) ResourceConfig         { c.PageSize = n; return c }
-func (c ResourceConfig) WithCreate() ResourceConfig             { c.CanCreate = true; return c }
-
-// WithFilters sets the facet filters shown in the toolbar above the list.
-func (c ResourceConfig) WithFilters(fs ...ResFilter) ResourceConfig { c.Filters = fs; return c }
-
-// WithEdit shows Edit + Delete on the detail screen (a /{id}/edit form is mounted).
-func (c ResourceConfig) WithEdit() ResourceConfig { c.CanEdit = true; return c }
-
-// WithHeading overrides the list's title; WithEmpty overrides the empty-state text.
-func (c ResourceConfig) WithHeading(s string) ResourceConfig { c.Heading = s; return c }
-func (c ResourceConfig) WithEmpty(s string) ResourceConfig   { c.EmptyText = s; return c }
-
-func (c ResourceConfig) relationLabels(ctx context.Context) map[string]map[string]string {
-	out := map[string]map[string]string{}
-	for col, rel := range c.Relations {
-		if rel.Crud == nil {
-			continue
-		}
-		// WithReadHooks: the DISPLAY value becomes the visible label on the
-		// grid and detail page, so it must show the mask. Only the id is used
-		// for lookup, and a picker submits the id — so redacting the label
-		// cannot write a masked value back.
-		rows, err := rel.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Limit: 1000})
-		if err != nil {
-			continue
-		}
-		m := map[string]string{}
-		for _, r := range rows {
-			id := resCell(resGet(r, "id"))
-			if id == "" {
-				continue
-			}
-			label := resCell(resGet(r, rel.Display))
-			if label == "" {
-				label = id
-			}
-			m[id] = label
-		}
-		out[col] = m
-	}
-	return out
-}
-
-// List renders the entity list screen.
-func (c ResourceConfig) List(ctx context.Context) render.HTML {
-	q := appui.QueryFromContext(ctx)
-	page := 1
-	if n, err := strconv.Atoi(q.Get("p")); err == nil && n > 1 {
-		page = n
-	}
-	limit := c.pageSize()
-	search := strings.TrimSpace(q.Get("q"))
-
-	var filters []filter.ParsedFilter
-	if search != "" && c.Search != "" {
-		filters = append(filters, filter.ParsedFilter{Field: c.Search, Op: filter.OpLike, Value: search})
-	}
-	// Facet filters: one equality per active facet. Applied to both the count
-	// and the page query, so a filtered result set paginates correctly.
-	for _, ff := range c.Filters {
-		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
-			filters = append(filters, filter.ParsedFilter{Field: ff.Key, Op: filter.OpEq, Value: v})
-		}
-	}
-	var sorts []filter.ParsedSort
-	sortCol := q.Get("sort")
-	// sortable(), not hasField(): a NoQuery column is displayed but the API
-	// refuses ORDER BY on it, and this ParsedSort goes straight to ListAll
-	// without passing through ParseSortValues. Rendering the header
-	// unsortable stops the app emitting the link; this stops a hand-typed
-	// or bookmarked ?sort= from reaching the query.
-	if sortCol != "" && c.sortable(sortCol) {
-		sorts = append(sorts, filter.ParsedSort{Field: sortCol, Desc: q.Get("dir") == "desc"})
-	}
-
-	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
-	// WithReadHooks: these rows are rendered to an end user.
-	rows, err := c.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
-
-	var actions render.HTML
-	if c.CanCreate {
-		actions = ui.LinkButton(ui.LinkButtonConfig{Label: "New " + c.Singular, Href: c.BasePath + "/new", Variant: ui.ButtonPrimary})
-	}
-	title := c.Title
-	if c.Heading != "" {
-		title = c.Heading
-	}
-	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: title, Subtitle: resCountLabel(total, c.Singular, c.Title), Actions: actions})}
-	// When facets are configured, search folds into the one filter toolbar
-	// (rendered below, once relation options are resolved) so the screen is a
-	// single GET form. Otherwise keep the standalone search box unchanged.
-	if len(c.Filters) == 0 && c.Search != "" {
-		body = append(body, ui.SearchInput(ui.SearchInputConfig{
-			Name: "q", ID: "search-" + c.Title, Action: c.BasePath, Method: "GET",
-			Placeholder: "Search " + c.Title, ExtraAttrs: map[string]string{"value": search},
-		}))
-	}
-	if err != nil {
-		body = append(body, ui.Callout(ui.CalloutConfig{Title: "Couldn't load " + c.Title, Variant: ui.StatusDanger}, render.Text("See server logs.")))
-		return render.Join(body...)
-	}
-
-	rel := c.relationLabels(ctx)
-	if len(c.Filters) > 0 {
-		if tb := c.filterToolbar(q, search, rel); tb != "" {
-			body = append(body, tb)
-		}
-	}
-	cols := make([]ui.Column, 0, len(c.Fields)+1)
-	for _, f := range c.Fields {
-		// A NoQuery column still shows its value, but ?sort= on it is a 400
-		// that blanks the grid — so it renders unsortable.
-		col := ui.Column{Key: f.Key, Header: f.Label, Sortable: !f.NoQuery}
-		if resNumeric(f.Type) {
-			col.Align = "end"
-		}
-		cols = append(cols, col)
-	}
-	cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end"})
-
-	uiRows := make([]ui.Row, 0, len(rows))
-	for _, row := range rows {
-		id := resCell(resGet(row, "id"))
-		cells := map[string]render.HTML{}
-		for _, f := range c.Fields {
-			cells[f.Key] = resFormat(f, resGet(row, f.Key), rel)
-		}
-		cells["_a"] = ui.Link(ui.LinkConfig{Href: c.BasePath + "/" + id, Text: "View", Variant: ui.LinkAction})
-		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
-	}
-
-	// carry preserves search + active facets across sort-header and pagination
-	// links (which are <a> navigations, not the toolbar form) so those actions
-	// never silently drop the current filter set.
-	carry := ""
-	if search != "" {
-		carry += "q=" + url.QueryEscape(search) + "&"
-	}
-	for _, ff := range c.Filters {
-		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
-			carry += url.QueryEscape(ff.Key) + "=" + url.QueryEscape(v) + "&"
-		}
-	}
-	dt := ui.DataTableConfig{
-		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
-		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
-		SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
-		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText), HeadingLevel: 2},
-	}
-	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
-		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
-	}
-	body = append(body, ui.DataTable(dt))
-	return render.Join(body...)
-}
-
-// filterToolbar builds the facet + search toolbar shown above the list. Enum
-// facets render as pills when they hold a few short choices and as a select
-// otherwise; bools render as Yes/No pills; relations render as a select whose
-// options are the related records' display labels. Returns nil when there is
-// nothing to render (e.g. only an empty relation facet and no search).
-func (c ResourceConfig) filterToolbar(q url.Values, search string, rel map[string]map[string]string) render.HTML {
-	facets := make([]ui.Facet, 0, len(c.Filters))
-	for _, ff := range c.Filters {
-		facet := ui.Facet{Name: ff.Key, Label: ff.Label, Value: q.Get(ff.Key)}
-		switch ff.Type {
-		case "bool", "boolean":
-			facet.Options = []ui.FacetOption{{Label: "Yes", Value: "true"}, {Label: "No", Value: "false"}}
-			facet.Kind = ui.FacetPills
-		case "relation":
-			facet.Options = resRelFacetOptions(rel[ff.Key])
-			facet.Kind = ui.FacetSelect
-		default: // enum
-			short := len(ff.Values) > 0 && len(ff.Values) <= 4
-			opts := make([]ui.FacetOption, 0, len(ff.Values))
-			for _, v := range ff.Values {
-				label := resTitle(v)
-				if len(label) > 14 {
-					short = false
-				}
-				opts = append(opts, ui.FacetOption{Label: label, Value: v})
-			}
-			facet.Options = opts
-			if short {
-				facet.Kind = ui.FacetPills
-			} else {
-				facet.Kind = ui.FacetSelect
-			}
-		}
-		if len(facet.Options) == 0 {
-			continue
-		}
-		facets = append(facets, facet)
-	}
-	cfg := ui.FilterToolbarConfig{Action: c.BasePath, Facets: facets}
-	if c.Search != "" {
-		cfg.Search = &ui.FilterSearch{Name: "q", Value: search, Placeholder: "Search " + c.Title, Label: "Search " + c.Title}
-	}
-	if len(cfg.Facets) == 0 && cfg.Search == nil {
-		return ""
-	}
-	return ui.FilterToolbar(cfg)
-}
-
-// resRelFacetOptions turns a relation's id→label map into select options,
-// ordered by label for a stable, glanceable dropdown.
-func resRelFacetOptions(m map[string]string) []ui.FacetOption {
-	opts := make([]ui.FacetOption, 0, len(m))
-	for id, label := range m {
-		opts = append(opts, ui.FacetOption{Label: label, Value: id})
-	}
-	sort.Slice(opts, func(i, j int) bool {
-		if opts[i].Label == opts[j].Label {
-			return opts[i].Value < opts[j].Value
-		}
-		return opts[i].Label < opts[j].Label
-	})
-	return opts
-}
-
-// Detail renders the single-record detail screen.
-func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
-	// WithReadHooks: this row is rendered to an end user, so it must show
-	// whatever an AfterGet redaction shows, not the stored value.
-	row, err := c.Crud.GetOne(framework.WithReadHooks(ctx), id, nil)
-	if err != nil || row == nil {
-		return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
-	}
-	rel := c.relationLabels(ctx)
-	title := resCell(resGet(row, "name"))
-	if title == "" {
-		title = resCell(resGet(row, "title"))
-	}
-	if title == "" {
-		title = c.Singular
-	}
-	items := make([]ui.DetailItem, 0, len(c.Fields))
-	for _, f := range c.Fields {
-		items = append(items, ui.DetailItem{Label: f.Label, Value: resFormat(f, resGet(row, f.Key), rel)})
-	}
-	actions := []render.HTML{}
-	for _, t := range c.Transitions {
-		body := "{\"status\":\"" + t.Status + "\""
-		if t.Stamp != "" {
-			body += ",\"" + t.Stamp + "\":\"" + resToday() + "\""
-		}
-		body += "}"
-		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: interactive.Put(c.APIPath + "/" + id).
-			WithBody(body).
-			OnSuccess(interactive.Navigate(c.BasePath + "/" + id)).Attrs()}))
-	}
-	if c.CanEdit {
-		actions = append(actions,
-			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
-			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: interactive.Delete(c.APIPath + "/" + id).
-				WithConfirm("Delete this " + c.Singular + "? This cannot be undone.").
-				OnSuccess(interactive.Navigate(c.BasePath)).Attrs()}),
-		)
-	}
-	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))
-	body := []render.HTML{
-		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Cluster(ui.ClusterConfig{}, actions...)}),
-		ui.DetailList(ui.DetailListConfig{Items: items}),
-	}
-	for _, rl := range c.Related {
-		body = append(body, c.relatedList(ctx, rl, id))
-	}
-	return render.Join(body...)
-}
-
-// relatedList renders one reverse-relation section: the related entity's rows
-// where ForeignKey == this record's id, as a compact table under a heading.
-func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id string) render.HTML {
-	// WithReadHooks: these rows are rendered to an end user, same as List and
-	// Detail. relatedRelationLabels and the dashboard aggregates below stay
-	// raw on purpose — they resolve ids and compute over stored values.
-	rows, err := rl.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{
-		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
-		Limit:   10,
-	})
-	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: resCountLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title)})
-	if err != nil {
-		return render.Join(head, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger, Title: "Couldn't load " + rl.Title}, render.Text("See server logs.")))
-	}
-	if len(rows) == 0 {
-		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added.", HeadingLevel: 2}))
-	}
-	relLabels := relatedRelationLabels(ctx, rl.Relations)
-	cols := make([]ui.Column, 0, len(rl.Fields)+1)
-	for _, f := range rl.Fields {
-		col := ui.Column{Key: f.Key, Header: f.Label}
-		if resNumeric(f.Type) {
-			col.Align = "end"
-		}
-		cols = append(cols, col)
-	}
-	if rl.BasePath != "" {
-		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end"})
-	}
-	uiRows := make([]ui.Row, 0, len(rows))
-	for _, row := range rows {
-		rid := resCell(resGet(row, "id"))
-		cells := map[string]render.HTML{}
-		for _, f := range rl.Fields {
-			cells[f.Key] = resFormat(f, resGet(row, f.Key), relLabels)
-		}
-		if rl.BasePath != "" {
-			cells["_a"] = ui.Link(ui.LinkConfig{Href: rl.BasePath + "/" + rid, Text: "View", Variant: ui.LinkAction})
-		}
-		uiRows = append(uiRows, ui.Row{ID: rid, Cells: cells})
-	}
-	return render.Join(head, ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards}))
-}
-
-// relatedRelationLabels resolves the FK columns of a related entity's rows to
-// display names (so an invoice row under a customer still shows plan names etc.).
-func relatedRelationLabels(ctx context.Context, rels map[string]RelSource) map[string]map[string]string {
-	out := map[string]map[string]string{}
-	for col, rel := range rels {
-		if rel.Crud == nil {
-			continue
-		}
-		// WithReadHooks: the DISPLAY value becomes the visible label on the
-		// grid and detail page, so it must show the mask. Only the id is used
-		// for lookup, and a picker submits the id — so redacting the label
-		// cannot write a masked value back.
-		rows, err := rel.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Limit: 1000})
-		if err != nil {
-			continue
-		}
-		m := map[string]string{}
-		for _, r := range rows {
-			rid := resCell(resGet(r, "id"))
-			if rid == "" {
-				continue
-			}
-			label := resCell(resGet(r, rel.Display))
-			if label == "" {
-				label = rid
-			}
-			m[rid] = label
-		}
-		out[col] = m
-	}
-	return out
-}
-
-// Form renders the create (id == "") or edit (id != "") form for one record.
-// It submits as an island: data-fui-rpc posts/puts JSON to the entity's
-// auto-CRUD endpoint, then SPA-navigates back to the list/detail on success.
-func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
-	edit := id != ""
-	var row map[string]any
-	if edit {
-		// Deliberately NOT WithReadHooks: this is an EDIT form and its inputs
-		// round-trip back on submit, so prefilling from a redacted read would
-		// write the mask over the stored value. Display surfaces (List,
-		// Detail) opt in; an editor has to see what it edits.
-		r, err := c.Crud.GetOne(ctx, id, nil)
-		if err != nil || r == nil {
-			return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
-		}
-		row = r
-	}
-	rel := c.relationLabels(ctx)
-
-	title, submit := "New "+c.Singular, "Create "+c.Singular
-	rpc, back := c.APIPath, c.BasePath
-	var action interactive.Action
-	if edit {
-		title, submit = "Edit "+c.Singular, "Save changes"
-		rpc, back = c.APIPath+"/"+id, c.BasePath+"/"+id
-		action = interactive.Put(rpc)
-	} else {
-		action = interactive.Post(rpc)
-	}
-	attrs := action.OnSuccess(interactive.Navigate(back)).Attrs()
-
-	fields := make([]render.HTML, 0, len(c.Fields))
-	for _, f := range c.Fields {
-		cur := ""
-		if edit {
-			cur = resCell(resGet(row, f.Key))
-		}
-		fields = append(fields, ui.FormField(ui.FormFieldConfig{
-			Label: f.Label, For: "f-" + f.Key, Input: c.formInput(ctx, f, cur, rel),
-		}))
-	}
-	form := ui.Form(ui.FormConfig{Action: rpc, Method: "POST", SubmitLabel: submit, ExtraAttrs: attrs, Ctx: ctx}, fields...)
-	return render.Join(
-		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Link(ui.LinkConfig{Href: back, Text: "← Cancel", Variant: ui.LinkMuted})}),
-		form,
-	)
-}
-
-// formInput builds the typed control for one field, prefilled with cur. Enums
-// and relations render their options server-side; relations resolve to the same
-// human label the list/detail show.
-func (c ResourceConfig) formInput(ctx context.Context, f ResField, cur string, rel map[string]map[string]string) render.HTML {
-	id := "f-" + f.Key
-	if labels, ok := rel[f.Key]; ok {
-		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
-		for val, label := range labels {
-			opts = append(opts, html.SelectOption{Value: val, Text: label, Selected: val == cur})
-		}
-		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
-	}
-	switch f.Type {
-	case "enum":
-		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
-		for _, v := range f.Values {
-			opts = append(opts, html.SelectOption{Value: v, Text: resTitle(v), Selected: v == cur})
-		}
-		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
-	case "text":
-		return html.TextArea(html.TextAreaConfig{Name: f.Key, ID: id, Content: cur, Rows: 4})
-	case "bool", "boolean":
-		attrs := html.Attrs{}
-		if resTruthy(cur) {
-			attrs["checked"] = "checked"
-		}
-		return html.Input(html.InputConfig{Type: "checkbox", Name: f.Key, ID: id, ExtraAttrs: attrs})
-	default:
-		return html.Input(html.InputConfig{Type: resInputType(f.Type), Name: f.Key, ID: id, Value: cur})
-	}
-}
-
-// resInputType maps a field type to an <input type=...>.
-func resInputType(t string) string {
-	switch t {
-	case "int", "integer", "float", "decimal":
-		return "number"
-	case "date":
-		return "date"
-	case "timestamp", "datetime":
-		return "datetime-local"
-	case "email":
-		return "email"
-	default:
-		return "text"
-	}
-}
-
-func resToday() string {
-	return time.Now().Format("2006-01-02")
-}
-
-func resButtonVariant(v string) ui.ButtonVariant {
-	switch v {
-	case "primary":
-		return ui.ButtonPrimary
-	case "danger":
-		return ui.ButtonDanger
-	case "ghost":
-		return ui.ButtonGhost
-	default:
-		return ui.ButtonSecondary
-	}
-}
-
-// ----- formatting helpers ---------------------------------------------------
-
-func resCell(v any) string {
-	if v == nil {
-		return ""
-	}
-	switch t := v.(type) {
-	case string:
-		return t
-	case bool:
-		if t {
-			return "true"
-		}
-		return "false"
-	default:
-		return fmt.Sprint(v)
-	}
-}
-
-// resGet reads a row value by snake_case key, falling back to the camelCase
-// form the JSON API serializes (requires_prescription → requiresPrescription).
-func resGet(row map[string]any, key string) any {
-	if v, ok := row[key]; ok {
-		return v
-	}
-	return row[resCamel(key)]
-}
-
-func resCamel(s string) string {
-	var b strings.Builder
-	up := false
-	for _, r := range s {
-		if r == '_' {
-			up = true
-			continue
-		}
-		if up {
-			if r >= 'a' && r <= 'z' {
-				r = r - 32
-			}
-			up = false
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
-func resMuted() render.HTML {
-	return ui.EmptyValue()
-}
-
-func resNumeric(t string) bool {
-	switch t {
-	case "int", "integer", "float", "decimal":
-		return true
-	}
-	return false
-}
-
-func resTruthy(s string) bool {
-	switch strings.ToLower(s) {
-	case "true", "1", "yes", "on", "t":
-		return true
-	}
-	return false
-}
-
-func resFormat(f ResField, raw any, rel map[string]map[string]string) render.HTML {
-	val := resCell(raw)
-	if labels, ok := rel[f.Key]; ok {
-		if val == "" {
-			return resMuted()
-		}
-		if l, ok := labels[val]; ok {
-			return render.Text(l)
-		}
-		return render.Text(val)
-	}
-	switch f.Type {
-	case "bool", "boolean":
-		if resTruthy(val) {
-			return ui.StatusBadge(ui.StatusBadgeConfig{Label: "Yes", Variant: ui.StatusSuccess})
-		}
-		return ui.StatusBadge(ui.StatusBadgeConfig{Label: "No", Variant: ui.StatusNeutral})
-	}
-	if val == "" {
-		return resMuted()
-	}
-	switch f.Type {
-	case "enum":
-		return ui.StatusBadge(ui.StatusBadgeConfig{Label: resTitle(val), Variant: resEnumVariant(val)})
-	case "decimal", "float":
-		return render.Text(resMoney(val))
-	case "date":
-		return render.Text(resDate(raw, val, "Jan 2, 2006"))
-	case "timestamp", "datetime":
-		return render.Text(resDate(raw, val, "Jan 2, 2006 3:04 PM"))
-	}
-	return render.Text(val)
-}
-
-// resDate renders a date/timestamp cleanly. DB drivers hand dates back as
-// time.Time (whose default String() is the noisy "2006-01-02 15:04:05 -0700
-// MST"), so format those directly; fall back to parsing common string layouts,
-// then to trimming the time portion off an ISO-ish string.
-func resDate(raw any, val, layout string) string {
-	if t, ok := raw.(time.Time); ok {
-		if t.IsZero() {
-			return "—"
-		}
-		return t.Format(layout)
-	}
-	for _, l := range []string{
-		time.RFC3339,
-		"2006-01-02 15:04:05.999999999 -0700 MST",
-		"2006-01-02 15:04:05 -0700 MST",
-		"2006-01-02T15:04:05Z07:00",
-		"2006-01-02 15:04:05",
-		"2006-01-02",
-	} {
-		if parsed, err := time.Parse(l, val); err == nil {
-			return parsed.Format(layout)
-		}
-	}
-	if i := strings.IndexByte(val, 'T'); i > 0 {
-		return val[:i]
-	}
-	if i := strings.IndexByte(val, ' '); i > 0 {
-		return val[:i]
-	}
-	return val
-}
-
-func resTitle(s string) string {
-	s = strings.ReplaceAll(strings.ReplaceAll(s, "_", " "), "-", " ")
-	parts := strings.Fields(s)
-	for i, p := range parts {
-		if p != "" {
-			parts[i] = strings.ToUpper(p[:1]) + p[1:]
-		}
-	}
-	return strings.Join(parts, " ")
-}
-
-func resEnumVariant(v string) ui.StatusVariant {
-	switch strings.ToLower(v) {
-	case "active", "paid", "succeeded", "completed", "open":
-		return ui.StatusSuccess
-	case "past_due", "pending", "trialing", "draft":
-		return ui.StatusWarning
-	case "canceled", "cancelled", "void", "failed", "refunded", "inactive":
-		return ui.StatusNeutral
-	}
-	return ui.StatusInfo
-}
-
-func resMoney(s string) string {
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return s
-	}
-	neg := f < 0
-	if neg {
-		f = -f
-	}
-	whole := int64(f)
-	cents := int64(math.Round((f - float64(whole)) * 100))
-	if cents == 100 {
-		whole++
-		cents = 0
-	}
-	ws := strconv.FormatInt(whole, 10)
-	var grp []string
-	for len(ws) > 3 {
-		grp = append([]string{ws[len(ws)-3:]}, grp...)
-		ws = ws[:len(ws)-3]
-	}
-	grp = append([]string{ws}, grp...)
-	out := "$" + strings.Join(grp, ",") + fmt.Sprintf(".%02d", cents)
-	if neg {
-		out = "-" + out
-	}
-	return out
-}
-
-func resCountLabel(total int, singular, title string) string {
-	if total == 1 {
-		return "1 " + singular
-	}
-	return fmt.Sprintf("%d %s", total, strings.ToLower(title))
-}
-
-func resEmptyDesc(custom string) string {
-	if custom != "" {
-		return custom
-	}
-	return "They will appear here once created."
-}
-
-// authError reads the ?error= code an auth redirect sets and returns a
-// human message for an auth card's alert slot, or "" when there's no error. The
-// auth battery redirects a failed form login back to the login page with this
-// code instead of rendering a raw JSON error body.
+// authError maps auth redirect codes to the alert rendered by generated auth
+// screens. Edit this hook when the app needs different copy or extra codes.
 func authError(ctx context.Context) render.HTML {
 	switch appui.QueryFromContext(ctx).Get("error") {
 	case "":
@@ -4175,117 +3496,6 @@ func authError(ctx context.Context) render.HTML {
 	default:
 		return render.Text("Sorry, something went wrong. Please try again.")
 	}
-}
-
-// ----- dashboard data binding (stat_card / charts with source) --------------
-
-// statValue computes a single metric over an entity for a stat_card:
-// agg "count" (optionally filtered "field=value") or "sum" of a numeric field.
-func statValue(ctx context.Context, entity, agg, field, filterStr, format string) string {
-	c, ok := appResources[entity]
-	if !ok || c.Crud == nil {
-		return "—"
-	}
-	var filters []filter.ParsedFilter
-	if filterStr != "" {
-		if i := strings.IndexByte(filterStr, '='); i > 0 {
-			filters = append(filters, filter.ParsedFilter{Field: filterStr[:i], Op: filter.OpEq, Value: filterStr[i+1:]})
-		}
-	}
-	if agg == "sum" {
-		rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Filters: filters, Limit: 100000})
-		if err != nil {
-			return "—"
-		}
-		var total float64
-		for _, r := range rows {
-			f, _ := strconv.ParseFloat(resCell(resGet(r, field)), 64)
-			total += f
-		}
-		if format == "money" {
-			return resMoney(strconv.FormatFloat(total, 'f', 2, 64))
-		}
-		return fmtNum(total)
-	}
-	n, err := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
-	if err != nil {
-		return "—"
-	}
-	return strconv.Itoa(n)
-}
-
-type kvPair struct {
-	k string
-	v int
-}
-
-func groupCounts(ctx context.Context, entity, groupBy string) []kvPair {
-	c, ok := appResources[entity]
-	if !ok || c.Crud == nil {
-		return nil
-	}
-	rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Limit: 100000})
-	if err != nil {
-		return nil
-	}
-	order := []string{}
-	m := map[string]int{}
-	for _, r := range rows {
-		key := resCell(resGet(r, groupBy))
-		if key == "" {
-			key = "—"
-		}
-		if _, seen := m[key]; !seen {
-			order = append(order, key)
-		}
-		m[key]++
-	}
-	out := make([]kvPair, 0, len(order))
-	for _, k := range order {
-		out = append(out, kvPair{k, m[k]})
-	}
-	return out
-}
-
-func groupBars(ctx context.Context, entity, groupBy string) []ui.BarChartBar {
-	counts := groupCounts(ctx, entity, groupBy)
-	bars := make([]ui.BarChartBar, 0, len(counts))
-	for _, kv := range counts {
-		bars = append(bars, ui.BarChartBar{Label: resTitle(kv.k), Value: float64(kv.v)})
-	}
-	return bars
-}
-
-func groupSlices(ctx context.Context, entity, groupBy string) []ui.PieSlice {
-	counts := groupCounts(ctx, entity, groupBy)
-	slices := make([]ui.PieSlice, 0, len(counts))
-	for _, kv := range counts {
-		slices = append(slices, ui.PieSlice{Label: resTitle(kv.k), Value: float64(kv.v)})
-	}
-	return slices
-}
-
-// lineChart renders a single-series line chart over the grouped
-// counts. Fewer than two groups renders ui.LineChart's calm empty state.
-func lineChart(ctx context.Context, entity, groupBy string) render.HTML {
-	counts := groupCounts(ctx, entity, groupBy)
-	labels := make([]string, 0, len(counts))
-	values := make([]float64, 0, len(counts))
-	for _, kv := range counts {
-		labels = append(labels, resTitle(kv.k))
-		values = append(values, float64(kv.v))
-	}
-	return ui.LineChart(ui.LineChartConfig{
-		Series: []ui.LineSeries{{Name: resTitle(groupBy), Values: values}},
-		Labels: labels,
-	})
-}
-
-func fmtNum(f float64) string {
-	if f == float64(int64(f)) {
-		return strconv.FormatInt(int64(f), 10)
-	}
-	return strconv.FormatFloat(f, 'f', 2, 64)
 }
 `
 
@@ -4772,6 +3982,9 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	if hasScreens && needs.ui {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui\"\n")
 	}
+	if needs.resource {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui/resource\"\n")
+	}
 	if hasScreens && needs.uihost {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/uihost\"\n")
 	}
@@ -5130,6 +4343,7 @@ func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Bluepr
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
 	needs := blueprintScreensImportNeeds(screens, entityMap, apiBase)
+	needs.resource = true // every CRUD file emits a resource.Config assignment
 	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
 	for _, s := range screens {
 		sb.WriteString(blueprintScreenBody(s, entityMap, apiBase))
@@ -5159,30 +4373,8 @@ func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Bluepr
 	return generatedFile{name: screenFileName(entity + "_crud"), content: sb.String()}
 }
 
-// blueprintResourceRegistry emits the appResources map population inside
-// RegisterGenerated: one ResourceConfig per entity referenced by a server-side
-// entity_list/entity_detail screen, wired to its CrudHandler, displayable
-// fields, and relation lookups.
-func blueprintResourceRegistry(bp Blueprint) string {
-	entityMap, base, needed, editable := blueprintResourceIndex(bp)
-	if len(needed) == 0 {
-		return ""
-	}
-	names := make([]string, 0, len(needed))
-	for e := range needed {
-		names = append(names, e)
-	}
-	sort.Strings(names)
-	var sb strings.Builder
-	for _, e := range names {
-		sb.WriteString(blueprintResourceRegistryOne(bp, e, entityMap, base, editable))
-	}
-	return sb.String()
-}
-
-// blueprintResourceIndex computes the shared analysis backing the appResources
-// emission: the entity map, the base route per entity, the set of entities
-// that need a ResourceConfig, and which have an editable detail screen.
+// blueprintResourceIndex computes the entity map, base route, resource set,
+// and editable-detail set used by per-entity resource.Config assignments.
 func blueprintResourceIndex(bp Blueprint) (entityMap map[string]framework.EntityDeclaration, base map[string]string, needed map[string]bool, editable map[string]bool) {
 	entityMap = make(map[string]framework.EntityDeclaration, len(bp.Entities))
 	for _, d := range bp.Entities {
@@ -5211,11 +4403,9 @@ func blueprintResourceIndex(bp Blueprint) (entityMap map[string]framework.Entity
 			}
 		}
 	}
-	// Entities referenced only by a data source (stat_card / *_chart
-	// `source: {entity: X}`) need a ResourceConfig too, even without a
-	// list/detail screen — otherwise statValue/groupCounts look X up in
-	// appResources, miss, and render a silent "—". Registering a config is
-	// pure lookup-map population (no route is mounted here), so this is safe.
+	// Dashboard data sources need a config even without a list or detail
+	// screen. Registry aggregate methods return "—" for a missing config, so
+	// emit the lookup entry here.
 	for src := range blueprintSourceEntities(bp) {
 		if _, ok := entityMap[src]; ok {
 			needed[src] = true
@@ -5224,10 +4414,10 @@ func blueprintResourceIndex(bp Blueprint) (entityMap map[string]framework.Entity
 	return entityMap, base, needed, editable
 }
 
-// blueprintResourceRegistryOne emits the `appResources["E"] = ResourceConfig{…}`
-// block for a single entity. Shared by the (legacy) aggregated app.go emitter
-// and the per-entity screen_<entity>_crud.go file, so the wiring is identical
-// regardless of where it lands. Returns "" when the entity is unknown.
+// blueprintResourceRegistryOne emits one `appResources["E"] = resource.Config{…}`
+// block. The assignment stays in the entity's own generated screen file so
+// generate --add can add resources without rewriting the shared resource.go.
+// Returns "" when the entity is unknown.
 func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool) string {
 	decl, ok := entityMap[e]
 	if !ok {
@@ -5235,14 +4425,14 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 	}
 	apiBase := blueprintAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
-	sb.WriteString("\tappResources[" + fmt.Sprintf("%q", e) + "] = ResourceConfig{\n")
-	sb.WriteString(fmt.Sprintf("\t\tTitle: %q, Singular: %q, BasePath: %q, APIPath: %q,\n", toDisplayName(e), singularize(toDisplayName(e)), base[e], apiBase+"/"+e))
+	sb.WriteString("\tappResources[" + fmt.Sprintf("%q", e) + "] = resource.Config{\n")
+	sb.WriteString(fmt.Sprintf("\t\tEntity: %q, Title: %q, Singular: %q, BasePath: %q, APIPath: %q,\n", e, toDisplayName(e), singularize(toDisplayName(e)), base[e], apiBase+"/"+e))
 	sb.WriteString(fmt.Sprintf("\t\tCrud: fwApp.MustCrudHandler(%q),\n", e))
 	if editable[e] {
 		sb.WriteString("\t\tCanEdit: true,\n")
 	}
 	// Fields: displayable columns (skip system + hidden).
-	sb.WriteString("\t\tFields: []ResField{\n")
+	sb.WriteString("\t\tFields: []resource.Field{\n")
 	for _, f := range decl.Fields {
 		if blueprintFieldSystem(f.Name) || f.Hidden {
 			continue
@@ -5265,7 +4455,7 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 	// Relations: FK column -> related crud + display field.
 	rels := blueprintEntityRelations(decl)
 	if len(rels) > 0 {
-		sb.WriteString("\t\tRelations: map[string]RelSource{\n")
+		sb.WriteString("\t\tRelations: map[string]resource.Relation{\n")
 		relCols := make([]string, 0, len(rels))
 		for c := range rels {
 			relCols = append(relCols, c)
@@ -5308,9 +4498,9 @@ func blueprintEntityHasSystemColumn(decl framework.EntityDeclaration, name strin
 	case "created_at", "updated_at":
 		return decl.Timestamps == nil || *decl.Timestamps
 	case "deleted_at":
-		return decl.SoftDelete
+		return entityDeclarationScope(decl).SoftDelete
 	case "tenant_id":
-		return decl.MultiTenant
+		return entityDeclarationScope(decl).MultiTenant
 	}
 	return false
 }
@@ -5396,9 +4586,9 @@ func blueprintEntityRelations(decl framework.EntityDeclaration) map[string]strin
 	return out
 }
 
-// blueprintRelatedEmit emits the Related []RelatedList field for entity e: one
-// entry per (otherEntity, fkColumn) where otherEntity.fkColumn targets e — i.e.
-// the records that should appear on e's detail page as an account view.
+// blueprintRelatedEmit emits the Related []resource.RelatedList field for
+// entity e: one entry per (otherEntity, fkColumn) where
+// otherEntity.fkColumn targets e.
 func blueprintRelatedEmit(e string, entityMap map[string]framework.EntityDeclaration, base map[string]string) string {
 	names := make([]string, 0, len(entityMap))
 	for n := range entityMap {
@@ -5423,7 +4613,7 @@ func blueprintRelatedEmit(e string, entityMap map[string]framework.EntityDeclara
 			b.WriteString("\t\t{\n")
 			b.WriteString(fmt.Sprintf("\t\t\tTitle: %q, ForeignKey: %q, BasePath: %q,\n", toDisplayName(other), fk, base[other]))
 			b.WriteString(fmt.Sprintf("\t\t\tCrud: fwApp.MustCrudHandler(%q),\n", other))
-			b.WriteString("\t\t\tFields: []ResField{\n")
+			b.WriteString("\t\t\tFields: []resource.Field{\n")
 			shown := 0
 			for _, f := range od.Fields {
 				if blueprintFieldSystem(f.Name) || f.Hidden || f.Name == fk || shown >= 4 {
@@ -5434,7 +4624,7 @@ func blueprintRelatedEmit(e string, entityMap map[string]framework.EntityDeclara
 			}
 			b.WriteString("\t\t\t},\n")
 			if len(orels) > 0 {
-				b.WriteString("\t\t\tRelations: map[string]RelSource{\n")
+				b.WriteString("\t\t\tRelations: map[string]resource.Relation{\n")
 				cols := make([]string, 0, len(orels))
 				for c := range orels {
 					cols = append(cols, c)
@@ -5456,7 +4646,7 @@ func blueprintRelatedEmit(e string, entityMap map[string]framework.EntityDeclara
 	if b.Len() == 0 {
 		return ""
 	}
-	return "\t\tRelated: []RelatedList{\n" + b.String() + "\t\t},\n"
+	return "\t\tRelated: []resource.RelatedList{\n" + b.String() + "\t\t},\n"
 }
 
 // blueprintDisplayField picks the human label column for an entity.
@@ -5613,7 +4803,7 @@ func blueprintDetailExpr(block BlueprintBlock) string {
 	if len(block.Transitions) > 0 {
 		parts := make([]string, len(block.Transitions))
 		for i, t := range block.Transitions {
-			parts[i] = fmt.Sprintf("Transition{Label: %q, Status: %q, Variant: %q, Stamp: %q}", t.Label, t.Status, t.Variant, t.Stamp)
+			parts[i] = fmt.Sprintf("resource.Transition{Label: %q, Status: %q, Variant: %q, Stamp: %q}", t.Label, t.Status, t.Variant, t.Stamp)
 		}
 		expr += ".WithTransitions(" + strings.Join(parts, ", ") + ")"
 	}
@@ -5654,12 +4844,11 @@ func blueprintEntityListResourceExpr(block BlueprintBlock, entityMap map[string]
 	return expr
 }
 
-// blueprintEntityListFiltersExpr emits the `.WithFilters(ResFilter{...}, …)`
+// blueprintEntityListFiltersExpr emits the `.WithFilters(resource.Filter{...}, …)`
 // call for a top-level entity_list block's `filters:` list. Each column is
-// resolved against the entity declaration to its facet type (enum/bool/
-// relation) and, for enums, its allowed values — so the emitted engine can
-// render the right facet control and apply the right equality filter without
-// re-reading the schema. Returns "" when the block declares no filters.
+// resolved against the entity declaration to its facet type and enum values,
+// so the framework engine does not need the schema at render time. Returns ""
+// when the block declares no filters.
 func blueprintEntityListFiltersExpr(block BlueprintBlock, entityMap map[string]framework.EntityDeclaration) string {
 	if len(block.Filters) == 0 {
 		return ""
@@ -5699,7 +4888,7 @@ func blueprintEntityListFiltersExpr(block BlueprintBlock, entityMap map[string]f
 		default:
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("ResFilter{Key: %q, Label: %q, Type: %q%s}", col, humanizeFieldLabel(col), kind, values))
+		parts = append(parts, fmt.Sprintf("resource.Filter{Key: %q, Label: %q, Type: %q%s}", col, humanizeFieldLabel(col), kind, values))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -5714,6 +4903,7 @@ type screenImportNeeds struct {
 	interactive bool
 	node        bool
 	ui          bool
+	resource    bool
 	// uihost: any screen without a blueprint description emits the
 	// zero-value ScreenSEO opt-out, whose SEO type lives in uihost.
 	uihost bool
@@ -5792,8 +4982,9 @@ func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string
 					continue
 				}
 				if isEntityListBlock(block) || isEntityDetailBlock(block) || isEntityCreateBlock(block) || isEntityEditBlock(block) {
-					// Server-rendered via the resource engine (appResources,
-					// in-package) — no extra import beyond the ctx-screen machinery.
+					if len(block.Filters) > 0 || len(block.Transitions) > 0 {
+						needs.resource = true
+					}
 					continue
 				}
 				if blueprintCatalogKind(kind) {
@@ -6107,7 +5298,7 @@ func renderBlueprintCatalogBlock(screen BlueprintScreen, block BlueprintBlock, p
 			field, _ := src["field"].(string)
 			filter, _ := src["filter"].(string)
 			format := blueprintProp(block, "format")
-			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: statValue(ctx, %q, %q, %q, %q, %q)})", label, entity, agg, field, filter, format), true
+			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: appResources.StatValue(ctx, %q, %q, %q, %q, %q)})", label, entity, agg, field, filter, format), true
 		}
 		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: %q})", label, blueprintProp(block, "value")), true
 	case "bar_chart", "pie_chart", "line_chart":
@@ -6118,11 +5309,11 @@ func renderBlueprintCatalogBlock(screen BlueprintScreen, block BlueprintBlock, p
 			var chart string
 			switch kind {
 			case "pie_chart":
-				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Slices: groupSlices(ctx, %q, %q)})", entity, groupBy)
+				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Slices: appResources.GroupSlices(ctx, %q, %q)})", entity, groupBy)
 			case "line_chart":
-				chart = fmt.Sprintf("lineChart(ctx, %q, %q)", entity, groupBy)
+				chart = fmt.Sprintf("appResources.LineChart(ctx, %q, %q)", entity, groupBy)
 			default:
-				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
+				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: appResources.GroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
 			}
 			// A titled chart is a Card with a heading — design-system
 			// composition, zero bespoke classes (Hard rule 7).
@@ -7480,7 +6671,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	// ConfirmAction dialogs — mount a delete confirmation modal for each
 	// soft-delete entity so entity_detail screens can render a trigger.
 	for _, decl := range bp.Entities {
-		if decl.SoftDelete {
+		if entityDeclarationScope(decl).SoftDelete {
 			sb.WriteString("\t{\n")
 			sb.WriteString(fmt.Sprintf("\t\t_, b := ui.ConfirmAction(ui.ConfirmActionConfig{Name: %q, TriggerLabel: \"Delete\", Title: %q, Body: %q, RPCPath: %q})\n",
 				"delete-"+decl.Name,
@@ -8226,7 +7417,7 @@ func blueprintBlockNeedsToasts(block BlueprintBlock) bool {
 }
 func blueprintHasSoftDelete(bp Blueprint) bool {
 	for _, decl := range bp.Entities {
-		if decl.SoftDelete {
+		if entityDeclarationScope(decl).SoftDelete {
 			return true
 		}
 	}

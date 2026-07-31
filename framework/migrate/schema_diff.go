@@ -259,14 +259,14 @@ func isFrameworkManagedColumn(name string, ent *entity.Entity) bool {
 	// the diff emitted a data-losing DROP COLUMN on the column the app
 	// actually uses. Protect both names: the configured one, and the
 	// default that Define may have injected before the rename.
-	if ent.Config.MultiTenant && (name == ent.Config.TenantColumn() || name == "tenant_id") {
+	if ent.Config.Scope.MultiTenant && (name == ent.Config.TenantColumn() || name == "tenant_id") {
 		return true
 	}
 	switch name {
 	case "created_at", "updated_at":
-		return ent.Config.Timestamps
+		return ent.Config.Timestamps != nil && *ent.Config.Timestamps
 	case "deleted_at":
-		return ent.Config.SoftDelete
+		return ent.Config.Scope.SoftDelete
 	}
 	return false
 }

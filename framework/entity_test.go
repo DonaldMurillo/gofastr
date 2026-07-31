@@ -30,7 +30,7 @@ func TestDefineEntityWithFields(t *testing.T) {
 	}
 
 	// Timestamps should default to true
-	if !e.Config.Timestamps {
+	if e.Config.Timestamps == nil || !*e.Config.Timestamps {
 		t.Error("expected Timestamps to default to true")
 	}
 }
@@ -53,7 +53,7 @@ func TestDefineEntityTimestampsOptOut(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	if e.Config.Timestamps {
+	if e.Config.Timestamps == nil || *e.Config.Timestamps {
 		t.Error("expected Timestamps to be false when explicitly disabled")
 	}
 }
@@ -135,14 +135,11 @@ func TestRegistryAll(t *testing.T) {
 func TestAppFluentAPI(t *testing.T) {
 	app := NewApp()
 
-	result := app.Entity("articles", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-			{Name: "author", Type: schema.Relation, To: "users"},
-		},
-		CRUD: boolPtr(true),
-		MCP:  true,
+	result := app.Entity("articles", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "body", Type: schema.Text},
+		{Name: "author", Type: schema.Relation, To: "users"},
+	}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(true), MCP: true},
 	})
 
 	// Fluent: Entity returns *App
@@ -161,11 +158,11 @@ func TestAppFluentAPI(t *testing.T) {
 	if len(e.GetFields()) != 6 {
 		t.Errorf("expected 6 fields, got %d", len(e.GetFields()))
 	}
-	if *e.Config.CRUD {
+	if *e.Config.Exposure.CRUD {
 	} else {
 		t.Error("expected CRUD to be true")
 	}
-	if !e.Config.MCP {
+	if !e.Config.Exposure.MCP {
 		t.Error("expected MCP to be true")
 	}
 }

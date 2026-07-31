@@ -3,7 +3,7 @@
 //
 // It exists because the same predicate had been written twice with
 // different coverage — battery/webhook's rejectInternalIP and
-// framework/harness's isInternalIP — and the narrower copy was the one
+// framework/experimental/harness's isInternalIP — and the narrower copy was the one
 // guarding the surface that delivers signed payloads to caller-supplied
 // URLs. A predicate that only half the callers agree on is not a
 // predicate. New SSRF-adjacent surfaces call this rather than growing a

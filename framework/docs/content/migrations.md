@@ -142,6 +142,10 @@ Flags & inputs:
   a `.env` file in the working directory contains `DATABASE_URL=...`.
 - `--driver=<name>` — defaults to `sqlite3`. Postgres or MySQL require
   building a `gofastr` binary that blank-imports the matching driver.
+- `--create-db` (`up` only) — create the target database before applying
+  migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
+  for fresh deploys where the database named in the DSN has not been created
+  yet; a no-op when it already exists.
 - `--not-applied` (`force` only) — remove the version from the tracking
   table (treat as pending) instead of marking it applied.
 - `--group=<name>` — scope `up`/`down`/`status` to one or more groups

@@ -23,8 +23,8 @@ func expectDefinePanic(t *testing.T, wantSubstr string, config EntityConfig) {
 
 func TestCrossOwnerReadRequiresOwnerField(t *testing.T) {
 	expectDefinePanic(t, "CrossOwnerRead", EntityConfig{
-		Fields:         []schema.Field{{Name: "title", Type: schema.String}},
-		CrossOwnerRead: "things:read:all",
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+		Scope:  &ScopeConfig{CrossOwnerRead: "things:read:all"},
 	})
 }
 
@@ -34,11 +34,13 @@ func TestCrossOwnerReadWithOwnerFieldOK(t *testing.T) {
 			{Name: "title", Type: schema.String},
 			{Name: "user_id", Type: schema.String, Hidden: true},
 		},
-		OwnerField:     "user_id",
-		CrossOwnerRead: "tickets:read:all",
+		Scope: &ScopeConfig{
+			OwnerField:     "user_id",
+			CrossOwnerRead: "tickets:read:all",
+		},
 	})
-	if e.Config.CrossOwnerRead != "tickets:read:all" {
-		t.Fatalf("CrossOwnerRead = %q", e.Config.CrossOwnerRead)
+	if e.Config.Scope.CrossOwnerRead != "tickets:read:all" {
+		t.Fatalf("CrossOwnerRead = %q", e.Config.Scope.CrossOwnerRead)
 	}
 }
 

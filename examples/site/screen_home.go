@@ -174,8 +174,10 @@ func main() {
 
 	// CRUD is auto-on when a DB is set (CRUD *bool: nil = auto).
 	app.Entity("posts", framework.EntityConfig{
-		Public: true, // anonymous read AND write; omit it and CRUD requires a session (secure by default)
-		MCP:    true, // emit posts_list/get/create/update/delete MCP tools
+		Exposure: &framework.ExposureConfig{
+			Public: true, // anonymous read AND write; omit it and CRUD requires a session (secure by default)
+			MCP:    true, // emit posts_list/get/create/update/delete MCP tools
+		},
 		Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
 	})
 
@@ -227,11 +229,11 @@ func main() {
 		framework.WithMCP(),
 	)
 
-	// OwnerField scopes rows per user: anonymous → 401, cross-user → 404.
+	// Scope.OwnerField scopes rows per user: anonymous → 401, cross-user → 404.
 	fwApp.Entity("notes", framework.EntityConfig{
-		OwnerField: "user_id",
-		MCP:        true,
-		Fields:     []schema.Field{{Name: "title", Type: schema.String, Required: true}},
+		Scope:    &framework.ScopeConfig{OwnerField: "user_id"},
+		Exposure: &framework.ExposureConfig{MCP: true},
+		Fields:   []schema.Field{{Name: "title", Type: schema.String, Required: true}},
 	})
 
 	// Login + sessions.

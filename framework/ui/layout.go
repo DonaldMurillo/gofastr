@@ -84,12 +84,8 @@ type ClusterConfig struct {
 	// NoWrap opts out of the default responsive wrapping behavior. Use it only
 	// for compact chrome that is guaranteed to fit, such as two icon controls.
 	NoWrap bool
-	// Wrap is retained for source compatibility. Clusters wrap by default,
-	// including when this zero-value field is false; use NoWrap to opt out.
-	// Deprecated: wrapping is now the documented zero-value behavior.
-	Wrap  bool
-	ID    string
-	Class string
+	ID     string
+	Class  string
 }
 
 // Cluster renders children in a horizontal row that wraps onto
@@ -301,7 +297,6 @@ func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
 	}
 	attrs := map[string]string{
 		"class":           cls,
-		"data-fui-sticky": string(edge),
 		"data-fui-z-tier": tier,
 	}
 	if cfg.ID != "" {

@@ -300,10 +300,10 @@ results, _ := sb.Backend().Search(ctx, search.Query{Text: "..."})
 ```
 
 `search.Memory` has no background goroutine, so `Battery` implements
-`framework.Battery` only (no `BatteryLifecycle`).  If a future
-production backend starts a background goroutine, implement `io.Closer`
-on that type and the `Battery` wrapper's `OnStop` will call `Close()`
-automatically.
+`framework.Battery` only — `Name` and `Init` (a no-op); there is no
+`OnStop`. A future backend that starts a background goroutine will need
+an `OnStop` added to this wrapper (it does not exist today): implement
+`io.Closer` on that backend type and call `Close` from the new hook.
 
 ## Common mistakes
 

@@ -32,7 +32,12 @@ func TestUpsert_RefusesSoftDeletedResurrection(t *testing.T) {
 		{Name: "id", Type: schema.String},
 		{Name: "title", Type: schema.String, Required: true},
 		{Name: "body", Type: schema.Text},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true })
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		c.Scope.SoftDelete = true
+	})
 	ch, db := setupSecurityTestHandler(t, cfg,
 		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, body TEXT, deleted_at TEXT)`)
 	seedRows(t, db, "posts", []map[string]any{
@@ -167,14 +172,12 @@ func TestUpsert_CannotHijackOtherOwnersRow(t *testing.T) {
 // TestUpsert_CannotHijackOtherTenantsRow is the tenant analogue: a caller
 // in tenant B must not take over a row stamped tenant A by colliding PK.
 func TestUpsert_CannotHijackOtherTenantsRow(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Table: "posts",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Table: "posts",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.String},
 			{Name: "tenant_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
-		},
-		MultiTenant: true,
+		}, Scope: &entity.ScopeConfig{MultiTenant: true},
 	}.WithTimestamps(false), `CREATE TABLE posts (id TEXT PRIMARY KEY, tenant_id TEXT, title TEXT)`)
 	seedRows(t, db, "posts", []map[string]any{
 		{"id": "post-1", "tenant_id": "tenant-a", "title": "a secret"},
@@ -237,14 +240,12 @@ func TestUpsert_RejectsDangerousMediaURL(t *testing.T) {
 }
 
 func TestUpsert_MissingTenantContextRejected(t *testing.T) {
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Table: "posts",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Table: "posts",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.String},
 			{Name: "tenant_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
-		},
-		MultiTenant: true,
+		}, Scope: &entity.ScopeConfig{MultiTenant: true},
 	}.WithTimestamps(false), `CREATE TABLE posts (id TEXT PRIMARY KEY, tenant_id TEXT, title TEXT)`)
 
 	if _, err := ch.UpsertOne(context.Background(), map[string]any{
@@ -256,14 +257,12 @@ func TestUpsert_MissingTenantContextRejected(t *testing.T) {
 }
 
 func TestUpsert_BodyTenantFieldWithoutContextRejected(t *testing.T) {
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Table: "posts",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Table: "posts",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.String},
 			{Name: "tenant_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
-		},
-		MultiTenant: true,
+		}, Scope: &entity.ScopeConfig{MultiTenant: true},
 	}.WithTimestamps(false), `CREATE TABLE posts (id TEXT PRIMARY KEY, tenant_id TEXT, title TEXT)`)
 
 	if _, err := ch.UpsertOne(context.Background(), map[string]any{

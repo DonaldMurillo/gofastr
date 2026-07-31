@@ -44,9 +44,7 @@ Hand the result to `framework.WithFileStorage` — `Image` / `File`
 entity fields then upload through it for free, and the S3 swap is
 a constructor change.
 
-**Declarative wiring:** `storage.Register(StorageType, factory)` +
-`storage.New(t, configMap)` lets host apps select a backend from a
-config file at boot.
+**Direct construction:** backends have no registry — call `storage.NewLocalStorage(dir)`, `storage.NewMemoryStorage()`, or `storage.NewS3Storage(bucket, region)` directly and hand the result to `framework.WithFileStorage`. Swapping backends is a constructor change.
 
 **Content checksums:** `storage.SaveWithChecksum(ctx, s, key, r)` writes
 through any `Storage` while teeing a SHA-256 hasher, returning

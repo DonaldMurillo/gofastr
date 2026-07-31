@@ -4,6 +4,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -63,7 +64,7 @@ func Link(cfg LinkConfig) render.HTML {
 	// Drop unsafe href (javascript:, data:, control bytes, …) and
 	// scrub event-handler attributes out of ExtraAttrs. See
 	// framework/ui/safety.go for the allow-list.
-	href := safeURL(cfg.Href)
+	href := urlsafe.CleanAnchor(cfg.Href)
 	if href == "" {
 		href = "#"
 	}

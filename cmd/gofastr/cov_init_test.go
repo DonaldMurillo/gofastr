@@ -12,7 +12,7 @@ func TestRunInitFullProject(t *testing.T) {
 	covT_chdir(t, dir)
 	covT_capStdout(t, func() { runInit([]string{"myapp"}) })
 	for _, rel := range []string{
-		"myapp/main.go", "myapp/screens/home.go", "myapp/DESIGN.md",
+		"myapp/main.go", "myapp/screens.go", "myapp/DESIGN.md",
 		"myapp/entities/entities.go", "myapp/.env", "myapp/.gitignore",
 		"myapp/AGENTS.md", "myapp/CLAUDE.md", "myapp/go.mod",
 	} {

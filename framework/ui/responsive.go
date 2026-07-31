@@ -22,7 +22,7 @@ package ui
 //	    desktopSidebar,   // shown when viewport >= 1024
 //	    mobilePicker)     // shown when viewport < 1024
 //
-// The primitive wraps each variant in `<div data-fui-viewport="…">`
+// The primitive wraps each variant in a `<div class="ui-responsive__…">`
 // and registers a stylesheet that toggles their display: above the
 // breakpoint the desktop variant shows, below it the mobile variant.
 
@@ -63,12 +63,10 @@ func Responsive(cfg ResponsiveConfig, desktop, mobile render.HTML) render.HTML {
 	}
 	return style.WrapHTML(html.Div(html.DivConfig{Class: cls},
 		html.Div(html.DivConfig{
-			Class:      "ui-responsive__desktop",
-			ExtraAttrs: html.Attrs{"data-fui-viewport": "desktop"},
+			Class: "ui-responsive__desktop",
 		}, desktop),
 		html.Div(html.DivConfig{
-			Class:      "ui-responsive__mobile",
-			ExtraAttrs: html.Attrs{"data-fui-viewport": "mobile"},
+			Class: "ui-responsive__mobile",
 		}, mobile),
 	))
 }

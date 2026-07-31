@@ -499,7 +499,7 @@ func (s *themeEditServer) checkBearer(w http.ResponseWriter, r *http.Request) bo
 	got := r.Header.Get("Authorization")
 	want := "Bearer " + s.token
 	// Constant-time, like every other secret comparison in the repo
-	// (core/middleware/csrf.go, framework/harness/control/auth). Loopback
+	// (core/middleware/csrf.go, framework/experimental/harness/control/auth). Loopback
 	// makes the timing channel unattractive rather than absent, and matching
 	// the house rule costs nothing.
 	if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {

@@ -70,17 +70,23 @@ func TestListFiltersEmit(t *testing.T) {
 	byName := filesByName(files)
 
 	// The screen wires the facets with resolved type + enum values so the
-	// engine needs no schema at render time.
-	assertContains(t, allScreenContent(files),
-		`.WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "published"}}, ResFilter{Key: "author_id", Label: "Author", Type: "relation"}, ResFilter{Key: "featured", Label: "Featured", Type: "bool"})`)
+	// framework engine needs no schema at render time.
+	screens := allScreenContent(files)
+	assertContains(t, screens,
+		`.WithFilters(resource.Filter{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "published"}}, resource.Filter{Key: "author_id", Label: "Author", Type: "relation"}, resource.Filter{Key: "featured", Label: "Featured", Type: "bool"})`)
+	assertContains(t, screens, `resource.Config{`)
+	assertContains(t, screens, `Entity: "posts"`)
 
-	// The owned resource engine carries the facet-filter machinery.
+	// The owned file keeps only the per-app registry and hooks. Rendering,
+	// filtering, and formatting live in framework/ui/resource.
 	res := byName["resource.go"]
-	assertContains(t, res, `func (c ResourceConfig) WithFilters(fs ...ResFilter) ResourceConfig`)
-	assertContains(t, res, `func (c ResourceConfig) filterToolbar(`)
-	assertContains(t, res, `ui.FilterToolbar(cfg)`)
-	assertContains(t, res, `filter.ParsedFilter{Field: ff.Key, Op: filter.OpEq, Value: v}`)
-	assertContains(t, res, `type ResFilter struct`)
+	assertContains(t, res, `"github.com/DonaldMurillo/gofastr/framework/ui/resource"`)
+	assertContains(t, res, `var appResources = resource.Registry{}`)
+	for _, copiedEngineSymbol := range []string{`func (c ResourceConfig)`, `filterToolbar`, `resFormat`, `groupCounts`} {
+		if strings.Contains(res, copiedEngineSymbol) {
+			t.Errorf("resource.go still contains engine symbol %q:\n%s", copiedEngineSymbol, res)
+		}
+	}
 }
 
 func TestListFiltersRejectBadColumn(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
 type CategoriesScreen struct{ component.ContextOnly }
@@ -25,10 +26,10 @@ func (s *CategoriesScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountCategoriesScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	appResources["categories"] = ResourceConfig{
-		Title: "Categories", Singular: "Category", BasePath: "/categories", APIPath: "/api/categories",
+	appResources["categories"] = resource.Config{
+		Entity: "categories", Title: "Categories", Singular: "Category", BasePath: "/categories", APIPath: "/api/categories",
 		Crud: fwApp.MustCrudHandler("categories"),
-		Fields: []ResField{
+		Fields: []resource.Field{
 			{Key: "name", Label: "Name", Type: "string"},
 			{Key: "slug", Label: "Slug", Type: "string"},
 			{Key: "description", Label: "Description", Type: "text"},
@@ -36,17 +37,17 @@ func mountCategoriesScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 			{Key: "sort_order", Label: "Sort Order", Type: "int"},
 			{Key: "active", Label: "Active", Type: "bool"},
 		},
-		Related: []RelatedList{
+		Related: []resource.RelatedList{
 			{
 				Title: "Products", ForeignKey: "category_id", BasePath: "/products",
 				Crud: fwApp.MustCrudHandler("products"),
-				Fields: []ResField{
+				Fields: []resource.Field{
 					{Key: "name", Label: "Name", Type: "string"},
 					{Key: "slug", Label: "Slug", Type: "string"},
 					{Key: "sku", Label: "SKU", Type: "string"},
 					{Key: "description", Label: "Description", Type: "text"},
 				},
-				Relations: map[string]RelSource{
+				Relations: map[string]resource.Relation{
 					"category_id": {Crud: fwApp.MustCrudHandler("categories"), Display: "name"},
 				},
 			},

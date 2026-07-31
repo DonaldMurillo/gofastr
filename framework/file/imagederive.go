@@ -9,6 +9,12 @@ import (
 
 // DerivedVariant is one stored rendition of an uploaded image — a single
 // width/format pair produced alongside the original.
+//
+// The JSON tags here are snake_case on purpose: this struct is persisted
+// verbatim into the entity's `<field>_variants` schema.JSON column, so the
+// tags are a stored database format following the snake_case column
+// convention — not an API response shape. Renaming them would orphan every
+// existing row's variants.
 type DerivedVariant struct {
 	// StorageRef is the storage backend key the rendition was saved under.
 	// It doubles as the URL path, matching FileField.URL/StorageRef.

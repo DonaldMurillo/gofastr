@@ -183,11 +183,11 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// entity except a Public one, so generated SDKs and agents don't
 		// assume a plain entity (no owner_field/access declared) is
 		// reachable anonymously — it isn't, unless Public: true says so.
-		rbacGated := ent.Config.Access.Read != "" ||
-			ent.Config.Access.Create != "" ||
-			ent.Config.Access.Update != "" ||
-			ent.Config.Access.Delete != ""
-		gated := !ent.Config.Public || ent.Config.OwnerField != "" || ent.Config.MultiTenant || rbacGated
+		rbacGated := ent.Config.Exposure.Access.Read != "" ||
+			ent.Config.Exposure.Access.Create != "" ||
+			ent.Config.Exposure.Access.Update != "" ||
+			ent.Config.Exposure.Access.Delete != ""
+		gated := !ent.Config.Exposure.Public || ent.Config.Scope.OwnerField != "" || ent.Config.Scope.MultiTenant || rbacGated
 		if gated {
 			anyGated = true
 		}
@@ -229,7 +229,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		listOp.AddParameter("fields", "query", fieldsDesc, false, fieldsSchema)
 		// ?trashed=true retrieves soft-deleted rows (authenticated callers
 		// only). Only meaningful when the entity opts into soft-delete.
-		if ent.Config.SoftDelete {
+		if ent.Config.Scope.SoftDelete {
 			listOp.AddParameter("trashed", "query", "Include soft-deleted rows (requires authentication).", false, map[string]any{"type": "boolean", "default": false})
 		}
 

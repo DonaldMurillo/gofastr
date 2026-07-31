@@ -52,10 +52,10 @@ func (m *mapRegistry) Get(name string) (*entity.Entity, error) {
 func TestVerifyAuthEntitiesPrivate_FlagsDangerousConfig(t *testing.T) {
 	reg := newMapRegistry()
 	crudOn := true
-	ent := entity.Define("users", entity.EntityConfig{
-		Fields: UserEntityFields(),
-		CRUD:   &crudOn, // dangerous-old-pattern
-		MCP:    true,
+	ent := entity.Define("users", entity.EntityConfig{Pagination: &entity.PaginationConfig{
+
+			// dangerous-old-pattern
+	}, Fields: UserEntityFields(), Exposure: &entity.ExposureConfig{CRUD: &crudOn, MCP: true},
 	})
 	_ = reg.Register(ent)
 

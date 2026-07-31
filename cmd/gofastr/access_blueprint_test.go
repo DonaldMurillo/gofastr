@@ -53,7 +53,7 @@ func TestBlueprintDecodesAccess(t *testing.T) {
 		Update: "posts:write",
 		Delete: "posts:admin",
 	}
-	got := bp.Entities[0].Access
+	got := bp.Entities[0].Exposure.Access
 	if got == nil || *got != *want {
 		t.Fatalf("Access = %#v, want %#v", got, want)
 	}
@@ -81,15 +81,12 @@ entities:
 
 func TestRegisterEmitsAccessLiteral(t *testing.T) {
 	files, err := renderGeneratedProject([]framework.EntityDeclaration{
-		{
-			Name: "posts",
-			Access: &entity.AccessDeclaration{
-				Read:   "posts:read",
-				Delete: "posts:admin",
-			},
-			Fields: []framework.FieldDeclaration{
-				{Name: "title", Type: "string"},
-			},
+		{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "posts", Exposure: &framework.ExposureDeclaration{Access: &entity.AccessDeclaration{
+			Read:   "posts:read",
+			Delete: "posts:admin",
+		}}, Fields: []framework.FieldDeclaration{
+			{Name: "title", Type: "string"},
+		},
 		},
 	})
 	if err != nil {

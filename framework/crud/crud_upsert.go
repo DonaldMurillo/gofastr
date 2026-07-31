@@ -52,7 +52,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	// Refuse upserts on multi-tenant entities when no tenant id is in
 	// the context. Mirrors the InjectTenant guard in doCreate so the
 	// upsert path can't write an orphan tenant row by omission.
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		if tenant.GetTenantID(ctx) == "" {
 			return nil, &tenantMissingError{}
 		}
@@ -60,10 +60,10 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	// Strip caller-supplied owner_id / tenant_id from the body BEFORE
 	// the tx so a body field can never override what the context says.
 	// The framework stamps both from context-derived values below.
-	if of := ch.Entity.Config.OwnerField; of != "" {
+	if of := ch.Entity.Config.Scope.OwnerField; of != "" {
 		delete(body, of)
 	}
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		delete(body, ch.Entity.Config.TenantColumn())
 	}
 
@@ -127,8 +127,8 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				vals = append(vals, body[f.Name])
 				continue
 			}
-			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.OwnerField {
-				isTenantCol := ch.Entity.Config.MultiTenant && f.Name == ch.Entity.Config.TenantColumn()
+			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
+				isTenantCol := ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn()
 				if isTenantCol || !serverWrites(ctx) {
 					continue
 				}
@@ -144,7 +144,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			cols = append(cols, f.Name)
 			vals = append(vals, val)
 		}
-		if ch.Entity.Config.MultiTenant {
+		if ch.Entity.Config.Scope.MultiTenant {
 			if tid := tenant.GetTenantID(ctx); tid != "" {
 				cols = append(cols, ch.Entity.Config.TenantColumn())
 				vals = append(vals, tid)
@@ -245,9 +245,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 // tenant, or is soft-deleted. Runs inside the upsert tx, before INSERT ...
 // ON CONFLICT. A pure-insert (no existing row) is always allowed.
 func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any) error {
-	ownerField := ch.Entity.Config.OwnerField
-	checkSoftDelete := ch.Entity.Config.SoftDelete
-	checkTenant := ch.Entity.Config.MultiTenant
+	ownerField := ch.Entity.Config.Scope.OwnerField
+	checkSoftDelete := ch.Entity.Config.Scope.SoftDelete
+	checkTenant := ch.Entity.Config.Scope.MultiTenant
 	if ownerField == "" && !checkSoftDelete && !checkTenant {
 		return nil
 	}

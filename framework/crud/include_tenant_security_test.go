@@ -39,7 +39,11 @@ CREATE TABLE comments (
 			{Name: "title", Type: schema.String},
 		},
 		func(c *entity.EntityConfig) {
-			c.MultiTenant = true
+			if c.Scope == nil {
+				c.Scope = &entity.ScopeConfig{}
+			}
+			c.Scope.
+				MultiTenant = true
 			c.Relations = []entity.Relation{
 				entity.HasMany("comments", "comments", "post_id"),
 			}
@@ -51,7 +55,11 @@ CREATE TABLE comments (
 			{Name: "body", Type: schema.String},
 		},
 		func(c *entity.EntityConfig) {
-			c.MultiTenant = true
+			if c.Scope == nil {
+				c.Scope = &entity.ScopeConfig{}
+			}
+			c.Scope.
+				MultiTenant = true
 		},
 	)
 
@@ -123,7 +131,11 @@ CREATE TABLE comments (
 			{Name: "body", Type: schema.String},
 		},
 		func(c *entity.EntityConfig) {
-			c.MultiTenant = true
+			if c.Scope == nil {
+				c.Scope = &entity.ScopeConfig{}
+			}
+			c.Scope.
+				MultiTenant = true
 		},
 	)
 

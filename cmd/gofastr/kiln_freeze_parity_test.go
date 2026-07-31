@@ -75,7 +75,7 @@ func TestKilnFreezeBlueprintParsesAndValidates(t *testing.T) {
 			t.Fatalf("frozen layout did not reach current generator %q:\n%s", want, screens)
 		}
 	}
-	if len(bp.Entities) != 1 || bp.Entities[0].OwnerField != "user_id" || len(bp.Entities[0].CursorFields) != 2 {
+	if len(bp.Entities) != 1 || bp.Entities[0].Scope.OwnerField != "user_id" || len(bp.Entities[0].Pagination.CursorFields) != 2 {
 		t.Fatalf("entity surface drifted during freeze: %+v", bp.Entities)
 	}
 	if len(bp.Screens) != 1 || bp.Screens[0].Layout != "app" || !bp.Screens[0].Access.Auth {

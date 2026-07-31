@@ -5,6 +5,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -177,7 +178,7 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
 		// protocol-relative //host, and control bytes (see safety.go);
 		// a rejected href degrades to "#" like ui.Card / ui.Link.
-		href := safeURL(it.Href)
+		href := urlsafe.CleanAnchor(it.Href)
 		if href == "" {
 			href = "#"
 		}

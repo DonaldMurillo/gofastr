@@ -304,7 +304,7 @@ func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleG
 	// permission is host-trusted config; if the re-attached caller holds it,
 	// the re-dispatch would lift owner scoping — so the broker refuses to
 	// broker the call at all. This is the load-bearing carve-out.
-	if cor := ent.Config.CrossOwnerRead; cor != "" && entry != nil && entry.policy != nil {
+	if cor := ent.Config.Scope.CrossOwnerRead; cor != "" && entry != nil && entry.policy != nil {
 		checkCtx := access.WithPolicy(access.WithRoles(ctx, entry.roles), entry.policy)
 		if access.Can(checkCtx, access.Permission(cor)) {
 			return nil, nil, brokerDeny("CrossOwnerRead is not brokerable through a module")

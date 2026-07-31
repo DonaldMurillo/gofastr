@@ -60,10 +60,7 @@ func r5Do(t *testing.T, app *App, method, path, body string) (int, string) {
 func TestWriteResponseHookDoesNotReachEventRecord(t *testing.T) {
 	db := r5DB(t, `CREATE TABLE r5_rows (id TEXT PRIMARY KEY, name TEXT);`)
 	app := NewApp(WithDB(db))
-	app.Entity("r5_rows", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "name", Type: schema.String}},
-	}.WithTimestamps(false))
+	app.Entity("r5_rows", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "name", Type: schema.String}}}.WithTimestamps(false))
 
 	reg := app.HookRegistry("r5_rows")
 	// Attach a nested object on write, the way a computed sub-document lands.
@@ -138,10 +135,7 @@ func TestReadHookCannotRecurseViaPayloadRequest(t *testing.T) {
 		INSERT INTO r5_items (id, name) VALUES ('i1','one');
 	`)
 	app := NewApp(WithDB(db))
-	app.Entity("r5_items", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "name", Type: schema.String}},
-	}.WithTimestamps(false))
+	app.Entity("r5_items", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "name", Type: schema.String}}}.WithTimestamps(false))
 
 	ch, err := app.CrudHandler("r5_items")
 	if err != nil {
@@ -190,17 +184,13 @@ func TestIncludeToleratesReorderingChildHook(t *testing.T) {
 			('k1','p1','aaa','S1'),('k2','p1','bbb','S2'),('k3','p1','ccc','S3');
 	`)
 	app := NewApp(WithDB(db))
-	app.Entity("r5_kids", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "parent_id", Type: schema.String},
-			{Name: "name", Type: schema.String},
-			{Name: "secret", Type: schema.String, NoQuery: true},
-		},
+	app.Entity("r5_kids", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "parent_id", Type: schema.String},
+		{Name: "name", Type: schema.String},
+		{Name: "secret", Type: schema.String, NoQuery: true},
+	},
 	}.WithTimestamps(false))
-	app.Entity("r5_parents", entity.EntityConfig{
-		Public:    true,
-		Fields:    []schema.Field{},
+	app.Entity("r5_parents", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{},
 		Relations: []entity.Relation{entity.HasMany("kids", "r5_kids", "parent_id")},
 	}.WithTimestamps(false))
 
@@ -252,13 +242,8 @@ func TestIncludeAppliesChildAfterGetOnToOne(t *testing.T) {
 		INSERT INTO r5_things (id, owner_id) VALUES ('t1','o1');
 	`)
 	app := NewApp(WithDB(db))
-	app.Entity("r5_owners", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "pin", Type: schema.String, NoQuery: true}},
-	}.WithTimestamps(false))
-	app.Entity("r5_things", entity.EntityConfig{
-		Public:    true,
-		Fields:    []schema.Field{{Name: "owner_id", Type: schema.String}},
+	app.Entity("r5_owners", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "pin", Type: schema.String, NoQuery: true}}}.WithTimestamps(false))
+	app.Entity("r5_things", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "owner_id", Type: schema.String}},
 		Relations: []entity.Relation{entity.BelongsTo("owner", "r5_owners", "owner_id")},
 	}.WithTimestamps(false))
 
@@ -293,10 +278,7 @@ func TestCursorStillRefusesUnsortableColumn(t *testing.T) {
 		INSERT INTO r5_cards (id, number) VALUES ('c1','4111111111111111');
 	`)
 	app := NewApp(WithDB(db))
-	app.Entity("r5_cards", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "number", Type: schema.String, NoQuery: true}},
-	}.WithTimestamps(false))
+	app.Entity("r5_cards", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "number", Type: schema.String, NoQuery: true}}}.WithTimestamps(false))
 
 	if code, _ := r5Do(t, app, http.MethodGet, "/r5_cards?sort=number", ""); code != http.StatusBadRequest {
 		t.Fatalf("precondition: ?sort=<NoQuery> should be 400, got %d", code)
@@ -315,10 +297,7 @@ func TestCursorStillRefusesUnsortableColumn(t *testing.T) {
 func TestWriteHookErrorDegradesToIDNotFiveHundred(t *testing.T) {
 	db := r5DB(t, `CREATE TABLE r5_writes (id TEXT PRIMARY KEY, secret TEXT);`)
 	app := NewApp(WithDB(db))
-	app.Entity("r5_writes", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "secret", Type: schema.String}},
-	}.WithTimestamps(false))
+	app.Entity("r5_writes", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "secret", Type: schema.String}}}.WithTimestamps(false))
 
 	app.HookRegistry("r5_writes").RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
 		return errors.New("redactor unavailable")
@@ -370,17 +349,13 @@ func TestIncludeSurvivesProjectingAndSortingChildHook(t *testing.T) {
 			('n1','p1','one','S1'),('n2','p1','two','S2'),('n3','p2','three','S3');
 	`)
 	app := NewApp(WithDB(db))
-	app.Entity("r5p_notes", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "post_id", Type: schema.String},
-			{Name: "body", Type: schema.String},
-			{Name: "secret", Type: schema.String, NoQuery: true},
-		},
+	app.Entity("r5p_notes", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "post_id", Type: schema.String},
+		{Name: "body", Type: schema.String},
+		{Name: "secret", Type: schema.String, NoQuery: true},
+	},
 	}.WithTimestamps(false))
-	app.Entity("r5p_posts", entity.EntityConfig{
-		Public:    true,
-		Fields:    []schema.Field{},
+	app.Entity("r5p_posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{},
 		Relations: []entity.Relation{entity.HasMany("notes", "r5p_notes", "post_id")},
 	}.WithTimestamps(false))
 
@@ -467,16 +442,12 @@ func TestIncludeHandlesSharedManyToManyChild(t *testing.T) {
 		INSERT INTO r7_post_tags (post_id, tag_id) VALUES ('p1','t1'),('p1','t2'),('p2','t1');
 	`)
 	app := NewApp(WithDB(db))
-	app.Entity("r7_tags", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "label", Type: schema.String},
-			{Name: "secret", Type: schema.String, NoQuery: true},
-		},
+	app.Entity("r7_tags", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "label", Type: schema.String},
+		{Name: "secret", Type: schema.String, NoQuery: true},
+	},
 	}.WithTimestamps(false))
-	app.Entity("r7_posts", entity.EntityConfig{
-		Public:    true,
-		Fields:    []schema.Field{},
+	app.Entity("r7_posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{},
 		Relations: []entity.Relation{entity.ManyToMany("tags", "r7_tags", "r7_post_tags", "post_id", "tag_id")},
 	}.WithTimestamps(false))
 

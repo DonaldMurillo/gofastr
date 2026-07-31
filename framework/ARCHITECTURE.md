@@ -267,7 +267,11 @@ Out-of-contract (NOT part of the layering rules below):
   testkit/, testdata/        Public test helpers + fixtures for host apps.
   factory/                   Rails-style fixture/factory helpers (tests).
   isolation/                 Per-worktree local runtime resource resolution.
-  harness/                   The GoFastr agent harness.
+  experimental/harness      The GoFastr agent harness — a v0.1 experimental
+                            subsystem (lives here so the /experimental/ stability
+                            exemption applies). Not imported by the framework
+                            root; enforced by harness/layering_test.go. Much of
+                            its architecture doc is design intent, not shipped.
 ```
 
 The root package `framework/` itself contains:

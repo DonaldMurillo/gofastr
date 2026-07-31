@@ -36,11 +36,8 @@ func cliFixtureDecls() []framework.EntityDeclaration {
 				{Name: "meta", Type: "json"},
 			},
 		},
-		{
-			Name:         "documents",
-			Table:        "documents",
-			SoftDelete:   true,
-			SearchFields: []string{"title", "body"},
+		{Pagination: &framework.PaginationDeclaration{}, Exposure: &framework.ExposureDeclaration{}, Name: "documents",
+			Table: "documents", Scope: &framework.ScopeDeclaration{SoftDelete: true}, SearchFields: []string{"title", "body"},
 			Fields: []framework.FieldDeclaration{
 				{Name: "title", Type: "string", Required: true},
 				{Name: "body", Type: "text"},

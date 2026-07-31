@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -254,7 +255,7 @@ func renderBellRow(it NotificationItem) render.HTML {
 		// Items are data-driven (live notification feeds) — drop unsafe
 		// href schemes per the framework/ui/safety.go allow-list and
 		// degrade to an inert "#" rather than a live javascript: link.
-		href := safeURL(it.Href)
+		href := urlsafe.CleanAnchor(it.Href)
 		if href == "" {
 			href = "#"
 		}

@@ -117,11 +117,11 @@ func TestSoftDeleteWithTrashed(t *testing.T) {
 
 func TestSoftDeleteWithSoftDeleteConfig(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{})
-	if ent.Config.SoftDelete {
+	if ent.Config.Scope.SoftDelete {
 		t.Error("expected SoftDelete=false by default")
 	}
 	softdelete.WithSoftDelete(ent)
-	if !ent.Config.SoftDelete {
+	if !ent.Config.Scope.SoftDelete {
 		t.Error("expected SoftDelete=true after WithSoftDelete")
 	}
 }
@@ -248,11 +248,11 @@ func TestTenantDefaultConfig(t *testing.T) {
 
 func TestTenantWithMultiTenant(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{})
-	if ent.Config.MultiTenant {
+	if ent.Config.Scope.MultiTenant {
 		t.Error("expected MultiTenant=false by default")
 	}
 	tenant.WithMultiTenant(ent, tenant.TenantConfig{Field: "org_id", Header: "X-Org-ID"})
-	if !ent.Config.MultiTenant {
+	if !ent.Config.Scope.MultiTenant {
 		t.Error("expected MultiTenant=true after WithMultiTenant")
 	}
 }

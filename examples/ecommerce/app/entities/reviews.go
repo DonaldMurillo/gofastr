@@ -279,8 +279,10 @@ func registerReviews(app *framework.App) {
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: "product_id"},
 		},
-		CRUD: boolPtr(true),
-		MCP:  true,
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
 		Indices: []framework.Index{
 			{Name: "idx_reviews_product", Columns: []string{"product_id"}},
 		},

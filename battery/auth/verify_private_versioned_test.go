@@ -33,13 +33,13 @@ import (
 func TestAuditSeesEveryVersion(t *testing.T) {
 	crudOn := true
 	mkUsers := func(version string) *entity.Entity {
-		e := entity.Define("zzr2_users", entity.EntityConfig{
-			Table: "zzr2_users",
+		e := entity.Define("zzr2_users", entity.EntityConfig{Table: "zzr2_users",
 			Fields: []schema.Field{
 				{Name: "email", Type: schema.String},
 				{Name: "password_hash", Type: schema.String},
-			},
-			CRUD: &crudOn, // explicitly exposed — exactly what the audit must catch
+			}, Exposure: &entity.ExposureConfig{
+				// explicitly exposed — exactly what the audit must catch
+				CRUD: &crudOn},
 		}.WithTimestamps(false))
 		e.Version = version
 		return e

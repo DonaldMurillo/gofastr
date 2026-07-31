@@ -168,12 +168,9 @@ func TestUpsert_InjectsTenantID(t *testing.T) {
 			t.Fatalf("create: %v", err)
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", entity.EntityConfig{
-			Table:       "posts",
-			MultiTenant: true,
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-			},
+		app.Entity("posts", entity.EntityConfig{Table: "posts", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+		},
 		}.WithTimestamps(false))
 		ent, _ := app.Registry.Get("posts")
 		ch := crud.NewCrudHandler(ent, db)

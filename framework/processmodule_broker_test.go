@@ -82,10 +82,13 @@ func brokerSeedRow(t *testing.T, db *sql.DB, table, id, ownerID, subject string)
 }
 
 func brokerEntity(name, table string, configure func(*entity.EntityConfig)) *entity.Entity {
-	cfg := entity.EntityConfig{
-		Table:      table,
-		Fields:     []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "subject", Type: schema.String}},
-		OwnerField: "user_id",
+	cfg := entity.EntityConfig{Table: table,
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "subject", Type: schema.String}},
+		// All three groups materialized so configure callbacks can write
+		// through them before Define normalizes.
+		Scope:      &entity.ScopeConfig{OwnerField: "user_id"},
+		Pagination: &entity.PaginationConfig{},
+		Exposure:   &entity.ExposureConfig{},
 	}
 	if configure != nil {
 		configure(&cfg)
@@ -251,7 +254,11 @@ func TestBrokerIgnoresChildCapability(t *testing.T) {
 // the router is never reached.
 func TestBrokerStripsCrossOwnerRead(t *testing.T) {
 	reg := brokerRegistry(brokerEntity("tix", "tix", func(c *entity.EntityConfig) {
-		c.CrossOwnerRead = "tix:read:all"
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		c.Scope.
+			CrossOwnerRead = "tix:read:all"
 	}))
 	policy := access.NewRolePolicy()
 	if err := policy.Grant("staff", "tix:read", "tix:read:all"); err != nil {
@@ -376,7 +383,7 @@ func TestBrokerCallerAuthorityDenies(t *testing.T) {
 		t.Fatal(err) // notably NOT logs:read
 	}
 	b, _ := newCrudBrokerEnv(t, "logs", "logs", func(c *entity.EntityConfig) {
-		c.Access.Read = "logs:read"
+		c.Exposure.Access.Read = "logs:read"
 	}, policy, func(string) []string { return []string{"member"} })
 	handle, release := brokerMint(t, b, policy, "alice", []string{"member"})
 	defer release()
@@ -415,7 +422,7 @@ func TestBrokerDelegatedReadSucceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := newCrudBrokerEnv(t, "logs", "logs", func(c *entity.EntityConfig) {
-		c.Access.Read = "logs:read"
+		c.Exposure.Access.Read = "logs:read"
 	}, policy, func(string) []string { return []string{"owner"} })
 	logsEnt, err := b.entities.Get("logs")
 	if err != nil {

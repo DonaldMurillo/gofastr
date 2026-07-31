@@ -39,7 +39,12 @@ CREATE TABLE comments (
 			{Name: "post_id", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.String},
 		},
-		func(c *entity.EntityConfig) { c.SoftDelete = true },
+		func(c *entity.EntityConfig) {
+			if c.Scope == nil {
+				c.Scope = &entity.ScopeConfig{}
+			}
+			c.Scope.SoftDelete = true
+		},
 	)
 
 	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
@@ -78,7 +83,12 @@ func TestSoftDelete_UnauthenticatedTrashedListRejected(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("tasks", "tasks", "user_id", []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true }),
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		c.Scope.SoftDelete = true
+	}),
 		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, deleted_at TEXT)`)
 
 	seedRows(t, db, "tasks", []map[string]any{
@@ -106,7 +116,12 @@ func TestSoftDelete_CrossUserTrashedAccessRejected(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("tasks", "tasks", "user_id", []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true }),
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		c.Scope.SoftDelete = true
+	}),
 		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, deleted_at TEXT)`)
 
 	seedRows(t, db, "tasks", []map[string]any{
@@ -133,7 +148,12 @@ func TestSoftDelete_ForceDeleteScopedToOwner(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("tasks", "tasks", "user_id", []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true }),
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		c.Scope.SoftDelete = true
+	}),
 		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, deleted_at TEXT)`)
 
 	seedRows(t, db, "tasks", []map[string]any{

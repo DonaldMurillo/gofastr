@@ -26,10 +26,8 @@ func TestTenantField_InvalidPanicsAtDefine(t *testing.T) {
 			t.Fatalf("panic should name TenantField, got: %v", r)
 		}
 	}()
-	entity.Define("bad", entity.EntityConfig{
-		MultiTenant: true,
-		TenantField: "org id", // space → invalid identifier
-		Fields:      []schema.Field{{Name: "x", Type: schema.String}},
+	entity.Define("bad", entity.EntityConfig{Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "org id"}, Pagination: // space → invalid identifier
+	&entity.PaginationConfig{}, Fields:                                                                                        []schema.Field{{Name: "x", Type: schema.String}},
 	})
 }
 
@@ -41,7 +39,7 @@ func TestWithMultiTenant_HonorsConfigField(t *testing.T) {
 		Fields: []schema.Field{{Name: "name", Type: schema.String}},
 	}.WithTimestamps(false))
 	tenant.WithMultiTenant(ent, tenant.TenantConfig{Field: "org_id"})
-	if !ent.Config.MultiTenant || ent.Config.TenantField != "org_id" {
+	if !ent.Config.Scope.MultiTenant || ent.Config.Scope.TenantField != "org_id" {
 		t.Fatalf("WithMultiTenant should set MultiTenant + TenantField, got %+v", ent.Config)
 	}
 	if ent.Config.TenantColumn() != "org_id" {
@@ -54,11 +52,8 @@ func TestWithMultiTenant_HonorsConfigField(t *testing.T) {
 // creates it, CRUD writes it, and CRUD reads are scoped by it.
 func TestTenantField_CustomColumnEndToEnd(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		ent := entity.Define("docs", entity.EntityConfig{
-			Table:       "docs",
-			MultiTenant: true,
-			TenantField: "org_id", // not the default "tenant_id"
-			Fields:      []schema.Field{{Name: "title", Type: schema.String}},
+		ent := entity.Define("docs", entity.EntityConfig{Table: "docs", Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "org_id"}, // not the default "tenant_id"
+			Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		}.WithTimestamps(false))
 
 		// Define injected the custom column, not "tenant_id".

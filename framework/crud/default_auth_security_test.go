@@ -108,10 +108,7 @@ func TestPublicEntityOpensReadAndWrite(t *testing.T) {
 	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	ent := entity.Define("posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		Public: true,
-	}.WithTimestamps(false))
+	ent := entity.Define("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{Public: true}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 
@@ -179,10 +176,8 @@ func TestSSEStricterThanBlankReadAccess(t *testing.T) {
 	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	ent := entity.Define("sse_posts", entity.EntityConfig{
-		Table:  "posts",
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		Access: entity.AccessControl{Create: "posts:create"}, // Read stays blank: public static reads
+	ent := entity.Define("sse_posts", entity.EntityConfig{Table: "posts",
+		Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Create: "posts:create"}}, // Read stays blank: public static reads
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)

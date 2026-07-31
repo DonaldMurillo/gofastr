@@ -17,13 +17,11 @@ func setupOwnerCreateInProcHandler(t *testing.T) *CrudHandler {
 		user_id TEXT,
 		title TEXT
 	)`)
-	ent := entity.Define("notes", entity.EntityConfig{
-		Table: "notes",
+	ent := entity.Define("notes", entity.EntityConfig{Table: "notes",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	return NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -36,13 +34,11 @@ func setupTenantInProcHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 		tenant_id TEXT,
 		title TEXT
 	)`)
-	ent := entity.Define("docs", entity.EntityConfig{
-		Table: "docs",
+	ent := entity.Define("docs", entity.EntityConfig{Table: "docs",
 		Fields: []schema.Field{
 			{Name: "tenant_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
-		},
-		MultiTenant: true,
+		}, Scope: &entity.ScopeConfig{MultiTenant: true},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -120,13 +116,11 @@ func setupOwnerReadInProcHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 		user_id TEXT,
 		title TEXT
 	)`)
-	ent := entity.Define("onotes", entity.EntityConfig{
-		Table: "onotes",
+	ent := entity.Define("onotes", entity.EntityConfig{Table: "onotes",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)

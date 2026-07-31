@@ -374,52 +374,17 @@ func WithDB(db *sql.DB) AppOption {
 	}
 }
 
-// WithConfig sets the application config. It merges into whatever the
-// granular options (WithAPIPrefix, WithPublicOpenAPI, WithName, …) have
-// already set rather than replacing the struct wholesale, so option order
-// doesn't silently discard config: every field WithConfig sets to a
-// non-zero value wins; a zero field preserves the existing value. To turn
-// a boolean back off, use the granular setter after WithConfig instead of
-// relying on a zero-valued field.
-//
-// TestWithConfigCoversEveryField pins the field list — extend this merge
-// when adding an AppConfig field.
+// WithConfig sets the application config by replacing AppConfig wholesale.
+// Options apply left to right and later options win: a granular setter placed
+// after WithConfig (WithAPIPrefix, WithPublicOpenAPI, …) overrides the field
+// it touches, while WithConfig overrides every option that ran before it —
+// including fields it leaves at the zero value. A zero field means the zero
+// value, not "keep whatever a previous option set". To turn a boolean back off,
+// set it in the AppConfig passed to WithConfig (or place a granular setter
+// after it) instead of relying on a zero field to preserve a prior value.
 func WithConfig(config AppConfig) AppOption {
 	return func(a *App) {
-		if config.Name != "" {
-			a.Config.Name = config.Name
-		}
-		if config.JSONCase != "" {
-			a.Config.JSONCase = config.JSONCase
-		}
-		if config.DebugEndpoints {
-			a.Config.DebugEndpoints = true
-		}
-		if config.NoLLMMD {
-			a.Config.NoLLMMD = true
-		}
-		if config.PublicOpenAPI {
-			a.Config.PublicOpenAPI = true
-		}
-		if config.APIPrefix != "" {
-			a.Config.APIPrefix = config.APIPrefix
-		}
-		if config.RequestTimeout != 0 {
-			a.Config.RequestTimeout = config.RequestTimeout
-		}
-		if config.DisableRequestTimeout {
-			a.Config.DisableRequestTimeout = true
-		}
-		// SecurityHeaders is a value type; copy it unconditionally. The
-		// zero value is valid (means "use the built-in strict defaults"),
-		// so there is no sentinel to gate on — unlike the scalar fields.
-		a.Config.SecurityHeaders = config.SecurityHeaders
-		if config.ShutdownTimeout != 0 {
-			a.Config.ShutdownTimeout = config.ShutdownTimeout
-		}
-		if config.DisableSignalHandling {
-			a.Config.DisableSignalHandling = true
-		}
+		a.Config = config
 	}
 }
 
@@ -979,7 +944,7 @@ func (a *App) Mount(m Mountable) *App {
 	// diagnostic or an opaque ServeMux panic.
 	if provider, ok := m.(interface{ RoutePatterns() []string }); ok {
 		for _, ent := range a.Registry.AllSorted() {
-			crudEnabled := a.DB != nil && (ent.Config.CRUD == nil || *ent.Config.CRUD)
+			crudEnabled := a.DB != nil && (ent.Config.Exposure.CRUD == nil || *ent.Config.Exposure.CRUD)
 			if !crudEnabled {
 				continue
 			}
@@ -1142,8 +1107,8 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// Read e.Config, not the raw parameter: Define normalized the grouped
 	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
 	// grouped values are authoritative.
-	crudEnabled := a.DB != nil && (e.Config.CRUD == nil || *e.Config.CRUD)
-	if e.Config.MCP && a.DB != nil && e.Config.CRUD != nil && !*e.Config.CRUD {
+	crudEnabled := a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
+	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
 		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name))
 	}
 
@@ -1192,7 +1157,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// MCP tools — namespaced if the group has a namespace. Explicit
 	// MCP=true, or dev-implied for CRUD-enabled entities (the dev loop
 	// gives the local agent the data tools without per-entity opt-in).
-	if (e.Config.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
+	if (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, g.Router()); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q in group %q: %v", name, g.Prefix(), err))
 		}
@@ -1564,8 +1529,8 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// Read e.Config, not the raw parameter: Define normalized the grouped
 	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
 	// grouped values are authoritative.
-	crudEnabled := a.DB != nil && (e.Config.CRUD == nil || *e.Config.CRUD)
-	if e.Config.MCP && a.DB != nil && e.Config.CRUD != nil && !*e.Config.CRUD {
+	crudEnabled := a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
+	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
 		return fmt.Errorf("entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name)
 	}
 
@@ -1603,7 +1568,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// CRUD-enabled entity serves its MCP data tools so the local agent
 	// can read AND write app data without per-entity opt-in. Production
 	// keeps the explicit flag as the only path.
-	if (e.Config.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
+	if (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
 			return fmt.Errorf("failed to register MCP tools for entity %q: %w", name, err)
 		}

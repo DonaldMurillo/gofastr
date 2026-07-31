@@ -145,7 +145,10 @@ var docIntents = []docIntent{
 			{"factories", "Factories", "Rails-style fixtures for tests."},
 			{"search", "Full-text search", "Find records containing a term, dialect-aware."},
 			{"uploads", "Uploads", "File + image fields with pluggable storage backends."},
+			{"storage", "Storage backends", "Local-filesystem and S3-compatible backends behind one Storage interface."},
+			{"email", "Email", "SMTP sending, a dev log sender, and template rendering."},
 			{"dotenv", "Env / .env", "core/dotenv auto-loaded by NewApp."},
+			{"core-packages", "Core packages", "A map of the exported core/* packages and when to reach for each directly."},
 		},
 	},
 	{

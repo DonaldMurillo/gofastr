@@ -26,38 +26,26 @@ func TestCovWithMCPServer(t *testing.T) {
 // Entity panics on a duplicate name (Registry.Register error, line 571).
 func TestCovEntityDuplicatePanics(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
-	app.Entity("dup", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "a", Type: schema.String}},
-		CRUD:   boolPtr(false),
-	})
+	app.Entity("dup", entity.EntityConfig{Fields: []schema.Field{{Name: "a", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}})
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected duplicate-entity panic")
 		}
 	}()
-	app.Entity("dup", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "b", Type: schema.String}},
-		CRUD:   boolPtr(false),
-	})
+	app.Entity("dup", entity.EntityConfig{Fields: []schema.Field{{Name: "b", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}})
 }
 
 // GroupEntity panics on a duplicate name (line 375).
 func TestCovGroupEntityDuplicatePanics(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	g := app.Group("/api")
-	app.GroupEntity(g, "dupg", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "a", Type: schema.String}},
-		CRUD:   boolPtr(false),
-	})
+	app.GroupEntity(g, "dupg", entity.EntityConfig{Fields: []schema.Field{{Name: "a", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}})
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected duplicate group-entity panic")
 		}
 	}()
-	app.GroupEntity(g, "dupg", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "b", Type: schema.String}},
-		CRUD:   boolPtr(false),
-	})
+	app.GroupEntity(g, "dupg", entity.EntityConfig{Fields: []schema.Field{{Name: "b", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}})
 }
 
 // View panics on a duplicate-name view entity (line 684). Register an entity,
@@ -94,21 +82,18 @@ func TestCovEntityEndpointDuplicateToolPanics(t *testing.T) {
 			t.Fatal("expected panic from duplicate MCP tool name")
 		}
 	}()
-	app.Entity("posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		CRUD:   boolPtr(false),
-		Endpoints: []entity.Endpoint{
-			{
-				Method: http.MethodPost, Path: "a", Name: "dup_tool", MCP: true,
-				Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-				MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-			},
-			{
-				Method: http.MethodPost, Path: "b", Name: "dup_tool", MCP: true,
-				Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-				MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-			},
+	app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{
+		{
+			Method: http.MethodPost, Path: "a", Name: "dup_tool", MCP: true,
+			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
 		},
+		{
+			Method: http.MethodPost, Path: "b", Name: "dup_tool", MCP: true,
+			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+		},
+	},
 	})
 }
 
@@ -121,21 +106,18 @@ func TestCovGroupEndpointDuplicateToolPanics(t *testing.T) {
 			t.Fatal("expected panic from duplicate group MCP tool name")
 		}
 	}()
-	app.GroupEntity(g, "posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		CRUD:   boolPtr(false),
-		Endpoints: []entity.Endpoint{
-			{
-				Method: http.MethodPost, Path: "a", Name: "dup", MCP: true,
-				Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-				MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-			},
-			{
-				Method: http.MethodPost, Path: "b", Name: "dup", MCP: true,
-				Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-				MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-			},
+	app.GroupEntity(g, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{
+		{
+			Method: http.MethodPost, Path: "a", Name: "dup", MCP: true,
+			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
 		},
+		{
+			Method: http.MethodPost, Path: "b", Name: "dup", MCP: true,
+			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+		},
+	},
 	})
 }
 

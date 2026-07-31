@@ -564,7 +564,7 @@ func (sc *entityScreen) listParamsNotes(cfg entity.EntityConfig) render.HTML {
 	if len(cfg.SearchFields) > 0 {
 		items = append(items, para(code("?q=term"), text(" — free-text search over: "+strings.Join(cfg.SearchFields, ", ")+".")))
 	}
-	if cfg.SoftDelete {
+	if cfg.Scope.SoftDelete {
 		items = append(items, para(code("?trashed=only|with"), text(" — include soft-deleted rows.")))
 	}
 	return render.Join(items...)

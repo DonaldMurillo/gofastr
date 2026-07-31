@@ -3,8 +3,8 @@
 // Build mode is not production: every chat session gets a disposable
 // database file under os.TempDir so destructive entity edits are safe.
 // EphemeralSQLite returns the database and a cleanup that removes the
-// file when the session ends. Freeze (Phase 8) emits versioned
-// migrations that the user runs against their real database.
+// file when the session ends. Freeze emits versioned migrations that the
+// user runs against their real database.
 package db
 
 import (

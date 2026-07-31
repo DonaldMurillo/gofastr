@@ -56,12 +56,12 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 		eventKeyTable:  ch.Entity.GetTable(),
 		eventKeyRecord: record,
 	}
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		if tid := tenant.GetTenantID(ctx); tid != "" {
 			data[eventKeyTenantID] = tid
 		}
 	}
-	if ch.Entity.Config.OwnerField != "" {
+	if ch.Entity.Config.Scope.OwnerField != "" {
 		// Stamp the owner id as a STRING so it survives the fanout bridge's
 		// JSON round-trip unchanged: a numeric owner (e.g. a BIGINT user
 		// key) would arrive as float64 on the remote replica, and the
@@ -75,7 +75,7 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 		if id, ok := owner.Get(ctx); ok {
 			data[eventKeyOwnerID] = fmt.Sprint(id)
 		} else if rec, ok := record.(map[string]any); ok {
-			if id, ok := rec[ch.Entity.Config.OwnerField]; ok {
+			if id, ok := rec[ch.Entity.Config.Scope.OwnerField]; ok {
 				data[eventKeyOwnerID] = fmt.Sprint(id)
 			}
 		}
@@ -153,7 +153,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		// Only Public — the full, deliberate opt-out — makes the stream
 		// anonymous; OwnerField entities are already authenticated via
 		// RequireOwner.
-		if ch.Entity.Config.OwnerField == "" && !ch.Entity.Config.Public {
+		if ch.Entity.Config.Scope.OwnerField == "" && !ch.Entity.Config.Exposure.Public {
 			if _, ok := handler.GetUser(r.Context()); !ok {
 				writeJSONError(w, http.StatusUnauthorized, "authentication required")
 				return
@@ -177,9 +177,9 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		sse.WriteComment("subscribed " + ch.Entity.GetName())
 
 		entityName := ch.Entity.GetName()
-		tenantScope := ch.Entity.Config.MultiTenant
+		tenantScope := ch.Entity.Config.Scope.MultiTenant
 		tenantID := tenant.GetTenantID(r.Context())
-		ownerScope := ch.Entity.Config.OwnerField != ""
+		ownerScope := ch.Entity.Config.Scope.OwnerField != ""
 
 		buf := make(chan event.Event, 32)
 

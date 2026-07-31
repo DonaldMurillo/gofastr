@@ -45,9 +45,9 @@ func TestWriteIsolationConfigWriteFailureExits(t *testing.T) {
 	}
 }
 
-func TestWriteHomeScreenWriteFailureExits(t *testing.T) {
+func TestWriteScreensGoWriteFailureExits(t *testing.T) {
 	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { writeHomeScreen(covT_missingDir(t), true) })
+		covT_capStdout(t, func() { writeScreensGo(covT_missingDir(t), true) })
 	})
 	if code != 1 {
 		t.Fatalf("want 1 got %d", code)
@@ -69,23 +69,17 @@ func TestWriteEntitiesGoWriteFailureExits(t *testing.T) {
 	}
 }
 
-func TestWriteHomeScreenNoEntityVsEntity(t *testing.T) {
+func TestWriteScreensGoNoEntityVsEntity(t *testing.T) {
 	d1 := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(d1, "screens"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Both branches of the noEntity hint.
-	covT_capStdout(t, func() { writeHomeScreen(d1, true) })
+	// Both branches of the noEntity hint land in flat screens.go.
+	covT_capStdout(t, func() { writeScreensGo(d1, true) })
 	d2 := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(d2, "screens"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	covT_capStdout(t, func() { writeHomeScreen(d2, false) })
+	covT_capStdout(t, func() { writeScreensGo(d2, false) })
 
 	// The entity hint is prose. It must land in the Section description,
 	// never inside the shell CodeBlock — a sentence concatenated onto a
 	// command renders as a nonsense line a new user may copy-paste.
-	b, err := os.ReadFile(filepath.Join(d2, "screens", "home.go"))
+	b, err := os.ReadFile(filepath.Join(d2, "screens.go"))
 	if err != nil {
 		t.Fatal(err)
 	}

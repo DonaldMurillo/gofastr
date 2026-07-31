@@ -25,7 +25,6 @@ type Live struct {
 	sess         *journal.Session
 	factory      AppFactory
 	app          *framework.App
-	deferred     kilnrender.Deferred
 	bus          *Broadcaster
 	aux          *router.Router
 	fallbackHTML string
@@ -187,8 +186,7 @@ func (l *Live) Reload() error {
 // so live entity edits propagate to the schema.
 func (l *Live) rebuild() error {
 	app := l.factory()
-	d, err := kilnrender.ApplyDetailed(app, l.sess.World)
-	if err != nil {
+	if err := kilnrender.Apply(app, l.sess.World); err != nil {
 		return err
 	}
 	if app.DB != nil && len(app.Registry.All()) > 0 {
@@ -213,7 +211,6 @@ func (l *Live) rebuild() error {
 		app.Router().Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
 	}
 	l.app = app
-	l.deferred = d
 	return nil
 }
 
@@ -252,13 +249,6 @@ func (l *Live) App() *framework.App {
 
 // Journal returns the underlying journal.
 func (l *Live) Journal() journal.Journal { return l.journal }
-
-// Deferred returns the most recent Deferred report from rebuild.
-func (l *Live) Deferred() kilnrender.Deferred {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.deferred
-}
 
 // Subscribe returns a channel of events and an unsubscribe function.
 func (l *Live) Subscribe() (<-chan Event, func()) {

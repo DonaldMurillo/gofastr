@@ -66,10 +66,7 @@ func TestUpsertPreflight_MultiTenantOnly(t *testing.T) {
 	// MultiTenant-only entity (no owner, no soft-delete): preflight runs the
 	// tenant idx++ path and returns nil when the tenant matches.
 	db := setupDB(t, `CREATE TABLE upt (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
-	ent := entity.Define("upt", entity.EntityConfig{
-		Name: "upt", Table: "upt", MultiTenant: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("upt", entity.EntityConfig{Name: "upt", Table: "upt", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	ctx := tenant.SetTenantID(context.Background(), "T1")
@@ -93,10 +90,7 @@ func TestUpsertPreflight_NoPKSupplied(t *testing.T) {
 	// "no PK ⇒ no conflict possible" early return fires (then the INSERT
 	// auto-generates the id).
 	db := setupDB(t, `CREATE TABLE upn (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
-	ent := entity.Define("upn", entity.EntityConfig{
-		Name: "upn", Table: "upn", SoftDelete: true,
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("upn", entity.EntityConfig{Name: "upn", Table: "upn", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	res, err := ch.UpsertOne(context.Background(), map[string]any{"title": "noid"})

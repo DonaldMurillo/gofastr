@@ -16,14 +16,12 @@ type (
 
 // Known Action kinds, re-exported from core-ui/node.
 const (
-	ActionNoop         = node.ActionNoop
-	ActionSetField     = node.ActionSetField
-	ActionValidate     = node.ActionValidate
-	ActionAudit        = node.ActionAudit
-	ActionCreateEntity = node.ActionCreateEntity
-	ActionRespondJSON  = node.ActionRespondJSON
-	ActionRespondQuery = node.ActionRespondQuery
-	ActionEmitEvent    = node.ActionEmitEvent
+	ActionNoop        = node.ActionNoop
+	ActionSetField    = node.ActionSetField
+	ActionValidate    = node.ActionValidate
+	ActionAudit       = node.ActionAudit
+	ActionRespondJSON = node.ActionRespondJSON
+	ActionEmitEvent   = node.ActionEmitEvent
 )
 
 // Node-tree helpers, re-exported from core-ui/node.

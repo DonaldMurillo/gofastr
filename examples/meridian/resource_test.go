@@ -4,57 +4,25 @@
 package main
 
 import (
-	"strings"
+	"context"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
-func TestResMoney(t *testing.T) {
-	for in, want := range map[string]string{"1234.5": "$1,234.50", "99": "$99.00", "0": "$0.00", "1000000": "$1,000,000.00"} {
-		if got := resMoney(in); got != want {
-			t.Errorf("resMoney(%q) = %q, want %q", in, got, want)
-		}
+func TestResourceConfigUsesFrameworkEngine(t *testing.T) {
+	var cfg ResourceConfig = resource.Config{Title: "Invoices"}
+	cfg = cfg.WithHeading("Recent invoices").WithLimit(8)
+	if cfg.Heading != "Recent invoices" || cfg.PageSize != 8 {
+		t.Fatalf("shared resource config options were not applied: %#v", cfg)
 	}
 }
 
-func TestResTitle(t *testing.T) {
-	if got := resTitle("past_due"); got != "Past Due" {
-		t.Errorf("resTitle(past_due) = %q", got)
+func TestMissingDashboardResourceFailsClosed(t *testing.T) {
+	if got := statValue(context.Background(), "missing", "count", "", "", ""); got != "—" {
+		t.Fatalf("statValue for missing resource = %q, want em dash", got)
 	}
-}
-
-func TestResCamel(t *testing.T) {
-	if got := resCamel("generic_name"); got != "genericName" {
-		t.Errorf("resCamel(generic_name) = %q", got)
-	}
-}
-
-func TestResTruthy(t *testing.T) {
-	if !resTruthy("true") || !resTruthy("1") || resTruthy("false") || resTruthy("") {
-		t.Error("resTruthy mismatch")
-	}
-}
-
-func TestResInputType(t *testing.T) {
-	for in, want := range map[string]string{
-		"decimal": "number", "int": "number", "date": "date",
-		"timestamp": "datetime-local", "email": "email", "string": "text",
-	} {
-		if got := resInputType(in); got != want {
-			t.Errorf("resInputType(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestResDate(t *testing.T) {
-	if got := resDate(nil, "2025-01-02", "Jan 2, 2006"); got != "Jan 2, 2025" {
-		t.Errorf("resDate = %q, want Jan 2, 2025", got)
-	}
-}
-
-func TestResFormatEnum(t *testing.T) {
-	// enum cells render as a status badge containing the humanized value.
-	h := resFormat(ResField{Key: "status", Type: "enum"}, "past_due", nil)
-	if !strings.Contains(string(h), "Past Due") {
-		t.Errorf("enum cell missing humanized label: %s", string(h))
+	if bars := groupBars(context.Background(), "missing", "status"); len(bars) != 0 {
+		t.Fatalf("groupBars for missing resource = %#v, want empty", bars)
 	}
 }

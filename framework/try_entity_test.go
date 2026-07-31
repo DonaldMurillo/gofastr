@@ -14,10 +14,8 @@ import (
 // the underlying Define panic; TryEntity must recover it.
 func TestTryEntity_ReturnsErrorOnBadConfig(t *testing.T) {
 	app := NewApp()
-	err := app.TryEntity("posts", entity.EntityConfig{
-		MultiTenant: true,
-		TenantField: "bad field; DROP TABLE", // not a valid SQL identifier
-		Fields:      []schema.Field{{Name: "title", Type: schema.String}},
+	err := app.TryEntity("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "bad field; DROP TABLE"}, Pagination: // not a valid SQL identifier
+	&entity.PaginationConfig{}, Fields:                                                                                                                []schema.Field{{Name: "title", Type: schema.String}},
 	})
 	if err == nil {
 		t.Fatal("TryEntity with invalid TenantField returned nil error")
@@ -50,9 +48,5 @@ func TestEntity_StillPanicsOnBadConfig(t *testing.T) {
 			t.Fatal("Entity with invalid config should panic")
 		}
 	}()
-	app.Entity("posts", entity.EntityConfig{
-		MultiTenant: true,
-		TenantField: "bad field; DROP TABLE",
-		Fields:      []schema.Field{{Name: "title", Type: schema.String}},
-	})
+	app.Entity("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "bad field; DROP TABLE"}, Fields: []schema.Field{{Name: "title", Type: schema.String}}})
 }

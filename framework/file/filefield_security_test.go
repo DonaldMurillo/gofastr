@@ -195,8 +195,8 @@ func TestPlaceholderAllowListsAgree(t *testing.T) {
 // TestFileFieldRejectsControlBytes pins one property — no C0 control
 // byte or DEL survives validation — across every FileField string
 // surface that is persisted and later echoed into a header, an HTML
-// attribute, or a log line. mime_type is already covered by its
-// charset filter; url, filename, and storage_ref were not.
+// attribute, or a log line. mimeType is already covered by its
+// charset filter; url, filename, and storageRef were not.
 func TestFileFieldRejectsControlBytes(t *testing.T) {
 	t.Parallel()
 	payloads := map[string]string{
@@ -206,10 +206,10 @@ func TestFileFieldRejectsControlBytes(t *testing.T) {
 		"del": "ok\x7finjected",
 	}
 	surfaces := map[string]func(string) *file.FileField{
-		"url":         func(v string) *file.FileField { return &file.FileField{URL: v} },
-		"filename":    func(v string) *file.FileField { return &file.FileField{Filename: v} },
-		"mime_type":   func(v string) *file.FileField { return &file.FileField{MimeType: v} },
-		"storage_ref": func(v string) *file.FileField { return &file.FileField{StorageRef: v} },
+		"url":        func(v string) *file.FileField { return &file.FileField{URL: v} },
+		"filename":   func(v string) *file.FileField { return &file.FileField{Filename: v} },
+		"mimeType":   func(v string) *file.FileField { return &file.FileField{MimeType: v} },
+		"storageRef": func(v string) *file.FileField { return &file.FileField{StorageRef: v} },
 	}
 	for sname, mk := range surfaces {
 		for pname, payload := range payloads {

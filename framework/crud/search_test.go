@@ -24,11 +24,8 @@ func setupSearchHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 		body TEXT,
 		deleted_at TEXT
 	)`)
-	ent := entity.Define("sarticles", entity.EntityConfig{
-		Table:        "sarticles",
-		Fields:       []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "body", Type: schema.Text}},
-		OwnerField:   "user_id",
-		SearchFields: []string{"title", "body"},
+	ent := entity.Define("sarticles", entity.EntityConfig{Table: "sarticles",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "body", Type: schema.Text}}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, SearchFields: []string{"title", "body"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -150,10 +147,8 @@ func TestSearch_NoSearchFieldsBackCompat(t *testing.T) {
 		user_id TEXT,
 		note TEXT
 	)`)
-	ent := entity.Define("splain", entity.EntityConfig{
-		Table:      "splain",
-		Fields:     []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "note", Type: schema.String}},
-		OwnerField: "user_id",
+	ent := entity.Define("splain", entity.EntityConfig{Table: "splain",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "note", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -185,11 +180,8 @@ func TestSearch_QColumnEdge(t *testing.T) {
 		title TEXT,
 		q TEXT
 	)`)
-	ent := entity.Define("sedge", entity.EntityConfig{
-		Table:        "sedge",
-		Fields:       []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "q", Type: schema.String}},
-		OwnerField:   "user_id",
-		SearchFields: []string{"title"},
+	ent := entity.Define("sedge", entity.EntityConfig{Table: "sedge",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "q", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, SearchFields: []string{"title"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -267,10 +259,8 @@ func TestSearch_ListAllNoSearchFieldsError(t *testing.T) {
 		user_id TEXT,
 		note TEXT
 	)`)
-	ent := entity.Define("sbare", entity.EntityConfig{
-		Table:      "sbare",
-		Fields:     []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "note", Type: schema.String}},
-		OwnerField: "user_id",
+	ent := entity.Define("sbare", entity.EntityConfig{Table: "sbare",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "note", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -339,12 +329,8 @@ func TestSearch_SoftDeleteRespected(t *testing.T) {
 		title TEXT,
 		deleted_at TEXT
 	)`)
-	ent := entity.Define("ssoft", entity.EntityConfig{
-		Table:        "ssoft",
-		Fields:       []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "title", Type: schema.String}},
-		OwnerField:   "user_id",
-		SearchFields: []string{"title"},
-		SoftDelete:   true,
+	ent := entity.Define("ssoft", entity.EntityConfig{Table: "ssoft",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "title", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id", SoftDelete: true}, SearchFields: []string{"title"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -372,12 +358,8 @@ func TestSearch_TenantScopeHolds(t *testing.T) {
 		title TEXT,
 		tenant_id TEXT
 	)`)
-	ent := entity.Define("sten", entity.EntityConfig{
-		Table:        "sten",
-		Fields:       []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "tenant_id", Type: schema.String}},
-		OwnerField:   "user_id",
-		SearchFields: []string{"title"},
-		MultiTenant:  true,
+	ent := entity.Define("sten", entity.EntityConfig{Table: "sten",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "tenant_id", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id", MultiTenant: true}, SearchFields: []string{"title"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)

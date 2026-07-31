@@ -75,11 +75,7 @@ func TestCovEntityMCPWithoutCRUDPanics(t *testing.T) {
 				t.Fatal("expected panic: MCP=true with CRUD=false")
 			}
 		}()
-		app.Entity("posts", entity.EntityConfig{
-			Fields: []schema.Field{{Name: "title", Type: schema.String}},
-			MCP:    true,
-			CRUD:   boolPtr(false),
-		})
+		app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true, CRUD: boolPtr(false)}})
 	})
 }
 
@@ -93,11 +89,7 @@ func TestCovGroupEntityMCPWithoutCRUDPanics(t *testing.T) {
 				t.Fatal("expected panic: group MCP=true with CRUD=false")
 			}
 		}()
-		app.GroupEntity(g, "posts", entity.EntityConfig{
-			Fields: []schema.Field{{Name: "title", Type: schema.String}},
-			MCP:    true,
-			CRUD:   boolPtr(false),
-		})
+		app.GroupEntity(g, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true, CRUD: boolPtr(false)}})
 	})
 }
 
@@ -116,10 +108,8 @@ func TestCovEntityMCPRegisterError(t *testing.T) {
 				t.Fatal("expected panic from colliding MCP CRUD tool name")
 			}
 		}()
-		app.Entity("posts", entity.EntityConfig{
-			Table:  "posts",
-			Fields: []schema.Field{{Name: "title", Type: schema.String}},
-			MCP:    true,
+		app.Entity("posts", entity.EntityConfig{Table: "posts",
+			Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true},
 		}.WithTimestamps(false))
 	})
 }
@@ -139,10 +129,8 @@ func TestCovGroupEntityMCPRegisterError(t *testing.T) {
 				t.Fatal("expected panic from colliding group MCP CRUD tool name")
 			}
 		}()
-		app.GroupEntity(g, "posts", entity.EntityConfig{
-			Table:  "posts",
-			Fields: []schema.Field{{Name: "title", Type: schema.String}},
-			MCP:    true,
+		app.GroupEntity(g, "posts", entity.EntityConfig{Table: "posts",
+			Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true},
 		}.WithTimestamps(false))
 	})
 }
@@ -152,10 +140,8 @@ func TestCovGroupEntityWithDB(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 		g := app.Group("/api", routegroup.WithMCPNamespace("api"))
-		app.GroupEntity(g, "posts", entity.EntityConfig{
-			Table:  "posts",
-			Fields: []schema.Field{{Name: "title", Type: schema.String}},
-			MCP:    true,
+		app.GroupEntity(g, "posts", entity.EntityConfig{Table: "posts",
+			Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true},
 		}.WithTimestamps(false))
 		if _, err := app.Registry.Get("posts"); err != nil {
 			t.Fatalf("entity not registered: %v", err)

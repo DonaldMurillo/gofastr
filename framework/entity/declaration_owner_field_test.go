@@ -19,15 +19,15 @@ func TestEntityDeclaration_OwnerFieldRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if d.OwnerField != "user_id" {
-		t.Fatalf("decl OwnerField = %q, want user_id", d.OwnerField)
+	if d.Scope == nil || d.Scope.OwnerField != "user_id" {
+		t.Fatalf("decl Scope.OwnerField = %#v, want user_id", d.Scope)
 	}
 	cfg, err := d.Config()
 	if err != nil {
 		t.Fatalf("Config: %v", err)
 	}
-	if cfg.OwnerField != "user_id" {
-		t.Fatalf("cfg.OwnerField = %q, want user_id", cfg.OwnerField)
+	if cfg.Scope.OwnerField != "user_id" {
+		t.Fatalf("cfg.Scope.OwnerField = %q, want user_id", cfg.Scope.OwnerField)
 	}
 }
 
@@ -71,15 +71,15 @@ func TestEntityDeclaration_CrossOwnerReadRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if d.CrossOwnerRead != "tickets:read:all" {
-		t.Fatalf("decl CrossOwnerRead = %q, want tickets:read:all", d.CrossOwnerRead)
+	if d.Scope == nil || d.Scope.CrossOwnerRead != "tickets:read:all" {
+		t.Fatalf("decl Scope.CrossOwnerRead = %#v, want tickets:read:all", d.Scope)
 	}
 	cfg, err := d.Config()
 	if err != nil {
 		t.Fatalf("Config: %v", err)
 	}
-	if cfg.CrossOwnerRead != "tickets:read:all" {
-		t.Fatalf("cfg.CrossOwnerRead = %q, want tickets:read:all", cfg.CrossOwnerRead)
+	if cfg.Scope.CrossOwnerRead != "tickets:read:all" {
+		t.Fatalf("cfg.Scope.CrossOwnerRead = %q, want tickets:read:all", cfg.Scope.CrossOwnerRead)
 	}
 
 	// omitempty: zero-value declaration must not emit the key.

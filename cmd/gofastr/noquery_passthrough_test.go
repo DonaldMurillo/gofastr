@@ -185,8 +185,9 @@ entities:
 
 // TestNoQueryReachesGeneratedScreens is the end-to-end guard: a blueprint that
 // declares no_query must produce an app whose grid renders the column but
-// refuses to sort on it. The individual pieces (ResField.NoQuery, sortable(),
-// Sortable: !f.NoQuery) each have a home, but nothing checked they meet.
+// refuses to sort on it. The individual pieces (resource.Field.NoQuery,
+// Config.sortable, and Sortable: !f.NoQuery) each have a home, but this checks
+// they meet.
 func TestNoQueryReachesGeneratedScreens(t *testing.T) {
 	bp, err := covT_decode(t, blueprintWithNoQuery)
 	if err != nil {
@@ -203,7 +204,7 @@ func TestNoQueryReachesGeneratedScreens(t *testing.T) {
 		t.Errorf("NoQuery column missing from the generated grid — it must stay visible:\n%s", src)
 	}
 	if !strings.Contains(src, "NoQuery: true") {
-		t.Errorf("generated ResField drops NoQuery, so the column renders sortable and "+
+		t.Errorf("generated resource.Field drops NoQuery, so the column renders sortable and "+
 			"?sort= on it blanks the page:\n%s", src)
 	}
 	if strings.Contains(src, `{Key: "label", Label: "Label", Type: "string", NoQuery: true}`) {

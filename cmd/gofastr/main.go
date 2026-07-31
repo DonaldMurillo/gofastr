@@ -105,10 +105,10 @@ func printHelp() {
     Flags:
       --module=<path>  Set Go module path (default: local/<name>)
       --no-entity      Skip sample entity scaffolding
-      --db=<driver>    Database driver: sqlite (default) or postgres
+      --db=<driver>    Database driver: sqlite3 (default) or postgres
   new handler <n>       Scaffold a new HTTP handler
   new route <path>      Scaffold a route registration
-  generate --from=<yml> Generate code from a deterministic YAML blueprint
+  generate (gen, g) --from=<yml> Generate code from a deterministic YAML blueprint
   generate --config=<yml> Run YAML-configured code generators/extensions
   generate cli          Generate a customer-facing CLI for the app's API (docs: gofastr docs app-cli)
   pack [app-dir]        Snapshot a generated app into a best-effort gofastr.yml (lossy; not an inverse of generate)
@@ -132,14 +132,14 @@ func printHelp() {
                        --pkg ./cmd/<name> when main lives under cmd/, so the
                        watcher still sees internal/ and relative paths resolve
                        against the project root
-  migrate [up|down|status|generate|force]  Run database migrations
-  test                  Run project tests
+  migrate (m) [up|down|status|generate|force]  Run database migrations
+  test (t)              Run project tests
   semantic <sub>        Local semantic index (index/watch/query/stats/clear)
   harness               Start the AI agent harness (interactive loop / TUI)
     mcp                 Launch harness as a stdio MCP server for IDE integration
     creds [add|list|delete]  Manage encrypted API-key credentials
   agents [init|sync|skill]  Generate/refresh AGENTS.md and per-battery detail files
-  docs [topic]          Browse framework docs (auto-versioned with this binary)
+  docs (doc) [topic]    Browse framework docs (auto-versioned with this binary)
                         --list  list every topic; --grep <term> search across docs
   audit <sub>           Inspect the project for security- and accessibility-relevant patterns
                         deps  list packages that perform init-time global registrations

@@ -283,9 +283,7 @@ server side and the runtime does the work.
 | `data-fui-sidebar` | Emitted by `framework/ui.Sidebar` on its root. The sidebar runtime scopes collapse state and controls to this element. |
 | `data-fui-sidebar-collapse` | On a collapsible sidebar's toggle button. Demand-loads the sidebar module, toggles the compact rail, and keeps `aria-expanded` synchronized. |
 | `data-fui-sidebar-storage="<key>"` | On a collapsible sidebar root. Names the local-storage key used to restore its collapsed state across navigation and reloads. |
-| `data-fui-sticky="<edge>"` | Emitted by `framework/ui.Sticky` (`layout.go`) with the pinned edge (`top`/`bottom`). No runtime or CSS consumer today (styling keys off `.ui-sticky--*` classes); emit-only structural marker. |
 | `data-fui-z-tier="<tier>"` | Emitted by `framework/ui.Sticky` with the layering tier from `StickyConfig.ZIndexTier` (`sticky` default, or `dropdown`/`modal`/`popover`/`toast` matching the theme's `ZIndexSet` tokens). CSS-only consumer: the `ui-sticky` stylesheet keys `z-index: var(--z-<tier>)` off this attribute so a sticky toolbar can layer above/below other surfaces without bespoke CSS. |
-| `data-fui-viewport="desktop\|mobile"` | Emitted by `framework/ui.Responsive` on each variant wrapper. No runtime or CSS consumer today — the per-breakpoint stylesheet toggles `display` via the `.ui-responsive__desktop` / `.ui-responsive__mobile` classes; emit-only structural marker. |
 | `data-fui-poll="<duration>"` | Marks an element for the demand-loaded `poll` runtime module. On the interval (Go-duration syntax: `"5s"`, `"30s"`, `"1m"`, compound `"1m30s"`) the module GETs `data-fui-poll-src` and swaps the response HTML into the element's `innerHTML` through the same `innerHTML + scanAndLoadCSS` path `html`-mode signal regions use — one region-swap pipeline, not a second one. Clamp: intervals below 5s are raised to 5s so a typo can't DoS the server. ±10% jitter per tick desynchronises a page full of polls; pauses while `document.hidden` and fetches immediately on regain; doubles the interval (capped at 5× base) on fetch failure and resets to base on the next success. The marker is idempotent (`__fuiPollWired` guard); timers self-teardown when the element leaves the DOM and are reclaimed on SPA navigation via the `_moduleScanners.poll` hook. Pair with `data-fui-poll-src`. |
 | `data-fui-poll-src="<url>"` | The GET endpoint the `poll` runtime module fetches on each `data-fui-poll` tick. The response body replaces the parent element's `innerHTML`. Same-origin by default (`credentials: 'same-origin'`); the endpoint should return an HTML fragment, not a full document. Every successful applied tick (page-level here, widget-level `Builder.Poll` alike) increments the shared liveness observable `window.__gofastr.pollStatus` (`{ ticks, lastTickAt }` — one object mutated in place, the poll analog of `sseStatus`); an HTTP-error response counts as a failure and triggers the back-off. |
 
@@ -1193,6 +1191,12 @@ func Render(cfg Config) render.HTML {
 const baseCSS = `.foo { ... }`
 ```
 
+**Registration names are bare.** A pattern's `RegisterStyle` name — and the
+matching `data-fui-comp` value its CSS scopes to — is the package name
+verbatim (`accordion`, `breadcrumbs`, `multiselect`, `sortablelist`), not an
+`ui-`-prefixed alias. The prefix matches no convention in the repo and only
+hides which package owns the stylesheet.
+
 ### What about widgets?
 
 The `core-ui/widget` registry continues to drive widgets (their
@@ -1223,21 +1227,35 @@ core-ui/
                  (Div, Button, Heading, Form, Table…)
   patterns/    — composed UI patterns (not 1:1 with HTML):
                  accordion, breadcrumbs, combobox, disclosure,
-                 infinitescroll, multiselect, pagination, progress,
-                 skeleton, sortablelist, tabs, tree
-  compute/     — process-global Web Worker + WebAssembly asset registry
+                 infinitescroll, multiselect, nestedlist, pagination,
+                 progress, scrollspy, skeleton, sortablelist, tabs, tree
   component/   — Component / InteractiveComponent interfaces (the contract
                  every renderable satisfies)
+  interactive/ — declarative data-fui-* attribute builders (RPC, signal
+                 bindings, widget chaining) that wrap render.HTML with no JS
+  node/        — the JSON-clean serializable UI element tree (first-party IR;
+                 dependency-free, composed by blueprint codegen and Kiln)
+  noderender/  — walks a node.Node tree and emits HTML via core-ui/html
+                 (treats the IR as untrusted; see RenderTrustedNode)
+  uinodev1/    — the closed ui.node.v1 wire type + validator for
+                 process-isolated third-party modules (makes runtime-attribute
+                 forgery unrepresentable, unlike the first-party node IR)
+  compute/     — process-global Web Worker + WebAssembly asset registry
   widget/      — island/widget builder + registration
   widget/preset/ — opinionated mounting shortcuts:
                  Modal, Drawer, Popover, ToastStack, Toast, Banner,
                  FloatingPanel, BottomSheet
   widget/theme/ — page-level theme tokens + utility classes
-  signal/      — reactive state + SSE push
+  registry/    — process-global catalog of components whose CSS ships as real
+                 stylesheets loaded on demand (RegisterStyle → *Style handle)
+  store/       — typed shared client state (Slices) seeded into the signal bus
+                 at SSR; the server-declared reactive-value primitive
   island/      — runtime-side island manager
+  seo/         — typed Schema.org structs → JSON-LD blocks for rich results
+  urlsafe/     — the single URL-scheme allow-list every URL sink runs through
   runtime/     — runtime.js (client) + Go embed wrapper
   runtime/src/ — code-split runtime modules (loaded on demand):
-                 animate, animatedcounter, backtotop, banner, carousel,
+                 animate, animatedcounter, backtosop, banner, carousel,
                  combobox, compute, computed, conditionalfield, copy,
                  dragdismiss, dropdown, dropzone, fileupload,
                  formrepeater, infinitescroll, lightbox, menu,
@@ -1250,7 +1268,7 @@ core-ui/
                  before CSS parses, reads localStorage + OS hint,
                  sets data-color-scheme on <html>)
   style/       — theme structs, stylesheet builder, token resolution
-  check/       — .ui.go linter
+  check/       — .ui.go linter + the no-pattern-BaseCSS / no-inline-* guards
 
 framework/
   uihost/      — wires core-ui app onto framework.App router; serves

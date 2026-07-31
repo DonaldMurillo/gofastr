@@ -16,7 +16,7 @@ import (
 
 // EntityConfig holds the declarative configuration for an entity.
 // Name is set via Define(); Fields declare the schema.
-// Timestamps defaults to true — use WithTimestamps(false) to disable.
+// Timestamps is nil by default; Define resolves nil to true.
 type EntityConfig struct {
 	Name       string            // entity name (e.g. "users")
 	Table      string            // DB table name (defaults to snake_case of Name)
@@ -26,71 +26,13 @@ type EntityConfig struct {
 	Scope      *ScopeConfig      // ownership, tenancy, and soft-delete behavior
 	Pagination *PaginationConfig // list limits and keyset cursor shape
 	Exposure   *ExposureConfig   // generated HTTP/MCP and access posture
-	// Deprecated: use Scope.SoftDelete. Supported through the v0.40 line.
-	SoftDelete bool
-	// Deprecated: use Scope.MultiTenant. Supported through the v0.40 line.
-	MultiTenant bool
-	// Deprecated: use Scope.TenantField. Supported through the v0.40 line.
-	TenantField string
-	Timestamps  bool // add created_at / updated_at columns
-	// Deprecated: use Exposure.CRUD. Supported through the v0.40 line.
-	CRUD *bool
-	// Deprecated: use Exposure.MCP. Supported through the v0.40 line.
-	MCP bool
-	// Deprecated: use Pagination.CursorField. Supported through the v0.40 line.
-	CursorField string
-	// Deprecated: use Pagination.CursorFields. Supported through the v0.40 line.
-	CursorFields []string
-	Indices      []Index        // additional CREATE INDEX statements emitted by AutoMigrate
-	Unmanaged    bool           // when true, the migration system never emits DDL for this object (it is created elsewhere — e.g. a view, an FTS virtual table, or a legacy/external table). The ORM still queries it.
-	Properties   map[string]any // caller-owned metadata for generators, plugins, and app conventions
-	// Deprecated: use Pagination.MaxListLimit. Supported through the v0.40 line.
-	MaxListLimit int
+	Timestamps *bool             // add created_at / updated_at columns; nil defaults to true
+	Indices    []Index           // additional CREATE INDEX statements emitted by AutoMigrate
+	Unmanaged  bool              // when true, the migration system never emits DDL for this object (it is created elsewhere — e.g. a view, an FTS virtual table, or a legacy/external table). The ORM still queries it.
 
-	// OwnerField names the DB column that holds the row's owner id (e.g.
-	// "user_id"). When set AND an owner extractor is registered (typically
-	// by battery/auth), auto-CRUD scopes List/Get/Update/Delete by the
-	// current request's owner and auto-stamps Create. Leave empty to keep
-	// pre-existing behaviour.
-	// Deprecated: use Scope.OwnerField. Supported through the v0.40 line.
-	OwnerField string
-
-	// CrossOwnerRead names an RBAC permission (e.g. "tickets:read:all")
-	// that, when held by the request context (installed via access.Middleware
-	// or battery/auth), lifts owner scoping for READ operations only
-	// (List/Get/Count/includes — both HTTP and in-process). Writes stay
-	// owner-scoped, always. Requires OwnerField; leave empty to keep
-	// pre-existing behaviour. Fail-closed: when no access policy is present
-	// in the context the scope stays ON (the secure-by-default answer). The
-	// admin battery's wildcard grant passes any permission, so an entity
-	// opted in here is fully visible in the back office.
-	// Deprecated: use Scope.CrossOwnerRead. Supported through the v0.40 line.
-	CrossOwnerRead string
-
-	// Access declares the RBAC permission required for each CRUD operation.
-	// A blank permission leaves that operation un-gated by RBAC (owner and
-	// tenant scoping still apply). When set, auto-CRUD refuses a request
-	// whose context lacks the permission with 403. Roles + policy must be
-	// present in the request context — wire them once with access.Middleware
-	// (or battery/auth). See framework/docs/content/access-control.md.
-	// Deprecated: use Exposure.Access. Supported through the v0.40 line.
-	Access AccessControl
-
-	// Public opts an entity OUT of the framework's secure-by-default
-	// session requirement (see the doc comment on requireAuthenticated in
-	// framework/crud/owner.go, and framework/docs/content/security.md
-	// "Default CRUD authentication"): every operation — List/Get and
-	// Create/Update/Delete — is reachable by an anonymous caller, the
-	// pre-#65 behaviour. This is a deliberate declaration ("yes, this is
-	// public": a public contact form, a blog's comments, a newsletter
-	// signup), not a partial relaxation — an entity that should allow
-	// anonymous reads but still gate writes needs a declared Access block
-	// instead (blank Access.Read + a real Access.Create permission).
-	// Has no effect when OwnerField or Access is set; those mechanisms
-	// already govern the entity. Default false: every operation requires
-	// a session, matching the blueprint's default (no `public: true`).
-	// Deprecated: use Exposure.Public. Supported through the v0.40 line.
-	Public bool
+	// Properties holds caller-owned metadata. The framework does not
+	// interpret any key; generators, plugins, and apps define their own keys.
+	Properties map[string]any
 
 	// SearchFields names the DB columns that ?q= free-text search operates
 	// on (e.g. []string{"title","body"}). When non-empty, a List request
@@ -152,21 +94,16 @@ type EntityConfig struct {
 	// entirely). Reserved list controls are always allowed and need not be
 	// listed here.
 	AllowedFilterParams []string
-
-	// timestampsSet tracks whether Timestamps was explicitly set.
-	// When false (zero value), Define defaults Timestamps to true.
-	timestampsSet bool
 }
 
-// ScopeConfig groups entity behavior that constrains which rows a request can
-// see or mutate. When EntityConfig.Scope is non-nil it is authoritative over
-// the compatibility flat fields.
+// ScopeConfig groups the rules that constrain which rows a request can read
+// or change. Define always populates EntityConfig.Scope on the resolved entity.
 type ScopeConfig struct {
-	SoftDelete     bool
-	MultiTenant    bool
-	TenantField    string
-	OwnerField     string
-	CrossOwnerRead string
+	SoftDelete     bool   // add deleted_at and hide deleted rows by default
+	MultiTenant    bool   // scope rows to the tenant in the request context
+	TenantField    string // tenant column; empty uses tenant_id
+	OwnerField     string // owner column stamped and scoped by auto-CRUD
+	CrossOwnerRead string // permission that lifts owner scoping for reads only
 }
 
 // PaginationConfig groups list limits and keyset cursor configuration. A
@@ -177,13 +114,13 @@ type PaginationConfig struct {
 	MaxListLimit int
 }
 
-// ExposureConfig groups generated surfaces and their access posture. CRUD is a
-// pointer so nil retains auto mode, while false explicitly disables routes.
+// ExposureConfig groups generated routes and their access rules. CRUD is a
+// pointer so nil keeps automatic route generation and false disables it.
 type ExposureConfig struct {
-	CRUD   *bool
-	MCP    bool
-	Public bool
-	Access AccessControl
+	CRUD   *bool         // nil or true generates CRUD routes
+	MCP    bool          // register MCP CRUD tools
+	Public bool          // allow anonymous CRUD when no scope or access rule applies
+	Access AccessControl // per-operation permissions
 }
 
 // AccessControl declares the RBAC permission required for each CRUD operation
@@ -287,21 +224,17 @@ type Endpoint struct {
 }
 
 // TenantColumn returns the tenant-scoping column name for this entity:
-// TenantField when set, otherwise the framework default "tenant_id". This is
-// the single source of the column name across injection, auto-migrate, and the
-// CRUD insert/scope/filter paths.
+// Scope.TenantField when set, otherwise "tenant_id".
 func (c EntityConfig) TenantColumn() string {
-	if c.TenantField != "" {
-		return c.TenantField
+	if c.Scope != nil && c.Scope.TenantField != "" {
+		return c.Scope.TenantField
 	}
 	return "tenant_id"
 }
 
-// WithTimestamps returns a copy of the config with Timestamps set to the
-// given value. Use this to opt out of the default (true).
+// WithTimestamps returns a copy with timestamp columns enabled or disabled.
 func (c EntityConfig) WithTimestamps(v bool) EntityConfig {
-	c.Timestamps = v
-	c.timestampsSet = true
+	c.Timestamps = &v
 	return c
 }
 
@@ -340,11 +273,6 @@ func Define(name string, config EntityConfig) *Entity {
 		config.Table = toSnake(name)
 	}
 
-	// Timestamps defaults to true unless explicitly set via WithTimestamps
-	if !config.timestampsSet {
-		config.Timestamps = true
-	}
-
 	// Inject id field if not already defined by user
 	hasID := false
 	for _, f := range config.Fields {
@@ -364,7 +292,7 @@ func Define(name string, config EntityConfig) *Entity {
 	}
 
 	// Inject timestamp fields if enabled and not already defined
-	if config.Timestamps {
+	if *config.Timestamps {
 		hasCreatedAt := false
 		hasUpdatedAt := false
 		for _, f := range config.Fields {
@@ -400,7 +328,7 @@ func Define(name string, config EntityConfig) *Entity {
 	// tenant_id column and the first create request would fail with a
 	// "no such column" error. Hidden + ReadOnly keeps it out of request
 	// bodies and API responses — the framework manages its value.
-	if config.MultiTenant {
+	if config.Scope.MultiTenant {
 		tenantCol := config.TenantColumn()
 		// Validate the tenant column name once, here, so a misconfigured
 		// TenantField fails loud at definition with an actionable message —
@@ -428,7 +356,7 @@ func Define(name string, config EntityConfig) *Entity {
 	}
 
 	// Inject soft delete field if enabled
-	if config.SoftDelete {
+	if config.Scope.SoftDelete {
 		hasDeletedAt := false
 		for _, f := range config.Fields {
 			if f.Name == "deleted_at" {
@@ -450,8 +378,8 @@ func Define(name string, config EntityConfig) *Entity {
 	// sense on an entity that is owner-scoped to begin with. Catch the
 	// misconfiguration here, at definition, with an actionable message —
 	// otherwise the knob silently does nothing.
-	if config.CrossOwnerRead != "" && config.OwnerField == "" {
-		panic(fmt.Sprintf("entity %q: CrossOwnerRead %q requires OwnerField (cross-owner read only applies to owner-scoped entities)", name, config.CrossOwnerRead))
+	if config.Scope.CrossOwnerRead != "" && config.Scope.OwnerField == "" {
+		panic(fmt.Sprintf("entity %q: CrossOwnerRead %q requires OwnerField (cross-owner read only applies to owner-scoped entities)", name, config.Scope.CrossOwnerRead))
 	}
 
 	// SearchFields must reference known, non-Hidden, non-NoQuery, String/Text
@@ -504,14 +432,14 @@ func Define(name string, config EntityConfig) *Entity {
 	// validating only the declared members missed a NoQuery `id` entirely.
 	// EntityConfig carries no primary key of its own; Entity.PrimaryKey and
 	// CrudHandler both default to "id", so that is the effective column.
-	// normalizeSubConfigs has already copied Pagination.* down by here.
+	// normalizeSubConfigs has populated Pagination by here.
 	var cursorCols []string
 	switch {
-	case len(config.CursorFields) > 0:
-		cursorCols = append(cursorCols, config.CursorFields...)
+	case len(config.Pagination.CursorFields) > 0:
+		cursorCols = append(cursorCols, config.Pagination.CursorFields...)
 		cursorCols = append(cursorCols, "id") // auto-appended tiebreak
-	case config.CursorField != "":
-		cursorCols = append(cursorCols, config.CursorField)
+	case config.Pagination.CursorField != "":
+		cursorCols = append(cursorCols, config.Pagination.CursorField)
 	default:
 		cursorCols = append(cursorCols, "id")
 	}
@@ -566,23 +494,35 @@ func Define(name string, config EntityConfig) *Entity {
 }
 
 func (c EntityConfig) normalizeSubConfigs() EntityConfig {
-	if c.Scope != nil {
-		c.SoftDelete = c.Scope.SoftDelete
-		c.MultiTenant = c.Scope.MultiTenant
-		c.TenantField = c.Scope.TenantField
-		c.OwnerField = c.Scope.OwnerField
-		c.CrossOwnerRead = c.Scope.CrossOwnerRead
+	if c.Scope == nil {
+		c.Scope = &ScopeConfig{}
+	} else {
+		scope := *c.Scope
+		c.Scope = &scope
 	}
-	if c.Pagination != nil {
-		c.CursorField = c.Pagination.CursorField
-		c.CursorFields = append([]string(nil), c.Pagination.CursorFields...)
-		c.MaxListLimit = c.Pagination.MaxListLimit
+	if c.Pagination == nil {
+		c.Pagination = &PaginationConfig{}
+	} else {
+		pagination := *c.Pagination
+		pagination.CursorFields = append([]string(nil), c.Pagination.CursorFields...)
+		c.Pagination = &pagination
 	}
-	if c.Exposure != nil {
-		c.CRUD = c.Exposure.CRUD
-		c.MCP = c.Exposure.MCP
-		c.Public = c.Exposure.Public
-		c.Access = c.Exposure.Access
+	if c.Exposure == nil {
+		c.Exposure = &ExposureConfig{}
+	} else {
+		exposure := *c.Exposure
+		if c.Exposure.CRUD != nil {
+			crud := *c.Exposure.CRUD
+			exposure.CRUD = &crud
+		}
+		c.Exposure = &exposure
+	}
+	if c.Timestamps == nil {
+		enabled := true
+		c.Timestamps = &enabled
+	} else {
+		timestamps := *c.Timestamps
+		c.Timestamps = &timestamps
 	}
 	return c
 }

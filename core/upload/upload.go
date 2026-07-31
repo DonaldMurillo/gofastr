@@ -35,10 +35,10 @@ type Storage interface {
 
 // Metadata holds information about an uploaded file.
 type Metadata struct {
-	OriginalName string    `json:"original_name"`
+	OriginalName string    `json:"originalName"`
 	Size         int64     `json:"size"`
-	MimeType     string    `json:"mime_type"`
-	UploadedAt   time.Time `json:"uploaded_at"`
+	MimeType     string    `json:"mimeType"`
+	UploadedAt   time.Time `json:"uploadedAt"`
 	Key          string    `json:"key"`
 }
 

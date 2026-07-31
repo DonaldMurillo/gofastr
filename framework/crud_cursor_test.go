@@ -248,13 +248,10 @@ func TestCursor_PerEntityCursorField(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("events", entity.EntityConfig{
-			Table:       "events",
-			CursorField: "created_at",
-			Fields: []schema.Field{
-				{Name: "created_at", Type: schema.String, Required: true},
-				{Name: "label", Type: schema.String, Required: true},
-			},
+		app.Entity("events", entity.EntityConfig{Table: "events", Pagination: &entity.PaginationConfig{CursorField: "created_at"}, Fields: []schema.Field{
+			{Name: "created_at", Type: schema.String, Required: true},
+			{Name: "label", Type: schema.String, Required: true},
+		},
 		}.WithTimestamps(false))
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
@@ -329,13 +326,10 @@ func TestCursor_Composite(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("feed", entity.EntityConfig{
-			Table:        "feed",
-			CursorFields: []string{"created_at", "id"},
-			Fields: []schema.Field{
-				{Name: "created_at", Type: schema.String, Required: true},
-				{Name: "label", Type: schema.String, Required: true},
-			},
+		app.Entity("feed", entity.EntityConfig{Table: "feed", Pagination: &entity.PaginationConfig{CursorFields: []string{"created_at", "id"}}, Fields: []schema.Field{
+			{Name: "created_at", Type: schema.String, Required: true},
+			{Name: "label", Type: schema.String, Required: true},
+		},
 		}.WithTimestamps(false))
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 

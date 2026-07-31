@@ -32,7 +32,7 @@ app.Use(framework.AccessMiddleware(policy, currentUserRoles))
 // currentUserRoles has signature func(ctx context.Context) []string
 ```
 
-## Gating auto-CRUD (`EntityConfig.Access`)
+## Gating auto-CRUD (`Exposure.Access`)
 
 `RequirePermission` gates routes you mount yourself. To gate the
 **auto-generated CRUD** for an entity, declare the permission for each
@@ -40,11 +40,13 @@ operation on the entity config:
 
 ```go
 app.Entity("posts", framework.EntityConfig{
-    Access: framework.AccessControl{
-        Read:   "posts:read",   // List + Get
-        Create: "posts:write",
-        Update: "posts:write",
-        Delete: "posts:delete",
+    Exposure: &framework.ExposureConfig{
+        Access: framework.AccessControl{
+            Read:   "posts:read",   // List + Get
+            Create: "posts:write",
+            Update: "posts:write",
+            Delete: "posts:delete",
+        },
     },
 })
 ```
@@ -81,11 +83,11 @@ flips it to `session_id`. If your deployment overrides
 `AuthConfig.SessionCookie`, overwrite the scheme after building the spec —
 `Spec.SetSecurityScheme("cookieAuth", …)` replaces it by name.
 
-> **Important — `EntityConfig.Access` is HTTP-only.** It gates the HTTP
+> **Important — `Exposure.Access` is HTTP-only.** It gates the HTTP
 > CRUD routes, not in-process repository or `CrudHandler` calls. This is
 > intentional: in-process Go code is trusted, while owner and tenant
 > isolation still apply at the data layer. SSR screens do not inherit
-> `EntityConfig.Access` checks automatically. Enforce per-row rules for SSR
+> `Exposure.Access` checks automatically. Enforce per-row rules for SSR
 > in lifecycle hooks or explicit screen/handler checks before calling
 > `CrudHandler.CreateOne/UpdateOne/DeleteOne/GetOne/ListAll/UpsertOne` or a
 > generated typed repo. For deliberate cross-owner reads, use
@@ -93,7 +95,7 @@ flips it to `session_id`. If your deployment overrides
 > has no path to it. See [entity-declarations](entity-declarations.md) →
 > "Reading across owners".
 >
-> **Declarative cross-owner read.** `EntityConfig.CrossOwnerRead` names a
+> **Declarative cross-owner read.** `Scope.CrossOwnerRead` names a
 > permission that, when held by the request context, lifts owner scoping
 > for READ operations only on that entity — letting a staff or admin role
 > see every owner's rows on List/Get/Count while writes stay scoped. It
@@ -103,7 +105,7 @@ flips it to `session_id`. If your deployment overrides
 
 > Before this existed, exposing an entity granted **every authenticated
 > user full CRUD** unless you hand-composed route-group middleware.
-> `EntityConfig.Access` makes the requirement visible at the declaration
+> `Exposure.Access` makes the requirement visible at the declaration
 > and enforced by default.
 
 ## Concepts
@@ -278,7 +280,7 @@ context hold permission P?", not "may this context act on record R?".
 There is no resource argument, so per-record decisions are made
 elsewhere:
 
-- **Owner scoping** — set `EntityConfig.OwnerField` so auto-CRUD only
+- **Owner scoping** — set `Scope.OwnerField` so auto-CRUD only
   ever reads/writes rows owned by the caller. See
   [entity-declarations.md](entity-declarations.md) → "Per-user scoping".
 - **`BeforeCreate` / `BeforeUpdate` / `BeforeDelete` hooks** — these run
@@ -547,7 +549,7 @@ func decideProjectAccess(ctx context.Context, roles []string, cap access.Permiss
 }
 ```
 
-Auto-CRUD consults this automatically: `EntityConfig.Access` gates route through
+Auto-CRUD consults this automatically: `Exposure.Access` gates route through
 `CanResource`, passing `Ref{Type: <entity name>, ID: <path id>}` for item-scoped
 ops (read-one/update/delete) and `Ref{Type: <entity name>, ID: ""}` for
 collection-level ops (list/create/batch/the `_events` feed). No handler change

@@ -75,7 +75,12 @@ func TestBuildDSLAfterWiresCursor(t *testing.T) {
 // TestBuildDSLAfterUsesCursorField pins that after() keysets on the entity's
 // configured CursorField, not always the primary key.
 func TestBuildDSLAfterUsesCursorField(t *testing.T) {
-	reg := postsRegistry(t, func(c *entity.EntityConfig) { c.CursorField = "seq" })
+	reg := postsRegistry(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.CursorField = "seq"
+	})
 	qb, err := BuildDSLQuery(reg, `posts.after("42")`)
 	if err != nil {
 		t.Fatalf("BuildDSLQuery: %v", err)
@@ -89,7 +94,12 @@ func TestBuildDSLAfterUsesCursorField(t *testing.T) {
 // TestBuildDSLAfterCompositeRejected pins that after() on a composite-cursor
 // entity errors instead of silently ignoring the cursor.
 func TestBuildDSLAfterCompositeRejected(t *testing.T) {
-	reg := postsRegistry(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq", "id"} })
+	reg := postsRegistry(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.CursorFields = []string{"seq", "id"}
+	})
 	if _, err := BuildDSLQuery(reg, `posts.after("x")`); err == nil {
 		t.Fatal("after() on composite cursor should error")
 	}

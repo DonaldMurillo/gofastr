@@ -31,11 +31,7 @@ func TestListGetDeclareFields(t *testing.T) {
 // TestSoftDeleteListDeclaresTrashed asserts ?trashed= is advertised on the
 // list op only for soft-delete entities.
 func TestSoftDeleteListDeclaresTrashed(t *testing.T) {
-	soft := entity.Define("notes", entity.EntityConfig{
-		Table:      "notes",
-		SoftDelete: true,
-		Fields:     []schema.Field{{Name: "title", Type: schema.String}},
-	})
+	soft := entity.Define("notes", entity.EntityConfig{Table: "notes", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}})
 	doc := EntityOpenAPI(reg(soft), "Test", "1.0.0").Build()
 	listOp := getMap(t, getMap(t, getMap(t, doc, "paths"), "/notes"), "get")
 	if findParam(listOp["parameters"], "trashed") == nil {

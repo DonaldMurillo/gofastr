@@ -323,7 +323,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	}
 	// Soft-deleted rows are logically gone — a bulk UPDATE must not reach
 	// them, mirroring the SELECT/Count paths (ApplySoftDeleteFilter).
-	if q.handler.Entity.Config.SoftDelete {
+	if q.handler.Entity.Config.Scope.SoftDelete {
 		ub.Where("deleted_at IS NULL")
 	}
 	req := syntheticRequest(ctx, "PATCH", "/")
@@ -346,7 +346,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	req := syntheticRequest(ctx, "DELETE", "/")
-	if q.handler.Entity.Config.SoftDelete {
+	if q.handler.Entity.Config.Scope.SoftDelete {
 		ub := query.Update(q.handler.Entity.GetTable()).
 			Set("deleted_at", time.Now().UTC())
 		for _, c := range q.wheres {

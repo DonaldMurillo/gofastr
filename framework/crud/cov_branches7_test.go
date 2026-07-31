@@ -130,10 +130,7 @@ func TestEagerLoad_SoftDeleteManyToMany(t *testing.T) {
 	seedRows(t, db, "smpivot", []map[string]any{
 		{"post_id": "p1", "tag_id": "t1"}, {"post_id": "p1", "tag_id": "t2"},
 	})
-	tagsEnt := entity.Define("smtags", entity.EntityConfig{
-		Name: "smtags", Table: "smtags", SoftDelete: true,
-		Fields: []schema.Field{{Name: "label", Type: schema.String}},
-	}.WithTimestamps(false))
+	tagsEnt := entity.Define("smtags", entity.EntityConfig{Name: "smtags", Table: "smtags", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{{Name: "label", Type: schema.String}}}.WithTimestamps(false))
 	postsEnt := entity.Define("smposts", entity.EntityConfig{Name: "smposts", Table: "smposts"}.WithTimestamps(false))
 	reg := stubRegistry{byName: map[string]*entity.Entity{"smtags": tagsEnt, "smposts": postsEnt}}
 	m2m := entity.ManyToMany("tags", "smtags", "smpivot", "post_id", "tag_id")
@@ -164,10 +161,7 @@ func TestInclude_ScopedSoftDeleteManyToMany(t *testing.T) {
 	seedRows(t, db, "impivot", []map[string]any{
 		{"post_id": "p1", "tag_id": "t1"}, {"post_id": "p1", "tag_id": "t2"},
 	})
-	tagsEnt := entity.Define("imtags", entity.EntityConfig{
-		Name: "imtags", Table: "imtags", SoftDelete: true,
-		Fields: []schema.Field{{Name: "label", Type: schema.String}},
-	}.WithTimestamps(false))
+	tagsEnt := entity.Define("imtags", entity.EntityConfig{Name: "imtags", Table: "imtags", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{{Name: "label", Type: schema.String}}}.WithTimestamps(false))
 	postsEnt := entity.Define("imposts", entity.EntityConfig{
 		Name: "imposts", Table: "imposts",
 		Fields:    []schema.Field{{Name: "title", Type: schema.String}},
@@ -189,8 +183,15 @@ func TestInclude_ScopedSoftDeleteManyToMany(t *testing.T) {
 }
 
 func TestCursor_BackwardComposite(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq", "id"} }, 6)
-	// First forward page to obtain a composite cursor.
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{
+				// First forward page to obtain a composite cursor.
+			}
+		}
+		c.Pagination.CursorFields = []string{"seq", "id"}
+	}, 6)
+
 	rec := httptest.NewRecorder()
 	ch.List()(rec, withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1"))
 	var page struct {

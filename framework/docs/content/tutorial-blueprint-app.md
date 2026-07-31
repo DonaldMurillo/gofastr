@@ -163,10 +163,12 @@ registration. Removing `Public` re-arms the secure-by-default gate;
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
-		OwnerField: "user_id",                                    // per-user scoping
-		Access:     framework.AccessControl{Delete: "notes:admin"}, // RBAC gate on DELETE
-		CRUD:       boolPtr(true),
-		MCP:        true,
+		Scope:    &framework.ScopeConfig{OwnerField: "user_id"}, // per-user scoping
+		Exposure: &framework.ExposureConfig{
+			Access: framework.AccessControl{Delete: "notes:admin"}, // RBAC gate on DELETE
+			CRUD:   boolPtr(true),
+			MCP:    true,
+		},
 	})
 ```
 

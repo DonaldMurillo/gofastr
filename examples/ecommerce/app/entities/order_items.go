@@ -285,9 +285,13 @@ func registerOrderItems(app *framework.App) {
 			{Type: framework.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: "order_id"},
 			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: "product_id"},
 		},
-		OwnerField: "user_id",
-		CRUD:       boolPtr(true),
-		MCP:        true,
+		Scope: &framework.ScopeConfig{
+			OwnerField: "user_id",
+		},
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
 	})
 	_ = OrderItems{}
 }

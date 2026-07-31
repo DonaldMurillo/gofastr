@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -59,11 +60,11 @@ func (s *OrdersEditScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountOrdersScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	appResources["orders"] = ResourceConfig{
-		Title: "Orders", Singular: "Order", BasePath: "/orders", APIPath: "/api/orders",
+	appResources["orders"] = resource.Config{
+		Entity: "orders", Title: "Orders", Singular: "Order", BasePath: "/orders", APIPath: "/api/orders",
 		Crud:    fwApp.MustCrudHandler("orders"),
 		CanEdit: true,
-		Fields: []ResField{
+		Fields: []resource.Field{
 			{Key: "user_id", Label: "User", Type: "string"},
 			{Key: "order_number", Label: "Order Number", Type: "string"},
 			{Key: "status", Label: "Status", Type: "enum", Values: []string{"pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"}},
@@ -80,17 +81,17 @@ func mountOrdersScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 			{Key: "shipped_at", Label: "Shipped At", Type: "timestamp"},
 			{Key: "delivered_at", Label: "Delivered At", Type: "timestamp"},
 		},
-		Related: []RelatedList{
+		Related: []resource.RelatedList{
 			{
 				Title: "Order Items", ForeignKey: "order_id", BasePath: "",
 				Crud: fwApp.MustCrudHandler("order_items"),
-				Fields: []ResField{
+				Fields: []resource.Field{
 					{Key: "user_id", Label: "User", Type: "string"},
 					{Key: "product_id", Label: "Product", Type: "relation"},
 					{Key: "product_name", Label: "Product Name", Type: "string"},
 					{Key: "quantity", Label: "Quantity", Type: "int"},
 				},
-				Relations: map[string]RelSource{
+				Relations: map[string]resource.Relation{
 					"order_id":   {Crud: fwApp.MustCrudHandler("orders"), Display: "user_id"},
 					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
 				},

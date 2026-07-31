@@ -46,22 +46,18 @@ func newReadHookWorld(t *testing.T) (*App, *sql.DB) {
 }
 
 func readHookChildConfig() entity.EntityConfig {
-	return entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String},
-			{Name: "secret", Type: schema.String, NoQuery: true},
-		},
+	return entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "name", Type: schema.String},
+		{Name: "secret", Type: schema.String, NoQuery: true},
+	},
 	}.WithTimestamps(false)
 }
 
 func readHookParentConfig() entity.EntityConfig {
-	return entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String},
-			{Name: "author_id", Type: schema.String},
-		},
+	return entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String},
+		{Name: "author_id", Type: schema.String},
+	},
 		Relations: []entity.Relation{entity.BelongsTo("author", "rw_authors", "author_id")},
 	}.WithTimestamps(false)
 }
@@ -128,7 +124,7 @@ func TestViewRouteWiresChildHooks(t *testing.T) {
 	}
 	// View does not currently declare relations. Add one to the registered
 	// entity so the read-only route exercises its ChildHooks wiring.
-	view.Config.Public = true
+	view.Config.Exposure.Public = true
 	view.Config.Relations = []entity.Relation{entity.BelongsTo("author", "rw_authors", "author_id")}
 
 	rec := httptest.NewRecorder()
@@ -141,10 +137,7 @@ func TestViewRouteWiresChildHooks(t *testing.T) {
 
 func TestWriteRoutesRunResponseHooks(t *testing.T) {
 	app, _ := newReadHookWorld(t)
-	app.Entity("rw_notes", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String, NoQuery: true}},
-	}.WithTimestamps(false))
+	app.Entity("rw_notes", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "body", Type: schema.String, NoQuery: true}}}.WithTimestamps(false))
 	app.HookRegistry("rw_notes").RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
 		p := data.(*hook.GetPayload)
 		if _, ok := p.Result["body"]; ok {

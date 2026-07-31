@@ -89,17 +89,15 @@ func setupNewFeaturesE2E(t *testing.T, db *sql.DB) *newFeaturesEnv {
 			{Name: "name", Type: schema.String, Required: true},
 		},
 	}.WithTimestamps(false))
-	app.Entity("posts", entity.EntityConfig{
-		Table: "posts",
+	app.Entity("posts", entity.EntityConfig{Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "author_id", Type: schema.String, Required: true},
 			{Name: "created_at", Type: schema.String, Required: true},
-		},
+		}, Pagination:
 		// Composite cursor: order by created_at then id so duplicate
 		// timestamps still produce a stable page boundary.
-		CursorFields: []string{"created_at"},
-		Relations: []entity.Relation{
+		&entity.PaginationConfig{CursorFields: []string{"created_at"}}, Relations: []entity.Relation{
 			entity.BelongsTo("author", "authors", "author_id"),
 			entity.HasMany("comments", "comments", "post_id"),
 		},

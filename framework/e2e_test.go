@@ -779,15 +779,12 @@ func TestE2E_SoftDelete(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		ent := entity.Define("posts", entity.EntityConfig{
-			Table:      "posts",
-			SoftDelete: true,
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-				{Name: "body", Type: schema.Text},
-				{Name: "status", Type: schema.String},
-				{Name: "author_id", Type: schema.String},
-			},
+		ent := entity.Define("posts", entity.EntityConfig{Table: "posts", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "body", Type: schema.Text},
+			{Name: "status", Type: schema.String},
+			{Name: "author_id", Type: schema.String},
+		},
 		})
 		app.Registry.Register(ent)
 

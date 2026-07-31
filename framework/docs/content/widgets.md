@@ -356,8 +356,9 @@ come from `widget.MountRuntime(r)` — once per host, not per widget.
 Widgets resolve through `core-ui/style` and use the framework default
 theme without extra setup. Token overrides flow through:
 
-1. `core-ui/widget/theme.PageTheme(overrides ...style.Theme)` returns
-   a merged `style.Theme`. Use it to author custom widget chrome.
+1. `core-ui/widget/theme.PageTheme()` returns the page `style.Theme`.
+   Mutate the returned value's typed fields to override tokens, then pass
+   it where you build widget chrome.
 2. Or rely on the default — `widget.Mount` builds a stylesheet with
    `:root` CSS variables for every token.
 

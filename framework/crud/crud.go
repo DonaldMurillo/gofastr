@@ -132,7 +132,7 @@ type singleResponse struct {
 // is configured for multi-tenancy and a tenant ID is present in the context.
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) ApplyTenantScope(qb *query.QueryBuilder, r *http.Request) {
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
 			qb.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
@@ -143,7 +143,7 @@ func (ch *CrudHandler) ApplyTenantScope(qb *query.QueryBuilder, r *http.Request)
 // ApplyTenantScopeCount adds a tenant_id filter to a count query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) ApplyTenantScopeCount(cb *query.CountBuilder, r *http.Request) {
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
 			cb.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
@@ -154,7 +154,7 @@ func (ch *CrudHandler) ApplyTenantScopeCount(cb *query.CountBuilder, r *http.Req
 // ApplyTenantScopeUpdate adds a tenant_id filter to an update query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) ApplyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
 			ub.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
@@ -165,7 +165,7 @@ func (ch *CrudHandler) ApplyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.R
 // ApplyTenantScopeDelete adds a tenant_id filter to a delete query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) ApplyTenantScopeDelete(db *query.DeleteBuilder, r *http.Request) {
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
 			db.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
@@ -177,7 +177,7 @@ func (ch *CrudHandler) ApplyTenantScopeDelete(db *query.DeleteBuilder, r *http.R
 // enabled. It reads the tenant ID from ctx so it works whether the caller is
 // outside or inside an in-tx context derived from the request.
 func (ch *CrudHandler) InjectTenant(data map[string]any, ctx context.Context) {
-	if ch.Entity.Config.MultiTenant {
+	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(ctx)
 		if tenantID != "" {
 			data[ch.Entity.Config.TenantColumn()] = tenantID
@@ -206,14 +206,14 @@ func (ch *CrudHandler) ApplySoftDeleteFilterCount(cb *query.CountBuilder, r *htt
 // url.Values through every helper; this variant accepts it directly so the
 // soft-delete gate doesn't pay url.URL.Query a second time per call.
 func (ch *CrudHandler) applySoftDeleteFilterQ(qb *query.QueryBuilder, q url.Values, ctx context.Context) {
-	if ch.Entity.Config.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
+	if ch.Entity.Config.Scope.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
 		qb.Where("deleted_at IS NULL")
 	}
 }
 
 // applySoftDeleteFilterCountQ mirrors applySoftDeleteFilterQ for count queries.
 func (ch *CrudHandler) applySoftDeleteFilterCountQ(cb *query.CountBuilder, q url.Values, ctx context.Context) {
-	if ch.Entity.Config.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
+	if ch.Entity.Config.Scope.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
 		cb.Where("deleted_at IS NULL")
 	}
 }
@@ -465,7 +465,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// explicit offset). Handing the same parsed Values to every
 		// helper eliminates the re-parse without changing any semantics.
 		q := r.URL.Query()
-		page, perPage := parsePaginationValues(q, ch.Entity.Config.MaxListLimit)
+		page, perPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
 
 		includes, err := parseIncludeTreeQ(q, ch.Entity, ch.Registry)
 		if err != nil {

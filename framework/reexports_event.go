@@ -17,4 +17,5 @@ const (
 	EntityDeleted = event.EntityDeleted
 )
 
-var NewEventBus = event.NewEventBus
+// NewEventBus wraps event.NewEventBus.
+func NewEventBus() *event.EventBus { return event.NewEventBus() }

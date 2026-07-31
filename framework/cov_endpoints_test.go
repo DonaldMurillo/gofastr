@@ -26,13 +26,11 @@ func covMustPanic(t *testing.T, fn func()) {
 func TestCovEntityEndpointEmptyMethod(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	covMustPanic(t, func() {
-		app.Entity("posts", entity.EntityConfig{
-			CRUD: boolPtr(false),
-			Endpoints: []entity.Endpoint{{
-				Method:  "  ",
-				Path:    "thing",
-				Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			}},
+		app.Entity("posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{{
+			Method:  "  ",
+			Path:    "thing",
+			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		}},
 		})
 	})
 }
@@ -41,13 +39,11 @@ func TestCovEntityEndpointEmptyMethod(t *testing.T) {
 func TestCovEntityEndpointNilMCPHandler(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	covMustPanic(t, func() {
-		app.Entity("posts", entity.EntityConfig{
-			CRUD: boolPtr(false),
-			Endpoints: []entity.Endpoint{{
-				Method: http.MethodGet,
-				Path:   "thing",
-				MCP:    true,
-			}},
+		app.Entity("posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{{
+			Method: http.MethodGet,
+			Path:   "thing",
+			MCP:    true,
+		}},
 		})
 	})
 }
@@ -56,17 +52,14 @@ func TestCovEntityEndpointNilMCPHandler(t *testing.T) {
 // default-name and default-description branches.
 func TestCovEntityEndpointDefaultNameDesc(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
-	app.Entity("posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		CRUD:   boolPtr(false),
-		Endpoints: []entity.Endpoint{{
-			Method: http.MethodPost,
-			Path:   "{id}/act",
-			MCP:    true,
-			// Name and Description intentionally empty → defaults derived.
-			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-		}},
+	app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{{
+		Method: http.MethodPost,
+		Path:   "{id}/act",
+		MCP:    true,
+		// Name and Description intentionally empty → defaults derived.
+		Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+	}},
 	})
 	// A tool with a derived name must now exist.
 	if len(app.MCP.ListTools()) == 0 {
@@ -83,16 +76,13 @@ func TestCovEntityEndpointDefaultNameDesc(t *testing.T) {
 func TestCovGroupEndpointsHappy(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	g := app.Group("/api", routegroup.WithMCPNamespace("api"))
-	app.GroupEntity(g, "posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		CRUD:   boolPtr(false),
-		Endpoints: []entity.Endpoint{{
-			Method:     http.MethodPost,
-			Path:       "{id}/publish",
-			MCP:        true,
-			Handler:    http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }),
-			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-		}},
+	app.GroupEntity(g, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{{
+		Method:     http.MethodPost,
+		Path:       "{id}/publish",
+		MCP:        true,
+		Handler:    http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }),
+		MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+	}},
 	})
 	// Namespaced tool name "api.<derived>" must be present.
 	found := false
@@ -114,13 +104,11 @@ func TestCovGroupEndpointEmptyMethod(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	g := app.Group("/api")
 	covMustPanic(t, func() {
-		app.GroupEntity(g, "posts", entity.EntityConfig{
-			CRUD: boolPtr(false),
-			Endpoints: []entity.Endpoint{{
-				Method:  "",
-				Path:    "x",
-				Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			}},
+		app.GroupEntity(g, "posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{{
+			Method:  "",
+			Path:    "x",
+			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		}},
 		})
 	})
 }
@@ -130,13 +118,11 @@ func TestCovGroupEndpointNilMCPHandler(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	g := app.Group("/api")
 	covMustPanic(t, func() {
-		app.GroupEntity(g, "posts", entity.EntityConfig{
-			CRUD: boolPtr(false),
-			Endpoints: []entity.Endpoint{{
-				Method: http.MethodGet,
-				Path:   "x",
-				MCP:    true,
-			}},
+		app.GroupEntity(g, "posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{{
+			Method: http.MethodGet,
+			Path:   "x",
+			MCP:    true,
+		}},
 		})
 	})
 }

@@ -229,32 +229,19 @@ func TestApplyEntityFromJSONRoundTrip(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("entity not registered: %v", err)
 	}
-}
-
-func TestApplyDeferredEmptyOnceWired(t *testing.T) {
-	// Phase 3 wires hooks and routes; Deferred should be empty for a
-	// world that uses only supported action kinds.
-	app, _ := newTestApp(t)
-	w := world.New()
-	w.Entities["posts"] = &world.Entity{
-		Name:   "posts",
-		Fields: []world.Field{{Name: "title", Type: "string", Required: true}},
+	if got.Config.Scope == nil || !got.Config.Scope.SoftDelete || !got.Config.Scope.MultiTenant {
+		t.Fatalf("scope not converted to grouped config: %+v", got.Config.Scope)
 	}
-	w.Hooks = append(w.Hooks, &world.Hook{
-		ID: "h1", Entity: "posts", When: "before_create",
-		Action: world.Action{Kind: world.ActionNoop},
-	})
-	deferred, err := render.ApplyDetailed(app, w)
-	if err != nil {
-		t.Fatalf("Apply: %v", err)
+	if got.Config.Exposure == nil || !got.Config.Exposure.MCP || !got.Config.Exposure.Public {
+		t.Fatalf("exposure not converted to grouped config: %+v", got.Config.Exposure)
 	}
-	if len(deferred.Hooks) != 0 || len(deferred.Routes) != 0 {
-		t.Errorf("expected no deferred surfaces, got %+v", deferred)
+	if got.Config.Pagination == nil || got.Config.Timestamps == nil || !*got.Config.Timestamps {
+		t.Fatalf("resolved config groups or timestamps missing: %+v", got.Config)
 	}
 }
 
-// Sanity that the JSON shape of world.Entity matches framework.EntityDeclaration
-// without requiring a manual converter. The renderer relies on this.
+// EntityDeclaration's custom JSON decoder accepts Kiln's versioned flat
+// shape and moves those keys into the grouped declaration fields.
 func TestWorldEntityMarshalsLikeDeclaration(t *testing.T) {
 	w := &world.Entity{
 		Name:   "posts",
@@ -270,6 +257,9 @@ func TestWorldEntityMarshalsLikeDeclaration(t *testing.T) {
 		t.Fatalf("unmarshal as declaration: %v", err)
 	}
 	if decl.Name != "posts" || len(decl.Fields) != 1 || decl.Fields[0].Name != "title" {
+		if decl.Exposure == nil || !decl.Exposure.MCP {
+			t.Errorf("flat Kiln exposure did not normalize: %#v", decl.Exposure)
+		}
 		t.Errorf("declaration round-trip lost data: %#v", decl)
 	}
 }

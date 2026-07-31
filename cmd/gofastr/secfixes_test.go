@@ -12,12 +12,9 @@ import (
 
 // F1: OwnerField must be emitted by the codegen text emitter.
 func TestEmitOwnerField(t *testing.T) {
-	reg, err := renderEntityRegistration(framework.EntityDeclaration{
-		Name:       "notes",
-		OwnerField: "user_id",
-		Fields: []framework.FieldDeclaration{
-			{Name: "title", Type: "string"},
-		},
+	reg, err := renderEntityRegistration(framework.EntityDeclaration{Pagination: &framework.PaginationDeclaration{}, Exposure: &framework.ExposureDeclaration{}, Name: "notes", Scope: &framework.ScopeDeclaration{OwnerField: "user_id"}, Fields: []framework.FieldDeclaration{
+		{Name: "title", Type: "string"},
+	},
 	})
 	if err != nil {
 		t.Fatalf("renderEntityRegistration: %v", err)
@@ -40,7 +37,7 @@ func TestBlueprintOwnerField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadBlueprint: %v", err)
 	}
-	if len(bp.Entities) != 1 || bp.Entities[0].OwnerField != "user_id" {
+	if len(bp.Entities) != 1 || bp.Entities[0].Scope.OwnerField != "user_id" {
 		t.Fatalf("owner_field dropped: %#v", bp.Entities)
 	}
 }

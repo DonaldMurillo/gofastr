@@ -1,5 +1,3 @@
-// Package email provides a pluggable email system with SMTP sending,
-// development logging, and template rendering capabilities.
 package email
 
 import (

@@ -177,25 +177,23 @@ func TestSPAEntityAPI(t *testing.T) {
 		framework.WithConfig(framework.AppConfig{Name: "spa-test"}),
 	)
 
-	app.Entity("articles", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "summary", Type: schema.Text},
-			{Name: "body", Type: schema.Text},
-			{Name: "category", Type: schema.String},
-		},
+	app.Entity("articles", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "summary", Type: schema.Text},
+		{Name: "body", Type: schema.Text},
+		{Name: "category", Type: schema.String},
+	},
 	})
 
-	app.Entity("projects", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true},
-			{Name: "description", Type: schema.Text},
-			{Name: "url", Type: schema.String},
-		},
+	app.Entity("projects", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "name", Type: schema.String, Required: true},
+		{Name: "description", Type: schema.Text},
+		{Name: "url", Type: schema.String},
+	},
 	})
 
 	// Auto-migrate to create tables (normally done by app.Start)
@@ -323,15 +321,13 @@ func TestBlogEntityDeclarationsLoad(t *testing.T) {
 			{Name: "role", Type: schema.Enum, Values: []string{"admin", "author", "reader"}, Default: "reader"},
 		},
 	})
-	app.Entity("posts", framework.EntityConfig{
-		SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
-			{Name: "author_id", Type: schema.Relation, To: "users"},
-			{Name: "published_at", Type: schema.Timestamp},
-		},
+	app.Entity("posts", framework.EntityConfig{Scope: &framework.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "body", Type: schema.Text},
+		{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
+		{Name: "author_id", Type: schema.Relation, To: "users"},
+		{Name: "published_at", Type: schema.Timestamp},
+	},
 	})
 	app.Entity("comments", framework.EntityConfig{
 		Fields: []schema.Field{
@@ -412,15 +408,14 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 		framework.WithConfig(framework.AppConfig{Name: "spa-crud-test"}),
 	)
 
-	app.Entity("articles", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "summary", Type: schema.Text},
-			{Name: "body", Type: schema.Text},
-			{Name: "category", Type: schema.String},
-		},
+	app.Entity("articles", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "summary", Type: schema.Text},
+		{Name: "body", Type: schema.Text},
+		{Name: "category", Type: schema.String},
+	},
 	})
 
 	// Auto-migrate to create tables
@@ -557,14 +552,12 @@ func TestSPARouteVsAPISplit(t *testing.T) {
 	)
 
 	crudFalse := false
-	app.Entity("articles", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		CRUD:   &crudFalse,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "summary", Type: schema.Text},
-		},
+	app.Entity("articles", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true, CRUD: &crudFalse}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "summary", Type: schema.Text},
+	},
 	})
 
 	framework.AutoMigrate(db, app.Registry)
@@ -665,10 +658,9 @@ func TestApiTourSmoke(t *testing.T) {
 		framework.WithDB(db),
 		framework.WithConfig(framework.AppConfig{Name: "api-tour-test"}),
 	)
-	app.Entity("users", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Table:  "users",
+	app.Entity("users", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "users",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "name", Type: schema.String, Required: true},
@@ -685,16 +677,13 @@ func TestApiTourSmoke(t *testing.T) {
 			{Name: "bio", Type: schema.Text},
 		},
 	})
-	app.Entity("posts", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public:      true,
-		Table:       "posts",
-		CursorField: "created_at",
-		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "author_id", Type: schema.String, Required: true},
-		},
+	app.Entity("posts", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "posts", Pagination: &framework.PaginationConfig{CursorField: "created_at"}, Fields: []schema.Field{
+		{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "author_id", Type: schema.String, Required: true},
+	},
 		Relations: []framework.Relation{
 			framework.BelongsTo("author", "users", "author_id"),
 		},

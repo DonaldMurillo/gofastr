@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
@@ -160,5 +161,74 @@ func TestValidateBlueprintBadThemeToken(t *testing.T) {
 	bp := Blueprint{App: BlueprintApp{Theme: map[string]string{"not_a_real_token": "#fff"}}}
 	if err := validateBlueprint(bp); err == nil {
 		t.Fatal("expected unsupported theme token error")
+	}
+}
+
+func TestDecodeEntityFlatKeysNormalizeToGroups(t *testing.T) {
+	bp, err := covT_decode(t, `
+entities:
+  - name: tickets
+    soft_delete: true
+    multi_tenant: true
+    tenant_field: account_id
+    owner_field: user_id
+    cross_owner_read: tickets:read:all
+    cursor_fields: [created_at, id]
+    max_list_limit: 25
+    crud: false
+    mcp: true
+    public: false
+    access:
+      read: tickets:read
+    fields:
+      - name: title
+        type: string
+`)
+	if err != nil {
+		t.Fatalf("decode flat declaration: %v", err)
+	}
+	d := bp.Entities[0]
+	if d.Scope == nil || !d.Scope.SoftDelete || !d.Scope.MultiTenant ||
+		d.Scope.TenantField != "account_id" || d.Scope.OwnerField != "user_id" ||
+		d.Scope.CrossOwnerRead != "tickets:read:all" {
+		t.Fatalf("scope not normalized: %+v", d.Scope)
+	}
+	if d.Pagination == nil || len(d.Pagination.CursorFields) != 2 ||
+		d.Pagination.MaxListLimit != 25 {
+		t.Fatalf("pagination not normalized: %+v", d.Pagination)
+	}
+	if d.Exposure == nil || d.Exposure.CRUD == nil || *d.Exposure.CRUD ||
+		!d.Exposure.MCP || d.Exposure.Access == nil ||
+		d.Exposure.Access.Read != "tickets:read" {
+		t.Fatalf("exposure not normalized: %+v", d.Exposure)
+	}
+}
+
+func TestDecodeEntityRejectsConflictingFlatAndGroupedKeys(t *testing.T) {
+	tests := map[string]string{
+		"soft delete":      "    soft_delete: true\n    scope:\n      soft_delete: false\n",
+		"multi tenant":     "    multi_tenant: true\n    scope:\n      multi_tenant: false\n",
+		"tenant field":     "    tenant_field: tenant_id\n    scope:\n      tenant_field: account_id\n",
+		"owner field":      "    owner_field: user_id\n    scope:\n      owner_field: account_id\n",
+		"cross owner read": "    cross_owner_read: read:a\n    scope:\n      cross_owner_read: read:b\n",
+		"cursor field":     "    cursor_field: id\n    pagination:\n      cursor_field: created_at\n",
+		"cursor fields":    "    cursor_fields: [id]\n    pagination:\n      cursor_fields: [created_at, id]\n",
+		"max list limit":   "    max_list_limit: 10\n    pagination:\n      max_list_limit: 20\n",
+		"crud":             "    crud: true\n    exposure:\n      crud: false\n",
+		"mcp":              "    mcp: true\n    exposure:\n      mcp: false\n",
+		"public":           "    public: true\n    exposure:\n      public: false\n",
+		"access":           "    access:\n      read: read:a\n    exposure:\n      access:\n        read: read:b\n",
+	}
+	for name, declaration := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := covT_decode(t, "entities:\n  - name: tickets\n"+declaration+
+				"    fields:\n      - name: title\n        type: string\n")
+			if err == nil {
+				t.Fatal("expected conflicting declaration to fail")
+			}
+			if !strings.Contains(err.Error(), "conflicting") {
+				t.Fatalf("error %q does not explain the conflict", err)
+			}
+		})
 	}
 }

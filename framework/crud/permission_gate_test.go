@@ -28,14 +28,12 @@ func setupPermissionedHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	if _, err := db.Exec(`CREATE TABLE docs (id TEXT PRIMARY KEY, body TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	ent := entity.Define("docs", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-		Access: entity.AccessControl{
-			Read:   "docs:read",
-			Create: "docs:write",
-			Update: "docs:write",
-			Delete: "docs:delete",
-		},
+	ent := entity.Define("docs", entity.EntityConfig{Fields: []schema.Field{{Name: "body", Type: schema.String}}, Exposure: &entity.ExposureConfig{Access: entity.AccessControl{
+		Read:   "docs:read",
+		Create: "docs:write",
+		Update: "docs:write",
+		Delete: "docs:delete",
+	}},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	return NewCrudHandler(ent, db).WithJSONCase(CaseSnake), db

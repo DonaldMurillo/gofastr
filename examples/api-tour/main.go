@@ -55,10 +55,9 @@ func main() {
 		framework.WithFileStorage(upload.NewLocalStorage(uploadDir)),
 	)
 
-	app.Entity("users", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Table:  "users",
+	app.Entity("users", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "users",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "name", Type: schema.String, Required: true},
@@ -70,8 +69,7 @@ func main() {
 		},
 	})
 
-	app.Entity("profiles", framework.EntityConfig{
-		Table: "profiles",
+	app.Entity("profiles", framework.EntityConfig{Table: "profiles",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "user_id", Type: schema.String, Required: true},
@@ -79,40 +77,38 @@ func main() {
 		},
 		Relations: []framework.Relation{
 			framework.BelongsTo("user", "users", "user_id"),
-		},
+		}, Exposure:
 		// Public read (the ?include=author.profile flows stay anonymous),
 		// gated writes: per-user data must never be world-writable. With
 		// no RBAC policy installed in this demo, the write permissions
 		// simply fail closed for everyone — the read-only posture a
 		// public author bio wants.
-		Access: framework.AccessControl{
+		&framework.ExposureConfig{Access: framework.AccessControl{
 			Create: "profiles:write",
 			Update: "profiles:write",
 			Delete: "profiles:write",
-		},
+		}},
 	})
 
-	app.Entity("posts", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public:      true,
-		Table:       "posts",
-		CursorField: "created_at", // pagination by recency, not PK
-		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-			{Name: "author_id", Type: schema.String, Required: true},
-		},
+	app.Entity("posts", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "posts", Pagination: &framework.PaginationConfig{
+		// pagination by recency, not PK
+		CursorField: "created_at"}, Fields: []schema.Field{
+		{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "body", Type: schema.Text},
+		{Name: "author_id", Type: schema.String, Required: true},
+	},
 		Relations: []framework.Relation{
 			framework.BelongsTo("author", "users", "author_id"),
 			framework.HasMany("comments", "comments", "post_id"),
 		},
 	})
 
-	app.Entity("comments", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Table:  "comments",
+	app.Entity("comments", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "comments",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "body", Type: schema.Text, Required: true},

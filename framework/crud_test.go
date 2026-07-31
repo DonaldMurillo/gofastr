@@ -169,7 +169,7 @@ func TestCrudApplyTenantScopeCount(t *testing.T) {
 // ============================================================================
 
 func TestCrudApplySoftDeleteFilter(t *testing.T) {
-	ent := entity.Define("posts", entity.EntityConfig{SoftDelete: true})
+	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}, Exposure: &entity.ExposureConfig{}})
 
 	ch := &crud.CrudHandler{Entity: ent}
 
@@ -192,7 +192,7 @@ func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
 	// requires the filter to stay applied when no authenticated user
 	// is present, regardless of the query param. The test was
 	// previously inverted; git history records the flip.
-	ent := entity.Define("posts", entity.EntityConfig{SoftDelete: true})
+	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}, Exposure: &entity.ExposureConfig{}})
 
 	ch := &crud.CrudHandler{Entity: ent}
 
@@ -224,7 +224,7 @@ func TestCrudApplySoftDeleteFilter_NotSoftDelete(t *testing.T) {
 }
 
 func TestCrudApplySoftDeleteFilterCount(t *testing.T) {
-	ent := entity.Define("posts", entity.EntityConfig{SoftDelete: true})
+	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}, Exposure: &entity.ExposureConfig{}})
 
 	ch := &crud.CrudHandler{Entity: ent}
 
@@ -622,21 +622,19 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		ent := entity.Define("posts", entity.EntityConfig{
-			Table:      "posts",
-			SoftDelete: true,
+		ent := entity.Define("posts", entity.EntityConfig{Table: "posts", Scope: &entity.ScopeConfig{
+
 			// Public: this test asserts anonymous ?trashed=true still
 			// hides soft-deleted rows (a public list endpoint) — the
 			// secure-by-default session gate (issue #65) would otherwise
 			// 401 every request here before the soft-delete filter is
 			// even reached.
-			Public: true,
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-				{Name: "body", Type: schema.Text},
-				{Name: "status", Type: schema.String},
-				{Name: "author_id", Type: schema.String},
-			},
+			SoftDelete: true}, Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "body", Type: schema.Text},
+			{Name: "status", Type: schema.String},
+			{Name: "author_id", Type: schema.String},
+		},
 		})
 		app.Registry.Register(ent)
 
@@ -854,15 +852,12 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		ent := entity.Define("posts", entity.EntityConfig{
-			Table:       "posts",
-			MultiTenant: true,
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-				{Name: "body", Type: schema.Text},
-				{Name: "status", Type: schema.String},
-				{Name: "author_id", Type: schema.String},
-			},
+		ent := entity.Define("posts", entity.EntityConfig{Table: "posts", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "body", Type: schema.Text},
+			{Name: "status", Type: schema.String},
+			{Name: "author_id", Type: schema.String},
+		},
 		})
 		tenant.WithMultiTenant(ent, tenant.DefaultTenantConfig())
 		app.Registry.Register(ent)
@@ -940,12 +935,9 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		ent := entity.Define("posts", entity.EntityConfig{
-			Table:      "posts",
-			SoftDelete: true,
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-			},
+		ent := entity.Define("posts", entity.EntityConfig{Table: "posts", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+		},
 		})
 		app.Registry.Register(ent)
 

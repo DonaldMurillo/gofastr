@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -106,7 +107,7 @@ func Tag(cfg TagConfig) render.HTML {
 		// same allow-list as ui.Link; see framework/ui/safety.go. Tag
 		// is a content-level component, so a rejected href degrades to
 		// an inert "#" rather than panicking.
-		href := safeURL(cfg.Href)
+		href := urlsafe.CleanAnchor(cfg.Href)
 		if href == "" {
 			href = "#"
 		}

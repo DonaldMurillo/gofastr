@@ -309,11 +309,17 @@ func registerProducts(app *framework.App) {
 			{Type: framework.RelHasMany, Name: "reviews", Entity: "reviews", ForeignKey: "product_id"},
 			{Type: framework.RelHasMany, Name: "order_items", Entity: "order_items", ForeignKey: "product_id"},
 		},
-		SoftDelete:   true,
-		CRUD:         boolPtr(true),
-		MCP:          true,
-		CursorField:  "id",
-		CursorFields: []string{"created_at", "id"},
+		Scope: &framework.ScopeConfig{
+			SoftDelete: true,
+		},
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
+		Pagination: &framework.PaginationConfig{
+			CursorField:  "id",
+			CursorFields: []string{"created_at", "id"},
+		},
 		Indices: []framework.Index{
 			{Name: "idx_products_category", Columns: []string{"category_id"}},
 			{Name: "idx_products_status", Columns: []string{"status"}},

@@ -16,10 +16,10 @@ Blueprints are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
 `.json` blueprint files (or a directory of them), validates them, and scaffolds
 owned Go into an idiomatic, module-root layout by default — a flat
 `package main` at the root (`main.go`, `app.go`, `screens_register.go`, one
-`screen_<name>.go` per screen, and, when needed,
-`resource.go`/`stubs.go`/`resource_test.go`) plus the `entities/`
-package (set `--out=<dir>` or `app.output_dir` to scaffold into a subpackage
-instead). `generate` is one-shot: it refuses to overwrite an existing project
+`screen_<name>.go` per screen, and, when needed, a thin `resource.go` or
+`stubs.go`) plus the `entities/` package (set `--out=<dir>` or
+`app.output_dir` to scaffold into a subpackage instead).
+`generate` is one-shot: it refuses to overwrite an existing project
 (pass `--force`), because the emitted code is yours to own. `--add` is the
 additive alternative: it writes only the new files from a partial yml, never
 overwriting — see [Additive generation](#additive-generation---add).
@@ -328,9 +328,9 @@ aggregated `screens.go`:
   `screenRegistrars = append(screenRegistrars, screenRegistrar{order: N, fn: mount<Screen>})`.
 - `screen_<entity>_crud.go` — one per entity with CRUD screens (or referenced
   by a data source): that entity's list/detail/new/edit screens, their mount
-  funcs, **and** its `appResources["<entity>"] = ResourceConfig{...}` wiring
+  funcs, **and** its `appResources["<entity>"] = resource.Config{...}` wiring
   inside the primary mount func (it needs `fwApp`). An entity's resource
-  wiring lives here, never in `app.go`.
+  wiring lives here, never in `app.go` or the shared engine.
 
 `app.go` still owns layouts, nav, theme, `authPolicy`/`guestPolicy`, auth,
 toasts, and endpoints. `appLayout`/`marketingLayout` are package-level vars
@@ -368,6 +368,10 @@ pieces without editing any owned file. If you removed one of those calls,
 Only the new files are written: `entities/<name>.go` for new entities,
 `screen_<name>.go` for new authored screens, and `screen_<entity>_crud.go` for
 an entity that gains CRUD screens.
+The shared `resource.go` seam is skipped like every existing owned file. A new
+entity's `resource.Config` assignment is contained in its new
+`screen_<entity>_crud.go`, so `--add` extends the registry without rewriting an
+engine or central config file.
 
 **Entity order continuity.** `--add` reads the existing `entities/` directory
 and assigns the new entities declaration orders that continue after the
@@ -488,9 +492,9 @@ re-emit their declarations.
 
 A top-level `entity_list` or `entity_detail` makes its screen a **server-rendered**
 (request-time) screen that queries the entity's `CrudHandler` and composes real
-`framework/ui` components — no client-side fetch. The generator emits an owned
-engine at `resource.go` (and a `resource_test.go`) that the
-screens call:
+`framework/ui` components — no client-side fetch. The generated screen calls
+the supported `framework/ui/resource` engine through the app's thin
+`resource.go` config registry:
 
 - `entity_list` → `ui.PageHeader` + `ui.SearchInput` + `ui.DataTable` +
   `ui.Pagination`/`ui.EmptyState`, with **humanized headers** ("Generic Name"),
@@ -516,14 +520,73 @@ screens call:
 - `entity_form` renders a `<form data-fui-rpc="<api_prefix>/<entity>">` (enum →
   `<select>` of values; relation → `<select>` populated from the related entity).
 
-The generated `ResourceConfig` registry (`appResources`) is populated in each
-entity's `screen_<entity>_crud.go` mount func (run via `mountGenerated`), from
-that entity's `CrudHandler`, fields, and relations — see [Generated screen
-files](#generated-screen-files). `appBaseCSS()` (mounted
-ahead of `static/app.css`) is an owned, empty-by-default extension point for
-app-specific base CSS — every generated screen composes `framework/ui`
-components and `core-ui/app` layouts that ship their own styling, so the
-generator itself emits zero bespoke CSS.
+The generated `resource.Config` registry (`appResources`) is declared in the
+thin owned `resource.go` and populated in each entity's
+`screen_<entity>_crud.go` mount func (run via `mountGenerated`) from that
+entity's `CrudHandler`, fields, and relations — see [Generated screen
+files](#generated-screen-files). Rendering, queries, formatting, relations,
+filters, and mutations stay in `framework/ui/resource`, so framework updates
+reach existing generated apps. `appBaseCSS()` (mounted ahead of
+`static/app.css`) is an owned, empty-by-default extension point for app-specific
+base CSS — every generated screen composes `framework/ui` components and
+`core-ui/app` layouts that ship their own styling, so the generator emits zero
+bespoke CSS.
+
+#### Resource screens (`framework/ui/resource`)
+
+`framework/ui/resource` is the supported server-rendered resource package. It
+composes `ui.PageHeader`, `ui.FilterToolbar`, `ui.DataTable`,
+`ui.Pagination`, `ui.EmptyState`, forms, and status actions. It does not ship a
+second component set or app-specific CSS.
+
+The public seam is:
+
+- `resource.DataSource` — the read methods needed by resource screens;
+  `*framework.CrudHandler` satisfies it.
+- `resource.Config` — entity labels and paths, `Fields`, relation label sources,
+  filters, related lists, transitions, and create/edit policy. `Field.Label`,
+  `Field.Type`, `Field.Values`, and `Field.NoQuery` control display and query
+  behavior; `Relation.Display` names the related record's label field.
+- `Config.WithColumns`, `WithSearch`, `WithLimit`, `WithCreate`, `WithEdit`,
+  `WithFilters`, `WithHeading`, `WithEmpty`, `WithActions`, and `WithIsland` —
+  value-copy options for one screen without changing the registry entry.
+- `Config.List`, `Table`, `Detail`, and `Form` — screen-rendering entry points;
+  `TableHandler` serves an island table refresh.
+- `resource.Registry` — the per-app config map plus dashboard helpers
+  `StatValue`, `GroupBars`, `GroupSlices`, and `LineChart`.
+
+Generated apps keep only the editable config and auth-copy hook:
+
+```go
+var appResources = resource.Registry{}
+
+func mountProductsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	appResources["products"] = resource.Config{
+		Entity:   "products",
+		Title:    "Products",
+		Singular: "Product",
+		BasePath: "/products",
+		APIPath:  "/api/products",
+		Crud:     fwApp.MustCrudHandler("products"),
+		Fields: []resource.Field{
+			{Key: "name", Label: "Name", Type: "string"},
+			{Key: "price", Label: "Price", Type: "decimal"},
+		},
+	}
+	site.Register("/products", &ProductsScreen{}, appLayout)
+}
+
+func (s *ProductsScreen) RenderCtx(ctx context.Context) render.HTML {
+	return appResources["products"].
+		WithColumns("name", "price").
+		WithLimit(20).
+		List(ctx)
+}
+```
+
+Keep app-specific fields, actions, and copy in generated files. Do not copy the
+engine into the app: a private copy does not receive correctness or security
+fixes when the GoFastr module is upgraded.
 
 #### Writable app screens (`create:`, edit, delete)
 
@@ -1119,6 +1182,11 @@ portability rules are built into that template:
   per-entity `owner_field`, `access`, or `multi_tenant` gate the
   generated CRUD and MCP endpoints — that's why the unscoped-PII check fires
   even with auth enabled.
+- **Copying the resource engine into a generated app.** Keep the generated
+  `resource.Config` values and app-specific hooks, but import
+  `framework/ui/resource` for rendering, filtering, formatting, relations, and
+  mutations. A private engine copy does not receive fixes when GoFastr is
+  upgraded.
 - **Writing flow-style inline maps.** `core/yaml` rejects
   `{name: x, type: relation}` — every map must be indented
   `key: value` lines. Anchors, aliases, block scalars, and tabs are

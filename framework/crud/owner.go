@@ -26,7 +26,7 @@ const (
 // permissionForOp returns the declared RBAC permission for op, or "" when the
 // operation is not RBAC-gated.
 func (ch *CrudHandler) permissionForOp(op crudOp) string {
-	a := ch.Entity.Config.Access
+	a := ch.Entity.Config.Exposure.Access
 	switch op {
 	case opCreate:
 		return a.Create
@@ -87,7 +87,7 @@ var errTenantRequired = errors.New("tenant context required for multi-tenant ent
 // (including the fail-closed "no policy in context" case). READ-ONLY by
 // construction: only ApplyOwnerScope / ApplyOwnerScopeCount consult it.
 func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
-	perm := ch.Entity.Config.CrossOwnerRead
+	perm := ch.Entity.Config.Scope.CrossOwnerRead
 	return perm != "" && access.Can(ctx, access.Permission(perm))
 }
 
@@ -98,7 +98,7 @@ func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
 //
 // Uses PostgreSQL-style $N placeholders, matching ApplyTenantScope.
 func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) {
-	field := ch.Entity.Config.OwnerField
+	field := ch.Entity.Config.Scope.OwnerField
 	if field == "" || owner.IsCrossOwner(r.Context()) || ch.crossOwnerReadGranted(r.Context()) {
 		return
 	}
@@ -109,7 +109,7 @@ func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) 
 
 // ApplyOwnerScopeCount mirrors ApplyOwnerScope for count queries.
 func (ch *CrudHandler) ApplyOwnerScopeCount(cb *query.CountBuilder, r *http.Request) {
-	field := ch.Entity.Config.OwnerField
+	field := ch.Entity.Config.Scope.OwnerField
 	if field == "" || owner.IsCrossOwner(r.Context()) || ch.crossOwnerReadGranted(r.Context()) {
 		return
 	}
@@ -120,7 +120,7 @@ func (ch *CrudHandler) ApplyOwnerScopeCount(cb *query.CountBuilder, r *http.Requ
 
 // ApplyOwnerScopeUpdate mirrors ApplyOwnerScope for UPDATE queries.
 func (ch *CrudHandler) ApplyOwnerScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
-	field := ch.Entity.Config.OwnerField
+	field := ch.Entity.Config.Scope.OwnerField
 	if field == "" || owner.IsCrossOwner(r.Context()) {
 		return
 	}
@@ -131,7 +131,7 @@ func (ch *CrudHandler) ApplyOwnerScopeUpdate(ub *query.UpdateBuilder, r *http.Re
 
 // ApplyOwnerScopeDelete mirrors ApplyOwnerScope for DELETE queries.
 func (ch *CrudHandler) ApplyOwnerScopeDelete(db *query.DeleteBuilder, r *http.Request) {
-	field := ch.Entity.Config.OwnerField
+	field := ch.Entity.Config.Scope.OwnerField
 	if field == "" || owner.IsCrossOwner(r.Context()) {
 		return
 	}
@@ -146,7 +146,7 @@ func (ch *CrudHandler) ApplyOwnerScopeDelete(db *query.DeleteBuilder, r *http.Re
 // (UpsertOne, in-process Create variants) where there's no
 // http.ResponseWriter to write a 401 to.
 func (ch *CrudHandler) requireOwnerContext(ctx context.Context) error {
-	if ch.Entity.Config.OwnerField == "" {
+	if ch.Entity.Config.Scope.OwnerField == "" {
 		return nil
 	}
 	if owner.IsCrossOwner(ctx) {
@@ -163,7 +163,7 @@ func (ch *CrudHandler) requireOwnerContext(ctx context.Context) error {
 // Wired into every in-process CRUD method that touches DB state, so a
 // MultiTenant entity can never be queried unscoped through this API.
 func (ch *CrudHandler) requireTenantContext(ctx context.Context) error {
-	if !ch.Entity.Config.MultiTenant {
+	if !ch.Entity.Config.Scope.MultiTenant {
 		return nil
 	}
 	if tenantIDFromCtx(ctx) == "" && !tenant.IsCrossTenant(ctx) {
@@ -175,7 +175,7 @@ func (ch *CrudHandler) requireTenantContext(ctx context.Context) error {
 // InjectOwner stamps the owner id into a Create payload when the entity
 // declares OwnerField. Mirrors InjectTenant's shape.
 func (ch *CrudHandler) InjectOwner(data map[string]any, ctx context.Context) {
-	field := ch.Entity.Config.OwnerField
+	field := ch.Entity.Config.Scope.OwnerField
 	if field == "" {
 		return
 	}
@@ -197,7 +197,7 @@ func (ch *CrudHandler) InjectOwner(data map[string]any, ctx context.Context) {
 // requests that can't produce an owner id, regardless of whether the
 // caller mounted auth middleware in front of the route.
 func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id any, ok bool) {
-	if ch.Entity.Config.OwnerField == "" {
+	if ch.Entity.Config.Scope.OwnerField == "" {
 		return nil, true
 	}
 	id, found := owner.Get(r.Context())
@@ -227,7 +227,7 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 // feed.
 func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Request, op crudOp) bool {
 	cfg := ch.Entity.Config
-	if cfg.OwnerField != "" || cfg.Access.Declared() || cfg.Public {
+	if cfg.Scope.OwnerField != "" || cfg.Exposure.Access.Declared() || cfg.Exposure.Public {
 		return true // an explicit mechanism already governs this entity
 	}
 	if _, ok := handler.GetUser(r.Context()); !ok {
@@ -272,7 +272,7 @@ func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op c
 // access (admin tooling) must set a tenant id deliberately rather than rely on
 // an empty context.
 func (ch *CrudHandler) RequireTenant(w http.ResponseWriter, r *http.Request) (ok bool) {
-	if !ch.Entity.Config.MultiTenant {
+	if !ch.Entity.Config.Scope.MultiTenant {
 		return true
 	}
 	ctx := r.Context()

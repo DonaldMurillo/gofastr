@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -218,7 +219,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 			if it.Caption != "" {
 				dl += "&caption=" + url.PathEscape(it.Caption)
 			}
-			if h := safeURL(it.Src); h != "" {
+			if h := urlsafe.CleanAnchor(it.Src); h != "" {
 				linkAttrs["href"] = h
 				linkAttrs["target"] = "_blank"
 				linkAttrs["rel"] = "noopener"
@@ -227,11 +228,11 @@ func Gallery(cfg GalleryConfig) render.HTML {
 			linkAttrs["data-fui-deeplink"] = dl
 			linkAttrs["data-fui-lightbox-group"] = groupID
 		case cfg.HrefFn != nil:
-			if h := safeURL(cfg.HrefFn(i, it)); h != "" {
+			if h := urlsafe.CleanAnchor(cfg.HrefFn(i, it)); h != "" {
 				linkAttrs["href"] = h
 			}
 		default:
-			if h := safeURL(it.Src); h != "" {
+			if h := urlsafe.CleanAnchor(it.Src); h != "" {
 				linkAttrs["href"] = h
 				linkAttrs["target"] = "_blank"
 				linkAttrs["rel"] = "noopener"

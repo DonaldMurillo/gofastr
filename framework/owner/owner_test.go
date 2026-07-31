@@ -102,10 +102,8 @@ func staticExtractor(id any) owner.Extractor {
 func ownerHandler(field string) *crud.CrudHandler {
 	return &crud.CrudHandler{
 		Entity: &entity.Entity{
-			Config: entity.EntityConfig{
-				Name:       "notes",
-				Table:      "notes",
-				OwnerField: field,
+			Config: entity.EntityConfig{Name: "notes",
+				Table: "notes", Scope: &entity.ScopeConfig{OwnerField: field},
 			},
 		},
 	}

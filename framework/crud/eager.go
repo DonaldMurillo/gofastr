@@ -106,7 +106,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			target = t
 		}
 		softDeleteFilter := ""
-		if target != nil && target.Config.SoftDelete {
+		if target != nil && target.Config.Scope.SoftDelete {
 			softDeleteFilter = " AND deleted_at IS NULL"
 		}
 		hidden := hiddenColumns(target)
@@ -429,7 +429,7 @@ func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.Pars
 		return nil
 	}
 	var out []filter.ParsedFilter
-	if ownerField := target.Config.OwnerField; ownerField != "" {
+	if ownerField := target.Config.Scope.OwnerField; ownerField != "" {
 		var val string
 		if id, ok := owner.Get(ctx); ok && id != nil {
 			val = fmt.Sprintf("%v", id)
@@ -440,7 +440,7 @@ func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.Pars
 			Value: val,
 		})
 	}
-	if target.Config.MultiTenant {
+	if target.Config.Scope.MultiTenant {
 		out = append(out, filter.ParsedFilter{
 			Field: target.Config.TenantColumn(),
 			Op:    filter.OpEq,

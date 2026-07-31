@@ -268,10 +268,10 @@ func TestE2E_Disclosure_ClickSummaryToggles(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/disclosure"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-disclosure"]')[0].hasAttribute('open')`, &openA),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-disclosure"]')[0].querySelector('.ui-disclosure__summary').click()`, nil),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="disclosure"]')[0].hasAttribute('open')`, &openA),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="disclosure"]')[0].querySelector('.ui-disclosure__summary').click()`, nil),
 		chromedp.Sleep(100*1e6),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-disclosure"]')[0].hasAttribute('open')`, &openB),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="disclosure"]')[0].hasAttribute('open')`, &openB),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)

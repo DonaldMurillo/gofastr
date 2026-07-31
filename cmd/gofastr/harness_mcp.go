@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	xharness "github.com/DonaldMurillo/gofastr/framework/harness"
-	"github.com/DonaldMurillo/gofastr/framework/harness/control/mcpserver"
-	"github.com/DonaldMurillo/gofastr/framework/harness/logging"
-	"github.com/DonaldMurillo/gofastr/framework/harness/secrets"
+	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/mcpserver"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/logging"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/secrets"
 )
 
 // runHarnessMCP is the `gofastr harness mcp` subcommand entry. It

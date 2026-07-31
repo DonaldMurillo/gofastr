@@ -40,12 +40,10 @@ type Action struct {
 // Known Action kinds. Evaluators validate Kind+Params shape; serialization
 // only requires that they round-trip through JSON unchanged.
 const (
-	ActionNoop         = "noop"
-	ActionSetField     = "set_field"     // params: {field, value}
-	ActionValidate     = "validate"      // params: {expression, message}
-	ActionAudit        = "audit"         // params: {channel, message}
-	ActionCreateEntity = "create_entity" // params: {entity, data}
-	ActionRespondJSON  = "respond_json"  // params: {status, body}
-	ActionRespondQuery = "respond_query" // params: {query}
-	ActionEmitEvent    = "emit_event"    // params: {topic, data}
+	ActionNoop        = "noop"
+	ActionSetField    = "set_field"    // params: {field, value}
+	ActionValidate    = "validate"     // params: {expression, message}
+	ActionAudit       = "audit"        // params: {channel, message}
+	ActionRespondJSON = "respond_json" // params: {status, body}
+	ActionEmitEvent   = "emit_event"   // params: {topic, data}
 )

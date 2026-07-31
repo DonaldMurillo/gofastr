@@ -75,13 +75,9 @@ func TestCoherence_AllFieldTypesRoundTrip(t *testing.T) {
 func TestCoherence_ManagedColumnsRoundTrip(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
-		reg.Register(entity.Define("account", entity.EntityConfig{
-			Table:       "account",
-			SoftDelete:  true,
-			MultiTenant: true,
-			Fields: []schema.Field{
-				{Name: "name", Type: schema.String, Required: true},
-			},
+		reg.Register(entity.Define("account", entity.EntityConfig{Table: "account", Scope: &entity.ScopeConfig{SoftDelete: true, MultiTenant: true}, Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+		},
 		})) // Timestamps default on.
 
 		if err := AutoMigrate(db, reg); err != nil {

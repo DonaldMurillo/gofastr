@@ -175,11 +175,8 @@ func TestRenderFieldLiteralErrors(t *testing.T) {
 func TestRenderEntityRegistrationFull(t *testing.T) {
 	got, err := renderEntityRegistration(framework.EntityDeclaration{
 		Name: "user", Table: "users",
-		Fields:     []framework.FieldDeclaration{{Name: "name", Type: "string"}},
-		Relations:  []framework.Relation{{Type: framework.RelHasMany, Name: "posts", Entity: "post"}},
-		SoftDelete: true, MultiTenant: true, CRUD: covT_bool(true), MCP: true,
-		CursorField: "id", CursorFields: []string{"a", "b"},
-		Indices:    []framework.Index{{Name: "ix", Columns: []string{"name"}}},
+		Fields:    []framework.FieldDeclaration{{Name: "name", Type: "string"}},
+		Relations: []framework.Relation{{Type: framework.RelHasMany, Name: "posts", Entity: "post"}}, Scope: &framework.ScopeDeclaration{SoftDelete: true, MultiTenant: true}, Exposure: &framework.ExposureDeclaration{CRUD: covT_bool(true), MCP: true}, Pagination: &framework.PaginationDeclaration{CursorField: "id", CursorFields: []string{"a", "b"}}, Indices: []framework.Index{{Name: "ix", Columns: []string{"name"}}},
 		Properties: map[string]any{"k": "v"},
 		Timestamps: covT_bool(true),
 	})

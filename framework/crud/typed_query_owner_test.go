@@ -21,13 +21,10 @@ func openSqliteMem(t *testing.T) (*sql.DB, error) {
 }
 
 func buildSoftDeleteOwnerEntity() *entity.Entity {
-	return entity.Define("softlogs", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "notes", Type: schema.String},
-		},
-		OwnerField: "user_id",
-		SoftDelete: true,
+	return entity.Define("softlogs", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "notes", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{OwnerField: "user_id", SoftDelete: true},
 	}.WithTimestamps(false))
 }
 

@@ -229,16 +229,25 @@ func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	dialect := migrate.DialectPostgres
-	if driver == "sqlite3" {
-		dialect = migrate.DialectSQLite
-	}
+	dialect := dialectForDriver(driver)
 	migrator := migrate.New(db, migrate.WithDialect(dialect))
 	if err := loadMigrationFiles(migrator, "migrations"); err != nil {
 		db.Close()
 		return nil, nil, err
 	}
 	return migrator, func() { _ = db.Close() }, nil
+}
+
+// dialectForDriver maps a database/sql driver name to a migration dialect.
+// Both the CGO mattn/go-sqlite3 driver ("sqlite3") and the pure-Go engine
+// ("sqlite", registered by core/sqlite) are SQLite. Matching on "sqlite3"
+// alone left the pure-Go driver defaulting to the Postgres dialect, so
+// `migrate up` silently ran Postgres SQL against a SQLite database.
+func dialectForDriver(driver string) migrate.Dialect {
+	if driver == "sqlite" || driver == "sqlite3" {
+		return migrate.DialectSQLite
+	}
+	return migrate.DialectPostgres
 }
 
 func loadMigrationFiles(migrator *migrate.Migrator, dir string) error {

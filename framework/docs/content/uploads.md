@@ -55,6 +55,24 @@ The record persisted to the database looks like:
   "resume": "/uploads/users/resume/def456.pdf" }
 ```
 
+## Upload response (standalone handler)
+
+`upload.Handler` (the standalone multipart endpoint, separate from the
+auto-CRUD path) responds `200` with a JSON body describing the stored file.
+Every key is **camelCase**, like the rest of the framework:
+
+```json
+{ "originalName": "report.txt",
+  "size": 11,
+  "mimeType": "text/plain; charset=utf-8",
+  "uploadedAt": "2026-07-30T18:04:07.567319Z",
+  "key": "report.txt" }
+```
+
+`mimeType` is the content type sniffed from the bytes (never the
+attacker-controlled multipart header), and `key` is the sanitized storage
+key the backend wrote the file under.
+
 ## Field-name casing
 
 Multipart field names are **taken literally** as column names — there

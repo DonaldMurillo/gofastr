@@ -18,7 +18,7 @@
 //     os.Stdout specifically — so the wire format survives a future v2 socket
 //     transport without re-opening the protocol (design §1).
 //
-// # Why not reuse framework/harness/mcpclient
+// # Why not reuse framework/experimental/harness/mcpclient
 //
 // mcpclient structurally cannot dispatch child-originated requests: its read
 // loop unmarshals every inbound line into a response struct with no Method

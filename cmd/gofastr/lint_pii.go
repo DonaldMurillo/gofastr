@@ -69,11 +69,12 @@ func (f piiFinding) Message() string {
 func lintUnscopedPII(bp Blueprint) []piiFinding {
 	var out []piiFinding
 	for _, decl := range bp.Entities {
-		crudOn := decl.CRUD == nil || *decl.CRUD // blueprint CRUD defaults on
-		if !crudOn && !decl.MCP {
+		exposure := entityDeclarationExposure(decl)
+		scope := entityDeclarationScope(decl)
+		if !entityDeclarationCRUDEnabled(decl) && !exposure.MCP {
 			continue
 		}
-		if decl.OwnerField != "" || decl.MultiTenant || hasAccessGate(decl.Access) {
+		if scope.OwnerField != "" || scope.MultiTenant || hasAccessGate(exposure.Access) {
 			continue
 		}
 		var pii []string
@@ -140,7 +141,7 @@ func (f publicFinding) Message() string {
 func lintPublicEntities(bp Blueprint) []publicFinding {
 	var out []publicFinding
 	for _, decl := range bp.Entities {
-		if decl.Public {
+		if entityDeclarationExposure(decl).Public {
 			out = append(out, publicFinding{Entity: decl.Name})
 		}
 	}
@@ -153,15 +154,16 @@ func lintPublicEntities(bp Blueprint) []publicFinding {
 func lintUnscopedEntities(bp Blueprint) []unscopedFinding {
 	var out []unscopedFinding
 	for _, decl := range bp.Entities {
-		crudOn := decl.CRUD == nil || *decl.CRUD // blueprint CRUD defaults on
-		if !crudOn && !decl.MCP {
+		exposure := entityDeclarationExposure(decl)
+		scope := entityDeclarationScope(decl)
+		if !entityDeclarationCRUDEnabled(decl) && !exposure.MCP {
 			continue
 		}
 		// Public: true already carries its own, more accurate warning
 		// (lintPublicEntities) — this entity requires no session at all,
 		// so unscopedFinding.Message()'s "a session is already required"
 		// claim would be false for it.
-		if decl.OwnerField != "" || decl.MultiTenant || hasAccessGate(decl.Access) || decl.Public {
+		if scope.OwnerField != "" || scope.MultiTenant || hasAccessGate(exposure.Access) || exposure.Public {
 			continue
 		}
 		out = append(out, unscopedFinding{Entity: decl.Name})

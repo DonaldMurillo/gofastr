@@ -94,8 +94,8 @@ func SchemaHash(named []NamedConfig) string {
 		he := hashEntity{
 			Name:       cfg.Name,
 			Table:      cfg.Table,
-			Public:     cfg.Public,
-			SoftDelete: cfg.SoftDelete,
+			Public:     cfg.Exposure.Public,
+			SoftDelete: cfg.Scope.SoftDelete,
 		}
 		he.SearchFields = append(he.SearchFields, cfg.SearchFields...)
 		sort.Strings(he.SearchFields)

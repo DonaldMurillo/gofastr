@@ -5,7 +5,7 @@
 //
 // Output:
 //
-//	<details data-fui-comp="ui-disclosure" class="ui-disclosure">
+//	<details data-fui-comp="disclosure" class="ui-disclosure">
 //	  <summary class="ui-disclosure__summary">Title</summary>
 //	  <div class="ui-disclosure__body">…</div>
 //	</details>
@@ -62,17 +62,17 @@ func Render(cfg Config, body ...render.HTML) render.HTML {
 	))
 }
 
-var disclosureStyle = registry.RegisterStyle("ui-disclosure", disclosureCSS)
+var disclosureStyle = registry.RegisterStyle("disclosure", disclosureCSS)
 
 func disclosureCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-disclosure"] {
+	return `[data-fui-comp="disclosure"] {
   display: block;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   overflow: hidden;
 }
-[data-fui-comp="ui-disclosure"] .ui-disclosure__summary {
+[data-fui-comp="disclosure"] .ui-disclosure__summary {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 8px);
@@ -84,29 +84,29 @@ func disclosureCSS(_ style.Theme) string {
   user-select: none;
   list-style: none;
 }
-[data-fui-comp="ui-disclosure"] .ui-disclosure__summary::-webkit-details-marker {
+[data-fui-comp="disclosure"] .ui-disclosure__summary::-webkit-details-marker {
   display: none;
 }
-[data-fui-comp="ui-disclosure"] .ui-disclosure__summary::before {
+[data-fui-comp="disclosure"] .ui-disclosure__summary::before {
   content: "▸";
   font-size: var(--text-xs, 0.7rem);
   color: var(--color-text-muted, #52525B);
   transition: transform 120ms ease;
 }
-[data-fui-comp="ui-disclosure"][open] .ui-disclosure__summary::before {
+[data-fui-comp="disclosure"][open] .ui-disclosure__summary::before {
   transform: rotate(90deg);
 }
-[data-fui-comp="ui-disclosure"] .ui-disclosure__summary:focus-visible {
+[data-fui-comp="disclosure"] .ui-disclosure__summary:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-disclosure"] .ui-disclosure__body {
+[data-fui-comp="disclosure"] .ui-disclosure__body {
   padding: 0 var(--spacing-md, 12px) var(--spacing-md, 12px);
   color: var(--color-text, #18181B);
   border-top: 1px solid var(--color-border, #E4E4E7);
   padding-block-start: var(--spacing-md, 12px);
 }
-[data-fui-comp="ui-disclosure"]:not([open]) .ui-disclosure__body {
+[data-fui-comp="disclosure"]:not([open]) .ui-disclosure__body {
   display: none;
 }`
 }

@@ -24,12 +24,12 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	xharness "github.com/DonaldMurillo/gofastr/framework/harness"
-	"github.com/DonaldMurillo/gofastr/framework/harness/control"
-	"github.com/DonaldMurillo/gofastr/framework/harness/control/auth"
-	"github.com/DonaldMurillo/gofastr/framework/harness/control/rest"
-	"github.com/DonaldMurillo/gofastr/framework/harness/control/ws"
-	"github.com/DonaldMurillo/gofastr/framework/harness/ids"
+	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/rest"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/ws"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
 // startHTTPListener binds a TCP listener at bindAddr, mounts the REST

@@ -68,9 +68,12 @@ func DefaultTenantConfig() TenantConfig {
 // the CRUD insert/scope/filter paths. A blank or default "tenant_id" leaves
 // TenantField unset (the default applies).
 func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
-	ent.Config.MultiTenant = true
+	if ent.Config.Scope == nil {
+		ent.Config.Scope = &entity.ScopeConfig{}
+	}
+	ent.Config.Scope.MultiTenant = true
 	if config.Field != "" && config.Field != "tenant_id" {
-		ent.Config.TenantField = config.Field
+		ent.Config.Scope.TenantField = config.Field
 	}
 	return ent
 }

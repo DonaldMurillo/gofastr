@@ -20,12 +20,10 @@ func covOwnerNotesHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	t.Helper()
 	installOwnerExtractor(t)
 	db := setupDB(t, `CREATE TABLE onotes (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, deleted_at TEXT)`)
-	ent := entity.Define("onotes", entity.EntityConfig{
-		Name: "onotes", Table: "onotes", OwnerField: "user_id", SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String},
-			{Name: "title", Type: schema.String},
-		},
+	ent := entity.Define("onotes", entity.EntityConfig{Name: "onotes", Table: "onotes", Scope: &entity.ScopeConfig{OwnerField: "user_id", SoftDelete: true}, Fields: []schema.Field{
+		{Name: "user_id", Type: schema.String},
+		{Name: "title", Type: schema.String},
+	},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	return NewCrudHandler(ent, db).WithJSONCase(CaseSnake), db
@@ -84,10 +82,7 @@ func TestUpsert_RejectsSoftDeletedResurrection(t *testing.T) {
 
 func TestUpsert_TenantMissing(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE tnotes (id TEXT PRIMARY KEY, tenant_id TEXT, title TEXT)`)
-	ent := entity.Define("tnotes", entity.EntityConfig{
-		Name: "tnotes", Table: "tnotes", MultiTenant: true,
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("tnotes", entity.EntityConfig{Name: "tnotes", Table: "tnotes", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	var tme *tenantMissingError
@@ -121,10 +116,7 @@ func TestEmitEvent_NoBusIsNoop(t *testing.T) {
 func TestEmitEvent_StampsTenantAndOwner(t *testing.T) {
 	installOwnerExtractor(t)
 	db := setupDB(t, `CREATE TABLE ev (id TEXT PRIMARY KEY, user_id TEXT, tenant_id TEXT, body TEXT)`)
-	ent := entity.Define("ev", entity.EntityConfig{
-		Name: "ev", Table: "ev", OwnerField: "user_id", MultiTenant: true,
-		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("ev", entity.EntityConfig{Name: "ev", Table: "ev", Scope: &entity.ScopeConfig{OwnerField: "user_id", MultiTenant: true}, Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	bus := event.NewEventBus()
@@ -157,10 +149,7 @@ func TestEmitEvent_OwnerFromRecordFallback(t *testing.T) {
 	// No owner in ctx (admin emitter) → owner extracted from record column.
 	installOwnerExtractor(t)
 	db := setupDB(t, `CREATE TABLE ev2 (id TEXT PRIMARY KEY, user_id TEXT, body TEXT)`)
-	ent := entity.Define("ev2", entity.EntityConfig{
-		Name: "ev2", Table: "ev2", OwnerField: "user_id",
-		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("ev2", entity.EntityConfig{Name: "ev2", Table: "ev2", Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	bus := event.NewEventBus()

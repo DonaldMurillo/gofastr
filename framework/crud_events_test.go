@@ -288,12 +288,9 @@ func TestSSE_FiltersByTenant(t *testing.T) {
 		// the existing test pattern (header-as-tenant) keeps working.
 		app.Use(stubTenantFromHeaderMiddleware)
 		app.Use(tenant.TenantMiddleware("X-Tenant-ID"))
-		app.Entity("posts", entity.EntityConfig{
-			Table:       "posts",
-			MultiTenant: true,
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-			},
+		app.Entity("posts", entity.EntityConfig{Table: "posts", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+		},
 		}.WithTimestamps(false))
 
 		srv := httptest.NewServer(app.Router())

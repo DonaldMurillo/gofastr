@@ -84,7 +84,7 @@ func renderCrumb(c Crumb) render.HTML {
 	// control bytes) is dropped and the crumb degrades to a plain
 	// <span> rather than a clickable XSS vector. An empty result from
 	// safeURL also means "no link", so it folds into the current heuristic.
-	href := safeURL(c.Href)
+	href := urlsafe.CleanAnchor(c.Href)
 	current := c.Current || href == ""
 	if current {
 		return render.Tag("li", nil,
@@ -96,14 +96,6 @@ func renderCrumb(c Crumb) render.HTML {
 	return render.Tag("li", nil,
 		render.Tag("a", map[string]string{"href": href}, render.Text(c.Text)),
 	)
-}
-
-// safeURL returns u if it is safe to render as an href, and "" otherwise.
-// The rule set lives in core-ui/urlsafe — this builder renders below
-// framework/ui, so the allow-list has to be enforced here too, but it is
-// the same allow-list, not another copy of it.
-func safeURL(u string) string {
-	return urlsafe.Clean(u, urlsafe.Anchor)
 }
 
 // baseCSS is the stylesheet for breadcrumbs. Tokens: --color-text-muted,

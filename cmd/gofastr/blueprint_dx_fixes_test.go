@@ -103,19 +103,16 @@ func (e *stubErr) Error() string { return e.s }
 
 // ---- Item 2: chart/stat source registration ------------------------------
 
-// A chart sourced from an entity that has NO list/detail screen must still get
-// a ResourceConfig, or statValue/groupCounts render a silent "—".
+// A chart sourced from an entity that has no list/detail screen still needs a
+// resource.Config; otherwise registry aggregates render a silent "—".
 func TestChartSourceRegistersResource(t *testing.T) {
 	crudOn := true
 	bp := Blueprint{
 		App: BlueprintApp{Name: "Dash", Module: "example.com/dash"},
-		Entities: []framework.EntityDeclaration{{
-			Name: "tickets",
-			CRUD: &crudOn,
-			Fields: []framework.FieldDeclaration{
-				{Name: "title", Type: "string"},
-				{Name: "status", Type: "enum", Values: []string{"open", "closed"}},
-			},
+		Entities: []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "tickets", Exposure: &framework.ExposureDeclaration{CRUD: &crudOn}, Fields: []framework.FieldDeclaration{
+			{Name: "title", Type: "string"},
+			{Name: "status", Type: "enum", Values: []string{"open", "closed"}},
+		},
 		}},
 		Screens: []BlueprintScreen{{
 			Name:  "dashboard",
@@ -136,8 +133,11 @@ func TestChartSourceRegistersResource(t *testing.T) {
 	if crud == "" {
 		t.Fatalf("missing screen_tickets_crud.go; files=%v", sortedFileNames(mustRenderBlueprintFiles(t, bp)))
 	}
-	if !strings.Contains(crud, `appResources["tickets"] = ResourceConfig{`) {
+	if !strings.Contains(crud, `appResources["tickets"] = resource.Config{`) {
 		t.Fatalf("tickets must be registered in appResources even without a list screen:\n%s", crud)
+	}
+	if files["resource.go"] == "" {
+		t.Fatal("dashboard data source must emit the thin resource.go registry")
 	}
 }
 
@@ -229,13 +229,10 @@ func TestSeedWeightsRespected(t *testing.T) {
 // count: N generates that many rows with the enum column varied.
 func TestSeedCountGeneratesVariedRows(t *testing.T) {
 	crudOn := true
-	decl := framework.EntityDeclaration{
-		Name: "tickets",
-		CRUD: &crudOn,
-		Fields: []framework.FieldDeclaration{
-			{Name: "title", Type: "string", Required: true},
-			{Name: "status", Type: "enum", Values: []string{"open", "in_progress", "resolved", "closed"}},
-		},
+	decl := framework.EntityDeclaration{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "tickets", Exposure: &framework.ExposureDeclaration{CRUD: &crudOn}, Fields: []framework.FieldDeclaration{
+		{Name: "title", Type: "string", Required: true},
+		{Name: "status", Type: "enum", Values: []string{"open", "in_progress", "resolved", "closed"}},
+	},
 	}
 	rows := blueprintGenerateSeedRows(decl, 20, nil)
 	if len(rows) != 20 {

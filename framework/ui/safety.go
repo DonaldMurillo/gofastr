@@ -7,29 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
 
-// safeURL returns u if it is safe to render as an href / src / action /
-// formaction value, and "" otherwise. Safe URLs are http(s), relative
-// paths, fragment-only references, and a small set of always-safe
-// well-known schemes (mailto, tel). Everything else — javascript:,
-// data:, vbscript:, file:, blob:, filesystem:, chrome:, view-source:,
-// protocol-relative URLs, and any value with embedded CR/LF/NUL — is
-// dropped. Encoded CR/LF (%0d/%0a) is also dropped because consumers
-// that decode the URL would otherwise see header smuggling.
-//
-// This is the framework-side enforcement layer that earlier
-// architecture iterations expected callers to handle. Callers that
-// need a legitimate non-http(s) scheme can render the raw anchor via
-// core-ui/html directly — UI builders no longer make that decision.
-//
-// The rule set lives in core-ui/urlsafe, not here: it had been
-// re-derived six times across framework/ui, framework/uihost,
-// framework/crud, framework/experimental/apiversions and three
-// core-ui/patterns builders, each copy free to drift the day after it
-// was written.
-func safeURL(u string) string {
-	return urlsafe.Clean(u, urlsafe.Anchor)
-}
-
 // safeResourceURL is safeURL for URLs the BROWSER fetches on its own —
 // <source src>, <link href>. It drops mailto:/tel:, which are
 // meaningful on an anchor the user activates and a caller mistake on a

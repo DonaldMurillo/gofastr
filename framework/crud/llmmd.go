@@ -218,7 +218,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 	// DELETE /{table}/{id}
 	fmt.Fprintf(&b, "### DELETE %s/{id}\n\n", resourcePath)
 	b.WriteString("Delete a record.\n\n")
-	if ent.Config.SoftDelete {
+	if ent.Config.Scope.SoftDelete {
 		b.WriteString("**Note:** This entity uses soft-delete — sets `deleted_at` instead of removing the row.\n\n")
 	}
 	b.WriteString("**Response:** `204` No Content.\n")
@@ -265,7 +265,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 	}
 
 	// Multi-tenant note
-	if ent.Config.MultiTenant {
+	if ent.Config.Scope.MultiTenant {
 		b.WriteString("## Multi-tenancy\n\n")
 		b.WriteString("All endpoints are scoped by `tenant_id`. The tenant context is derived from the request (middleware-injected).\n\n")
 	}
@@ -304,10 +304,10 @@ func RegistryLLMMD(registry entity.Registry, appName string) string {
 		numEndpoints := 8 // standard CRUD + batch + events
 		numEndpoints += len(ent.Config.Endpoints)
 		desc := ""
-		if ent.Config.SoftDelete {
+		if ent.Config.Scope.SoftDelete {
 			desc = "soft-delete"
 		}
-		if ent.Config.MultiTenant {
+		if ent.Config.Scope.MultiTenant {
 			if desc != "" {
 				desc += ", "
 			}

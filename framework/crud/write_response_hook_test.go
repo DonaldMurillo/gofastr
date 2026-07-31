@@ -32,12 +32,10 @@ func setupWriteHookHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	if _, err := db.Exec(`CREATE TABLE cards (id TEXT PRIMARY KEY, label TEXT, number TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	ent := entity.Define("cards", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "label", Type: schema.String},
-			{Name: "number", Type: schema.String, NoQuery: true},
-		},
+	ent := entity.Define("cards", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "label", Type: schema.String},
+		{Name: "number", Type: schema.String, NoQuery: true},
+	},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)

@@ -24,8 +24,8 @@ func TestDeclarationAccessToConfig(t *testing.T) {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if d.Access == nil || d.Access.Delete != "posts:admin" {
-		t.Fatalf("decl Access = %#v", d.Access)
+	if d.Exposure == nil || d.Exposure.Access == nil || d.Exposure.Access.Delete != "posts:admin" {
+		t.Fatalf("decl Exposure.Access = %#v", d.Exposure)
 	}
 	cfg, err := d.Config()
 	if err != nil {
@@ -37,8 +37,8 @@ func TestDeclarationAccessToConfig(t *testing.T) {
 		Update: "posts:write",
 		Delete: "posts:admin",
 	}
-	if cfg.Access != want {
-		t.Fatalf("cfg.Access = %#v, want %#v", cfg.Access, want)
+	if cfg.Exposure.Access != want {
+		t.Fatalf("cfg.Exposure.Access = %#v, want %#v", cfg.Exposure.Access, want)
 	}
 }
 
@@ -58,7 +58,7 @@ func TestDeclarationAccessOmittedWhenNil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Config: %v", err)
 	}
-	if cfg.Access != (entity.AccessControl{}) {
-		t.Fatalf("cfg.Access = %#v, want zero", cfg.Access)
+	if cfg.Exposure.Access != (entity.AccessControl{}) {
+		t.Fatalf("cfg.Exposure.Access = %#v, want zero", cfg.Exposure.Access)
 	}
 }

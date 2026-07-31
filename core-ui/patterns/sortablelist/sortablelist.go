@@ -5,7 +5,7 @@
 //
 // Single-list usage (back-compat — no new attrs emitted):
 //
-//	<ol data-fui-comp="ui-sortable-list" role="listbox"
+//	<ol data-fui-comp="sortablelist" role="listbox"
 //	    data-fui-sortable data-fui-sortable-rpc="<path>">
 //	  <li data-fui-sortable-item data-fui-sort-key="<key>"
 //	      draggable="true" tabindex="0" role="option">…</li>
@@ -189,17 +189,17 @@ func sortableGripIcon() string {
 	return `<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="3" r="1.2"/><circle cx="5" cy="7" r="1.2"/><circle cx="5" cy="11" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="9" cy="7" r="1.2"/><circle cx="9" cy="11" r="1.2"/></svg>`
 }
 
-var sortableListStyle = registry.RegisterStyle("ui-sortable-list", sortableListCSS)
+var sortableListStyle = registry.RegisterStyle("sortablelist", sortableListCSS)
 
 func sortableListCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-sortable-list"] {
+	return `[data-fui-comp="sortablelist"] {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-sortable-list"] .ui-sortable-list__item {
+[data-fui-comp="sortablelist"] .ui-sortable-list__item {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 8px);
@@ -211,22 +211,22 @@ func sortableListCSS(_ style.Theme) string {
   user-select: none;
   min-block-size: var(--spacing-touch-target, 44px);
 }
-[data-fui-comp="ui-sortable-list"] .ui-sortable-list__item:focus-visible {
+[data-fui-comp="sortablelist"] .ui-sortable-list__item:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-sortable-list"] .ui-sortable-list__item.is-grabbed {
+[data-fui-comp="sortablelist"] .ui-sortable-list__item.is-grabbed {
   background: color-mix(in srgb, var(--color-primary, #4F46E5) 12%, transparent);
   border-color: var(--color-primary, #4F46E5);
   cursor: grabbing;
 }
-[data-fui-comp="ui-sortable-list"] .ui-sortable-list__item.is-dragging {
+[data-fui-comp="sortablelist"] .ui-sortable-list__item.is-dragging {
   opacity: 0.5;
 }
-[data-fui-comp="ui-sortable-list"] .ui-sortable-list__item.is-drop-target {
+[data-fui-comp="sortablelist"] .ui-sortable-list__item.is-drop-target {
   border-top: 2px solid var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-sortable-list"] .ui-sortable-list__grip {
+[data-fui-comp="sortablelist"] .ui-sortable-list__grip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -238,10 +238,10 @@ func sortableListCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   cursor: grab;
 }
-[data-fui-comp="ui-sortable-list"] .ui-sortable-list__item:active .ui-sortable-list__grip {
+[data-fui-comp="sortablelist"] .ui-sortable-list__item:active .ui-sortable-list__grip {
   cursor: grabbing;
 }
-[data-fui-comp="ui-sortable-list"] .ui-sortable-list__label {
+[data-fui-comp="sortablelist"] .ui-sortable-list__label {
   font-weight: 500;
   color: var(--color-text, #18181B);
 }

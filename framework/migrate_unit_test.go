@@ -89,12 +89,7 @@ func TestManagedColumns_NotDroppedAcrossConfigs(t *testing.T) {
 			t.Fatalf("create: %v", err)
 		}
 		reg := NewRegistry()
-		reg.Register(entity.Define("acct", entity.EntityConfig{
-			Table:       "acct",
-			SoftDelete:  true,
-			MultiTenant: true,
-			Fields:      []schema.Field{{Name: "name", Type: schema.String, Required: true}},
-		})) // timestamps default on
+		reg.Register(entity.Define("acct", entity.EntityConfig{Table: "acct", Scope: &entity.ScopeConfig{SoftDelete: true, MultiTenant: true}, Fields: []schema.Field{{Name: "name", Type: schema.String, Required: true}}})) // timestamps default on
 
 		changes, err := DiffSchema(context.Background(), db, reg)
 		if err != nil {

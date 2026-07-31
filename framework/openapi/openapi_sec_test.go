@@ -162,12 +162,9 @@ func itoa(i int) string {
 }
 
 func TestOwnerScopedOpsDeclare401(t *testing.T) {
-	e := entity.Define("notes", entity.EntityConfig{
-		Table:      "notes",
-		OwnerField: "user_id",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-		},
+	e := entity.Define("notes", entity.EntityConfig{Table: "notes", Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+	},
 	})
 	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
 	for label, op := range gatedOpsFor(t, doc, "notes") {
@@ -178,12 +175,9 @@ func TestOwnerScopedOpsDeclare401(t *testing.T) {
 }
 
 func TestMultiTenantOpsDeclare401(t *testing.T) {
-	e := entity.Define("invoices", entity.EntityConfig{
-		Table:       "invoices",
-		MultiTenant: true,
-		Fields: []schema.Field{
-			{Name: "amount", Type: schema.Int, Required: true},
-		},
+	e := entity.Define("invoices", entity.EntityConfig{Table: "invoices", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{
+		{Name: "amount", Type: schema.Int, Required: true},
+	},
 	})
 	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
 	for label, op := range gatedOpsFor(t, doc, "invoices") {
@@ -196,12 +190,9 @@ func TestMultiTenantOpsDeclare401(t *testing.T) {
 // An unguarded entity (no OwnerField, not MultiTenant) must NOT gain a
 // spurious 401 — the fix must be scoped to gated entities only.
 func TestUnguardedOpsHaveNo401(t *testing.T) {
-	e := entity.Define("public_posts", entity.EntityConfig{
-		Table:  "public_posts",
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String},
-		},
+	e := entity.Define("public_posts", entity.EntityConfig{Table: "public_posts", Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String},
+	},
 	})
 	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
 	paths := getMap(t, doc, "paths")
@@ -267,17 +258,15 @@ func TestJSONFieldOmitsRangeFilters(t *testing.T) {
 
 // rbacOnly has no OwnerField or MultiTenant — only Access.
 func rbacOnlyEntity() *entity.Entity {
-	return entity.Define("rbac_items", entity.EntityConfig{
-		Table: "rbac_items",
+	return entity.Define("rbac_items", entity.EntityConfig{Table: "rbac_items",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
-		},
-		Access: entity.AccessControl{
+		}, Exposure: &entity.ExposureConfig{Access: entity.AccessControl{
 			Read:   "items:read",
 			Create: "items:write",
 			Update: "items:write",
 			Delete: "items:write",
-		},
+		}},
 	})
 }
 
@@ -326,12 +315,9 @@ func TestSSEOpDeclares401And403WhenGated(t *testing.T) {
 
 // An unguarded entity must NOT get 401/403 on its batch or SSE ops.
 func TestUnguardedBatchAndSSEHaveNo401(t *testing.T) {
-	e := entity.Define("pub_items", entity.EntityConfig{
-		Table:  "pub_items",
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "val", Type: schema.Int},
-		},
+	e := entity.Define("pub_items", entity.EntityConfig{Table: "pub_items", Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "val", Type: schema.Int},
+	},
 	}.WithTimestamps(false))
 	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
 	paths := getMap(t, doc, "paths")

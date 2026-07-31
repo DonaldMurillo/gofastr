@@ -43,27 +43,49 @@ func TestCursorFields_Defaults(t *testing.T) {
 }
 
 func TestCursorFields_SingleAndComposite(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 0)
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.CursorField = "seq"
+	}, 0)
 	if got := ch.cursorFields(); len(got) != 1 || got[0] != "seq" {
 		t.Errorf("single cursorField = %v", got)
 	}
 
-	ch2, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq"} }, 0)
+	ch2, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.CursorFields = []string{"seq"}
+	}, 0)
 	got := ch2.cursorFields()
 	// PrimaryKey auto-appended.
 	if len(got) != 2 || got[0] != "seq" || got[1] != "id" {
 		t.Errorf("composite cursorFields = %v", got)
 	}
 
-	ch3, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq", "id"} }, 0)
+	ch3, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.CursorFields = []string{"seq", "id"}
+	}, 0)
 	if got := ch3.cursorFields(); len(got) != 2 {
 		t.Errorf("composite with pk = %v", got)
 	}
 }
 
 func TestCursorList_FirstPageAndNext(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 5)
-	// First page, limit 2.
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination =
+				// First page, limit 2.
+				&entity.PaginationConfig{}
+		}
+		c.Pagination.CursorField = "seq"
+	}, 5)
+
 	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
@@ -92,7 +114,12 @@ func TestCursorList_FirstPageAndNext(t *testing.T) {
 }
 
 func TestCursorList_Composite(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorFields = []string{"seq", "id"} }, 5)
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.CursorFields = []string{"seq", "id"}
+	}, 5)
 	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
@@ -117,7 +144,12 @@ func TestCursorList_Composite(t *testing.T) {
 }
 
 func TestCursorList_InvalidCursor(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 3)
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.CursorField = "seq"
+	}, 3)
 	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=not-a-valid-cursor", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
@@ -127,8 +159,15 @@ func TestCursorList_InvalidCursor(t *testing.T) {
 }
 
 func TestCursorList_BackwardDirection(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 5)
-	// Establish a forward cursor first, then walk backward.
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination =
+				// Establish a forward cursor first, then walk backward.
+				&entity.PaginationConfig{}
+		}
+		c.Pagination.CursorField = "seq"
+	}, 5)
+
 	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
@@ -145,7 +184,12 @@ func TestCursorList_BackwardDirection(t *testing.T) {
 }
 
 func TestStreamingList_Explicit(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.MaxListLimit = 500 }, 4)
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.MaxListLimit = 500
+	}, 4)
 	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true&limit=10", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)

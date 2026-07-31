@@ -254,10 +254,10 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 	// (CursorFields) have no single-value form in the DSL, so refuse them
 	// with a clear error rather than silently paging from page 1.
 	if parsed.After != "" {
-		if len(ent.Config.CursorFields) > 0 {
+		if len(ent.Config.Pagination.CursorFields) > 0 {
 			return nil, fmt.Errorf("dsl: after() is unsupported on %s (composite cursor); use the HTTP cursor API", parsed.Entity)
 		}
-		cursorField := ent.Config.CursorField
+		cursorField := ent.Config.Pagination.CursorField
 		if cursorField == "" {
 			cursorField = ent.PrimaryKey
 		}

@@ -61,13 +61,10 @@ func postsConfig() entity.EntityConfig {
 }
 
 func notesConfig() entity.EntityConfig {
-	return entity.EntityConfig{
-		Table:      "notes",
-		OwnerField: "user_id",
-		Fields: []schema.Field{
-			{Name: "text", Type: schema.String, Required: true},
-			{Name: "user_id", Type: schema.String},
-		},
+	return entity.EntityConfig{Table: "notes", Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Fields: []schema.Field{
+		{Name: "text", Type: schema.String, Required: true},
+		{Name: "user_id", Type: schema.String},
+	},
 	}.WithTimestamps(false)
 }
 

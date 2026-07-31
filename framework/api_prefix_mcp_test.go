@@ -17,14 +17,12 @@ func TestAPIPrefix_MCPToolsReachPrefixedRoutes(t *testing.T) {
 		createPostsTable(t, db)
 
 		app := NewApp(WithDB(db), WithAPIPrefix("/api/v1"))
-		app.Entity("posts", entity.EntityConfig{
-			Table: "posts",
+		app.Entity("posts", entity.EntityConfig{Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 				{Name: "body", Type: schema.Text},
 				{Name: "status", Type: schema.String},
-			},
-			MCP: true,
+			}, Exposure: &entity.ExposureConfig{MCP: true},
 		})
 
 		createResult := callMCPTool(t, app.MCP, "posts_create", map[string]any{

@@ -127,6 +127,7 @@ func (ta *TestApp) Close() {
 type TestRequest struct {
 	testApp *TestApp
 	request *http.Request
+	err     error // retained builder error (e.g. a WithBody marshal failure)
 }
 
 // WithHeader adds a header to the request.
@@ -136,6 +137,8 @@ func (tr *TestRequest) WithHeader(key, value string) *TestRequest {
 }
 
 // WithBody sets the request body. Non-reader values are marshalled as JSON.
+// A marshal failure is retained on the TestRequest and surfaced by Execute
+// as a failed TestResponse, so a test can never run with the wrong body.
 func (tr *TestRequest) WithBody(body any) *TestRequest {
 	var r io.Reader
 	if br, ok := body.(io.Reader); ok {
@@ -143,6 +146,7 @@ func (tr *TestRequest) WithBody(body any) *TestRequest {
 	} else {
 		data, err := json.Marshal(body)
 		if err != nil {
+			tr.err = err
 			return tr
 		}
 		r = bytes.NewReader(data)
@@ -154,8 +158,14 @@ func (tr *TestRequest) WithBody(body any) *TestRequest {
 	return tr
 }
 
-// Execute sends the request and returns a TestResponse.
+// Execute sends the request and returns a TestResponse. If the builder
+// captured an error (e.g. a WithBody marshal failure), Execute returns a
+// failed TestResponse carrying it instead of dispatching the malformed
+// request — the failure surfaces through the assertion helpers.
 func (tr *TestRequest) Execute() *TestResponse {
+	if tr.err != nil {
+		return &TestResponse{err: tr.err}
+	}
 	rec := httptest.NewRecorder()
 	tr.testApp.router.ServeHTTP(rec, tr.request)
 	return &TestResponse{recorder: rec}

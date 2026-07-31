@@ -17,7 +17,7 @@ type SoftDeleteScope struct{}
 // WithSoftDelete configures an entity for soft delete support.
 // Sets the SoftDelete flag so the framework knows to use UPDATE instead of DELETE.
 func WithSoftDelete(ent *entity.Entity) *entity.Entity {
-	ent.Config.SoftDelete = true
+	ent.Config.Scope.SoftDelete = true
 	return ent
 }
 

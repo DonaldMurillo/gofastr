@@ -46,12 +46,10 @@ func setupOwnerScopedHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 		t.Fatal(err)
 	}
 
-	ent := entity.Define("logs", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "notes", Type: schema.String},
-		},
-		OwnerField: "user_id",
+	ent := entity.Define("logs", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "notes", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 
@@ -182,12 +180,10 @@ func setupHiddenOwnerHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	)`); err != nil {
 		t.Fatal(err)
 	}
-	ent := entity.Define("logs", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Hidden: true},
-			{Name: "notes", Type: schema.String},
-		},
-		OwnerField: "user_id",
+	ent := entity.Define("logs", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_id", Type: schema.String, Hidden: true},
+		{Name: "notes", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	return NewCrudHandler(ent, db).WithJSONCase(CaseSnake), db

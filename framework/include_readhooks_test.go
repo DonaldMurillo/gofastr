@@ -39,22 +39,21 @@ func newIncludeHookApp(t *testing.T) *App {
 	}
 
 	app := NewApp(WithDB(db))
-	app.Entity("ih_authors", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String},
-			// Multi-word on purpose: the loader writes card_number, the
-			// child's own endpoint returns cardNumber. A hook keyed to the
-			// wrong one silently no-ops.
-			{Name: "card_number", Type: schema.String, NoQuery: true},
-		},
+	app.Entity("ih_authors", entity.EntityConfig{Exposure: &entity.ExposureConfig{
+
+		// Multi-word on purpose: the loader writes card_number, the
+		// child's own endpoint returns cardNumber. A hook keyed to the
+		// wrong one silently no-ops.
+		Public: true}, Fields: []schema.Field{
+		{Name: "name", Type: schema.String},
+
+		{Name: "card_number", Type: schema.String, NoQuery: true},
+	},
 	}.WithTimestamps(false))
-	app.Entity("ih_posts", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String},
-			{Name: "author_id", Type: schema.String},
-		},
+	app.Entity("ih_posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String},
+		{Name: "author_id", Type: schema.String},
+	},
 		Relations: []entity.Relation{entity.BelongsTo("author", "ih_authors", "author_id")},
 	}.WithTimestamps(false))
 
@@ -156,13 +155,8 @@ func TestIncludeHookSeesRealRequest(t *testing.T) {
 	}
 
 	app := NewApp(WithDB(db))
-	app.Entity("rr_authors", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "secret", Type: schema.String}},
-	}.WithTimestamps(false))
-	app.Entity("rr_posts", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "author_id", Type: schema.String}},
+	app.Entity("rr_authors", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "secret", Type: schema.String}}}.WithTimestamps(false))
+	app.Entity("rr_posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "author_id", Type: schema.String}},
 		Relations: []entity.Relation{
 			entity.BelongsTo("author", "rr_authors", "author_id"),
 		},
@@ -222,13 +216,8 @@ func newProjectionHookApp(t *testing.T, replace bool, drop bool) *App {
 		t.Fatal(err)
 	}
 	app := NewApp(WithDB(db))
-	app.Entity("pj_authors", entity.EntityConfig{
-		Public: true,
-		Fields: []schema.Field{{Name: "card_number", Type: schema.String}},
-	}.WithTimestamps(false))
-	app.Entity("pj_posts", entity.EntityConfig{
-		Public:    true,
-		Fields:    []schema.Field{{Name: "author_id", Type: schema.String}},
+	app.Entity("pj_authors", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "card_number", Type: schema.String}}}.WithTimestamps(false))
+	app.Entity("pj_posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "author_id", Type: schema.String}},
 		Relations: []entity.Relation{entity.BelongsTo("author", "pj_authors", "author_id")},
 	}.WithTimestamps(false))
 
