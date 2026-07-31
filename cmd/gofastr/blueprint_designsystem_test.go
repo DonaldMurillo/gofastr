@@ -64,8 +64,8 @@ func TestLineChartRenders(t *testing.T) {
 		t.Fatalf("loadBlueprint: %v", err)
 	}
 	screens := allScreenContent(mustRenderBlueprintFiles(t, bp))
-	if !strings.Contains(screens, "lineChart(ctx, \"orders\", \"status\")") {
-		t.Fatalf("line_chart should render via lineChart, got:\n%s", screens)
+	if !strings.Contains(screens, `appResources.LineChart(ctx, "orders", "status")`) {
+		t.Fatalf("line_chart should render via framework/ui/resource, got:\n%s", screens)
 	}
 	if strings.Contains(screens, "noderender") {
 		t.Fatalf("line_chart fell through to the node renderer:\n%s", screens)

@@ -177,13 +177,14 @@ func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 	}
 }
 
-func TestBlueprint_HandlesCamelCaseKeys(t *testing.T) {
-	// CrudHandler.ListAll/GetOne serialize columns in camelCase, but blueprint
-	// fields are snake_case. Lists/details are now server-rendered by the
-	// resource engine, which maps snake -> camel server-side (resCamel/resGet)
-	// so a field like generic_name isn't read as an undefined row["generic_name"].
-	if !strings.Contains(blueprintResourceGo, "func resCamel") || !strings.Contains(blueprintResourceGo, "func resGet") {
-		t.Error("resource engine missing the snake_case -> camelCase key mapping (resCamel/resGet)")
+func TestBlueprint_ImportsResourceEngine(t *testing.T) {
+	if !strings.Contains(blueprintResourceGo, `"github.com/DonaldMurillo/gofastr/framework/ui/resource"`) {
+		t.Fatal("thin resource.go must import framework/ui/resource")
+	}
+	for _, copied := range []string{"func resCamel", "func resGet", "func resFormat"} {
+		if strings.Contains(blueprintResourceGo, copied) {
+			t.Errorf("thin resource.go still copies engine helper %q", copied)
+		}
 	}
 }
 

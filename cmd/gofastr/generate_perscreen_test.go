@@ -135,7 +135,7 @@ func TestAppResourcesLivesInCrudFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	crud := fileContent(files, "screen_customers_crud.go")
-	if !strings.Contains(crud, `appResources["customers"] = ResourceConfig{`) {
+	if !strings.Contains(crud, `appResources["customers"] = resource.Config{`) {
 		t.Fatalf("screen_customers_crud.go must carry the customers appResources wiring:\n%s", crud)
 	}
 	if !strings.Contains(crud, `fwApp.MustCrudHandler("customers")`) {

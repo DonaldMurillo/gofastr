@@ -159,6 +159,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
 func TestGeneratedNoQueryResourceBehavior(t *testing.T) {
@@ -175,16 +176,13 @@ func TestGeneratedNoQueryResourceBehavior(t *testing.T) {
 		{Name: "number", Type: schema.String, NoQuery: true},
 	}}.WithTimestamps(false))
 	ent.SetDB(db)
-	cfg := ResourceConfig{
-		Title: "Cards", Singular: "Card", BasePath: "/cards",
+	cfg := resource.Config{
+		Entity: "cards", Title: "Cards", Singular: "Card", BasePath: "/cards",
 		Crud: crud.NewCrudHandler(ent, db),
-		Fields: []ResField{
+		Fields: []resource.Field{
 			{Key: "label", Label: "Label", Type: "string"},
 			{Key: "number", Label: "Number", Type: "string", NoQuery: true},
 		},
-	}
-	if cfg.sortable("number") {
-		t.Fatal("NoQuery field accepted as a sort key")
 	}
 	html := cfg.List(context.Background()).String()
 	if !strings.Contains(html, "4111") {

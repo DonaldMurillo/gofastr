@@ -103,8 +103,8 @@ func (e *stubErr) Error() string { return e.s }
 
 // ---- Item 2: chart/stat source registration ------------------------------
 
-// A chart sourced from an entity that has NO list/detail screen must still get
-// a ResourceConfig, or statValue/groupCounts render a silent "—".
+// A chart sourced from an entity that has no list/detail screen still needs a
+// resource.Config; otherwise registry aggregates render a silent "—".
 func TestChartSourceRegistersResource(t *testing.T) {
 	crudOn := true
 	bp := Blueprint{
@@ -133,8 +133,11 @@ func TestChartSourceRegistersResource(t *testing.T) {
 	if crud == "" {
 		t.Fatalf("missing screen_tickets_crud.go; files=%v", sortedFileNames(mustRenderBlueprintFiles(t, bp)))
 	}
-	if !strings.Contains(crud, `appResources["tickets"] = ResourceConfig{`) {
+	if !strings.Contains(crud, `appResources["tickets"] = resource.Config{`) {
 		t.Fatalf("tickets must be registered in appResources even without a list screen:\n%s", crud)
+	}
+	if files["resource.go"] == "" {
+		t.Fatal("dashboard data source must emit the thin resource.go registry")
 	}
 }
 

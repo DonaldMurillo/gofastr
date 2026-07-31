@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -73,11 +74,11 @@ func (s *ProductsEditScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountHomeScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	appResources["products"] = ResourceConfig{
-		Title: "Products", Singular: "Product", BasePath: "/products", APIPath: "/api/products",
+	appResources["products"] = resource.Config{
+		Entity: "products", Title: "Products", Singular: "Product", BasePath: "/products", APIPath: "/api/products",
 		Crud:    fwApp.MustCrudHandler("products"),
 		CanEdit: true,
-		Fields: []ResField{
+		Fields: []resource.Field{
 			{Key: "name", Label: "Name", Type: "string"},
 			{Key: "slug", Label: "Slug", Type: "string"},
 			{Key: "sku", Label: "SKU", Type: "string"},
@@ -92,20 +93,20 @@ func mountHomeScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 			{Key: "image", Label: "Image", Type: "image"},
 			{Key: "tags", Label: "Tags", Type: "json"},
 		},
-		Relations: map[string]RelSource{
+		Relations: map[string]resource.Relation{
 			"category_id": {Crud: fwApp.MustCrudHandler("categories"), Display: "name"},
 		},
-		Related: []RelatedList{
+		Related: []resource.RelatedList{
 			{
 				Title: "Order Items", ForeignKey: "product_id", BasePath: "",
 				Crud: fwApp.MustCrudHandler("order_items"),
-				Fields: []ResField{
+				Fields: []resource.Field{
 					{Key: "user_id", Label: "User", Type: "string"},
 					{Key: "order_id", Label: "Order", Type: "relation"},
 					{Key: "product_name", Label: "Product Name", Type: "string"},
 					{Key: "quantity", Label: "Quantity", Type: "int"},
 				},
-				Relations: map[string]RelSource{
+				Relations: map[string]resource.Relation{
 					"order_id":   {Crud: fwApp.MustCrudHandler("orders"), Display: "user_id"},
 					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
 				},
@@ -113,13 +114,13 @@ func mountHomeScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 			{
 				Title: "Reviews", ForeignKey: "product_id", BasePath: "/reviews",
 				Crud: fwApp.MustCrudHandler("reviews"),
-				Fields: []ResField{
+				Fields: []resource.Field{
 					{Key: "author_name", Label: "Author Name", Type: "string"},
 					{Key: "rating", Label: "Rating", Type: "int"},
 					{Key: "title", Label: "Title", Type: "string"},
 					{Key: "body", Label: "Body", Type: "text"},
 				},
-				Relations: map[string]RelSource{
+				Relations: map[string]resource.Relation{
 					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
 				},
 			},

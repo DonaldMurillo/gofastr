@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -78,39 +79,55 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 
 	client := authedClient(t, base, "flagship@shop.example", "str0ng-passphrase")
 
-	// 1) The OpenAPI surface is wired from the blueprint. The raw spec is
-	// auth-gated by secure-by-default (PublicOpenAPI is off), so an
-	// unauthenticated request gets 401; a 404 would mean it was never
-	// mounted. Either response proves the surface exists.
-	if code := httpStatus(t, base+"/openapi.json"); code != http.StatusOK && code != http.StatusUnauthorized {
-		t.Errorf("/openapi.json = %d, want 200 or 401 (mounted)", code)
-	}
+	// 1) OpenAPI is auth-gated and must describe the same prefixed entity
+	// paths that the live router exposes.
+	assertOpenAPIEntityRouteParity(t, client, base)
 
-	// 2) REST CRUD round-trip: create a product, then read it back. Entity
-	// JSON APIs mount under /api (the blueprint default), leaving the bare
-	// /products path for the HTML screen. price is a decimal field, sent as
-	// a string per the framework contract.
+	// 2) REST CRUD round-trip. Entity JSON APIs mount under /api, leaving
+	// the bare /products path for the HTML screen. Decimal values are JSON
+	// strings under the framework contract.
 	code, created := request(t, client, http.MethodPost, base+"/api/products",
 		`{"name":"Test Widget","slug":"test-widget","price":"9.99","stock":5,"status":"active"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST /api/products = %d, want 201; body=%s", code, created)
 	}
-	if !strings.Contains(created, "test-widget") {
-		t.Fatalf("POST /api/products did not echo the created product; got:\n%s", created)
+	id := jsonField(t, created, "id")
+	if code, got := request(t, client, http.MethodGet, base+"/api/products/"+id, ""); code != http.StatusOK {
+		t.Fatalf("GET /api/products/%s = %d, want 200; body=%s", id, code, got)
+	} else if !strings.Contains(got, `"slug":"test-widget"`) {
+		t.Fatalf("GET /api/products/%s missing created data; body=%s", id, got)
 	}
-	if code, list := request(t, client, http.MethodGet, base+"/api/products?limit=50", ""); code != http.StatusOK {
-		t.Errorf("GET /api/products = %d, want 200; body=%.400s", code, list)
-	} else if !strings.Contains(list, "test-widget") {
-		t.Errorf("GET /api/products missing the created product; got:\n%.400s", list)
+	if code, updated := request(t, client, http.MethodPut, base+"/api/products/"+id,
+		`{"name":"Updated Widget","status":"archived"}`); code != http.StatusOK {
+		t.Fatalf("PUT /api/products/%s = %d, want 200; body=%s", id, code, updated)
+	}
+	if code, got := request(t, client, http.MethodGet, base+"/api/products/"+id, ""); code != http.StatusOK {
+		t.Fatalf("GET updated /api/products/%s = %d, want 200; body=%s", id, code, got)
+	} else if !strings.Contains(got, `"name":"Updated Widget"`) {
+		t.Fatalf("GET updated /api/products/%s missing update; body=%s", id, got)
 	}
 
-	// 3) MCP tool surface advertises the generated per-entity tools.
-	tools := httpPost(t, base+"/mcp",
+	// 3) MCP discovery and one real entity call use the authenticated session.
+	code, tools := request(t, client, http.MethodPost, base+"/mcp",
 		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if code != http.StatusOK {
+		t.Fatalf("authenticated MCP tools/list = %d; body=%s", code, tools)
+	}
 	for _, want := range []string{"products_list", "products_create", "categories_list", "orders_list", "reviews_list"} {
 		if !strings.Contains(tools, want) {
 			t.Errorf("MCP tools/list missing %q", want)
 		}
+	}
+	products := mcpCallToolText(t, client, base, 2, "products_list", map[string]any{"limit": 50})
+	if !strings.Contains(products, "Updated Widget") {
+		t.Fatalf("authenticated MCP products_list missed the REST-created product:\n%.500s", products)
+	}
+
+	if code, body := request(t, client, http.MethodDelete, base+"/api/products/"+id, ""); code != http.StatusNoContent {
+		t.Fatalf("DELETE /api/products/%s = %d, want 204; body=%s", id, code, body)
+	}
+	if code, body := request(t, client, http.MethodGet, base+"/api/products/"+id, ""); code != http.StatusNotFound {
+		t.Fatalf("GET deleted /api/products/%s = %d, want 404; body=%s", id, code, body)
 	}
 
 	// 4) Server-rendered UI home page is live.
@@ -225,6 +242,131 @@ func jsonField(t *testing.T, body, field string) string {
 		t.Fatalf("JSON body has no string field %q; body=%.300s", field, body)
 	}
 	return val
+}
+
+func assertOpenAPIEntityRouteParity(t *testing.T, client *http.Client, base string) {
+	t.Helper()
+	code, body := request(t, client, http.MethodGet, base+"/openapi.json", "")
+	if code != http.StatusOK {
+		t.Fatalf("authenticated GET /openapi.json = %d, want 200; body=%.500s", code, body)
+	}
+	var spec struct {
+		Servers []struct {
+			URL string `json:"url"`
+		} `json:"servers"`
+		Paths map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal([]byte(body), &spec); err != nil {
+		t.Fatalf("decode /openapi.json: %v\n%.500s", err, body)
+	}
+	if len(spec.Servers) != 1 {
+		t.Fatalf("/openapi.json servers = %d, want one API-prefix server", len(spec.Servers))
+	}
+
+	var live struct {
+		Routes []struct {
+			Pattern string `json:"pattern"`
+		} `json:"routes"`
+	}
+	routesJSON := mcpCallToolText(t, client, base, 3, "app_routes", map[string]any{})
+	if err := json.Unmarshal([]byte(routesJSON), &live); err != nil {
+		t.Fatalf("decode app_routes result: %v\n%.500s", err, routesJSON)
+	}
+
+	const apiPrefix = "/api"
+	entities := []string{"categories", "products", "orders", "order_items", "reviews"}
+	isEntityPath := func(path string) bool {
+		for _, entityName := range entities {
+			root := apiPrefix + "/" + entityName
+			if path == root || strings.HasPrefix(path, root+"/") {
+				return path != root+"/llm.md"
+			}
+		}
+		return false
+	}
+
+	livePaths := make(map[string]struct{})
+	for _, route := range live.Routes {
+		path := normalizeRouteParams(route.Pattern)
+		if isEntityPath(path) {
+			livePaths[path] = struct{}{}
+		}
+	}
+	specPaths := make(map[string]struct{}, len(spec.Paths))
+	serverURL := strings.TrimRight(spec.Servers[0].URL, "/")
+	for path := range spec.Paths {
+		fullPath := normalizeRouteParams(serverURL + "/" + strings.TrimLeft(path, "/"))
+		specPaths[fullPath] = struct{}{}
+	}
+
+	if missing, stale := routeSetDifference(livePaths, specPaths), routeSetDifference(specPaths, livePaths); len(missing) > 0 || len(stale) > 0 {
+		t.Fatalf("OpenAPI paths do not match live prefixed entity routes\nmissing from spec: %v\nnot live: %v", missing, stale)
+	}
+}
+
+func mcpCallToolText(t *testing.T, client *http.Client, base string, id int, name string, arguments map[string]any) string {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      name,
+			"arguments": arguments,
+		},
+	})
+	if err != nil {
+		t.Fatalf("encode MCP %s call: %v", name, err)
+	}
+	code, body := request(t, client, http.MethodPost, base+"/mcp", string(payload))
+	if code != http.StatusOK {
+		t.Fatalf("authenticated MCP %s = %d; body=%.500s", name, code, body)
+	}
+	var response struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		t.Fatalf("decode MCP %s response: %v\n%.500s", name, err, body)
+	}
+	if response.Error != nil {
+		t.Fatalf("MCP %s error: %s", name, response.Error.Message)
+	}
+	if response.Result.IsError {
+		t.Fatalf("MCP %s returned an error result: %.500s", name, body)
+	}
+	if len(response.Result.Content) == 0 || response.Result.Content[0].Text == "" {
+		t.Fatalf("MCP %s returned no text content: %.500s", name, body)
+	}
+	return response.Result.Content[0].Text
+}
+
+func normalizeRouteParams(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if len(part) >= 2 && part[0] == '{' && part[len(part)-1] == '}' {
+			parts[i] = ":" + part[1:len(part)-1]
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+func routeSetDifference(left, right map[string]struct{}) []string {
+	diff := make([]string, 0)
+	for path := range left {
+		if _, ok := right[path]; !ok {
+			diff = append(diff, path)
+		}
+	}
+	sort.Strings(diff)
+	return diff
 }
 
 // request performs an HTTP call and returns status + body without failing

@@ -510,3 +510,6 @@ releases:
         breaking: true
         guidance: "storage.Register/New/NewBattery/StorageType never had a working path (New always errored) — construct NewLocalStorage/NewS3Storage directly and pass it to WithFileStorage. Kiln's create_entity and respond_query action kinds were advertised but never executed; authoring one is now rejected at journal time with an error naming the kind."
         detect: "storage\\.(Register|New)\\(|storage\\.NewBattery"
+      - change: Generated resource screens now import framework/ui/resource
+        breaking: false
+        guidance: "Older generated apps keep working with their private resource.go engine; optionally regenerate or migrate its config to framework/ui/resource, because future correctness and security fixes do not reach the private copy."

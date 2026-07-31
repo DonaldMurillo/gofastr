@@ -522,7 +522,7 @@ func TestAddEntityFragmentEmitsCrudScreenFile(t *testing.T) {
 	})
 	// The reviews entity + its per-entity crud screen file are both written.
 	reviewsCrud := readFile(t, dir, "screen_reviews_crud.go")
-	if !strings.Contains(reviewsCrud, `appResources["reviews"] = ResourceConfig{`) {
+	if !strings.Contains(reviewsCrud, `appResources["reviews"] = resource.Config{`) {
 		t.Errorf("screen_reviews_crud.go must wire the reviews resource:\n%s", reviewsCrud)
 	}
 	if !strings.Contains(reviewsCrud, "type ReviewsScreen struct") {
@@ -536,6 +536,41 @@ func TestAddEntityFragmentEmitsCrudScreenFile(t *testing.T) {
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("union did not build after --add entity+screen: %v\n%s", err, out)
+	}
+}
+
+func TestAddEntityFragmentPreservesResourceSeam(t *testing.T) {
+	base := addScreenBaseBlueprint("example.com/addtest") + `
+  - name: posts
+    route: /posts
+    title: Posts
+    body:
+      - kind: entity_list
+        entity: posts
+        fields: [title]
+`
+	dir, bp := addSetup(t, base)
+	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp}) })
+	resourcePath := filepath.Join(dir, "resource.go")
+	resourceBefore := readFile(t, dir, "resource.go") + "\n// app-owned hook\n"
+	if err := os.WriteFile(resourcePath, []byte(resourceBefore), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fragment := filepath.Join(dir, "fragment.yml")
+	if err := os.WriteFile(fragment, []byte(addEntityWithScreenFragment()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	covT_capStdout(t, func() {
+		generateFromBlueprint(generateOptions{from: fragment, add: true})
+	})
+
+	if got := readFile(t, dir, "resource.go"); got != resourceBefore {
+		t.Fatal("--add rewrote the app-owned resource.go seam")
+	}
+	reviews := readFile(t, dir, "screen_reviews_crud.go")
+	if !strings.Contains(reviews, `appResources["reviews"] = resource.Config{`) {
+		t.Fatalf("added entity did not append its resource config in its own file:\n%s", reviews)
 	}
 }
 

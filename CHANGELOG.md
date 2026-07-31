@@ -7,7 +7,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-## [0.54.0] - 2026-07-30
+## [0.54.0] - 2026-07-31
 
 The zero-carryover release: a three-agent deep analysis of the whole
 framework at v0.53 concluded the feature surface is complete but the
@@ -18,6 +18,44 @@ contradicted the code. Every behavioral fix landed with a test that
 failed first.
 
 ### Breaking
+
+- **BREAKING: the generated resource engine is a framework package.**
+  Blueprint apps used to own a ~946-line generated `resource.go`
+  containing generic list/detail/form/filter/pagination machinery — a
+  private fork that framework fixes could never reach. The engine now
+  lives once in `framework/ui/resource` (Config/Field/Relation/Filter/
+  Transition/RelatedList + a per-app Registry), and the generated
+  `resource.go` is a 34-line thin seam. Each entity's `resource.Config`
+  lives in its own generated screen file, so `generate --add` stays
+  additive and never rewrites the seam. `--force` removes the retired
+  generated `resource_test.go` only when it carries the generated
+  marker. The flagship test now proves OpenAPI paths match the live
+  mounted routes (the API-prefix parity oracle both agent evals tripped
+  on), executes a real MCP tool call through the auth path, and drives
+  a full REST create→get→update→delete cycle.
+- **BREAKING: framework facade re-exports are functions, not assignable vars.**
+  The subpackage function re-exports in `framework/reexports_*.go` (e.g.
+  `framework.AutoMigrate`, `framework.NewCrudHandler`, `framework.Define`) are
+  now real wrapper functions with identical signatures. Assigning to them
+  (`framework.X = myReplacement`) or taking their address (`&framework.X`) no
+  longer compiles — global mutation of the public API is gone. Plain call sites
+  `framework.X(...)` are unchanged.
+- **BREAKING: `WithConfig` replaces `AppConfig` wholesale.** It no longer
+  merges field-by-field into prior options. Later options win (including
+  granular setters placed after it), and a field `WithConfig` leaves at the zero
+  value becomes the zero value, not "keep whatever a previous option set".
+- **BREAKING: removed deprecated UI shims.** `framework/ui.BaseCSS()` (a no-op),
+  `framework/ui.ClusterConfig.Wrap` (ignored — `NoWrap` is authoritative), and
+  `interactive.Confirm` (use `Action.WithConfirm`) are deleted.
+- **BREAKING: pattern component names are bare.** `disclosure`, `multiselect`,
+  and `sortablelist` register under their package names instead of
+  `ui-disclosure` / `ui-multiselect` / `ui-sortable-list`; the emitted
+  `data-fui-comp` value, the CSS scope, and the runtime selectors in
+  `multiselect.js` follow. CSS or JS keyed on the old `ui-*` names must update.
+- **BREAKING: `data-fui-sticky` and `data-fui-viewport` are no longer emitted.**
+  Both were documented emit-only markers with no runtime or CSS consumer
+  (styling keys off the `.ui-sticky--*` / `.ui-responsive__*` classes); the
+  attribute-table rows are removed from the docs.
 
 - **BREAKING: the flat `EntityConfig` fields are gone; the grouped
   configs are the model.** `SoftDelete`, `MultiTenant`, `TenantField`,
