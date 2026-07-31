@@ -1,25 +1,33 @@
-// Package admin is a small read-only admin battery for GoFastr apps —
-// stock screens on top of the data the framework already collects:
-// queue jobs (when [battery/queue] is wired) and the audit log (when
-// [framework.WithAuditLog] is set).
+// Package admin is the back-office battery for GoFastr apps — stock operator
+// screens on top of the data and controls the framework already exposes. It is
+// NOT read-only: today it owns queue/audit ops dashboards, full entity CRUD
+// (proxied through each entity's own CrudHandler so validation, owner/tenant
+// scope, hooks, and audit apply exactly as on the public JSON API), the
+// role→permission and user→role RBAC screens, and the process-module operator
+// lifecycle (enable / disable / bump-generation / per-grant revoke).
 //
-// The battery mounts three pages:
+// Every surface — SSR screens and RPC/form routes alike — is behind the admin
+// default-deny gate (b.gate), which requires an authenticated admin (role
+// "admin" by default, or whatever Config.Authorize decides). Unauthenticated
+// requests are 401 (or redirected to Config.LoginPath); authenticated-but-
+// unauthorized are 403. There is no unauthenticated or self-service path.
 //
-//	GET /admin           index with per-section summary cards
-//	GET /admin/queue     jobs list with ?status= filter
-//	GET /admin/audit     audit log paged newest-first
+// The ops dashboards (queue, audit) are self-contained server-rendered HTML
+// that work without a UI host. The entity CRUD screens render THROUGH the host's
+// mounted UI host (runtime.js hydration, islands) and require one. All inputs
+// that reach a SQL surface are bound as parameters, never interpolated; role,
+// permission, and module names from operator forms are $n-bound in their stores.
 //
-// Pages are self-contained server-rendered HTML — they don't depend
-// on [framework/uihost] or the runtime, so the admin endpoints work
-// even before any UI host is mounted. Wire your own auth middleware
-// in front of them; nothing here gates access.
+// Every mutation (grant, revoke, assign-roles, module lifecycle, entity write)
+// records a security/compliance audit row; a failed audit write is logged, not
+// swallowed, because the mutation is already durable.
 package admin
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -29,6 +37,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	html "github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -37,6 +47,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -154,6 +165,15 @@ type Config struct {
 	// app.ProcessModules() — the real *framework.ProcessModuleSupervisor
 	// satisfies the processModuleController interface.
 	ProcessModules processModuleController
+
+	// Logger receives operational warnings a handler can't surface to the
+	// caller — notably a security/compliance audit-row write failing AFTER
+	// its mutation already committed (grant, revoke, role-assign, module
+	// lifecycle). The mutation is not rolled back (it took effect), but a
+	// lost audit record is a silent security gap, so it MUST be logged.
+	// Default: slog.Default(). Inject a *slog.Logger (e.g. the app's) so the
+	// line lands wherever the host's structured logs go.
+	Logger *slog.Logger
 }
 
 // Battery is the framework Battery implementation.
@@ -190,7 +210,19 @@ func New(cfg Config) *Battery {
 	if cfg.EntityListLimit <= 0 {
 		cfg.EntityListLimit = 50
 	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
 	return &Battery{cfg: cfg, db: cfg.DB, flash: newFlashStore()}
+}
+
+// logger returns the configured *slog.Logger, falling back to slog.Default()
+// for a Battery constructed outside New (tests that build the struct by hand).
+func (b *Battery) logger() *slog.Logger {
+	if b.cfg.Logger != nil {
+		return b.cfg.Logger
+	}
+	return slog.Default()
 }
 
 // authorized reports whether the current request may use the admin. The
@@ -383,18 +415,18 @@ func (b *Battery) handleIndex(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("SELECT COUNT(*) FROM %s", b.cfg.AuditTable),
 		).Scan(&auditCount)
 	}
-	body := render.Raw("")
+	var sections []render.HTML
 	if b.cfg.Queue != nil {
-		body += section("Queue", queueSummary(b.cfg.PathPrefix, stats, true))
+		sections = append(sections, adminSection("Queue", queueSummary(b.cfg.PathPrefix, stats, true)))
 	}
-	body += section("Audit log", auditSummary(b.cfg.PathPrefix, auditCount, db != nil))
-	b.writePage(w, b.cfg.Title, "Overview", body)
+	sections = append(sections, adminSection("Audit log", auditSummary(b.cfg.PathPrefix, auditCount, db != nil)))
+	b.writePage(w, b.cfg.Title, "Overview", ui.Stack(ui.StackConfig{Gap: ui.GapLG}, sections...))
 }
 
 func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 	if b.cfg.Queue == nil {
 		b.writePage(w, b.cfg.Title, "Queue",
-			render.Raw(`<p class="muted">No queue is wired into this admin battery.</p>`))
+			ui.Muted(render.Text("No queue is wired into this admin battery.")))
 		return
 	}
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
@@ -403,7 +435,7 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Don't echo err.Error() — driver text leaks DSNs, IPs, secrets.
 		b.writePage(w, b.cfg.Title, "Queue",
-			render.Raw(`<p class="err">Could not load queue jobs. Check the server logs for details.</p>`))
+			adminError("Could not load queue jobs. Check the server logs for details."))
 		return
 	}
 	stats, _ := b.cfg.Queue.Stats(r.Context())
@@ -415,8 +447,10 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 			showReplay = true
 		}
 	}
-	body := queueFilters(b.cfg.PathPrefix, status, stats) +
-		jobsTable(jobs, b.cfg.PathPrefix, middleware.TokenFromContext(r.Context()), showReplay)
+	body := ui.Stack(ui.StackConfig{Gap: ui.GapMD},
+		queueFilters(b.cfg.PathPrefix, status, stats),
+		jobsTable(jobs, b.cfg.PathPrefix, middleware.TokenFromContext(r.Context()), showReplay),
+	)
 	b.writePage(w, b.cfg.Title, "Queue", body)
 }
 
@@ -444,7 +478,7 @@ func (b *Battery) handleQueueReplay(w http.ResponseWriter, r *http.Request) {
 func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if b.effectiveDB() == nil {
 		b.writePage(w, b.cfg.Title, "Audit log",
-			render.Raw(`<p class="muted">No DB / audit table is wired into this admin battery.</p>`))
+			ui.Muted(render.Text("No DB / audit table is wired into this admin battery.")))
 		return
 	}
 	limit := parseLimit(r.URL.Query().Get("limit"), b.cfg.AuditListLimit)
@@ -452,7 +486,7 @@ func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Don't echo err.Error() — driver text leaks DSNs, schema, secrets.
 		b.writePage(w, b.cfg.Title, "Audit log",
-			render.Raw(`<p class="err">Could not load audit rows. Check the server logs for details.</p>`))
+			adminError("Could not load audit rows. Check the server logs for details."))
 		return
 	}
 	b.writePage(w, b.cfg.Title, "Audit log", auditTable(rows))
@@ -494,82 +528,29 @@ func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error)
 
 // ----- rendering helpers ---------------------------------------------------
 
-// baseCSS styles the admin back-office entirely from the shared theme tokens
-// (--color-* / --font-*) that core-ui/style emits and framework/ui consumes, so
-// the admin renders coherently with the rest of an app and follows whatever
-// theme the host passes (Config.Theme). The hard-coded values are fallbacks for
-// a token-less host. There is intentionally NO prefers-color-scheme override —
-// light/dark is the theme's decision, not the OS's, so the admin can't diverge
-// from the surface that mounts it.
-const baseCSS = `
-:root { color-scheme: light dark; }
-body { font-family: var(--font-body, -apple-system, system-ui, sans-serif); margin: 0; padding: 2rem;
-       max-width: 80rem; margin-inline: auto; line-height: 1.5;
-       background: var(--color-background, #fff); color: var(--color-text, #111827); }
-h1, h2 { font-family: var(--font-heading, var(--font-body, inherit)); }
-h1 { margin: 0 0 0.25rem; font-size: 1.5rem; letter-spacing: -0.01em; }
-a { color: var(--color-primary, #4f46e5); }
-.sub { color: var(--color-text-muted, #6b7280); margin: 0 0 1.5rem; }
-nav { display: flex; gap: 1rem; padding-block: 1rem; border-bottom: 1px solid var(--color-border, #d1d5db);
-      margin-bottom: 1.5rem; }
-nav a { color: inherit; text-decoration: none; padding: 0.25rem 0.5rem; border-radius: 4px; }
-nav a:hover { background: color-mix(in oklab, var(--color-text, #111827) 6%, transparent); }
-section { margin-bottom: 2rem; }
-section h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-         gap: 0.75rem; }
-.card { padding: 0.75rem 1rem; border: 1px solid var(--color-border, #d1d5db); border-radius: 6px;
-        background: var(--color-surface, #fff); }
-.card .label { font-size: 0.8rem; color: var(--color-text-muted, #6b7280); text-transform: uppercase; letter-spacing: 0.05em; }
-.card .value { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.muted { color: var(--color-text-muted, #6b7280); }
-.err { color: var(--color-danger, #b91c1c); }
-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border, #e5e7eb); }
-th { background: color-mix(in oklab, var(--color-text, #111827) 3%, transparent); font-weight: 600; }
-tr:hover td { background: color-mix(in oklab, var(--color-text, #111827) 2%, transparent); }
-.filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.filters a { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid var(--color-border, #d1d5db);
-             text-decoration: none; color: inherit; font-size: 0.85rem; }
-.filters a.active { background: var(--color-primary, #111827); color: var(--color-primary-fg, #fff); border-color: var(--color-primary, #111827); }
-code { font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace); font-size: 0.85em; }
-nav a.current { background: color-mix(in oklab, var(--color-text, #111827) 8%, transparent); font-weight: 600; }
-.toolbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
-.toolbar .muted { margin-left: auto; font-size: 0.85rem; }
-.btn { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid var(--color-border, #d1d5db); border-radius: 6px;
-       text-decoration: none; color: inherit; font-size: 0.9rem; background: none; cursor: pointer; }
-.btn:hover { background: color-mix(in oklab, var(--color-text, #111827) 4%, transparent); }
-.btn.primary { background: var(--color-primary, #111827); color: var(--color-primary-fg, #fff); border-color: var(--color-primary, #111827); }
-.btn.primary:hover { background: color-mix(in oklab, var(--color-primary, #111827) 88%, #000); }
-.pager { display: flex; gap: 0.5rem; margin-top: 1rem; }
-.row-actions { display: flex; gap: 0.75rem; align-items: center; white-space: nowrap; }
-.row-actions form { display: inline; margin: 0; }
-.link-danger { background: none; border: none; color: var(--color-danger, #b91c1c); cursor: pointer; padding: 0;
-               font: inherit; text-decoration: underline; }
-.form-row { display: grid; gap: 0.3rem; margin-bottom: 1rem; max-width: 40rem; }
-.form-row label { font-size: 0.85rem; font-weight: 600; }
-.form-row input, .form-row textarea, .form-row select {
-    font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--color-border, #d1d5db); border-radius: 6px;
-    background: var(--color-surface, #fff); color: var(--color-text, #111827); width: 100%; box-sizing: border-box; }
-.form-row input[type=checkbox] { width: auto; }
-.form-row input[readonly] { background: var(--color-surface-soft, #f3f4f6); color: var(--color-text-muted, #6b7280); }
-.form-row .req { color: var(--color-danger, #b91c1c); }
-.actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
-pre { white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono, ui-monospace, monospace);
-      font-size: 0.85em; margin: 0.5rem 0 0; }
-/* RBAC screens: strict CSP strips inline style=, so layout hooks are classes. */
-.inline-form { display: inline; }
-.perm-input { width: 8rem; }
-`
+// The standalone ops pages (queue / audit / rbac / modules / overview) skip
+// the host UI host: they emit their own HTML document and pull ALL styling
+// from the single registry-served stylesheet (handleCSS → registry.All()),
+// exactly the battery/setup pattern. There is NO bespoke CSS string here —
+// every visual comes from a registered component (DataTable, StatCard,
+// FilterToolbar, Tag, Button, …) or from the registered ui-admin sheet
+// (styles.go), which also owns the .layout-admin shell these pages reuse.
 
-// writePage emits a complete HTML document. Title is the page-level
-// title, pageName is the subheading shown above the content. The nav is
-// built from cfg.PathPrefix (so a custom prefix links correctly) and
-// includes one link per configured entity. pageName is matched against
-// the nav labels to mark the current item.
+// writePage emits a complete standalone HTML document. The shell reuses the
+// same .layout-admin / .layout-body / .layout-content skeleton the entity
+// screens receive from the host, so the registered ui-admin sheet styles it
+// without a single bespoke rule here. pageName is matched against the nav
+// labels to mark the current item.
 func (b *Battery) writePage(w http.ResponseWriter, title, pageName string, body render.HTML) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	header := ui.PageHeader(ui.PageHeaderConfig{Title: title, Subtitle: pageName})
+	inner := fmt.Sprintf(`<div class="layout-body">%s<main class="layout-content">%s%s</main></div>`,
+		b.navHTML(pageName), header, body)
+	shell := render.Tag("div", map[string]string{
+		"class":         "layout-admin",
+		"data-fui-comp": "ui-admin",
+	}, render.Raw(inner))
 	fmt.Fprintf(w, `<!doctype html>
 <html lang="en">
 <head>
@@ -578,44 +559,42 @@ func (b *Battery) writePage(w http.ResponseWriter, title, pageName string, body 
   <title>%s · %s</title>
   <link rel="stylesheet" href="%s/admin.css">
 </head>
-<body>
-  <header>
-    <h1>%s</h1>
-    <p class="sub">%s</p>
-  </header>
-  <main>
-  %s
-  %s
-  </main>
+<body class="admin-standalone">
+%s
 </body>
-</html>`,
-		render.Escape(title), render.Escape(pageName), b.cfg.PathPrefix,
-		render.Escape(title), render.Escape(pageName), b.navHTML(pageName), body)
+</html>`, render.Escape(title), render.Escape(pageName), b.cfg.PathPrefix, shell)
 }
 
-// handleCSS serves the admin stylesheet. Long-cacheable: the CSS is a build
-// constant, not per-request data.
+// handleCSS serves the combined admin stylesheet: theme :root tokens + the
+// CSS for EVERY registered component (ui-admin plus every framework/ui
+// component the ops pages compose — DataTable, StatCard, FilterToolbar, Tag,
+// Button, …). registry.All() is the single styling surface, so the admin
+// ships zero bespoke CSS strings. Mirrors battery/setup's serveCSS.
 func (b *Battery) handleCSS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	// Emit the theme's :root token block first so the token-based rules below
-	// resolve. Falls back to the framework default when the host passed no theme.
 	theme := b.cfg.Theme
 	if theme.Colors.Background.Value == "" {
 		theme = style.DefaultTheme()
 	}
-	// Emit the FULL theme CSS (light :root + the dark-scheme block when the
-	// theme defines one). The admin's own overview pages and its uihost-rendered
-	// entity CRUD screens then follow the same scheme — both light, or both
-	// following the OS dark preference — so the back-office is coherent with
-	// itself and with the app. (No bespoke prefers-color-scheme block of its
-	// own: light/dark is the theme's call, as everywhere.)
-	_, _ = io.WriteString(w, theme.CSSCustomProperties()+"\n"+b.cfg.FontFaceCSS+"\n"+baseCSS)
+	var sb strings.Builder
+	sb.WriteString(theme.CSSCustomProperties())
+	sb.WriteString("\n")
+	if b.cfg.FontFaceCSS != "" {
+		sb.WriteString(b.cfg.FontFaceCSS)
+		sb.WriteString("\n")
+	}
+	for _, e := range registry.All() {
+		sb.WriteString(e.CSSFor(theme))
+		sb.WriteString("\n")
+	}
+	_, _ = fmt.Fprint(w, sb.String())
 }
 
-// navHTML builds the admin nav. Queue is included only with real backing;
-// Overview/Audit and configured entities remain fixed. current is the page
-// name; the matching link gets the .current class.
+// navHTML builds the admin nav as ui.Link action targets inside a <nav>. The
+// current page's link carries aria-current="page"; the active styling comes
+// from a scoped rule in the registered ui-admin sheet. Queue appears only
+// with real backing; Overview/Audit and configured entities remain fixed.
 func (b *Battery) navHTML(current string) render.HTML {
 	type link struct{ label, href string }
 	links := []link{{"Overview", b.cfg.PathPrefix}}
@@ -642,168 +621,179 @@ func (b *Battery) navHTML(current string) render.HTML {
 	if b.cfg.ProcessModules != nil {
 		links = append(links, link{"Modules", b.cfg.PathPrefix + "/modules"})
 	}
-	var sb strings.Builder
-	sb.WriteString(`<nav>`)
+	items := make([]render.HTML, 0, len(links))
 	for _, l := range links {
-		cls := ""
+		cfg := ui.LinkConfig{Href: l.href, Text: l.label, Variant: ui.LinkAction}
 		if l.label == current {
-			cls = ` class="current"`
+			cfg.ExtraAttrs = html.Attrs{"aria-current": "page"}
 		}
-		fmt.Fprintf(&sb, `<a%s href="%s">%s</a>`, cls, render.Escape(l.href), render.Escape(l.label))
+		items = append(items, ui.Link(cfg))
 	}
-	sb.WriteString(`</nav>`)
-	return render.HTML(sb.String())
+	return render.Tag("nav", map[string]string{"class": "admin-nav"}, items...)
 }
 
-func section(name string, body render.HTML) render.HTML {
-	return render.Raw(fmt.Sprintf(`<section><h2>%s</h2>%s</section>`,
-		render.Escape(name), body))
+// adminSection wraps a titled content block via the design-system ui.Section
+// (replaces the old hand-rolled <section><h2> helper).
+func adminSection(heading string, body render.HTML) render.HTML {
+	return ui.Section(ui.SectionConfig{Heading: heading}, body)
 }
 
+// adminError renders a page-level error flash as a ui.Callout (inline danger
+// alert — the danger variant carries role=alert automatically). Replaces the
+// old <p class="err"> markup.
+func adminError(msg string) render.HTML {
+	return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(msg))
+}
+
+// queueSummary renders the overview's queue tile: a responsive grid of
+// StatCards (one per status the queue reports) + a muted "view all" link.
 func queueSummary(prefix string, stats queue.JobStats, wired bool) render.HTML {
 	if !wired {
-		return render.Raw(`<p class="muted">No queue wired.</p>`)
+		return ui.Muted(render.Text("No queue wired."))
 	}
-	keys := []string{"pending", "claimed", "failed", "running", "dead"}
-	var seen = map[string]bool{}
-	cards := strings.Builder{}
-	cards.WriteString(`<div class="cards">`)
-	for _, k := range keys {
+	order := []string{"pending", "claimed", "failed", "running", "dead"}
+	cards := make([]render.HTML, 0, len(stats))
+	seen := make(map[string]bool, len(stats))
+	for _, k := range order {
 		if n, ok := stats[k]; ok {
-			cards.WriteString(card(k, n))
+			cards = append(cards, statCard(k, n))
 			seen[k] = true
 		}
 	}
 	// Emit any unexpected status names the queue produced.
 	for k, n := range stats {
 		if !seen[k] {
-			cards.WriteString(card(k, n))
+			cards = append(cards, statCard(k, n))
 		}
 	}
-	cards.WriteString(`</div>`)
-	cards.WriteString(fmt.Sprintf(`<p><a href="%s/queue">View all jobs →</a></p>`,
-		render.Escape(prefix)))
-	return render.Raw(cards.String())
+	return ui.Stack(ui.StackConfig{Gap: ui.GapMD},
+		ui.Grid(ui.GridConfig{Min: "9rem"}, cards...),
+		ui.Link(ui.LinkConfig{Href: prefix + "/queue", Text: "View all jobs →", Variant: ui.LinkMuted}),
+	)
 }
 
+// auditSummary renders the overview's audit tile.
 func auditSummary(prefix string, total int, wired bool) render.HTML {
 	if !wired {
-		return render.Raw(`<p class="muted">No audit log wired.</p>`)
+		return ui.Muted(render.Text("No audit log wired."))
 	}
-	return render.Raw(fmt.Sprintf(`<div class="cards">%s</div>
-		<p><a href="%s/audit">View recent entries →</a></p>`,
-		card("entries", total), render.Escape(prefix)))
+	return ui.Stack(ui.StackConfig{Gap: ui.GapMD},
+		ui.Grid(ui.GridConfig{Min: "9rem"}, statCard("entries", total)),
+		ui.Link(ui.LinkConfig{Href: prefix + "/audit", Text: "View recent entries →", Variant: ui.LinkMuted}),
+	)
 }
 
-func card(label string, value int) string {
-	return fmt.Sprintf(`<div class="card"><div class="label">%s</div><div class="value">%d</div></div>`,
-		render.Escape(label), value)
+// statCard renders one metric tile. label is the small caption, value the
+// prominent number — matching ui.StatCard's Label/Value semantics.
+func statCard(label string, value int) render.HTML {
+	return ui.StatCard(ui.StatCardConfig{Label: label, Value: strconv.Itoa(value)})
 }
 
+// queueFilters renders the queue status filter as a ui.FilterToolbar — the
+// design-system's URL-driven (GET <form>) facet control. A single pill facet
+// over status; submitting navigates to ?status=<value>, so it works on these
+// standalone pages with zero JavaScript.
 func queueFilters(prefix, current string, stats queue.JobStats) render.HTML {
-	// DBQueue's terminal state is 'failed' and its in-progress state is
-	// 'claimed' — it never writes 'dead'. Listing a 'dead' chip showed a
-	// permanently-empty filter. Match the statuses the queue actually writes.
-	all := []string{"", "pending", "claimed", "failed"}
-	var b strings.Builder
-	b.WriteString(`<div class="filters">`)
-	for _, k := range all {
-		cls := ""
-		if k == current {
-			cls = " class=\"active\""
-		}
+	// DBQueue's terminal state is 'failed', in-progress 'claimed' — it never
+	// writes 'dead', so a 'dead' chip was a permanently-empty filter.
+	opts := []ui.FacetOption{{Label: "All", Value: ""}}
+	for _, k := range []string{"pending", "claimed", "failed"} {
 		label := k
-		if label == "" {
-			label = "all"
+		if n, ok := stats[k]; ok {
+			label = fmt.Sprintf("%s (%d)", k, n)
 		}
-		count := ""
-		if k != "" {
-			if n, ok := stats[k]; ok {
-				count = fmt.Sprintf(" (%d)", n)
-			}
-		}
-		q := ""
-		if k != "" {
-			q = "?status=" + k
-		}
-		fmt.Fprintf(&b, `<a%s href="%s/queue%s">%s%s</a>`,
-			cls, render.Escape(prefix), q, render.Escape(label), count)
+		opts = append(opts, ui.FacetOption{Label: label, Value: k})
 	}
-	b.WriteString(`</div>`)
-	return render.Raw(b.String())
+	return ui.FilterToolbar(ui.FilterToolbarConfig{
+		Action:     prefix + "/queue",
+		ApplyLabel: "Filter",
+		Facets: []ui.Facet{{
+			Name:    "status",
+			Label:   "Status",
+			Kind:    ui.FacetPills,
+			Value:   current,
+			Options: opts,
+		}},
+	})
 }
 
-// jobsTable renders the job list. When showReplay is true (the failed-jobs
-// view on a Replayable queue), each row gets a CSRF-protected Replay form that
-// POSTs to the gated /queue/_replay/{id} route.
+// jobsTable renders the job list as a ui.DataTable. When showReplay is true
+// (failed-jobs view on a Replayable queue), each row's Actions cell carries a
+// CSRF-protected Replay form posting to the gated /queue/_replay/{id} route.
 func jobsTable(jobs []queue.Job, prefix, csrfToken string, showReplay bool) render.HTML {
-	if len(jobs) == 0 {
-		return render.Raw(`<p class="muted">No jobs match this filter.</p>`)
+	cols := []ui.Column{
+		{Key: "id", Header: "ID"},
+		{Key: "type", Header: "Type"},
+		{Key: "attempts", Header: "Attempts"},
+		{Key: "priority", Header: "Priority"},
+		{Key: "created", Header: "Created"},
+		{Key: "scheduled", Header: "Scheduled"},
 	}
-	var b strings.Builder
-	b.WriteString(`<table><thead><tr>
-		<th>ID</th><th>Type</th><th>Attempts</th><th>Priority</th>
-		<th>Created</th><th>Scheduled</th>`)
 	if showReplay {
-		b.WriteString(`<th>Actions</th>`)
+		cols = append(cols, ui.Column{Key: "actions", Header: "Actions"})
 	}
-	b.WriteString(`</tr></thead><tbody>`)
-	for _, j := range jobs {
-		fmt.Fprintf(&b, `<tr>
-			<td><code>%s</code></td>
-			<td>%s</td>
-			<td>%d / %d</td>
-			<td>%d</td>
-			<td>%s</td>
-			<td>%s</td>`,
-			render.Escape(j.ID),
-			render.Escape(j.Type),
-			j.Attempts, j.MaxAttempts,
-			j.Priority,
-			render.Escape(j.CreatedAt.Format(time.RFC3339)),
-			render.Escape(j.ScheduledAt.Format(time.RFC3339)),
-		)
-		if showReplay {
-			fmt.Fprintf(&b, `<td><form method="post" action="%s/queue/_replay/%s">`+
-				`<input type="hidden" name="_csrf" value="%s">`+
-				`<button type="submit">Replay</button></form></td>`,
-				render.Escape(prefix), render.Escape(url.PathEscape(j.ID)), render.Escape(csrfToken))
+	rows := make([]ui.Row, len(jobs))
+	for i, j := range jobs {
+		cells := map[string]render.HTML{
+			"id":        monoCell(j.ID),
+			"type":      render.Text(j.Type),
+			"attempts":  render.Text(fmt.Sprintf("%d / %d", j.Attempts, j.MaxAttempts)),
+			"priority":  render.Text(strconv.Itoa(j.Priority)),
+			"created":   render.Text(j.CreatedAt.Format(time.RFC3339)),
+			"scheduled": render.Text(j.ScheduledAt.Format(time.RFC3339)),
 		}
-		b.WriteString(`</tr>`)
+		if showReplay {
+			cells["actions"] = render.HTML(html.Form(html.FormConfig{
+				Method: "post",
+				Action: prefix + "/queue/_replay/" + url.PathEscape(j.ID),
+			},
+				html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrfToken}),
+				ui.Button(ui.ButtonConfig{Label: "Replay", Type: "submit", Size: ui.ButtonSizeSmall}),
+			))
+		}
+		rows[i] = ui.Row{Cells: cells}
 	}
-	b.WriteString(`</tbody></table>`)
-	return render.Raw(b.String())
+	return ui.DataTable(ui.DataTableConfig{
+		Columns: cols,
+		Rows:    rows,
+		Empty:   ui.EmptyStateConfig{Title: "No jobs", Description: "No jobs match this filter.", HeadingLevel: 3},
+	})
 }
 
+// auditTable renders the audit log as a ui.DataTable.
 func auditTable(rows []auditRow) render.HTML {
-	if len(rows) == 0 {
-		return render.Raw(`<p class="muted">No audit entries yet.</p>`)
+	cols := []ui.Column{
+		{Key: "time", Header: "Time"},
+		{Key: "entity", Header: "Entity"},
+		{Key: "op", Header: "Op"},
+		{Key: "record", Header: "Record"},
+		{Key: "actor", Header: "Actor"},
 	}
-	var b strings.Builder
-	b.WriteString(`<table><thead><tr>
-		<th>Time</th><th>Entity</th><th>Op</th><th>Record</th><th>Actor</th>
-	</tr></thead><tbody>`)
-	for _, r := range rows {
+	data := make([]ui.Row, len(rows))
+	for i, r := range rows {
 		actor := "—"
 		if r.ActorID.Valid && r.ActorID.String != "" {
 			actor = r.ActorID.String
 		}
-		fmt.Fprintf(&b, `<tr>
-			<td>%s</td>
-			<td>%s</td>
-			<td>%s</td>
-			<td><code>%s</code></td>
-			<td>%s</td>
-		</tr>`,
-			render.Escape(r.CreatedAt.Format(time.RFC3339)),
-			render.Escape(r.Entity),
-			render.Escape(r.Op),
-			render.Escape(r.RecordID),
-			render.Escape(actor),
-		)
+		data[i] = ui.Row{Cells: map[string]render.HTML{
+			"time":   render.Text(r.CreatedAt.Format(time.RFC3339)),
+			"entity": render.Text(r.Entity),
+			"op":     render.Text(r.Op),
+			"record": monoCell(r.RecordID),
+			"actor":  render.Text(actor),
+		}}
 	}
-	b.WriteString(`</tbody></table>`)
-	return render.Raw(b.String())
+	return ui.DataTable(ui.DataTableConfig{
+		Columns: cols,
+		Rows:    data,
+		Empty:   ui.EmptyStateConfig{Title: "No audit entries", Description: "Audit events will appear here.", HeadingLevel: 3},
+	})
+}
+
+// monoCell renders text in the admin's quiet monospace cell style (ids, codes)
+// via the existing .admin-mono class in the registered ui-admin sheet.
+func monoCell(s string) render.HTML {
+	return render.Tag("span", map[string]string{"class": "admin-mono"}, render.Text(s))
 }
 
 func parseLimit(raw string, fallback int) int {

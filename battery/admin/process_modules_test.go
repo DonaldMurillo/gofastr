@@ -329,7 +329,7 @@ func TestModules_ControllerErrorShowsMessage(t *testing.T) {
 		t.Fatalf("error list got %d, want 200", getRR.Code)
 	}
 	body := getRR.Body.String()
-	if !strings.Contains(body, "class=\"err\"") || !strings.Contains(body, "boom") {
+	if !strings.Contains(body, "ui-callout--danger") || !strings.Contains(body, "boom") {
 		t.Errorf("error flash not rendered in list: %q", body)
 	}
 	if strings.Contains(body, "application/json") {

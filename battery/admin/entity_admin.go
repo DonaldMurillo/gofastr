@@ -225,7 +225,7 @@ func crudEnabled(ent *entity.Entity) bool {
 // crudFor builds the app's canonical CrudHandler for ent, preserving the
 // host's JSON casing so lifecycle hooks and audit redactors receive the same
 // payload shape for admin and public requests.
-func (b *Battery) crudFor(ent *entity.Entity) *crud.CrudHandler {
+func (b *Battery) crudFor(ent *entity.Entity) (*crud.CrudHandler, error) {
 	// Start from App's canonical handler so audit/lifecycle hooks, events,
 	// storage, outbox, and registry wiring match the public JSON routes. A
 	// fresh crud.NewCrudHandler has Hooks=nil and silently bypasses all of it.
@@ -233,11 +233,25 @@ func (b *Battery) crudFor(ent *entity.Entity) *crud.CrudHandler {
 	// Registry.Get lookup that fails for multi-version entities.
 	ch, err := b.app.CrudHandlerForEntity(ent)
 	if err != nil {
-		panic(fmt.Sprintf("admin: crudFor(%s): %v", ent.GetName(), err))
+		// A wiring failure (no DB, entity not the registered instance) is
+		// DETERMINISTIC — it fails the same way every request. Panicking per
+		// request (the old behaviour) just hands the noise to Recovery and
+		// logs a stack trace on every hit. Return the error and let each call
+		// site render its normal failure shape.
+		return nil, err
 	}
 	// Preserve Config.DB's documented override for admin entity operations.
 	ch.DB = b.db
-	return ch
+	return ch, nil
+}
+
+// crudFor500 renders a 500 for a crudFor wiring failure at an HTTP boundary.
+// The real error is logged (driver/wiring text can leak schema, DSNs, or
+// paths, so it never goes in the body); the response carries a generic,
+// operator-facing message in the style of the other admin 500s.
+func (b *Battery) crudFor500(w http.ResponseWriter, ent *entity.Entity, err error) {
+	b.logger().Error("admin: crud handler unavailable", "entity", ent.GetName(), "error", err)
+	http.Error(w, ent.GetName()+" admin is unavailable; check server logs", http.StatusInternalServerError)
 }
 
 // field names at the admin boundary. Admin screens index rows by schema field
@@ -380,7 +394,10 @@ func noQueryColumns(ent *entity.Entity) map[string]bool {
 // listRows runs the CrudHandler List with the given query and returns the
 // decoded rows plus the total count for pagination.
 func (b *Battery) listRows(ctx context.Context, ent *entity.Entity, query string) (rows []map[string]any, total int, err error) {
-	ch := b.crudFor(ent)
+	ch, err := b.crudFor(ent)
+	if err != nil {
+		return nil, 0, err
+	}
 	// Screen renders bypass b.gate, so inject the admin superuser policy here too
 	// — the admin reads every entity it manages, regardless of per-entity access RBAC.
 	code, raw := callCrudCtx(adminSuperuserCtx(ctx), ch.List(), http.MethodGet, query, "", "")
@@ -403,7 +420,10 @@ func (b *Battery) listRows(ctx context.Context, ent *entity.Entity, query string
 
 // getRow loads a single record by id (owner-scoped via ctx).
 func (b *Battery) getRow(ctx context.Context, ent *entity.Entity, id string) (map[string]any, error) {
-	ch := b.crudFor(ent)
+	ch, err := b.crudFor(ent)
+	if err != nil {
+		return nil, err
+	}
 	code, raw := callCrudCtx(adminSuperuserCtx(ctx), ch.Get(), http.MethodGet, "", id, "")
 	if code != http.StatusOK {
 		return nil, fmt.Errorf("get returned %d", code)
@@ -436,7 +456,10 @@ func (b *Battery) getRow(ctx context.Context, ent *entity.Entity, id string) (ma
 // because those answer different questions: NoQuery is about the query
 // surface, and an app may mask a column it never marked.
 func (b *Battery) getRowForEdit(ctx context.Context, ent *entity.Entity, id string) (map[string]any, map[string]bool, error) {
-	ch := b.crudFor(ent)
+	ch, err := b.crudFor(ent)
+	if err != nil {
+		return nil, nil, err
+	}
 	sctx := adminSuperuserCtx(ctx)
 	raw, err := ch.GetOne(sctx, id, nil)
 	if err != nil {
@@ -455,9 +478,19 @@ func (b *Battery) getRowForEdit(ctx context.Context, ent *entity.Entity, id stri
 // blanks mean "unchanged" rather than "clear this". Recomputing it server-side
 // rather than round-tripping it through a hidden input keeps it authoritative.
 func (b *Battery) maskedFields(ctx context.Context, ent *entity.Entity, id string, rawRow map[string]any, keys map[string]string) map[string]bool {
-	ch := b.crudFor(ent)
-	sctx := adminSuperuserCtx(ctx)
 	masked := map[string]bool{}
+	ch, err := b.crudFor(ent)
+	if err != nil {
+		// Unreachable via the live callers (getRowForEdit / maskedFieldsForID
+		// already failed at their own crudFor), but honour maskedFields'
+		// "must not take the form down" contract: treat every editable column
+		// as masked so the admin retypes rather than sees a prefilled secret.
+		for _, f := range editableFields(ent) {
+			masked[f.Name] = true
+		}
+		return masked
+	}
+	sctx := adminSuperuserCtx(ctx)
 	// A hook failure here must not take the form down: it means we cannot
 	// prove a column is safe to prefill, so treat every editable column as
 	// masked and let the admin retype what they mean to change.
@@ -489,7 +522,10 @@ func (b *Battery) maskedFieldsForID(ctx context.Context, ent *entity.Entity, id 
 	if id == "" {
 		return nil // create: nothing is stored yet, so nothing is masked
 	}
-	ch := b.crudFor(ent)
+	ch, err := b.crudFor(ent)
+	if err != nil {
+		return nil
+	}
 	raw, err := ch.GetOne(adminSuperuserCtx(ctx), id, nil)
 	if err != nil {
 		return nil
@@ -524,8 +560,30 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 		// Recompute server-side rather than trusting a hidden input: the form
 		// omits masked columns, so the handler must know which blanks mean
 		// "unchanged".
-		body := formToJSON(ent, r, b.maskedFieldsForID(r.Context(), ent, id))
-		ch := b.crudFor(ent)
+		body, formErrs := formToJSON(ent, r, b.maskedFieldsForID(r.Context(), ent, id))
+		if len(formErrs) > 0 {
+			// A field-level coercion failure (e.g. "abc" in an Int field) used
+			// to be silently dropped by formToJSON, creating the row with the
+			// field omitted. Surface it exactly like a CrudHandler validation
+			// error: stash the submitted values + field errors and redirect
+			// back to the form so the field is named, not silently accepted.
+			vals := map[string]string{}
+			for _, f := range editableFields(ent) {
+				vals[f.Name] = r.PostForm.Get(f.Name)
+			}
+			token := b.flash.put(&formFlash{values: vals, fieldErrs: formErrs, general: "Please correct the highlighted fields."})
+			dest := b.entityBase(ent) + "/new"
+			if edit {
+				dest = b.entityBase(ent) + "/edit/" + id
+			}
+			http.Redirect(w, r, dest+"?e="+token, http.StatusSeeOther)
+			return
+		}
+		ch, err := b.crudFor(ent)
+		if err != nil {
+			b.crudFor500(w, ent, err)
+			return
+		}
 		var code int
 		var raw []byte
 		if edit {
@@ -559,8 +617,23 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 // re-rendered list anyway.
 func (b *Battery) entityDelete(ent *entity.Entity) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ch := b.crudFor(ent)
-		_, _ = callCrud(r, ch.Delete(), http.MethodDelete, "", r.PathValue("id"), "")
+		ch, err := b.crudFor(ent)
+		if err != nil {
+			b.crudFor500(w, ent, err)
+			return
+		}
+		code, _ := callCrud(r, ch.Delete(), http.MethodDelete, "", r.PathValue("id"), "")
+		// The island-swap contract forces an HTML response (the runtime swaps
+		// whatever this returns into the list's signal node), so a failed
+		// delete can't become a non-2xx — that would blank the grid. But the
+		// result must not be discarded either: a genuine server error (5xx) is
+		// logged so it can't vanish silently. A 4xx (scope miss / not found)
+		// is the documented benign case — the row is simply absent from the
+		// caller's re-rendered list.
+		if code >= http.StatusInternalServerError {
+			b.logger().Error("admin: delete failed",
+				"entity", ent.GetName(), "id", r.PathValue("id"), "status", code)
+		}
 		html := b.renderTable(r.Context(), ent, r.URL.Query())
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, string(html))
@@ -585,8 +658,9 @@ func (b *Battery) entityRows(ent *entity.Entity) http.HandlerFunc {
 // accepts, coercing by field type. Empty optional values are omitted so the
 // handler's defaults/validation behave as on the API; booleans always send (an
 // unchecked checkbox is absent → false).
-func formToJSON(ent *entity.Entity, r *http.Request, masked map[string]bool) string {
+func formToJSON(ent *entity.Entity, r *http.Request, masked map[string]bool) (string, map[string]string) {
 	obj := map[string]any{}
+	fieldErrs := map[string]string{}
 	for _, f := range editableFields(ent) {
 		raw := strings.TrimSpace(r.PostForm.Get(f.Name))
 		// A masked column renders empty and is write-only: blank means "leave
@@ -605,12 +679,18 @@ func formToJSON(ent *entity.Entity, r *http.Request, masked map[string]bool) str
 			if raw != "" {
 				if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
 					obj[f.Name] = n
+				} else {
+					// Don't silently drop a non-numeric value (it would create
+					// the row with the field omitted → defaulted to zero).
+					fieldErrs[f.Name] = "must be a whole number"
 				}
 			}
 		case schema.Float:
 			if raw != "" {
 				if x, err := strconv.ParseFloat(raw, 64); err == nil {
 					obj[f.Name] = x
+				} else {
+					fieldErrs[f.Name] = "must be a number"
 				}
 			}
 		default:
@@ -620,7 +700,7 @@ func formToJSON(ent *entity.Entity, r *http.Request, masked map[string]bool) str
 		}
 	}
 	out, _ := json.Marshal(obj)
-	return string(out)
+	return string(out), fieldErrs
 }
 
 // crudErrorMessage extracts a human message from a CrudHandler error body.
