@@ -122,19 +122,27 @@ type covFailPlugin struct{}
 func (covFailPlugin) Name() string      { return "cov-fail-plugin" }
 func (covFailPlugin) Init(_ *App) error { return errStored }
 
-// WithBody returns early (no body set) when the value can't be marshalled.
+// WithBody must retain a marshal error on the TestRequest so Execute can
+// surface it — a test must never run against the real handler with the
+// wrong (or empty) body just because marshalling failed.
 func TestCovWithBodyMarshalError(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	app.Router().Post("/echo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Body != nil {
-			_, _ = w.Write([]byte("had-body"))
-		}
+		w.WriteHeader(http.StatusOK)
 	}))
 	ta := TestHarness(t, app)
-	// A channel can't be marshalled → WithBody returns tr unchanged (no body).
-	tr := ta.Request(http.MethodPost, "/echo", nil).WithBody(make(chan int))
-	if tr.request.Header.Get("Content-Type") == "application/json" {
-		t.Fatal("WithBody should not set Content-Type on marshal failure")
+	// A channel can't be JSON-marshalled. Execute must surface the error
+	// rather than dispatching the request with no body.
+	resp := ta.Request(http.MethodPost, "/echo", nil).
+		WithBody(make(chan int)).
+		Execute()
+	if resp.err == nil {
+		t.Fatal("WithBody marshal error was swallowed: Execute returned a response with no stored error")
+	}
+	// The failure cannot be silently ignored by an assertion on status:
+	// AssertStatus(200) must fail-stop, not pass.
+	if !cov_runFail(func(tb testing.TB) { resp.AssertStatus(tb, http.StatusOK) }) {
+		t.Fatal("AssertStatus(200) passed silently despite the WithBody marshal error")
 	}
 }
 
