@@ -36,7 +36,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/harness/ids"
 	"github.com/DonaldMurillo/gofastr/framework/harness/logging"
 	"github.com/DonaldMurillo/gofastr/framework/harness/memory"
-	"github.com/DonaldMurillo/gofastr/framework/harness/plugin"
 	"github.com/DonaldMurillo/gofastr/framework/harness/profile"
 	"github.com/DonaldMurillo/gofastr/framework/harness/provider"
 	"github.com/DonaldMurillo/gofastr/framework/harness/provider/credstore"
@@ -75,9 +74,6 @@ type Config struct {
 	// AllowProjectHooks gates project-local hooks (§ TOFU rule 13).
 	AllowProjectHooks bool
 
-	// Plugins to register before boot.
-	Plugins []plugin.Plugin
-
 	// CredstorePass is the passphrase used to derive the credstore key.
 	// In CI, prefer GOFASTR_HARNESS_MACHINE_KEY env var instead.
 	CredstorePass string
@@ -104,8 +100,6 @@ type Harness struct {
 
 	Mux     *multiplex.Mux
 	Catalog *resources.Catalog
-
-	plugins *plugin.Manager
 
 	// sessionMu guards sessionRuns. CreateSession and Shutdown may be
 	// called from different goroutines.
@@ -135,7 +129,6 @@ func New(cfg Config) (*Harness, error) {
 		Logger:  cfg.Logger,
 		Mux:     multiplex.New(),
 		Catalog: resources.NewCatalog(),
-		plugins: plugin.NewManager(),
 	}
 
 	// (3) Context reader.
@@ -243,14 +236,6 @@ func New(cfg Config) (*Harness, error) {
 	h.Catalog.Providers = h.Providers
 	h.Catalog.Skills = func() []skillmd.Tier1 {
 		return h.Skills.Tier1Catalog()
-	}
-
-	// Plugins.
-	for _, p := range cfg.Plugins {
-		h.plugins.Register(p)
-	}
-	if err := h.plugins.InitAll(h); err != nil {
-		return nil, fmt.Errorf("harness: init plugins: %w", err)
 	}
 
 	return h, nil
@@ -376,43 +361,6 @@ func (h *Harness) Shutdown() error {
 		return err
 	}
 	return nil
-}
-
-// ---------- Plugin Host implementation ----------
-//
-// We implement plugin.Host with no-op stubs in v0.1; concrete wiring
-// (request-middleware registration, transport registration, etc.)
-// lands as the plugin system fills out. Plugins can still claim
-// slash-command namespaces.
-
-func (h *Harness) ClaimSlashCommand(namespace string) error {
-	h.Catalog.ClaimNamespace(namespace)
-	return nil
-}
-
-func (h *Harness) AddRequestMiddleware(_ plugin.RequestMiddleware) {}
-func (h *Harness) AddToolMiddleware(_ plugin.ToolMiddleware)       {}
-func (h *Harness) RegisterToolSource(src plugin.ToolSource) error {
-	tsrc, ok := src.(tool.ToolSource)
-	if !ok {
-		return errors.New("harness: plugin ToolSource has wrong type")
-	}
-	return h.Tools.Register(context.Background(), tsrc)
-}
-func (h *Harness) RegisterProvider(p plugin.Provider) error {
-	pp, ok := p.(provider.Provider)
-	if !ok {
-		return errors.New("harness: plugin Provider has wrong type")
-	}
-	h.Providers = append(h.Providers, pp)
-	h.Catalog.Providers = h.Providers
-	return nil
-}
-func (h *Harness) SubscribeEvents() <-chan plugin.EventEnvelope {
-	// Cross-session subscription is v0.2 work; v0.1 returns a closed channel.
-	ch := make(chan plugin.EventEnvelope)
-	close(ch)
-	return ch
 }
 
 // ---------- helpers ----------

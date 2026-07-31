@@ -1,7 +1,7 @@
 // Package provider defines the Provider abstraction the engine uses
 // to talk to language models. Provider adapters live in subpackages
-// (openrouter, zai, copilot, routing) and translate to/from the
-// canonical Anthropic-shape message form used internally.
+// (openrouter, zai) and translate to/from the canonical
+// Anthropic-shape message form used internally.
 //
 // See docs/harness-architecture.md § Providers.
 package provider
@@ -14,11 +14,7 @@ import (
 
 // Provider is the abstraction every LLM transport implements.
 //
-// Concrete implementations live in subpackages:
-//   - openrouter (v0.1)
-//   - zai        (v0.1)
-//   - copilot    (v0.2 placeholder)
-//   - routing    (v0.3 RoutingProvider composition)
+// Concrete implementations live in subpackages: openrouter and zai.
 type Provider interface {
 	// Name returns the provider's identifier (e.g., "openrouter", "zai").
 	Name() string

@@ -70,13 +70,6 @@ func (h *InProcess) AttachAuth(req *http.Request, provider, account string) erro
 	case "openrouter", "zai":
 		req.Header.Set("Authorization", "Bearer "+secret)
 		return nil
-	case "copilot":
-		// v0.2 will own the exchange flow here. For now, the
-		// secret is treated as a raw bearer (placeholder).
-		req.Header.Set("Authorization", "token "+secret)
-		req.Header.Set("Copilot-Integration-Id", "vscode-chat")
-		req.Header.Set("Editor-Version", "gofastr-harness/0.1")
-		return nil
 	}
 	return ErrUnknownProvider
 }

@@ -129,7 +129,7 @@ pinned.
   fileformat/varint readers — robustness bugs only unless the engine is
   pointed at an untrusted `.db` (kiln/harness session stores), where
   `-fuzz` is the right tool.
-- **Agent surface:** `framework/experimental`, `battery/experimental`,
+- **Agent surface:** `framework/experimental`,
   `kiln/{expr,effect,render}` CSP, `cmd/gofastr/{pack,skill,docs}`,
   `core/moduleproto/{peer,handshake,methods}.go`, `framework/agentsinv`.
 - **Browser:** most `core-ui/runtime/src/*.js` (lightbox, sortablelist,

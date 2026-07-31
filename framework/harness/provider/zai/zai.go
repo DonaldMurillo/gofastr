@@ -8,7 +8,6 @@ package zai
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -130,6 +129,3 @@ func (p *Provider) baseURL() string {
 func defaultClient() *http.Client {
 	return &http.Client{Timeout: 5 * time.Minute}
 }
-
-// ErrMissingKey is returned when the Provider is asked to chat without an API key.
-var ErrMissingKey = errors.New("zai: API key not set")

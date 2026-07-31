@@ -10,7 +10,6 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -193,6 +192,3 @@ func parseUSDPerToken(s string) float64 {
 	}
 	return v * 1_000_000
 }
-
-// ErrMissingKey is returned when the Provider is asked to chat without an API key.
-var ErrMissingKey = errors.New("openrouter: API key not set")

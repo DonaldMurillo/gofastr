@@ -392,35 +392,6 @@ func TestMemoryStorageConcurrentAccess(t *testing.T) {
 	}
 }
 
-// ─── Registry Tests ──────────────────────────────────────────────────
-
-func TestRegistry(t *testing.T) {
-	// Register local backend
-	Register(Local, func(config map[string]interface{}) (Storage, error) {
-		dir, _ := config["dir"].(string)
-		if dir == "" {
-			dir = t.TempDir()
-		}
-		return NewLocalStorage(dir), nil
-	})
-
-	// Should be able to create via registry
-	s, err := New(Local, map[string]interface{}{"dir": t.TempDir()})
-	if err != nil {
-		t.Fatalf("New(Local): %v", err)
-	}
-	if s == nil {
-		t.Fatal("expected non-nil storage")
-	}
-}
-
-func TestRegistryUnknownType(t *testing.T) {
-	_, err := New(StorageType(99), nil)
-	if err == nil {
-		t.Fatal("New with unknown type should fail")
-	}
-}
-
 // ─── S3 Storage Tests (interface only, no real client) ───────────────
 
 func TestS3StorageNoClient(t *testing.T) {
@@ -608,23 +579,4 @@ func (m *mockPresigner) PresignGet(_ context.Context, _, _ string, _ time.Durati
 
 func (m *mockPresigner) PresignPut(_ context.Context, _, _ string, _ time.Duration) (*url.URL, error) {
 	return &url.URL{Scheme: "https", Host: "s3.amazonaws.com", Path: "/bucket/key"}, nil
-}
-
-// ─── StorageType String ─────────────────────────────────────────────
-
-func TestStorageTypeString(t *testing.T) {
-	tests := []struct {
-		t    StorageType
-		want string
-	}{
-		{Local, "local"},
-		{S3, "s3"},
-		{Memory, "memory"},
-		{StorageType(99), "unknown(99)"},
-	}
-	for _, tt := range tests {
-		if got := tt.t.String(); got != tt.want {
-			t.Errorf("StorageType(%d).String() = %q, want %q", tt.t, got, tt.want)
-		}
-	}
 }

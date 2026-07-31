@@ -7,8 +7,8 @@ import (
 
 // TestPricingForModel_KnownProviders: every provider+model in the
 // shipped static table returns a non-zero rate. Today only zai:glm-5.1
-// (since that's the only provider we ship a static rate for); copilot
-// uses a flat fee model; openrouter populates Pricing dynamically.
+// (since that's the only provider we ship a static rate for);
+// openrouter populates Pricing dynamically.
 func TestPricingForModel_KnownProviders(t *testing.T) {
 	cases := []struct {
 		provider, model string

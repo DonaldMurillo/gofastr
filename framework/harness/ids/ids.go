@@ -10,16 +10,11 @@
 //	CallID       call_<ULID>   one per tool call
 //	JTI          tok_<ULID>    token ID (revocation key)
 //	ClientID     cli_<ULID>    stable for the lifetime of a client attach
-//
-// Branch ID rewrite is deterministic from (source_id, new_log_id) so
-// two clients branching the same boundary produce the same new IDs.
 package ids
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/harness/internal/ulid"
 )
@@ -132,24 +127,6 @@ func parseExpect(s, want string) error {
 		return fmt.Errorf("ids: prefix %q, want %q", prefix, want)
 	}
 	return nil
-}
-
-// RewriteForBranch deterministically derives a new ID from a source ID
-// and the new LogID it belongs to, per the doc's branch ID-rewrite rule.
-//
-// Two clients branching the same source ID at the same boundary with
-// the same destination LogID produce the same rewritten ID. This is
-// the property the replay/diff tools rely on.
-//
-// The input may be any prefixed ID; the rewritten ID keeps the same
-// prefix.
-func RewriteForBranch(sourceID string, newLogID LogID) (string, error) {
-	prefix, _, err := ulid.SplitPrefixed(sourceID)
-	if err != nil {
-		return "", fmt.Errorf("ids: rewrite source: %w", err)
-	}
-	h := sha256.Sum256([]byte(sourceID + "|" + string(newLogID)))
-	return strings.ToLower(prefix) + "_" + ulid.FromSeed(h[:]).String(), nil
 }
 
 // ErrInvalidPrefix is returned when a parsed ID has the wrong prefix.
