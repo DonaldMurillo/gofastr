@@ -16,6 +16,12 @@ with a test that failed first. A three-model review of the resulting
 branch then found four more, including a regression this wave itself had
 introduced into the timeout middleware; those are fixed here too.
 
+A second six-reviewer round (Claude, GLM and Sol, each over half the
+diff) then found nine more, including a data leak this branch had itself
+introduced: the generated list-island endpoint served rows without the
+screen's own gate. Three reviewers independently hit entity-registration
+atomicity and the static ETag cache. Those are fixed here as well.
+
 ### Breaking
 
 - **BREAKING: `openapi.SwaggerUIHandler` is now `openapi.DocsHandler`.**
@@ -70,6 +76,32 @@ introduced into the timeout middleware; those are fixed here too.
   parsed every integer at 64 bits and let `SetInt` truncate, so
   `?small=300` bound 44 to an `int8` with a nil error. Binding now uses
   the destination's bit width and returns a range error.
+- **BREAKING: island endpoints enforce the entity's read permission.**
+  `resource.Config.TableHandler` checked only that someone was signed in,
+  so a list's sort/paginate endpoint served rows that `GET /api/<entity>`
+  refused with 403. It now also applies the entity's declared read
+  permission (via the new `crud.CrudHandler.CanRead`) and the screen's own
+  policy (the new `Config.IslandPolicy`). A role-gated screen MUST set
+  `IslandPolicy`; a public one declares `resource.PublicIsland()`, because
+  with no policy the handler still requires sign-in.
+- **BREAKING: generated island endpoints moved to
+  `/api/tables/<screen>/<entity>`.** They were one per entity, mounted on
+  the bare registry entry — so two screens showing the same entity shared
+  one endpoint, and a sort click on a filtered list came back unfiltered.
+  Each screen now gets its own endpoint serving that screen's refined
+  config behind that screen's policy.
+- **BREAKING: entity registration rejects route collisions it used to
+  half-commit.** `TryEntity` pre-flighted a guessed pair of paths; it now
+  asks `crud` for the full set it will mount (the new
+  `crud.CrudRoutePatterns`) and compares wildcard SHAPE, so a screen at
+  `/posts/{slug}` and an endpoint shadowing `/posts/_batch` are both
+  caught during validation. Declarations that previously panicked
+  mid-commit — leaving the entity in the registry and its CRUD routes
+  mounted — now return an error having registered nothing.
+- **BREAKING: production re-checks the session store after plugin init.**
+  A plugin's `Init` could call `SetSessionStore(NewMemorySessionStore())`
+  after the only fail-closed check, so `Init` returned nil with every
+  session in RAM. The gate now runs again once plugins are initialised.
 
 ### Fixed
 
@@ -145,9 +177,62 @@ introduced into the timeout middleware; those are fixed here too.
   every value instead of the last; computed and animate teardown runs on
   island swaps, not only on navigation; two lightboxes on one page no
   longer share state.
+- **Redis `Nack` no longer loses the job.** It deleted the processing
+  entry before pushing to the retry or dead-letter list, so a failed push
+  left the job in no list and invisible to `Reclaim`. It now writes the
+  destination first; a failure between the two re-delivers rather than
+  drops, which is what an at-least-once queue promises.
+- **`sql.DB.Close` releases the sqlite engine's file.** `Pager.Close`
+  dropped the page cache without closing the backing `*os.File`, so a
+  program that opened and closed databases in a loop exhausted its
+  descriptor limit while every handle looked closed.
+- **Static files:** the content-digest cache is per handler, not
+  process-wide. `embed.FS` reports the zero modtime for every file, so
+  two handlers over different filesystems serving a same-name, same-size
+  file shared an ETag and answered `304` for content the client had never
+  seen. A path that is not valid UTF-8 (`/%ff`) is now a 404 rather than a
+  500 — `fs.ValidPath` rejects it as `fs.ErrInvalid`, which any client
+  could use to drive a 5xx.
+- **SQL placeholders inside string literals are left alone.** The
+  renumberer understood `'…'` but not `$$…$$`, `$tag$…$tag$`, or the
+  backslash escapes `E'…'` allows, so a `$5` inside a literal was
+  rewritten and every real placeholder after it shifted.
+- **The semantic bearer check is constant-time in the token's length.**
+  `subtle.ConstantTimeCompare` returns immediately when lengths differ,
+  so comparing raw tokens still revealed when a candidate was the right
+  length. Both sides are hashed to 32 bytes first.
+- **A form field named after an `Object.prototype` member posts its
+  value.** The multi-value merge read `obj[k]` on a plain object, where
+  `constructor` and `toString` resolve up the prototype chain and are
+  never `undefined`, so a single such field posted `[null, value]`.
+- **SPA navigation A→B→A leaves the URL and the content agreeing.** The
+  in-flight dedup returned before the epoch bump, so re-requesting an
+  earlier path never became the current intent and the page showed B at
+  the URL `/a`.
 
 ### Changed
 
+- **The RPC engine ships as a demand-loaded module.** `frag/rpc.js` is
+  gone; the network machinery (dispatch, CSRF, form encoding, abort
+  controllers, response-header effects, the kiln tool POST) now lives in
+  `src/rpc.js`, and the core bundle fell from 14,338 to 12,368 gzip bytes
+  — from 2 bytes over the 14,336-byte initial congestion window to nearly
+  2 KB under it. A page carrying `[data-fui-rpc]` or `[data-kiln-tool]`
+  starts fetching the module at boot, fire-and-forget, so it is normally
+  resident before the first click; core keeps one delegated bridge that
+  calls `preventDefault()` synchronously and then awaits the module, so a
+  click landing mid-download is still dispatched rather than falling
+  through to a native submit. A module that never arrives (a host serving
+  `runtime.js` but not `/__gofastr/runtime/<name>.js`, or a network blip)
+  warns rather than swallowing the action, and a non-JSON intercepted form
+  falls back to a native submit — prevented-then-never-dispatched would
+  lose the submission silently, which could not happen while RPC was
+  compiled into core. Static exports keep `rpc-stub` and never request the
+  module. Client-only signal mutations
+  (`data-fui-signal-set`/`-inc`/`-toggle`) moved to the signals fragment
+  and work with no module load at all; the same-origin guards moved to
+  the kernel, which also deletes the copy `rpc-stub` was carrying. No
+  public Go API changed.
 - Generated blueprint apps sort and paginate list screens through the
   resource island endpoint rather than a full page navigation, and no
   longer emit `.gofastr-entity-*` or `.detail-*` markup — the dead
@@ -176,6 +261,29 @@ introduced into the timeout middleware; those are fixed here too.
   applies no owner, tenant, or soft-delete scoping;
   `hooks-and-transactions.md` had `BeforeCreate`/`BeforeUpdate` running
   after validation when they run before.
+- A second documentation pass, likewise pinned by tests, caught pages
+  teaching APIs this release deletes: `widgets.md` opened its quickstart
+  with `Builder.RPCWithSignal` and listed `Definition.Bootstrap`, and
+  `presence.md` and `live-dashboards.md` assigned to
+  `Manager.AuthorizeTopic` / `OnPresenceChange`, now setters — the
+  roster-disclosure remediation snippet on the security page was among
+  the samples that did not compile. Also: `isolation.md` pointed at
+  `gofastr.yml` when `gofastr.isolation.yml` wins the discovery order, so
+  following it configured nothing; `semantic-search.md` documented 200s
+  for routes that answer 401 without a token; `queue.md` told you to
+  write a `RedisClient` adapter without mentioning that `RPop` must map
+  its driver's empty-sentinel onto `queue.ErrRedisEmpty`; `auth.md`'s
+  `UserStore` omitted `UpdateRoles`; `access-control.md` used a
+  `framework.Wildcard` that is not re-exported; `query-dsl.md` named a
+  `framework.ParseDSL` that does not exist and claimed an uncapped
+  `limit()` executes when the parser rejects anything over 10,000; and
+  the README twice called `/api/docs/` "Swagger UI", the claim this
+  release renamed the handler to stop making.
+- `gofastr test` and `gofastr build` document the flags they actually
+  parse — the help advertised `-v`, `-count N`, `-race`, `-run <regex>`
+  and a bare `-o <output>` that the parsers ignore or reject — and
+  `gofastr init` names `gofastr.isolation.yml` in its created-files list
+  instead of the `gofastr.yml` it does not write.
 
 ## [0.54.0] - 2026-07-31
 

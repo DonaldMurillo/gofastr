@@ -552,3 +552,18 @@ releases:
         breaking: true
         guidance: "core/handler parsed every integer at 64 bits and let reflect truncate, so ?small=300 bound 44 to an int8 field with a nil error. Binding now parses at the destination's bit width and returns a range error, which the adapter turns into a 400. Widen the field type if the larger range was intended."
         detect: "int8|int16|uint8|uint16"
+      - change: Island endpoints enforce the entity's read permission and the screen's policy
+        breaking: true
+        guidance: "resource.Config.TableHandler checked only that someone was signed in, so a list's sort/paginate endpoint served rows that GET /api/<entity> refused with 403. It now also applies the entity's declared read permission and the screen's own policy. Set Config.IslandPolicy to the SAME policy that gates the screen; a public list declares resource.PublicIsland(), because with no policy the handler still requires sign-in."
+        detect: "TableHandler\\(\\)"
+      - change: Generated island endpoints moved to /api/tables/<screen>/<entity>
+        breaking: true
+        guidance: "Blueprint apps mounted one island endpoint per entity on the bare registry config, so two screens showing the same entity shared it and a sort click on a filtered list came back unfiltered. Each screen now gets its own endpoint serving that screen's refined config behind that screen's policy. Regenerate the app; any hand-written client calling /api/tables/<entity> needs the screen segment."
+        detect: "/api/tables/"
+      - change: TryEntity rejects route collisions it used to half-commit
+        breaking: true
+        guidance: "Registration pre-flighted a guessed pair of paths. It now asks crud.CrudRoutePatterns for the full set it will mount and compares wildcard SHAPE, so a screen at /posts/{slug} colliding with the generated /posts/{id}, or an endpoint shadowing /posts/_batch, is caught during validation. A declaration that previously panicked mid-commit — leaving the entity registered and its CRUD routes mounted — now returns an error having registered nothing. Move the conflicting screen or endpoint, or mount entity routes under an APIPrefix."
+      - change: Production re-checks the session store after plugin init
+        breaking: true
+        guidance: "An auth plugin's Init could call SetSessionStore(NewMemorySessionStore()) after the only fail-closed check, so Init returned nil with every session in process memory. The gate now runs again once plugins are initialised. A plugin that installs an in-memory store in production must stop, or the app must set AuthConfig.AllowInMemoryStores to acknowledge a single-node deployment."
+        detect: "NewMemorySessionStore"
