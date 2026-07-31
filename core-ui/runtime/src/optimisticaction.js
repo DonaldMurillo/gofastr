@@ -102,9 +102,9 @@
     }
   };
 
-  requestAnimationFrame(() => scan(document));
+  scan(document);
   window.addEventListener('gofastr:navigate', () => {
-    requestAnimationFrame(() => scan(document));
+    scan(document);
   });
 
   window.__gofastr = window.__gofastr || {};

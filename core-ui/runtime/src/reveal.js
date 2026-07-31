@@ -49,11 +49,11 @@
   };
 
   // Initial scan
-  requestAnimationFrame(() => scan(document));
+  scan(document);
 
   // SPA re-wire
   window.addEventListener('gofastr:navigate', () => {
-    requestAnimationFrame(() => scan(document));
+    scan(document);
   });
 
   // Register module
