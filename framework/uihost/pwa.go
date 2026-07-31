@@ -232,7 +232,7 @@ func (ds *UIHost) pwaPrecachePaths(cfg PWAConfig, offlineHTML string) []string {
 	if ds.App != nil {
 		set["/__gofastr/app.css"] = true
 	}
-	if ds.GetActionJS() != "" {
+	if ds.HasActions() {
 		set["/__gofastr/actions.js"] = true
 	}
 	// Split runtime modules are demand-loaded parts of the shell; an
@@ -360,8 +360,8 @@ func (ds *UIHost) PWAOfflineHTML() string {
 			html.Paragraph(html.TextConfig{}, render.Text("This page isn't available without a connection. Reconnect and try again."))
 	}
 	shell := fmt.Sprintf(
-		`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Offline — %s</title></head><body><main role="main">%s</main></body></html>`,
-		stdhtml.EscapeString(cfg.Name), string(body))
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Offline — %s</title></head><body><main role="main">%s</main></body></html>`,
+		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(cfg.Name), string(body))
 	// bundle=false (same as RenderStaticPage): component CSS must be
 	// direct per-component links. The bundle URL depends on the page's
 	// component set — precaching it would answer every OTHER page's

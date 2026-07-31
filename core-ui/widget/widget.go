@@ -1,10 +1,12 @@
 package widget
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -38,18 +40,6 @@ const (
 	EdgeRight    Position = "edge-right"
 )
 
-// BootstrapMode selects how the widget injects itself onto a page.
-//   - AutoScript: framework emits a <script> tag and the runtime mounts
-//     it on every page that includes the tag. Used by kiln's panel.
-//   - Embedded:   the widget is rendered as part of an existing page
-//     tree (no script tag). Useful when the page already runs core-ui.
-type BootstrapMode string
-
-const (
-	AutoScript BootstrapMode = "auto-script"
-	Embedded   BootstrapMode = "embedded"
-)
-
 // SignalSource produces JSON-serializable values that flow to the
 // browser as named signals. The runtime polls (or receives via SSE)
 // and pushes new values into [data-fui-signal="<name>"] html.
@@ -64,13 +54,13 @@ func (f SignalFunc) Read() (any, error) { return f() }
 
 // RPCEndpoint is a server-side HTTP handler the widget can invoke
 // from the client (typically via a button click or form submit). The
-// runtime POSTs to Path; on success it can push the response body
-// into a signal named ResponseSignal (optional).
+// runtime POSTs to Path. (Routing the response body into a named signal is
+// done client-side via the data-fui-rpc-signal DOM attribute on the trigger,
+// not via this struct.)
 type RPCEndpoint struct {
-	Method         string // "POST" by default
-	Path           string
-	Handler        http.Handler
-	ResponseSignal string
+	Method  string // "POST" by default
+	Path    string
+	Handler http.Handler
 }
 
 // Slot is a host-supplied content region in the widget chrome. The
@@ -84,10 +74,9 @@ type Slot struct {
 // Definition is the full description of a widget. It is built via
 // the New(name) builder and consumed by Mount(app, def).
 type Definition struct {
-	Name      string
-	Position  Position
-	Bootstrap BootstrapMode
-	Slots     []Slot
+	Name     string
+	Position Position
+	Slots    []Slot
 
 	// Signals are served by the widget's /state endpoint.
 	//
@@ -195,9 +184,8 @@ type Definition struct {
 	DragDismiss bool
 
 	// Asset path overrides. Default routes are derived from Name.
-	BootstrapPath string // default: /core-ui/widget/<name>/bootstrap.js
-	StylePath     string // default: /core-ui/widget/<name>/style.css
-	StatePath     string // default: /core-ui/widget/<name>/state
+	StylePath string // default: /core-ui/widget/<name>/style.css
+	StatePath string // default: /core-ui/widget/<name>/state
 
 	// PollMS is the freshness interval (milliseconds) the runtime
 	// should re-fetch StatePath on. Zero (the default) disables
@@ -301,12 +289,25 @@ func AvailableOn(path string) []*Definition {
 	return out
 }
 
-// RenderChrome returns the rendered chrome HTML for a single widget,
-// using its registered Skeleton or the framework's defaultSkeleton.
-// Exported so SSR hosts can inline chrome without instantiating
-// `server` themselves.
+// RenderChrome returns the rendered chrome HTML for a single widget, using its
+// registered Skeleton or the framework's defaultSkeleton. Exported so SSR hosts
+// can inline chrome without instantiating `server` themselves.
+//
+// It renders with context.Background(): use it for build-time dumps (the static
+// exporter) where no request exists. For SSR first paint, prefer
+// [RenderChromeCtx] so context-aware slots (role-aware nav, tenant-scoped
+// chrome) see the signed-in user instead of rendering anonymous.
 func RenderChrome(d *Definition) string {
-	return string((&server{def: *d}).renderSkeleton())
+	return RenderChromeCtx(context.Background(), d)
+}
+
+// RenderChromeCtx is RenderChrome with an explicit request context, threaded
+// into each slot. The lazy /chrome endpoint already did this
+// (server.renderSkeletonCtx(r.Context())); SSR-inlined chrome must match, or a
+// context-aware slot renders anonymous on first paint and personalized only
+// when reopened.
+func RenderChromeCtx(ctx context.Context, d *Definition) string {
+	return string((&server{def: *d}).renderSkeletonCtx(ctx))
 }
 
 // RenderCSS returns the widget's stylesheet: the framework positioning +
@@ -325,10 +326,9 @@ func RenderCSS(d *Definition) string {
 func New(name string) *Builder {
 	return &Builder{
 		def: Definition{
-			Name:      name,
-			Position:  BottomRight,
-			Bootstrap: AutoScript,
-			Signals:   map[string]SignalSource{},
+			Name:     name,
+			Position: BottomRight,
+			Signals:  map[string]SignalSource{},
 		},
 	}
 }
@@ -348,11 +348,6 @@ func (b *Builder) Mount(p Position) *Builder {
 			b.def.Role = "dialog"
 		}
 	}
-	return b
-}
-
-func (b *Builder) Bootstrap(m BootstrapMode) *Builder {
-	b.def.Bootstrap = m
 	return b
 }
 
@@ -394,19 +389,6 @@ func (b *Builder) RPC(method, path string, h http.Handler) *Builder {
 		method = "POST"
 	}
 	b.def.RPCs = append(b.def.RPCs, RPCEndpoint{Method: method, Path: path, Handler: h})
-	return b
-}
-
-// RPCWithSignal is RPC + ResponseSignal: on success the handler's
-// JSON response body is pushed into the named signal. Useful for
-// "fetch and render" flows where a button click updates a region.
-func (b *Builder) RPCWithSignal(method, path string, h http.Handler, signal string) *Builder {
-	if method == "" {
-		method = "POST"
-	}
-	b.def.RPCs = append(b.def.RPCs, RPCEndpoint{
-		Method: method, Path: path, Handler: h, ResponseSignal: signal,
-	})
 	return b
 }
 
@@ -517,15 +499,33 @@ func (b *Builder) Build() Definition { return b.def }
 // sessionCheck is the host-installed predicate used by widgets that set
 // Definition.RequireSession. nil means no host installed one, in which
 // case a widget asking for a session fails closed.
-var sessionCheck func(*http.Request) bool
+//
+// Backed by atomic.Pointer so a host installing it (SetSessionCheck) at wire
+// time races nothing with the per-request read in gateSession — a plain var
+// here was a data race under -race, and the predicate is read on every gated
+// request. Set once before serving; hot-swapping on a live host is not advised
+// but is at least race-free.
+var sessionCheck atomic.Pointer[func(*http.Request) bool]
 
 // SetSessionCheck installs the predicate that Definition.RequireSession
-// consults. Hosts (framework/uihost) call this once at wiring time.
-func SetSessionCheck(fn func(*http.Request) bool) { sessionCheck = fn }
+// consults. Hosts (framework/uihost) call this once at wiring time. A nil
+// predicate clears the check (widgets then fail closed).
+func SetSessionCheck(fn func(*http.Request) bool) {
+	if fn == nil {
+		sessionCheck.Store(nil)
+		return
+	}
+	sessionCheck.Store(&fn)
+}
 
 // SessionCheck returns the installed predicate, or nil when no host
 // installed one. Lets a host assert its own wiring.
-func SessionCheck() func(*http.Request) bool { return sessionCheck }
+func SessionCheck() func(*http.Request) bool {
+	if p := sessionCheck.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
 
 // gateSession wraps h so it only runs for callers with a valid session
 // when required. Fails closed: a widget that asked for a session but
@@ -535,7 +535,8 @@ func gateSession(required bool, h http.Handler) http.Handler {
 		return h
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if sessionCheck == nil || !sessionCheck(r) {
+		p := sessionCheck.Load()
+		if p == nil || !(*p)(r) {
 			http.Error(w, "forbidden: widget requires a session", http.StatusForbidden)
 			return
 		}

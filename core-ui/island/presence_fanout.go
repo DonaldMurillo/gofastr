@@ -204,7 +204,7 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 		delete(m.remoteRosters, msg.Topic)
 	}
 	after := mergedRosterLocked(m, msg.Topic, now)
-	cb := m.OnPresenceChange
+	cb := m.presenceCallback()
 	m.mu.Unlock()
 	if !membersEqual(before, after) && cb != nil {
 		cb(msg.Topic)
@@ -248,7 +248,7 @@ func (m *Manager) presenceBeat() {
 		return
 	}
 	m.mu.RLock()
-	cb := m.OnPresenceChange
+	cb := m.presenceCallback()
 	m.mu.RUnlock()
 	if cb != nil {
 		for _, t := range changed {

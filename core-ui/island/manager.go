@@ -30,10 +30,63 @@ type streamEntry struct {
 	subs map[uint64]chan IslandUpdate // subscriber id → its buffered channel
 }
 
+// streamCaps bounds how many concurrent SSE streams one replica tolerates.
+// An anonymous same-origin caller can mint a session (POST /__gofastr/session)
+// and then open an unbounded number of EventSource connections against it; each
+// Subscribe allocates a goroutine-sized buffered channel (64 slots) that lives
+// until the client disconnects. Without a ceiling a single client — or a
+// reconnect-loop bug — holds them forever. The policy is REJECT-not-evict (the
+// v0.39 SSE review): a stream over the cap is refused with a clear status, and
+// a new stream NEVER silently drops an existing one. A field value of 0 means
+// "unlimited"; the defaults are applied by NewManager.
+type streamCaps struct {
+	perSession int // max streams sharing one session id (one per tab/connection)
+	global     int // max streams across all sessions on this replica
+}
+
+// Default concurrent-SSE-stream ceilings. perSession is generous for real
+// multi-tab use but small enough that a runaway client can't pin dozens of
+// goroutines to one session; global protects one replica's RAM. Override per
+// manager via WithStreamCaps.
+const (
+	DefaultStreamsPerSession = 16
+	DefaultGlobalStreams     = 4096
+)
+
+// ErrSessionStreamLimit is returned when a session already holds its per-session
+// cap of concurrent SSE streams. The connect is refused, not evicted.
+var ErrSessionStreamLimit = errors.New("island: per-session SSE stream limit reached")
+
+// ErrGlobalStreamLimit is returned when the replica already holds its global cap
+// of concurrent SSE streams. The connect is refused, not evicted.
+var ErrGlobalStreamLimit = errors.New("island: global SSE stream limit reached")
+
+// ManagerOption configures a Manager at construction (NewManager).
+type ManagerOption func(*Manager)
+
+// WithStreamCaps overrides the concurrent-SSE-stream ceilings. perSession bounds
+// how many streams a single session id may hold open (one per browser tab /
+// EventSource connection); global bounds the total across all sessions on this
+// replica. A value of 0 means "unlimited" for that dimension.
+func WithStreamCaps(perSession, global int) ManagerOption {
+	return func(m *Manager) {
+		m.caps.perSession = perSession
+		m.caps.global = global
+	}
+}
+
 // Manager tracks active islands across all client sessions.
 type Manager struct {
 	mu      sync.RWMutex
 	streams map[string]*streamEntry // sessionID → update stream
+
+	// caps bounds concurrent SSE streams (per-session + global). Defaults
+	// from DefaultStreamsPerSession / DefaultGlobalStreams; override with
+	// WithStreamCaps. globalSubs tracks the live total across all sessions
+	// (guarded by mu) so the global cap is a cheap integer compare rather
+	// than a map walk on every connect.
+	caps       streamCaps
+	globalSubs int
 
 	// ── Presence ──
 	// presenceConns maps a unique connection id to its presence
@@ -44,26 +97,28 @@ type Manager struct {
 	// fired outside the lock after a local OR remote roster change
 	// mutates a topic's merged roster. See presence.go (local) and
 	// presence_fanout.go (cross-replica).
-	presenceConns    map[uint64]*presenceConn
-	nextPresenceID   uint64
-	nextSubID        uint64 // stream-subscriber id source; guarded by mu
-	OnPresenceChange func(topic string)
+	presenceConns  map[uint64]*presenceConn
+	nextPresenceID uint64
+	nextSubID      uint64 // stream-subscriber id source; guarded by mu
+
+	// OnPresenceChange, when set, is fired outside the lock after a local OR
+	// remote roster change mutates a topic's merged roster. See presence.go
+	// (local) and presence_fanout.go (cross-replica). Install with
+	// SetOnPresenceChange BEFORE serving traffic; the atomic.Pointer keeps the
+	// install race-free against the per-roster-change read.
+	onPresenceChange atomic.Pointer[func(string)]
 
 	// AuthorizeTopic, when set, gates which presence topics a connection may
-	// join. It is called once per requested topic at SSE-connect time with
-	// the request context (carrying the server-derived authenticated user);
+	// join. It is called once per requested topic at SSE-connect time with the
+	// request context (carrying the server-derived authenticated user);
 	// returning false drops that topic BEFORE any subscription or roster
 	// emission, so an unauthorized viewer never sees the roster (which can
 	// contain emails) and never receives join/leave events. A nil hook
-	// authorizes every topic — presence is public by default (opt-in
-	// gating), so existing apps are unaffected. Rejected topics are dropped
-	// silently: there is no error distinguishing an unauthorized topic from a
-	// nonexistent one, so the gate is not a private-topic existence oracle.
-	//
-	// Set once before serving traffic (like OnPresenceChange). It is read
-	// under mu so a set-once assignment races nothing; hot-swapping it on a
-	// live manager is not supported.
-	AuthorizeTopic func(ctx context.Context, topic string) bool
+	// authorizes every topic — presence is public by default (opt-in gating),
+	// so existing apps are unaffected. Install with SetAuthorizeTopic BEFORE
+	// serving traffic; the atomic.Pointer keeps the install race-free against
+	// the SSE-connect read.
+	authorizeTopic atomic.Pointer[func(context.Context, string) bool]
 
 	// dropped counts island updates discarded because a client's SSE buffer
 	// was full (slow/stalled consumer). Exposed via DroppedUpdates so the
@@ -104,11 +159,63 @@ type Manager struct {
 // consumers can't keep up (undersized buffer, stalled browsers).
 func (m *Manager) DroppedUpdates() int64 { return m.dropped.Load() }
 
-// NewManager creates a new island manager.
-func NewManager() *Manager {
-	return &Manager{
-		streams: make(map[string]*streamEntry),
+// SetOnPresenceChange installs the roster-change callback. Install BEFORE
+// serving traffic (the typical wire-time set). Stored in an atomic.Pointer so
+// the install races nothing with the per-change read — a plain field here was a
+// data race under -race when an app installed it concurrently with a roster
+// change firing. Replaces the old direct field assignment.
+func (m *Manager) SetOnPresenceChange(fn func(topic string)) {
+	if fn == nil {
+		m.onPresenceChange.Store(nil)
+		return
 	}
+	m.onPresenceChange.Store(&fn)
+}
+
+// SetAuthorizeTopic installs the topic-authorization gate. Install BEFORE
+// serving traffic. Stored in an atomic.Pointer for the same race-safety reason
+// as SetOnPresenceChange. Replaces the old direct field assignment.
+func (m *Manager) SetAuthorizeTopic(fn func(ctx context.Context, topic string) bool) {
+	if fn == nil {
+		m.authorizeTopic.Store(nil)
+		return
+	}
+	m.authorizeTopic.Store(&fn)
+}
+
+// presenceCallback returns the installed OnPresenceChange hook or nil. The
+// atomic load races nothing with SetOnPresenceChange.
+func (m *Manager) presenceCallback() func(string) {
+	if p := m.onPresenceChange.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// topicAuthorizer returns the installed AuthorizeTopic hook or nil. The atomic
+// load races nothing with SetAuthorizeTopic.
+func (m *Manager) topicAuthorizer() func(context.Context, string) bool {
+	if p := m.authorizeTopic.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// NewManager creates a new island manager. Options override the default
+// concurrent-SSE-stream caps (see WithStreamCaps); the defaults already bound
+// one replica, so most callers pass nothing.
+func NewManager(opts ...ManagerOption) *Manager {
+	m := &Manager{
+		streams: make(map[string]*streamEntry),
+		caps: streamCaps{
+			perSession: DefaultStreamsPerSession,
+			global:     DefaultGlobalStreams,
+		},
+	}
+	for _, o := range opts {
+		o(m)
+	}
+	return m
 }
 
 // Subscribe registers a new subscriber on the session's stream and
@@ -117,8 +224,28 @@ func NewManager() *Manager {
 // each tab sharing the session cookie — receives every update; the
 // session's entry is deleted when its last subscriber cancels.
 func (m *Manager) Subscribe(sessionID string) (<-chan IslandUpdate, func()) {
+	ch, cancel, _ := m.subscribeImpl(sessionID)
+	return ch, cancel
+}
+
+// subscribeImpl is the single cap-enforcing chokepoint. It checks BOTH ceilings
+// AND adds the subscriber atomically under mu, so two concurrent connects cannot
+// both pass a ceiling and then both land. A refused connect returns a nil channel,
+// a no-op cancel, and a sentinel error (ErrSessionStreamLimit / ErrGlobalStreamLimit);
+// existing streams are untouched (reject-not-evict). The global counter is maintained
+// here and in the returned cancel so it stays consistent regardless of which entry
+// point (Subscribe, ConnectSession) produced the subscription.
+func (m *Manager) subscribeImpl(sessionID string) (<-chan IslandUpdate, func(), error) {
 	m.mu.Lock()
 	entry, ok := m.streams[sessionID]
+	if m.caps.perSession > 0 && ok && len(entry.subs) >= m.caps.perSession {
+		m.mu.Unlock()
+		return nil, func() {}, ErrSessionStreamLimit
+	}
+	if m.caps.global > 0 && m.globalSubs >= m.caps.global {
+		m.mu.Unlock()
+		return nil, func() {}, ErrGlobalStreamLimit
+	}
 	if !ok {
 		entry = &streamEntry{subs: make(map[uint64]chan IslandUpdate)}
 		m.streams[sessionID] = entry
@@ -127,6 +254,7 @@ func (m *Manager) Subscribe(sessionID string) (<-chan IslandUpdate, func()) {
 	id := m.nextSubID
 	ch := make(chan IslandUpdate, 64)
 	entry.subs[id] = ch
+	m.globalSubs++
 	m.mu.Unlock()
 
 	var once sync.Once
@@ -135,14 +263,17 @@ func (m *Manager) Subscribe(sessionID string) (<-chan IslandUpdate, func()) {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			if e, ok := m.streams[sessionID]; ok {
-				delete(e.subs, id)
+				if _, sub := e.subs[id]; sub {
+					delete(e.subs, id)
+					m.globalSubs--
+				}
 				if len(e.subs) == 0 {
 					delete(m.streams, sessionID)
 				}
 			}
 		})
 	}
-	return ch, cancel
+	return ch, cancel, nil
 }
 
 // PushUpdate sends a direct update to a session's SSE stream.

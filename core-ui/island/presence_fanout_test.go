@@ -179,11 +179,11 @@ func TestPresenceFanoutOnChangeFiresOnRemote(t *testing.T) {
 		mu      sync.Mutex
 		firedOn []string
 	)
-	b.OnPresenceChange = func(topic string) {
+	b.SetOnPresenceChange(func(topic string) {
 		mu.Lock()
 		firedOn = append(firedOn, topic)
 		mu.Unlock()
-	}
+	})
 
 	h := a.PresenceJoin("sess-a1", PresenceIdentity{UserID: "u1"}, []string{"doc:9"})
 	defer h.Leave()

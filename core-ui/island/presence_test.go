@@ -222,7 +222,7 @@ func TestPresenceSessionsForTopic(t *testing.T) {
 func TestPresenceOnChangeFires(t *testing.T) {
 	m := NewManager()
 	var events []string
-	m.OnPresenceChange = func(topic string) { events = append(events, topic) }
+	m.SetOnPresenceChange(func(topic string) { events = append(events, topic) })
 
 	h := m.PresenceJoin("s1", PresenceIdentity{UserID: "u1"}, []string{"doc:1", "doc:2"})
 	h.Leave()

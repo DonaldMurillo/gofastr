@@ -26,6 +26,12 @@ type App struct {
 
 	// NoLLMMD disables auto-generated llm.md for all pages in this app.
 	NoLLMMD bool
+
+	// Lang is the BCP-47 language tag of the document (e.g. "en", "fr",
+	// "pt-BR"). It becomes the <html lang="…"> attribute on every page the app
+	// renders, so screen readers announce the right language (WCAG 3.1.1).
+	// Empty defaults to "en" via EffectiveLang. Set with WithLang.
+	Lang string
 }
 
 // NewApp creates a new application with the given name.
@@ -49,6 +55,24 @@ func (a *App) WithTheme(theme style.Theme) *App {
 	theme.MustValidate()
 	a.Theme = &theme
 	return a
+}
+
+// WithLang sets the document language (BCP-47 tag, e.g. "en", "fr", "pt-BR")
+// and returns the app for chaining. It becomes the <html lang="…"> attribute so
+// assistive tech announces the page in the right language (WCAG 3.1.1). An empty
+// tag is rejected in favor of the "en" default — a bad tag is worse than the
+// default, which is at least correct for English content.
+func (a *App) WithLang(lang string) *App {
+	a.Lang = lang
+	return a
+}
+
+// EffectiveLang returns the document language, defaulting to "en" when unset.
+func (a *App) EffectiveLang() string {
+	if a.Lang != "" {
+		return a.Lang
+	}
+	return "en"
 }
 
 // Provide registers a service in the DI container.
@@ -377,7 +401,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 
 	// Assemble full document.
 	doctype := render.Raw("<!DOCTYPE html>")
-	htmlDoc := render.Tag("html", map[string]string{"lang": "en"}, head, body)
+	htmlDoc := render.Tag("html", map[string]string{"lang": a.EffectiveLang()}, head, body)
 
 	out := RenderResult{HTML: render.Join(doctype, htmlDoc), Title: effectiveTitle, Component: comp}
 	if decision.Kind == DecisionRenderAlt {
