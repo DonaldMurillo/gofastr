@@ -629,7 +629,12 @@ func (b *Battery) navHTML(current string) render.HTML {
 		}
 		items = append(items, ui.Link(cfg))
 	}
-	return render.Tag("nav", map[string]string{"class": "admin-nav"}, items...)
+	// ui.Stack does the column layout. Without it the <nav> was a bare
+	// block and the links rendered as one inline run of text — no
+	// stacking, no gap, no hit targets. Composing the primitive keeps the
+	// layout in the design system rather than in a bespoke .admin-nav rule.
+	return render.Tag("nav", map[string]string{"class": "admin-nav"},
+		ui.Stack(ui.StackConfig{Gap: ui.GapXS, Align: ui.AlignStart}, items...))
 }
 
 // adminSection wraps a titled content block via the design-system ui.Section
