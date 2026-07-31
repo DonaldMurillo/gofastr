@@ -8,7 +8,7 @@ import "fmt"
 // keys on; keep that anchor when editing.
 
 func printBuildUsage() {
-	fmt.Println(`Usage: gofastr build [--no-a11y] [--no-embed-check] [--allow-unverified-embeds] [--pkg=<path>] [-o <output>]
+	fmt.Println(`Usage: gofastr build [--no-a11y] [--no-embed-check] [--allow-unverified-embeds] [--pkg=<path>] [-o=<output>]
 
 Runs the project-root codegen extension protocol (if gofastr.codegen.yml is
 present), go vet, the static accessibility + .ui.go hydration-sandbox lints,
@@ -18,7 +18,7 @@ the embed-surface server-action gate, then go build.
 --no-embed-check          skip the embed server-action gate
 --allow-unverified-embeds keep proven violations fatal but downgrade a surface the analyzer cannot follow
 --pkg=<path>              package to compile (default .); e.g. --pkg ./cmd/server
--o <output>               binary output path (default ./<project>)`)
+-o=<output>               binary output path (default bin/server); --output= also works`)
 }
 
 func printDevUsage() {
@@ -48,10 +48,17 @@ Common flags: --db-url=<path> --db=<sqlite3|postgres|mysql> --group=<name> --cre
 }
 
 func printTestUsage() {
-	fmt.Println(`Usage: gofastr test [pattern] [-v] [-count N] [-race] [-run <regex>]
+	fmt.Println(`Usage: gofastr test [--run=<regex>] [--bench=<regex>] [--race] [--cover] [--short] [--timeout=<d>]
 
-Runs the project's tests (go test ./...), colorizing the output. A bare
-pattern filters via -run. GOFASTR_TEST=1 is set for the child process.`)
+Runs the project's tests (go test ./...), colorizing the output.
+GOFASTR_TEST=1 is set for the child process.
+
+--run=<regex>     run only tests matching the regex
+--bench=<regex>   also run matching benchmarks
+--race            enable the race detector
+--cover           report coverage
+--short           set -short
+--timeout=<d>     per-package timeout (e.g. --timeout=10m)`)
 }
 
 func printHarnessUsage() {
