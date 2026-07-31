@@ -260,6 +260,15 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// chosen lexically for the same determinism reason as unknown.
 	blocked := ""
 
+	// overCapField/overCapCount record the lexically-smallest ?field_in= list
+	// that exceeds maxINListEntries, surfaced as a single deterministic error
+	// after the loop for the same reason unknown/blocked are. Silent
+	// truncation (parts[:cap]) narrows the predicate — rows past entry N drop
+	// out of the result set without the caller knowing — so it fails closed,
+	// mirroring parseScopedFilters' cap on the include path.
+	overCapField := ""
+	overCapCount := 0
+
 	for key, values := range q {
 		if len(values) == 0 {
 			continue
@@ -305,10 +314,19 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			if s.Op == OpIn {
 				parts := strings.Split(values[0], ",")
 				if len(parts) > maxINListEntries {
-					parts = parts[:maxINListEntries]
-				}
-				for _, p := range parts {
-					filters = append(filters, ParsedFilter{Field: col, Op: OpIn, Value: p})
+					// Fail closed: a truncated list silently narrows the
+					// predicate (rows past entry N drop out of results)
+					// without telling the caller. Record the lexically-
+					// smallest offender for a deterministic message under
+					// randomized map iteration and error after the loop.
+					if overCapField == "" || col < overCapField {
+						overCapField = col
+						overCapCount = len(parts)
+					}
+				} else {
+					for _, p := range parts {
+						filters = append(filters, ParsedFilter{Field: col, Op: OpIn, Value: p})
+					}
 				}
 			} else {
 				filters = append(filters, ParsedFilter{Field: col, Op: s.Op, Value: values[0]})
@@ -365,6 +383,11 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	}
 	if unknown != "" {
 		return nil, unknownFilterError(unknown, names)
+	}
+	// An over-cap ?field_in= list narrows results silently; fail closed
+	// with a message shaped like the include path's scoped-IN cap.
+	if overCapField != "" {
+		return nil, fmt.Errorf("in-list on %q has %d entries (max %d)", overCapField, overCapCount, maxINListEntries)
 	}
 
 	return filters, nil

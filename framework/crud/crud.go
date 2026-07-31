@@ -1296,7 +1296,17 @@ func generateFieldValue(strategy schema.AutoGenerate) any {
 	case schema.AutoUUID:
 		return generateUUID()
 	case schema.AutoTimestamp:
-		return time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		// Microsecond precision, FIXED WIDTH (.000000 keeps trailing
+		// zeros). Whole-second resolution made two rows written in the
+		// same second share an identical created_at, which stalls
+		// single-field cursor pagination on ties — the documented
+		// tiebreak. Microseconds match PostgreSQL TIMESTAMPTZ storage
+		// (its max), so the value round-trips losslessly on Postgres;
+		// SQLite TEXT keeps the exact string. Fixed width is load-
+		// bearing: SQLite compares these as strings, and a zero-stripped
+		// "…07.5Z" sorts AFTER "…07.5001Z" while being chronologically
+		// earlier — mis-ordering both the cursor keyset and ORDER BY.
+		return time.Now().UTC().Format("2006-01-02T15:04:05.000000Z07:00")
 	case schema.AutoIncrement:
 		return 0 // placeholder — real increment handled by DB
 	default:
