@@ -165,7 +165,10 @@ func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 	assertContains(t, screens, `appResources["widgets"].Form(ctx, "")`)
 	assertContains(t, screens, `appResources["widgets"].Form(ctx, s.id)`)
 	// List shows "New"; detail shows Edit/Delete (CanEdit) and posts to the API.
-	assertContains(t, screens, ".WithCreate().List(ctx)")
+	// The island refinement (.WithIsland/.WithIslandPolicy) sits between
+	// .WithCreate() and .List(ctx), so assert the two ends separately.
+	assertContains(t, screens, ".WithCreate()")
+	assertContains(t, screens, ".List(ctx)")
 	assertContains(t, crudFile, "CanEdit: true")
 	assertContains(t, crudFile, `APIPath: "/api/widgets"`)
 	// The /new and /{id}/edit routes are registered (in the crud mount funcs).

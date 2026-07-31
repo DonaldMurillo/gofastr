@@ -724,7 +724,11 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, screenContent, `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
 	assertContains(t, screenContent, `component.On("save_click"`)
 	assertContains(t, screenContent, `"data-action": "save_click"`)
-	assertContains(t, screenContent, `appResources["posts"].WithColumns("title", "status").WithLimit(5).WithHeading("Latest posts").WithEmpty("No posts yet.").List(ctx)`)
+	// The island refinement (.WithIsland/.WithIslandPolicy) is appended
+	// after the block's own options and before .List(ctx), so assert the
+	// authored chain and the terminal call separately.
+	assertContains(t, screenContent, `appResources["posts"].WithColumns("title", "status").WithLimit(5).WithHeading("Latest posts").WithEmpty("No posts yet.")`)
+	assertContains(t, screenContent, `.WithIsland("/api/tables/home/posts").WithIslandPolicy(resource.PublicIsland()).List(ctx)`)
 	assertContains(t, byName["stubs.go"], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
 	assertContains(t, byName["stubs.go"], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
 	assertContains(t, byName["stubs.go"], `type AnalyticsPlugin struct{}`)

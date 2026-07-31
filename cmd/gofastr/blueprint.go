@@ -3943,6 +3943,9 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	if withMount {
 		sb.WriteString("\t\"database/sql\"\n")
 	}
+	if needs.nethttp {
+		sb.WriteString("\t\"net/http\"\n")
+	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
 	if hasScreens && (needs.component || anyCtx) {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/component\"\n")
@@ -4046,7 +4049,7 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 			var expr string
 			switch {
 			case ctxScreen && isEntityListBlock(block):
-				expr = blueprintEntityListResourceExpr(block, entityMap)
+				expr = blueprintEntityListResourceExpr(screen, block, entityMap, apiBase)
 			case ctxScreen && isEntityDetailBlock(block):
 				expr = blueprintDetailExpr(block)
 			case ctxScreen && isEntityCreateBlock(block):
@@ -4324,6 +4327,8 @@ func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Bluepr
 	sb.WriteString("package main\n\n")
 	needs := blueprintScreensImportNeeds(screens, entityMap, apiBase)
 	needs.resource = true // every CRUD file emits a resource.Config assignment
+	// Island endpoints are mounted with an http.HandlerFunc closure.
+	needs.nethttp = len(entityListPlacements(bp, entity)) > 0
 	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
 	for _, s := range screens {
 		sb.WriteString(blueprintScreenBody(s, entityMap, apiBase))
@@ -4407,14 +4412,6 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 		return ""
 	}
 	apiBase := blueprintAPIBase(bp.App.APIPrefix)
-	// Island mode: a list screen's sort/paginate must swap just the table
-	// (data-fui-rpc island), never full-navigate (Hard rule 1). The handler
-	// reads IslandPath off this same config, so its RPC responses render with
-	// the island attributes too. Mirrors meridian's /api/tables/<entity>.
-	islandPath := ""
-	if entityHasListScreen(bp, e) {
-		islandPath = apiBase + "/tables/" + e
-	}
 	var sb strings.Builder
 	sb.WriteString("\tappResources[" + fmt.Sprintf("%q", e) + "] = resource.Config{\n")
 	sb.WriteString(fmt.Sprintf("\t\tEntity: %q, Title: %q, Singular: %q, BasePath: %q, APIPath: %q,\n", e, toDisplayName(e), singularize(toDisplayName(e)), base[e], apiBase+"/"+e))
@@ -4467,12 +4464,22 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 	if rel := blueprintRelatedEmit(e, entityMap, base); rel != "" {
 		sb.WriteString(rel)
 	}
-	if islandPath != "" {
-		sb.WriteString(fmt.Sprintf("\t\tIslandPath: %q,\n", islandPath))
-	}
 	sb.WriteString("\t}\n")
-	if islandPath != "" {
-		sb.WriteString(fmt.Sprintf("\tfwApp.Router().HandleFunc(\"GET\", %q, appResources[%q].TableHandler())\n", islandPath, e))
+	// Island endpoints: one per screen showing this entity as a list, each
+	// serving that screen's OWN refined config behind that screen's OWN
+	// policy. The closure defers evaluation to request time so it does not
+	// depend on appResources being fully populated at mount time.
+	seen := map[string]bool{}
+	for _, p := range entityListPlacements(bp, e) {
+		path := blueprintIslandPath(apiBase, p.screen, e)
+		if seen[path] {
+			continue // same screen, same entity: one endpoint serves it
+		}
+		seen[path] = true
+		cfg := blueprintEntityListConfigExpr(p.screen, p.block, entityMap, apiBase)
+		sb.WriteString(fmt.Sprintf("\tfwApp.Router().HandleFunc(\"GET\", %q, func(w http.ResponseWriter, r *http.Request) {\n", path))
+		sb.WriteString(fmt.Sprintf("\t\t%s.TableHandler()(w, r)\n", cfg))
+		sb.WriteString("\t})\n")
 	}
 	return sb.String()
 }
@@ -4483,24 +4490,60 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 // serve, so the resource Config gets an IslandPath + a mounted TableHandler.
 // Detail-only and data-source-only entities return false (no list to island).
 func entityHasListScreen(bp Blueprint, entity string) bool {
-	var walk func(blocks []BlueprintBlock) bool
-	walk = func(blocks []BlueprintBlock) bool {
-		for _, b := range blocks {
-			if isEntityListBlock(b) && strings.Trim(b.Entity, "/") == entity {
-				return true
-			}
-			if walk(b.Children) {
-				return true
-			}
-		}
-		return false
-	}
+	return len(entityListPlacements(bp, entity)) > 0
+}
+
+// listPlacement is one entity_list block on one screen: the unit an island
+// endpoint is scoped to.
+//
+// The endpoint cannot be per-entity. A list block carries its own columns,
+// search, facets and page size, and two screens can show the same entity
+// refined differently — so one shared /api/tables/<entity> would answer the
+// wrong rows for at least one of them, and would answer them under whichever
+// screen's gate happened to be weaker. Path and policy both come from the
+// placement.
+type listPlacement struct {
+	screen BlueprintScreen
+	block  BlueprintBlock
+}
+
+// entityListPlacements returns every entity_list block for entity, at any
+// nesting depth, across every screen.
+func entityListPlacements(bp Blueprint, entity string) []listPlacement {
+	var out []listPlacement
 	for _, s := range bp.Screens {
-		if walk(s.Body) {
-			return true
+		var walk func(blocks []BlueprintBlock)
+		walk = func(blocks []BlueprintBlock) {
+			for _, b := range blocks {
+				if isEntityListBlock(b) && strings.Trim(b.Entity, "/") == entity {
+					out = append(out, listPlacement{screen: s, block: b})
+				}
+				walk(b.Children)
+			}
 		}
+		walk(s.Body)
 	}
-	return false
+	return out
+}
+
+// blueprintIslandPath is the endpoint serving one screen's table for entity.
+func blueprintIslandPath(apiBase string, screen BlueprintScreen, entity string) string {
+	return apiBase + "/tables/" + toSnakeCase(screen.Name) + "/" + entity
+}
+
+// blueprintIslandPolicyExpr returns the policy gating the screen this
+// placement sits on — the SAME expression blueprintScreenMountStmt emits.
+// The island is a second route onto the screen's rows, so it has to repeat
+// the screen's gate.
+//
+// An ungated screen gets an explicit public policy rather than none: with no
+// policy TableHandler falls back to requiring sign-in, which would 401 an
+// anonymous visitor's first sort click on a public list.
+func blueprintIslandPolicyExpr(screen BlueprintScreen) string {
+	if screen.Access.Auth {
+		return fmt.Sprintf("authPolicy(%q, %q)", "/login", screen.Access.Role)
+	}
+	return "resource.PublicIsland()"
 }
 
 // blueprintEntityHasSystemColumn reports whether a framework-managed column
@@ -4835,7 +4878,19 @@ func blueprintDetailExpr(block BlueprintBlock) string {
 
 // blueprintEntityListResourceExpr emits the server-side list render call for a
 // top-level entity_list block: appResources["x"].WithColumns(...).List(ctx).
-func blueprintEntityListResourceExpr(block BlueprintBlock, entityMap map[string]framework.EntityDeclaration) string {
+func blueprintEntityListResourceExpr(screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+	return blueprintEntityListConfigExpr(screen, block, entityMap, apiBase) + ".List(ctx)"
+}
+
+// blueprintEntityListConfigExpr emits the refined resource.Config for one
+// entity_list block — the chain WITHOUT a terminal .List(ctx), so the island
+// mount can render the exact same config the page renders.
+//
+// The refinement has to be shared rather than re-derived: columns, search,
+// facets and page size live here, and an island endpoint mounted on the bare
+// registry entry would answer unfiltered, differently-columned rows to a
+// sort click on a filtered page.
+func blueprintEntityListConfigExpr(screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	entity := strings.Trim(block.Entity, "/")
 	expr := fmt.Sprintf("appResources[%q]", entity)
 	if len(block.Fields) > 0 {
@@ -4863,7 +4918,13 @@ func blueprintEntityListResourceExpr(block BlueprintBlock, entityMap map[string]
 	if block.EmptyText != "" {
 		expr += fmt.Sprintf(".WithEmpty(%q)", block.EmptyText)
 	}
-	expr += ".List(ctx)"
+	// Island mode: sort/paginate swap just the table (Hard rule 1). The
+	// endpoint carries the screen's own policy, because it serves the same
+	// rows over a route the screen's gate never sees.
+	expr += fmt.Sprintf(".WithIsland(%q)", blueprintIslandPath(apiBase, screen, entity))
+	if p := blueprintIslandPolicyExpr(screen); p != "" {
+		expr += ".WithIslandPolicy(" + p + ")"
+	}
 	return expr
 }
 
@@ -4927,6 +4988,9 @@ type screenImportNeeds struct {
 	node        bool
 	ui          bool
 	resource    bool
+	// nethttp: the file mounts an island endpoint, whose closure takes
+	// (http.ResponseWriter, *http.Request).
+	nethttp bool
 	// uihost: any screen without a blueprint description emits the
 	// zero-value ScreenSEO opt-out, whose SEO type lives in uihost.
 	uihost bool
@@ -5414,7 +5478,7 @@ func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock,
 	}
 	if isEntityListBlock(block) {
 		// Server-rendered via the resource engine (ui.DataTable).
-		return blueprintEntityListResourceExpr(block, entityMap)
+		return blueprintEntityListResourceExpr(screen, block, entityMap, apiBase)
 	}
 	if expr, ok := renderBlueprintCatalogBlock(screen, block, path, entityMap, apiBase); ok {
 		return expr
