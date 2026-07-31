@@ -5,17 +5,10 @@ import (
 	"testing"
 )
 
-// TestFormDispatcher_SingleSourceOfTruth pins the dedup fix. The global
-// form-submit dispatcher MUST live in exactly one place — runtime.js.
-// widgets.js historically duplicated it, causing drift (one file got
-// updated, the other didn't, and behaviour depended on load order).
-//
-// This test asserts:
-//  1. runtime.js installs a global submit handler that handles
-//     data-fui-rpc forms and follows Location for native submits.
-//  2. widgets.js does NOT install a second global submit handler at
-//     document-scope. (Widget-scoped handlers — `widgetEl.addEventListener`
-//     — are fine; the rule is one DOCUMENT-level handler.)
+// TestFormDispatcher_SingleSourceOfTruth pins the single-listener contract.
+// Core owns the document submit bridge so a pre-module interaction is caught.
+// src/rpc.js owns request encoding and redirect handling, but installs no
+// document listener. widgets.js may keep widget-scoped listeners only.
 func TestFormDispatcher_SingleSourceOfTruth(t *testing.T) {
 	runtimeJS, err := RuntimeJS()
 	if err != nil {
@@ -23,16 +16,26 @@ func TestFormDispatcher_SingleSourceOfTruth(t *testing.T) {
 	}
 	widgetsJS, ok := Module("widgets")
 	if !ok {
-		t.Skip("widgets module not embedded")
+		t.Fatal("widgets module not embedded")
+	}
+	rpcJS, ok := Module("rpc")
+	if !ok {
+		t.Fatal("rpc module not embedded")
 	}
 
 	if !strings.Contains(runtimeJS, "data-fui-rpc") {
 		t.Error("runtime.js missing data-fui-rpc form-submit branch")
 	}
-	// Minified spacing has no space after the colon.
-	if !strings.Contains(runtimeJS, "redirect:'follow'") &&
-		!strings.Contains(runtimeJS, "redirect: 'follow'") {
-		t.Error("runtime.js missing Location-follow path")
+	if strings.Count(runtimeJS, `document.addEventListener('submit'`) != 1 {
+		t.Error("runtime.js must install exactly one document-level submit bridge")
+	}
+	if !strings.Contains(rpcJS, "redirect:'follow'") &&
+		!strings.Contains(rpcJS, "redirect: 'follow'") {
+		t.Error("rpc module missing Location-follow path")
+	}
+
+	if strings.Contains(rpcJS, `document.addEventListener('submit'`) {
+		t.Error("rpc module installs a document-level submit listener")
 	}
 
 	// widgets.js must NOT install a second document-scope submit

@@ -1,7 +1,8 @@
 // kernel.js — always-present substrate (spec fragment `kernel`, boot class).
-// Owns: doc state (DOC_MANIFEST), module loader, the data-fui-comp CSS
-// scanner, window.__gofastr namespace CREATION (other fragments extend it
-// via Object.assign), manifest reads, component-action dispatch helpers.
+// Owns: doc state (DOC_MANIFEST), module loader, same-origin guards, the
+// data-fui-comp CSS scanner, window.__gofastr namespace CREATION (other
+// fragments and demand modules extend it via Object.assign), manifest reads,
+// component-action dispatch helpers.
 // Composed FIRST; every other fragment depends on it.
 
   // -----------------------------------------------------------------------
@@ -181,9 +182,9 @@
   };
 
   // -----------------------------------------------------------------------
-  // Public API — kernel members only. rpc/signals/nav each contribute their
-  // own namespace members below via Object.assign so a future composition
-  // that omits a fragment leaves no dangling references inside this literal.
+  // Public API — kernel members only. Core fragments and demand modules add
+  // their namespace members via Object.assign. Optional code therefore leaves
+  // no dangling references inside this literal.
   // -----------------------------------------------------------------------
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
@@ -192,6 +193,19 @@
         top of this file. Split modules (widgets, toasts, backtotop)
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
+
+    /* DOM attributes name fetch targets throughout the runtime. Keep these
+       guards in kernel so navigation cannot race the RPC demand module that
+       previously registered them. */
+    _sameOrigin(u) {
+      try { return new URL(String(u ?? ''), location.href).origin === location.origin; }
+      catch (_) { return false; }
+    },
+    _originOK(u) {
+      if (this._sameOrigin(u)) return true;
+      console.warn('[gofastr] refused cross-origin fetch:', u);
+      return false;
+    },
 
     /** Reject dangerous schemes when a signal value is about to be
         written into a URL-bearing HTML attribute (href / src / action
@@ -251,6 +265,8 @@
 
     /** Get current path */
     get currentPath() { return currentPath; },
+    /** Split modules cannot close over the IIFE-local route state. */
+    _setCurrentPath(path) { currentPath = path; },
 
     // --- State helpers (compiled Go code uses these) ---
 

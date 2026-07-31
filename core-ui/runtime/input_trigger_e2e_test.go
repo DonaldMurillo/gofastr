@@ -34,6 +34,7 @@ func TestInputTrigger_SelectFiresRPC(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/filter", func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		body := map[string]string{}

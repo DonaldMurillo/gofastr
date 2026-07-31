@@ -32,6 +32,7 @@ func TestDispatchRPC_MultiValueFormKeys(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/rpc/save", func(w http.ResponseWriter, r *http.Request) {
 		var m map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&m)
@@ -47,6 +48,7 @@ func TestDispatchRPC_MultiValueFormKeys(t *testing.T) {
 		fmt.Fprint(w, `<!doctype html><html><head><title>mv</title></head><body>
 <form id="f" data-fui-rpc="/rpc/save" data-fui-rpc-method="POST">
   <input name="single" value="x">
+  <input name="constructor" value="admin">
   <input type="checkbox" name="tag" value="a" checked>
   <input type="checkbox" name="tag" value="b" checked>
   <button type="submit" id="go">Go</button>
@@ -74,6 +76,12 @@ func TestDispatchRPC_MultiValueFormKeys(t *testing.T) {
 	}
 	if got["single"] != "x" {
 		t.Errorf("single=%v, want \"x\" (a one-shot field must stay a scalar)", got["single"])
+	}
+	// A field named after an Object.prototype member must stay a scalar.
+	// On a plain {} accumulator, obj["constructor"] resolves up the
+	// prototype chain and is never undefined, so this posted [null,"admin"].
+	if got["constructor"] != "admin" {
+		t.Errorf("constructor=%v, want \"admin\" (a field named after a prototype member must stay a scalar)", got["constructor"])
 	}
 	tag, _ := got["tag"].([]any)
 	if len(tag) != 2 || fmt.Sprint(tag[0]) != "a" || fmt.Sprint(tag[1]) != "b" {

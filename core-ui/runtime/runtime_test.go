@@ -66,25 +66,41 @@ func TestRuntimeJS(t *testing.T) {
 		"MutationObserver",
 		"hydrate",
 		"collectParams",
-		"screenCache",                       // screen caching for back-navigation
-		"swapMainContent",                   // partial content swapping
-		"X-Gofastr-Navigate",                // client-side navigation header
-		"X-Gofastr-Partial",                 // server partial response header
-		"loadComponentCSS",                  // per-component CSS loader
-		"scanAndLoadCSS",                    // marker scan post-swap/post-mount
-		"_pendingLinks",                     // sync dedup guard
-		"data-fui-style",                    // <link> dedup key
-		"scheduleIdleLoads",                 // LoadPrewarm idle queue
-		"data-fui-comp",                     // marker attr the scanner reads
-		"data-fui-copy-text-from",           // marker triggers copy module load
-		"data-fui-os",                       // OS detection on <html> for ShortcutHint
-		"data-fui-spa",                      // opt-IN form-intercept for non-JSON forms
-		"redirect:'follow'",                 // form-intercept follows server Location headers (minified spacing)
-		"application/x-www-form-urlencoded", // SPA-opt-in body encoding
+		"screenCache",             // screen caching for back-navigation
+		"swapMainContent",         // partial content swapping
+		"X-Gofastr-Navigate",      // client-side navigation header
+		"X-Gofastr-Partial",       // server partial response header
+		"loadComponentCSS",        // per-component CSS loader
+		"scanAndLoadCSS",          // marker scan post-swap/post-mount
+		"_pendingLinks",           // sync dedup guard
+		"data-fui-style",          // <link> dedup key
+		"scheduleIdleLoads",       // LoadPrewarm idle queue
+		"data-fui-comp",           // marker attr the scanner reads
+		"data-fui-copy-text-from", // marker triggers copy module load
+		"data-fui-os",             // OS detection on <html> for ShortcutHint
+		"data-fui-spa",            // opt-IN form-intercept for non-JSON forms
 	}
 	for _, check := range checks {
 		if !strings.Contains(js, check) {
 			t.Errorf("runtime JS missing: %s", check)
+		}
+	}
+}
+
+func TestRuntimeModule_RPC(t *testing.T) {
+	js, ok := Module("rpc")
+	if !ok {
+		t.Fatal("rpc module not embedded")
+	}
+	for _, check := range []string{
+		"dispatchRPC",
+		"redirect:'follow'",
+		"application/x-www-form-urlencoded",
+		"X-CSRF-Token",
+		"X-FUI-Widget",
+	} {
+		if !strings.Contains(js, check) {
+			t.Errorf("rpc module missing: %s", check)
 		}
 	}
 }
@@ -240,10 +256,8 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"widgethelpers",
 		"widgetfocus",
 		"widgetlinks",
-		// "X-Gofastr-Toast" used to be checked here: the widget RPC path
-		// awaited the toasts module on the header. That handling moved to
-		// the shared dispatchRPC in runtime.js (rpc fragment) when the
-		// widget dispatcher was unified with the global one.
+		// Toast response handling lives in the shared RPC demand module.
+		"NS.loadModule('rpc')",
 		"loadedModules",
 		// `data-fui-copy-text-from` was previously checked here but
 		// only lives in a comment now (the delegated handler moved
@@ -781,15 +795,13 @@ func TestRuntimeErrorObjectFormatting(t *testing.T) {
 	}
 }
 
-// TestRuntimeLoadingCSSClassDuringRPC pins that the module-level
-// dispatchRPC adds a fui-loading CSS class to the trigger node during
-// the in-flight request. This lets CSS authors style loading states.
+// TestRuntimeLoadingCSSClassDuringRPC pins that dispatchRPC adds a fui-loading
+// class during a request and removes it in finally.
 func TestRuntimeLoadingCSSClassDuringRPC(t *testing.T) {
-	js, err := RuntimeJS()
-	if err != nil {
-		t.Fatal(err)
+	js, ok := Module("rpc")
+	if !ok {
+		t.Fatal("rpc module not embedded")
 	}
-	// Must add the class before fetch and remove it in finally.
 	if !contains(js, "fui-loading") {
 		t.Error("dispatchRPC must add/remove 'fui-loading' CSS class during in-flight requests")
 	}

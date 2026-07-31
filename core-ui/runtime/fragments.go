@@ -18,10 +18,9 @@ package runtime
 // The distinction is the whole safety story for composition (spec §"Two
 // classes of behavior"):
 //
-//   - marker: the fragment's behavior is triggered by a data-fui-* marker
-//     in the DOM. Safe at any granularity — when the kernel's scanner sees
-//     an unrecognized marker it demand-loads the fragment, so a resolution
-//     miss self-heals. rpc, signals, compute, and every src/*.js module.
+//   - marker: behavior is triggered by a data-fui-* marker in the DOM. The
+//     kernel scanner demand-loads src/*.js modules, including rpc. Core signal
+//     behavior is marker-class but remains composed in every bundle.
 //
 //   - boot: the fragment installs listeners or fetches at boot with no DOM
 //     marker to recover from. Omitting it is a deliberate SSR decision
@@ -61,25 +60,19 @@ type fragmentDef struct {
 // is triggered by <meta name="gofastr-embed"> and owns one attribute,
 // data-fui-embed-state, which reports the frame's lifecycle.
 //
-// boot-embed's declared deps are the fragments it calls INTO: kernel (the
-// namespace and scanAndLoadCSS) and rpc (whose island dispatch is what the
-// grant it installs authenticates). It also relies on boot's mutation observer
-// to hydrate the content it injects, but boot is the kernel boot tail rather
-// than a declared fragment, so it cannot be named here; composeEmbed orders it
-// explicitly instead.
+// boot-embed depends on kernel. RPC requests inside an embed route through
+// boot's delegation bridge and load src/rpc.js at interaction time. It also
+// relies on boot's mutation observer to hydrate injected content, but boot is
+// the kernel tail rather than a declared fragment.
 //
-// Note on sse / compute: in today's unsplit runtime their CODE lives in
-// src/sse.js and src/compute.js (demand modules). The spec promotes each to
-// a core fragment in the target split; until step 2 extracts them, the
-// fragment name and the module name coincide. data-fui-compute is therefore
-// claimed by the "compute" FRAGMENT below, not by the compute module — and
-// src/compute.js consequently owns no data-fui-* attributes.
+// sse and compute keep declared fragment names for the composer specification
+// although their code is already in demand modules. Their privileged markers
+// remain claimed below; rpc has completed the carve and is owned by moduleAttrs.
 var fragments = map[string]fragmentDef{
 	"kernel":       {name: "kernel", class: bootClass, deps: nil},
-	"rpc":          {name: "rpc", class: markerClass, deps: []string{"kernel"}},
 	"signals":      {name: "signals", class: markerClass, deps: []string{"kernel"}},
 	"nav":          {name: "nav", class: bootClass, deps: []string{"kernel", "signals"}},
-	"widgets-boot": {name: "widgets-boot", class: bootClass, deps: []string{"kernel", "rpc"}},
+	"widgets-boot": {name: "widgets-boot", class: bootClass, deps: []string{"kernel"}},
 	// widgets-boot-static is the static-mode counterpart of widgets-boot
 	// (MUTUALLY EXCLUSIVE — never compose both). It owns NO data-fui-*
 	// attributes of its own: it cross-references data-fui-open /
@@ -90,7 +83,7 @@ var fragments = map[string]fragmentDef{
 	"widgets-boot-static": {name: "widgets-boot-static", class: bootClass, deps: []string{"kernel"}},
 	"sse":                 {name: "sse", class: bootClass, deps: []string{"kernel"}},
 	"compute":             {name: "compute", class: markerClass, deps: []string{"kernel"}},
-	"boot-embed":          {name: "boot-embed", class: bootClass, deps: []string{"kernel", "rpc"}},
+	"boot-embed":          {name: "boot-embed", class: bootClass, deps: []string{"kernel"}},
 }
 
 // fragmentAttrs maps each CORE fragment to the data-fui-* attributes whose
@@ -132,24 +125,6 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-static",
 		"data-fui-prefetch",
 		"data-fui-toast-fallback",
-	},
-	"rpc": {
-		"data-fui-rpc",
-		"data-fui-rpc-method",
-		"data-fui-rpc-signal",
-		"data-fui-rpc-close",
-		"data-fui-rpc-reset",
-		"data-fui-rpc-body",
-		"data-fui-rpc-open",
-		"data-fui-rpc-navigate",
-		"data-fui-rpc-trigger",
-		"data-fui-rpc-after-text",
-		"data-fui-rpc-after-done",
-		"data-fui-rpc-after-disable",
-		"data-fui-rpc-debounce-ms",
-		"data-fui-rpc-scroll-to",
-		"data-fui-confirm",
-		"data-fui-push-state",
 	},
 	"signals": {
 		"data-fui-signal",
@@ -350,6 +325,24 @@ var moduleAttrs = map[string][]string{
 	"rangeslider": {
 		"data-fui-range-slider",
 		"data-fui-range-slider-value",
+	},
+	"rpc": {
+		"data-fui-rpc",
+		"data-fui-rpc-method",
+		"data-fui-rpc-signal",
+		"data-fui-rpc-close",
+		"data-fui-rpc-reset",
+		"data-fui-rpc-body",
+		"data-fui-rpc-open",
+		"data-fui-rpc-navigate",
+		"data-fui-rpc-trigger",
+		"data-fui-rpc-after-text",
+		"data-fui-rpc-after-done",
+		"data-fui-rpc-after-disable",
+		"data-fui-rpc-debounce-ms",
+		"data-fui-rpc-scroll-to",
+		"data-fui-confirm",
+		"data-fui-push-state",
 	},
 	"reveal": {
 		"data-fui-reveal",

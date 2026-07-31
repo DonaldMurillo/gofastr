@@ -303,19 +303,20 @@
       }).catch(() => {});
     }
 
-    // RPC dispatch is shared with the global path: window.__gofastr.dispatchRPC
-    // (frag/rpc.js) is the ONE implementation. It derives the widget context
-    // (name, dismiss, default refresh target) from the DOM, so the widget
-    // path needs no opts — yet gains every rpc-* primitive (confirm,
-    // push-state, after-*, GET-encoding, abort-dedup, scroll-to) the global
-    // path has. The local copy here used to fork and drift.
+    // Widget roots stop at their scoped listener while the document bridge
+    // skips them. Both paths await the same RPC module Promise, then call its
+    // single dispatchRPC implementation. This keeps a cold-cache click from
+    // racing module registration without adding a second document listener.
 
     // Widget-scoped click + submit.
     w.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-fui-rpc]');
       if (btn && w.contains(btn) && btn.tagName !== 'FORM') {
         e.preventDefault();
-        await NS.dispatchRPC(btn);
+        try {
+          await NS.loadModule('rpc');
+          await NS.dispatchRPC(btn);
+        } catch (_) {}
         return;
       }
       const closeBtn = e.target.closest('[data-fui-action="close"]');
@@ -328,7 +329,10 @@
       const form = e.target.closest('form[data-fui-rpc]');
       if (form && w.contains(form)) {
         e.preventDefault();
-        await NS.dispatchRPC(form);
+        try {
+          await NS.loadModule('rpc');
+          await NS.dispatchRPC(form);
+        } catch (_) {}
       }
     });
 

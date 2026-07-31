@@ -192,8 +192,10 @@
     // credentials and swapped into <main>. A javascript: or data: URL
     // resolves to a null origin, so this subsumes the scheme check too.
     if (!window.__gofastr._originOK(path)) return;
-    // Drop redundant in-flight nav to the same URL (10 clicks → 1 fetch).
-    if (_pendingNav.has(path)) return;
+    // Dedup in-flight nav (10 clicks → 1 fetch), but only while path is
+    // still the destination: on A→B→A the pending A fetch holds a stale
+    // epoch and is dropped, so returning here left the URL at /a showing B.
+    if (_pendingNav.has(path) && currentPath === path) return;
     _pendingNav.add(path);
     const myEpoch = ++_navEpoch;
     const prevPath = currentPath;

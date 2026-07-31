@@ -29,6 +29,7 @@ func TestRedirectNavBypassesStaleCache(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
+	handleRuntimeModules(t, mux)
 	// /stale — content version bumps on every fetch. First visit
 	// caches v1; the post-mutation redirect must show v2, not v1.
 	mux.HandleFunc("/stale", func(w http.ResponseWriter, r *http.Request) {

@@ -19,6 +19,8 @@ type demandLoadMarker struct {
 // the bottom of core-ui/runtime/runtime.js (search for "DEMAND-LOAD
 // SCANNERS"). The drift test enforces both sides stay aligned.
 var demandLoadMarkers = []demandLoadMarker{
+	{"data-fui-rpc", "rpc"},
+	{"data-kiln-tool", "rpc"},
 	{"data-fui-copy-text-from", "copy"},
 	{"data-fui-computed", "computed"},
 	{"data-fui-compute", "compute"},

@@ -185,6 +185,90 @@
     });
     return _modulePromises[name];
   }
+
+  // Live compositions keep one document-level bridge so a click or submit
+  // that lands while rpc.js is downloading is retained. rpc-stub installs its
+  // own static-only guard before boot runs, so static exports never install
+  // this bridge or request the server-backed module.
+  // The bridge calls preventDefault() BEFORE awaiting src/rpc.js, so a
+  // module that never arrives (404 because the host does not serve
+  // /__gofastr/runtime/<name>.js, or a network blip) would otherwise eat
+  // the user's click or submit in silence. When RPC was compiled into
+  // core that could not happen; carving it out reintroduced the risk, so
+  // failure has to be loud, and a form has to still go somewhere.
+  const _rpcUnavailable = () => {
+    console.warn('[gofastr] RPC module unavailable — serve /__gofastr/runtime/rpc.js');
+  };
+  const _rpcFormFallback = (form) => {
+    _rpcUnavailable();
+    // A JSON-enctype form cannot be submitted natively (browsers fall back
+    // to urlencoded, which the endpoint would reject), so warning is all
+    // that is honest there. Every other intercepted form submits natively.
+    if ((form.getAttribute('enctype') || '').toLowerCase() === 'application/json') return;
+    try { form.submit(); } catch (_) {}
+  };
+
+  if (!document.__fuiStaticDispatch && !document.__fuiGlobalDispatch) {
+    document.__fuiGlobalDispatch = true;
+    document.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-fui-widget]')) return;
+      // Signal mutations win, as they did when one delegator owned both:
+      // the old handler set the signal and RETURNED without consulting
+      // data-fui-rpc. Two listeners would otherwise both fire on an
+      // element carrying each attribute.
+      if (e.target.closest('[data-fui-signal-set],[data-fui-signal-inc],[data-fui-signal-toggle]')) return;
+      const node = e.target.closest('[data-fui-rpc],[data-kiln-tool]');
+      if (!node || node.tagName === 'FORM') return;
+      e.preventDefault();
+      try {
+        await loadModule('rpc');
+        await window.__gofastr.dispatchRPC(node);
+      } catch (_) { _rpcUnavailable(); }
+    });
+
+    document.addEventListener('submit', async (e) => {
+      const form = e.target.closest('form');
+      if (!form || form.closest('[data-fui-widget]')) return;
+      if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) {
+        e.preventDefault();
+        try {
+          await loadModule('rpc');
+          await window.__gofastr.dispatchRPC(form);
+        } catch (_) { _rpcFormFallback(form); }
+        return;
+      }
+
+      const action = form.getAttribute('action');
+      if (!action || !window.__gofastr._sameOrigin(action)) return;
+      const enctype = (form.getAttribute('enctype') || '').toLowerCase();
+      if (enctype !== 'application/json' && !form.hasAttribute('data-fui-spa')) return;
+      e.preventDefault();
+      try {
+        await loadModule('rpc');
+        await window.__gofastr.dispatchRPC(form);
+      } catch (_) { _rpcFormFallback(form); }
+    });
+
+    document.addEventListener('input', (e) => {
+      // Open a focused combobox immediately. The network request remains
+      // debounced in the RPC module, but the listbox should react to typing
+      // before the response arrives.
+      const combo = e.target && e.target.closest && e.target.closest('[role="combobox"]');
+      if (combo) {
+        const lbId = combo.getAttribute('aria-controls');
+        const lb = lbId ? document.getElementById(lbId) : null;
+        if (lb) {
+          combo.setAttribute('aria-expanded', 'true');
+          lb.removeAttribute('hidden');
+        }
+      }
+      const form = e.target.closest('form[data-fui-rpc][data-fui-rpc-trigger="input"]');
+      if (!form) return;
+      loadModule('rpc')
+        .then(() => window.__gofastr.dispatchRPC(form, 'input'))
+        .catch(() => {});
+    });
+  }
   // Hover/focus prefetch: any element with data-fui-prefetch="<name>"
   // kicks off the module fetch as soon as the user hovers or
   // keyboard-focuses it. By the time they click, the module is
@@ -213,6 +297,7 @@
   // Marker-driven modules are rescanned after boot, SPA navigation,
   // and DOM insertion.
   const _moduleMarkers = [
+    { name: 'rpc', selector: '[data-fui-rpc],[data-kiln-tool]' },
     // Copy-to-clipboard delegated handler. Loaded when any
     // [data-fui-copy-text-from] button is on the page (or arrives via
     // SPA-nav). The src/copy.js module installs a single document-level
@@ -330,6 +415,9 @@
     const idleQueue = [];
     for (const m of _moduleMarkers) {
       const { name, selector, idle } = m;
+      // rpc-stub owns static-export clicks. The marker table is shared by all
+      // compositions, so skip this one entry instead of fetching dead code.
+      if (name === 'rpc' && document.__fuiStaticDispatch) continue;
       // Skip if the module is already loaded — its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
       if (window.__gofastr.loadedModules?.[name]) continue;

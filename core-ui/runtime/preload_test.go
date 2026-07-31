@@ -27,6 +27,17 @@ func TestNeededModules_SingleMarker(t *testing.T) {
 	}
 }
 
+func TestNeededModules_RPCMarkers(t *testing.T) {
+	for _, html := range []string{
+		`<button data-fui-rpc="/save">Save</button>`,
+		`<form data-kiln-tool="build"></form>`,
+	} {
+		if got, want := NeededModules(html), []string{"rpc"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("NeededModules(%q) = %v, want %v", html, got, want)
+		}
+	}
+}
+
 func TestNeededModules_SidebarCollapse(t *testing.T) {
 	html := `<button data-fui-sidebar-collapse>Collapse</button>`
 	got := NeededModules(html)

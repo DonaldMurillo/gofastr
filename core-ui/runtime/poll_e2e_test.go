@@ -14,6 +14,23 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+// handleRuntimeModules exposes the same split-module route production uses.
+// Browser tests that render marker attributes must call it; serving only
+// runtime.js would turn a demand-loaded interaction into a false no-op.
+func handleRuntimeModules(t *testing.T, mux *http.ServeMux) {
+	t.Helper()
+	mux.HandleFunc("/__gofastr/runtime/", func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/__gofastr/runtime/"), ".js")
+		src, ok := Module(name)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(src))
+	})
+}
+
 // startPollServer wires a chromedp-facing test server with the runtime
 // bundle at /__gofastr/runtime.js, every embedded split module at
 // /__gofastr/runtime/<name>.js (so the module loader path actually
@@ -31,17 +48,7 @@ func startPollServer(t *testing.T, pageHTML string, extra map[string]http.Handle
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
-	mux.HandleFunc("/__gofastr/runtime/", func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, "/__gofastr/runtime/")
-		name = strings.TrimSuffix(name, ".js")
-		src, ok := Module(name)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/javascript")
-		w.Write([]byte(src))
-	})
+	handleRuntimeModules(t, mux)
 	for path, h := range extra {
 		mux.HandleFunc(path, h)
 	}

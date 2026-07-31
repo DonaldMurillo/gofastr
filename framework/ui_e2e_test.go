@@ -193,6 +193,20 @@ func setupUIE2EApp(t *testing.T) *uiE2EApp {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(rtJS))
 	}))
+	// …and the split modules. RPC is demand-loaded, so a form with
+	// enctype="application/json" needs /__gofastr/runtime/rpc.js to reach
+	// its endpoint. uihost mounts this route for real apps; this fixture
+	// hand-rolls its router and has to do the same.
+	app.Router().Get("/__gofastr/runtime/{name}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimSuffix(r.PathValue("name"), ".js")
+		src, ok := uiruntime.Module(name)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(src))
+	}))
 
 	// Fire battery/plugin Init so auth routes (/auth/login etc.) mount.
 	if err := app.InitPlugins(); err != nil {

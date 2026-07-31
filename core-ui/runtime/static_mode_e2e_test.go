@@ -30,12 +30,9 @@ import (
 // widgets-boot-static) — the composition IS the static-mode switch now,
 // replacing the old runtime branch on <html data-fui-static>. When
 // static=false the page gets the `full` composition (the regression
-// guard). Server-side counters record hits to the live widget endpoint
-// (the session-gated /__gofastr/widgets?page=…) and the dead RPC path so
-// the test can assert the live endpoint is skipped in static mode and
-// fired in live mode; the dumped /__gofastr/widgets.json is also served
-// so widgets-boot-static resolves cleanly.
-func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, rpcHits *int32) {
+// guard). Counters record live widget, RPC-module, and dead RPC requests so
+// static mode proves it neither loads nor dispatches RPC.
+func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, moduleHits, rpcHits *int32) {
 	t.Helper()
 	var js string
 	var err error
@@ -47,11 +44,24 @@ func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var wh, rh int32
+	var wh, mh, rh int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
+	})
+	mux.HandleFunc("/__gofastr/runtime/", func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/__gofastr/runtime/"), ".js")
+		if name == "rpc" {
+			atomic.AddInt32(&mh, 1)
+		}
+		src, ok := Module(name)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(src))
 	})
 	mux.HandleFunc("/__gofastr/widgets", func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&wh, 1)
@@ -83,7 +93,7 @@ func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, 
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv.URL, &wh, &rh
+	return srv.URL, &wh, &mh, &rh
 }
 
 // TestStaticMode_SkipsServerBackedRequests: the `static` composition
@@ -94,7 +104,7 @@ func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, 
 // notice. The live widget endpoint stays at zero hits; the RPC endpoint
 // stays at zero hits.
 func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
-	base, widgetHits, rpcHits := startStaticModeServer(t, true)
+	base, widgetHits, moduleHits, rpcHits := startStaticModeServer(t, true)
 	ctx := newSeedBrowserCtx(t)
 
 	var ready string
@@ -112,6 +122,9 @@ func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 	if got := atomic.LoadInt32(widgetHits); got != 0 {
 		t.Errorf("static composition must not hit the live /__gofastr/widgets?page endpoint (it fetches the dumped /__gofastr/widgets.json instead), got %d hits", got)
 	}
+	if got := atomic.LoadInt32(moduleHits); got != 0 {
+		t.Errorf("static composition must not demand-load the RPC module, got %d module request(s)", got)
+	}
 	if got := atomic.LoadInt32(rpcHits); got != 0 {
 		t.Errorf("static mode must skip RPC dispatch, got %d hits", got)
 	}
@@ -121,7 +134,7 @@ func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 // guard must be a no-op on a live page (no marker) — the catalog fetch
 // fires on boot and an RPC click still reaches the server.
 func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
-	base, widgetHits, rpcHits := startStaticModeServer(t, false)
+	base, widgetHits, moduleHits, rpcHits := startStaticModeServer(t, false)
 	ctx := newSeedBrowserCtx(t)
 
 	if err := chromedp.Run(ctx,
@@ -137,6 +150,9 @@ func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
 	if got := atomic.LoadInt32(widgetHits); got == 0 {
 		t.Error("live mode should fetch the widget catalog (guard must be a no-op without the marker)")
 	}
+	if got := atomic.LoadInt32(moduleHits); got == 0 {
+		t.Error("live mode should prefetch the RPC module when an RPC marker is present")
+	}
 	if got := atomic.LoadInt32(rpcHits); got == 0 {
 		t.Error("live mode should dispatch the RPC on click (guard must be a no-op without the marker)")
 	}
@@ -147,7 +163,7 @@ func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
 // so the user understands why the demo is dead and how to run it live. The
 // notice renders synchronously into #fui-nav-toast (the CSP-clean mini toast).
 func TestStaticMode_RPCShowsNotice(t *testing.T) {
-	base, _, rpcHits := startStaticModeServer(t, true)
+	base, _, _, rpcHits := startStaticModeServer(t, true)
 	ctx := newSeedBrowserCtx(t)
 
 	var toastText string
