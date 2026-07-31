@@ -128,7 +128,7 @@
     }
   };
 
-  requestAnimationFrame(() => scan(document));
+  scan(document);
   window.addEventListener('gofastr:navigate', () => {
     // Disconnect old banners' timers — their DOM is about to be
     // replaced. Walk the WeakMap-keyed Set; banners not in the new
@@ -138,7 +138,7 @@
       if (s && s.sseTimer) { clearInterval(s.sseTimer); s.sseTimer = null; }
     });
     banners.clear();
-    requestAnimationFrame(() => scan(document));
+    scan(document);
   });
 
   // SSE reconnect recovery: when the stream comes back, re-probe the

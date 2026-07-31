@@ -126,7 +126,7 @@
     for (const wrap of scope.querySelectorAll('[data-fui-scrollspy]')) setupOne(wrap);
   };
 
-  requestAnimationFrame(() => scan(document));
+  scan(document);
   window.addEventListener('gofastr:navigate', () => {
     // SPA navigation replaces the page DOM. Disconnect every active
     // observer before re-scanning so the old observers + their
@@ -137,7 +137,7 @@
       observers.delete(w);
     }
     activeWraps.clear();
-    requestAnimationFrame(() => scan(document));
+    scan(document);
   });
 
   window.__gofastr = window.__gofastr || {};
