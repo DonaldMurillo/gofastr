@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 )
 
@@ -32,15 +34,30 @@ type RedisClient interface {
 	LRem(ctx context.Context, key string, count int64, value interface{}) (int64, error)
 }
 
+// ErrRedisEmpty is the sentinel a RedisClient.RPop implementation returns (or
+// wraps) when the source list is empty. It is how RedisQueue distinguishes a
+// genuinely empty queue from a real backend failure: an empty list is a normal
+// "no work" signal (→ ErrNoJob), while any other error means the backend is
+// unreachable and MUST be surfaced so an outage is not masked as idle.
+//
+// Adapter authors translating a real driver MUST map its own nil-sentinel
+// (e.g. go-redis's redis.Nil, redigo's redis.ErrNil) onto this via errors.Is.
+var ErrRedisEmpty = errors.New("redis: list is empty")
+
 // RedisQueue implements the Queue interface backed by Redis lists and hashes.
 // It supports a visibility timeout for in-flight jobs and a dead letter queue
 // for jobs that exceed MaxAttempts.
 type RedisQueue struct {
-	client            RedisClient
-	queueName         string
-	processingQueue   string
-	deadLetterQueue   string
-	visibilityTimeout time.Duration
+	client          RedisClient
+	queueName       string
+	processingQueue string
+	deadLetterQueue string
+
+	// visibilityTimeout is read by Dequeue and written by SetVisibilityTimeout
+	// from independent goroutines, so it is stored as nanoseconds in an
+	// atomic.Int64 to make that path race-free without a mutex on the hot
+	// Dequeue path.
+	visibilityTimeout atomic.Int64
 
 	// now is the clock used for visibility-timeout stamps and expiry checks.
 	// Defaults to time.Now; tests substitute a fake clock so reclaim
@@ -50,20 +67,22 @@ type RedisQueue struct {
 
 // NewRedisQueue creates a new Redis-backed queue.
 func NewRedisQueue(client RedisClient, queueName string) *RedisQueue {
-	return &RedisQueue{
-		client:            client,
-		queueName:         queueName,
-		processingQueue:   queueName + ":processing",
-		deadLetterQueue:   queueName + ":dead",
-		visibilityTimeout: 30 * time.Second,
-		now:               time.Now,
+	q := &RedisQueue{
+		client:          client,
+		queueName:       queueName,
+		processingQueue: queueName + ":processing",
+		deadLetterQueue: queueName + ":dead",
+		now:             time.Now,
 	}
+	q.visibilityTimeout.Store(int64(30 * time.Second))
+	return q
 }
 
 // SetVisibilityTimeout configures how long a job can be in-flight before it
-// is considered abandoned and eligible for re-delivery.
+// is considered abandoned and eligible for re-delivery. Safe for concurrent
+// use with Dequeue.
 func (q *RedisQueue) SetVisibilityTimeout(d time.Duration) {
-	q.visibilityTimeout = d
+	q.visibilityTimeout.Store(int64(d))
 }
 
 // Enqueue pushes a job onto the Redis list, applying defaults for ID,
@@ -88,6 +107,19 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) error {
 // Dequeue pops a job from the Redis list and moves it to the processing queue.
 // If types are specified, only jobs matching one of those types are returned;
 // non-matching jobs are pushed back onto the list.
+//
+// Crash-safety contract for the pop→processing transition: a job is RPop'd off
+// the main list before it is recorded in the processing hash. If that recording
+// fails, the popped payload is pushed back onto the main list so the job is
+// re-delivered later instead of being permanently lost in the gap. (An atomic
+// RPOPLPUSH-style move would close the window entirely, but the RedisClient
+// interface exposes no single-round-trip move primitive — error propagation
+// that leaves the job on the queue is the safe option within this interface.)
+//
+// Attempts are bumped at claim, matching DBQueue: a worker that crashes before
+// Ack/Nack has still consumed a delivery, so a poison message cannot redeliver
+// forever. A job whose attempts exceed MaxAttempts at claim is moved to the
+// dead-letter queue instead of being handed out again.
 func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
 	typeSet := make(map[string]struct{}, len(types))
 	for _, t := range types {
@@ -113,9 +145,16 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 
 		data, err := q.client.RPop(ctx, q.queueName)
 		if err != nil {
-			// Re-enqueue skipped jobs so we don't lose them.
+			// Distinguish a genuinely empty queue (sentinel) from a real
+			// backend failure. Masking a backend error as "empty" would make
+			// an outage look like an idle queue, so workers stop pulling jobs
+			// with no signal that anything is wrong.
+			isEmpty := errors.Is(err, ErrRedisEmpty)
 			requeueSkipped(skipped)
-			return Job{}, ErrNoJob
+			if isEmpty {
+				return Job{}, ErrNoJob
+			}
+			return Job{}, fmt.Errorf("dequeue: pop: %w", err)
 		}
 
 		var job Job
@@ -136,12 +175,48 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			}
 		}
 
-		// Track in processing queue for visibility timeout.
+		// Bump attempts at claim (DBQueue parity). The bumped payload becomes
+		// the canonical record for the processing hash, Nack and Reclaim, so a
+		// crash before Nack still consumes an attempt and a poison message
+		// cannot redeliver forever.
+		job.Attempts++
+		if job.Attempts > job.MaxAttempts {
+			// Exhausted: dead-letter instead of redelivering, then keep
+			// looking so a following eligible job can still be handed out.
+			// The job is already off the main list — a failed DLQ push
+			// must restore it there and surface the error, or the job
+			// vanishes (the same no-silent-loss contract as the
+			// pop→processing transition below; the claim-time bump keeps
+			// the restored job from redelivering forever once the
+			// backend heals).
+			dlqData, _ := json.Marshal(job)
+			if err := q.client.LPush(ctx, q.deadLetterQueue, dlqData); err != nil {
+				_ = q.client.LPush(ctx, q.queueName, string(dlqData))
+				requeueSkipped(skipped)
+				return Job{}, fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
+			}
+			continue
+		}
+		bumped, _ := json.Marshal(job)
+
+		// Track in processing queue for visibility timeout. The job was
+		// already RPop'd off the main list, so a failure here MUST restore it
+		// — otherwise the pop→processing transition loses the job permanently
+		// (it is neither on the main list nor visible to Reclaim).
+		visTimeout := time.Duration(q.visibilityTimeout.Load())
 		jobData, _ := json.Marshal(map[string]interface{}{
-			"job":       data,
-			"expiresAt": q.now().Add(q.visibilityTimeout).UnixNano(),
+			"job":       string(bumped),
+			"expiresAt": q.now().Add(visTimeout).UnixNano(),
 		})
-		_ = q.client.HSet(ctx, q.processingQueue, job.ID, jobData)
+		if err := q.client.HSet(ctx, q.processingQueue, job.ID, jobData); err != nil {
+			// Restore the bumped payload to the main list so it is re-delivered
+			// on a later Dequeue. If the restore itself fails the job is
+			// unrecoverable, but the common single-failure case (pop ok,
+			// processing write blip) no longer loses it.
+			_ = q.client.LPush(ctx, q.queueName, string(bumped))
+			requeueSkipped(skipped)
+			return Job{}, fmt.Errorf("dequeue: track in processing: %w", err)
+		}
 
 		// Re-enqueue skipped jobs.
 		requeueSkipped(skipped)
@@ -187,8 +262,10 @@ func (q *RedisQueue) Nack(ctx context.Context, jobID string) error {
 	// Remove from processing.
 	_ = q.client.HDel(ctx, q.processingQueue, jobID)
 
-	// Increment attempts and check max.
-	job.Attempts++
+	// Attempts were bumped at claim (Dequeue), so the processing entry
+	// already carries the post-claim count — Nack only decides retry vs
+	// dead-letter. Bumping here too would double-count and let a poison
+	// message that only ever crashes before Nack evade MaxAttempts.
 	if job.Attempts >= job.MaxAttempts {
 		// Move to dead letter queue.
 		dlqData, _ := json.Marshal(job)

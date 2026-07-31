@@ -104,8 +104,10 @@ func TestRedisReplayMovesDLQJobToQueue(t *testing.T) {
 	}
 	r.mu.Unlock()
 
-	// The job should be back on the main queue and Dequeue-able with a
-	// reset attempts counter.
+	// The job should be back on the main queue and Dequeue-able. Replay reset
+	// its attempts counter to 0 on the queued payload; the claim then bumps it
+	// to 1 (DBQueue parity: a delivery counts as an attempt), proving the
+	// counter was reset rather than carrying over the pre-DLQ count.
 	replayed, err := q.Dequeue(ctx)
 	if err != nil {
 		t.Fatalf("Dequeue after replay: %v", err)
@@ -113,8 +115,8 @@ func TestRedisReplayMovesDLQJobToQueue(t *testing.T) {
 	if replayed.ID != "dead1" {
 		t.Errorf("expected replayed job ID 'dead1', got %q", replayed.ID)
 	}
-	if replayed.Attempts != 0 {
-		t.Errorf("expected Attempts reset to 0 after replay, got %d", replayed.Attempts)
+	if replayed.Attempts != 1 {
+		t.Errorf("expected Attempts=1 after replay+claim (reset then bumped), got %d", replayed.Attempts)
 	}
 	if replayed.Type != "email" {
 		t.Errorf("expected Type 'email' preserved, got %q", replayed.Type)

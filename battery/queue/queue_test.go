@@ -326,7 +326,7 @@ func (m *mockRedis) RPop(_ context.Context, key string) (string, error) {
 	defer m.mu.Unlock()
 	l := m.lists[key]
 	if len(l) == 0 {
-		return "", fmt.Errorf("list empty")
+		return "", ErrRedisEmpty
 	}
 	val := l[len(l)-1]
 	m.lists[key] = l[:len(l)-1]
