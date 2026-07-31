@@ -7,6 +7,176 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-07-31
+
+Five independent analyses of the whole framework — three in-repo passes
+plus two external models, none given the others' findings — turned up
+bugs the v0.54 sweep did not reach. This release fixes all of them, each
+with a test that failed first. A three-model review of the resulting
+branch then found four more, including a regression this wave itself had
+introduced into the timeout middleware; those are fixed here too.
+
+### Breaking
+
+- **BREAKING: `openapi.SwaggerUIHandler` is now `openapi.DocsHandler`.**
+  It takes a third argument, `public bool`, which gates the landing page
+  and its nested spec route together. `framework` passes `PublicOpenAPI`,
+  so `WithPublicOpenAPI()` now opens `/api/docs/` as well as
+  `/openapi.json`. Previously the page was auth-gated unconditionally,
+  which left a published spec with no browsable page. The startup banner
+  says "API docs" instead of "Swagger UI"; the handler serves a static
+  landing page and has not embedded Swagger UI since the CDN reference
+  was removed.
+- **BREAKING: `island.Manager` presence hooks are set through methods.**
+  The public `OnPresenceChange` and `AuthorizeTopic` fields are gone; use
+  `SetOnPresenceChange` and `SetAuthorizeTopic`. Apps assigned the fields
+  without the lock the hooks were read under. `ConnectSession` now
+  returns `(ch, cancel, error)` so it can refuse a connection over the
+  new stream caps.
+- **BREAKING: dead widget-builder API removed.** `BootstrapMode`,
+  `Definition.Bootstrap`, `Definition.BootstrapPath`, `Builder.Bootstrap`,
+  `Builder.RPCWithSignal`, and `RPCEndpoint.ResponseSignal` are deleted.
+  `Mount` never applied the documented bootstrap default and
+  `ResponseSignal` was written but never read; signal routing goes
+  through the `data-fui-rpc-signal` attribute.
+- **BREAKING: production refuses the in-memory session store.** With
+  `DevMode: false` and no `SessionStore`, `Init` now returns an error
+  instead of logging a warning. Sessions in process memory do not survive
+  a restart and never resolve on a second replica. Set
+  `AllowInMemoryStores: true` to acknowledge a single-node deployment, or
+  wire `EntitySessionStore`. The in-memory 2FA store already failed this
+  way; both stores now behave the same.
+- **BREAKING: `battery/semantic` routes require a bearer token.** The
+  handler accepted any non-empty `Authorization` header, so
+  `Authorization: x` granted index write, query, and delete. Configure
+  `semantic.WithAuthToken(token)` (compared in constant time) or
+  `WithInsecureDisabledAuth()` for local development. With neither, every
+  route returns 401 rather than mounting open.
+- **BREAKING: `gofastr init` writes `gofastr.isolation.yml`.** The
+  isolation config used the blueprint's `gofastr.yml` filename, so
+  following the CLI's own example sequence failed with `unknown key
+  "version"`. `framework/isolation` reads the new name first and still
+  falls back to `gofastr.yml`.
+- **BREAKING: an over-length `?field_in=` list is a 400.** Above 1000
+  entries the parser silently dropped the remainder, narrowing the
+  predicate without telling the caller. It now errors, matching the
+  include-scoped IN cap.
+- **BREAKING: `AutoTimestamp` writes microsecond precision.** Values were
+  whole seconds, so rows written in the same second shared a
+  `created_at` and stalled single-field cursor pagination on the tie. The
+  format is fixed-width (`.000000`) because SQLite compares these as
+  strings and a zero-stripped fraction sorts wrongly.
+- **BREAKING: out-of-range integers fail to bind.** `core/handler`
+  parsed every integer at 64 bits and let `SetInt` truncate, so
+  `?small=300` bound 44 to an `int8` with a nil error. Binding now uses
+  the destination's bit width and returns a range error.
+
+### Fixed
+
+- **Streams are no longer cut off by the request timeout.** The 30s
+  middleware deadline stayed on the request context after a handler
+  started streaming, and the server's fixed 60s read/write timeouts cut
+  the connection even with `DisableRequestTimeout` set. A response that
+  flushes now sheds both, so SSE subscribers stay connected;
+  `DisableRequestTimeout` also drops the server read/write timeouts,
+  which is what makes uploads longer than a minute work.
+- **A late timeout no longer corrupts a completed response.** A deadline
+  firing just as a handler finished appended `Gateway Timeout` to an
+  already-sent 200 body. The timer now only signals; every write happens
+  on the request goroutine.
+- **`TryEntity` rejects a declaration without publishing part of it.**
+  Entity validation, the CRUD/MCP contract, route collisions (including
+  custom endpoint paths), and MCP tool names are all checked before the
+  registry, router, or MCP server is touched. A rejected declaration used
+  to leave its registry entry and routes behind, which made the corrected
+  retry fail under the same name.
+- **`MemorySessionStore` no longer races on two-factor state.** `Get` and
+  `Create` returned the stored `*Session` while the marker methods
+  mutated it under the store lock; both now return a copy taken under the
+  lock. `go test -race` reported three races on authentication state.
+- **The Redis queue no longer loses jobs.** A failed processing-hash
+  write after `RPOP` dropped the job entirely; it is now pushed back.
+  Attempts are counted at claim (matching the DB backend), so a worker
+  that crashes before `Nack` cannot redeliver a poison message forever. A
+  backend error during dequeue is returned instead of being reported as
+  an empty queue.
+- **`core/static` serves whole files.** Files over 32MB were sent
+  truncated under a matching `Content-Length` and ETag. On a filesystem
+  whose handles do not implement `io.Seeker`, the body was empty after
+  the ETag hash consumed the file; the handler now reopens. Read errors
+  other than "not found" return 500 instead of 404, and the content
+  digest is cached per file rather than recomputed per request.
+- **`$N` inside a SQL string literal is no longer rewritten.** The
+  placeholder renumberer was quote-blind, so `label = '$5 off'` became
+  `'$1 off'` and shifted the real placeholders. Renumbering stays
+  positional, which is what `entity.Condition` composition depends on.
+- **MCP SSE frames carry their payload intact.** The writer collapsed
+  newlines and rewrote any `event:`/`data:` substring in the body,
+  corrupting JSON-RPC content. It now emits one `data:` line per payload
+  line, so a spec-conforming client reassembles the exact bytes.
+- **The pure-Go SQLite driver honors its DSN and shares one engine per
+  pool.** `sql.Open("sqlite", "file.db")` returned a fresh in-memory
+  engine and discarded every write. Each pooled connection then got its
+  own engine over the same file, with separate page caches and no
+  locking: 25 of 50 concurrent inserts survived. A corrupt schema page
+  now surfaces as an open error instead of reading as an empty database.
+- **`gofastr migrate` with no subcommand runs `up`** instead of panicking
+  on a slice bounds error.
+- **The `.ui.go` sandbox lint runs in `gofastr build` and `gofastr dev`.**
+  The goroutine, channel, and import rules were implemented and tested
+  but had no caller outside their own tests, so a `.ui.go` file with
+  `go func()` or `import "os"` passed the build.
+- **Concurrent SSE streams are capped** at 16 per session and 4096 per
+  replica (`island.WithStreamCaps`). An over-cap connect gets a 429 with
+  `Retry-After`; existing streams are never dropped to make room. Any
+  same-origin caller could previously hold unbounded streams, each with a
+  goroutine and a 64-slot channel.
+- **Per-theme component CSS is evicted** when a theme variant is
+  released, and `MemoryBurnStore` prunes expired nonces. Both grew for
+  the life of the process.
+- **Failed writes are reported.** Admin RBAC and process-module audit
+  rows, webhook delivery-state updates, idempotency `Finish`, and
+  password-reset email sends discarded their errors while the surrounding
+  docs promised the write happened. Each now logs.
+- **Client runtime:** a slow page load can no longer swap its content
+  over a newer navigation; `data-fui-confirm` is honored inside widgets
+  (a delete in a drawer fired without confirming); an SSE island swap
+  loads the CSS for components it introduces; repeated form fields keep
+  every value instead of the last; computed and animate teardown runs on
+  island swaps, not only on navigation; two lightboxes on one page no
+  longer share state.
+
+### Changed
+
+- Generated blueprint apps sort and paginate list screens through the
+  resource island endpoint rather than a full page navigation, and no
+  longer emit `.gofastr-entity-*` or `.detail-*` markup — the dead
+  client-JS list and detail renderers are deleted.
+- `battery/admin` composes `ui.DataTable`, `ui.StatCard`,
+  `ui.FilterToolbar`, and `ui.Tag`; its second stylesheet (a `baseCSS`
+  string of unprefixed `.card`/`.btn`/`body`/`table` rules served outside
+  the registry) is gone, along with two `.badge` classes that had no CSS
+  anywhere.
+- `<html lang>` is configurable through `app.WithLang` and
+  `uihost.WithLang`, defaulting to `en` (WCAG 3.1.1). It was hardcoded on
+  every rendered surface.
+- SSR-inlined widget chrome renders with the request context, so a
+  context-aware slot no longer renders anonymous on first paint and
+  personalized when reopened.
+- The route table and component catalog are serialized once instead of on
+  every request.
+- Documentation corrections, with tests pinning them to the code:
+  `auth.md` described a `framework/auth` package that does not exist and
+  argon2id hashing (it is bcrypt in `battery/auth/password.go`), and said
+  password reset fails closed when it returns 200 and sends nothing;
+  `security.md` used two `CORSConfig` fields and a `Tracing` signature
+  that do not exist, named a `gofastr export` subcommand that does not
+  exist, and said `app.Use` disables the default middleware chain;
+  `query-dsl.md`'s quickstart did not compile and omitted that the DSL
+  applies no owner, tenant, or soft-delete scoping;
+  `hooks-and-transactions.md` had `BeforeCreate`/`BeforeUpdate` running
+  after validation when they run before.
+
 ## [0.54.0] - 2026-07-31
 
 The zero-carryover release: a three-agent deep analysis of the whole
