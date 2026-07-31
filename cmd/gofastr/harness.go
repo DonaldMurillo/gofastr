@@ -33,17 +33,17 @@ import (
 
 	xterm "golang.org/x/term"
 
-	xharness "github.com/DonaldMurillo/gofastr/framework/harness"
-	"github.com/DonaldMurillo/gofastr/framework/harness/client/tui"
-	xcontext "github.com/DonaldMurillo/gofastr/framework/harness/context"
-	"github.com/DonaldMurillo/gofastr/framework/harness/control"
-	"github.com/DonaldMurillo/gofastr/framework/harness/control/inproc"
-	"github.com/DonaldMurillo/gofastr/framework/harness/engine"
-	"github.com/DonaldMurillo/gofastr/framework/harness/ids"
-	"github.com/DonaldMurillo/gofastr/framework/harness/logging"
-	"github.com/DonaldMurillo/gofastr/framework/harness/profile"
-	"github.com/DonaldMurillo/gofastr/framework/harness/provider"
-	"github.com/DonaldMurillo/gofastr/framework/harness/secrets"
+	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/client/tui"
+	xcontext "github.com/DonaldMurillo/gofastr/framework/experimental/harness/context"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/inproc"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/engine"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/logging"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/profile"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/secrets"
 )
 
 func runHarness(args []string) {
@@ -227,10 +227,10 @@ func loadProfile(useFramework bool, explicit string) (*profile.Profile, error) {
 		return profile.Load(explicit)
 	}
 	name := "default"
-	path := "framework/harness/profile/default.toml"
+	path := "framework/experimental/harness/profile/default.toml"
 	if useFramework {
 		name = "framework"
-		path = "framework/harness/profile/framework.toml"
+		path = "framework/experimental/harness/profile/framework.toml"
 	}
 	// Prefer the on-disk copy when running inside the source tree (so
 	// edits to the .toml take effect without rebuilding); fall back to

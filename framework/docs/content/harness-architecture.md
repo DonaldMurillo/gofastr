@@ -1,7 +1,7 @@
 # GoFastr harness architecture
 
 > Read this before adding, moving, or extracting any package under
-> `framework/harness/`. The harness is intentionally narrow at the core
+> `framework/experimental/harness/`. The harness is intentionally narrow at the core
 > and extensible at the edges — the rules below explain *why* each layer
 > exists, what is locked, and how to add new behavior without growing
 > the loop.
@@ -66,8 +66,14 @@ engine itself knows about *clients*, never about transports.
    event subscriber, or a plugin registration, it lives outside the
    loop. No exceptions.
 2. **No third-party imports.** Stdlib and `golang.org/x/*` only. The
-   single import boundary is enforced by `go.mod` review and by the
-   `harness/internal/depscheck` build tag.
+   import boundary is policed by `go.mod` review. The inverse boundary —
+   the framework root must not import the experimental harness (so an
+   entire agent runtime never lands in every host app that links the
+   framework, and no root→harness→framework cycle forms) — is enforced
+   by a layering test, `layering_test.go` →
+   `TestFrameworkRootDoesNotImportHarness`, using the same `go list
+   -deps` shape as the `framework/ui` and `framework/crud` layering
+   guards.
 3. **AGENTS.md is the primary source of project instructions.** Vendor
    files are additive fallbacks read by separate `ContextSource`
    implementations.
@@ -122,32 +128,41 @@ engine itself knows about *clients*, never about transports.
     (`<untrusted-...>...</untrusted-...>`) with a standing
     instruction to never follow instructions inside those tags.
 13. **Trust-on-first-use for code-adjacent files loaded into prompts
-    or executed by hooks** — with bulk-ack scoped to user-owned
-    directories. SHA-256 every `SKILL.md`, `AGENTS.md`, fallback
-    context file, and project hook on first load. New / changed →
-    interactive ack with diff. Approvals persist in
-    `~/.config/gofastr/harness/approved.lock`.
-    - **Bulk-ack policy.** Files from user-owned directories
-      (`~/.config/gofastr/harness/`, `framework/harness/skills/` —
-      built-ins shipped in the binary) may be bulk-approved with
-      one decision per *directory* (recorded in
-      `approved.lock` as a `dir-trust` entry covering all files
-      whose hashes were captured at install time).
-    - **Project-local files are never bulk-acked.** Files from
-      `<repo>/.gofastr/harness/` are individually reviewed every
-      time the hash changes. This is the supply-chain trust
-      boundary.
-    - **Diff-class detection.** When a previously-approved file
-      changes, the harness classifies the diff (metadata-only,
-      prose, code-adjacent, executable-changes). Only
-      code-adjacent and executable-changes block; prose-only
-      changes auto-promote with a non-blocking notice. Defense in
-      depth comes from rule 12 (untrusted-content tags at
-      runtime).
-    - **Hooks** defined in project-local config
-      (`<repo>/.gofastr/harness/`) are additionally gated behind
-      `--allow-project-hooks` and individually ack'd. No
-      bulk-ack for project-local hooks ever.
+    or executed by hooks.** Every `SKILL.md`, `AGENTS.md`, and
+    fallback context file is SHA-256 hashed at load time and the hash
+    is stored on the parsed object (`skillmd.Skill.SHA256`, the
+    context `Section` hash) so callers can compare it across runs.
+    **That hash computation is all that is built today.** The full TOFU
+    gate — interactive ack with diff on new/changed files, the
+    `~/.config/gofastr/harness/approved.lock` approval store, the
+    bulk-ack / `dir-trust` policy for user-owned directories, the
+    per-file review for project-local files, diff-class detection
+    (metadata-only vs code-adjacent vs executable-changes), and the
+    `--allow-project-hooks` per-hook ack — is **not built yet**. The
+    design intent below is kept so the shape stays stable, but nothing
+    in `harness.New()` blocks boot, persists approvals, or classifies
+    diffs today. See § Maturity — not-yet-built.
+    - **Bulk-ack policy (intent, not built).** Files from user-owned
+      directories (`~/.config/gofastr/harness/`,
+      `framework/experimental/harness/skills/` built-ins) would be
+      bulk-approved with one decision per directory (a `dir-trust`
+      entry in `approved.lock` covering all files whose hashes were
+      captured at install time).
+    - **Project-local files are never bulk-acked (intent, not built).**
+      Files from `<repo>/.gofastr/harness/` would be individually
+      reviewed every time the hash changes. This is the supply-chain
+      trust boundary.
+    - **Diff-class detection (intent, not built).** When a
+      previously-approved file changes, the harness would classify the
+      diff (metadata-only, prose, code-adjacent, executable-changes);
+      only code-adjacent and executable-changes would block, prose-only
+      changes auto-promote with a non-blocking notice. Defense in depth
+      comes from rule 12 (untrusted-content tags at runtime), which
+      *is* built.
+    - **Hooks (intent, not built).** Project-local hooks
+      (`<repo>/.gofastr/harness/`) would be gated behind
+      `--allow-project-hooks` and individually ack'd; no bulk-ack for
+      project-local hooks ever. Today hooks load with no ack gate.
 14. **`Command` and `Event` are closed sealed unions.** Plugins
     extend via tools, events-via-subscription, and slash commands
     in their own namespaces — *not* new wire-protocol verbs. The
@@ -162,6 +177,33 @@ engine itself knows about *clients*, never about transports.
     deterministic from `(source_id, new_log_id)`.
 
 ---
+
+## Maturity — what is and isn't built
+
+This document is the **design** for the harness. Much of it is
+aspirational: it describes the target shape so the interfaces stay
+stable, but it must never be read as a feature list. As a v0.1
+experimental subsystem under `framework/experimental/`, the following
+are **not built yet** (tracked here so the rest of the doc can keep the
+design intent without presenting it as shipped behavior):
+
+- **TOFU ack gate.** Content SHA-256 hashes for `SKILL.md` and
+  context files *are* computed at load, but nothing compares them to an
+  approval store, blocks boot on change, or persists acks. There is no
+  `approved.lock`, no `dir-trust` bulk-ack, no diff-class detection
+  (rule 13).
+- **MCP server spawn in `New`.** The `mcpclient` package exists but is
+  **not wired into `harness.New()`**; no MCP servers are spawned or
+  sha256-pinned at boot. Profile `mcp_servers` entries are not yet
+  honored by the engine.
+- **Copilot provider and failover.** Only OpenRouter and ZAI ship.
+  There is no Copilot adapter and no pre-wired Copilot→OpenRouter
+  failover (that machinery was removed).
+- **`--framework` default model.** The default profile targets
+  `zai:glm-5.1` (GLM-5.1 is the flagship and first in the ZAI catalog).
+
+Where a later section reads as if one of the above is live, treat it as
+design intent, not current behavior.
 
 ## Threat model
 
@@ -363,96 +405,90 @@ agreement).
 ## Package map
 
 ```
-cmd/gofastr/
-└── harness.go              Subcommand entry; flag parsing; profile load; engine bootstrap
+cmd/gofastr/                 `gofastr harness` subcommand (owns CLI flags, profile load,
+│   harness.go                transport + client start, engine bootstrap) + harness_http.go,
+│   harness_creds.go,         harness_mcp.go — the surface New() does not own.
+│   harness_mcp.go
 
-framework/harness/
+framework/experimental/harness/
+├── harness.go              Harness struct — composes the subsystems New() builds
+├── ids/                    ULID-derived typed IDs (SessionID, CallID, ClientID, …)
+├── context/                Project-instruction file readers.
+│   ├── reader.go           Walks context_sources; walk-upward AGENTS.md; concatenates
+│   └── hash.go             sha256Hex helper — hash IS computed; TOFU ack is NOT built
+├── skill/                  SKILL.md loader + registry.
+│   ├── registry.go         Skill registry, tier-1 catalog, SHA256 lookup, triggers
+│   └── skillmd/            SKILL.md parser (frontmatter, body); SHA256 set on parse
+│       ├── skillmd.go
+│       └── hash.go
+├── tool/                   Tool / ToolSource interfaces + registry.
+│   ├── tool.go, registry.go
+│   ├── builtins/           Read, Write, Edit, Bash, Grep, Glob, Ls, WebFetch,
+│   │                       Agent, Tasks, ToolSearch
+│   └── permission/         Allow/ask/deny engine + persistable allowlists
+│                           (LoadPersistentRules; rules only — profile preset not loaded yet)
+├── mcpclient/              MCP wire client. EXISTS but NOT wired into New (see Maturity).
+│   ├── client.go           stdio + http+sse + streamable HTTP
+│   └── source.go           ToolSource adapter — MCP tools appear identical to built-ins
+├── provider/               Provider adapters.
+│   ├── provider.go         Provider interface + Request/StreamEvent/Model/Capabilities
+│   ├── pricing.go,         Pricing + cache-attribution helpers
+│   │   cache_attrib.go
+│   ├── openrouter/         OpenAI-compatible client + model catalog + pricing
+│   ├── zai/                ZAI GLM (static catalog: glm-5.1 first, then 4.6 / 4.5-air / z1)
+│   ├── credstore/          AES-GCM encrypted-file credential store (credstore.go)
+│   ├── helper/             In-process credential helper
+│   └── internal/openai/    Shared OpenAI-shape stream client
+├── secrets/                Repo-side secret loader (.harness-secrets/env → env vars)
+├── session/                Session log interface + export.
+│   ├── store.go            SessionStore interface
+│   ├── export.go           Export helpers
+│   └── sqlite/             SQLite event log: sqlite.go, encrypted.go (page-level DEK),
+│                           retention.go (TTL), redact.go (secret-regex), attempts.go.
+│                           (No replay.go / branch.go — step-through replay and
+│                           branch-at-TurnEnded are not built.)
+├── memory/                 File-based typed auto-memory (memory.go)
+├── hook/                   Shell-level lifecycle hooks: spec (event, command, blocking)
+│                           + procgroup_unix/windows. No TOFU ack gate on hooks yet.
 ├── engine/                 The agent loop. Orchestration only.
-│   ├── loop.go             Turn loop — request, stream, tool execution, terminate/continue
-│   ├── stream.go           Provider-shape-agnostic stream parser (text, tool, thinking, usage)
+│   ├── loop.go             Turn loop
+│   ├── stream.go           Provider-shape-agnostic stream parser
 │   ├── request.go          Request middleware chain
 │   ├── tool_dispatch.go    Tool middleware chain + dispatcher
-│   ├── cancel.go           Cancellation tree (turn → tool calls → child engines)
+│   ├── middleware.go,      Request + tool middleware, permission middleware
+│   │   permission_mw.go
+│   ├── cancel.go           Cancellation tree
 │   └── events.go           Typed event bus + subscriber registry
-├── provider/               Provider adapters. One subdir per implementation.
-│   ├── provider.go         Provider interface (Chat, Models, TokenCount)
-│   ├── routing/            RoutingProvider (Provider composition — multi-model per turn)
-│   ├── credstore/          Encrypted-file primary; OS-keychain integrations opt-in
-│   │   ├── encfile.go      AES-GCM with passphrase or machine-bound key (primary)
-│   │   ├── keychain_darwin.go  (opt-in plugin — macOS Security framework)
-│   │   ├── keychain_linux.go   (opt-in plugin — libsecret via D-Bus)
-│   │   └── keychain_windows.go (opt-in plugin — CredRead/Write via x/sys/windows)
-│   ├── helper/             Credential-helper subprocess — holds tokens, signs requests
-│   ├── copilot/            v0.2 placeholder — OAuth device-code flow, /chat/completions
-│   ├── zai/                OpenAI-compatible client (api.z.ai)
-│   └── openrouter/         OpenAI-compatible client, model catalog, pricing, BYO-key passthrough
-├── tool/                   Built-in tools + permission engine + tool packs.
-│   ├── tool.go             Tool interface: Run(ctx, ToolCall, EventSink) → (ToolResult, error)
-│   ├── registry.go         ToolSource interface + dynamic registration
-│   ├── permission/         Allow/ask/deny rules, glob matching, persistable allowlists
-│   ├── pack/               Tool bundles (fs, git, web, gofastr, ...)
-│   └── builtins/           Read, Write, Edit, Bash, Grep, Glob, Ls, WebFetch, ...
-├── mcpclient/              MCP client (eager + lazy discovery modes).
-│   ├── client.go           MCP wire protocol client (stdio + http+sse + streamable HTTP)
-│   ├── discovery.go        Tool-list + on-demand schema fetch
-│   ├── pin.go              sha256 pinning of MCP server binaries declared in profiles
-│   └── source.go           ToolSource adapter — MCP tools appear identical to built-ins
-├── skill/                  SKILL.md loader + progressive disclosure.
-│   ├── skillmd/            SKILL.md parser (frontmatter, body, supporting files)
-│   ├── tier.go             3-tier disclosure machinery
-│   ├── tofu.go             TOFU hash + ack flow
-│   └── registry.go         Skill registry, activation triggers, /skills:name invocation
-├── context/                Project-instruction sources (config list, not polymorphism).
-│   ├── reader.go           Walks a configured list of (path, label) tuples; concatenates
-│   ├── agentsmd.go         AGENTS.md primary reader (nested file support, walk-upward)
-│   └── fallback.go         CLAUDE.md, .cursorrules, GEMINI.md, .windsurfrules,
-│                           .github/copilot-instructions.md — appended if profile enables
-├── session/                Persistence + replay.
-│   ├── store.go            SessionStore interface
-│   ├── sqlite/             SQLite append-only event log (keychain-encrypted)
-│   ├── retention.go        TTL on full-content events; metadata-only after expiry
-│   ├── redact.go           Secret-regex redaction middleware (AWS/GitHub/Bearer/-----BEGIN)
-│   ├── replay.go           Step-through walker (view only; does not re-execute)
-│   └── branch.go           Branch-at-TurnEnded with tool_use ID rewriting
-├── memory/                 Typed auto-memory (file-based).
-│   └── file.go             Markdown-files-with-frontmatter implementation
-├── hook/                   Shell-level lifecycle hooks.
-│   ├── hook.go             Hook spec (event, command, blocking)
-│   ├── tofu.go             SHA-256 ack for any new hook (per rule 13)
-│   └── runner.go           PreToolUse / PostToolUse / UserPromptSubmit / Stop / Compact / SessionStart
-├── profile/                Profile loader + presets.
-│   ├── profile.go          Profile spec — skills, mcp servers (sha256-pinned), tools, permissions, model, prompt header
-│   ├── framework.toml      Preset: working on GoFastr
-│   └── default.toml        Preset: working with GoFastr
 ├── control/                Engine-as-a-service: transport-agnostic protocol.
-│   ├── protocol.go         Wire types (Command, Event) and codec (JSON)
-│   ├── client.go           Client interface — Subscribe(events), Send(command), ID(), IdentityClass()
-│   ├── multiplex/          Multi-client routing — originator tracking, total input ordering,
-│   │                       permission-arbitration policy, broadcast events to all attached.
-│   │                       This is where "engine knows about clients, not transports" lives.
-│   ├── resources/          Aggregation layer (sessions, profiles, providers, tools, skills);
-│   │                       depended on by mcpserver/ and rest/ for catalog responses.
-│   ├── conformance/        Cross-transport parity test matrix (every transport runs the same scenarios).
+│   ├── protocol.go         Wire types (Command, Event) + JSON codec
+│   ├── client.go           Client interface — Subscribe/Send/ID/IdentityClass
+│   ├── multiplex/          Multi-client routing, originator tracking, total input ordering
+│   ├── resources/          Catalog aggregation (sessions, profiles, providers, tools, skills)
+│   ├── auth/               Token issuance (TTY 6-digit confirmation), claims, revocation
 │   ├── inproc/             Go-channel transport for bundled clients
-│   ├── rest/               HTTP/REST + SSE; Host/Origin checks; X-Harness-Token header
-│   ├── ws/                 WebSocket transport (full duplex)            — v0.2
-│   ├── mcpserver/          MCP-server transport (engine as MCP)         — stdio in v0.2, HTTP in v0.3
-│   └── auth/               Token issuance (TTY confirmation), claim sets, revocation list
+│   ├── rest/               HTTP/REST + SSE; Host/Origin checks; X-Harness-Token
+│   ├── ws/                 WebSocket transport (full duplex)
+│   └── mcpserver/          MCP-server transport (engine as MCP) — stdio + streamable HTTP
 ├── client/                 Bundled clients (each speaks the control protocol).
-│   ├── tui/                Pure-stdlib + x/term TUI
-│   │   ├── terminal.go     Raw mode (termios via x/term), resize handling
-│   │   ├── render.go       ANSI rendering, scrollback, syntax highlighting
-│   │   ├── input.go        Key parsing (escape sequences, mouse, paste)
-│   │   ├── modal.go        Permission prompts, diff preview, file picker
-│   │   └── statusline.go   Cost meter, model indicator, profile name
-│   └── web/                gofastr-powered local web UI (sidecar, co-equal)
-│       ├── server.go       Embeds framework.App; random local port
-│       ├── entities.go     Session, Turn, ToolCall, Event entities
-│       ├── pages/          Server-rendered pages — session timeline, MCP inspector, cost dashboard
-│       └── stream.go       SSE bridge to control-plane events
-├── plugin/                 Plugin interface.
-│   └── plugin.go           type Plugin interface { Register(h *Harness) error }
-└── harness.go              Harness struct — composes all the above
+│   ├── tui/                Pure-stdlib + x/term TUI (terminal.go, modal.go, markdown.go,
+│   │                       search.go, slash.go, spinner.go, style.go, escape.go, time.go)
+│   └── web/                gofastr-powered local web UI sidecar (web.go)
+├── profile/                Profile loader + embedded presets.
+│   ├── profile.go          Profile spec — skills, mcp_servers, tool_packs, permissions, model
+│   ├── embed.go            go:embed fallback for framework.toml + default.toml
+│   ├── framework.toml      Preset: working on GoFastr
+│   └── default.toml        Preset: working with GoFastr (default_model = "zai:glm-5.1")
+├── logging/                Structured logger (slog-style levels)
+├── slash/                  Slash-command parsing + registry
+├── tracing/                Span/tracing helpers
+└── internal/               Private helpers, not part of the public surface
+    ├── clock/              injectable clock
+    └── ulid/               ULID implementation
+
+Not present (described in older drafts, removed/not yet built): provider/copilot,
+provider/routing, tool/pack, plugin/, control/conformance/, session replay/branch,
+credstore OS-keychain adapters, mcpclient discovery/pin, skill tier/tofu ack,
+context agentsmd/fallback readers.
 ```
 
 ---
@@ -705,8 +741,11 @@ type Provider interface {
 
 ### v0.1 providers
 
-**ZAI GLM.** OpenAI-compatible. API key in credstore. Models:
-`glm-4.6`, `glm-4.5-air`, `glm-z1`. Endpoint: `api.z.ai/api/paas/v4`.
+**ZAI GLM.** OpenAI-compatible. API key in credstore. Models
+(`provider/zai/zai.go` static catalog, GLM-5.1 flagship and listed
+first): `glm-5.1`, `glm-4.6`, `glm-4.5-air`, `glm-z1`. Endpoint:
+`api.z.ai/api/paas/v4` (Coding Plan keys must use the dedicated
+`api.z.ai/api/coding/paas/v4` endpoint — set `ZAI_CODING_PLAN=1`).
 
 **OpenRouter.** OpenAI-compatible. API key in credstore. Model
 catalog from `openrouter.ai/api/v1/models` (cached locally with TTL;
@@ -735,9 +774,12 @@ subtly from official OpenAI in tool-call delta accumulation and
 6. Model catalog from `api.githubcopilot.com/models` — but per-call
    availability differs from the catalog
 
-When v0.2 ships, the `--framework` profile does **not** default to
-Copilot until 30 days of stable operation. The default-failover
-path (Copilot 401 → OpenRouter with same model name) is pre-wired.
+When Copilot lands it will **not** default the `--framework` profile to
+Copilot until 30 days of stable operation. There is no failover path
+today: a provider 401 surfaces as an error, not a silent retry on
+another provider. (An earlier "pre-wired Copilot→OpenRouter failover"
+claim described machinery that was never built and has been removed
+from this doc.)
 
 ### Internal canonical message shape
 
@@ -848,7 +890,7 @@ via `/skill-name`.
 
 Skill search paths (in order, last wins):
 
-1. `framework/harness/skills/` (built-in, ships with the binary)
+1. `framework/experimental/harness/skills/` (built-in, ships with the binary)
 2. `~/.config/gofastr/harness/skills/` (user-global)
 3. `<repo>/.gofastr/harness/skills/` (project-local)
 
@@ -1619,7 +1661,7 @@ CREATE TABLE schema_migrations (
 ```
 
 Migrations live as numbered SQL files under
-`framework/harness/session/sqlite/migrations/*.sql`. Forward-only.
+`framework/experimental/harness/session/sqlite/migrations/*.sql`. Forward-only.
 A harness binary refuses to open a DB whose `max(version)` exceeds
 its known max (so downgrades fail loud). Migrations on the
 encrypted page-level DB hold an explicit lock; the doc presents a
@@ -1866,7 +1908,7 @@ allow_project_hooks = false
 # profile/default.toml — working with GoFastr (downstream apps)
 schema_version = 1
 name = "default"
-default_model = "zai:glm-4.6"
+default_model = "zai:glm-5.1"
 
 prompt_header = """
 You are helping the user build an application with the GoFastr
@@ -1936,46 +1978,45 @@ that the model may be incoherent across the boundary.
 
 ## Lifecycle / boot
 
-1. CLI parses flags, picks profile, resolves XDG paths.
-2. Profile loads plugins; each plugin's `Register(h *Harness)` runs.
-   Plugins attach middleware, subscribe to events, register
-   backends, claim slash-command namespaces.
-3. Context reader processes the profile's `context_sources` list
-   (`AGENTS.md` walk-upward; `CLAUDE.md`/etc. if listed). **Every
-   file goes through TOFU** (rule 13) — new/changed files block the
-   boot with an interactive ack.
-4. Skill registry scans the three skill search paths; tier-1
-   metadata loaded. **TOFU** on every `SKILL.md`. If `--auto-approve`
-   is set on a non-interactive launch, all unknown files default to
-   *deny*; the harness logs and exits non-zero. Auto-approving
-   new skill content is never silent.
-5. `ToolSource`s register tools. MCP servers spawn after sha256
-   verification against the profile's `mcp_servers[].sha256` —
-   mismatch refuses to spawn. Discovery proceeds per declared mode
-   (eager/lazy).
-6. Credential helper subprocess starts; the agent process never
-   holds raw provider tokens.
-7. Control plane starts. Unix socket always (mode `0600`); TCP/WS
-   only if `--listen`. If `--listen` is set, no token is auto-issued —
-   the first client uses `GET /v1/auth/token` on the Unix socket
-   and completes the TTY 6-digit confirmation.
-8. `mcpserver` stdio mode (v0.2+, `gofastr harness mcp`) reads the
-   capability token from `GOFASTR_HARNESS_TOKEN` env var. On first
-   spawn from an unknown parent (argv0 + binary SHA-256), the
-   harness pauses and prompts the user out-of-band to authorize.
-9. Bundled clients start (TUI takes over the terminal; web client,
-   if `--web`, prints its URL). Both attach as `inproc` clients
-   with `IdentityClass = human`.
-10. Engine waits for input from any attached client; first
-    `SendInput` fires the loop.
+Boot is split between the `gofastr harness` **subcommand** (CLI flags,
+profile load, transport + client start) and `harness.New()` (the
+in-process composition). What actually runs today:
 
-Shutdown is graceful via `framework/lifecycle` (the same shutdown
-contract the rest of GoFastr uses). Attached clients receive a
-`SessionEnded` event; the control plane stops accepting new
-commands; MCP servers receive `shutdown` messages; the credential
-helper exits; the TUI restores the terminal; SQLite is flushed and
-re-encrypted; revocation list is persisted; in-memory tokens are
-zeroed.
+1. **Subcommand.** Parses flags, loads the profile (on-disk TOML, or the
+   `go:embed` fallback), resolves XDG paths, loads repo secrets into env.
+2. **`New()` — context.** Builds the context `Reader` over
+   `context_sources`. Files are read and **SHA-256 hashed**, but there is
+   **no TOFU ack gate** — nothing blocks boot or persists approvals
+   (rule 13 / Maturity).
+3. **`New()` — skills.** Scans the skill search paths and loads tier-1
+   metadata; each `SKILL.md` is hashed. Again, **no ack gate**.
+4. **`New()` — tools + permissions.** Registers the built-in tool packs
+   from the profile; starts the permission engine and loads its
+   persistent allowlist. **No MCP servers spawn** — `mcpclient` exists
+   but is not wired into `New()`, and profile `mcp_servers` are not yet
+   honored.
+5. **`New()` — credentials + providers.** Opens the encrypted-file
+   credstore, starts the in-process credential helper, and constructs
+   the OpenRouter + ZAI providers (key resolution: credstore → env).
+6. **`New()` — stores + hooks.** Opens the SQLite session log, the
+   file-based memory store, and the hook runner; wires the resource
+   catalog. `New()` returns.
+7. **Subcommand — control plane + clients.** The subcommand (not `New`)
+   starts the control-plane transports and the bundled TUI/web client,
+   then drives turns.
+
+**Limitations called out honestly:** the TOFU ack gate, MCP-server
+spawn + sha256 pinning, the concurrent-worktree one-engine-many-clients
+socket model, and the graceful-shutdown re-encryption/token-zeroing
+steps below are **design intent, not current behavior** (see Maturity).
+
+Shutdown today is `Harness.Shutdown()`: it tears down each per-session
+run (cancels the persist loop, closes the engine bus, unregisters the
+engine from the mux + catalog) and closes the session store. The fuller
+graceful contract (broadcast `SessionEnded`, stop the control plane,
+`shutdown` MCP servers, restore the terminal, flush + re-encrypt
+SQLite, persist the revocation list, zero in-memory tokens) is the
+target, not the present implementation.
 
 ### Concurrent-worktree deployment model
 
@@ -2325,7 +2366,7 @@ encryption as the session log.
 ## End
 
 This document is the harness contract — every system it describes is
-implemented in `framework/harness/` and exercised by tests. There is
+implemented in `framework/experimental/harness/` and exercised by tests. There is
 no separate roadmap; future capabilities live in this doc or they do
 not exist.
 

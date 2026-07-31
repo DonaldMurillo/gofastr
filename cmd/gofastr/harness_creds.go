@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/DonaldMurillo/gofastr/framework/harness/provider/credstore"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider/credstore"
 )
 
 // runHarnessCreds dispatches `gofastr harness creds <subcommand>`.

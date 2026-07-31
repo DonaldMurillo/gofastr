@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/framework/harness/control"
-	"github.com/DonaldMurillo/gofastr/framework/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
 func covT_env(t *testing.T, e control.Event) control.EventEnvelope {

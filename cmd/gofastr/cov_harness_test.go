@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	xharness "github.com/DonaldMurillo/gofastr/framework/harness"
-	"github.com/DonaldMurillo/gofastr/framework/harness/ids"
-	"github.com/DonaldMurillo/gofastr/framework/harness/profile"
+	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/profile"
 )
 
 func TestIsTTY(t *testing.T) {

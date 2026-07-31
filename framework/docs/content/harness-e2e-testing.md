@@ -24,7 +24,7 @@ skip individually if the relevant env var is missing.
 ZAI_API_KEY=zai_...                      \
 OPENROUTER_API_KEY=sk-or-...             \
 OPENROUTER_MODEL=anthropic/claude-3.5-haiku  \
-  go test -tags=e2e_real -v -run E2EReal ./framework/harness \
+  go test -tags=e2e_real -v -run E2EReal ./framework/experimental/harness \
           -count=1 -timeout 5m
 ```
 
@@ -32,7 +32,7 @@ What each test verifies:
 
 | Test | Verifies |
 |---|---|
-| `TestE2EReal_ZAI_GLM51` | ZAI streaming format, usage parsing, full turn lifecycle against GLM-4.6 |
+| `TestE2EReal_ZAI_GLM51` | ZAI streaming format, usage parsing, full turn lifecycle against GLM-5.1 |
 | `TestE2EReal_ZAI_Models` | Hardcoded catalog still lists GLM-5.1 first |
 | `TestE2EReal_OpenRouter_Chat` | OpenRouter SSE streaming, `HTTP-Referer` + `X-Title` headers accepted, usage parsing |
 | `TestE2EReal_OpenRouter_Catalog` | `/v1/models` parser handles real OpenRouter payload; pricing populated |
@@ -78,7 +78,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
         "harness",
         "mcp",
         "--profile",
-        "/absolute/path/to/framework/harness/profile/default.toml"
+        "/absolute/path/to/framework/experimental/harness/profile/default.toml"
       ],
       "env": {
         "GOFASTR_HARNESS_PASSPHRASE": "your-passphrase-from-step-1"
