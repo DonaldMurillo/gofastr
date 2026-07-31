@@ -136,7 +136,7 @@ Register the capabilities the application checks, then grant them to roles:
 p := framework.NewRolePolicy()
 p.Register("users:read", "users:write", "teams:read", "teams:write")
 
-if err := p.Grant("admin", framework.Wildcard); err != nil {
+if err := p.Grant("admin", access.Wildcard); err != nil {
     return err
 }
 if err := p.Grant("editor", "users:read", "users:write"); err != nil {
@@ -146,6 +146,10 @@ p.Revoke("editor", "users:write")
 
 caps := p.Capabilities() // sorted defensive copy
 ```
+
+`Wildcard` is the one symbol here that is not re-exported on the
+`framework` facade — import `github.com/DonaldMurillo/gofastr/framework/access`
+for it.
 
 `Register` is idempotent and thread-safe. `Grant` ignores duplicate entries.
 With a non-empty registry, an unknown grant is accepted for backward
@@ -167,7 +171,7 @@ Strict rejections are typed: `errors.As(err, &e)` with
 `e.Nearest`) from a real store failure, so handlers can answer 400 instead of
 500 — the admin grant screen does exactly this.
 
-The global `framework.Wildcard` (`"*"`) remains the superuser grant. A
+The global `access.Wildcard` (`"*"`) remains the superuser grant. A
 resource wildcard such as `"teams:*"` is different: with a non-empty
 registry, `Grant` expands it immediately to every registered capability with
 the `"teams:"` prefix, and `Can` continues to perform exact matching. The
@@ -331,7 +335,7 @@ database table and keeps the live `*RolePolicy` in sync.
 
 ```go
 policy := framework.NewRolePolicy()
-policy.Grant("admin", framework.Wildcard) // code-defined baseline
+policy.Grant("admin", access.Wildcard) // code-defined baseline
 
 store := framework.NewGrantStore(db, policy)
 store.EnsureSchema(ctx)                    // CREATE TABLE IF NOT EXISTS access_grants

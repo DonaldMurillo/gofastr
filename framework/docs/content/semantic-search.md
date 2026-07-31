@@ -157,6 +157,16 @@ When `GOFASTR_URL` is set, `query` and `stats` are dispatched to that running se
 
 ## HTTP routes
 
+**Every route requires a bearer token.** The handler fails CLOSED: with
+no token configured it rejects every request with 401, so an
+accidentally-unprotected mount cannot expose the index. Configure one
+with `WithAuthToken` (or `Plugin.WithAuthToken`) and send
+`Authorization: Bearer <token>`; the comparison is constant-time.
+`WithInsecureDisabledAuth()` turns auth off for local development only.
+
+The statuses below are what an *authenticated* caller sees — without a
+valid token every one of them is 401.
+
 | Method | Path | Body | Status |
 | --- | --- | --- | --- |
 | POST | `/semantic/index` | `{"documents":[{"id","source","text","metadata"}…]}` | 202 |
@@ -167,14 +177,17 @@ When `GOFASTR_URL` is set, `query` and `stats` are dispatched to that running se
 Mount the plugin onto a `framework.App`:
 
 ```go
-app.RegisterPlugin(semantic.NewPlugin(idx).WithPrefix("/semantic"))
+app.RegisterPlugin(semantic.NewPlugin(idx).
+    WithPrefix("/semantic").
+    WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))
 app.InitPlugins()
 ```
 
 Or wire the bare `http.Handler` onto a `core/router.Router` or stdlib `http.ServeMux`:
 
 ```go
-mux.Handle("/semantic/", http.StripPrefix("/semantic", semantic.Handler(idx)))
+mux.Handle("/semantic/", http.StripPrefix("/semantic",
+    semantic.Handler(idx, semantic.WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))))
 ```
 
 ## Agent inventory

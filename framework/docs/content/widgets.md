@@ -32,7 +32,7 @@ import (
 panel := preset.FloatingPanel("my-panel").
     Slot("body", myBodyComponent).
     Signal("counter", widget.SignalFunc(readCounter)).
-    RPCWithSignal("POST", "/api/inc", incHandler, "counter").
+    RPC("POST", "/api/inc", incHandler).
     Build()
 
 widget.Mount(router, &panel)
@@ -66,7 +66,6 @@ A widget is described by a `widget.Definition`:
 type Definition struct {
     Name      string                       // unique id; routes derive from it
     Position  Position                     // BottomRight, Center, Top, …
-    Bootstrap BootstrapMode                // AutoScript (default) | Embedded
     Slots     []Slot                       // host-supplied content regions
     Signals   map[string]SignalSource      // server-side data → client signals
     RPCs      []RPCEndpoint                // client buttons/forms → server handlers
@@ -218,8 +217,12 @@ requires `WithFanout` in a multi-replica deploy. See
 A button or form click can invoke a server handler:
 
 ```go
-.RPCWithSignal("POST", "/api/inc", incHandler, "count")
+.RPC("POST", "/api/inc", incHandler)
 ```
+
+The response is routed to a signal by the trigger's
+`data-fui-rpc-signal` attribute, not by the registration — name the
+target signal there.
 
 Slot HTML wires it via `data-fui-rpc`:
 
@@ -410,8 +413,9 @@ encoding.
   embed `widget.RuntimeTag()` themselves.
 - **Forgetting `data-fui-rpc-signal`.** The RPC fires and succeeds,
   but the response goes nowhere — no DOM update. Name the target
-  signal on the trigger (`data-fui-rpc-signal="count"`) or register
-  the binding with `RPCWithSignal`.
+  signal on the trigger (`data-fui-rpc-signal="count"`). This is the
+  only way to route an RPC response; there is no registration-side
+  binding.
 - **Inline `style=` / `onclick=` in slot HTML.** The default CSP
   blocks both. Use theme-token class names for styling and the
   `data-fui-*` attributes (`data-fui-rpc`, `data-fui-action="close"`)

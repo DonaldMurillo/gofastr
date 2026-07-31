@@ -90,6 +90,7 @@ type UserStore interface {
     FindByEmail(ctx, email) (User, hashedPassword string, error)
     FindByID(ctx, id) (User, error)
     CreateUser(ctx, email, hashedPassword, roles) (User, error)
+    UpdateRoles(ctx, userID string, roles []string) error
 }
 ```
 

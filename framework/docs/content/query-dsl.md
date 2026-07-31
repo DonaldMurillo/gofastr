@@ -29,7 +29,7 @@ rows, err := db.QueryContext(ctx, sqlStr, args...)
 ```
 
 `BuildDSLQuery` returns a builder you can extend with additional
-calls. Use `framework.ParseDSL` if you only need the parsed AST.
+calls. Use `dsl.ParseDSL` if you only need the parsed AST.
 
 ## Grammar
 
@@ -138,9 +138,9 @@ Drop down to `core/query` directly when:
 
 - **Trusting `include()` to eager-load.** It only validates. Combine
   it with the include/eager-loading API to actually fetch the relation.
-- **Passing a raw user string to the DSL.** Safe at the SQL injection
-  level (the parser produces parameterised queries), but unbounded —
-  a query with `limit(1000000)` will still execute. Cap `limit`
-  before calling `BuildDSLQuery`.
+- **Assuming you must cap `limit` yourself.** The parser rejects any
+  `limit()` above `maxDSLLimit` (10,000), so `limit(1000000)` fails to
+  parse rather than executing. Cap it lower than that if your app wants
+  a smaller ceiling, but the unbounded case is already closed.
 - **Building once, sharing across requests.** The returned
   `*query.QueryBuilder` is stateful. Build per request.

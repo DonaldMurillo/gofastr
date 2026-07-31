@@ -42,7 +42,7 @@ swapping its `innerHTML`. No client-side data fetch, no full reload, no
 re-render of unrelated page state.
 
 ```go
-mgr.OnPresenceChange = func(topic string) {
+mgr.SetOnPresenceChange(func(topic string) {
     rosterHTML := string(renderRoster(mgr.PresenceRoster(topic)))
     for _, sid := range mgr.PresenceSessions(topic) {
         mgr.PushUpdate(island.IslandUpdate{
@@ -50,7 +50,7 @@ mgr.OnPresenceChange = func(topic string) {
             HTML:     rosterHTML,
         }, sid)
     }
-}
+})
 ```
 
 The dashboard's ticker uses the identical shape — it just fires on a
@@ -334,7 +334,7 @@ has no authenticated identity — every viewer is meant to see the same
 metric ticks. **A fixed topic is wrong for a multi-tenant app.** Two
 different tenants' users would join the same topic and `pushAll` would
 broadcast identical HTML to all of them — no isolation, *regardless of
-any `AuthorizeTopic` gate you add*. `Manager.AuthorizeTopic` only checks
+any `SetAuthorizeTopic` gate you add*. `Manager.SetAuthorizeTopic` only checks
 *whether* a session may join a topic; it does not invent a per-tenant
 topic. The gate is correct, but it must gate a topic that is **already
 tenant-qualified**.
@@ -362,19 +362,19 @@ The right shape for a multi-tenant dashboard:
    topic value does.
 
 2. **Authorize the requested topic against the identity.**
-   `Manager.AuthorizeTopic` verifies the session may join the topic it
+   `Manager.SetAuthorizeTopic` verifies the session may join the topic it
    asked for — i.e. the identity actually belongs to that tenant. A
    client that asks for `?presence=tenant:someone-else:dashboard` is
    refused at SSE-connect time:
 
    ```go
-   host.Islands.AuthorizeTopic = func(ctx context.Context, topic string) bool {
+   host.Islands.SetAuthorizeTopic(func(ctx context.Context, topic string) bool {
        want, err := dashTopicFor(ctx)
        if err != nil {
            return false
        }
        return topic == want
-   }
+   })
    ```
 
    Rejected topics are dropped silently — the client is simply never
@@ -409,7 +409,7 @@ The right shape for a multi-tenant dashboard:
 
 The demo intentionally skips all four steps because it is single-tenant
 by design. Copying the demo's fixed topic into an authed app is the
-most common isolation bug — `AuthorizeTopic` alone does not fix it.
+most common isolation bug — `SetAuthorizeTopic` alone does not fix it.
 
 ## Performance evidence
 
@@ -456,9 +456,9 @@ promising a number.
    island HTML on reconnect.
 5. **Pick the scope.** Use `PresenceSessions(topic)` for push targets.
    For multi-tenant apps, derive a tenant-qualified topic from the
-   authenticated identity and gate it with `Manager.AuthorizeTopic`
+   authenticated identity and gate it with `Manager.SetAuthorizeTopic`
    (see [Tenant isolation](#tenant-isolation) — a fixed topic is wrong
-   for multi-tenant, and `AuthorizeTopic` alone does not fix it).
+   for multi-tenant, and `SetAuthorizeTopic` alone does not fix it).
 6. **Stop the ticker on shutdown.** `app.OnStop` cancels the ticker
    context so SIGTERM drains cleanly.
 
@@ -496,7 +496,7 @@ promising a number.
   `PresenceSessions(topic)` so only viewers who joined the topic
   receive them. **A fixed topic is wrong for multi-tenant apps** —
   derive a tenant-qualified topic from the authenticated identity and
-  gate it with `Manager.AuthorizeTopic` (see [Tenant isolation](#tenant-isolation)).
+  gate it with `Manager.SetAuthorizeTopic` (see [Tenant isolation](#tenant-isolation)).
 - **SPA navigation won't join the topic.** The SSE topic is read from
   the page's `<meta name="gofastr-sse">` on initial load; partial-nav
   (an in-site link click) does NOT re-thread the topic, so a user who
