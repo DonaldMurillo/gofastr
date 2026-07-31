@@ -396,7 +396,7 @@ func routeSchema() map[string]any {
 
 func actionSchema() map[string]any {
 	return object(map[string]any{
-		"kind":   enum("noop", "validate", "set_field", "audit", "create_entity", "respond_json", "respond_query", "emit_event"),
+		"kind":   enum("noop", "validate", "set_field", "audit", "respond_json", "emit_event"),
 		"params": map[string]any{"type": "object"},
 	}, []string{"kind"})
 }

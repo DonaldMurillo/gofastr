@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -14,48 +15,40 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
-// Apply registers every world surface onto app. Equivalent to calling
-// ApplyDetailed and discarding the deferred report.
+// Apply registers every world surface onto app: entities (with CRUD),
+// pages, custom routes, hooks, seeds, and middleware. Hooks and routes
+// carry declarative actions that effect evaluates; entity endpoints carry
+// actions too, but rendering a custom entity endpoint needs run-then-
+// respond semantics plus entity-row scope binding that kiln/effect does
+// not provide — so applyEntities screams (slog.Warn) per dropped endpoint
+// rather than mounting a handler that would 500. Those endpoints still
+// graduate to owned-Go handler stubs via freeze.
 func Apply(app *framework.App, w *world.World) error {
-	_, err := ApplyDetailed(app, w)
-	return err
-}
-
-// Deferred reports any surfaces Apply skipped or downgraded. Reserved for
-// future cases (e.g., unsupported action kinds); Phase 3 wires hooks and
-// routes through the expression evaluator so a full world is rendered.
-type Deferred struct {
-	Hooks  []*world.Hook
-	Routes []*world.Route
-}
-
-// ApplyDetailed is Apply but returns the Deferred report.
-func ApplyDetailed(app *framework.App, w *world.World) (Deferred, error) {
 	if app == nil {
-		return Deferred{}, fmt.Errorf("kiln/render: nil app")
+		return fmt.Errorf("kiln/render: nil app")
 	}
 	if w == nil {
-		return Deferred{}, fmt.Errorf("kiln/render: nil world")
+		return fmt.Errorf("kiln/render: nil world")
 	}
 	if err := applyAppConfig(app, w.App); err != nil {
-		return Deferred{}, fmt.Errorf("kiln/render: app config: %w", err)
+		return fmt.Errorf("kiln/render: app config: %w", err)
 	}
 	if err := applyEntities(app, w); err != nil {
-		return Deferred{}, fmt.Errorf("kiln/render: entities: %w", err)
+		return fmt.Errorf("kiln/render: entities: %w", err)
 	}
 	if err := applyMiddleware(app, w); err != nil {
-		return Deferred{}, fmt.Errorf("kiln/render: middleware: %w", err)
+		return fmt.Errorf("kiln/render: middleware: %w", err)
 	}
 	if err := applyHooks(app, w); err != nil {
-		return Deferred{}, fmt.Errorf("kiln/render: hooks: %w", err)
+		return fmt.Errorf("kiln/render: hooks: %w", err)
 	}
 	if err := applyRoutes(app, w); err != nil {
-		return Deferred{}, fmt.Errorf("kiln/render: routes: %w", err)
+		return fmt.Errorf("kiln/render: routes: %w", err)
 	}
 	if err := applyUIHostPages(app, w); err != nil {
-		return Deferred{}, fmt.Errorf("kiln/render: pages: %w", err)
+		return fmt.Errorf("kiln/render: pages: %w", err)
 	}
-	return Deferred{}, nil
+	return nil
 }
 
 func applyHooks(app *framework.App, w *world.World) error {
@@ -159,10 +152,18 @@ func applyEntities(app *framework.App, w *world.World) error {
 		if err != nil {
 			return fmt.Errorf("entity %q: %w", name, err)
 		}
-		// Endpoints carry declarative actions; framework.Endpoint expects a
-		// Go handler we don't have until Phase 3. Strip them here so the
-		// entity registers cleanly; Apply's caller sees the unevaluated
-		// endpoints via Deferred (extension: TBD when Phase 3 lands).
+		// Entity endpoints carry declarative actions, but mounting one needs
+		// run-then-respond semantics plus entity-row scope binding that
+		// kiln/effect does not provide (routes can use effect.Resolve because
+		// they only produce a response; an endpoint action like set_field
+		// mutates and then must respond). Rather than silently dropping them,
+		// scream per endpoint: they are NOT served by the live build-mode app,
+		// but they still graduate to owned-Go handler stubs via freeze.
+		for _, ep := range ent.Endpoints {
+			slog.Warn("kiln/render: entity endpoint not mounted in build-mode preview",
+				"entity", ent.Name, "method", ep.Method, "path", ep.Path, "name", ep.Name,
+				"reason", "declarative entity endpoints graduate to owned-Go handler stubs via freeze; the live build-mode app does not serve them")
+		}
 		cfg.Endpoints = nil
 		app.Entity(ent.Name, cfg)
 	}
@@ -254,8 +255,8 @@ func relationType(value string) (framework.RelationType, error) {
 
 // ApplySeeds inserts the world's seed rows into db. It's a separate call
 // because seeding requires migrations to have run first, and Kiln owns
-// the migration step (Phase 4) — Apply registers the entities, the
-// caller migrates, the caller seeds.
+// the migration step — Apply registers the entities, the caller migrates,
+// the caller seeds.
 func ApplySeeds(db *sql.DB, w *world.World) error {
 	if db == nil || len(w.Seeds) == 0 {
 		return nil

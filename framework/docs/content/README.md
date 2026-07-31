@@ -30,6 +30,11 @@ results, the harness contract) are exempt — the exemption list lives in
   extract; the repo's source of truth is `core-ui/ARCHITECTURE.md`.)
 - [`ROADMAP.md`](../../../ROADMAP.md) — forward-looking work (proposals,
   performance opportunities, in-flight plans).
+- [Project structure](project-structure.md) — why `gofastr init` ships a
+  flat layout and you grow structure as real boundaries appear.
+- [Core packages](core-packages.md) — a map of the exported `core/*`
+  packages with no dedicated page: what each does, when you touch it
+  directly vs through the framework, and one code anchor.
 
 ## Entity APIs
 
@@ -121,8 +126,14 @@ results, the harness contract) are exempt — the exemption list lives in
   service-env isolation for linked Git worktrees.
 - [Migrations](migrations.md) — SQL files, CLI subcommands,
   auto-migrate, dialects.
+- [First-run setup](first-run.md) — the `battery/setup` wizard: an
+  interactive first-boot setup and a scriptable headless path for IaC,
+  over one bootstrap API.
 - [Security defaults](security.md) — default middleware chain, CSP,
   CORS, CSRF, rate limiting.
+- [Auditing init-time registrations](audit-deps.md) — `gofastr audit deps`
+  lists every `init()` that mutates framework-wide state, so a dependency
+  that hijacks startup is visible before `main()` runs.
 - [Idempotency keys](idempotency.md) — `Idempotency-Key` header
   support for safe-retry of POST / PUT / PATCH / DELETE.
 - [Health checks](health-checks.md) — `/healthz` + `/readyz`,
@@ -135,6 +146,8 @@ results, the harness contract) are exempt — the exemption list lives in
   JSON catalogs, plurals, `Accept-Language` negotiation.
 - [Unified notifications](notifications.md) — `battery/notify` sends
   to multiple channels, each with its own template.
+- [Email](email.md) — `battery/email`: SMTP and log senders behind one
+  `Sender` interface, plus template rendering.
 - [Factories / fixtures](factories.md) — `framework/factory`
   Rails-style test setup helpers.
 - [Testkit](testkit.md) — `framework/testkit`: isolated per-test Postgres
@@ -151,16 +164,20 @@ results, the harness contract) are exempt — the exemption list lives in
 - [Printable documents](print.md) — `battery/print`: declare a
   print-friendly document route (invoice / receipt / report); optional
   headless-Chromium PDF via the `chromepdf` adapter.
-- [Search](search.md) — `battery/search` backend interface, memory
-  implementation.
+- [Search](search.md) — `battery/search` backend interface with three
+  shipped backends: in-memory, Postgres FTS, and SQLite FTS5.
 - [Image pipeline](image.md) — `framework/image`: chainable
   Resize / Rotate / Flip / Modulate / Placeholder / BlurHash (encode and
   decode), pure-Go with no CGo or system codec dependencies. For CRUD
   uploads, wire it once with `WithImagePipeline` — see
   [File uploads](uploads.md).
+- [File storage](storage.md) — `battery/storage`: the `Storage`
+  interface plus local and S3 backends, wired via `WithFileStorage`.
 
 ## Build-time tooling
 
+- [The gofastr CLI](cli.md) — one binary; maps each `gofastr` command to
+  the doc that covers it.
 - [Static-site export](static-export.md) — `app.ExportStatic`: render
   every route in-process to a directory of query-free HTML + assets for
   any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;
@@ -180,7 +197,8 @@ results, the harness contract) are exempt — the exemption list lives in
 - [Blueprints](blueprints.md) — deterministic YAML-to-code input for
   `gofastr generate --from`, backed by the in-house `core/yaml` parser.
 - [Kiln (agent-driven build mode)](kiln.md) — separate binary; build a
-  GoFastr app live via an agent CLI, then freeze to canonical JSON.
+  GoFastr app live via an agent CLI, then freeze to a `gofastr.yml` blueprint
+  (with a lossless `world.json` snapshot) and generate owned Go.
 - [Benchmarks](benchmarks.md) — tiered Go benchmarks covering claims-
   defending end-to-end paths, hot-path microbenchmarks, concurrency,
   and startup. `make bench`, output to `dist/bench/`.

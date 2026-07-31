@@ -9,7 +9,7 @@ import (
 
 // Event is one notification published when a journal entry is applied.
 // Subscribers learn that something changed; they can pull current state
-// (e.g. the Deferred report or specific entity data) via separate calls.
+// (e.g. specific entity data or the world summary) via separate calls.
 type Event struct {
 	EntryID string `json:"entry_id"`
 	Kind    string `json:"kind"`

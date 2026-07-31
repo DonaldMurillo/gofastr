@@ -231,28 +231,6 @@ func TestApplyEntityFromJSONRoundTrip(t *testing.T) {
 	}
 }
 
-func TestApplyDeferredEmptyOnceWired(t *testing.T) {
-	// Phase 3 wires hooks and routes; Deferred should be empty for a
-	// world that uses only supported action kinds.
-	app, _ := newTestApp(t)
-	w := world.New()
-	w.Entities["posts"] = &world.Entity{
-		Name:   "posts",
-		Fields: []world.Field{{Name: "title", Type: "string", Required: true}},
-	}
-	w.Hooks = append(w.Hooks, &world.Hook{
-		ID: "h1", Entity: "posts", When: "before_create",
-		Action: world.Action{Kind: world.ActionNoop},
-	})
-	deferred, err := render.ApplyDetailed(app, w)
-	if err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	if len(deferred.Hooks) != 0 || len(deferred.Routes) != 0 {
-		t.Errorf("expected no deferred surfaces, got %+v", deferred)
-	}
-}
-
 // Sanity that the JSON shape of world.Entity matches framework.EntityDeclaration
 // without requiring a manual converter. The renderer relies on this.
 func TestWorldEntityMarshalsLikeDeclaration(t *testing.T) {
