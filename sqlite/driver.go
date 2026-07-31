@@ -207,7 +207,26 @@ type sharedConnector struct {
 	engine *Engine
 	once   sync.Once
 	shared *sharedEngine
+	mu     sync.Mutex
 	closed bool
+}
+
+// Close releases the engine this connector owns, closing the underlying
+// file. database/sql calls it from DB.Close when the Connector implements
+// io.Closer.
+//
+// Without it the engine — and the *os.File its pager holds — outlived every
+// DB.Close for the life of the process, so a program or test runner that
+// opens and closes databases in a loop ran out of descriptors while every
+// *sql.DB it held looked properly closed.
+func (c *sharedConnector) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	return c.engine.Close()
 }
 
 func (c *sharedConnector) getShared() *sharedEngine {

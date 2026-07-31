@@ -3,7 +3,11 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"os"
+	osexec "os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -114,5 +118,39 @@ func TestMemoryDSNsStayIndependent(t *testing.T) {
 	}
 	if _, err := db2.Exec(`SELECT * FROM only_in_one`); err == nil {
 		t.Fatal("a separate :memory: database must not see db1's table")
+	}
+}
+
+// DB.Close must release the engine's file handle. Dropping the page cache
+// without closing the backing file left an *os.File open for the life of
+// the process, so a program or test runner that opens and closes databases
+// in a loop ran out of descriptors while every *sql.DB it held looked
+// properly closed.
+func TestCloseReleasesTheEngineFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "handles.db")
+
+	// Hold every closed handle so nothing can be attributed to GC.
+	var kept []*sql.DB
+	for i := 0; i < 50; i++ {
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatalf("open %d: %v", i, err)
+		}
+		if _, err := db.Exec("CREATE TABLE IF NOT EXISTS t (id INTEGER)"); err != nil {
+			t.Fatalf("exec %d: %v", i, err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatalf("close %d: %v", i, err)
+		}
+		kept = append(kept, db)
+	}
+
+	out, err := osexec.Command("lsof", "-p", strconv.Itoa(os.Getpid())).Output()
+	if err != nil {
+		t.Skipf("lsof unavailable: %v", err)
+	}
+	if open := strings.Count(string(out), "handles.db"); open > 0 {
+		t.Fatalf("%d file handles still open after closing %d databases", open, len(kept))
 	}
 }

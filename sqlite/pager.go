@@ -476,7 +476,12 @@ func (p *Pager) Close() error {
 	}
 	p.pages = nil
 	p.dirty = nil
-	return nil
+	// Release the backing file too. Dropping the page cache without
+	// closing it left a DiskFile's *os.File open for the life of the
+	// process, so opening and closing databases in a loop exhausted the
+	// descriptor limit while every handle looked closed. MemFile.Close is
+	// a no-op.
+	return p.file.Close()
 }
 
 // pagerStatementSnapshot captures in-memory pager state at a statement
