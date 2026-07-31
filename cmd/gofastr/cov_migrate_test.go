@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/migrate"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -85,6 +86,22 @@ func TestMigrateHelperFlags(t *testing.T) {
 	}
 	if getMigrateDBURL([]string{"--db-url=abc"}) != "abc" {
 		t.Fatal("dburl override")
+	}
+}
+
+// TestDialectForDriverPureGoSQLite selects the SQLite dialect for BOTH the
+// mattn/go-sqlite3 driver name ("sqlite3") and the pure-Go engine name
+// ("sqlite"). Before the helper, only "sqlite3" matched and "sqlite" fell
+// through to the Postgres default — so a CLI build linking the pure-Go
+// driver ran Postgres-dialect SQL against a SQLite database.
+func TestDialectForDriverPureGoSQLite(t *testing.T) {
+	for _, d := range []string{"sqlite", "sqlite3"} {
+		if got := dialectForDriver(d); got != migrate.DialectSQLite {
+			t.Fatalf("driver %q → dialect %v, want DialectSQLite", d, got)
+		}
+	}
+	if got := dialectForDriver("postgres"); got != migrate.DialectPostgres {
+		t.Fatalf("driver postgres → dialect %v, want DialectPostgres", got)
 	}
 }
 

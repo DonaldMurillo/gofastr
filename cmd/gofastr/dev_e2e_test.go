@@ -154,7 +154,7 @@ func (h *devHarness) waitForServer(timeout time.Duration) {
 
 func (h *devHarness) modifyHomeScreen(newTitle string) {
 	h.t.Helper()
-	homeGo := filepath.Join(h.dir, "screens", "home.go")
+	homeGo := filepath.Join(h.dir, "screens.go")
 	data, err := os.ReadFile(homeGo)
 	if err != nil {
 		h.t.Fatalf("read home.go: %v", err)
@@ -352,7 +352,7 @@ func TestE2E_HotReload_LivereloadScriptServed(t *testing.T) {
 //
 //  1. Chrome loads the page (h1 = "hotreload")
 //  2. The livereload EventSource connects (first open → everConnected = true)
-//  3. We modify screens/home.go → h1 changes to "RELOADED_TITLE"
+//  3. We modify screens.go → h1 changes to "RELOADED_TITLE"
 //  4. gofastr dev detects the change, rebuilds, restarts the server
 //  5. Server restart kills the SSE connection
 //  6. EventSource auto-reconnects → second open → location.reload()
@@ -411,7 +411,7 @@ func TestE2E_HotReload_BrowserAutoRefreshes(t *testing.T) {
 
 	// Phase 2: modify the home screen to change the h1 text.
 	h.modifyHomeScreen("RELOADED_TITLE")
-	t.Log("modified screens/home.go — waiting for rebuild + browser reload...")
+	t.Log("modified screens.go — waiting for rebuild + browser reload...")
 
 	// Phase 3: wait for the browser to auto-refresh.
 	//

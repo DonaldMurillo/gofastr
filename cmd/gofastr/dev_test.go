@@ -138,20 +138,52 @@ func TestInitGeneratedMainUsesIsolationHelpers(t *testing.T) {
 	}
 }
 
+// TestInitSQLiteDriverAgreesEndToEnd pins that the generated app wires ONE
+// consistent SQLite driver: the name passed to isolation.Database, the
+// blank-imported driver package, and the migration dialect all agree. Both
+// the friendly "sqlite" spelling and the wire "sqlite3" spelling must yield
+// identical, self-consistent mattn/go-sqlite3 wiring.
+func TestInitSQLiteDriverAgreesEndToEnd(t *testing.T) {
+	for _, dbDriver := range []string{"sqlite", "sqlite3"} {
+		t.Run(dbDriver, func(t *testing.T) {
+			dir := t.TempDir()
+			project := filepath.Join(dir, "app")
+			if err := os.Mkdir(project, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeMainGo(project, "example.com/app", false, dbDriver, "file:app.db")
+			got, err := os.ReadFile(filepath.Join(project, "main.go"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			src := string(got)
+			for _, want := range []string{
+				`runtimeIsolation.Database("sqlite3",`,
+				`_ "github.com/mattn/go-sqlite3"`,
+				`migrate.WithDialect(migrate.DialectSQLite)`,
+			} {
+				if !strings.Contains(src, want) {
+					t.Errorf("dbDriver=%q: generated main.go missing %q\n%s", dbDriver, want, src)
+				}
+			}
+		})
+	}
+}
+
 func TestInitGeneratedUIIsFrameworkComposed(t *testing.T) {
 	dir := t.TempDir()
 	project := filepath.Join(dir, "demo")
-	if err := os.MkdirAll(filepath.Join(project, "screens"), 0o755); err != nil {
+	if err := os.Mkdir(project, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeMainGo(project, "example.com/demo", true, "sqlite", "")
-	writeHomeScreen(project, true)
+	writeScreensGo(project, true)
 
 	mainBody, err := os.ReadFile(filepath.Join(project, "main.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	homeBody, err := os.ReadFile(filepath.Join(project, "screens", "home.go"))
+	homeBody, err := os.ReadFile(filepath.Join(project, "screens.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +199,42 @@ func TestInitGeneratedUIIsFrameworkComposed(t *testing.T) {
 		if !strings.Contains(string(homeBody), required) {
 			t.Errorf("generated home screen missing framework primitive %q", required)
 		}
+	}
+}
+
+// TestParseDevFlagsAcceptsEqualsAndSpaceForms pins that dev's hand-rolled
+// flag parser accepts BOTH the documented `--flag=value` form and the
+// `--flag value` space form for every flag it knows. Before the fix, only
+// the space form was parsed and `--addr=localhost:9090` (the form the help
+// text shows) was silently ignored.
+func TestParseDevFlagsAcceptsEqualsAndSpaceForms(t *testing.T) {
+	cases := []struct {
+		name   string
+		args   []string
+		addr   string
+		dir    string
+		pkg    string
+		noA11y bool
+	}{
+		{"addr equals", []string{"--addr=localhost:9090"}, "localhost:9090", ".", ".", false},
+		{"addr space", []string{"--addr", "localhost:9090"}, "localhost:9090", ".", ".", false},
+		{"p equals", []string{"-p=9090"}, "localhost:9090", ".", ".", false},
+		{"p space", []string{"-p", "9090"}, "localhost:9090", ".", ".", false},
+		{"dir equals", []string{"--dir=./app"}, "localhost:8080", "./app", ".", false},
+		{"dir space", []string{"--dir", "./app"}, "localhost:8080", "./app", ".", false},
+		{"pkg equals", []string{"--pkg=./cmd/srv"}, "localhost:8080", ".", "./cmd/srv", false},
+		{"pkg space", []string{"--pkg", "./cmd/srv"}, "localhost:8080", ".", "./cmd/srv", false},
+		{"no-a11y", []string{"--no-a11y"}, "localhost:8080", ".", ".", true},
+		{"combined", []string{"--addr=:9000", "--dir=app", "--pkg=./cmd/srv", "--no-a11y"}, ":9000", "app", "./cmd/srv", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, dir, pkg, noA11y := parseDevFlags(tc.args)
+			if addr != tc.addr || dir != tc.dir || pkg != tc.pkg || noA11y != tc.noA11y {
+				t.Fatalf("parseDevFlags(%v) = (addr=%q dir=%q pkg=%q noA11y=%v), want (addr=%q dir=%q pkg=%q noA11y=%v)",
+					tc.args, addr, dir, pkg, noA11y, tc.addr, tc.dir, tc.pkg, tc.noA11y)
+			}
+		})
 	}
 }
 

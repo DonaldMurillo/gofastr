@@ -38,33 +38,13 @@ func buildDevChildEnv(parent []string) []string {
 }
 
 func runDev(args []string) {
-	addr := "localhost:8080"
-	dir := "."
 	// pkg is the package to build, relative to dir. It defaults to dir itself,
 	// which is right for the scaffold layout (main at the project root). Apps
 	// that keep main under cmd/<name>/ need the two to differ: the build target
 	// is the command, but the watch root and the server's cwd must stay at the
 	// project root — otherwise the watcher misses internal/ and relative paths
 	// (sqlite db_url, static dirs) resolve against the command dir instead.
-	pkg := "."
-	noA11y := false
-	for i, a := range args {
-		if a == "--addr" && i+1 < len(args) {
-			addr = args[i+1]
-		}
-		if a == "-p" && i+1 < len(args) {
-			addr = "localhost:" + args[i+1]
-		}
-		if a == "--dir" && i+1 < len(args) {
-			dir = args[i+1]
-		}
-		if a == "--pkg" && i+1 < len(args) {
-			pkg = args[i+1]
-		}
-		if a == "--no-a11y" {
-			noA11y = true
-		}
-	}
+	addr, dir, pkg, noA11y := parseDevFlags(args)
 
 	runtimeIsolation, resolvedAddr, err := resolveDevIsolation(dir, addr)
 	if err != nil {
@@ -144,6 +124,63 @@ func runDev(args []string) {
 			}
 		}
 	}
+}
+
+// parseDevFlags parses dev's hand-rolled flags, accepting BOTH the
+// space-separated form (--addr x) and the equals form (--addr=x) that the
+// help text documents. Previously only the space form was recognised, so
+// `gofastr dev --addr=:9000` silently kept the default address.
+func parseDevFlags(args []string) (addr, dir, pkg string, noA11y bool) {
+	addr, dir, pkg = "localhost:8080", ".", "."
+	for i := 0; i < len(args); i++ {
+		name, value, hasValue := splitFlagEqual(args[i])
+		switch name {
+		case "--addr":
+			if v, ok := flagValue(value, hasValue, args, &i); ok {
+				addr = v
+			}
+		case "-p":
+			if v, ok := flagValue(value, hasValue, args, &i); ok {
+				addr = "localhost:" + v
+			}
+		case "--dir":
+			if v, ok := flagValue(value, hasValue, args, &i); ok {
+				dir = v
+			}
+		case "--pkg":
+			if v, ok := flagValue(value, hasValue, args, &i); ok {
+				pkg = v
+			}
+		case "--no-a11y":
+			noA11y = true
+		}
+	}
+	return
+}
+
+// splitFlagEqual splits "--name=value" into ("--name", "value", true). A bare
+// "--name" (no '=') returns ("--name", "", false) so the caller can take the
+// value from the next argument.
+func splitFlagEqual(arg string) (name, value string, hasValue bool) {
+	if idx := strings.IndexByte(arg, '='); idx >= 0 {
+		return arg[:idx], arg[idx+1:], true
+	}
+	return arg, "", false
+}
+
+// flagValue returns a flag's value: the inline =value when present, otherwise
+// the next argument (advancing i past it). Mirrors the original parser, which
+// consumed the following token unconditionally.
+func flagValue(inline string, hasInline bool, args []string, i *int) (string, bool) {
+	if hasInline {
+		return inline, true
+	}
+	if *i+1 < len(args) {
+		v := args[*i+1]
+		*i++
+		return v, true
+	}
+	return "", false
 }
 
 func resolveDevIsolation(dir, addr string) (*isolation.Runtime, string, error) {

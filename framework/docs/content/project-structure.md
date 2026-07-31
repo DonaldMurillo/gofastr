@@ -11,16 +11,15 @@ projects actually evolve, not the way a framework dictates on day one.
 
 ```
 myapp/
-├── main.go             # the entrypoint — one binary, so it lives at the root
-├── app.go              # RegisterGenerated: screens + app wiring (package main)
-├── screens.go          # generated screen components (package main)
+├── main.go             # the entrypoint + UI host — one binary at the root
+├── screens.go          # the sample HomeScreen (package main, beside main.go)
 ├── entities/           # Go entity declarations — the source of truth
 │   └── entities.go     # app.Entity(...) registrations (sample: posts)
 ├── migrations/         # versioned SQL (reversible)
 ├── static/             # assets served as-is
 ├── gofastr.yml         # the scaffold input — OPTIONAL, deletable once the code is yours
 ├── go.mod
-└── AGENTS.md, CLAUDE.md, agents/   # agent onboarding
+└── AGENTS.md, CLAUDE.md, DESIGN.md, agents/   # agent onboarding
 ```
 
 That's the whole thing. One `main.go`, your declarations, and the generated
