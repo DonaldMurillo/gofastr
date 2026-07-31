@@ -49,13 +49,13 @@ type FileField struct {
 	Filename string `json:"filename"`
 
 	// MimeType is the detected MIME type of the file.
-	MimeType string `json:"mime_type"`
+	MimeType string `json:"mimeType"`
 
 	// Size is the file size in bytes.
 	Size int64 `json:"size"`
 
 	// StorageRef is the storage backend key used to reference this file.
-	StorageRef string `json:"storage_ref"`
+	StorageRef string `json:"storageRef"`
 
 	// Image carries renditions and placeholder metadata derived from an
 	// uploaded image. Nil unless ProcessFileField ran with
@@ -89,10 +89,10 @@ func (f *FileField) Validate() error {
 		return nil
 	}
 	for name, v := range map[string]string{
-		"url":         f.URL,
-		"filename":    f.Filename,
-		"mime_type":   f.MimeType,
-		"storage_ref": f.StorageRef,
+		"url":        f.URL,
+		"filename":   f.Filename,
+		"mimeType":   f.MimeType,
+		"storageRef": f.StorageRef,
 	} {
 		if len(v) > MaxFileFieldStringBytes {
 			return fmt.Errorf("%w: field %q is %d bytes (max %d)", ErrFileFieldOversize, name, len(v), MaxFileFieldStringBytes)
