@@ -22,14 +22,8 @@ func TestMultiVersionSameNameNoPanic(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	v1 := app.Group("/api/v1")
 	v2 := app.Group("/api/v2")
-	app.GroupEntity(v1, "posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		CRUD:   boolPtr(false),
-	})
-	app.GroupEntity(v2, "posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		CRUD:   boolPtr(false),
-	})
+	app.GroupEntity(v1, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}})
+	app.GroupEntity(v2, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}})
 
 	if _, err := app.Registry.Get("posts"); err == nil {
 		t.Fatal("expected ambiguity error for multi-version Get by name")
@@ -67,15 +61,11 @@ func TestMultiVersionMCPNamespacing(t *testing.T) {
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 		v1 := app.Group("/api/v1", routegroup.WithMCPNamespace("v1"))
 		v2 := app.Group("/api/v2", routegroup.WithMCPNamespace("v2"))
-		app.GroupEntity(v1, "posts", entity.EntityConfig{
-			Table:  "posts",
-			Fields: []schema.Field{{Name: "title", Type: schema.String}},
-			MCP:    true,
+		app.GroupEntity(v1, "posts", entity.EntityConfig{Table: "posts",
+			Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true},
 		}.WithTimestamps(false))
-		app.GroupEntity(v2, "posts", entity.EntityConfig{
-			Table:  "posts",
-			Fields: []schema.Field{{Name: "title", Type: schema.String}},
-			MCP:    true,
+		app.GroupEntity(v2, "posts", entity.EntityConfig{Table: "posts",
+			Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true},
 		}.WithTimestamps(false))
 
 		tools := make(map[string]bool)
@@ -102,15 +92,11 @@ func TestVersionedOpenAPI(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	v1 := app.Group("/api/v1", routegroup.WithOpenAPITag("v1"))
 	v2 := app.Group("/api/v2", routegroup.WithOpenAPITag("v2"))
-	app.GroupEntity(v1, "posts", entity.EntityConfig{
-		Table:  "posts",
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		CRUD:   boolPtr(false),
+	app.GroupEntity(v1, "posts", entity.EntityConfig{Table: "posts",
+		Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
 	})
-	app.GroupEntity(v2, "posts", entity.EntityConfig{
-		Table:  "posts",
-		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "summary", Type: schema.Text}},
-		CRUD:   boolPtr(false),
+	app.GroupEntity(v2, "posts", entity.EntityConfig{Table: "posts",
+		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "summary", Type: schema.Text}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
 	})
 
 	spec := frameworkopenapi.EntityOpenAPI(app.Registry, "Test", "1.0.0")

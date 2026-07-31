@@ -86,15 +86,22 @@ func (t Table) ToEntity() *entity.Entity {
 			ForeignKey: fk.Column,
 		})
 	}
+	timestamps := false
 	ent := &entity.Entity{Config: entity.EntityConfig{
-		Name:      t.Name,
-		Table:     t.Name,
-		Fields:    fields,
-		Indices:   t.Indices,
-		Relations: relations,
+		Name:       t.Name,
+		Table:      t.Name,
+		Fields:     fields,
+		Indices:    t.Indices,
+		Relations:  relations,
+		Timestamps: &timestamps,
 		// Raw table: timestamps / soft-delete / multi-tenant all off, so the
 		// diff engine treats every column as user-owned (no managed-column
-		// skip) — exactly what a raw table wants.
+		// skip) — exactly what a raw table wants. The groups are materialized
+		// because this constructor bypasses Define()'s normalization — the
+		// diff engine reads Config.Scope directly.
+		Scope:      &entity.ScopeConfig{},
+		Pagination: &entity.PaginationConfig{},
+		Exposure:   &entity.ExposureConfig{},
 	}}
 	ent.PrimaryKey = pk
 	return ent

@@ -129,10 +129,7 @@ func TestUpsert_ValidationError(t *testing.T) {
 
 func TestUpsert_MultiTenantStamps(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE tup (id TEXT PRIMARY KEY, tenant_id TEXT, title TEXT)`)
-	ent := entity.Define("tup", entity.EntityConfig{
-		Name: "tup", Table: "tup", MultiTenant: true,
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("tup", entity.EntityConfig{Name: "tup", Table: "tup", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	ctx := tenant.SetTenantID(context.Background(), "T9")
@@ -149,7 +146,7 @@ func TestUpsert_MultiTenantStamps(t *testing.T) {
 func TestCursor_WithNestedFilter(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	// Set a cursor field so cursor mode kicks in alongside a nested filter.
-	ch.Entity.Config.CursorField = "id"
+	ch.Entity.Config.Pagination.CursorField = "id"
 	req := withTestUser(httptest.NewRequest("GET", "/posts?cursor=&author.name=alice", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
@@ -170,7 +167,7 @@ func TestStream_WithNestedFilter(t *testing.T) {
 
 func TestCursor_IncludeDBError(t *testing.T) {
 	ch, _ := covMissingTargetWorld(t)
-	ch.Entity.Config.CursorField = "id"
+	ch.Entity.Config.Pagination.CursorField = "id"
 	req := withTestUser(httptest.NewRequest("GET", "/eposts?cursor=&include=comments", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)

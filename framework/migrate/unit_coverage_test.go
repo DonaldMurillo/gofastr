@@ -13,7 +13,16 @@ import (
 
 // rawEnt builds an entity directly (no Define injection) for migration tests.
 func rawEnt(name, table string, fields []schema.Field, rels []entity.Relation, pk string) *entity.Entity {
-	e := &entity.Entity{Config: entity.EntityConfig{Name: name, Table: table, Fields: fields, Relations: rels}}
+	timestamps := false
+	e := &entity.Entity{Config: entity.EntityConfig{
+		Name: name, Table: table, Fields: fields, Relations: rels,
+		Timestamps: &timestamps,
+		// Materialized: this helper bypasses Define()'s normalization and
+		// tests write through Config.Scope directly.
+		Scope:      &entity.ScopeConfig{},
+		Pagination: &entity.PaginationConfig{},
+		Exposure:   &entity.ExposureConfig{},
+	}}
 	e.PrimaryKey = pk
 	return e
 }
@@ -65,9 +74,9 @@ func TestSaveSnapshot_WriteError(t *testing.T) {
 
 func TestIsFrameworkManagedColumn_AllBranches(t *testing.T) {
 	ts := rawEnt("e", "e", nil, nil, "")
-	ts.Config.Timestamps = true
-	ts.Config.SoftDelete = true
-	ts.Config.MultiTenant = true
+	ts.Config = ts.Config.WithTimestamps(true)
+	ts.Config.Scope.SoftDelete = true
+	ts.Config.Scope.MultiTenant = true
 	for _, c := range []string{"created_at", "updated_at", "deleted_at", "tenant_id"} {
 		if !isFrameworkManagedColumn(c, ts) {
 			t.Errorf("%q should be managed when all flags on", c)
@@ -366,7 +375,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 	}
 
 	tsEnt := rawEnt("e", "e", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
-	tsEnt.Config.Timestamps = true
+	tsEnt.Config = tsEnt.Config.WithTimestamps(true)
 	ch2, _ := diffEntityFromLive(tsEnt, nil, DialectSQLite, map[string]string{"x": "TEXT", "created_at": "TIMESTAMP"})
 	for _, c := range ch2 {
 		if strings.Contains(c.SQL, "DROP COLUMN created_at") {

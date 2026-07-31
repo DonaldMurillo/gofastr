@@ -39,18 +39,13 @@ func newExportTestApp(t *testing.T) (*App, *sql.DB) {
 	app := NewApp(WithDB(db))
 
 	// documents: owner-scoped + soft-delete + hidden column + multi-tenant.
-	app.Registry.Register(entity.Define("documents", entity.EntityConfig{
-		Table:       "documents",
-		OwnerField:  "owner_id",
-		SoftDelete:  true,
-		MultiTenant: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String},
-			{Name: "body", Type: schema.Text},
-			{Name: "owner_id", Type: schema.String},
-			{Name: "views", Type: schema.Int},
-			{Name: "internal_note", Type: schema.String, Hidden: true},
-		},
+	app.Registry.Register(entity.Define("documents", entity.EntityConfig{Table: "documents", Scope: &entity.ScopeConfig{OwnerField: "owner_id", SoftDelete: true, MultiTenant: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String},
+		{Name: "body", Type: schema.Text},
+		{Name: "owner_id", Type: schema.String},
+		{Name: "views", Type: schema.Int},
+		{Name: "internal_note", Type: schema.String, Hidden: true},
+	},
 	}))
 	// tags: plain entity with timestamps.
 	app.Registry.Register(entity.Define("tags", entity.EntityConfig{

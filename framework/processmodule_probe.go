@@ -274,7 +274,7 @@ type SandboxOpts struct {
 }
 
 // SandboxBackend is the per-OS confinement wrapper (design §6 — v1 is a
-// wrapper command, mirroring framework/harness/tool/builtins/bash.go's
+// wrapper command, mirroring framework/experimental/harness/tool/builtins/bash.go's
 // SandboxFn but with the fail-closed seam INVERTED: a nil/nil-error Wrap
 // is mandatory for untrusted modules, and the constructor refuses to
 // build a non-conforming runner). Each build-tagged implementation wraps

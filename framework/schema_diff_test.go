@@ -216,13 +216,9 @@ func TestSchemaDiff_KeepsFrameworkManagedColumns(t *testing.T) {
 		}
 
 		reg := NewRegistry()
-		reg.Register(entity.Define("posts", entity.EntityConfig{
-			Table:       "posts",
-			SoftDelete:  true,
-			MultiTenant: true,
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-			},
+		reg.Register(entity.Define("posts", entity.EntityConfig{Table: "posts", Scope: &entity.ScopeConfig{SoftDelete: true, MultiTenant: true}, Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+		},
 		}.WithTimestamps(true)))
 
 		changes, err := DiffSchema(context.Background(), db, reg)

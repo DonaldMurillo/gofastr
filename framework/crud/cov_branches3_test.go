@@ -15,10 +15,7 @@ import (
 
 func TestRequireTenantContext_Present(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE mt3 (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
-	ent := entity.Define("mt3", entity.EntityConfig{
-		Name: "mt3", Table: "mt3", MultiTenant: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("mt3", entity.EntityConfig{Name: "mt3", Table: "mt3", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	ctx := tenant.SetTenantID(context.Background(), "T1")

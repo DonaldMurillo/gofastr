@@ -18,7 +18,7 @@ import (
 // landlock/seccomp *syscalls* but no BPF assembler (CONFIRMED in the
 // design), so a native seccomp filter is bespoke code. bwrap is the
 // de-facto Linux unprivileged-sandbox CLI and is already the seam the
-// repo's bash tool wires (`framework/harness/tool/builtins/bash.go`
+// repo's bash tool wires (`framework/experimental/harness/tool/builtins/bash.go`
 // SandboxFn comment) — mirroring it keeps one Linux sandbox story.
 //
 // Honest limits (probed, not assumed — design §6):

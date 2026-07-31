@@ -16,16 +16,15 @@ import (
 func auditApp(t *testing.T, db *sql.DB, actor string) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", entity.EntityConfig{
-		Table: "posts",
+	app.Entity("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{
+
 		// Public: these tests exercise the audit trail's anonymous-actor
 		// path (TestAudit_AnonymousActor posts with no session and
 		// expects a NULL actor_id) — the secure-by-default session gate
-		// (issue #65) would otherwise 401 every request in this suite.
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-		},
+			// (issue #65) would otherwise 401 every request in this suite.
+	}, Table: "posts", Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+	},
 	}.WithTimestamps(false))
 	if err := AutoMigrate(db, app.Registry); err != nil {
 		t.Fatalf("automigrate: %v", err)

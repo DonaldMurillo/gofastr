@@ -161,16 +161,16 @@ func TestNoQueryCursorFieldRejectedAtDefine(t *testing.T) {
 			t.Fatalf("panic = %v, want it to name the cursor field", r)
 		}
 	}()
-	entity.Define("nq_cursor_bad", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "body", Type: schema.String, NoQuery: true},
-		},
-		CursorField: "body",
+	entity.Define("nq_cursor_bad", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "body", Type: schema.String, NoQuery: true},
+	}, Pagination: &entity.PaginationConfig{
+
+		// TestNoQuerySearchFieldRejectedAtDefine covers the Go-API half of the ?q=
+		// guard; the blueprint half is pinned in cmd/gofastr.
+		CursorField: "body"},
 	})
 }
 
-// TestNoQuerySearchFieldRejectedAtDefine covers the Go-API half of the ?q=
-// guard; the blueprint half is pinned in cmd/gofastr.
 func TestNoQuerySearchFieldRejectedAtDefine(t *testing.T) {
 	defer func() {
 		r := recover()
@@ -294,12 +294,10 @@ func TestNoQueryPKRejectedAsCompositeTiebreak(t *testing.T) {
 			t.Fatalf("panic = %v, want it to name the cursor field", r)
 		}
 	}()
-	entity.Define("nq_composite_pk", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, NoQuery: true},
-			{Name: "created_at", Type: schema.Timestamp},
-		},
-		CursorFields: []string{"created_at"},
+	entity.Define("nq_composite_pk", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "id", Type: schema.String, NoQuery: true},
+		{Name: "created_at", Type: schema.Timestamp},
+	}, Pagination: &entity.PaginationConfig{CursorFields: []string{"created_at"}},
 	})
 }
 
@@ -312,11 +310,9 @@ func TestSingleCursorFieldDoesNotPullInPK(t *testing.T) {
 			t.Fatalf("Define panicked on a valid single-field cursor: %v", r)
 		}
 	}()
-	entity.Define("nq_single_cursor_ok", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, NoQuery: true},
-			{Name: "seq", Type: schema.Int},
-		},
-		CursorField: "seq",
+	entity.Define("nq_single_cursor_ok", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "id", Type: schema.String, NoQuery: true},
+		{Name: "seq", Type: schema.Int},
+	}, Pagination: &entity.PaginationConfig{CursorField: "seq"},
 	})
 }

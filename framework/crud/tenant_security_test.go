@@ -15,24 +15,18 @@ import (
 // X-Tenant-ID header does not override the server-set tenant context.
 // Attack: spoofing X-Tenant-ID to access another tenant's data.
 func TestTenant_SpoofedHeaderIgnored(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-		OwnerField:  "user_id",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Fields: []schema.Field{
+		{Name: "tenant_id", Type: schema.String},
+		{Name: "name", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT, name TEXT)`)
 
 	// Add user_id field
-	ch, db = setupSecurityTestHandler(t, entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-		OwnerField:  "user_id",
+	ch, db = setupSecurityTestHandler(t, entity.EntityConfig{Fields: []schema.Field{
+		{Name: "tenant_id", Type: schema.String},
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "name", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT, name TEXT)`)
 
 	seedRows(t, db, "items", []map[string]any{
@@ -71,7 +65,12 @@ func TestTenant_MissingTenantOnCreateHandled(t *testing.T) {
 		{Name: "tenant_id", Type: schema.String},
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "name", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.MultiTenant = true }),
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		c.Scope.MultiTenant = true
+	}),
 		`CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT, name TEXT)`)
 
 	// Create without tenant context
@@ -94,14 +93,11 @@ func TestTenant_MissingTenantOnCreateHandled(t *testing.T) {
 // scoped to one tenant cannot delete records from another tenant.
 // Attack: batch delete with tenant filter bypass.
 func TestTenant_CrossTenantBatchDeleteRejected(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-		OwnerField:  "user_id",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Fields: []schema.Field{
+		{Name: "tenant_id", Type: schema.String},
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "name", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT, name TEXT)`)
 
 	seedRows(t, db, "items", []map[string]any{
@@ -137,14 +133,11 @@ func TestTenant_CrossTenantBatchDeleteRejected(t *testing.T) {
 // Attack: authenticated user in tenant-A reads tenant-B data owned by
 // same user ID.
 func TestTenant_TenantOwnerComboEnforced(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-		OwnerField:  "user_id",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Fields: []schema.Field{
+		{Name: "tenant_id", Type: schema.String},
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "name", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT, name TEXT)`)
 
 	seedRows(t, db, "items", []map[string]any{
@@ -171,14 +164,12 @@ func TestTenant_TenantOwnerComboEnforced(t *testing.T) {
 // tenantItemsConfig is the shared MultiTenant entity used by the
 // secure-by-default tenant-gate tests below.
 func tenantItemsConfig() entity.EntityConfig {
-	return entity.EntityConfig{
-		Name:  "items",
+	return entity.EntityConfig{Name: "items",
 		Table: "items",
 		Fields: []schema.Field{
 			{Name: "tenant_id", Type: schema.String},
 			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
+		}, Scope: &entity.ScopeConfig{MultiTenant: true},
 	}.WithTimestamps(false)
 }
 

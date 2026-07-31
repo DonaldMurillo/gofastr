@@ -1,58 +1,191 @@
 package entity
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// EntityDeclaration is the readable, JSON/YAML-friendly shape the gofastr.yml
-// blueprint loader decodes entities into before converting them to
-// EntityConfig. It mirrors EntityConfig while keeping field types readable.
+// EntityDeclaration is the grouped JSON/YAML shape used after blueprint
+// decoding. The decoder also accepts flat shorthand keys and moves them into
+// Scope, Pagination, or Exposure before returning the declaration.
 type EntityDeclaration struct {
-	Name        string                 `json:"name"`
-	Table       string                 `json:"table,omitempty"`
-	Fields      []FieldDeclaration     `json:"fields"`
-	Relations   []Relation             `json:"relations,omitempty"`
-	Endpoints   []Endpoint             `json:"endpoints,omitempty"`
-	Scope       *ScopeDeclaration      `json:"scope,omitempty"`
-	Pagination  *PaginationDeclaration `json:"pagination,omitempty"`
-	Exposure    *ExposureDeclaration   `json:"exposure,omitempty"`
-	SoftDelete  bool                   `json:"soft_delete,omitempty"`
-	MultiTenant bool                   `json:"multi_tenant,omitempty"`
-	// OwnerField names the DB column that holds the row's owner id
-	// (e.g. "user_id"). When set AND an owner extractor is registered
-	// by a battery, auto-CRUD scopes List/Get/Update/Delete by the
-	// current request's owner and auto-stamps Create. Mirrors
-	// EntityConfig.OwnerField; leave empty to keep pre-existing behaviour.
-	OwnerField string `json:"owner_field,omitempty"`
-	// CrossOwnerRead optionally names an RBAC permission that lifts owner
-	// scoping for READ operations only on this entity, when the permission
-	// is held in the request context. Mirrors EntityConfig.CrossOwnerRead;
-	// leave empty to keep pre-existing behaviour. Requires OwnerField.
-	CrossOwnerRead string `json:"cross_owner_read,omitempty"`
-	// SearchFields names the DB columns that ?q= free-text search operates
-	// on (e.g. ["title","body"]). Mirrors EntityConfig.SearchFields; leave
-	// empty to keep pre-existing behaviour (?q= is ignored).
-	SearchFields []string `json:"search_fields,omitempty"`
-	// Access declares the RBAC permission required per CRUD operation.
-	// Mirrors EntityConfig.Access (AccessControl): each entry is a
-	// permission string (e.g. "posts:write"); a blank/omitted entry
-	// leaves that operation un-gated by RBAC. nil means no RBAC at all.
-	Access *AccessDeclaration `json:"access,omitempty"`
-	// Public mirrors EntityConfig.Public: a deliberate, full opt-out of
-	// the framework's secure-by-default session requirement (issue #65)
-	// — every operation is reachable by an anonymous caller, matching
-	// pre-#65 behaviour. Has no effect when OwnerField or Access is set.
-	Public       bool           `json:"public,omitempty"`
-	Timestamps   *bool          `json:"timestamps,omitempty"`
-	CRUD         *bool          `json:"crud,omitempty"`
-	MCP          bool           `json:"mcp,omitempty"`
-	CursorField  string         `json:"cursor_field,omitempty"`
-	CursorFields []string       `json:"cursor_fields,omitempty"`
-	Indices      []Index        `json:"indices,omitempty"`
-	Properties   map[string]any `json:"properties,omitempty"`
+	Name         string                 `json:"name"`
+	Table        string                 `json:"table,omitempty"`
+	Fields       []FieldDeclaration     `json:"fields"`
+	Relations    []Relation             `json:"relations,omitempty"`
+	Endpoints    []Endpoint             `json:"endpoints,omitempty"`
+	Scope        *ScopeDeclaration      `json:"scope,omitempty"`
+	Pagination   *PaginationDeclaration `json:"pagination,omitempty"`
+	Exposure     *ExposureDeclaration   `json:"exposure,omitempty"`
+	SearchFields []string               `json:"search_fields,omitempty"`
+	Timestamps   *bool                  `json:"timestamps,omitempty"`
+	Indices      []Index                `json:"indices,omitempty"`
+	Properties   map[string]any         `json:"properties,omitempty"`
+}
+
+// UnmarshalJSON accepts grouped declarations and the documented flat
+// shorthand. A flat key and its grouped key may both be present only when
+// their values match.
+func (d *EntityDeclaration) UnmarshalJSON(data []byte) error {
+	type grouped EntityDeclaration
+	var decoded grouped
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return err
+	}
+	scopeJSON, err := declarationGroupJSON(root, "scope")
+	if err != nil {
+		return err
+	}
+	paginationJSON, err := declarationGroupJSON(root, "pagination")
+	if err != nil {
+		return err
+	}
+	exposureJSON, err := declarationGroupJSON(root, "exposure")
+	if err != nil {
+		return err
+	}
+
+	*d = EntityDeclaration(decoded)
+	if d.Scope != nil || declarationHasAny(root, "soft_delete", "multi_tenant", "tenant_field", "owner_field", "cross_owner_read") {
+		if d.Scope == nil {
+			d.Scope = &ScopeDeclaration{}
+		}
+		for _, merge := range []func() error{
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "soft_delete", &d.Scope.SoftDelete)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "multi_tenant", &d.Scope.MultiTenant)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "tenant_field", &d.Scope.TenantField)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "owner_field", &d.Scope.OwnerField)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "cross_owner_read", &d.Scope.CrossOwnerRead)
+			},
+		} {
+			if err := merge(); err != nil {
+				return err
+			}
+		}
+	}
+	if d.Pagination != nil || declarationHasAny(root, "cursor_field", "cursor_fields", "max_list_limit") {
+		if d.Pagination == nil {
+			d.Pagination = &PaginationDeclaration{}
+		}
+		for _, merge := range []func() error{
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, paginationJSON, "cursor_field", &d.Pagination.CursorField)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, paginationJSON, "cursor_fields", &d.Pagination.CursorFields)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, paginationJSON, "max_list_limit", &d.Pagination.MaxListLimit)
+			},
+		} {
+			if err := merge(); err != nil {
+				return err
+			}
+		}
+	}
+	if d.Exposure != nil || declarationHasAny(root, "crud", "mcp", "public", "access") {
+		if d.Exposure == nil {
+			d.Exposure = &ExposureDeclaration{}
+		}
+		for _, merge := range []func() error{
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "crud", &d.Exposure.CRUD)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "mcp", &d.Exposure.MCP)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "public", &d.Exposure.Public)
+			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "access", &d.Exposure.Access)
+			},
+		} {
+			if err := merge(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func declarationGroupJSON(root map[string]json.RawMessage, key string) (map[string]json.RawMessage, error) {
+	raw, ok := root[key]
+	if !ok {
+		return nil, nil
+	}
+	var group map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &group); err != nil {
+		return nil, fmt.Errorf("%s must be an object: %w", key, err)
+	}
+	return group, nil
+}
+
+func declarationHasAny(root map[string]json.RawMessage, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := root[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeDeclarationJSONField[T any](
+	entityName string,
+	root, group map[string]json.RawMessage,
+	key string,
+	target *T,
+) error {
+	flatRaw, flatSet := root[key]
+	if !flatSet {
+		return nil
+	}
+	var flat T
+	if err := json.Unmarshal(flatRaw, &flat); err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	if groupedRaw, groupedSet := group[key]; groupedSet {
+		var grouped T
+		if err := json.Unmarshal(groupedRaw, &grouped); err != nil {
+			return fmt.Errorf("%s.%s: %w", declarationGroupForKey(key), key, err)
+		}
+		if !reflect.DeepEqual(flat, grouped) {
+			return fmt.Errorf(
+				"entity %q: conflicting declaration values for %s and %s.%s (%v != %v)",
+				entityName, key, declarationGroupForKey(key), key, flat, grouped,
+			)
+		}
+	}
+	*target = flat
+	return nil
+}
+
+func declarationGroupForKey(key string) string {
+	switch key {
+	case "soft_delete", "multi_tenant", "tenant_field", "owner_field", "cross_owner_read":
+		return "scope"
+	case "cursor_field", "cursor_fields", "max_list_limit":
+		return "pagination"
+	default:
+		return "exposure"
+	}
 }
 
 // ScopeDeclaration is the JSON/YAML-friendly shape of ScopeConfig.
@@ -123,57 +256,48 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		}
 		fields = append(fields, field)
 	}
-	cfg := EntityConfig{
-		Name:           d.Name,
-		Table:          d.Table,
-		Fields:         fields,
-		Relations:      d.Relations,
-		Endpoints:      d.Endpoints,
-		SoftDelete:     d.SoftDelete,
-		MultiTenant:    d.MultiTenant,
-		OwnerField:     d.OwnerField,
-		CrossOwnerRead: d.CrossOwnerRead,
-		SearchFields:   d.SearchFields,
-		Public:         d.Public,
-		CRUD:           d.CRUD,
-		CursorField:    d.CursorField,
-		CursorFields:   d.CursorFields,
-		Indices:        d.Indices,
-		Properties:     d.Properties,
-	}
+
+	scope := &ScopeConfig{}
 	if d.Scope != nil {
-		cfg.Scope = &ScopeConfig{
+		*scope = ScopeConfig{
 			SoftDelete: d.Scope.SoftDelete, MultiTenant: d.Scope.MultiTenant,
 			TenantField: d.Scope.TenantField, OwnerField: d.Scope.OwnerField,
 			CrossOwnerRead: d.Scope.CrossOwnerRead,
 		}
 	}
+	pagination := &PaginationConfig{}
 	if d.Pagination != nil {
-		cfg.Pagination = &PaginationConfig{
-			CursorField: d.Pagination.CursorField, CursorFields: d.Pagination.CursorFields,
+		*pagination = PaginationConfig{
+			CursorField:  d.Pagination.CursorField,
+			CursorFields: append([]string(nil), d.Pagination.CursorFields...),
 			MaxListLimit: d.Pagination.MaxListLimit,
 		}
 	}
+	exposure := &ExposureConfig{}
 	if d.Exposure != nil {
-		exposure := &ExposureConfig{CRUD: d.Exposure.CRUD, MCP: d.Exposure.MCP, Public: d.Exposure.Public}
+		exposure.CRUD = d.Exposure.CRUD
+		exposure.MCP = d.Exposure.MCP
+		exposure.Public = d.Exposure.Public
 		if d.Exposure.Access != nil {
 			exposure.Access = AccessControl{
 				Read: d.Exposure.Access.Read, Create: d.Exposure.Access.Create,
 				Update: d.Exposure.Access.Update, Delete: d.Exposure.Access.Delete,
 			}
 		}
-		cfg.Exposure = exposure
 	}
-	if d.Access != nil {
-		cfg.Access = AccessControl{
-			Read:   d.Access.Read,
-			Create: d.Access.Create,
-			Update: d.Access.Update,
-			Delete: d.Access.Delete,
-		}
-	}
-	if d.Timestamps != nil {
-		cfg = cfg.WithTimestamps(*d.Timestamps)
+	cfg := EntityConfig{
+		Name:         d.Name,
+		Table:        d.Table,
+		Fields:       fields,
+		Relations:    d.Relations,
+		Endpoints:    d.Endpoints,
+		Scope:        scope,
+		Pagination:   pagination,
+		Exposure:     exposure,
+		SearchFields: d.SearchFields,
+		Timestamps:   d.Timestamps,
+		Indices:      d.Indices,
+		Properties:   d.Properties,
 	}
 	return cfg, nil
 }

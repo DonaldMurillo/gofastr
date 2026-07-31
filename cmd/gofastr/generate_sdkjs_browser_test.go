@@ -70,15 +70,12 @@ func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
 		framework.WithDB(db),
 		framework.WithoutDefaultMiddleware(),
 	)
-	app.Entity("posts", framework.EntityConfig{
-		Table:  "posts",
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "author_name", Type: schema.String, Required: true},
-			{Name: "views", Type: schema.Int},
-			{Name: "published", Type: schema.Bool},
-		},
+	app.Entity("posts", framework.EntityConfig{Table: "posts", Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "author_name", Type: schema.String, Required: true},
+		{Name: "views", Type: schema.Int},
+		{Name: "published", Type: schema.Bool},
+	},
 	}.WithTimestamps(false))
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		t.Fatal(err)

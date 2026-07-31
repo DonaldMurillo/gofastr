@@ -306,11 +306,17 @@ func registerOrders(app *framework.App) {
 		Relations: []framework.Relation{
 			{Type: framework.RelHasMany, Name: "items", Entity: "order_items", ForeignKey: "order_id"},
 		},
-		OwnerField:   "user_id",
-		CRUD:         boolPtr(true),
-		MCP:          true,
-		CursorField:  "id",
-		CursorFields: []string{"created_at", "id"},
+		Scope: &framework.ScopeConfig{
+			OwnerField: "user_id",
+		},
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
+		Pagination: &framework.PaginationConfig{
+			CursorField:  "id",
+			CursorFields: []string{"created_at", "id"},
+		},
 		Indices: []framework.Index{
 			{Name: "idx_orders_status", Columns: []string{"status"}},
 			{Name: "idx_orders_user", Columns: []string{"user_id"}},

@@ -229,10 +229,19 @@ func TestApplyEntityFromJSONRoundTrip(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("entity not registered: %v", err)
 	}
+	if got.Config.Scope == nil || !got.Config.Scope.SoftDelete || !got.Config.Scope.MultiTenant {
+		t.Fatalf("scope not converted to grouped config: %+v", got.Config.Scope)
+	}
+	if got.Config.Exposure == nil || !got.Config.Exposure.MCP || !got.Config.Exposure.Public {
+		t.Fatalf("exposure not converted to grouped config: %+v", got.Config.Exposure)
+	}
+	if got.Config.Pagination == nil || got.Config.Timestamps == nil || !*got.Config.Timestamps {
+		t.Fatalf("resolved config groups or timestamps missing: %+v", got.Config)
+	}
 }
 
-// Sanity that the JSON shape of world.Entity matches framework.EntityDeclaration
-// without requiring a manual converter. The renderer relies on this.
+// EntityDeclaration's custom JSON decoder accepts Kiln's versioned flat
+// shape and moves those keys into the grouped declaration fields.
 func TestWorldEntityMarshalsLikeDeclaration(t *testing.T) {
 	w := &world.Entity{
 		Name:   "posts",
@@ -248,6 +257,9 @@ func TestWorldEntityMarshalsLikeDeclaration(t *testing.T) {
 		t.Fatalf("unmarshal as declaration: %v", err)
 	}
 	if decl.Name != "posts" || len(decl.Fields) != 1 || decl.Fields[0].Name != "title" {
+		if decl.Exposure == nil || !decl.Exposure.MCP {
+			t.Errorf("flat Kiln exposure did not normalize: %#v", decl.Exposure)
+		}
 		t.Errorf("declaration round-trip lost data: %#v", decl)
 	}
 }

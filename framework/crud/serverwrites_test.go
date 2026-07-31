@@ -71,13 +71,11 @@ func TestServerWritesPersistReadOnlyField(t *testing.T) {
 // TestServerWritesKeepOwnerProtected asserts that even with WithServerWrites
 // a client-supplied owner id in the body cannot override the context owner.
 func TestServerWritesKeepOwnerProtected(t *testing.T) {
-	ch, db := swHandler(t, entity.EntityConfig{
-		Table: "sw_owned",
+	ch, db := swHandler(t, entity.EntityConfig{Table: "sw_owned",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "name", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false),
 		`CREATE TABLE sw_owned (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT)`)
 
@@ -100,12 +98,10 @@ func TestServerWritesKeepOwnerProtected(t *testing.T) {
 // TestServerWritesKeepTenantProtected asserts that even with WithServerWrites
 // a client-supplied tenant_id in the body cannot override the context tenant.
 func TestServerWritesKeepTenantProtected(t *testing.T) {
-	ch, db := swHandler(t, entity.EntityConfig{
-		Table: "sw_tenant",
+	ch, db := swHandler(t, entity.EntityConfig{Table: "sw_tenant",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
+		}, Scope: &entity.ScopeConfig{MultiTenant: true},
 	}.WithTimestamps(false),
 		`CREATE TABLE sw_tenant (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
 

@@ -526,35 +526,35 @@ func checkRowIsolationCompat(existing, newEnt *entity.Entity) error {
 			versionLabel(existing.Version), existingVal,
 			versionLabel(newEnt.Version), newVal)
 	}
-	if existing.Config.MultiTenant != newEnt.Config.MultiTenant {
+	if existing.Config.Scope.MultiTenant != newEnt.Config.Scope.MultiTenant {
 		return mismatch("tenant scoping",
-			multiTenantLabel(existing.Config.MultiTenant),
-			multiTenantLabel(newEnt.Config.MultiTenant))
+			multiTenantLabel(existing.Config.Scope.MultiTenant),
+			multiTenantLabel(newEnt.Config.Scope.MultiTenant))
 	}
-	if existing.Config.OwnerField != newEnt.Config.OwnerField {
+	if existing.Config.Scope.OwnerField != newEnt.Config.Scope.OwnerField {
 		return mismatch("owner scoping",
-			ownerFieldLabel(existing.Config.OwnerField),
-			ownerFieldLabel(newEnt.Config.OwnerField))
+			ownerFieldLabel(existing.Config.Scope.OwnerField),
+			ownerFieldLabel(newEnt.Config.Scope.OwnerField))
 	}
-	if existing.Config.SoftDelete != newEnt.Config.SoftDelete {
+	if existing.Config.Scope.SoftDelete != newEnt.Config.Scope.SoftDelete {
 		return mismatch("delete semantics",
-			softDeleteLabel(existing.Config.SoftDelete),
-			softDeleteLabel(newEnt.Config.SoftDelete))
+			softDeleteLabel(existing.Config.Scope.SoftDelete),
+			softDeleteLabel(newEnt.Config.Scope.SoftDelete))
 	}
-	if existing.Config.Public != newEnt.Config.Public {
+	if existing.Config.Exposure.Public != newEnt.Config.Exposure.Public {
 		return mismatch("public access",
-			publicLabel(existing.Config.Public),
-			publicLabel(newEnt.Config.Public))
+			publicLabel(existing.Config.Exposure.Public),
+			publicLabel(newEnt.Config.Exposure.Public))
 	}
-	if existing.Config.Access != newEnt.Config.Access {
+	if existing.Config.Exposure.Access != newEnt.Config.Exposure.Access {
 		return mismatch("access control",
-			accessLabel(existing.Config.Access),
-			accessLabel(newEnt.Config.Access))
+			accessLabel(existing.Config.Exposure.Access),
+			accessLabel(newEnt.Config.Exposure.Access))
 	}
-	if existing.Config.CrossOwnerRead != newEnt.Config.CrossOwnerRead {
+	if existing.Config.Scope.CrossOwnerRead != newEnt.Config.Scope.CrossOwnerRead {
 		return mismatch("cross-owner read",
-			crossOwnerReadLabel(existing.Config.CrossOwnerRead),
-			crossOwnerReadLabel(newEnt.Config.CrossOwnerRead))
+			crossOwnerReadLabel(existing.Config.Scope.CrossOwnerRead),
+			crossOwnerReadLabel(newEnt.Config.Scope.CrossOwnerRead))
 	}
 	return nil
 }

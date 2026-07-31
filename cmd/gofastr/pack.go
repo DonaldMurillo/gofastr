@@ -184,11 +184,6 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 		putStr(scope, "owner_field", e.Scope.OwnerField)
 		putStr(scope, "cross_owner_read", e.Scope.CrossOwnerRead)
 		m["scope"] = scope
-	} else {
-		putBool(m, "soft_delete", e.SoftDelete)
-		putBool(m, "multi_tenant", e.MultiTenant)
-		putStr(m, "owner_field", e.OwnerField)
-		putStr(m, "cross_owner_read", e.CrossOwnerRead)
 	}
 	if e.Exposure != nil {
 		exposure := map[string]any{}
@@ -206,12 +201,6 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			exposure["access"] = acc
 		}
 		m["exposure"] = exposure
-	} else {
-		if e.CRUD != nil {
-			m["crud"] = *e.CRUD
-		}
-		putBool(m, "mcp", e.MCP)
-		putBool(m, "public", e.Public)
 	}
 	putStrs(m, "search_fields", e.SearchFields)
 	if e.Timestamps != nil {
@@ -225,22 +214,9 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			pagination["max_list_limit"] = e.Pagination.MaxListLimit
 		}
 		m["pagination"] = pagination
-	} else {
-		putStr(m, "cursor_field", e.CursorField)
-		putStrs(m, "cursor_fields", e.CursorFields)
 	}
 	if len(e.Properties) > 0 {
 		m["properties"] = anyMap(e.Properties)
-	}
-	if e.Exposure == nil && e.Access != nil {
-		acc := map[string]any{}
-		putStr(acc, "read", e.Access.Read)
-		putStr(acc, "create", e.Access.Create)
-		putStr(acc, "update", e.Access.Update)
-		putStr(acc, "delete", e.Access.Delete)
-		if len(acc) > 0 {
-			m["access"] = acc
-		}
 	}
 	if len(e.Indices) > 0 {
 		idx := make([]any, len(e.Indices))
@@ -259,7 +235,7 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			// Drop the hidden owner column the generator synthesizes from
 			// owner_field — the author never wrote it, so packing it back
 			// would diverge from the source blueprint.
-			if e.OwnerField != "" && f.Name == e.OwnerField && f.Hidden {
+			if e.Scope != nil && e.Scope.OwnerField != "" && f.Name == e.Scope.OwnerField && f.Hidden {
 				continue
 			}
 			fields = append(fields, fieldToMap(f))
@@ -1054,25 +1030,31 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 	if v, ok := cfg["Table"]; ok {
 		decl.Table = astString(v)
 	}
+	// An all-zero group normalizes to nil: a hand-written (or legacy
+	// generator's) empty `Scope: &framework.ScopeConfig{}` literal must
+	// pack back to the same declaration as writing nothing at all.
 	if v, ok := cfg["Scope"]; ok {
 		s := fieldVals(v)
-		decl.Scope = &framework.ScopeDeclaration{
+		scope := &framework.ScopeDeclaration{
 			SoftDelete: astBool(s["SoftDelete"]), MultiTenant: astBool(s["MultiTenant"]),
 			TenantField: astString(s["TenantField"]), OwnerField: astString(s["OwnerField"]),
 			CrossOwnerRead: astString(s["CrossOwnerRead"]),
 		}
-		decl.SoftDelete, decl.MultiTenant = decl.Scope.SoftDelete, decl.Scope.MultiTenant
-		decl.OwnerField, decl.CrossOwnerRead = decl.Scope.OwnerField, decl.Scope.CrossOwnerRead
+		if *scope != (framework.ScopeDeclaration{}) {
+			decl.Scope = scope
+		}
 	}
 	if v, ok := cfg["Pagination"]; ok {
 		p := fieldVals(v)
-		decl.Pagination = &framework.PaginationDeclaration{
+		pagination := &framework.PaginationDeclaration{
 			CursorField: astString(p["CursorField"]), CursorFields: astStringSlice(p["CursorFields"]),
 		}
 		if limit, ok := astInt(p["MaxListLimit"]); ok {
-			decl.Pagination.MaxListLimit = limit
+			pagination.MaxListLimit = limit
 		}
-		decl.CursorField, decl.CursorFields = decl.Pagination.CursorField, decl.Pagination.CursorFields
+		if pagination.CursorField != "" || len(pagination.CursorFields) > 0 || pagination.MaxListLimit != 0 {
+			decl.Pagination = pagination
+		}
 	}
 	if v, ok := cfg["Exposure"]; ok {
 		x := fieldVals(v)
@@ -1087,40 +1069,12 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 				Update: astString(a["Update"]), Delete: astString(a["Delete"]),
 			}
 		}
-		decl.Exposure = exposure
-		decl.CRUD, decl.MCP, decl.Public, decl.Access = exposure.CRUD, exposure.MCP, exposure.Public, exposure.Access
-	}
-	if v, ok := cfg["SoftDelete"]; ok {
-		decl.SoftDelete = astBool(v)
-	}
-	if v, ok := cfg["MultiTenant"]; ok {
-		decl.MultiTenant = astBool(v)
-	}
-	if v, ok := cfg["OwnerField"]; ok {
-		decl.OwnerField = astString(v)
-	}
-	if v, ok := cfg["MCP"]; ok {
-		decl.MCP = astBool(v)
-	}
-	if v, ok := cfg["Public"]; ok {
-		decl.Public = astBool(v)
-	}
-	if v, ok := cfg["CursorField"]; ok {
-		decl.CursorField = astString(v)
-	}
-	if v, ok := cfg["CrossOwnerRead"]; ok {
-		decl.CrossOwnerRead = astString(v)
+		if exposure.CRUD != nil || exposure.MCP || exposure.Public || exposure.Access != nil {
+			decl.Exposure = exposure
+		}
 	}
 	if v, ok := cfg["SearchFields"]; ok {
 		decl.SearchFields = astStringSlice(v)
-	}
-	if v, ok := cfg["CursorFields"]; ok {
-		decl.CursorFields = astStringSlice(v)
-	}
-	if v, ok := cfg["CRUD"]; ok {
-		if b, ok := astPtrCallBool(v); ok {
-			decl.CRUD = &b
-		}
 	}
 	// Timestamps is emitted as a .WithTimestamps(bool) builder call, not a
 	// struct field — recover it from the unwrapped builder args. (Fall back
@@ -1136,15 +1090,6 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 	if v, ok := cfg["Properties"]; ok {
 		if m, ok := astAny(v).(map[string]any); ok && len(m) > 0 {
 			decl.Properties = m
-		}
-	}
-	if v, ok := cfg["Access"]; ok {
-		a := fieldVals(v)
-		decl.Access = &framework.AccessDeclaration{
-			Read:   astString(a["Read"]),
-			Create: astString(a["Create"]),
-			Update: astString(a["Update"]),
-			Delete: astString(a["Delete"]),
 		}
 	}
 	if v, ok := cfg["Fields"]; ok {

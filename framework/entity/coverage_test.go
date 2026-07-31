@@ -137,7 +137,7 @@ func TestDeclarationConfigAndField(t *testing.T) {
 	// Timestamps pointer applied.
 	tsTrue := true
 	cfg, err := (EntityDeclaration{Name: "x", Timestamps: &tsTrue, Fields: []FieldDeclaration{{Name: "f", Type: "string"}}}).Config()
-	if err != nil || !cfg.Timestamps {
+	if err != nil || cfg.Timestamps == nil || !*cfg.Timestamps {
 		t.Fatalf("timestamps: %v %+v", err, cfg)
 	}
 	// Field: empty name.
@@ -247,9 +247,11 @@ func TestToSnake(t *testing.T) {
 func TestDefine_SkipsPreDeclaredInjectedColumns(t *testing.T) {
 	ts := true
 	e := Define("things", EntityConfig{
-		Timestamps:  ts,
-		SoftDelete:  true,
-		MultiTenant: true,
+		Timestamps: &ts,
+		Scope: &ScopeConfig{
+			SoftDelete:  true,
+			MultiTenant: true,
+		},
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
 			{Name: "created_at", Type: schema.Timestamp},

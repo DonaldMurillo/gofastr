@@ -39,7 +39,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 	// ApplySoftDeleteFilter, and an include must not be a back door around
 	// it. Rendered as a static (non-parameterised) `deleted_at IS NULL`.
 	softDeleteFilter := ""
-	if node.Target.Config.SoftDelete {
+	if node.Target.Config.Scope.SoftDelete {
 		softDeleteFilter = " AND deleted_at IS NULL"
 	}
 

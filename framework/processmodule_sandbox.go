@@ -25,7 +25,7 @@ import (
 //     fail-closed error). This is the inversion of the wave-2a site that
 //     unconditionally returned UntrustedNoSandboxError.
 //
-// The inversion of bash.go's nil-check (framework/harness/tool/builtins/
+// The inversion of bash.go's nil-check (framework/experimental/harness/tool/builtins/
 // bash.go:121-123) is deliberate and load-bearing: bash's SandboxFn is
 // nil = no sandbox (fails OPEN, correct for a first-party dev tool behind
 // a blocklist); a nil/unconforming sandbox for an untrusted module fails

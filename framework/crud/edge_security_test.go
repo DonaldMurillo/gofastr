@@ -417,14 +417,11 @@ func TestUpdate_TenantIDTamper(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ddl := `CREATE TABLE tdata (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT NOT NULL, name TEXT)`
-	cfg := entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-		OwnerField:  "user_id",
+	cfg := entity.EntityConfig{Fields: []schema.Field{
+		{Name: "tenant_id", Type: schema.String},
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "name", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "user_id"},
 	}.WithTimestamps(false)
 	ch, db := setupSecurityTestHandler(t, cfg, ddl)
 	seedRows(t, db, "tdata", []map[string]any{
@@ -452,7 +449,12 @@ func TestUpdate_DeletedRecord(t *testing.T) {
 	cfg := makeEntityConfig("sitems", "sitems", "user_id", []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true })
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		c.Scope.SoftDelete = true
+	})
 	ch, db := setupSecurityTestHandler(t, cfg, ddl)
 	// Seed an OWNED but soft-deleted row so the deleted-row code path is
 	// actually exercised (the previous version left the table empty, so the
@@ -545,15 +547,12 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ddl := `CREATE TABLE sdocs (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, deleted_at TEXT)`
-	cfg := entity.EntityConfig{
-		Name:  "sdocs",
+	cfg := entity.EntityConfig{Name: "sdocs",
 		Table: "sdocs",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
-		SoftDelete: true,
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id", SoftDelete: true},
 	}.WithTimestamps(false)
 	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
 	req := makeRequest(t, RequestOpts{Method: http.MethodDelete, Path: "/sdocs/already-deleted", UserID: "alice"})
@@ -754,14 +753,11 @@ func TestMCP_ToolRespectsTenantScope(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ddl := `CREATE TABLE titems (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT NOT NULL, name TEXT)`
-	cfg := entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-		OwnerField:  "user_id",
+	cfg := entity.EntityConfig{Fields: []schema.Field{
+		{Name: "tenant_id", Type: schema.String},
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "name", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "user_id"},
 	}.WithTimestamps(false)
 	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
 	mux := http.NewServeMux()
@@ -777,14 +773,11 @@ func TestMCP_ToolCountDoesntLeak(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ddl := `CREATE TABLE tenant_records (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT NOT NULL, val TEXT)`
-	cfg := entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "val", Type: schema.String},
-		},
-		MultiTenant: true,
-		OwnerField:  "user_id",
+	cfg := entity.EntityConfig{Fields: []schema.Field{
+		{Name: "tenant_id", Type: schema.String},
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "val", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "user_id"},
 	}.WithTimestamps(false)
 	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
 	mux := http.NewServeMux()

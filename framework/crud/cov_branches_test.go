@@ -37,10 +37,7 @@ func TestCreate_AppliesDefaults(t *testing.T) {
 }
 
 func TestInjectTenant_StampsColumn(t *testing.T) {
-	ent := entity.Define("mt", entity.EntityConfig{
-		Name: "mt", Table: "mt", MultiTenant: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("mt", entity.EntityConfig{Name: "mt", Table: "mt", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ch := NewCrudHandler(ent, nil).WithJSONCase(CaseSnake)
 	data := map[string]any{"body": "x"}
 	ch.InjectTenant(data, tenant.SetTenantID(context.Background(), "T1"))
@@ -57,10 +54,7 @@ func TestInjectTenant_StampsColumn(t *testing.T) {
 
 func TestCreate_TenantMissing(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE mt2 (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
-	ent := entity.Define("mt2", entity.EntityConfig{
-		Name: "mt2", Table: "mt2", MultiTenant: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("mt2", entity.EntityConfig{Name: "mt2", Table: "mt2", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	// HTTP create with no tenant in ctx → 401: the secure-by-default
@@ -143,13 +137,11 @@ func TestInclude_SoftDeleteAndHiddenScrub(t *testing.T) {
 		{"id": "c1", "post_id": "p1", "body": "live", "secret": "SHH", "deleted_at": nil},
 		{"id": "c2", "post_id": "p1", "body": "gone", "secret": "SHH2", "deleted_at": "2026-01-01"},
 	})
-	commentsEnt := entity.Define("scomments", entity.EntityConfig{
-		Name: "scomments", Table: "scomments", SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "post_id", Type: schema.String},
-			{Name: "body", Type: schema.String},
-			{Name: "secret", Type: schema.String, Hidden: true},
-		},
+	commentsEnt := entity.Define("scomments", entity.EntityConfig{Name: "scomments", Table: "scomments", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+		{Name: "post_id", Type: schema.String},
+		{Name: "body", Type: schema.String},
+		{Name: "secret", Type: schema.String, Hidden: true},
+	},
 	}.WithTimestamps(false))
 	postsEnt := entity.Define("sposts", entity.EntityConfig{
 		Name: "sposts", Table: "sposts",
@@ -176,7 +168,12 @@ func TestInclude_SoftDeleteAndHiddenScrub(t *testing.T) {
 }
 
 func TestCursor_WithFiltersAndExtraWhere(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 6)
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.CursorField = "seq"
+	}, 6)
 	ch.Hooks = hook.NewHookRegistry()
 	ch.Hooks.RegisterHook(hook.BeforeList, func(ctx context.Context, data any) error {
 		p := data.(*hook.ListPayload)
@@ -222,10 +219,7 @@ func TestList_PaginatedTotalPages(t *testing.T) {
 func TestEventStream_FilterDropsByTenant(t *testing.T) {
 	// Multi-tenant entity: subscriber on tenant A must not see tenant B events.
 	db := setupDB(t, `CREATE TABLE mte (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
-	ent := entity.Define("mte", entity.EntityConfig{
-		Name: "mte", Table: "mte", MultiTenant: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("mte", entity.EntityConfig{Name: "mte", Table: "mte", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	bus := event.NewEventBus()

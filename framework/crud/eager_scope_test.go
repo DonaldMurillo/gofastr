@@ -26,13 +26,11 @@ func TestEagerLoadScopesTenant(t *testing.T) {
 		{"id": "c-b", "post_id": "p1", "tenant_id": "tenant-B", "body": "B secret"},
 	})
 
-	commentsEnt := entity.Define("stcomments", entity.EntityConfig{
-		Name: "stcomments", Table: "stcomments", MultiTenant: true,
-		Fields: []schema.Field{
-			{Name: "post_id", Type: schema.String},
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "body", Type: schema.String},
-		},
+	commentsEnt := entity.Define("stcomments", entity.EntityConfig{Name: "stcomments", Table: "stcomments", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{
+		{Name: "post_id", Type: schema.String},
+		{Name: "tenant_id", Type: schema.String},
+		{Name: "body", Type: schema.String},
+	},
 	}.WithTimestamps(false))
 	postsEnt := entity.Define("stposts", entity.EntityConfig{
 		Name: "stposts", Table: "stposts",
@@ -78,13 +76,11 @@ func TestEagerLoadScopesOwner(t *testing.T) {
 		{"id": "n-b", "post_id": "p1", "user_id": "bob", "body": "bob secret"},
 	})
 
-	notesEnt := entity.Define("sonotes", entity.EntityConfig{
-		Name: "sonotes", Table: "sonotes", OwnerField: "user_id",
-		Fields: []schema.Field{
-			{Name: "post_id", Type: schema.String},
-			{Name: "user_id", Type: schema.String},
-			{Name: "body", Type: schema.String},
-		},
+	notesEnt := entity.Define("sonotes", entity.EntityConfig{Name: "sonotes", Table: "sonotes", Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Fields: []schema.Field{
+		{Name: "post_id", Type: schema.String},
+		{Name: "user_id", Type: schema.String},
+		{Name: "body", Type: schema.String},
+	},
 	}.WithTimestamps(false))
 	postsEnt := entity.Define("soposts", entity.EntityConfig{
 		Name: "soposts", Table: "soposts",

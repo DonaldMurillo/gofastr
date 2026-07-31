@@ -45,7 +45,7 @@ func TestBuildDSLRejectsNoQuerySurfaces(t *testing.T) {
 
 	// Define rejects a static NoQuery cursor. Set it after definition so this
 	// test reaches the DSL's own after() guard.
-	ent.Config.CursorField = "number"
+	ent.Config.Pagination.CursorField = "number"
 	_, err = BuildDSLQuery(reg, `cards.after("4111")`)
 	if err == nil || !strings.Contains(err.Error(), "cannot be queried") {
 		t.Fatalf("NoQuery after() error = %v, want cannot be queried", err)

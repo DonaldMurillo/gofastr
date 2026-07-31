@@ -175,30 +175,19 @@ func applyEntities(app *framework.App, w *world.World) error {
 // types are strings in the authoring IR and enums in framework code, so a
 // JSON round-trip silently drifted as the framework surface evolved.
 func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
-	decl := framework.EntityDeclaration{
-		// Every kiln entity is public, even one declaring OwnerField or
-		// MultiTenant, which hard rule 6 forbids anywhere else. Kiln has no
-		// session concept to scope against, and this is a deliberate
-		// exception rather than an oversight: kiln is the in-app build-mode
-		// runtime for someone assembling a world over HTTP, not a way to
-		// serve an application. A kiln world is a preview — treat its
-		// database as readable by anyone who can reach the port, and freeze
-		// to a real app (which does honour these fields) before it holds
-		// anything that matters.
-		Public:         true,
-		Name:           e.Name,
-		Table:          e.Table,
-		SoftDelete:     e.SoftDelete,
-		MultiTenant:    e.MultiTenant,
-		OwnerField:     e.OwnerField,
-		CrossOwnerRead: e.CrossOwnerRead,
-		SearchFields:   append([]string(nil), e.SearchFields...),
-		Timestamps:     e.Timestamps,
-		CRUD:           e.CRUD,
-		MCP:            e.MCP,
-		CursorField:    e.CursorField,
-		CursorFields:   append([]string(nil), e.CursorFields...),
-		Properties:     e.Properties,
+	decl := framework.EntityDeclaration{Exposure:
+	// Every kiln entity is public, even one declaring OwnerField or
+	// MultiTenant, which hard rule 6 forbids anywhere else. Kiln has no
+	// session concept to scope against, and this is a deliberate
+	// exception rather than an oversight: kiln is the in-app build-mode
+	// runtime for someone assembling a world over HTTP, not a way to
+	// serve an application. A kiln world is a preview — treat its
+	// database as readable by anyone who can reach the port, and freeze
+	// to a real app (which does honour these fields) before it holds
+	// anything that matters.
+	&framework.ExposureDeclaration{Public: true, CRUD: e.CRUD, MCP: e.MCP}, Name: e.Name,
+		Table: e.Table, Scope: &framework.ScopeDeclaration{SoftDelete: e.SoftDelete, MultiTenant: e.MultiTenant, OwnerField: e.OwnerField, CrossOwnerRead: e.CrossOwnerRead}, SearchFields: append([]string(nil), e.SearchFields...),
+		Timestamps: e.Timestamps, Pagination: &framework.PaginationDeclaration{CursorField: e.CursorField, CursorFields: append([]string(nil), e.CursorFields...)}, Properties: e.Properties,
 	}
 	for _, f := range e.Fields {
 		decl.Fields = append(decl.Fields, framework.FieldDeclaration{
@@ -230,7 +219,7 @@ func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
 		})
 	}
 	if e.Access != nil {
-		decl.Access = &framework.AccessDeclaration{
+		decl.Exposure.Access = &framework.AccessDeclaration{
 			Read: e.Access.Read, Create: e.Access.Create,
 			Update: e.Access.Update, Delete: e.Access.Delete,
 		}

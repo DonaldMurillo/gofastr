@@ -176,19 +176,19 @@ func TestUnion_RejectsMismatchedRowScopes(t *testing.T) {
 		{
 			name: "tenant-scoped beside unscoped",
 			v1:   entity.EntityConfig{Fields: titleOnly},
-			v2:   entity.EntityConfig{Fields: titleOnly, MultiTenant: true},
+			v2:   entity.EntityConfig{Fields: titleOnly, Scope: &entity.ScopeConfig{MultiTenant: true}},
 			want: "tenant scoping",
 		},
 		{
 			name: "soft-delete beside hard-delete",
 			v1:   entity.EntityConfig{Fields: titleOnly},
-			v2:   entity.EntityConfig{Fields: titleOnly, SoftDelete: true},
+			v2:   entity.EntityConfig{Fields: titleOnly, Scope: &entity.ScopeConfig{SoftDelete: true}},
 			want: "delete semantics",
 		},
 		{
 			name: "owner-scoped beside unscoped",
 			v1:   entity.EntityConfig{Fields: withOwner},
-			v2:   entity.EntityConfig{Fields: withOwner, OwnerField: "owner_id"},
+			v2:   entity.EntityConfig{Fields: withOwner, Scope: &entity.ScopeConfig{OwnerField: "owner_id"}},
 			want: "owner scoping",
 		},
 	}
@@ -217,14 +217,10 @@ func TestUnion_RejectsMismatchedRowScopes(t *testing.T) {
 // The mirror of F12: versions that AGREE on all three still register.
 func TestUnion_AcceptsMatchingRowScopes(t *testing.T) {
 	cfg := func() entity.EntityConfig {
-		return entity.EntityConfig{
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String},
-				{Name: "owner_id", Type: schema.String, Hidden: true},
-			},
-			MultiTenant: true,
-			OwnerField:  "owner_id",
-			SoftDelete:  true,
+		return entity.EntityConfig{Fields: []schema.Field{
+			{Name: "title", Type: schema.String},
+			{Name: "owner_id", Type: schema.String, Hidden: true},
+		}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "owner_id", SoftDelete: true},
 		}
 	}
 	reg := NewRegistry()

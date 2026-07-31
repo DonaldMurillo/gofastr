@@ -17,7 +17,12 @@ func TestUpsertDoNothingSkipsSoftDeleted(t *testing.T) {
 	// Entity whose only non-auto column is the PK ⇒ ON CONFLICT DO NOTHING.
 	cfg := makeEntityConfig("tags", "tags", "", []schema.Field{
 		{Name: "id", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true })
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		c.Scope.SoftDelete = true
+	})
 	ch, db := setupSecurityTestHandler(t, cfg,
 		`CREATE TABLE tags (id TEXT PRIMARY KEY, deleted_at TEXT)`)
 	seedRows(t, db, "tags", []map[string]any{

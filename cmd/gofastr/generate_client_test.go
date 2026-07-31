@@ -15,11 +15,8 @@ import (
 func TestRenderClient_StructsAndMethods(t *testing.T) {
 	crud := true
 	tsOff := false
-	out := renderClient([]framework.EntityDeclaration{{
-		Name:       "posts",
-		Table:      "posts",
-		CRUD:       &crud,
-		Timestamps: &tsOff,
+	out := renderClient([]framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "posts",
+		Table: "posts", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Timestamps: &tsOff,
 		Fields: []framework.FieldDeclaration{
 			{Name: "title", Type: "string", Required: true},
 			{Name: "views", Type: "int"},
@@ -78,11 +75,8 @@ func TestRenderClient_HonoursCustomTable(t *testing.T) {
 func TestRenderClient_PatchStructUsesPointers(t *testing.T) {
 	crud := true
 	tsOff := false
-	out := renderClient([]framework.EntityDeclaration{{
-		Name:       "posts",
-		Table:      "posts",
-		CRUD:       &crud,
-		Timestamps: &tsOff,
+	out := renderClient([]framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "posts",
+		Table: "posts", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Timestamps: &tsOff,
 		Fields: []framework.FieldDeclaration{
 			{Name: "title", Type: "string", Required: true},
 			{Name: "views", Type: "int"},
@@ -249,8 +243,8 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		framework.WithoutDefaultMiddleware(),
 	)
 	app.Entity("posts", framework.EntityConfig{
-		Table:  "posts",
-		Public: true,
+		Table:    "posts",
+		Exposure: &framework.ExposureConfig{Public: true},
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "views", Type: schema.Int},

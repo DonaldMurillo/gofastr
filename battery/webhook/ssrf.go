@@ -161,7 +161,7 @@ func (g *ssrfGuardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, er
 }
 
 func rejectInternalIP(ip net.IP) error {
-	// One predicate, shared with framework/harness's webfetch and
+	// One predicate, shared with framework/experimental/harness's webfetch and
 	// battery/print's PDF renderer. This used to be a local copy that
 	// omitted RFC 6598 CGNAT (100.64.0.0/10) and did not normalize
 	// IPv4-mapped IPv6 before range-checking — both gaps the sibling

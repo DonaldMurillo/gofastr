@@ -99,12 +99,10 @@ func setupUIE2EApp(t *testing.T) *uiE2EApp {
 	// real apps do via app.Group("/api"); routegroup makes the path
 	// explicit instead of /logs at the root).
 	api := app.Group("/api")
-	app.GroupEntity(api, "logs", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "notes", Type: schema.String},
-		},
-		OwnerField: "user_id",
+	app.GroupEntity(api, "logs", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "notes", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	})
 
 	// Mount session middleware so cookie → user in ctx.

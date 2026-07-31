@@ -14,11 +14,8 @@ import (
 // covRelEntity builds a posts entity with one of each relation kind so the
 // LLM-md and nested-filter helpers exercise every label branch.
 func covRelEntity() *entity.Entity {
-	return entity.Define("posts", entity.EntityConfig{
-		Name:       "posts",
-		Table:      "posts",
-		SoftDelete: true,
-		Fields: []schema.Field{
+	return entity.Define("posts", entity.EntityConfig{Name: "posts",
+		Table: "posts", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "views", Type: schema.Int, Default: 0},
@@ -68,10 +65,7 @@ func TestEntityLLMMD_CoversAllBranches(t *testing.T) {
 }
 
 func TestEntityLLMMD_MultiTenantNote(t *testing.T) {
-	ent := entity.Define("acct", entity.EntityConfig{
-		Name: "acct", Table: "acct", MultiTenant: true,
-		Fields: []schema.Field{{Name: "name", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("acct", entity.EntityConfig{Name: "acct", Table: "acct", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "name", Type: schema.String}}}.WithTimestamps(false))
 	md := EntityLLMMD(ent)
 	if !strings.Contains(md, "Multi-tenancy") {
 		t.Error("expected multi-tenancy note")
@@ -81,10 +75,7 @@ func TestEntityLLMMD_MultiTenantNote(t *testing.T) {
 func TestRegistryLLMMD_ListsEntities(t *testing.T) {
 	reg := stubRegistry{byName: map[string]*entity.Entity{
 		"posts": covRelEntity(),
-		"acct": entity.Define("acct", entity.EntityConfig{
-			Name: "acct", Table: "acct", MultiTenant: true, SoftDelete: true,
-			Fields: []schema.Field{{Name: "n", Type: schema.String}},
-		}.WithTimestamps(false)),
+		"acct":  entity.Define("acct", entity.EntityConfig{Name: "acct", Table: "acct", Scope: &entity.ScopeConfig{MultiTenant: true, SoftDelete: true}, Fields: []schema.Field{{Name: "n", Type: schema.String}}}.WithTimestamps(false)),
 	}}
 	md := RegistryLLMMD(reg, "MyApp")
 	for _, want := range []string{"MyApp — API Reference", "posts", "acct", "soft-delete", "multi-tenant", "Quick Reference"} {

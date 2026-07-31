@@ -279,8 +279,10 @@ func registerCategories(app *framework.App) {
 		Relations: []framework.Relation{
 			{Type: framework.RelHasMany, Name: "products", Entity: "products", ForeignKey: "category_id"},
 		},
-		CRUD:       boolPtr(true),
-		MCP:        true,
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
 		Properties: map[string]any{"icon": "folder", "label": "Categories"},
 	})
 	_ = Categories{}

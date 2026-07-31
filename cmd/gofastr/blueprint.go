@@ -575,53 +575,63 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 	out := make([]framework.EntityDeclaration, 0, len(list))
 	var endpointStubs []BlueprintEndpoint
 	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("entities[%d]", i))
+		context := fmt.Sprintf("entities[%d]", i)
+		m, err := expectMap(item, context)
 		if err != nil {
 			return nil, nil, err
 		}
-		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "scope": true, "pagination": true, "exposure": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "cross_owner_read": true, "search_fields": true, "access": true, "public": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
-		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("entities[%d]", i)); err != nil {
+		allowed := map[string]bool{
+			"name": true, "table": true, "fields": true, "relations": true,
+			"endpoints": true, "scope": true, "pagination": true, "exposure": true,
+			"soft_delete": true, "multi_tenant": true, "tenant_field": true,
+			"owner_field": true, "cross_owner_read": true, "search_fields": true,
+			"access": true, "public": true, "timestamps": true, "crud": true,
+			"mcp": true, "cursor_field": true, "cursor_fields": true,
+			"max_list_limit": true, "indices": true, "properties": true,
+		}
+		if err := rejectUnknownKeys(m, allowed, context); err != nil {
 			return nil, nil, err
 		}
 		decl := framework.EntityDeclaration{
-			Name:           stringValue(m["name"]),
-			Table:          stringValue(m["table"]),
-			SoftDelete:     boolValue(m["soft_delete"]),
-			MultiTenant:    boolValue(m["multi_tenant"]),
-			OwnerField:     stringValue(m["owner_field"]),
-			CrossOwnerRead: stringValue(m["cross_owner_read"]),
-			SearchFields:   stringListValue(m["search_fields"]),
-			Public:         boolValue(m["public"]),
-			MCP:            boolValue(m["mcp"]),
-			CursorField:    stringValue(m["cursor_field"]),
-			CursorFields:   stringListValue(m["cursor_fields"]),
-			Properties:     mapValue(m["properties"]),
+			Name:         stringValue(m["name"]),
+			Table:        stringValue(m["table"]),
+			SearchFields: stringListValue(m["search_fields"]),
+			Properties:   mapValue(m["properties"]),
 		}
 		if m["timestamps"] != nil {
 			v := boolValue(m["timestamps"])
 			decl.Timestamps = &v
 		}
-		if m["crud"] != nil {
-			v := boolValue(m["crud"])
-			decl.CRUD = &v
-		}
-		scope, err := decodeEntityScope(m["scope"], fmt.Sprintf("entities[%d].scope", i))
+
+		scope, err := decodeEntityScope(m["scope"], context+".scope")
 		if err != nil {
 			return nil, nil, err
 		}
-		if scope != nil {
-			decl.Scope = scope
-			decl.SoftDelete, decl.MultiTenant = scope.SoftDelete, scope.MultiTenant
-			decl.OwnerField, decl.CrossOwnerRead = scope.OwnerField, scope.CrossOwnerRead
-		}
-		pagination, err := decodeEntityPagination(m["pagination"], fmt.Sprintf("entities[%d].pagination", i))
+		decl.Scope, err = mergeEntityScopeDeclaration(decl.Name, m, scope, context)
 		if err != nil {
 			return nil, nil, err
 		}
-		if pagination != nil {
-			decl.Pagination = pagination
-			decl.CursorField, decl.CursorFields = pagination.CursorField, pagination.CursorFields
+		pagination, err := decodeEntityPagination(m["pagination"], context+".pagination")
+		if err != nil {
+			return nil, nil, err
 		}
+		decl.Pagination, err = mergeEntityPaginationDeclaration(decl.Name, m, pagination, context)
+		if err != nil {
+			return nil, nil, err
+		}
+		flatAccess, err := decodeEntityAccess(m["access"], context+".access")
+		if err != nil {
+			return nil, nil, err
+		}
+		exposure, err := decodeEntityExposure(m["exposure"], context+".exposure")
+		if err != nil {
+			return nil, nil, err
+		}
+		decl.Exposure, err = mergeEntityExposureDeclaration(decl.Name, m, exposure, flatAccess, context)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		fields, err := decodeFields(m["fields"])
 		if err != nil {
 			return nil, nil, err
@@ -631,23 +641,21 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		// string column so AutoMigrate creates it and auto-CRUD can stamp/scope
 		// it, without the author hand-declaring a field they never want shown in
 		// a form or table. pack drops this synthesized column on the way back.
-		if decl.OwnerField != "" && !blueprintEntityHasField(decl, decl.OwnerField) {
+		if decl.Scope != nil && decl.Scope.OwnerField != "" &&
+			!blueprintEntityHasField(decl, decl.Scope.OwnerField) {
 			decl.Fields = append(decl.Fields, framework.FieldDeclaration{
-				Name:   decl.OwnerField,
+				Name:   decl.Scope.OwnerField,
 				Type:   "string",
 				Hidden: true,
 			})
 		}
-		// cross_owner_read lifts owner scoping for reads only — it only
-		// makes sense on an owner-scoped entity. Catch the misconfiguration
-		// here with an actionable message rather than letting the knob
-		// silently do nothing at runtime.
-		if decl.CrossOwnerRead != "" && decl.OwnerField == "" {
-			return nil, nil, fmt.Errorf("blueprint: entity %q sets cross_owner_read %q but has no owner_field (cross-owner read only applies to owner-scoped entities)", decl.Name, decl.CrossOwnerRead)
+		// cross_owner_read only applies to an owner-scoped entity.
+		if decl.Scope != nil && decl.Scope.CrossOwnerRead != "" && decl.Scope.OwnerField == "" {
+			return nil, nil, fmt.Errorf(
+				"blueprint: entity %q sets cross_owner_read %q but has no owner_field (cross-owner read only applies to owner-scoped entities)",
+				decl.Name, decl.Scope.CrossOwnerRead,
+			)
 		}
-		// search_fields must reference known, non-hidden, string/text
-		// columns. entity.Define panics on these too, but the blueprint
-		// decoder returns a friendlier error before code generation.
 		for _, sf := range decl.SearchFields {
 			var found *framework.FieldDeclaration
 			for j := range decl.Fields {
@@ -669,12 +677,12 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
 			}
 		}
-		// Cursor columns get the same treatment. entity.Define panics on a
-		// Hidden or no_query keyset column — correct, since the cursor token
-		// carries its value — but a generated app that dies at boot is a much
-		// worse diagnostic than the error search_fields gets here. Both
-		// spellings, and the framework-managed columns resolve as unflagged.
-		for _, cf := range append(append([]string{}, decl.CursorFields...), decl.CursorField) {
+		var cursorFields []string
+		if decl.Pagination != nil {
+			cursorFields = append(cursorFields, decl.Pagination.CursorFields...)
+			cursorFields = append(cursorFields, decl.Pagination.CursorField)
+		}
+		for _, cf := range cursorFields {
 			if cf == "" {
 				continue
 			}
@@ -702,19 +710,6 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			return nil, nil, err
 		}
 		decl.Indices = indices
-		access, err := decodeEntityAccess(m["access"], fmt.Sprintf("entities[%d].access", i))
-		if err != nil {
-			return nil, nil, err
-		}
-		decl.Access = access
-		exposure, err := decodeEntityExposure(m["exposure"], fmt.Sprintf("entities[%d].exposure", i))
-		if err != nil {
-			return nil, nil, err
-		}
-		if exposure != nil {
-			decl.Exposure = exposure
-			decl.CRUD, decl.MCP, decl.Public, decl.Access = exposure.CRUD, exposure.MCP, exposure.Public, exposure.Access
-		}
 		endpoints, stubs, err := decodeEntityEndpoints(decl.Name, m["endpoints"])
 		if err != nil {
 			return nil, nil, err
@@ -724,6 +719,176 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		out = append(out, decl)
 	}
 	return out, endpointStubs, nil
+}
+
+func mergeEntityScopeDeclaration(
+	name string,
+	root map[string]*coreyaml.Node,
+	grouped *fwentity.ScopeDeclaration,
+	context string,
+) (*fwentity.ScopeDeclaration, error) {
+	groupMap, err := optionalEntityGroupMap(root["scope"], context+".scope")
+	if err != nil {
+		return nil, err
+	}
+	keys := []string{"soft_delete", "multi_tenant", "tenant_field", "owner_field", "cross_owner_read"}
+	if grouped == nil && !hasEntityDeclarationKey(root, keys...) {
+		return nil, nil
+	}
+	if grouped == nil {
+		grouped = &fwentity.ScopeDeclaration{}
+	}
+	if node := root["soft_delete"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["soft_delete"] != nil && flat != grouped.SoftDelete {
+			return nil, entityDeclarationConflict(name, "soft_delete", "scope.soft_delete", flat, grouped.SoftDelete)
+		}
+		grouped.SoftDelete = flat
+	}
+	if node := root["multi_tenant"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["multi_tenant"] != nil && flat != grouped.MultiTenant {
+			return nil, entityDeclarationConflict(name, "multi_tenant", "scope.multi_tenant", flat, grouped.MultiTenant)
+		}
+		grouped.MultiTenant = flat
+	}
+	for key, target := range map[string]*string{
+		"tenant_field": &grouped.TenantField, "owner_field": &grouped.OwnerField,
+		"cross_owner_read": &grouped.CrossOwnerRead,
+	} {
+		if node := root[key]; node != nil {
+			flat := stringValue(node)
+			if groupMap[key] != nil && flat != *target {
+				return nil, entityDeclarationConflict(name, key, "scope."+key, flat, *target)
+			}
+			*target = flat
+		}
+	}
+	return grouped, nil
+}
+
+func mergeEntityPaginationDeclaration(
+	name string,
+	root map[string]*coreyaml.Node,
+	grouped *fwentity.PaginationDeclaration,
+	context string,
+) (*fwentity.PaginationDeclaration, error) {
+	groupMap, err := optionalEntityGroupMap(root["pagination"], context+".pagination")
+	if err != nil {
+		return nil, err
+	}
+	keys := []string{"cursor_field", "cursor_fields", "max_list_limit"}
+	if grouped == nil && !hasEntityDeclarationKey(root, keys...) {
+		return nil, nil
+	}
+	if grouped == nil {
+		grouped = &fwentity.PaginationDeclaration{}
+	}
+	if node := root["cursor_field"]; node != nil {
+		flat := stringValue(node)
+		if groupMap["cursor_field"] != nil && flat != grouped.CursorField {
+			return nil, entityDeclarationConflict(name, "cursor_field", "pagination.cursor_field", flat, grouped.CursorField)
+		}
+		grouped.CursorField = flat
+	}
+	if node := root["cursor_fields"]; node != nil {
+		flat := stringListValue(node)
+		if groupMap["cursor_fields"] != nil && !stringSlicesEqual(flat, grouped.CursorFields) {
+			return nil, entityDeclarationConflict(name, "cursor_fields", "pagination.cursor_fields", flat, grouped.CursorFields)
+		}
+		grouped.CursorFields = flat
+	}
+	if node := root["max_list_limit"]; node != nil {
+		flat := intValue(node)
+		if groupMap["max_list_limit"] != nil && flat != grouped.MaxListLimit {
+			return nil, entityDeclarationConflict(name, "max_list_limit", "pagination.max_list_limit", flat, grouped.MaxListLimit)
+		}
+		grouped.MaxListLimit = flat
+	}
+	return grouped, nil
+}
+
+func mergeEntityExposureDeclaration(
+	name string,
+	root map[string]*coreyaml.Node,
+	grouped *fwentity.ExposureDeclaration,
+	flatAccess *fwentity.AccessDeclaration,
+	context string,
+) (*fwentity.ExposureDeclaration, error) {
+	groupMap, err := optionalEntityGroupMap(root["exposure"], context+".exposure")
+	if err != nil {
+		return nil, err
+	}
+	keys := []string{"crud", "mcp", "public", "access"}
+	if grouped == nil && !hasEntityDeclarationKey(root, keys...) {
+		return nil, nil
+	}
+	if grouped == nil {
+		grouped = &fwentity.ExposureDeclaration{}
+	}
+	if node := root["crud"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["crud"] != nil && (grouped.CRUD == nil || flat != *grouped.CRUD) {
+			return nil, entityDeclarationConflict(name, "crud", "exposure.crud", flat, grouped.CRUD)
+		}
+		grouped.CRUD = &flat
+	}
+	if node := root["mcp"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["mcp"] != nil && flat != grouped.MCP {
+			return nil, entityDeclarationConflict(name, "mcp", "exposure.mcp", flat, grouped.MCP)
+		}
+		grouped.MCP = flat
+	}
+	if node := root["public"]; node != nil {
+		flat := boolValue(node)
+		if groupMap["public"] != nil && flat != grouped.Public {
+			return nil, entityDeclarationConflict(name, "public", "exposure.public", flat, grouped.Public)
+		}
+		grouped.Public = flat
+	}
+	if flatAccess != nil {
+		if groupMap["access"] != nil && (grouped.Access == nil || *flatAccess != *grouped.Access) {
+			return nil, entityDeclarationConflict(name, "access", "exposure.access", flatAccess, grouped.Access)
+		}
+		grouped.Access = flatAccess
+	}
+	return grouped, nil
+}
+
+func optionalEntityGroupMap(node *coreyaml.Node, context string) (map[string]*coreyaml.Node, error) {
+	if node == nil {
+		return map[string]*coreyaml.Node{}, nil
+	}
+	return expectMap(node, context)
+}
+
+func hasEntityDeclarationKey(root map[string]*coreyaml.Node, keys ...string) bool {
+	for _, key := range keys {
+		if root[key] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func entityDeclarationConflict(name, flatPath, groupedPath string, flat, grouped any) error {
+	return fmt.Errorf(
+		"blueprint: entity %q has conflicting values for %s and %s (%v != %v)",
+		name, flatPath, groupedPath, flat, grouped,
+	)
 }
 
 func decodeEntityScope(node *coreyaml.Node, context string) (*fwentity.ScopeDeclaration, error) {
@@ -784,12 +949,31 @@ func decodeEntityExposure(node *coreyaml.Node, context string) (*fwentity.Exposu
 	return &fwentity.ExposureDeclaration{CRUD: crud, MCP: boolValue(m["mcp"]), Public: boolValue(m["public"]), Access: access}, nil
 }
 
+func entityDeclarationScope(decl framework.EntityDeclaration) fwentity.ScopeDeclaration {
+	if decl.Scope == nil {
+		return fwentity.ScopeDeclaration{}
+	}
+	return *decl.Scope
+}
+
+func entityDeclarationExposure(decl framework.EntityDeclaration) fwentity.ExposureDeclaration {
+	if decl.Exposure == nil {
+		return fwentity.ExposureDeclaration{}
+	}
+	return *decl.Exposure
+}
+
+func entityDeclarationCRUDEnabled(decl framework.EntityDeclaration) bool {
+	exposure := entityDeclarationExposure(decl)
+	return exposure.CRUD == nil || *exposure.CRUD
+}
+
 // blueprintHasEntityAccess reports whether any entity declares an `access:`
 // block — i.e. its auto-CRUD API is permission-gated and therefore needs a
 // RolePolicy installed for the signed-in user, or every write 403s.
 func blueprintHasEntityAccess(bp Blueprint) bool {
 	for _, e := range bp.Entities {
-		if e.Access != nil {
+		if entityDeclarationExposure(e).Access != nil {
 			return true
 		}
 	}
@@ -873,7 +1057,7 @@ func blueprintEntityHasField(decl framework.EntityDeclaration, name string) bool
 
 func blueprintHasOwnerScopedEntity(bp Blueprint) bool {
 	for _, e := range bp.Entities {
-		if e.OwnerField != "" {
+		if entityDeclarationScope(e).OwnerField != "" {
 			return true
 		}
 	}
@@ -1575,7 +1759,7 @@ func validateBlueprint(bp Blueprint) error {
 	// empty tenant on writes: silently broken while looking secure. Refuse
 	// to generate rather than ship that.
 	for _, decl := range bp.Entities {
-		if decl.MultiTenant {
+		if entityDeclarationScope(decl).MultiTenant {
 			return fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy — subdomain, JWT claim, user's org — is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name)
 		}
 	}
@@ -1783,7 +1967,7 @@ func validateBlueprint(bp Blueprint) error {
 func blueprintCRUDRoutes(entities []framework.EntityDeclaration) map[string]bool {
 	out := map[string]bool{}
 	for _, decl := range entities {
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			continue
 		}
 		root := "/" + blueprintEntityTable(decl)
@@ -1862,7 +2046,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !ok {
 			return fmt.Errorf("blueprint: screen %q entity_list targets unknown entity %q", screenName, block.Entity)
 		}
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q entity_list target %q must enable crud", screenName, block.Entity)
 		}
 		if len(block.Fields) == 0 {
@@ -1949,7 +2133,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !ok {
 			return fmt.Errorf("blueprint: screen %q entity_form targets unknown entity %q", screenName, block.Entity)
 		}
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q entity_form target %q must enable crud", screenName, block.Entity)
 		}
 		mode := strings.ToLower(strings.TrimSpace(block.Mode))
@@ -1964,7 +2148,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !ok {
 			return fmt.Errorf("blueprint: screen %q entity_detail targets unknown entity %q", screenName, block.Entity)
 		}
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q entity_detail target %q must enable crud", screenName, block.Entity)
 		}
 	case "login_form", "signup_form":
@@ -1990,7 +2174,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !known {
 			return fmt.Errorf("blueprint: screen %q %s source targets unknown entity %q", screenName, kind, srcEntity)
 		}
-		if decl.CRUD != nil && !*decl.CRUD {
+		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q %s source entity %q must enable crud (the chart reads its rows via the CRUD handler)", screenName, kind, srcEntity)
 		}
 		// group_by is the chart's LABEL, not an aggregate: groupCounts reads
@@ -2019,7 +2203,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 			if !known {
 				return fmt.Errorf("blueprint: screen %q stat_card source targets unknown entity %q", screenName, srcEntity)
 			}
-			if decl.CRUD != nil && !*decl.CRUD {
+			if !entityDeclarationCRUDEnabled(decl) {
 				return fmt.Errorf("blueprint: screen %q stat_card source entity %q must enable crud", screenName, srcEntity)
 			}
 			// source.filter is split on "=" and handed to CountAll as a raw
@@ -2685,7 +2869,7 @@ func blueprintE2EWritableTarget(bp Blueprint) (blueprintCRUDTarget, bool) {
 			createJSON:  createJSON,
 			updateJSON:  updateJSON,
 			probe:       probe,
-			accessGated: decl.Access != nil || decl.OwnerField != "",
+			accessGated: entityDeclarationExposure(decl).Access != nil || entityDeclarationScope(decl).OwnerField != "",
 		}
 		if dr, ok := detailOf[e]; ok {
 			r := dr
@@ -5308,9 +5492,9 @@ func blueprintEntityHasSystemColumn(decl framework.EntityDeclaration, name strin
 	case "created_at", "updated_at":
 		return decl.Timestamps == nil || *decl.Timestamps
 	case "deleted_at":
-		return decl.SoftDelete
+		return entityDeclarationScope(decl).SoftDelete
 	case "tenant_id":
-		return decl.MultiTenant
+		return entityDeclarationScope(decl).MultiTenant
 	}
 	return false
 }
@@ -7480,7 +7664,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	// ConfirmAction dialogs — mount a delete confirmation modal for each
 	// soft-delete entity so entity_detail screens can render a trigger.
 	for _, decl := range bp.Entities {
-		if decl.SoftDelete {
+		if entityDeclarationScope(decl).SoftDelete {
 			sb.WriteString("\t{\n")
 			sb.WriteString(fmt.Sprintf("\t\t_, b := ui.ConfirmAction(ui.ConfirmActionConfig{Name: %q, TriggerLabel: \"Delete\", Title: %q, Body: %q, RPCPath: %q})\n",
 				"delete-"+decl.Name,
@@ -8226,7 +8410,7 @@ func blueprintBlockNeedsToasts(block BlueprintBlock) bool {
 }
 func blueprintHasSoftDelete(bp Blueprint) bool {
 	for _, decl := range bp.Entities {
-		if decl.SoftDelete {
+		if entityDeclarationScope(decl).SoftDelete {
 			return true
 		}
 	}

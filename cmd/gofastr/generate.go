@@ -1059,7 +1059,7 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 		}
 		sb.WriteString("\t\t},\n")
 	}
-	if decl.Scope != nil {
+	if scopeDeclHasContent(decl.Scope) {
 		sb.WriteString("\t\tScope: &framework.ScopeConfig{\n")
 		if decl.Scope.SoftDelete {
 			sb.WriteString("\t\t\tSoftDelete: true,\n")
@@ -1077,17 +1077,6 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 			sb.WriteString(fmt.Sprintf("\t\t\tCrossOwnerRead: %q,\n", decl.Scope.CrossOwnerRead))
 		}
 		sb.WriteString("\t\t},\n")
-	} else if decl.SoftDelete {
-		sb.WriteString("\t\tSoftDelete: true,\n")
-	}
-	if decl.Scope == nil && decl.MultiTenant {
-		sb.WriteString("\t\tMultiTenant: true,\n")
-	}
-	if decl.Scope == nil && decl.OwnerField != "" {
-		sb.WriteString(fmt.Sprintf("\t\tOwnerField: %q,\n", decl.OwnerField))
-	}
-	if decl.Scope == nil && decl.CrossOwnerRead != "" {
-		sb.WriteString(fmt.Sprintf("\t\tCrossOwnerRead: %q,\n", decl.CrossOwnerRead))
 	}
 	if len(decl.SearchFields) > 0 {
 		sb.WriteString("\t\tSearchFields: []string{")
@@ -1099,7 +1088,7 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 		}
 		sb.WriteString("},\n")
 	}
-	if decl.Exposure != nil {
+	if exposureDeclHasContent(decl.Exposure) {
 		sb.WriteString("\t\tExposure: &framework.ExposureConfig{\n")
 		if decl.Exposure.CRUD != nil {
 			sb.WriteString(fmt.Sprintf("\t\t\tCRUD: boolPtr(%t),\n", *decl.Exposure.CRUD))
@@ -1114,19 +1103,8 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 			sb.WriteString("\t\t\tAccess: " + literal + ",\n")
 		}
 		sb.WriteString("\t\t},\n")
-	} else if literal := renderAccessLiteral(decl.Access); literal != "" {
-		sb.WriteString("\t\tAccess: " + literal + ",\n")
 	}
-	if decl.Exposure == nil && decl.Public {
-		sb.WriteString("\t\tPublic: true,\n")
-	}
-	if decl.Exposure == nil && decl.CRUD != nil {
-		sb.WriteString(fmt.Sprintf("\t\tCRUD: boolPtr(%t),\n", *decl.CRUD))
-	}
-	if decl.Exposure == nil && decl.MCP {
-		sb.WriteString("\t\tMCP: true,\n")
-	}
-	if decl.Pagination != nil {
+	if paginationDeclHasContent(decl.Pagination) {
 		sb.WriteString("\t\tPagination: &framework.PaginationConfig{\n")
 		if decl.Pagination.CursorField != "" {
 			sb.WriteString(fmt.Sprintf("\t\t\tCursorField: %q,\n", decl.Pagination.CursorField))
@@ -1145,18 +1123,6 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 			sb.WriteString(fmt.Sprintf("\t\t\tMaxListLimit: %d,\n", decl.Pagination.MaxListLimit))
 		}
 		sb.WriteString("\t\t},\n")
-	} else if decl.CursorField != "" {
-		sb.WriteString(fmt.Sprintf("\t\tCursorField: %q,\n", decl.CursorField))
-	}
-	if decl.Pagination == nil && len(decl.CursorFields) > 0 {
-		sb.WriteString("\t\tCursorFields: []string{")
-		for i, field := range decl.CursorFields {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			sb.WriteString(fmt.Sprintf("%q", field))
-		}
-		sb.WriteString("},\n")
 	}
 	if len(decl.Indices) > 0 {
 		sb.WriteString("\t\tIndices: []framework.Index{\n")
@@ -1179,6 +1145,23 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	sb.WriteString(")\n")
 	sb.WriteString(fmt.Sprintf("\t_ = %s{}\n", structName))
 	return sb.String(), nil
+}
+
+// scopeDeclHasContent, exposureDeclHasContent, and paginationDeclHasContent
+// gate group-literal emission: a nil or all-zero group must emit nothing, so
+// the generated Go packs back to the same declaration the YAML parsed to
+// (a materialized-but-empty group would round-trip as non-nil where the
+// author wrote nothing).
+func scopeDeclHasContent(s *fwentity.ScopeDeclaration) bool {
+	return s != nil && *s != (fwentity.ScopeDeclaration{})
+}
+
+func exposureDeclHasContent(e *fwentity.ExposureDeclaration) bool {
+	return e != nil && (e.CRUD != nil || e.MCP || e.Public || e.Access != nil)
+}
+
+func paginationDeclHasContent(p *fwentity.PaginationDeclaration) bool {
+	return p != nil && (p.CursorField != "" || len(p.CursorFields) > 0 || p.MaxListLimit != 0)
 }
 
 // renderAccessLiteral renders an entity's per-operation RBAC declaration as

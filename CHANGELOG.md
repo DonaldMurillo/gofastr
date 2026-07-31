@@ -7,7 +7,96 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-## [0.53.0] - 2026-07-30
+## [0.54.0] - 2026-07-30
+
+The zero-carryover release: a three-agent deep analysis of the whole
+framework at v0.53 concluded the feature surface is complete but the
+contract is not freeze-ready, and this release clears everything the
+analysis found — every deprecated field, every dead exported surface,
+every advertised-but-unimplemented behavior, and every place the docs
+contradicted the code. Every behavioral fix landed with a test that
+failed first.
+
+### Breaking
+
+- **BREAKING: the flat `EntityConfig` fields are gone; the grouped
+  configs are the model.** `SoftDelete`, `MultiTenant`, `TenantField`,
+  `OwnerField`, `CrossOwnerRead` → `Scope`; `CursorField`,
+  `CursorFields`, `MaxListLimit` → `Pagination`; `CRUD`, `MCP`,
+  `Public`, `Access` → `Exposure`. The fields were deprecated through
+  the v0.40 line and — worse — were still the canonical runtime
+  representation: normalization copied the groups into them and the
+  runtime read the flat copies. The inversion makes the groups the
+  resolved model. Blueprint YAML flat keys (`owner_field:`,
+  `soft_delete:`, …) still parse as the documented shorthand, and a
+  flat key that conflicts with its grouped twin is now a loud error
+  instead of a silent precedence pick. `gofastr upgrade` maps each
+  removed field to its replacement.
+- **BREAKING: `EntityConfig.Timestamps` is `*bool`.** A literal
+  `false` used to silently mean "default true" because an unexported
+  set-bit carried the real value; only `WithTimestamps(false)` worked.
+  The visible value is now the semantic value — nil defaults to true —
+  so the struct survives copying, serialization, and generic
+  construction.
+- **BREAKING: the agent harness moved to
+  `framework/experimental/harness`.** It is a v0.1 subsystem and now
+  carries the experimental-path stability exemption. Its architecture
+  doc no longer describes unbuilt machinery: the TOFU
+  acknowledgement flow, dir-trust, and diff-class detection were
+  documented as shipped but never implemented, and are now labeled
+  design intent; the package map is generated from the real tree. A
+  layering test (with a red/green proof) replaces the fictional
+  `depscheck` guard the doc used to claim.
+- **BREAKING: upload metadata and `FileField` emit camelCase JSON.**
+  `core/upload.Metadata` (`originalName`, `mimeType`, `uploadedAt`)
+  and `framework/file.FileField` (`mimeType`, `storageRef`) join the
+  camelCase wire convention. The persisted `<field>_variants` column
+  format deliberately stays snake_case — it is a stored database
+  format, and renaming its keys would orphan existing rows.
+- **BREAKING: dead exported surface is deleted.** `battery/storage`'s
+  `BackendFactory` registry (`Register`/`New`/`NewBattery` — `New`
+  always errored "no backend registered"), the unwirable
+  `battery/experimental` redis stores, the harness's orphan providers
+  (`failover`, `routing`, `copilot`), its inert plugin seam and stub
+  packages, kiln's never-populated `render.Deferred` surface, and the
+  never-returned `freeze.ErrGenerateViaBlueprint` sentinel.
+
+### Fixed
+
+- **`gofastr migrate` honors the pure-Go sqlite driver.** The dialect
+  branch keyed only on `"sqlite3"`, so the zero-CGO `"sqlite"` driver
+  silently ran Postgres-dialect SQL.
+- **`gofastr dev --flag=value` parses.** The help documented the `=`
+  form; the parser accepted only the space-separated form, silently
+  ignoring `--addr=:9000`.
+- **`gofastr init` emits the flat owned layout the scaffold-and-own
+  contract documents** — `main.go` + `screens.go` at the root, no
+  `screens/` subpackage, no `gen/` directory, Owned headers on every
+  scaffold file.
+- **Kiln no longer advertises actions it cannot run.** The agent tool
+  schema and prompt offered `create_entity` and `respond_query`;
+  nothing executed them. They are gone from the schema and the node
+  catalog, and journal application now rejects any unsupported action
+  kind at authoring time with an error naming it. Dropped entity
+  endpoints — previously silently nulled — log a warning naming the
+  endpoint and why.
+- **`TestRequest.WithBody` cannot silently run the wrong body.** A
+  JSON marshal failure is retained and surfaced by `Execute` as a
+  failed response instead of dispatching the request unchanged.
+- **The blueprint generator emits no empty group literals**, and
+  `gofastr pack` normalizes an all-zero group to nil, so generated Go
+  packs back to exactly the declaration the YAML parsed to.
+
+### Documentation
+
+- Every embedded doc page matches the code it describes again: the
+  core-ui architecture package map lists the real packages, admin.md
+  describes the real no-host failure mode, search.md the real battery
+  lifecycle, widgets.md the real `PageTheme` signature,
+  project-structure.md the real `init` output, and the doc index links
+  the pages that existed but were unreachable. New pages: `email.md`,
+  `storage.md`, and `core-packages.md` (a map of the exported `core/*`
+  packages that had no page).
 
 The eleven pre-existing bugs the v0.52.0 review pass found in shipped code
 but deliberately left out of that release, plus a security audit of the

@@ -262,7 +262,10 @@ func TestBlueprint_AdminAndRBACAdditiveSeam(t *testing.T) {
 	bp.App.Admin = BlueprintAdmin{Enabled: true, Role: "admin", LoginPath: "/login"}
 	// Declare access on an entity so rolePolicy is emitted too.
 	if len(bp.Entities) > 0 {
-		bp.Entities[0].Access = &entity.AccessDeclaration{Read: "items:read"}
+		if bp.Entities[0].Exposure == nil {
+			bp.Entities[0].Exposure = &entity.ExposureDeclaration{}
+		}
+		bp.Entities[0].Exposure.Access = &entity.AccessDeclaration{Read: "items:read"}
 	}
 
 	app := renderBlueprintApp(bp)

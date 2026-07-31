@@ -31,11 +31,8 @@ func sdkFixtureDecls() []framework.EntityDeclaration {
 				{Name: "secret_note", Type: "string", Hidden: true},
 			},
 		},
-		{
-			Name:         "documents",
-			Table:        "doc_files",
-			SoftDelete:   true,
-			SearchFields: []string{"title"},
+		{Pagination: &framework.PaginationDeclaration{}, Exposure: &framework.ExposureDeclaration{}, Name: "documents",
+			Table: "doc_files", Scope: &framework.ScopeDeclaration{SoftDelete: true}, SearchFields: []string{"title"},
 			Fields: []framework.FieldDeclaration{
 				{Name: "title", Type: "string", Required: true},
 				{Name: "body", Type: "text"},

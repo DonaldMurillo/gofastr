@@ -35,27 +35,20 @@ func TestVersionsMustAgreeOnAccess(t *testing.T) {
 	}{
 		{
 			name: "RBAC-gated beside un-gated",
-			v1:   entity.EntityConfig{Fields: titleOnly, Access: entity.AccessControl{Read: "records:read"}},
+			v1:   entity.EntityConfig{Fields: titleOnly, Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: "records:read"}}},
 			v2:   entity.EntityConfig{Fields: titleOnly},
 			want: "access",
 		},
 		{
 			name: "session-required beside Public",
 			v1:   entity.EntityConfig{Fields: titleOnly},
-			v2:   entity.EntityConfig{Fields: titleOnly, Public: true},
+			v2:   entity.EntityConfig{Fields: titleOnly, Exposure: &entity.ExposureConfig{Public: true}},
 			want: "public",
 		},
 		{
 			name: "owner-scoped beside cross-owner-read",
-			v1: entity.EntityConfig{
-				Fields:     []schema.Field{{Name: "title", Type: schema.String}, {Name: "owner_id", Type: schema.String, Hidden: true}},
-				OwnerField: "owner_id",
-			},
-			v2: entity.EntityConfig{
-				Fields:         []schema.Field{{Name: "title", Type: schema.String}, {Name: "owner_id", Type: schema.String, Hidden: true}},
-				OwnerField:     "owner_id",
-				CrossOwnerRead: "records:read_all",
-			},
+			v1:   entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "owner_id", Type: schema.String, Hidden: true}}, Scope: &entity.ScopeConfig{OwnerField: "owner_id"}},
+			v2:   entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "owner_id", Type: schema.String, Hidden: true}}, Scope: &entity.ScopeConfig{OwnerField: "owner_id", CrossOwnerRead: "records:read_all"}},
 			want: "cross",
 		},
 	}

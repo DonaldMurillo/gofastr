@@ -34,7 +34,7 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
 
 - `DefaultPageSize = 25`
 - `MaxPageSize = 100` (`limit` is clamped silently)
-- `EntityConfig.MaxListLimit` caps the cursor path too: a `limit` above
+- `Pagination.MaxListLimit` caps the cursor path too: a `limit` above
   the entity's cap is clamped to it, same as the offset and streaming
   list paths. (An oversized `limit` never falls back to the default —
   it clamps.)
@@ -51,14 +51,14 @@ with `EntityConfig`:
 // Single-field cursor on created_at:
 framework.EntityConfig{
     Name: "posts",
-    CursorField: "created_at",
+    Pagination: &framework.PaginationConfig{CursorField: "created_at"},
     …
 }
 
 // Composite cursor: tuple-compare on (created_at, id):
 framework.EntityConfig{
     Name: "posts",
-    CursorFields: []string{"created_at", "id"},
+    Pagination: &framework.PaginationConfig{CursorFields: []string{"created_at", "id"}},
     …
 }
 ```

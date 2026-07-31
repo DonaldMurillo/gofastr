@@ -63,19 +63,15 @@ func TestEagerLoadScrubsSoftDeleteAndHidden(t *testing.T) {
 		{"id": "c2", "post_id": "p1", "body": "trashed", "secret": "SHH2", "deleted_at": "2026-01-01"},
 	})
 
-	usersEnt := entity.Define("users", entity.EntityConfig{
-		Name: "users", Table: "users", SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String},
-			{Name: "password_hash", Type: schema.String, Hidden: true},
-		},
+	usersEnt := entity.Define("users", entity.EntityConfig{Name: "users", Table: "users", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+		{Name: "name", Type: schema.String},
+		{Name: "password_hash", Type: schema.String, Hidden: true},
+	},
 	})
-	commentsEnt := entity.Define("comments", entity.EntityConfig{
-		Name: "comments", Table: "comments", SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "body", Type: schema.String},
-			{Name: "secret", Type: schema.String, Hidden: true},
-		},
+	commentsEnt := entity.Define("comments", entity.EntityConfig{Name: "comments", Table: "comments", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+		{Name: "body", Type: schema.String},
+		{Name: "secret", Type: schema.String, Hidden: true},
+	},
 	})
 	postsEnt := entity.Define("posts", entity.EntityConfig{
 		Name: "posts", Table: "posts",

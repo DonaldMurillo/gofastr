@@ -16,7 +16,11 @@ import (
 // still reach auto-CRUD/MCP.
 
 func piiEntity(name string, fields ...string) framework.EntityDeclaration {
-	decl := framework.EntityDeclaration{Name: name}
+	decl := framework.EntityDeclaration{
+		Name:     name,
+		Scope:    &framework.ScopeDeclaration{},
+		Exposure: &framework.ExposureDeclaration{},
+	}
 	for _, f := range fields {
 		decl.Fields = append(decl.Fields, framework.FieldDeclaration{Name: f, Type: "string"})
 	}
@@ -47,7 +51,7 @@ func TestPIIUnscopedFlagged(t *testing.T) {
 
 func TestPIIOwnerFieldPasses(t *testing.T) {
 	decl := piiEntity("patients", "email", "user_id")
-	decl.OwnerField = "user_id"
+	decl.Scope.OwnerField = "user_id"
 	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("owner_field set, want no findings: %+v", got)
@@ -56,7 +60,7 @@ func TestPIIOwnerFieldPasses(t *testing.T) {
 
 func TestPIIMultiTenantPasses(t *testing.T) {
 	decl := piiEntity("patients", "email")
-	decl.MultiTenant = true
+	decl.Scope.MultiTenant = true
 	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("multi_tenant set, want no findings: %+v", got)
@@ -65,7 +69,7 @@ func TestPIIMultiTenantPasses(t *testing.T) {
 
 func TestPIIAccessPasses(t *testing.T) {
 	decl := piiEntity("patients", "email")
-	decl.Access = &fwentity.AccessDeclaration{Read: "patients:read"}
+	decl.Exposure.Access = &fwentity.AccessDeclaration{Read: "patients:read"}
 	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("access set, want no findings: %+v", got)
@@ -76,7 +80,7 @@ func TestPIIAccessPasses(t *testing.T) {
 // count as a remedy.
 func TestPIIEmptyAccessStillFlagged(t *testing.T) {
 	decl := piiEntity("patients", "email")
-	decl.Access = &fwentity.AccessDeclaration{}
+	decl.Exposure.Access = &fwentity.AccessDeclaration{}
 	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 1 {
 		t.Fatalf("blank access map should not suppress: %+v", got)
@@ -104,7 +108,7 @@ func TestPIIAuthAloneStillFlagged(t *testing.T) {
 func TestPIICrudOffPasses(t *testing.T) {
 	decl := piiEntity("patients", "email")
 	off := false
-	decl.CRUD = &off
+	decl.Exposure.CRUD = &off
 	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("crud off, want no findings: %+v", got)
@@ -115,8 +119,8 @@ func TestPIICrudOffPasses(t *testing.T) {
 func TestPIIMcpOnlyFlagged(t *testing.T) {
 	decl := piiEntity("patients", "email")
 	off := false
-	decl.CRUD = &off
-	decl.MCP = true
+	decl.Exposure.CRUD = &off
+	decl.Exposure.MCP = true
 	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 1 {
 		t.Fatalf("mcp-only entity should be flagged: %+v", got)

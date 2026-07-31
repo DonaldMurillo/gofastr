@@ -345,21 +345,23 @@ func TestPack_GroupedEntityConfigsRoundTrip(t *testing.T) {
 	if _, ok := m["exposure"]; !ok {
 		t.Fatalf("packed YAML map flattened exposure: %#v", m)
 	}
+	for _, flat := range []string{
+		"soft_delete", "multi_tenant", "tenant_field", "owner_field",
+		"cross_owner_read", "cursor_field", "cursor_fields", "max_list_limit",
+		"crud", "mcp", "public", "access",
+	} {
+		if _, ok := m[flat]; ok {
+			t.Errorf("packed YAML map contains removed flat key %q: %#v", flat, m)
+		}
+	}
 }
 
-// TestPack_PublicEntityRoundTrips guards that an entity declared with
-// public: true survives generate→pack. The generator emits EntityConfig
-// {Public: true}; pack must read it back AND re-emit public: true into the
-// YAML, or a generated public app silently flips to session-gated on
-// round-trip (issue: Public declaration dropped by pack).
+// TestPack_PublicEntityRoundTrips guards that a public entity survives
+// generate and pack without moving exposure.public back to a flat key.
 func TestPack_PublicEntityRoundTrips(t *testing.T) {
 	bp := Blueprint{
-		App: BlueprintApp{Name: "Pub", Module: "example.com/pub", DBDriver: "sqlite", DBURL: "file:x.db"},
-		Entities: []framework.EntityDeclaration{{
-			Name:   "posts",
-			Public: true,
-			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string", Required: true}},
-		}},
+		App:      BlueprintApp{Name: "Pub", Module: "example.com/pub", DBDriver: "sqlite", DBURL: "file:x.db"},
+		Entities: []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "posts", Exposure: &framework.ExposureDeclaration{Public: true}, Fields: []framework.FieldDeclaration{{Name: "title", Type: "string", Required: true}}}},
 	}
 	dir := materializeBlueprint(t, bp)
 	got, err := packReadEntities(dir)
@@ -369,15 +371,16 @@ func TestPack_PublicEntityRoundTrips(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("recovered %d entities, want 1", len(got))
 	}
-	if !got[0].Public {
-		t.Errorf("public flag lost on read-back: Public=%v", got[0].Public)
+	if !got[0].Exposure.Public {
+		t.Errorf("public flag lost on read-back: Public=%v", got[0].Exposure.Public)
 	}
-	// The emit side: entityToMap must produce public: true so the serialized
-	// YAML carries the declaration. putBool only writes when true, matching
-	// how soft_delete/multi_tenant are emitted.
 	m := entityToMap(got[0])
-	if v, ok := m["public"]; !ok || v != true {
-		t.Errorf("entityToMap did not emit public: true, got %#v", m["public"])
+	exposure, ok := m["exposure"].(map[string]any)
+	if !ok || exposure["public"] != true {
+		t.Errorf("entityToMap exposure = %#v, want public: true", m["exposure"])
+	}
+	if _, ok := m["public"]; ok {
+		t.Errorf("entityToMap emitted removed flat public key: %#v", m)
 	}
 }
 

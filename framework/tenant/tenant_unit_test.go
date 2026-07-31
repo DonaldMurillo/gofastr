@@ -22,17 +22,17 @@ func TestDefaultTenantConfig(t *testing.T) {
 func TestWithMultiTenant_FieldBranches(t *testing.T) {
 	// Custom column flows into TenantField.
 	custom := WithMultiTenant(&entity.Entity{}, TenantConfig{Field: "org_id"})
-	if !custom.Config.MultiTenant || custom.Config.TenantField != "org_id" {
+	if !custom.Config.Scope.MultiTenant || custom.Config.Scope.TenantField != "org_id" {
 		t.Fatalf("custom field not honored: %+v", custom.Config)
 	}
 	// Blank field leaves TenantField unset (default applies).
 	blank := WithMultiTenant(&entity.Entity{}, TenantConfig{Field: ""})
-	if !blank.Config.MultiTenant || blank.Config.TenantField != "" {
+	if !blank.Config.Scope.MultiTenant || blank.Config.Scope.TenantField != "" {
 		t.Fatalf("blank field should leave TenantField empty: %+v", blank.Config)
 	}
 	// Explicit default "tenant_id" also leaves TenantField unset.
 	def := WithMultiTenant(&entity.Entity{}, TenantConfig{Field: "tenant_id"})
-	if !def.Config.MultiTenant || def.Config.TenantField != "" {
+	if !def.Config.Scope.MultiTenant || def.Config.Scope.TenantField != "" {
 		t.Fatalf("default field should leave TenantField empty: %+v", def.Config)
 	}
 }

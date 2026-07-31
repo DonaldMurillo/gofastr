@@ -49,17 +49,14 @@ func main() {
 	)
 
 	// ----- Entities -----------------------------------------------------
-	authors := framework.Define("authors", framework.EntityConfig{
-		Table: "authors",
+	authors := framework.Define("authors", framework.EntityConfig{Table: "authors",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "email", Type: schema.String, Unique: true},
 			{Name: "avatar", Type: schema.Image}, // exercises the upload pipeline
-		},
-		MCP: true,
+		}, Exposure: &framework.ExposureConfig{MCP: true},
 	})
-	posts := framework.Define("posts", framework.EntityConfig{
-		Table: "posts",
+	posts := framework.Define("posts", framework.EntityConfig{Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
@@ -70,18 +67,16 @@ func main() {
 		Relations: []framework.Relation{
 			framework.BelongsTo("author", "authors", "author_id"),
 			framework.HasMany("comments", "comments", "post_id"),
-		},
-		MCP: true,
+		}, Exposure: &framework.ExposureConfig{MCP: true},
 	})
-	comments := framework.Define("comments", framework.EntityConfig{
-		Table: "comments",
+	comments := framework.Define("comments", framework.EntityConfig{Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.Text, Required: true},
 			{Name: "post_id", Type: schema.String},
 			{Name: "tenant_id", Type: schema.String},
-		},
-		MultiTenant: true, // exercises the tenant-scoping path
-		MCP:         true,
+		}, Scope: &framework.ScopeConfig{
+			// exercises the tenant-scoping path
+			MultiTenant: true}, Exposure: &framework.ExposureConfig{MCP: true},
 	})
 	fwApp.Registry.Register(authors)
 	fwApp.Registry.Register(posts)

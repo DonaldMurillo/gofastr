@@ -23,11 +23,8 @@ func setupCrossOwnerReadHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 		user_id TEXT,
 		subject TEXT
 	)`)
-	ent := entity.Define("ctickets", entity.EntityConfig{
-		Table:          "ctickets",
-		Fields:         []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "subject", Type: schema.String}},
-		OwnerField:     "user_id",
-		CrossOwnerRead: "tickets:read:all",
+	ent := entity.Define("ctickets", entity.EntityConfig{Table: "ctickets",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "subject", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id", CrossOwnerRead: "tickets:read:all"},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -48,12 +45,8 @@ func setupCrossOwnerReadTenantHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 		body TEXT,
 		tenant_id TEXT
 	)`)
-	ent := entity.Define("cdocs", entity.EntityConfig{
-		Table:          "cdocs",
-		Fields:         []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "body", Type: schema.String}, {Name: "tenant_id", Type: schema.String}},
-		OwnerField:     "user_id",
-		CrossOwnerRead: "docs:read:all",
-		MultiTenant:    true,
+	ent := entity.Define("cdocs", entity.EntityConfig{Table: "cdocs",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "body", Type: schema.String}, {Name: "tenant_id", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id", CrossOwnerRead: "docs:read:all", MultiTenant: true},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -255,10 +248,8 @@ func TestCrossOwnerReadWildcardOptInOnly(t *testing.T) {
 		user_id TEXT,
 		body TEXT
 	)`)
-	entSib := entity.Define("snote", entity.EntityConfig{
-		Table:      "snote",
-		Fields:     []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "body", Type: schema.String}},
-		OwnerField: "user_id",
+	entSib := entity.Define("snote", entity.EntityConfig{Table: "snote",
+		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "body", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false))
 	entSib.SetDB(db2)
 	chSib := NewCrudHandler(entSib, db2).WithJSONCase(CaseSnake)
@@ -399,8 +390,5 @@ func TestDefineCrossOwnerReadRequiresOwnerField(t *testing.T) {
 			t.Fatalf("panic message wrong: %v", r)
 		}
 	}()
-	entity.Define("bad", entity.EntityConfig{
-		Fields:         []schema.Field{{Name: "n", Type: schema.String}},
-		CrossOwnerRead: "x:read:all",
-	}.WithTimestamps(false))
+	entity.Define("bad", entity.EntityConfig{Fields: []schema.Field{{Name: "n", Type: schema.String}}, Scope: &entity.ScopeConfig{CrossOwnerRead: "x:read:all"}}.WithTimestamps(false))
 }

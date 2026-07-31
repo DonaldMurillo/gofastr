@@ -27,7 +27,7 @@ import (
 //
 //   - verifying the executable SHA-256 equals the descriptor pin BEFORE exec
 //     (verify-then-exec, design §4.6 — mirrors
-//     framework/harness/mcpclient/client.go:83-91);
+//     framework/experimental/harness/mcpclient/client.go:83-91);
 //   - applying baseline hygiene (empty-by-default env allowlist, no fds
 //     beyond stdio, cwd = per-module scratch dir, own process group);
 //   - wiring the child's stdin/stdout to a [moduleproto.Codec];
@@ -151,7 +151,7 @@ type TrustedProcessRunner struct {
 // DefaultChildEnvAllowlist is the minimal set of host env-var names a child
 // needs to exec and run ordinary tools, with no secrets. Grows only when a
 // real child genuinely cannot run without a name. Mirrors
-// framework/harness/mcpclient.defaultEnvAllowlist so the two spawners share
+// framework/experimental/harness/mcpclient.defaultEnvAllowlist so the two spawners share
 // the same baseline.
 func DefaultChildEnvAllowlist() []string {
 	return append([]string(nil), defaultChildEnvAllowlist...)
@@ -190,7 +190,7 @@ type childPrep struct {
 // contract, shared by BOTH runners (design §6: "applied by BOTH runners"):
 //
 //   - verify-then-exec: SHA-256 pin checked BEFORE exec (mirrors
-//     mcpclient.SpawnWithConfig, framework/harness/mcpclient/client.go:82-128;
+//     mcpclient.SpawnWithConfig, framework/experimental/harness/mcpclient/client.go:82-128;
 //     the #37 trust anchor, design §3 decision B);
 //   - per-module scratch dir as cwd (0o700; concurrent children never
 //     collide);
@@ -426,9 +426,9 @@ func (e *ExecutableSHAMismatchError) Error() string {
 }
 
 // sha256OfFile hashes the file at path (verbatim lift of
-// framework/harness/mcpclient.sha256OfBinary, kept local so this runner does
+// framework/experimental/harness/mcpclient.sha256OfBinary, kept local so this runner does
 // not import the harness subpackage — the framework root may not import
-// framework/harness per ARCHITECTURE.md layering).
+// framework/experimental/harness per ARCHITECTURE.md layering).
 func sha256OfFile(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {

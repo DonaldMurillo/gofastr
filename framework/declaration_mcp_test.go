@@ -18,14 +18,12 @@ func TestEntityMCPToolsCRUDLifecycle(t *testing.T) {
 		createPostsTable(t, db)
 
 		app := NewApp(WithDB(db))
-		app.Entity("posts", entity.EntityConfig{
-			Table: "posts",
+		app.Entity("posts", entity.EntityConfig{Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 				{Name: "body", Type: schema.Text},
 				{Name: "status", Type: schema.String},
-			},
-			MCP: true,
+			}, Exposure: &entity.ExposureConfig{MCP: true},
 		})
 
 		createResult := callMCPTool(t, app.MCP, "posts_create", map[string]any{
@@ -68,24 +66,21 @@ func TestEntityMCPToolsCRUDLifecycle(t *testing.T) {
 
 func TestCustomEndpointHTTPAndMCPRegistration(t *testing.T) {
 	app := NewApp()
-	app.Entity("posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-		CRUD:   boolPtr(false),
-		Endpoints: []entity.Endpoint{
-			{
-				Method:      http.MethodPost,
-				Path:        "{id}/publish",
-				Name:        "posts_publish",
-				Description: "Publish a post",
-				MCP:         true,
-				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					_, _ = w.Write([]byte(r.PathValue("id") + ":published"))
-				}),
-				MCPHandler: func(ctx context.Context, params map[string]any) (any, error) {
-					return map[string]any{"id": params["id"], "status": "published"}, nil
-				},
+	app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{
+		{
+			Method:      http.MethodPost,
+			Path:        "{id}/publish",
+			Name:        "posts_publish",
+			Description: "Publish a post",
+			MCP:         true,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(r.PathValue("id") + ":published"))
+			}),
+			MCPHandler: func(ctx context.Context, params map[string]any) (any, error) {
+				return map[string]any{"id": params["id"], "status": "published"}, nil
 			},
 		},
+	},
 	})
 
 	resp := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"}).Request(http.MethodPost, "/posts/post-1/publish", nil).Execute()

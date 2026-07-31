@@ -42,10 +42,7 @@ func (f *staticTestRegistry) Get(name string) (*entity.Entity, error) {
 // into the tree — without clobbering files the export already owns.
 func TestBuildExportsSDKDocsAndExtraDirs(t *testing.T) {
 	reg := &staticTestRegistry{entities: []*entity.Entity{
-		entity.Define("posts", entity.EntityConfig{
-			Public: true,
-			Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
-		}),
+		entity.Define("posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}}}),
 	}}
 
 	a := coreapp.NewApp("SDK Export")

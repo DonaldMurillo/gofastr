@@ -116,11 +116,9 @@ func TestEntityLLMMD_BasicEntity(t *testing.T) {
 // ============================================================================
 
 func TestEntityLLMMD_SoftDelete(t *testing.T) {
-	ent := entity.Define("posts", entity.EntityConfig{
-		SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-		},
+	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+	},
 	})
 
 	md := crud.EntityLLMMD(ent)
@@ -134,11 +132,9 @@ func TestEntityLLMMD_SoftDelete(t *testing.T) {
 // ============================================================================
 
 func TestEntityLLMMD_MultiTenant(t *testing.T) {
-	ent := entity.Define("posts", entity.EntityConfig{
-		MultiTenant: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-		},
+	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+	},
 	})
 
 	md := crud.EntityLLMMD(ent)

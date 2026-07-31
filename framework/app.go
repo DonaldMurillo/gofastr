@@ -979,7 +979,7 @@ func (a *App) Mount(m Mountable) *App {
 	// diagnostic or an opaque ServeMux panic.
 	if provider, ok := m.(interface{ RoutePatterns() []string }); ok {
 		for _, ent := range a.Registry.AllSorted() {
-			crudEnabled := a.DB != nil && (ent.Config.CRUD == nil || *ent.Config.CRUD)
+			crudEnabled := a.DB != nil && (ent.Config.Exposure.CRUD == nil || *ent.Config.Exposure.CRUD)
 			if !crudEnabled {
 				continue
 			}
@@ -1142,8 +1142,8 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// Read e.Config, not the raw parameter: Define normalized the grouped
 	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
 	// grouped values are authoritative.
-	crudEnabled := a.DB != nil && (e.Config.CRUD == nil || *e.Config.CRUD)
-	if e.Config.MCP && a.DB != nil && e.Config.CRUD != nil && !*e.Config.CRUD {
+	crudEnabled := a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
+	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
 		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name))
 	}
 
@@ -1192,7 +1192,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// MCP tools — namespaced if the group has a namespace. Explicit
 	// MCP=true, or dev-implied for CRUD-enabled entities (the dev loop
 	// gives the local agent the data tools without per-entity opt-in).
-	if (e.Config.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
+	if (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, g.Router()); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q in group %q: %v", name, g.Prefix(), err))
 		}
@@ -1564,8 +1564,8 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// Read e.Config, not the raw parameter: Define normalized the grouped
 	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
 	// grouped values are authoritative.
-	crudEnabled := a.DB != nil && (e.Config.CRUD == nil || *e.Config.CRUD)
-	if e.Config.MCP && a.DB != nil && e.Config.CRUD != nil && !*e.Config.CRUD {
+	crudEnabled := a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
+	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
 		return fmt.Errorf("entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name)
 	}
 
@@ -1603,7 +1603,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// CRUD-enabled entity serves its MCP data tools so the local agent
 	// can read AND write app data without per-entity opt-in. Production
 	// keeps the explicit flag as the only path.
-	if (e.Config.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
+	if (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
 			return fmt.Errorf("failed to register MCP tools for entity %q: %w", name, err)
 		}

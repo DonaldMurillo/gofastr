@@ -62,13 +62,13 @@ func TestPatchSparseUpdate(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO widgets (id, name, note) VALUES ('w1', 'Widget', 'old')`); err != nil {
 		t.Fatal(err)
 	}
-	ent := entity.Define("widgets", entity.EntityConfig{
-		Name: "widgets", Table: "widgets",
+	ent := entity.Define("widgets", entity.EntityConfig{Name: "widgets", Table: "widgets",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "note", Type: schema.String},
-		},
-		Public: true, // fixture tests PATCH mechanics, not the session gate
+		}, Exposure: &entity.ExposureConfig{
+			// fixture tests PATCH mechanics, not the session gate
+			Public: true},
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	r := router.New()

@@ -45,14 +45,12 @@ func TestMassAssignment_FieldInjection(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-				Fields: []schema.Field{
-					{Name: "user_id", Type: schema.String, Required: true},
-					{Name: "content", Type: schema.String},
-					{Name: "role", Type: schema.String},
-					{Name: "settings", Type: schema.String},
-				},
-				OwnerField: "user_id",
+			ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Fields: []schema.Field{
+				{Name: "user_id", Type: schema.String, Required: true},
+				{Name: "content", Type: schema.String},
+				{Name: "role", Type: schema.String},
+				{Name: "settings", Type: schema.String},
+			}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 			}.WithTimestamps(false), `CREATE TABLE profiles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, content TEXT, role TEXT, settings TEXT)`)
 
 			req := makeRequest(t, RequestOpts{

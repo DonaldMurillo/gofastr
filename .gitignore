@@ -1,5 +1,5 @@
 # Harness e2e credentials (never commit). The file `env` here is
-# parsed by framework/harness/e2e_real_test.go and the harness's
+# parsed by framework/experimental/harness/e2e_real_test.go and the harness's
 # loadSecretsFromRepo helper.
 .harness-secrets/
 
@@ -151,7 +151,7 @@ pi-agent/plugins/*
 # *.txt.new alongside any drifted *.txt for diff inspection. They're
 # scratch output, never source. Regenerate the canonical .txt files
 # via GOFASTR_UPDATE_SNAPSHOTS=1.
-framework/harness/client/tui/testdata/snapshots/*.txt.new
+framework/experimental/harness/client/tui/testdata/snapshots/*.txt.new
 
 # Git worktrees live as sibling directories
 worktrees/

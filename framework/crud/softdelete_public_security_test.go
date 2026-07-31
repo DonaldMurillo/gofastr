@@ -13,7 +13,16 @@ import (
 func TestSoftDelete_PublicListDoesNotExposeDeletedRecords(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
 		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true; c.Public = true }),
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		if c.Exposure == nil {
+			c.Exposure = &entity.ExposureConfig{}
+		}
+		c.Scope.SoftDelete = true
+		c.Exposure.Public = true
+	}),
 		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
 
 	seedRows(t, db, "announcements", []map[string]any{
@@ -41,7 +50,16 @@ func TestSoftDelete_PublicListDoesNotExposeDeletedRecords(t *testing.T) {
 func TestSoftDelete_PublicGetWithTrashedReturnsNotFound(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
 		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true; c.Public = true }),
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		if c.Exposure == nil {
+			c.Exposure = &entity.ExposureConfig{}
+		}
+		c.Scope.SoftDelete = true
+		c.Exposure.Public = true
+	}),
 		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
 
 	seedRows(t, db, "announcements", []map[string]any{
@@ -65,7 +83,16 @@ func TestSoftDelete_PublicGetWithTrashedReturnsNotFound(t *testing.T) {
 func TestSoftDelete_PublicStreamingListDoesNotExposeDeletedRecords(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
 		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true; c.Public = true }),
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		if c.Exposure == nil {
+			c.Exposure = &entity.ExposureConfig{}
+		}
+		c.Scope.SoftDelete = true
+		c.Exposure.Public = true
+	}),
 		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
 
 	seedRows(t, db, "announcements", []map[string]any{
@@ -90,7 +117,16 @@ func TestSoftDelete_PublicStreamingListDoesNotExposeDeletedRecords(t *testing.T)
 func TestSoftDelete_PublicCursorListDoesNotExposeDeletedRecords(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
 		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) { c.SoftDelete = true; c.Public = true }),
+	}, func(c *entity.EntityConfig) {
+		if c.Scope == nil {
+			c.Scope = &entity.ScopeConfig{}
+		}
+		if c.Exposure == nil {
+			c.Exposure = &entity.ExposureConfig{}
+		}
+		c.Scope.SoftDelete = true
+		c.Exposure.Public = true
+	}),
 		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
 
 	seedRows(t, db, "announcements", []map[string]any{

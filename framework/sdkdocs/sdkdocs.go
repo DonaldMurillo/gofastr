@@ -172,14 +172,14 @@ func (s *site) includedEntities() []*entity.Entity {
 		if e == nil {
 			continue
 		}
-		if e.Config.CRUD != nil && !*e.Config.CRUD {
+		if e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
 			continue // no HTTP surface to document
 		}
 		if len(s.cfg.Entities) > 0 {
 			if !nameMatches(e, s.cfg.Entities) {
 				continue
 			}
-		} else if !s.cfg.IncludeGated && !e.Config.Public {
+		} else if !s.cfg.IncludeGated && !e.Config.Exposure.Public {
 			continue
 		}
 		out = append(out, e)

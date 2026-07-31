@@ -41,9 +41,7 @@ func (f *fakeRegistry) Get(name string) (*entity.Entity, error) {
 }
 
 func testRegistry() *fakeRegistry {
-	posts := entity.Define("posts", entity.EntityConfig{
-		Public:       true,
-		SearchFields: []string{"title"},
+	posts := entity.Define("posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, SearchFields: []string{"title"},
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "views", Type: schema.Int},

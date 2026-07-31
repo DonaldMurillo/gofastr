@@ -66,14 +66,12 @@ func TestPagination_ZeroPage(t *testing.T) {
 func TestPagination_HugePage(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "posts",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "posts",
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "posts", []map[string]any{
@@ -176,14 +174,12 @@ func TestPagination_NonNumericPerPage(t *testing.T) {
 // correctly when total is not evenly divisible by perPage.
 func TestPagination_TotalPagesRounding(t *testing.T) {
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "round_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "round_items",
 		Table: "round_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE round_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Insert 3 rows, request perPage=2 → totalPages should be 2
@@ -219,14 +215,12 @@ func TestPagination_TotalPagesRounding(t *testing.T) {
 func TestCursor_MalformedBase64(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "cursor_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "cursor_items",
 		Table: "cursor_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE cursor_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	garbage := "this-is-not-base64!!!"
@@ -272,14 +266,12 @@ func TestCursor_TamperedSignature(t *testing.T) {
 func TestCursor_EmptyCursor(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "ec_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "ec_items",
 		Table: "ec_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE ec_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "ec_items", []map[string]any{
@@ -316,14 +308,12 @@ func TestCursor_EmptyCursor(t *testing.T) {
 func TestCursor_SQLInjectionInCursor(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "sqli_cursor",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "sqli_cursor",
 		Table: "sqli_cursor",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE sqli_cursor (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "sqli_cursor", []map[string]any{
@@ -391,14 +381,12 @@ func TestCursor_FieldsNotInEntity(t *testing.T) {
 func TestCursor_ReverseDirectionPreservesScope(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "rev_cursor",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "rev_cursor",
 		Table: "rev_cursor",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE rev_cursor (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "rev_cursor", []map[string]any{
@@ -428,15 +416,12 @@ func TestCursor_ReverseDirectionPreservesScope(t *testing.T) {
 func TestCursor_LimitEnforced(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "cl_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "cl_items",
 		Table: "cl_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField:   "user_id",
-		MaxListLimit: 3,
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Pagination: &entity.PaginationConfig{MaxListLimit: 3},
 	}.WithTimestamps(false), `CREATE TABLE cl_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Seed 10 items
@@ -472,14 +457,12 @@ func TestCursor_LimitEnforced(t *testing.T) {
 func TestCursor_IncludeNotInCursor(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "ic_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "ic_items",
 		Table: "ic_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE ic_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "ic_items", []map[string]any{
@@ -508,14 +491,12 @@ func TestCursor_IncludeNotInCursor(t *testing.T) {
 func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "cc_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "cc_items",
 		Table: "cc_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE cc_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	for i := 0; i < 5; i++ {
@@ -555,14 +536,12 @@ func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 func TestBatchCreate_EmptyArray(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "bc_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bc_items",
 		Table: "bc_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE bc_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -583,14 +562,12 @@ func TestBatchCreate_EmptyArray(t *testing.T) {
 func TestBatchCreate_OversizedArray(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "bo_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bo_items",
 		Table: "bo_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE bo_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Build a batch with 101 items (MaxBatchSize=100)
@@ -618,15 +595,13 @@ func TestBatchCreate_OversizedArray(t *testing.T) {
 func TestBatchCreate_MixedValidInvalid(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "mi_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "mi_items",
 		Table: "mi_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "email", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE mi_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, email TEXT)`)
 
 	// First item is valid, second has missing required field (empty title)
@@ -663,14 +638,12 @@ func TestBatchCreate_MixedValidInvalid(t *testing.T) {
 func TestBatchCreate_DuplicateIDsInOneBatch(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "dup_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "dup_items",
 		Table: "dup_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE dup_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Send two identical items — the system should not crash
@@ -698,14 +671,12 @@ func TestBatchCreate_DuplicateIDsInOneBatch(t *testing.T) {
 func TestBatchUpdate_IDMismatch(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "bu_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bu_items",
 		Table: "bu_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE bu_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Items without "id" field
@@ -732,14 +703,12 @@ func TestBatchUpdate_IDMismatch(t *testing.T) {
 func TestBatchUpdate_NonexistentIDs(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "bn_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bn_items",
 		Table: "bn_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE bn_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	body := `{"items":[{"id":"nonexistent-xyz","title":"hacked"}]}`
@@ -768,14 +737,12 @@ func TestBatchUpdate_NonexistentIDs(t *testing.T) {
 func TestBatchDelete_EmptyIDList(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "bd_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bd_items",
 		Table: "bd_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE bd_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -796,14 +763,12 @@ func TestBatchDelete_EmptyIDList(t *testing.T) {
 func TestBatchDelete_NonexistentIDs(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "bdn_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bdn_items",
 		Table: "bdn_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE bdn_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -831,14 +796,12 @@ func TestBatchDelete_NonexistentIDs(t *testing.T) {
 func TestBatchCreate_HookRollback(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "hr_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "hr_items",
 		Table: "hr_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE hr_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	hooks := hook.NewHookRegistry()
@@ -883,14 +846,12 @@ func TestBatchCreate_HookRollback(t *testing.T) {
 func TestBatchUpdate_OwnerScopeEnforced(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "bou_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bou_items",
 		Table: "bou_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE bou_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "bou_items", []map[string]any{
@@ -928,14 +889,12 @@ func TestBatchUpdate_OwnerScopeEnforced(t *testing.T) {
 func TestInclude_DeeplyNested(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "dn_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "dn_items",
 		Table: "dn_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE dn_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -957,15 +916,12 @@ func TestInclude_DeeplyNested(t *testing.T) {
 func TestInclude_CircularRelation(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "circular_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "circular_items",
 		Table: "circular_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
-		Relations: []entity.Relation{
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Relations: []entity.Relation{
 			{Name: "parent", Type: entity.RelManyToOne, Entity: "circular_items", ForeignKey: "parent_id"},
 			{Name: "children", Type: entity.RelHasMany, Entity: "circular_items", ForeignKey: "parent_id"},
 		},
@@ -991,14 +947,12 @@ func TestInclude_CircularRelation(t *testing.T) {
 func TestInclude_NonexistentRelation(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "nr_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "nr_items",
 		Table: "nr_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE nr_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -1019,14 +973,12 @@ func TestInclude_NonexistentRelation(t *testing.T) {
 func TestInclude_SQLInjectionInRelationName(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "sqli_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "sqli_items",
 		Table: "sqli_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE sqli_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -1051,15 +1003,13 @@ func TestInclude_SQLInjectionInRelationName(t *testing.T) {
 func TestInclude_SensitiveRelationNotExposed(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "sr_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "sr_items",
 		Table: "sr_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 			{Name: "password_hash", Type: schema.String, Hidden: true},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE sr_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, password_hash TEXT)`)
 
 	seedRows(t, db, "sr_items", []map[string]any{
@@ -1086,15 +1036,12 @@ func TestInclude_SensitiveRelationNotExposed(t *testing.T) {
 func TestNestedFilter_SQLInjection(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "nf_posts",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "nf_posts",
 		Table: "nf_posts",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
-		Relations: []entity.Relation{
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Relations: []entity.Relation{
 			{Name: "author", Type: entity.RelManyToOne, Entity: "nf_users", ForeignKey: "author_id"},
 		},
 	}.WithTimestamps(false), `CREATE TABLE nf_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, author_id TEXT);
@@ -1126,14 +1073,12 @@ func TestNestedFilter_SQLInjection(t *testing.T) {
 func TestNestedFilter_DeeplyNested(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "dnf_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "dnf_items",
 		Table: "dnf_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE dnf_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Deep nested path — should be rejected as multi-level not supported
@@ -1157,15 +1102,12 @@ func TestNestedFilter_DeeplyNested(t *testing.T) {
 func TestNestedFilter_NonexistentField(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "nff_posts",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "nff_posts",
 		Table: "nff_posts",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
-		Relations: []entity.Relation{
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Relations: []entity.Relation{
 			{Name: "author", Type: entity.RelManyToOne, Entity: "nff_users", ForeignKey: "author_id"},
 		},
 	}.WithTimestamps(false), `CREATE TABLE nff_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, author_id TEXT);
@@ -1199,15 +1141,12 @@ func TestNestedFilter_NonexistentField(t *testing.T) {
 func TestInclude_LimitBypassViaInclude(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "lbv_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "lbv_items",
 		Table: "lbv_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField:   "user_id",
-		MaxListLimit: 2,
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Pagination: &entity.PaginationConfig{MaxListLimit: 2},
 	}.WithTimestamps(false), `CREATE TABLE lbv_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Seed 5 items
@@ -1241,14 +1180,12 @@ func TestInclude_LimitBypassViaInclude(t *testing.T) {
 func TestInclude_CountQueryExcludesRelations(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "cq_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "cq_items",
 		Table: "cq_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE cq_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Insert 3 items
@@ -1284,14 +1221,12 @@ func TestInclude_CountQueryExcludesRelations(t *testing.T) {
 func TestStreaming_ContentTypeSet(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "ct_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "ct_items",
 		Table: "ct_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE ct_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	for i := 0; i < 2; i++ {
@@ -1323,15 +1258,12 @@ func TestStreaming_ContentTypeSet(t *testing.T) {
 func TestStreaming_LimitEnforced(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "sl_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "sl_items",
 		Table: "sl_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField:   "user_id",
-		MaxListLimit: 3,
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Pagination: &entity.PaginationConfig{MaxListLimit: 3},
 	}.WithTimestamps(false), `CREATE TABLE sl_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	for i := 0; i < 10; i++ {
@@ -1363,14 +1295,12 @@ func TestStreaming_LimitEnforced(t *testing.T) {
 func TestStreaming_AbortedConnectionCleanup(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "ac_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "ac_items",
 		Table: "ac_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE ac_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	for i := 0; i < 5; i++ {
@@ -1420,14 +1350,12 @@ func TestStreaming_AbortedConnectionCleanup(t *testing.T) {
 func TestStreaming_ConcurrentStreams(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "cs_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "cs_items",
 		Table: "cs_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE cs_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	for i := 0; i < 3; i++ {
@@ -1463,14 +1391,12 @@ func TestStreaming_ConcurrentStreams(t *testing.T) {
 func TestList_SortInjection(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "si_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "si_items",
 		Table: "si_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE si_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "si_items", []map[string]any{
@@ -1499,14 +1425,12 @@ func TestList_SortInjection(t *testing.T) {
 func TestList_FilterInjection(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "fi_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "fi_items",
 		Table: "fi_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE fi_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -1530,14 +1454,12 @@ func TestList_FilterInjection(t *testing.T) {
 func TestList_FieldsParameterSQLInjection(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "fpi_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "fpi_items",
 		Table: "fpi_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE fpi_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -1561,15 +1483,13 @@ func TestList_FieldsParameterSQLInjection(t *testing.T) {
 func TestList_WhereClauseFromHook(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "hc_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "hc_items",
 		Table: "hc_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 			{Name: "category", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE hc_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, category TEXT)`)
 
 	hooks := hook.NewHookRegistry()
@@ -1616,14 +1536,12 @@ func TestList_WhereClauseFromHook(t *testing.T) {
 func TestList_ConcurrentOwnerScope(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "co_items",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "co_items",
 		Table: "co_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE co_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "co_items", []map[string]any{
@@ -1671,14 +1589,12 @@ func TestList_ConcurrentOwnerScope(t *testing.T) {
 func TestList_EmptyResultValidJSON(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "ej_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "ej_items",
 		Table: "ej_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE ej_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{

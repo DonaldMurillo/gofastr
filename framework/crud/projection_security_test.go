@@ -13,13 +13,11 @@ import (
 // field via ?fields= does not expose it in the response. Attack: client
 // probes for hidden/internal fields using the projection API.
 func TestProjection_HiddenFieldNotExposed(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "title", Type: schema.String},
-			{Name: "internal_notes", Type: schema.String, Hidden: true},
-		},
-		OwnerField: "user_id",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "title", Type: schema.String},
+		{Name: "internal_notes", Type: schema.String, Hidden: true},
+	}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE documents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, internal_notes TEXT)`)
 
 	seedRows(t, db, "documents", []map[string]any{
@@ -43,12 +41,10 @@ func TestProjection_HiddenFieldNotExposed(t *testing.T) {
 // nonexistent field via ?fields= returns a 400 error. Attack: field
 // enumeration to discover schema columns.
 func TestProjection_UnknownFieldReturnsError(t *testing.T) {
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "title", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE documents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
@@ -67,12 +63,10 @@ func TestProjection_UnknownFieldReturnsError(t *testing.T) {
 // does not bypass owner scoping. Attack: wildcard projection combined
 // with missing auth to dump all records.
 func TestProjection_WildcardDoesNotBypassOwnerScope(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "title", Type: schema.String},
+	}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE documents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	seedRows(t, db, "documents", []map[string]any{

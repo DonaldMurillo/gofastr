@@ -109,13 +109,10 @@ func TestChartSourceRegistersResource(t *testing.T) {
 	crudOn := true
 	bp := Blueprint{
 		App: BlueprintApp{Name: "Dash", Module: "example.com/dash"},
-		Entities: []framework.EntityDeclaration{{
-			Name: "tickets",
-			CRUD: &crudOn,
-			Fields: []framework.FieldDeclaration{
-				{Name: "title", Type: "string"},
-				{Name: "status", Type: "enum", Values: []string{"open", "closed"}},
-			},
+		Entities: []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "tickets", Exposure: &framework.ExposureDeclaration{CRUD: &crudOn}, Fields: []framework.FieldDeclaration{
+			{Name: "title", Type: "string"},
+			{Name: "status", Type: "enum", Values: []string{"open", "closed"}},
+		},
 		}},
 		Screens: []BlueprintScreen{{
 			Name:  "dashboard",
@@ -229,13 +226,10 @@ func TestSeedWeightsRespected(t *testing.T) {
 // count: N generates that many rows with the enum column varied.
 func TestSeedCountGeneratesVariedRows(t *testing.T) {
 	crudOn := true
-	decl := framework.EntityDeclaration{
-		Name: "tickets",
-		CRUD: &crudOn,
-		Fields: []framework.FieldDeclaration{
-			{Name: "title", Type: "string", Required: true},
-			{Name: "status", Type: "enum", Values: []string{"open", "in_progress", "resolved", "closed"}},
-		},
+	decl := framework.EntityDeclaration{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "tickets", Exposure: &framework.ExposureDeclaration{CRUD: &crudOn}, Fields: []framework.FieldDeclaration{
+		{Name: "title", Type: "string", Required: true},
+		{Name: "status", Type: "enum", Values: []string{"open", "in_progress", "resolved", "closed"}},
+	},
 	}
 	rows := blueprintGenerateSeedRows(decl, 20, nil)
 	if len(rows) != 20 {

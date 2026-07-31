@@ -220,7 +220,7 @@ func TestSSRF_DialTimeHonorsAllowPrivate(t *testing.T) {
 // TestWebhookRejectsCGNATTarget pins that the webhook SSRF predicate
 // covers every internal range its sibling does.
 //
-// The two predicates had drifted: framework/harness's webfetch rejects
+// The two predicates had drifted: framework/experimental/harness's webfetch rejects
 // the RFC 6598 carrier-grade NAT block (100.64.0.0/10) and normalizes
 // IPv4-mapped IPv6 before range-checking; the webhook predicate did
 // neither. net.IP.IsPrivate() does not cover 100.64/10, and CGNAT is
@@ -240,7 +240,7 @@ func TestWebhookRejectsCGNATTarget(t *testing.T) {
 	}
 	for _, raw := range internal {
 		if err := validateSubscriberURL(raw, false); err == nil {
-			t.Errorf("SECURITY: [ssrf] webhook accepted the internal target %q — the predicate is narrower than framework/harness's", raw)
+			t.Errorf("SECURITY: [ssrf] webhook accepted the internal target %q — the predicate is narrower than framework/experimental/harness's", raw)
 		}
 	}
 	// 100.128.0.0 is the first address ABOVE the /10 — a public address

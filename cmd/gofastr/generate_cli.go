@@ -465,7 +465,7 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		Table:      table,
 		Verbs:      verbs,
 		Search:     len(decl.SearchFields) > 0,
-		SoftDelete: decl.SoftDelete,
+		SoftDelete: entityDeclarationScope(decl).SoftDelete,
 	}
 	for _, fd := range decl.Fields {
 		if fd.Name == "id" || fd.Hidden {

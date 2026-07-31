@@ -8,7 +8,7 @@ The tenant ID is extracted from a request header by middleware.
 
 ```go
 app.Entity("posts", framework.EntityConfig{
-    MultiTenant: true,
+    Scope: &framework.ScopeConfig{MultiTenant: true},
     Fields: []schema.Field{
         {Name: "title", Type: schema.String, Required: true},
     },
@@ -42,13 +42,15 @@ write your own middleware that calls `framework.SetTenantID(ctx, id)`
 ## Custom tenant column
 
 The tenant column defaults to `tenant_id`. To use a different name, set
-`TenantField` on the entity — it's the single source of the column name
+`Scope.TenantField` on the entity — it's the single source of the column name
 across injection, auto-migrate, and the CRUD insert/scope/filter paths:
 
 ```go
 app.Entity("docs", framework.EntityConfig{
-    MultiTenant: true,
-    TenantField: "org_id",   // injected, created, written, and scoped by this column
+    Scope: &framework.ScopeConfig{
+        MultiTenant: true,
+        TenantField: "org_id",   // injected, created, written, and scoped by this column
+    },
     Fields:      []schema.Field{{Name: "title", Type: schema.String}},
 })
 ```

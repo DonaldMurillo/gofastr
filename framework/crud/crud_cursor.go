@@ -23,8 +23,8 @@ import (
 // (typically the primary key) so paging never stalls on ties — the
 // framework appends PrimaryKey automatically if it isn't already listed.
 func (ch *CrudHandler) cursorFields() []string {
-	if len(ch.Entity.Config.CursorFields) > 0 {
-		fields := append([]string{}, ch.Entity.Config.CursorFields...)
+	if len(ch.Entity.Config.Pagination.CursorFields) > 0 {
+		fields := append([]string{}, ch.Entity.Config.Pagination.CursorFields...)
 		hasPK := false
 		for _, f := range fields {
 			if f == ch.PrimaryKey {
@@ -37,8 +37,8 @@ func (ch *CrudHandler) cursorFields() []string {
 		}
 		return fields
 	}
-	if ch.Entity.Config.CursorField != "" {
-		return []string{ch.Entity.Config.CursorField}
+	if ch.Entity.Config.Pagination.CursorField != "" {
+		return []string{ch.Entity.Config.Pagination.CursorField}
 	}
 	return []string{ch.PrimaryKey}
 }
@@ -62,7 +62,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	// ParseCursorPagination clamps only to the global MaxPageSize; the
 	// per-entity cap must hold on this path too or ?cursor= becomes a
 	// MaxListLimit bypass.
-	if limitCap := listLimitCap(ch.Entity.Config.MaxListLimit); limit > limitCap {
+	if limitCap := listLimitCap(ch.Entity.Config.Pagination.MaxListLimit); limit > limitCap {
 		limit = limitCap
 	}
 

@@ -13,9 +13,16 @@ import (
 // TestBackwardPageIsAscending asserts a backward cursor page is returned in
 // the same logical (ascending) order a forward page uses, not reversed.
 func TestBackwardPageIsAscending(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.CursorField = "seq" }, 5)
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination =
 
-	// Forward to page 2 to obtain a cursor pointing past seq=3.
+				// Forward to page 2 to obtain a cursor pointing past seq=3.
+				&entity.PaginationConfig{}
+		}
+		c.Pagination.CursorField = "seq"
+	}, 5)
+
 	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
@@ -82,7 +89,12 @@ func seqOf(rows []map[string]any) []int {
 // TestStreamPageTwoSkipsFirstPage asserts the streaming list path honours
 // ?page=2 — it must skip the first page rather than re-stream page 1.
 func TestStreamPageTwoSkipsFirstPage(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) { c.MaxListLimit = 500 }, 5)
+	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+		if c.Pagination == nil {
+			c.Pagination = &entity.PaginationConfig{}
+		}
+		c.Pagination.MaxListLimit = 500
+	}, 5)
 	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true&limit=2&page=2", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)

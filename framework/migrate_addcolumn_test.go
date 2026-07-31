@@ -168,10 +168,7 @@ func TestAutoMigrate_AddsManagedColumn(t *testing.T) {
 			t.Fatalf("boot 1: %v", err)
 		}
 
-		v2 := notesRegistry(entity.EntityConfig{
-			SoftDelete: true,
-			Fields:     []schema.Field{{Name: "title", Type: schema.String}},
-		}.WithTimestamps(false))
+		v2 := notesRegistry(entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 		if err := AutoMigrate(db, v2); err != nil {
 			t.Fatalf("boot 2: %v", err)
 		}

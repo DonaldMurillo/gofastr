@@ -19,7 +19,7 @@ func perscreenBP() Blueprint {
 	return Blueprint{
 		App: BlueprintApp{Name: "Test", Module: "example.com/test", DBDriver: "sqlite"},
 		Entities: []framework.EntityDeclaration{
-			{Name: "customers", Table: "customers", CRUD: &crud, Fields: []framework.FieldDeclaration{
+			{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "customers", Table: "customers", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Fields: []framework.FieldDeclaration{
 				{Name: "name", Type: "string"},
 			}},
 		},
@@ -192,7 +192,7 @@ func TestPackRoundTripPerScreenFiles(t *testing.T) {
 	bp := Blueprint{
 		App: BlueprintApp{Name: "T", Module: "example.com/rt", DBDriver: "sqlite"},
 		Entities: []framework.EntityDeclaration{
-			{Name: "zebra", CRUD: &crud, Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
+			{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "zebra", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
 		},
 		Screens: []BlueprintScreen{
 			{Name: "zebra", Route: "/zebra", Title: "Zebras", Body: []BlueprintBlock{{Kind: "entity_list", Entity: "zebra", Create: true}}},

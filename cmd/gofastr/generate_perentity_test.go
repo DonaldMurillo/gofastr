@@ -146,11 +146,11 @@ func TestRenderPerEntityFilesCompile(t *testing.T) {
 	}
 	crud := true
 	files, err := renderGeneratedProject([]framework.EntityDeclaration{
-		{Name: "posts", Table: "posts", CRUD: &crud, SoftDelete: true, Fields: []framework.FieldDeclaration{
+		{Pagination: &framework.PaginationDeclaration{}, Name: "posts", Table: "posts", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Scope: &framework.ScopeDeclaration{SoftDelete: true}, Fields: []framework.FieldDeclaration{
 			{Name: "title", Type: "string", Required: true},
 			{Name: "author_id", Type: "relation", To: "users"},
 		}, Relations: []framework.Relation{{Type: framework.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"}}},
-		{Name: "users", CRUD: &crud, OwnerField: "user_id", Fields: []framework.FieldDeclaration{{Name: "email", Type: "string", Unique: true}}},
+		{Pagination: &framework.PaginationDeclaration{}, Name: "users", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Scope: &framework.ScopeDeclaration{OwnerField: "user_id"}, Fields: []framework.FieldDeclaration{{Name: "email", Type: "string", Unique: true}}},
 	})
 	if err != nil {
 		t.Fatalf("renderGeneratedProject: %v", err)
@@ -187,9 +187,9 @@ func TestRenderPerEntityFilesCompile(t *testing.T) {
 func TestPackRoundTripPerEntityFiles(t *testing.T) {
 	crud := true
 	decls := []framework.EntityDeclaration{
-		{Name: "zebra", Table: "zebra", CRUD: &crud, Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
+		{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "zebra", Table: "zebra", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
 		{Name: "alpha", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}, Relations: []framework.Relation{{Type: framework.RelManyToOne, Name: "z", Entity: "zebra", ForeignKey: "z_id"}}},
-		{Name: "mango", CRUD: &crud, OwnerField: "user_id", Fields: []framework.FieldDeclaration{{Name: "qty", Type: "int"}}},
+		{Pagination: &framework.PaginationDeclaration{}, Name: "mango", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Scope: &framework.ScopeDeclaration{OwnerField: "user_id"}, Fields: []framework.FieldDeclaration{{Name: "qty", Type: "int"}}},
 	}
 	files, err := renderGeneratedProject(decls)
 	if err != nil {
@@ -221,7 +221,7 @@ func TestPackRoundTripPerEntityFiles(t *testing.T) {
 	if len(got[1].Relations) != 1 || got[1].Relations[0].Entity != "zebra" {
 		t.Errorf("alpha relation lost in round-trip: %#v", got[1].Relations)
 	}
-	if got[2].OwnerField != "user_id" {
-		t.Errorf("mango owner scope lost in round-trip: %q", got[2].OwnerField)
+	if got[2].Scope.OwnerField != "user_id" {
+		t.Errorf("mango owner scope lost in round-trip: %q", got[2].Scope.OwnerField)
 	}
 }

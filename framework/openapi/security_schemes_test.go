@@ -65,12 +65,9 @@ func allGatedOps(t *testing.T, doc map[string]any, table string) map[string]map[
 }
 
 func TestGatedEntityDeclaresSchemes(t *testing.T) {
-	e := entity.Define("notes", entity.EntityConfig{
-		Table:      "notes",
-		OwnerField: "user_id",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-		},
+	e := entity.Define("notes", entity.EntityConfig{Table: "notes", Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+	},
 	})
 	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
 
@@ -102,20 +99,12 @@ func TestGatedOpsCarryBothSchemes(t *testing.T) {
 		{
 			name:  "owner-scoped",
 			table: "notes",
-			ent: entity.Define("notes", entity.EntityConfig{
-				Table:      "notes",
-				OwnerField: "user_id",
-				Fields:     []schema.Field{{Name: "title", Type: schema.String}},
-			}),
+			ent:   entity.Define("notes", entity.EntityConfig{Table: "notes", Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Fields: []schema.Field{{Name: "title", Type: schema.String}}}),
 		},
 		{
 			name:  "multi-tenant",
 			table: "invoices",
-			ent: entity.Define("invoices", entity.EntityConfig{
-				Table:       "invoices",
-				MultiTenant: true,
-				Fields:      []schema.Field{{Name: "amount", Type: schema.Int}},
-			}),
+			ent:   entity.Define("invoices", entity.EntityConfig{Table: "invoices", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "amount", Type: schema.Int}}}),
 		},
 		{
 			name:  "rbac",
@@ -141,12 +130,9 @@ func TestGatedOpsCarryBothSchemes(t *testing.T) {
 // A registry of only ungated entities must declare no schemes, no per-op
 // security, and no global security requirement.
 func TestUngatedEntityHasNoSecurity(t *testing.T) {
-	e := entity.Define("public_posts", entity.EntityConfig{
-		Table:  "public_posts",
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String},
-		},
+	e := entity.Define("public_posts", entity.EntityConfig{Table: "public_posts", Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String},
+	},
 	})
 	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
 

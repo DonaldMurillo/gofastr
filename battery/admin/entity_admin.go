@@ -217,7 +217,7 @@ func isTimestampCol(name string) bool {
 // crudEnabled reports whether ent has auto-CRUD (nil = auto-true when a DB is
 // set, which is always the case here).
 func crudEnabled(ent *entity.Entity) bool {
-	return ent.Config.CRUD == nil || *ent.Config.CRUD
+	return ent.Config.Exposure.CRUD == nil || *ent.Config.Exposure.CRUD
 }
 
 // ----- CrudHandler proxy ----------------------------------------------------

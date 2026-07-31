@@ -11,8 +11,8 @@
 >
 > ```go
 > app.Entity("logs", entity.EntityConfig{
->     Fields:     []schema.Field{ /* … */ },
->     OwnerField: "user_id", // CRUD auto-scopes by current user; auto-stamps on Create
+>     Fields: []schema.Field{ /* … */ },
+>     Scope:  &entity.ScopeConfig{OwnerField: "user_id"}, // CRUD auto-scopes by current user; auto-stamps on Create
 > })
 > ```
 >
@@ -294,15 +294,15 @@ Relation *blocks* (the `relations:` list, distinct from a `relation`
 field) take `type` (`belongs_to`, `has_many`, `has_one`), `name`,
 `entity`, and `foreign_key`.
 
-`owner_field` mirrors `EntityConfig.OwnerField` — set it to the column
+`owner_field` mirrors `Scope.OwnerField` — set it to the column
 that holds the row owner's id (e.g. `user_id`) and the blueprint-declared
 entity gets the same per-user auto-CRUD scoping as a Go-declared one
 (see **Per-user scoping** below). Omit the key to keep pre-existing
-behaviour. `gofastr generate --from=gofastr.yml` emits `OwnerField:` into
-the generated `app.Entity(...)` registration, so the scoping survives code
-generation.
+behaviour. `gofastr generate --from=gofastr.yml` emits `OwnerField:` inside a
+`Scope: &framework.ScopeConfig{…}` block in the generated `app.Entity(...)`
+registration, so the scoping survives code generation.
 
-`access` mirrors `EntityConfig.Access` (`framework.AccessControl`) — the
+`access` mirrors `Exposure.Access` (`framework.AccessControl`) — the
 per-operation RBAC permission required by auto-CRUD. Keys are `read`
 (List + Get), `create`, `update`, and `delete`; each value is a permission
 string such as `posts:write`. A blank or omitted key leaves that operation
@@ -314,8 +314,9 @@ the request context first: mount `framework.AccessMiddleware` with a policy
 into it; it does not satisfy the gate by itself — see
 [access-control](access-control.md)). `gofastr generate
 --from=gofastr.yml` emits the map as `Access: framework.AccessControl{...}`
-in the generated `app.Entity(...)` registration, so blueprint-declared
-entities get the same fail-closed enforcement as Go-declared ones.
+inside an `Exposure: &framework.ExposureConfig{…}` block in the generated
+`app.Entity(...)` registration, so blueprint-declared entities get the same
+fail-closed enforcement as Go-declared ones.
 
 ### Default CRUD authentication
 
@@ -439,7 +440,7 @@ SQL-traditional choice. Pick one per project and stick with it.
 
 ## Per-user scoping (`OwnerField`)
 
-Set `EntityConfig.OwnerField` to the DB column that holds the row owner's
+Set `Scope.OwnerField` to the DB column that holds the row owner's
 id, and auto-CRUD becomes per-user automatically:
 
 | Operation | Behaviour with `OwnerField: "user_id"` |
@@ -486,9 +487,11 @@ in-process) on that entity. Writes stay owner-scoped, always.
 
 ```go
 app.Entity("tickets", entity.EntityConfig{
-    Fields:         []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "subject", Type: schema.String}},
-    OwnerField:     "user_id",
-    CrossOwnerRead: "tickets:read:all", // staff who hold this can read every user's tickets
+    Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "subject", Type: schema.String}},
+    Scope:  &entity.ScopeConfig{
+        OwnerField:     "user_id",
+        CrossOwnerRead: "tickets:read:all", // staff who hold this can read every user's tickets
+    },
 })
 ```
 

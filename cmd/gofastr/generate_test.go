@@ -50,12 +50,8 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 	crud := true
 	timestamps := false
 	files, err := renderGeneratedProject([]framework.EntityDeclaration{
-		{
-			Name:       "posts",
-			Table:      "posts",
-			CRUD:       &crud,
-			MCP:        true,
-			Timestamps: &timestamps,
+		{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "posts",
+			Table: "posts", Exposure: &framework.ExposureDeclaration{CRUD: &crud, MCP: true}, Timestamps: &timestamps,
 			Fields: []framework.FieldDeclaration{
 				{Name: "title", Type: "string", Required: true, Max: floatPtrTest(120)},
 				{Name: "published", Type: "bool"},

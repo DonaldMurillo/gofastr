@@ -43,16 +43,16 @@ func nullFKWorld(t *testing.T) (*sql.DB, *entity.Entity, *entity.Entity, *stubRe
 		Name: "authors", Table: "authors",
 		Fields: []schema.Field{{Name: "name", Type: schema.String}},
 	})
-	postsEnt := entity.Define("posts", entity.EntityConfig{
-		Name: "posts", Table: "posts",
+	postsEnt := entity.Define("posts", entity.EntityConfig{Name: "posts", Table: "posts",
 		Fields: []schema.Field{
 			{Name: "author_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
 		},
 		Relations: []entity.Relation{
 			entity.BelongsTo("author", "authors", "author_id"),
-		},
-		Public: true, // fixture tests NULL-FK includes, not the session gate
+		}, Exposure: &entity.ExposureConfig{
+			// fixture tests NULL-FK includes, not the session gate
+			Public: true},
 	}.WithTimestamps(false))
 	postsEnt.SetDB(db)
 	reg := stubRegistry{byName: map[string]*entity.Entity{"authors": authorsEnt, "posts": postsEnt}}

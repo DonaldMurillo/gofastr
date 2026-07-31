@@ -379,17 +379,13 @@ func isUniqueViolation(err error) bool {
 // auto-generated REST or MCP tools.
 //
 // Hosts that DO want to expose a /users endpoint can override after the
-// fact (e.g. `cfg := auth.UserEntityConfig(); enabled := true; cfg.CRUD =
-// &enabled`).
+// fact (e.g. `cfg := auth.UserEntityConfig(); enabled := true;
+// cfg.Exposure.CRUD = &enabled`).
 //
 //	app.Entity("users", auth.UserEntityConfig())
 func UserEntityConfig() entity.EntityConfig {
 	crudOff := false
-	return entity.EntityConfig{
-		Fields: UserEntityFields(),
-		CRUD:   &crudOff,
-		MCP:    false,
-	}
+	return entity.EntityConfig{Fields: UserEntityFields(), Exposure: &entity.ExposureConfig{CRUD: &crudOff, MCP: false}}
 }
 
 // SessionEntityConfig returns an EntityConfig pre-configured for the auth
@@ -399,11 +395,7 @@ func UserEntityConfig() entity.EntityConfig {
 //	app.Entity("sessions", auth.SessionEntityConfig())
 func SessionEntityConfig() entity.EntityConfig {
 	crudOff := false
-	return entity.EntityConfig{
-		Fields: SessionEntityFields(),
-		CRUD:   &crudOff,
-		MCP:    false,
-	}
+	return entity.EntityConfig{Fields: SessionEntityFields(), Exposure: &entity.ExposureConfig{CRUD: &crudOff, MCP: false}}
 }
 
 // UserEntityFields returns the standard field definitions for a user entity.

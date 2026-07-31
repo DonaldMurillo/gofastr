@@ -674,7 +674,7 @@ app.Entity("logs", entity.EntityConfig{
         {Name: "user_id", Type: schema.String}, // snake
         {Name: "notes",   Type: schema.String},
     },
-    OwnerField: "user_id",
+    Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 })
 // Inside JSON payloads (POST body, response): {"userId": "...", "notes": "..."}
 ```

@@ -55,8 +55,8 @@ func VerifyAuthEntitiesPrivate(reg entity.Registry, usersName, sessionsName stri
 			// CRUD=nil means "auto" (defaults to true when DB is set).
 			// CRUD=&true is explicit on.
 			// CRUD=&false is the safe state.
-			crudOn := ent.Config.CRUD == nil || (ent.Config.CRUD != nil && *ent.Config.CRUD)
-			mcpOn := ent.Config.MCP
+			crudOn := ent.Config.Exposure.CRUD == nil || (ent.Config.Exposure.CRUD != nil && *ent.Config.Exposure.CRUD)
+			mcpOn := ent.Config.Exposure.MCP
 			if !crudOn && !mcpOn {
 				continue
 			}

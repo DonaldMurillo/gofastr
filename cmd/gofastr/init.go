@@ -558,7 +558,7 @@ func RegisterAll(app *framework.App) {
 			{Name: "body", Type: schema.Text},
 			{Name: "published", Type: schema.Bool},
 		},
-		CRUD: boolPtr(true),
+		Exposure: &entity.ExposureConfig{CRUD: boolPtr(true)},
 	})
 }
 

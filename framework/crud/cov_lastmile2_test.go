@@ -296,10 +296,7 @@ func TestGatherLoadedRows_Branches(t *testing.T) {
 func covTenantNotesHandler(t *testing.T) (*CrudHandler, *event.EventBus) {
 	t.Helper()
 	db := setupDB(t, `CREATE TABLE tnotes (id TEXT PRIMARY KEY, tenant_id TEXT, title TEXT)`)
-	ent := entity.Define("tnotes", entity.EntityConfig{
-		Name: "tnotes", Table: "tnotes", MultiTenant: true,
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("tnotes", entity.EntityConfig{Name: "tnotes", Table: "tnotes", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	bus := event.NewEventBus()

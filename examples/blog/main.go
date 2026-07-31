@@ -58,50 +58,46 @@ func main() {
 
 // registerEntities declares the blog's three entities in Go.
 func registerEntities(app *framework.App) {
-	app.Entity("users", framework.EntityConfig{
-		// email is PII: accounts are staff-managed records, so every operation
-		// is RBAC-gated (fail-closed 403 for anonymous) — hard rule #6. This
-		// mirrors the access: block in the blueprint twin (gofastr.yml).
-		Access: framework.AccessControl{
-			Read:   "users:read",
-			Create: "users:write",
-			Update: "users:write",
-			Delete: "users:admin",
-		},
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true},
-			{Name: "email", Type: schema.String, Required: true, Unique: true},
-			{Name: "role", Type: schema.Enum, Values: []string{"admin", "author", "reader"}, Default: "reader"},
-		},
+	app.Entity("users", framework.EntityConfig{Scope:
+	// email is PII: accounts are staff-managed records, so every operation
+	// is RBAC-gated (fail-closed 403 for anonymous) — hard rule #6. This
+	// mirrors the access: block in the blueprint twin (gofastr.yml).
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Access: framework.AccessControl{
+		Read:   "users:read",
+		Create: "users:write",
+		Update: "users:write",
+		Delete: "users:admin",
+	}}, Fields: []schema.Field{
+		{Name: "name", Type: schema.String, Required: true},
+		{Name: "email", Type: schema.String, Required: true, Unique: true},
+		{Name: "role", Type: schema.Enum, Values: []string{"admin", "author", "reader"}, Default: "reader"},
+	},
 		Relations: []framework.Relation{
 			framework.HasMany("posts", "posts", "author_id"),
 			framework.HasMany("comments", "comments", "author_id"),
 		},
 	})
-	app.Entity("posts", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public:     true,
-		SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true, Max: ptr(300.0)},
-			{Name: "body", Type: schema.Text},
-			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
-			{Name: "author_id", Type: schema.String},
-			{Name: "published_at", Type: schema.Timestamp},
-		},
+	app.Entity("posts", framework.EntityConfig{Pagination:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.PaginationConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Scope: &framework.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true, Max: ptr(300.0)},
+		{Name: "body", Type: schema.Text},
+		{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
+		{Name: "author_id", Type: schema.String},
+		{Name: "published_at", Type: schema.Timestamp},
+	},
 		Relations: []framework.Relation{
 			framework.BelongsTo("author", "users", "author_id"),
 			framework.HasMany("comments", "comments", "post_id"),
 		},
 	})
-	app.Entity("comments", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "body", Type: schema.Text, Required: true},
-			{Name: "post_id", Type: schema.String, Required: true},
-			{Name: "author_id", Type: schema.String},
-		},
+	app.Entity("comments", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "body", Type: schema.Text, Required: true},
+		{Name: "post_id", Type: schema.String, Required: true},
+		{Name: "author_id", Type: schema.String},
+	},
 		Relations: []framework.Relation{
 			framework.BelongsTo("post", "posts", "post_id"),
 			framework.BelongsTo("author", "users", "author_id"),

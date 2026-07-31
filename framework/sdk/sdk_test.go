@@ -11,13 +11,11 @@ import (
 )
 
 func postsConfig() entity.EntityConfig {
-	return entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "views", Type: schema.Int},
-			{Name: "secret", Type: schema.String, Hidden: true},
-		},
-		Public: true,
+	return entity.EntityConfig{Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "views", Type: schema.Int},
+		{Name: "secret", Type: schema.String, Hidden: true},
+	}, Exposure: &entity.ExposureConfig{Public: true},
 	}
 }
 

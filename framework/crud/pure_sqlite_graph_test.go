@@ -40,12 +40,10 @@ func TestPureSQLiteRelatedCRUDGraph(t *testing.T) {
 			{Name: "body", Type: schema.String, Required: true},
 		},
 	}.WithTimestamps(false))
-	posts := entity.Define("posts", entity.EntityConfig{
-		Name: "posts", Table: "posts", CursorField: "title",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "author_id", Type: schema.String, Required: true},
-		},
+	posts := entity.Define("posts", entity.EntityConfig{Name: "posts", Table: "posts", Pagination: &entity.PaginationConfig{CursorField: "title"}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "author_id", Type: schema.String, Required: true},
+	},
 		Relations: []entity.Relation{
 			entity.BelongsTo("author", "users", "author_id"),
 			entity.HasMany("comments", "comments", "post_id"),

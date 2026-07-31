@@ -318,10 +318,7 @@ func (e covNoTxExecutor) ExecContext(ctx context.Context, q string, a ...any) (s
 
 func TestRequireTenantContext(t *testing.T) {
 	dbc := setupDB(t, `CREATE TABLE mt (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
-	ent := entity.Define("mt", entity.EntityConfig{
-		Name: "mt", Table: "mt", MultiTenant: true,
-		Fields: []schema.Field{{Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("mt", entity.EntityConfig{Name: "mt", Table: "mt", Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{{Name: "body", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(dbc)
 	ch := NewCrudHandler(ent, dbc).WithJSONCase(CaseSnake)
 	if err := ch.requireTenantContext(context.Background()); err == nil {

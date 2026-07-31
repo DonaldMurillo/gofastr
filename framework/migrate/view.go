@@ -89,11 +89,18 @@ func (v View) ToEntity() *entity.Entity {
 	if pkCount > 1 {
 		panic(fmt.Sprintf("migrate: view %q marks %d columns PrimaryKey — exactly one is required", v.Name, pkCount))
 	}
+	timestamps := false
 	ent := &entity.Entity{Config: entity.EntityConfig{
-		Name:      v.Name,
-		Table:     v.Name,
-		Fields:    fields,
-		Unmanaged: true,
+		Name:       v.Name,
+		Table:      v.Name,
+		Fields:     fields,
+		Unmanaged:  true,
+		Timestamps: &timestamps,
+		// Materialized because this constructor bypasses Define()'s
+		// normalization — the diff engine reads Config.Scope directly.
+		Scope:      &entity.ScopeConfig{},
+		Pagination: &entity.PaginationConfig{},
+		Exposure:   &entity.ExposureConfig{},
 	}}
 	ent.PrimaryKey = pk
 	return ent

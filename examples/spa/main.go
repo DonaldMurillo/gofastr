@@ -30,25 +30,23 @@ func main() {
 
 	// --- Entities — auto-CRUD is on (DB set); APIPrefix puts the routes under /api. ---
 
-	app.Entity("articles", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "summary", Type: schema.Text},
-			{Name: "body", Type: schema.Text},
-			{Name: "category", Type: schema.String},
-		},
+	app.Entity("articles", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "summary", Type: schema.Text},
+		{Name: "body", Type: schema.Text},
+		{Name: "category", Type: schema.String},
+	},
 	})
 
-	app.Entity("projects", framework.EntityConfig{
-		// public demo content — see "Default CRUD authentication" in the security docs
-		Public: true,
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true},
-			{Name: "description", Type: schema.Text},
-			{Name: "url", Type: schema.String},
-		},
+	app.Entity("projects", framework.EntityConfig{Scope:
+	// public demo content — see "Default CRUD authentication" in the security docs
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "name", Type: schema.String, Required: true},
+		{Name: "description", Type: schema.Text},
+		{Name: "url", Type: schema.String},
+	},
 	})
 
 	// --- Seed data (must run after tables exist) ---

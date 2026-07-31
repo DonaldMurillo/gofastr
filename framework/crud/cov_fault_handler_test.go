@@ -58,10 +58,7 @@ func covFaultSoftNotes(t *testing.T) (*CrudHandler, *sql.DB) {
 	t.Helper()
 	db := covSetupFaultDB(t, `CREATE TABLE snotes (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
 	seedRows(t, db, "snotes", []map[string]any{{"id": "n1", "title": "a"}})
-	ent := entity.Define("snotes", entity.EntityConfig{
-		Name: "snotes", Table: "snotes", SoftDelete: true,
-		Fields: []schema.Field{{Name: "title", Type: schema.String}},
-	}.WithTimestamps(false))
+	ent := entity.Define("snotes", entity.EntityConfig{Name: "snotes", Table: "snotes", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 	ent.SetDB(db)
 	return NewCrudHandler(ent, db).WithJSONCase(CaseSnake), db
 }

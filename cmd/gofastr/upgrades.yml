@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.53.0
+through: v0.54.0
 
 releases:
   - version: v0.3.0
@@ -487,3 +487,26 @@ releases:
         breaking: true
         guidance: "EntityQueryParams, EntityMutationParams, SearchQueryParams and EventEmitParams now take moduleproto.CallerRef (Delegation only) instead of moduleproto.Caller. A child echoing back its own Subject/Tenant is a confused-deputy shape — the host must resolve the principal from Delegation alone. Drop the two fields from the reverse call; the host already sent them outbound and does not need them back. Compile errors point at each construction site."
         detect: "moduleproto\\.Caller\\{"
+  - version: v0.54.0
+    title: Zero-deprecated surface — grouped EntityConfig is the model
+    notes:
+      - change: The flat EntityConfig fields are gone; Scope/Pagination/Exposure are the config
+        breaking: true
+        guidance: "SoftDelete, MultiTenant, TenantField, OwnerField, and CrossOwnerRead move to Scope (&framework.ScopeConfig{...}); CursorField, CursorFields, and MaxListLimit move to Pagination (&framework.PaginationConfig{...}); CRUD, MCP, Public, and Access move to Exposure (&framework.ExposureConfig{...}). These fields were deprecated through the v0.40 line. Blueprint YAML flat keys (owner_field:, soft_delete:, crud:, mcp:, ...) still parse — only the Go struct changed. A flat YAML key that conflicts with its grouped twin is now an error instead of a silent precedence pick."
+        detect: "EntityConfig\\{[^}]*(SoftDelete|MultiTenant|TenantField|OwnerField|CrossOwnerRead|CursorField|MaxListLimit|Public):"
+      - change: EntityConfig.Timestamps is *bool
+        breaking: true
+        guidance: "A literal false used to silently mean \"default true\" (an unexported set-bit controlled it); only WithTimestamps(false) worked. Timestamps is now *bool with nil = default true, so the visible value is the semantic value under copying and serialization. Replace Timestamps: false with WithTimestamps(false) or a *bool literal; Timestamps: true can simply be dropped."
+        detect: "Timestamps:\\s*(true|false)"
+      - change: The harness moved under framework/experimental
+        breaking: true
+        guidance: "Import github.com/DonaldMurillo/gofastr/framework/experimental/harness/... instead of framework/harness/... — the subsystem is v0.1 and now carries the experimental-path stability exemption. The gofastr harness subcommand is unchanged."
+        detect: "framework/harness"
+      - change: Upload metadata and FileField emit camelCase JSON
+        breaking: true
+        guidance: "core/upload.Metadata keys changed from original_name/mime_type/uploaded_at to originalName/mimeType/uploadedAt, and framework/file.FileField from mime_type/storage_ref to mimeType/storageRef. Clients parsing those responses by key must switch. The persisted <field>_variants column format is unchanged on purpose."
+        detect: "original_name|\"mime_type\"|storage_ref"
+      - change: battery/storage lost its dead registry; kiln lost two advertised action kinds
+        breaking: true
+        guidance: "storage.Register/New/NewBattery/StorageType never had a working path (New always errored) — construct NewLocalStorage/NewS3Storage directly and pass it to WithFileStorage. Kiln's create_entity and respond_query action kinds were advertised but never executed; authoring one is now rejected at journal time with an error naming the kind."
+        detect: "storage\\.(Register|New)\\(|storage\\.NewBattery"
