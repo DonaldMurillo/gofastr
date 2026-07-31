@@ -19,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -104,7 +105,7 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 		} else {
 			// Crumbs can be data-driven (doc titles/paths from content
 			// files) — drop unsafe href schemes; degrade to "#".
-			href := safeURL(c.Href)
+			href := urlsafe.CleanAnchor(c.Href)
 			if href == "" {
 				href = "#"
 			}
@@ -121,7 +122,7 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 func DocPrevNext(p DocPager) render.HTML {
 	// Pager hrefs can be data-driven — drop unsafe schemes; degrade to "#".
 	safeHref := func(u string) string {
-		if s := safeURL(u); s != "" {
+		if s := urlsafe.CleanAnchor(u); s != "" {
 			return s
 		}
 		return "#"

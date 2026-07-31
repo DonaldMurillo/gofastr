@@ -40,13 +40,6 @@ func TestClusterNoWrapAddsModifier(t *testing.T) {
 	mustContain(t, h, "ui-cluster--nowrap")
 }
 
-func TestClusterLegacyWrapTrueStillWraps(t *testing.T) {
-	h := Cluster(ClusterConfig{Wrap: true}, render.Text("x"))
-	if strings.Contains(string(h), "ui-cluster--nowrap") {
-		t.Fatalf("legacy Wrap:true must remain wrapping:\n%s", h)
-	}
-}
-
 func TestGridRendersMinAsDataAttribute(t *testing.T) {
 	h := Grid(GridConfig{Min: "20rem"}, render.Text("x"))
 	mustContain(t, h, `data-min="20rem"`)

@@ -314,10 +314,10 @@ func TestE2E_Disclosure_OpenAndKeyboard(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/disclosure"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-disclosure"]').hasAttribute('open')`, &openBefore),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-disclosure"] .ui-disclosure__summary').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="disclosure"]').hasAttribute('open')`, &openBefore),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="disclosure"] .ui-disclosure__summary').click()`, nil),
 		chromedp.Sleep(100*1e6),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-disclosure"]').hasAttribute('open')`, &openAfter),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="disclosure"]').hasAttribute('open')`, &openAfter),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -127,7 +128,7 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 		// same allow-list as ui.Link; see framework/ui/safety.go. Card
 		// is a content-level component, so a rejected href degrades to
 		// an inert "#" rather than panicking.
-		href := safeURL(cfg.Href)
+		href := urlsafe.CleanAnchor(cfg.Href)
 		if href == "" {
 			href = "#"
 		}

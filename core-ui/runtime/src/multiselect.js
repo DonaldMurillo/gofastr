@@ -11,7 +11,7 @@
   'use strict';
 
   function findRoot(node) {
-    return node && node.closest && node.closest('[data-fui-comp="ui-multiselect"]');
+    return node && node.closest && node.closest('[data-fui-comp="multiselect"]');
   }
 
   function renderChips(root) {
@@ -70,7 +70,7 @@
   // avoids the case where the click handler that we want to fire is
   // INSIDE the disclosure (it stays open until the action runs).
   document.addEventListener('mousedown', function (ev) {
-    const opens = document.querySelectorAll('[data-fui-comp="ui-multiselect"] details.ui-multiselect__disclosure[open]');
+    const opens = document.querySelectorAll('[data-fui-comp="multiselect"] details.ui-multiselect__disclosure[open]');
     if (opens.length === 0) return;
     opens.forEach(function (d) {
       if (!d.contains(ev.target)) d.removeAttribute('open');
@@ -80,7 +80,7 @@
   // Esc closes any open multiselect, mirroring popover / menu UX.
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
-    const opens = document.querySelectorAll('[data-fui-comp="ui-multiselect"] details.ui-multiselect__disclosure[open]');
+    const opens = document.querySelectorAll('[data-fui-comp="multiselect"] details.ui-multiselect__disclosure[open]');
     if (opens.length === 0) return;
     opens.forEach(function (d) {
       d.removeAttribute('open');
@@ -91,7 +91,7 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('[data-fui-comp="ui-multiselect"]').forEach(renderChips);
+    scope.querySelectorAll('[data-fui-comp="multiselect"]').forEach(renderChips);
   }
   scan(document);
   window.addEventListener('gofastr:navigate', function () { scan(document); });

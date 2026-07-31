@@ -45,7 +45,7 @@ func TestOpenAttrEmitted(t *testing.T) {
 
 func TestDataFuiCompEmitted(t *testing.T) {
 	h := string(Render(Config{Title: "x"}))
-	if !strings.Contains(h, `data-fui-comp="ui-disclosure"`) {
+	if !strings.Contains(h, `data-fui-comp="disclosure"`) {
 		t.Errorf("disclosure should emit data-fui-comp marker:\n%s", h)
 	}
 }

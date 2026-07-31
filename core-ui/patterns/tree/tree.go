@@ -122,7 +122,7 @@ func renderNode(n Node, level, pos, setSize int, signalPrefix string, isFirstFoc
 	// A dangerous Href (javascript:/vbscript:/data:/protocol-relative/
 	// control bytes) is dropped and the node degrades to a plain label
 	// rather than a clickable XSS vector.
-	if href := safeURL(n.Href); href != "" {
+	if href := urlsafe.CleanAnchor(n.Href); href != "" {
 		rowChildren = append(rowChildren, render.Tag("a", map[string]string{
 			"href":  href,
 			"class": "tree__label",
@@ -158,12 +158,4 @@ func renderNode(n Node, level, pos, setSize int, signalPrefix string, isFirstFoc
 	}
 
 	return render.Tag("li", liAttrs, liBody...)
-}
-
-// safeURL returns u if it is safe to render as an href, and "" otherwise.
-// The rule set lives in core-ui/urlsafe — this builder renders below
-// framework/ui, so the allow-list has to be enforced here too, but it is
-// the same allow-list, not another copy of it.
-func safeURL(u string) string {
-	return urlsafe.Clean(u, urlsafe.Anchor)
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -315,7 +316,7 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		// a rejected href degrades to "#" like ui.Card / ui.Link /
 		// ui.Menu. (Previously this used the weaker sanitizeHref, which
 		// let //evil.com, file:, and blob: through verbatim.)
-		href := safeURL(it.Href)
+		href := urlsafe.CleanAnchor(it.Href)
 		if href == "" {
 			href = "#"
 		}

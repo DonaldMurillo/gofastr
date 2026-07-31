@@ -283,9 +283,7 @@ server side and the runtime does the work.
 | `data-fui-sidebar` | Emitted by `framework/ui.Sidebar` on its root. The sidebar runtime scopes collapse state and controls to this element. |
 | `data-fui-sidebar-collapse` | On a collapsible sidebar's toggle button. Demand-loads the sidebar module, toggles the compact rail, and keeps `aria-expanded` synchronized. |
 | `data-fui-sidebar-storage="<key>"` | On a collapsible sidebar root. Names the local-storage key used to restore its collapsed state across navigation and reloads. |
-| `data-fui-sticky="<edge>"` | Emitted by `framework/ui.Sticky` (`layout.go`) with the pinned edge (`top`/`bottom`). No runtime or CSS consumer today (styling keys off `.ui-sticky--*` classes); emit-only structural marker. |
 | `data-fui-z-tier="<tier>"` | Emitted by `framework/ui.Sticky` with the layering tier from `StickyConfig.ZIndexTier` (`sticky` default, or `dropdown`/`modal`/`popover`/`toast` matching the theme's `ZIndexSet` tokens). CSS-only consumer: the `ui-sticky` stylesheet keys `z-index: var(--z-<tier>)` off this attribute so a sticky toolbar can layer above/below other surfaces without bespoke CSS. |
-| `data-fui-viewport="desktop\|mobile"` | Emitted by `framework/ui.Responsive` on each variant wrapper. No runtime or CSS consumer today — the per-breakpoint stylesheet toggles `display` via the `.ui-responsive__desktop` / `.ui-responsive__mobile` classes; emit-only structural marker. |
 | `data-fui-poll="<duration>"` | Marks an element for the demand-loaded `poll` runtime module. On the interval (Go-duration syntax: `"5s"`, `"30s"`, `"1m"`, compound `"1m30s"`) the module GETs `data-fui-poll-src` and swaps the response HTML into the element's `innerHTML` through the same `innerHTML + scanAndLoadCSS` path `html`-mode signal regions use — one region-swap pipeline, not a second one. Clamp: intervals below 5s are raised to 5s so a typo can't DoS the server. ±10% jitter per tick desynchronises a page full of polls; pauses while `document.hidden` and fetches immediately on regain; doubles the interval (capped at 5× base) on fetch failure and resets to base on the next success. The marker is idempotent (`__fuiPollWired` guard); timers self-teardown when the element leaves the DOM and are reclaimed on SPA navigation via the `_moduleScanners.poll` hook. Pair with `data-fui-poll-src`. |
 | `data-fui-poll-src="<url>"` | The GET endpoint the `poll` runtime module fetches on each `data-fui-poll` tick. The response body replaces the parent element's `innerHTML`. Same-origin by default (`credentials: 'same-origin'`); the endpoint should return an HTML fragment, not a full document. Every successful applied tick (page-level here, widget-level `Builder.Poll` alike) increments the shared liveness observable `window.__gofastr.pollStatus` (`{ ticks, lastTickAt }` — one object mutated in place, the poll analog of `sseStatus`); an HTTP-error response counts as a failure and triggers the back-off. |
 
@@ -1192,6 +1190,12 @@ func Render(cfg Config) render.HTML {
 
 const baseCSS = `.foo { ... }`
 ```
+
+**Registration names are bare.** A pattern's `RegisterStyle` name — and the
+matching `data-fui-comp` value its CSS scopes to — is the package name
+verbatim (`accordion`, `breadcrumbs`, `multiselect`, `sortablelist`), not an
+`ui-`-prefixed alias. The prefix matches no convention in the repo and only
+hides which package owns the stylesheet.
 
 ### What about widgets?
 

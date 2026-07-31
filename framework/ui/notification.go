@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -126,7 +127,7 @@ func Notification(cfg NotificationConfig) render.HTML {
 		// a rejected href degrades to "#" like ui.Card / ui.Link.
 		// (Previously this used the weaker sanitizeHref, which let
 		// //evil.com, file:, and blob: through verbatim.)
-		dismissHref := safeURL(cfg.DismissHref)
+		dismissHref := urlsafe.CleanAnchor(cfg.DismissHref)
 		if dismissHref == "" {
 			dismissHref = "#"
 		}

@@ -223,13 +223,6 @@ interactive.OnClick(deleteBtn,
 
 Attribute injected: `data-fui-confirm="message"`.
 
-> **Why a method, not an `OnSuccess` effect?** The confirm fires *before*
-> the request, not after it succeeds. The older spelling —
-> `interactive.Confirm(message)` passed to `OnSuccess(...)` — reads as if it
-> runs on the response and has misled readers; it is deprecated but still
-> emits the identical `data-fui-confirm` attribute, so existing code keeps
-> working. Prefer `WithConfirm`, which reads in the order it executes.
-
 `window.confirm` is native, unthemed, and **blocks browser automation**
 (headless tests can't dismiss it without a dialog handler). For a
 design-system-styled confirmation that matches the rest of your app and is

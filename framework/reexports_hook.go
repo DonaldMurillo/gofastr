@@ -30,4 +30,5 @@ type (
 	HookWhereClause = hook.WhereClause
 )
 
-var NewHookRegistry = hook.NewHookRegistry
+// NewHookRegistry wraps hook.NewHookRegistry.
+func NewHookRegistry() *hook.HookRegistry { return hook.NewHookRegistry() }

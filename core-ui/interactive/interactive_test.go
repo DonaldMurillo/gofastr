@@ -656,18 +656,6 @@ func TestDropdownWrapsBoth(t *testing.T) {
 // ─── D4: Typed interactive effects ──────────────────────────────────────────
 // Failing tests that pin the exact runtime-read attribute name for each effect.
 
-func TestConfirmEmitsAttr(t *testing.T) {
-	btn := render.Tag("button", nil, render.Text("Delete"))
-	result := OnClick(btn, Delete("/api/item/1").OnSuccess(Confirm("Sure?")))
-	s := string(result)
-	if !strings.Contains(s, `data-fui-confirm="Sure?"`) {
-		t.Fatalf("Confirm must emit data-fui-confirm attr: %s", s)
-	}
-	if strings.Contains(s, "data-fui-rpc-confirm") {
-		t.Fatalf("Confirm must NOT emit data-fui-rpc-confirm (wrong prefix): %s", s)
-	}
-}
-
 func TestWithConfirmEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Delete"))
 	result := OnClick(btn, Delete("/api/item/1").WithConfirm("Sure?"))
@@ -677,18 +665,6 @@ func TestWithConfirmEmitsAttr(t *testing.T) {
 	}
 	if strings.Contains(s, "data-fui-rpc-confirm") {
 		t.Fatalf("WithConfirm must NOT emit data-fui-rpc-confirm (wrong prefix): %s", s)
-	}
-}
-
-// WithConfirm and the deprecated Confirm effect emit the identical attribute,
-// so an app can migrate without any runtime-visible change.
-func TestWithConfirmMatchesConfirmEffect(t *testing.T) {
-	btn := render.Tag("button", nil, render.Text("Delete"))
-	viaMethod := string(OnClick(btn, Delete("/api/x").WithConfirm("Gone?")))
-	viaEffect := string(OnClick(btn, Delete("/api/x").OnSuccess(Confirm("Gone?"))))
-	if !strings.Contains(viaMethod, `data-fui-confirm="Gone?"`) ||
-		!strings.Contains(viaEffect, `data-fui-confirm="Gone?"`) {
-		t.Fatalf("both spellings must emit the same attr:\n method=%s\n effect=%s", viaMethod, viaEffect)
 	}
 }
 
@@ -740,15 +716,6 @@ func TestAfterTextAndDisableCombine(t *testing.T) {
 	}
 	if !strings.Contains(s, `data-fui-rpc-after-disable`) {
 		t.Fatalf("missing after-disable: %s", s)
-	}
-}
-
-func TestConfirmNoPanicEmptyMessage(t *testing.T) {
-	// Empty message is allowed (runtime will show blank confirm dialog).
-	btn := render.Tag("button", nil, render.Text("x"))
-	result := OnClick(btn, Delete("/api/x").OnSuccess(Confirm("")))
-	if !strings.Contains(string(result), `data-fui-confirm=""`) {
-		t.Fatalf("empty confirm message should still emit attr: %s", result)
 	}
 }
 

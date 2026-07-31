@@ -374,52 +374,17 @@ func WithDB(db *sql.DB) AppOption {
 	}
 }
 
-// WithConfig sets the application config. It merges into whatever the
-// granular options (WithAPIPrefix, WithPublicOpenAPI, WithName, …) have
-// already set rather than replacing the struct wholesale, so option order
-// doesn't silently discard config: every field WithConfig sets to a
-// non-zero value wins; a zero field preserves the existing value. To turn
-// a boolean back off, use the granular setter after WithConfig instead of
-// relying on a zero-valued field.
-//
-// TestWithConfigCoversEveryField pins the field list — extend this merge
-// when adding an AppConfig field.
+// WithConfig sets the application config by replacing AppConfig wholesale.
+// Options apply left to right and later options win: a granular setter placed
+// after WithConfig (WithAPIPrefix, WithPublicOpenAPI, …) overrides the field
+// it touches, while WithConfig overrides every option that ran before it —
+// including fields it leaves at the zero value. A zero field means the zero
+// value, not "keep whatever a previous option set". To turn a boolean back off,
+// set it in the AppConfig passed to WithConfig (or place a granular setter
+// after it) instead of relying on a zero field to preserve a prior value.
 func WithConfig(config AppConfig) AppOption {
 	return func(a *App) {
-		if config.Name != "" {
-			a.Config.Name = config.Name
-		}
-		if config.JSONCase != "" {
-			a.Config.JSONCase = config.JSONCase
-		}
-		if config.DebugEndpoints {
-			a.Config.DebugEndpoints = true
-		}
-		if config.NoLLMMD {
-			a.Config.NoLLMMD = true
-		}
-		if config.PublicOpenAPI {
-			a.Config.PublicOpenAPI = true
-		}
-		if config.APIPrefix != "" {
-			a.Config.APIPrefix = config.APIPrefix
-		}
-		if config.RequestTimeout != 0 {
-			a.Config.RequestTimeout = config.RequestTimeout
-		}
-		if config.DisableRequestTimeout {
-			a.Config.DisableRequestTimeout = true
-		}
-		// SecurityHeaders is a value type; copy it unconditionally. The
-		// zero value is valid (means "use the built-in strict defaults"),
-		// so there is no sentinel to gate on — unlike the scalar fields.
-		a.Config.SecurityHeaders = config.SecurityHeaders
-		if config.ShutdownTimeout != 0 {
-			a.Config.ShutdownTimeout = config.ShutdownTimeout
-		}
-		if config.DisableSignalHandling {
-			a.Config.DisableSignalHandling = true
-		}
+		a.Config = config
 	}
 }
 

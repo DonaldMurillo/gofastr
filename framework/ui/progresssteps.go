@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -152,7 +153,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		if s.Status == ProgressStepComplete && s.Href != "" {
 			// Drop unsafe href schemes (framework/ui/safety.go allow-list);
 			// degrade to an inert "#" rather than a live javascript: link.
-			href := safeURL(s.Href)
+			href := urlsafe.CleanAnchor(s.Href)
 			if href == "" {
 				href = "#"
 			}

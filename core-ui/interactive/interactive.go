@@ -191,25 +191,6 @@ func (e navigateEffect) rpcAttrs() map[string]string {
 	return map[string]string{"data-fui-rpc-navigate": e.path}
 }
 
-// Confirm shows a window.confirm dialog before the RPC fires. The RPC is
-// cancelled if the user dismisses the dialog.
-//
-// Deprecated: Confirm is passed to OnSuccess(...) even though it fires
-// PRE-flight (before the request, not after success) — a placement that has
-// misled readers into thinking the gate runs on the response. Use
-// Action.WithConfirm(message) instead, which reads in the correct order and
-// lives where the timing implies. This effect still works and maps to the
-// same data-fui-confirm attribute.
-func Confirm(message string) Effect {
-	return confirmEffect{message: message}
-}
-
-type confirmEffect struct{ message string }
-
-func (e confirmEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-confirm": e.message}
-}
-
 // AfterText replaces the trigger element's text content with text on 2xx RPC
 // success. One-shot — subsequent re-clicks are idempotent via
 // data-fui-rpc-after-done. Pair with AfterDisable for "Saved ✓" feedback.

@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -144,7 +145,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 			))
 	}
 
-	action := safeURL(cfg.Action)
+	action := urlsafe.CleanAnchor(cfg.Action)
 	if action == "" {
 		// A form pointed at a dangerous URL is worse than a no-op — the
 		// user clicks submit and credentials flow somewhere unexpected.

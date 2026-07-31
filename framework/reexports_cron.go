@@ -10,4 +10,5 @@ type (
 	Scheduler = cron.Scheduler
 )
 
-var NewScheduler = cron.NewScheduler
+// NewScheduler wraps cron.NewScheduler.
+func NewScheduler() *cron.Scheduler { return cron.NewScheduler() }

@@ -3,7 +3,7 @@
 //
 // Output structure:
 //
-//	<div data-fui-comp="ui-multiselect">
+//	<div data-fui-comp="multiselect">
 //	  <div class="ui-multiselect__chips" data-fui-multiselect-chips>
 //	    <!-- runtime fills with chips for each :checked option -->
 //	  </div>
@@ -173,28 +173,28 @@ func itoa(i int) string {
 	return string(buf)
 }
 
-var multiSelectStyle = registry.RegisterStyle("ui-multiselect", multiSelectCSS)
+var multiSelectStyle = registry.RegisterStyle("multiselect", multiSelectCSS)
 
 func multiSelectCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-multiselect"] {
+	return `[data-fui-comp="multiselect"] {
   display: grid;
   gap: var(--spacing-xs, 4px);
   max-inline-size: 32rem;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__chips {
+[data-fui-comp="multiselect"] .ui-multiselect__chips {
   display: flex;
   gap: var(--spacing-xs, 6px);
   flex-wrap: wrap;
   min-block-size: 28px;
   align-items: center;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__chips:empty::before {
+[data-fui-comp="multiselect"] .ui-multiselect__chips:empty::before {
   content: attr(data-fui-multiselect-placeholder);
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.9rem);
   font-style: italic;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__chip {
+[data-fui-comp="multiselect"] .ui-multiselect__chip {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 6px);
@@ -205,7 +205,7 @@ func multiSelectCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.85rem);
   font-weight: 500;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__chip-remove {
+[data-fui-comp="multiselect"] .ui-multiselect__chip-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -220,15 +220,15 @@ func multiSelectCSS(_ style.Theme) string {
   font-size: var(--text-lg, 1.1rem);
   line-height: 1;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__chip-remove:hover {
+[data-fui-comp="multiselect"] .ui-multiselect__chip-remove:hover {
   background: color-mix(in srgb, var(--color-primary-fg, #FFFFFF) 25%, transparent);
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__disclosure {
+[data-fui-comp="multiselect"] .ui-multiselect__disclosure {
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__summary {
+[data-fui-comp="multiselect"] .ui-multiselect__summary {
   display: flex;
   align-items: center;
   min-block-size: var(--spacing-touch-target, 44px);
@@ -239,27 +239,27 @@ func multiSelectCSS(_ style.Theme) string {
   user-select: none;
   list-style: none;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__summary::-webkit-details-marker {
+[data-fui-comp="multiselect"] .ui-multiselect__summary::-webkit-details-marker {
   display: none;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__summary::before {
+[data-fui-comp="multiselect"] .ui-multiselect__summary::before {
   content: "▾";
   margin-inline-end: var(--spacing-sm, 8px);
   font-size: var(--text-xs, 0.7rem);
   color: var(--color-text-muted, #52525B);
   transition: transform 120ms ease;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__disclosure[open] .ui-multiselect__summary::before {
+[data-fui-comp="multiselect"] .ui-multiselect__disclosure[open] .ui-multiselect__summary::before {
   transform: rotate(180deg);
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__group {
+[data-fui-comp="multiselect"] .ui-multiselect__group {
   display: grid;
   gap: 0;
   border: 0;
   padding: 0;
   border-top: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__row {
+[data-fui-comp="multiselect"] .ui-multiselect__row {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 8px);
@@ -267,10 +267,10 @@ func multiSelectCSS(_ style.Theme) string {
   min-block-size: var(--spacing-touch-target, 44px);
   cursor: pointer;
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__row:hover {
+[data-fui-comp="multiselect"] .ui-multiselect__row:hover {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-multiselect"] .ui-multiselect__check:focus-visible {
+[data-fui-comp="multiselect"] .ui-multiselect__check:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }`

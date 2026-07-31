@@ -21,8 +21,7 @@ import (
 //
 // This linter flags any pattern package that still exports a top-level
 // `func BaseCSS() string`. The rule applies only to core-ui/patterns/*
-// packages so the framework's own theme bundle (framework/ui.BaseCSS)
-// is unaffected.
+// packages — elsewhere a BaseCSS export is not a contract violation.
 
 // LintNoPatternBaseCSS walks core-ui/patterns/* (or any subdir of the
 // given root that lives under "patterns") and reports any package that
