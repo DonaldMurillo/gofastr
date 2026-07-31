@@ -259,22 +259,30 @@ func (q *RedisQueue) Nack(ctx context.Context, jobID string) error {
 		return fmt.Errorf("nack: unmarshal job: %w", err)
 	}
 
-	// Remove from processing.
-	_ = q.client.HDel(ctx, q.processingQueue, jobID)
-
 	// Attempts were bumped at claim (Dequeue), so the processing entry
 	// already carries the post-claim count — Nack only decides retry vs
 	// dead-letter. Bumping here too would double-count and let a poison
 	// message that only ever crashes before Nack evade MaxAttempts.
+	dest := q.queueName
 	if job.Attempts >= job.MaxAttempts {
-		// Move to dead letter queue.
-		dlqData, _ := json.Marshal(job)
-		return q.client.LPush(ctx, q.deadLetterQueue, dlqData)
+		dest = q.deadLetterQueue
 	}
 
-	// Re-enqueue for retry.
-	jobData, _ := json.Marshal(job)
-	return q.client.LPush(ctx, q.queueName, jobData)
+	// Write the job to its next home BEFORE dropping the processing entry.
+	// The processing hash is the only durable copy of a claimed job: deleting
+	// it first and then failing this push left the job on no list and
+	// invisible to Reclaim — silently lost.
+	//
+	// The reverse order can duplicate instead: if the push lands and the HDel
+	// fails, Reclaim re-delivers the job once its visibility timeout expires.
+	// This queue is at-least-once, so a rare duplicate is within contract and
+	// losing the job is not.
+	payload, _ := json.Marshal(job)
+	if err := q.client.LPush(ctx, dest, payload); err != nil {
+		return fmt.Errorf("nack: push to %s: %w", dest, err)
+	}
+
+	return q.client.HDel(ctx, q.processingQueue, jobID)
 }
 
 // Reclaim scans the processing set for in-flight jobs whose visibility

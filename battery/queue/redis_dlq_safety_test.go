@@ -65,3 +65,63 @@ func TestRedisExhaustedJobSurvivesDLQFailure(t *testing.T) {
 		t.Fatalf("healed DLQ push should have dead-lettered the job, dead list = %d", deadLen)
 	}
 }
+
+// pushFailingRedis fails every LPush, whatever list it targets.
+type pushFailingRedis struct {
+	RedisClient
+	err error
+}
+
+func (f *pushFailingRedis) LPush(ctx context.Context, key string, values ...interface{}) error {
+	if f.err != nil {
+		return f.err
+	}
+	return f.RedisClient.LPush(ctx, key, values...)
+}
+
+// Nack must not delete the processing entry until the job's next home is
+// written. The processing hash is the only durable copy of a claimed job:
+// removing it first and then failing the retry (or dead-letter) push leaves
+// the job in no list and invisible to Reclaim — silently lost.
+func TestRedisNackKeepsJobWhenPushFails(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		attempts    int
+		maxAttempts int
+	}{
+		{"retry push fails", 1, 3},
+		// Attempts becomes 3 at claim, so Nack dead-letters rather than retries.
+		{"dead-letter push fails", 2, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newMockRedis()
+			ctx := context.Background()
+
+			job := Job{ID: "j1", Type: "x", MaxAttempts: tc.maxAttempts, Attempts: tc.attempts}
+			data, _ := json.Marshal(job)
+			_ = r.LPush(ctx, "test", data)
+
+			q := NewRedisQueue(r, "test")
+			claimed, err := q.Dequeue(ctx)
+			if err != nil {
+				t.Fatalf("Dequeue: %v", err)
+			}
+
+			fail := &pushFailingRedis{RedisClient: r, err: errors.New("redis down")}
+			failing := NewRedisQueue(fail, "test")
+			if err := failing.Nack(ctx, claimed.ID); err == nil {
+				t.Fatal("Nack must surface the failed push")
+			}
+
+			r.mu.Lock()
+			mainLen := len(r.lists["test"])
+			deadLen := len(r.lists["test:dead"])
+			processing := len(r.hashes["test:processing"])
+			r.mu.Unlock()
+
+			if mainLen+deadLen+processing == 0 {
+				t.Fatal("job permanently lost: not on the main list, not dead-lettered, not reclaimable")
+			}
+		})
+	}
+}
