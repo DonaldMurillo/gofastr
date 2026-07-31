@@ -427,6 +427,19 @@ func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []s
 	return m.userStore.UpdateRoles(ctx, userID, roles)
 }
 
+// refuseInMemorySessionStore is the production gate on single-node session
+// state. Init runs it twice — before and after plugin init — because a
+// plugin can swap the store out from under the first check.
+func (m *AuthManager) refuseInMemorySessionStore() error {
+	if m.config.DevMode || m.config.AllowInMemoryStores {
+		return nil
+	}
+	if _, ok := m.sessionStore.(*MemorySessionStore); ok {
+		return fmt.Errorf("auth: production mode refuses to boot on the default in-memory session store — sessions won't survive a restart and won't resolve on a second replica; set AuthConfig.AllowInMemoryStores: true to acknowledge a single-node deployment, or use NewEntitySessionStore(db, ...) (or another durable SessionStore)")
+	}
+	return nil
+}
+
 // initPlugins initializes all registered plugins in order.
 func (m *AuthManager) initPlugins() error {
 	for _, name := range m.order {
@@ -467,10 +480,8 @@ func (m *AuthManager) Init(app *framework.App) error {
 	// deployment boot undiscovered, so — matching the in-memory 2FA store
 	// policy — production REFUSES to boot on the default in-memory session
 	// store unless the host explicitly opts in via AllowInMemoryStores.
-	if !m.config.DevMode && !m.config.AllowInMemoryStores {
-		if _, ok := m.sessionStore.(*MemorySessionStore); ok {
-			return fmt.Errorf("auth: production mode refuses to boot on the default in-memory session store — sessions won't survive a restart and won't resolve on a second replica; set AuthConfig.AllowInMemoryStores: true to acknowledge a single-node deployment, or use NewEntitySessionStore(db, ...) (or another durable SessionStore)")
-		}
+	if err := m.refuseInMemorySessionStore(); err != nil {
+		return err
 	}
 
 	// Initialize JWT if secret is configured
@@ -498,6 +509,14 @@ func (m *AuthManager) Init(app *framework.App) error {
 
 	// Init all plugins
 	if err := m.initPlugins(); err != nil {
+		return err
+	}
+
+	// Re-check: a plugin's Init may call SetSessionStore, and the gate has
+	// to describe the store the app will actually RUN with. Checking only
+	// before plugin init let a plugin install the refused in-memory store
+	// and still return a nil error.
+	if err := m.refuseInMemorySessionStore(); err != nil {
 		return err
 	}
 

@@ -2,11 +2,14 @@ package auth_test
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // captureSlog routes slog.Default through a buffer for the duration of fn.
@@ -112,5 +115,48 @@ func TestDevModeAllowsMemoryTwoFAStore(t *testing.T) {
 	})
 	if strings.Contains(out, "in-memory 2FA store") {
 		t.Fatalf("DevMode should not warn about in-memory 2FA; got: %q", out)
+	}
+}
+
+// storeSwappingPlugin installs the in-memory session store from its Init,
+// which runs AFTER the manager's production check.
+type storeSwappingPlugin struct{}
+
+func (storeSwappingPlugin) Name() string { return "store-swapper" }
+
+func (storeSwappingPlugin) Init(mgr *auth.AuthManager) error {
+	mgr.SetSessionStore(auth.NewMemorySessionStore())
+	return nil
+}
+
+func (storeSwappingPlugin) RegisterRoutes(*router.Router) {}
+
+// durableStoreStub stands in for a real backing store: anything that is not
+// *MemorySessionStore passes the production check.
+type durableStoreStub struct{}
+
+func (durableStoreStub) Create(context.Context, string, time.Duration) (*auth.Session, error) {
+	return &auth.Session{}, nil
+}
+func (durableStoreStub) Get(context.Context, string) (*auth.Session, error) { return nil, nil }
+func (durableStoreStub) Delete(context.Context, string) error               { return nil }
+func (durableStoreStub) Cleanup(context.Context) (int, error)               { return 0, nil }
+
+// The production refusal has to describe the store the app will actually
+// RUN with. Plugin Init runs after the check, so a plugin that swaps in the
+// in-memory store used to sail past it: Init returned nil with production
+// mode active, AllowInMemoryStores false, and every session in RAM.
+func TestProdRefusesMemorySessionStoreInstalledByPlugin(t *testing.T) {
+	mgr := auth.New(auth.AuthConfig{JWTSecret: "k"})
+	mgr.SetSessionStore(durableStoreStub{})
+	mgr.Use(storeSwappingPlugin{})
+	mgr.Use(auth.NewCorePlugin())
+
+	err := mgr.Init(nil)
+	if err == nil {
+		t.Fatal("production Init must refuse an in-memory session store installed by a plugin")
+	}
+	if !strings.Contains(err.Error(), "in-memory session store") {
+		t.Errorf("refusal must name the in-memory session store; got: %v", err)
 	}
 }
