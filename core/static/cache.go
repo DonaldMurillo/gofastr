@@ -4,10 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +19,44 @@ import (
 func generateETag(data []byte) string {
 	h := sha256.Sum256(data)
 	return `"` + hex.EncodeToString(h[:16]) + `"`
+}
+
+// digestCache memoises file content digests so the ETag is not recomputed
+// (a full SHA-256 read of the file) on every request. The key is
+// (name, modtime, size): if the file is edited or replaced the key
+// changes and a fresh digest is computed. Bounded by the distinct set of
+// served files × (modtime,size) revisions — for an embed.FS that is a
+// small, fixed set.
+var digestCache sync.Map
+
+type digestKey struct {
+	name    string
+	modTime int64
+	size    int64
+}
+
+// fileETag returns a double-quoted content-hash ETag for the file. On a
+// cache miss it streams the file through SHA-256 — the content is never
+// held in memory, which matters for large files. On a cache miss the
+// caller MUST Seek the file back to the start before serving the body.
+// A read error is returned so the caller can map it to 500 rather than
+// masking it as 404.
+// The bool reports whether f was READ to compute the digest. On a cache
+// hit nothing is read and the handle is still at offset 0; on a miss the
+// handle is exhausted and the caller must rewind (or reopen) before
+// serving the body.
+func fileETag(f fs.File, stat fs.FileInfo, name string) (string, bool, error) {
+	key := digestKey{name: name, modTime: stat.ModTime().UnixNano(), size: stat.Size()}
+	if v, ok := digestCache.Load(key); ok {
+		return v.(string), false, nil
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", true, err
+	}
+	etag := `"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`
+	digestCache.Store(key, etag)
+	return etag, true, nil
 }
 
 // setCacheHeaders sets Cache-Control, ETag, and Last-Modified headers on w.

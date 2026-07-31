@@ -255,23 +255,56 @@ func (qb *QueryBuilder) Build() (string, []any) {
 	return sb.String(), args
 }
 
-// renumberPlaceholders replaces $N placeholders in a condition string
-// with the correct sequential parameter index.
+// renumberPlaceholders rewrites the $N placeholders in a condition string
+// into a fresh sequential run starting at startIdx.
+//
+// Semantics are POSITIONAL by encounter, not value-mapping: the first
+// placeholder token found becomes $startIdx, the next $startIdx+1, and so
+// on, regardless of the original digits. This is the contract the whole
+// fragment-composition model depends on — And/Or/Not (framework/entity's
+// Condition), the DSL, and nested-filter EXISTS subqueries each emit their
+// own args numbered from $1, and Build concatenates the arg slices in the
+// same order it renumbers. A composed "(name = $1 OR name = $1)" with two
+// args therefore correctly becomes "(name = $1 OR name = $2)". Callers who
+// need one argument referenced twice must pass it twice; a repeated $N is
+// NOT a back-reference to the same bind.
+//
+// Quote-aware: a $N inside a single-quoted SQL string literal is data, not
+// a placeholder, and is left untouched (a doubled ” is an escaped quote
+// that does not close the literal). This is the one behavior the older
+// positional renumberer got wrong — it rewrote digits inside literals.
 func renumberPlaceholders(condition string, startIdx int) string {
 	var sb strings.Builder
+	inQuote := false // inside a single-quoted SQL string literal
+	next := startIdx
 	i := 0
 	for i < len(condition) {
-		if condition[i] == '$' && i+1 < len(condition) && condition[i+1] >= '0' && condition[i+1] <= '9' {
-			// Found a placeholder, replace with sequential index
-			fmt.Fprintf(&sb, "$%d", startIdx)
-			startIdx++
-			// Skip the original placeholder number
-			i++
-			for i < len(condition) && condition[i] >= '0' && condition[i] <= '9' {
-				i++
+		c := condition[i]
+		switch {
+		case c == '\'':
+			// Doubled '' inside a literal is an escaped quote: emit
+			// both bytes and stay inside the literal.
+			if inQuote && i+1 < len(condition) && condition[i+1] == '\'' {
+				sb.WriteByte('\'')
+				sb.WriteByte('\'')
+				i += 2
+				continue
 			}
-		} else {
-			sb.WriteByte(condition[i])
+			inQuote = !inQuote
+			sb.WriteByte('\'')
+			i++
+		case !inQuote && c == '$' && i+1 < len(condition) && condition[i+1] >= '0' && condition[i+1] <= '9':
+			// A placeholder token: consume the digit run and emit the
+			// next sequential index, whatever the original digits were.
+			j := i + 1
+			for j < len(condition) && condition[j] >= '0' && condition[j] <= '9' {
+				j++
+			}
+			fmt.Fprintf(&sb, "$%d", next)
+			next++
+			i = j
+		default:
+			sb.WriteByte(c)
 			i++
 		}
 	}

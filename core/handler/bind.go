@@ -345,19 +345,29 @@ func setField(fv reflect.Value, s string) error {
 	case reflect.String:
 		fv.SetString(s)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		n, err := strconv.ParseInt(s, 10, 64)
+		// Parse against the field's actual bit width so a value that
+		// overflows the destination type is rejected instead of silently
+		// truncated. Previously every int was parsed as int64 and then
+		// SetInt truncated: ?small=300 into an int8 bound 44 with nil
+		// error. ParseInt with bitSize=N enforces the intN range.
+		n, err := strconv.ParseInt(s, 10, fv.Type().Bits())
 		if err != nil {
 			return err
 		}
 		fv.SetInt(n)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		n, err := strconv.ParseUint(s, 10, 64)
+		// Same range check as the int case. ParseUint bitSize=N enforces
+		// the uintN range (and already rejects negative input).
+		n, err := strconv.ParseUint(s, 10, fv.Type().Bits())
 		if err != nil {
 			return err
 		}
 		fv.SetUint(n)
 	case reflect.Float32, reflect.Float64:
-		n, err := strconv.ParseFloat(s, 64)
+		// ParseFloat with the field's bit width so a float32 field
+		// rejects values outside its range (returns a range error
+		// instead of silently rounding to ±Inf via SetFloat).
+		n, err := strconv.ParseFloat(s, fv.Type().Bits())
 		if err != nil {
 			return err
 		}

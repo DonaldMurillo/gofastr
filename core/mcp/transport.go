@@ -382,46 +382,35 @@ func RequestFromContext(ctx context.Context) (*http.Request, bool) {
 	return r, ok
 }
 
-// StreamSSE writes a single SSE event to the writer. It is the
-// hardened entry point for tool-result streaming and treats both
-// arguments as untrusted:
+// StreamSSE writes a single SSE event to the writer. It is the hardened
+// entry point for tool-result streaming and treats both arguments as
+// untrusted:
 //
-//   - the event name is truncated at the first CR/LF/NUL so the
-//     caller can't terminate the "event:" field and inject a forged
-//     directive below it.
-//   - data is collapsed to a single line (CR/LF/NUL stripped) and any
-//     occurrence of a literal SSE directive marker (e.g. "event:",
-//     "id:", "retry:", "data:") inside the payload has its colon
-//     replaced with " -" so the bytes can no longer be mistaken
-//     for — or substring-matched as — an injected directive.
+//   - the event name is truncated at the first CR/LF/NUL so the caller
+//     can't terminate the "event:" field and inject a forged directive
+//     below it.
+//   - the data is delivered with spec-correct multi-line `data:` framing:
+//     every '\n'-delimited line of the payload becomes its own `data:`
+//     line, and a single trailing blank line dispatches the event. A
+//     spec consumer re-joins the `data:` lines with '\n', so the payload
+//     round-trips byte-for-byte — including newlines and any
+//     "event:"/"id:"/"retry:"/"data:" substrings, which are DATA here
+//     (they appear only after a `data: ` prefix) and therefore cannot
+//     start a new field line or a second event frame. The previous
+//     implementation collapsed the payload to one line and rewrote those
+//     substrings, corrupting legitimate JSON-RPC content.
 func StreamSSE(w io.Writer, event, data string) {
 	event = stripSSEField(event)
-	data = neutralizeSSEDataPayload(data)
 	if event != "" {
 		fmt.Fprintf(w, "event: %s\n", event)
 	}
-	fmt.Fprintf(w, "data: %s\n\n", data)
-}
-
-// neutralizeSSEDataPayload collapses a multi-line payload to a single
-// line and disarms any inline SSE-directive lookalike. SSE data
-// legitimately MAY contain newlines (the spec splits on '\n' and
-// re-prefixes each line with "data: "), but for the MCP streaming
-// entry point we deliberately go stricter: we don't want the
-// serialized output to *substring-match* a forged directive at all,
-// because downstream consumers may scan rather than parse.
-func neutralizeSSEDataPayload(s string) string {
-	// Strip frame-terminating / line-terminating bytes outright.
-	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\x00", "")
-	// Defang the four reserved SSE field markers anywhere in the
-	// payload. Replacing the trailing colon is enough to break the
-	// "<name>:" pattern that defines an SSE directive.
-	for _, marker := range []string{"event:", "id:", "retry:", "data:"} {
-		s = strings.ReplaceAll(s, marker, strings.TrimSuffix(marker, ":")+" ")
+	// Normalise CR/CRLF to LF, then emit one `data:` line per payload
+	// line. A single blank line at the end dispatches the event.
+	nd := strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(data)
+	for _, line := range strings.Split(nd, "\n") {
+		fmt.Fprintf(w, "data: %s\n", line)
 	}
-	return s
+	fmt.Fprint(w, "\n")
 }
 
 // stripSSEField truncates at the first CR/LF/NUL — those bytes
