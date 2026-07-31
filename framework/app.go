@@ -75,8 +75,8 @@ type AppConfig struct {
 	// returns 401 there — which surprised users following the quickstart
 	// curl. Set true (or use WithPublicOpenAPI) when the spec is meant to be
 	// public, e.g. a docs site or an internal API behind a network boundary.
-	// The Swagger UI at /api/docs/ is always reachable; this only governs
-	// the raw spec JSON.
+	// The API docs page at /api/docs/ follows the same setting: public
+	// spec, public browse page; gated spec, gated page.
 	PublicOpenAPI bool
 
 	// APIPrefix mounts every auto-CRUD entity route (list/get/create/update/
@@ -90,16 +90,22 @@ type AppConfig struct {
 
 	// RequestTimeout caps the per-request wall-clock budget enforced by
 	// the default middleware chain. Zero (default) installs a 30s cap.
-	// Set a positive duration to override. To disable the timeout
-	// middleware entirely, set DisableRequestTimeout — overloading
-	// sign for "disable" is too easy to trip on (e.g. accidentally
-	// subtracting two timestamps).
+	// Set a positive duration to override. The cap applies to buffered
+	// responses only: a handler that flips into streaming mode (first
+	// Flush or Hijack — every SSE subscription does) sheds the deadline
+	// and the server-level read/write deadlines for the life of the
+	// stream, so subscribers are never cut off by this budget. To
+	// disable the timeout middleware entirely, set
+	// DisableRequestTimeout — overloading sign for "disable" is too
+	// easy to trip on (e.g. accidentally subtracting two timestamps).
 	RequestTimeout time.Duration
 
 	// DisableRequestTimeout removes the Timeout middleware from the
-	// default chain entirely. Useful for long-running uploads / SSE;
-	// pair with per-handler ctx deadlines if you still need bounded
-	// request lifetime.
+	// default chain entirely and drops the server-level read/write
+	// timeouts to match (header and idle timeouts stay). Useful for
+	// long-running uploads; SSE no longer needs it — streams shed the
+	// deadline at their first flush. Pair with per-handler ctx
+	// deadlines if you still need bounded request lifetime.
 	DisableRequestTimeout bool
 
 	// SecurityHeaders configures the defensive HTTP response headers
@@ -1492,6 +1498,15 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 // recovers panics from deeper validation (e.g. an invalid TenantField) and
 // converts them to errors, so a single bad config can never take down the
 // process — the property an agent-driven authoring loop needs.
+//
+// Registration is atomic with respect to configuration errors: every check
+// that can reject the declaration — entity validation, the MCP/CRUD
+// contract, route collisions, endpoint shape — runs BEFORE the registry,
+// router, or MCP server is touched. A rejected declaration therefore
+// leaves no registry entry, no route, and no tool, and a corrected retry
+// under the same name succeeds. (The registry has no unregister and the
+// router has no unmount, so validate-then-commit is the only ordering
+// that can keep this promise.)
 func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -1499,14 +1514,10 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		}
 	}()
 
-	// Attribute the entity to the module whose Init is running (if any).
-	if a.modules != nil {
-		a.modules.recordEntity(name)
-	}
+	// ---- Validation phase: nothing below may mutate shared state. ----
 
-	// Registration-time validation: SeedFS without SeedPath is a
-	// misconfiguration that would otherwise silently mark the entity
-	// as seeded with empty data on first run.
+	// SeedFS without SeedPath is a misconfiguration that would otherwise
+	// silently mark the entity as seeded with empty data on first run.
 	if config.SeedFS != nil && config.SeedPath == "" {
 		return fmt.Errorf("entity %q has SeedFS set but SeedPath empty — point SeedPath at a file within the FS or unset SeedFS", name)
 	}
@@ -1517,11 +1528,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		e.SetDB(a.DB)
 	}
 
-	if err := a.Registry.Register(e); err != nil {
-		return fmt.Errorf("failed to register entity %q: %w", name, err)
-	}
-
-	// Auto-register CRUD routes.
+	// CRUD/MCP contract.
 	// Default (CRUD==nil): auto-register when DB is set.
 	// Set CRUD to &true to always register, &false to opt out.
 	// MCP=true implies CRUD must be mounted: MCP tools dispatch through the
@@ -1534,9 +1541,9 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		return fmt.Errorf("entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name)
 	}
 
-	var crudHandler *crud.CrudHandler
+	var mountPath string
 	if crudEnabled {
-		mountPath := a.entityMountPath(e.GetTable())
+		mountPath = a.entityMountPath(e.GetTable())
 		// Pre-flight collision check: if a screen/route already owns this
 		// entity's URL space, surface an actionable diagnostic that names
 		// the entity, the path, and the fix — BEFORE the mux panics on the
@@ -1544,6 +1551,27 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		if msg := a.entityRouteCollision(name, mountPath); msg != "" {
 			return fmt.Errorf("%s", msg)
 		}
+	}
+
+	mcpToolsEnabled := (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil
+	if verr := a.validateEntityRegistration(e, config.Endpoints, mcpToolsEnabled); verr != nil {
+		return fmt.Errorf("entity %q: %w", name, verr)
+	}
+
+	// ---- Commit phase: validation passed; failures past this point are
+	// framework invariant bugs, not user configuration errors. ----
+
+	// Attribute the entity to the module whose Init is running (if any).
+	if a.modules != nil {
+		a.modules.recordEntity(name)
+	}
+
+	if err := a.Registry.Register(e); err != nil {
+		return fmt.Errorf("failed to register entity %q: %w", name, err)
+	}
+
+	var crudHandler *crud.CrudHandler
+	if crudEnabled {
 		crudHandler = crud.NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
@@ -1568,7 +1596,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// CRUD-enabled entity serves its MCP data tools so the local agent
 	// can read AND write app data without per-entity opt-in. Production
 	// keeps the explicit flag as the only path.
-	if (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
+	if mcpToolsEnabled {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
 			return fmt.Errorf("failed to register MCP tools for entity %q: %w", name, err)
 		}
@@ -1811,6 +1839,74 @@ func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
 			"rename the entity table, or move entity CRUD under an APIPrefix "+
 			"(framework.WithAPIPrefix(\"/api\")) so the URL spaces don't collide.",
 		name, mountPath, mountPath, screenPath)
+}
+
+// validateEntityRegistration runs every configuration check that could
+// reject an entity declaration WITHOUT touching the registry, router, or
+// MCP server. TryEntity calls it before its commit phase; keep its rules
+// in lockstep with registerEntityEndpoints and crud.RegisterEntityMCPTools
+// — a check that only exists at commit time reintroduces the partial
+// registration this split exists to prevent.
+func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool) error {
+	// Endpoint routes: an endpoint whose (method, path) is already taken
+	// — by an existing route or by a sibling endpoint on this same
+	// declaration — would panic inside router.Handle during the commit
+	// phase, i.e. AFTER the registry entry and CRUD routes are already
+	// published. Recovering that panic into an error cannot un-publish
+	// them, so the collision has to be caught here.
+	if len(endpoints) > 0 {
+		taken := map[string]bool{}
+		for _, rt := range a.router.Routes() {
+			taken[strings.ToUpper(rt.Method)+" "+rt.Pattern] = true
+		}
+		for _, endpoint := range endpoints {
+			method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
+			if method == "" || endpoint.Handler == nil {
+				continue // shape errors are reported below
+			}
+			path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
+			key := method + " " + path
+			if taken[key] {
+				return fmt.Errorf("endpoint %q would register %s, but that route is already taken — rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key)
+			}
+			taken[key] = true
+		}
+	}
+
+	claimed := map[string]bool{}
+	if mcpTools {
+		// The flat "<entity>_<action>" tool names are a documented-stable
+		// public surface (see crud.RegisterEntityMCPTools), which is what
+		// lets us pre-compute them here without reaching into crud.
+		for _, action := range []string{"list", "get", "create", "update", "delete"} {
+			claimed[ent.GetName()+"_"+action] = true
+		}
+	}
+	for _, endpoint := range endpoints {
+		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
+		if method == "" {
+			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
+		}
+		if endpoint.MCP {
+			if endpoint.MCPHandler == nil {
+				return fmt.Errorf("endpoint %q: MCPHandler is required when MCP is true", endpoint.Path)
+			}
+			toolName := endpoint.Name
+			if toolName == "" {
+				toolName = openapi.DefaultEndpointToolName(ent.GetName(), method, openapi.EntityEndpointPath(ent, endpoint.Path))
+			}
+			if claimed[toolName] {
+				return fmt.Errorf("endpoint %q: MCP tool name %q is already claimed by this entity", endpoint.Path, toolName)
+			}
+			claimed[toolName] = true
+		}
+	}
+	for toolName := range claimed {
+		if a.MCP.HasTool(toolName) {
+			return fmt.Errorf("MCP tool %q is already registered on the server — rename the entity, set a namespace, or rename the endpoint tool", toolName)
+		}
+	}
+	return nil
 }
 
 func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.Endpoint) error {
@@ -2471,9 +2567,9 @@ func (a *App) Start(addr string) error {
 		} else {
 			a.router.Get("/openapi.json", coreoa.Handler(spec))
 		}
-		a.router.Get("/api/docs/", coreoa.SwaggerUIHandler(spec, "/api/docs"))
+		a.router.Get("/api/docs/", coreoa.DocsHandler(spec, "/api/docs", a.Config.PublicOpenAPI))
 
-		// API entity index under /api/ alongside /api/docs/ (Swagger).
+		// API entity index under /api/ alongside /api/docs/.
 		// Root /llm.md is free for the homepage screen doc.
 		if !a.Config.NoLLMMD {
 			a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName))
@@ -2632,6 +2728,17 @@ func (a *App) Start(addr string) error {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	if a.Config.DisableRequestTimeout {
+		// The documented opt-out for SSE and long uploads has to hold at
+		// the server layer too: a fixed read/write timeout here would
+		// sever exactly the requests the opt-out exists for. Header and
+		// idle timeouts stay — they bound the connection, not the
+		// request body or the stream. (With the timeout middleware
+		// active, streaming responses shed these deadlines per-request
+		// instead; see core/middleware.Timeout.)
+		srv.ReadTimeout = 0
+		srv.WriteTimeout = 0
+	}
 	a.server = srv
 	a.serverMu.Unlock()
 	// Bind first, then Serve — split from ListenAndServe so OnReady hooks
@@ -2746,7 +2853,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 
 	if hasAPI {
 		fmt.Fprintf(w, "  %s OpenAPI:     http://%s/openapi.json\n", arrow(), boundAddr)
-		fmt.Fprintf(w, "  %s Swagger UI:  http://%s/api/docs/\n", arrow(), boundAddr)
+		fmt.Fprintf(w, "  %s API docs:    http://%s/api/docs/\n", arrow(), boundAddr)
 		if hasLLMMD {
 			fmt.Fprintf(w, "  %s LLM Docs:    http://%s/api/llm.md\n", arrow(), boundAddr)
 		}

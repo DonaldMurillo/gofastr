@@ -230,6 +230,18 @@ func (s *Server) getTool(name string) (Tool, bool) {
 	return t, ok
 }
 
+// HasTool reports whether a tool is registered under name, regardless of
+// gates or visibility. Registration-time collision checks need this
+// ground truth: the caller-filtered listings hide gated tools whose
+// names are nonetheless taken, and a collision discovered only at
+// RegisterTool time is discovered after sibling state already committed.
+func (s *Server) HasTool(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.tools[name]
+	return ok
+}
+
 // ListTools returns all registered tools whose call gate (if set)
 // allows them. Tools owned by a disabled module are excluded. Handlers
 // are nilled out for safety.

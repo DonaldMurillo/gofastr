@@ -102,14 +102,14 @@ func TestOpenAPISpecHandler_RequiresAuth(t *testing.T) {
 	}
 }
 
-func TestSwaggerUIHandler_RequiresAuth(t *testing.T) {
+func TestDocsHandler_RequiresAuth(t *testing.T) {
 	app := securityExposureApp(t)
 	spec := openapipkg.EntityOpenAPI(app.Registry, "Test App", "1.0.0")
 
 	rec := httptest.NewRecorder()
-	coreoa.SwaggerUIHandler(spec, "/api/docs").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/docs/", nil))
+	coreoa.DocsHandler(spec, "/api/docs", false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/docs/", nil))
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("SECURITY: [openapi] unauthenticated swagger UI returned %d. Attack: interactive API docs exposed without auth.", rec.Code)
+		t.Fatalf("SECURITY: [openapi] unauthenticated docs page returned %d. Attack: interactive API docs exposed without auth.", rec.Code)
 	}
 }
 

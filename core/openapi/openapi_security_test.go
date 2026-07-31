@@ -20,11 +20,11 @@ func TestSwaggerUI_EscapesBasePath(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, base+"/", nil)
 			req = req.WithContext(corehandler.SetUser(req.Context(), "admin"))
 			rec := httptest.NewRecorder()
-			SwaggerUIHandler(spec, base).ServeHTTP(rec, req)
+			DocsHandler(spec, base, false).ServeHTTP(rec, req)
 
 			body := rec.Body.String()
 			if strings.Contains(body, base) {
-				t.Fatalf("SwaggerUIHandler reflected raw basePath %q into body", base)
+				t.Fatalf("DocsHandler reflected raw basePath %q into body", base)
 			}
 		})
 	}
@@ -170,25 +170,30 @@ func TestOpenAPI_HandlerCarriesNoStore(t *testing.T) {
 	}
 }
 
-func TestSwaggerUIHandler_DoesNotLoadThirdPartyCDNAssets(t *testing.T) {
+func TestDocsHandler_DoesNotLoadThirdPartyCDNAssets(t *testing.T) {
 	spec := NewSpec("test", "1.0")
 	req := httptest.NewRequest(http.MethodGet, "/docs/", nil)
 	rr := httptest.NewRecorder()
 
-	SwaggerUIHandler(spec, "/docs").ServeHTTP(rr, req)
+	// public=true so the rendered page body is actually asserted — the
+	// gated variant 401s an anonymous request and the check is vacuous.
+	DocsHandler(spec, "/docs", true).ServeHTTP(rr, req)
 
+	if rr.Code != http.StatusOK {
+		t.Fatalf("public docs page = %d, want 200", rr.Code)
+	}
 	body := rr.Body.String()
 	if strings.Contains(body, "https://unpkg.com/") {
-		t.Fatalf("SECURITY: [openapi] swagger UI loaded third-party CDN assets: %q. Attack: docs page depends on remote JS/CSS supply chain by default.", body)
+		t.Fatalf("SECURITY: [openapi] docs page loaded third-party CDN assets: %q. Attack: docs page depends on remote JS/CSS supply chain by default.", body)
 	}
 }
 
-func TestSwaggerUIHandler_CarriesContentSecurityPolicy(t *testing.T) {
+func TestDocsHandler_CarriesContentSecurityPolicy(t *testing.T) {
 	spec := NewSpec("test", "1.0")
 	req := httptest.NewRequest(http.MethodGet, "/docs/", nil)
 	rr := httptest.NewRecorder()
 
-	SwaggerUIHandler(spec, "/docs").ServeHTTP(rr, req)
+	DocsHandler(spec, "/docs", false).ServeHTTP(rr, req)
 
 	if rr.Header().Get("Content-Security-Policy") == "" {
 		t.Fatalf("SECURITY: [openapi] swagger UI missing Content-Security-Policy header: %#v", rr.Header())

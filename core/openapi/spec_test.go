@@ -388,9 +388,9 @@ func TestHandlerServesJSON(t *testing.T) {
 	}
 }
 
-func TestSwaggerUIHandler(t *testing.T) {
+func TestDocsHandler(t *testing.T) {
 	s := NewSpec("Test", "1.0.0")
-	h := SwaggerUIHandler(s, "/docs")
+	h := DocsHandler(s, "/docs", false)
 
 	// Both surfaces are now auth-gated by default. Inject a user into
 	// the request context so the handler treats us as authenticated.

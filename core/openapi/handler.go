@@ -68,7 +68,7 @@ func GatedHandler(spec *Spec, allow func(*http.Request) bool) http.Handler {
 	})
 }
 
-// SwaggerUIHandler returns an http.Handler that serves a minimal,
+// DocsHandler returns an http.Handler that serves a minimal,
 // self-contained API spec landing page. The page links to the OpenAPI
 // JSON; viewers like Swagger UI / Insomnia / Stoplight / Postman can
 // load it. Earlier revisions embedded swagger-ui-dist via a public CDN
@@ -76,8 +76,17 @@ func GatedHandler(spec *Spec, allow func(*http.Request) bool) http.Handler {
 // (and broke offline / air-gapped deploys), so the CDN reference was
 // removed. Hosts that want the interactive UI can vendor swagger-ui
 // themselves and mount their own handler.
-func SwaggerUIHandler(spec *Spec, basePath string) http.Handler {
+//
+// public controls the gate for BOTH the landing page and the nested
+// spec route: an app that published its spec (framework's
+// WithPublicOpenAPI) gets a browsable docs page to match, and an app
+// that kept the spec private keeps the page private too. Splitting the
+// two was the old behavior and it made the public spec unbrowsable.
+func DocsHandler(spec *Spec, basePath string, public bool) http.Handler {
 	specHandler := Handler(spec)
+	if public {
+		specHandler = PublicHandler(spec)
+	}
 	// basePath is developer-supplied config but flows into href + visible
 	// text; escape it so a CR/LF/quote/angle can't break out of the
 	// attribute or inject script content.
@@ -111,9 +120,11 @@ func SwaggerUIHandler(spec *Spec, basePath string) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		if _, ok := handler.GetUser(r.Context()); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
+		if !public {
+			if _, ok := handler.GetUser(r.Context()); !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(uiHTML))
