@@ -1554,7 +1554,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	}
 
 	mcpToolsEnabled := (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil
-	if verr := a.validateEntityRegistration(e, config.Endpoints, mcpToolsEnabled); verr != nil {
+	if verr := a.validateEntityRegistration(e, config.Endpoints, mcpToolsEnabled, mountPath); verr != nil {
 		return fmt.Errorf("entity %q: %w", name, verr)
 	}
 
@@ -1817,18 +1817,60 @@ func (a *App) entityRouteCollision(name, mountPath string) string {
 	if mountPath == "" {
 		return ""
 	}
-	// The paths auto-CRUD claims that a hand-registered screen most often
-	// already owns. {id}/_batch/_events live in entity-only territory.
-	claimed := map[string]bool{
-		mountPath:             true,
-		mountPath + "/llm.md": true,
+	// Ask crud for the full set it will claim rather than guessing at it.
+	// An earlier version listed only the bare path and /llm.md, on the
+	// theory that {id}/_batch/_events were "entity-only territory" — but a
+	// detail page at /posts/{id} is the framework's own suggested idiom
+	// (see entityScreenCollisionMessage), and a screen there collided in
+	// the commit phase, after the registry entry and the first CRUD routes
+	// were already published and with no way to un-publish them.
+	// Keyed by normalized path, holding the methods CRUD will claim. A
+	// route registered without a method is treated as claiming all of
+	// them — better a loud false positive at registration than a panic
+	// halfway through the commit phase.
+	claimed := map[string][]string{}
+	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
+		method, path, _ := strings.Cut(pattern, " ")
+		path = normalizeRoutePattern(path)
+		claimed[path] = append(claimed[path], method)
 	}
 	for _, rt := range a.router.Routes() {
-		if claimed[rt.Pattern] {
-			return entityScreenCollisionMessage(name, mountPath, rt.Pattern)
+		methods, ok := claimed[normalizeRoutePattern(rt.Pattern)]
+		if !ok {
+			continue
+		}
+		rtMethod := strings.ToUpper(strings.TrimSpace(rt.Method))
+		for _, m := range methods {
+			if rtMethod == "" || m == rtMethod {
+				return entityScreenCollisionMessage(name, mountPath, rt.Pattern)
+			}
 		}
 	}
 	return ""
+}
+
+// normalizeRoutePattern rewrites every wildcard segment to a constant, so
+// two patterns that net/http's ServeMux considers equivalent compare equal
+// here too.
+//
+// ServeMux conflicts on the SHAPE of a pattern, not the wildcard's name:
+// "GET /posts/{slug}" and the generated "GET /posts/{id}" match the same
+// requests and cannot both be registered. Comparing the raw strings misses
+// that and lets the clash through to a mid-commit panic.
+func normalizeRoutePattern(pattern string) string {
+	segments := strings.Split(pattern, "/")
+	for i, seg := range segments {
+		if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
+			// A trailing {x...} matches multiple segments and is a
+			// different shape from a single-segment wildcard.
+			if strings.HasSuffix(seg, "...}") {
+				segments[i] = "{...}"
+			} else {
+				segments[i] = "{}"
+			}
+		}
+	}
+	return strings.Join(segments, "/")
 }
 
 func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
@@ -1847,17 +1889,28 @@ func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
 // in lockstep with registerEntityEndpoints and crud.RegisterEntityMCPTools
 // — a check that only exists at commit time reintroduces the partial
 // registration this split exists to prevent.
-func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool) error {
+func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool, crudMount string) error {
 	// Endpoint routes: an endpoint whose (method, path) is already taken
-	// — by an existing route or by a sibling endpoint on this same
-	// declaration — would panic inside router.Handle during the commit
-	// phase, i.e. AFTER the registry entry and CRUD routes are already
-	// published. Recovering that panic into an error cannot un-publish
-	// them, so the collision has to be caught here.
+	// — by an existing route, by a CRUD route this same call is about to
+	// mount, or by a sibling endpoint on this same declaration — would
+	// panic inside router.Handle during the commit phase, i.e. AFTER the
+	// registry entry and CRUD routes are already published. Recovering
+	// that panic into an error cannot un-publish them, so the collision
+	// has to be caught here.
 	if len(endpoints) > 0 {
-		taken := map[string]bool{}
+		// Values name what owns the route, so the error can tell a user
+		// who collided with an unrelated page from one who shadowed their
+		// own generated CRUD route — different fixes.
+		taken := map[string]string{}
 		for _, rt := range a.router.Routes() {
-			taken[strings.ToUpper(rt.Method)+" "+rt.Pattern] = true
+			taken[strings.ToUpper(rt.Method)+" "+rt.Pattern] = "an existing route"
+		}
+		// The CRUD routes are not on the router yet — this runs before
+		// the commit phase — so ask crud for the set it will mount.
+		if crudMount != "" {
+			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
+				taken[pattern] = "this entity's own generated CRUD route"
+			}
 		}
 		for _, endpoint := range endpoints {
 			method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
@@ -1866,10 +1919,10 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 			}
 			path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
 			key := method + " " + path
-			if taken[key] {
-				return fmt.Errorf("endpoint %q would register %s, but that route is already taken — rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key)
+			if owner, clash := taken[key]; clash {
+				return fmt.Errorf("endpoint %q would register %s, but that route is %s — rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key, owner)
 			}
-			taken[key] = true
+			taken[key] = "a sibling endpoint on this declaration"
 		}
 	}
 
