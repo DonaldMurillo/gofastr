@@ -8,6 +8,8 @@
 // steps (AdminStep, HealthStep). A Config becomes a Runner via New; the
 // Runner implements framework.SetupRunner and is wired onto an App via
 // framework.WithSetup.
+//
+// See the operator runbook: framework/docs/content/first-run.md.
 package setup
 
 import (

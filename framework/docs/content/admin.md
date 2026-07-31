@@ -66,8 +66,9 @@ The entity screens mount at `<PathPrefix>/e/<table>`:
 > **A UI host is required for the entity screens.** The battery discovers
 > the host the app mounted (via `framework.App.Mountables()`) and registers
 > the screens on it. If you list `Entities` but no host is mounted,
-> `RegisterBattery` returns an error. (With `AllEntities` and no host, the
-> entity screens are simply skipped and you still get the ops dashboards.)
+> `App.Start` returns an error from the battery's `Init` — the entity
+> screens cannot render without a host. With `AllEntities` and no host, the
+> entity screens are simply skipped and you still get the ops dashboards.
 
 ### How the interactions work (no JavaScript)
 

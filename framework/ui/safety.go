@@ -21,11 +21,13 @@ import (
 // need a legitimate non-http(s) scheme can render the raw anchor via
 // core-ui/html directly — UI builders no longer make that decision.
 //
-// The rule set lives in core-ui/urlsafe, not here: it had been
-// re-derived six times across framework/ui, framework/uihost,
-// framework/crud, framework/experimental/apiversions and three
-// core-ui/patterns builders, each copy free to drift the day after it
-// was written.
+// The rule set lives in core-ui/urlsafe.Clean, not here: this wrapper
+// and its three siblings (core-ui/patterns/breadcrumbs, nestedlist, and
+// tree, each rendering below framework/ui) are one-line delegations to
+// urlsafe.Clean(u, urlsafe.Anchor), not independent copies of the rule
+// set. A shared Anchor-policy helper in core-ui/urlsafe would collapse
+// the four call sites; until then, the delegation is the whole function
+// — there is no rule logic left here to drift.
 func safeURL(u string) string {
 	return urlsafe.Clean(u, urlsafe.Anchor)
 }

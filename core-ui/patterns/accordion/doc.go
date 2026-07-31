@@ -15,10 +15,12 @@
 // Browsers without these features get instant open/close, which is an
 // acceptable progressive-enhancement fallback.
 //
-// Call [BaseCSS] once at app startup and append it to your stylesheet
-// (typically via uihost.WithCustomCSS(...)) to enable the animation
-// styles. Authors who prefer per-component scoped CSS with lazy load
-// can wrap their own Accordion with [registry.RegisterStyle] +
-// [registry.Style.WrapHTML] — see core-ui/ARCHITECTURE.md "Component
-// CSS" for the registry path.
+// The animation styles load automatically. This package registers its
+// stylesheet at init via [registry.RegisterStyle] (the package-level
+// [Style] handle), and [Group]/[Stack] wrap their output in
+// [registry.Style.WrapHTML], which stamps data-fui-comp="accordion" onto
+// the outer tag. On first paint the SSR host emits a scoped <link> in
+// <head>; after hydration the runtime loads the CSS on demand and dedups
+// it. No app-startup wiring and no stylesheet concatenation — see
+// core-ui/ARCHITECTURE.md "Component CSS" for the registry path.
 package accordion

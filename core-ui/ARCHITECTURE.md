@@ -1223,21 +1223,35 @@ core-ui/
                  (Div, Button, Heading, Form, Table…)
   patterns/    — composed UI patterns (not 1:1 with HTML):
                  accordion, breadcrumbs, combobox, disclosure,
-                 infinitescroll, multiselect, pagination, progress,
-                 skeleton, sortablelist, tabs, tree
-  compute/     — process-global Web Worker + WebAssembly asset registry
+                 infinitescroll, multiselect, nestedlist, pagination,
+                 progress, scrollspy, skeleton, sortablelist, tabs, tree
   component/   — Component / InteractiveComponent interfaces (the contract
                  every renderable satisfies)
+  interactive/ — declarative data-fui-* attribute builders (RPC, signal
+                 bindings, widget chaining) that wrap render.HTML with no JS
+  node/        — the JSON-clean serializable UI element tree (first-party IR;
+                 dependency-free, composed by blueprint codegen and Kiln)
+  noderender/  — walks a node.Node tree and emits HTML via core-ui/html
+                 (treats the IR as untrusted; see RenderTrustedNode)
+  uinodev1/    — the closed ui.node.v1 wire type + validator for
+                 process-isolated third-party modules (makes runtime-attribute
+                 forgery unrepresentable, unlike the first-party node IR)
+  compute/     — process-global Web Worker + WebAssembly asset registry
   widget/      — island/widget builder + registration
   widget/preset/ — opinionated mounting shortcuts:
                  Modal, Drawer, Popover, ToastStack, Toast, Banner,
                  FloatingPanel, BottomSheet
   widget/theme/ — page-level theme tokens + utility classes
-  signal/      — reactive state + SSE push
+  registry/    — process-global catalog of components whose CSS ships as real
+                 stylesheets loaded on demand (RegisterStyle → *Style handle)
+  store/       — typed shared client state (Slices) seeded into the signal bus
+                 at SSR; the server-declared reactive-value primitive
   island/      — runtime-side island manager
+  seo/         — typed Schema.org structs → JSON-LD blocks for rich results
+  urlsafe/     — the single URL-scheme allow-list every URL sink runs through
   runtime/     — runtime.js (client) + Go embed wrapper
   runtime/src/ — code-split runtime modules (loaded on demand):
-                 animate, animatedcounter, backtotop, banner, carousel,
+                 animate, animatedcounter, backtosop, banner, carousel,
                  combobox, compute, computed, conditionalfield, copy,
                  dragdismiss, dropdown, dropzone, fileupload,
                  formrepeater, infinitescroll, lightbox, menu,
@@ -1250,7 +1264,7 @@ core-ui/
                  before CSS parses, reads localStorage + OS hint,
                  sets data-color-scheme on <html>)
   style/       — theme structs, stylesheet builder, token resolution
-  check/       — .ui.go linter
+  check/       — .ui.go linter + the no-pattern-BaseCSS / no-inline-* guards
 
 framework/
   uihost/      — wires core-ui app onto framework.App router; serves
