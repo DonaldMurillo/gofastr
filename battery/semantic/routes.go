@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -20,11 +21,12 @@ const maxRequestBody = 1 << 20 // 1 MiB
 //
 // Security contract:
 //
-//   - Every route requires a non-empty Authorization header. The handler
-//     does not validate the credential itself — that is the caller's job
-//     when the handler is mounted behind an auth middleware. Rejecting
-//     anonymous traffic at the handler is a defense-in-depth measure so
-//     an unprotected mount cannot accidentally expose the index.
+//   - Every route requires a valid bearer token. Configure it with
+//     [WithAuthToken] (or [Plugin.WithAuthToken]); clients must send
+//     "Authorization: Bearer <token>", verified in constant time. When no
+//     token is configured the handler fails CLOSED — every request is
+//     rejected — so an accidentally-unprotected mount cannot expose the
+//     index. [WithInsecureDisabledAuth] opts out of auth for local dev only.
 //   - POST routes require Content-Type: application/json (415 otherwise).
 //   - Request bodies are capped at 1 MiB (413 otherwise).
 //   - Upstream / driver errors are NEVER echoed back to the client; the
@@ -36,36 +38,86 @@ const maxRequestBody = 1 << 20 // 1 MiB
 //   - POST   /query          body: Query                           → {"hits": [...]}
 //   - GET    /stats                                                → Stats
 //   - DELETE /doc/{id}       (or query param ?id=)                 → 204
-func Handler(idx Index) http.Handler {
+func Handler(idx Index, opts ...HandlerOption) http.Handler {
+	cfg := handlerConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
 	mux := http.NewServeMux()
 	// Middleware order matters: body-size and content-type are cheap
 	// shape checks that must run BEFORE auth so probes can't infer
 	// whether a route exists by getting a 401 for a malformed request.
 	// (Equivalent: a giant body or a wrong content type should be
 	// rejected on syntactic grounds, not security grounds.)
-	mux.Handle("POST /index", limitBody(requireJSON(requireAuth(indexHandler(idx)))))
-	mux.Handle("POST /query", limitBody(requireJSON(requireAuth(queryHandler(idx)))))
-	mux.Handle("GET /stats", requireAuth(statsHandler(idx)))
+	auth := requireAuth(cfg)
+	mux.Handle("POST /index", limitBody(requireJSON(auth(indexHandler(idx)))))
+	mux.Handle("POST /query", limitBody(requireJSON(auth(queryHandler(idx)))))
+	mux.Handle("GET /stats", auth(statsHandler(idx)))
 	// DELETE supports both the pattern path param and a fallback query
 	// param so callers using mux flavors without Go 1.22 wildcards can
 	// still delete.
-	mux.Handle("DELETE /doc/{id}", requireAuth(deleteHandler(idx)))
-	mux.Handle("DELETE /doc", requireAuth(deleteHandler(idx)))
+	mux.Handle("DELETE /doc/{id}", auth(deleteHandler(idx)))
+	mux.Handle("DELETE /doc", auth(deleteHandler(idx)))
 	return mux
 }
 
-// requireAuth rejects requests that don't carry an Authorization header.
-// The handler itself doesn't validate the credential — that is the job
-// of an auth middleware in front of the mount. This is defense-in-depth
-// so an accidentally-unprotected mount can't be probed anonymously.
-func requireAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.TrimSpace(r.Header.Get("Authorization")) == "" {
-			writeErr(w, http.StatusUnauthorized, "authentication required")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+// requireAuth returns the auth middleware for the handler's policy. With
+// nothing configured it fails CLOSED (every request 401) so an unprotected
+// mount is never silently open; with a token it requires a constant-time
+// bearer match; WithInsecureDisabledAuth bypasses entirely for local
+// development only.
+func requireAuth(cfg handlerConfig) func(http.Handler) http.Handler {
+	const bearerPrefix = "Bearer "
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if cfg.insecure {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Fail closed when no credential is configured: a mount with no
+			// token must never serve the index, even to a caller who sends a
+			// (meaningless) Authorization header.
+			if cfg.authToken == "" {
+				writeErr(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			h := r.Header.Get("Authorization")
+			if !strings.HasPrefix(h, bearerPrefix) {
+				writeErr(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			// Constant-time compare so the bearer check is not a timing
+			// oracle for the secret.
+			if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(h[len(bearerPrefix):])), []byte(cfg.authToken)) != 1 {
+				writeErr(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// HandlerOption configures [Handler]'s auth policy.
+type HandlerOption func(*handlerConfig)
+
+type handlerConfig struct {
+	authToken string
+	insecure  bool
+}
+
+// WithAuthToken requires clients to present this exact bearer token in the
+// Authorization header ("Authorization: Bearer <token>"), compared in
+// constant time. This is the production auth mode. Pair it with
+// [Plugin.WithAuthToken] when mounting via the framework plugin.
+func WithAuthToken(token string) HandlerOption {
+	return func(c *handlerConfig) { c.authToken = token }
+}
+
+// WithInsecureDisabledAuth turns authentication OFF entirely. It is the only
+// way to serve the handler without a configured token and is intended for
+// local development only — never use it in production. Prefer [WithAuthToken].
+func WithInsecureDisabledAuth() HandlerOption {
+	return func(c *handlerConfig) { c.insecure = true }
 }
 
 // requireJSON rejects requests whose Content-Type isn't application/json.

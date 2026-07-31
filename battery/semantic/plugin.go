@@ -17,8 +17,10 @@ import (
 //	idx, _ := semantic.Open(semantic.Options{Embedder: e, Path: "~/.gofastr/semantic/myapp"})
 //	app.Plugins.Register(semantic.NewPlugin(idx))
 type Plugin struct {
-	idx    Index
-	prefix string
+	idx       Index
+	prefix    string
+	authToken string
+	insecure  bool
 }
 
 // NewPlugin returns a Plugin that mounts routes under "/semantic".
@@ -39,6 +41,24 @@ func (p *Plugin) WithPrefix(prefix string) *Plugin {
 	return p
 }
 
+// WithAuthToken requires clients of the mounted routes to present this bearer
+// token ("Authorization: Bearer <token>"), verified in constant time. This is
+// the production auth mode; without it (and without [Plugin.WithInsecureNoAuth])
+// the mounted routes fail closed — every request is rejected.
+func (p *Plugin) WithAuthToken(token string) *Plugin {
+	p.authToken = token
+	p.insecure = false
+	return p
+}
+
+// WithInsecureNoAuth disables authentication on the mounted routes. It is the
+// only way to serve them without a token and is intended for local development
+// only — never in production. Prefer [Plugin.WithAuthToken].
+func (p *Plugin) WithInsecureNoAuth() *Plugin {
+	p.insecure = true
+	return p
+}
+
 // Name implements [framework.Plugin].
 func (p *Plugin) Name() string { return "semantic" }
 
@@ -46,7 +66,13 @@ func (p *Plugin) Name() string { return "semantic" }
 // the configured prefix on the app's router; routing semantics match
 // Go 1.22 ServeMux.
 func (p *Plugin) Init(app *framework.App) error {
-	h := Handler(p.idx)
+	var opts []HandlerOption
+	if p.insecure {
+		opts = append(opts, WithInsecureDisabledAuth())
+	} else if p.authToken != "" {
+		opts = append(opts, WithAuthToken(p.authToken))
+	}
+	h := Handler(p.idx, opts...)
 	stripped := http.StripPrefix(p.prefix, h)
 	app.Router().Post(p.prefix+"/index", stripped)
 	app.Router().Post(p.prefix+"/query", stripped)
