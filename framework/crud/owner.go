@@ -39,6 +39,23 @@ func (ch *CrudHandler) permissionForOp(op crudOp) string {
 	}
 }
 
+// CanRead reports whether ctx carries the permission EntityConfig.Access
+// requires to read this entity. It answers true when the entity declares no
+// read permission.
+//
+// The HTTP CRUD routes enforce this through requirePermission. Any OTHER
+// surface that reads the same rows — a server-rendered table, an island
+// endpoint, a report — has to enforce it too, or it becomes a second door
+// to data the API refuses to serve. Exported for exactly that: see
+// resource.Config.TableHandler.
+func (ch *CrudHandler) CanRead(ctx context.Context) bool {
+	perm := ch.permissionForOp(opRead)
+	if perm == "" {
+		return true
+	}
+	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName()})
+}
+
 // requirePermission enforces EntityConfig.Access for op. When the entity
 // declares a permission for the operation and the request context does not
 // carry it, it writes 403 and returns false. No-op when the operation is not

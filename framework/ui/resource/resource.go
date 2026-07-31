@@ -108,6 +108,29 @@ type Config struct {
 	// runtime swaps just the table — no document navigation. Mount
 	// TableHandler at the same path.
 	IslandPath string
+
+	// IslandPolicy gates the island endpoint. It MUST be the same policy
+	// that gates the screen showing this list: the island serves the same
+	// rows over a route the screen's policy never sees, so leaving it nil
+	// on a role-gated screen publishes that screen's data to every signed-in
+	// user. TableHandler enforces it before rendering.
+	IslandPolicy appui.Policy
+}
+
+// WithIslandPolicy gates the island endpoint with the screen's own policy.
+func (c Config) WithIslandPolicy(p appui.Policy) Config {
+	c.IslandPolicy = p
+	return c
+}
+
+// PublicIsland is the policy for a list on a screen anyone may view. It has
+// to be stated rather than left nil: with no policy at all TableHandler
+// requires sign-in, so an anonymous visitor's first sort click on a public
+// list would come back 401.
+func PublicIsland() appui.Policy {
+	return appui.PolicyFunc(func(context.Context) appui.Decision {
+		return appui.Decision{Kind: appui.DecisionAllow}
+	})
 }
 
 // WithTransitions sets the detail-page status-transition workflow buttons.
@@ -394,10 +417,51 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 // TableHandler serves the island endpoint: it renders the same table HTML
 // List paints, for the RPC's query string. The runtime writes the response
 // into the island's data-fui-signal wrapper — no document navigation.
+//
+// It is a SECOND route onto the rows the screen shows, so it repeats every
+// gate the screen and the JSON API apply: sign-in, the screen's own policy
+// (IslandPolicy), and the entity's declared read permission. A gate that
+// lives only on the screen route is not a gate.
 func (c Config) TableHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if u, ok := handler.GetUser(r.Context()); !ok || u == nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		// The screen's policy decides on its own when there is one: it
+		// knows whether the screen is public, sign-in-only, or role-gated.
+		// With no policy configured we fall back to requiring sign-in,
+		// which is what this handler has always done.
+		if c.IslandPolicy == nil {
+			if u, ok := handler.GetUser(r.Context()); !ok || u == nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+		} else {
+			switch d := c.IslandPolicy.Decide(r.Context()); d.Kind {
+			case appui.DecisionAllow:
+				// proceed
+			case appui.DecisionBlock:
+				status, msg := d.Status, d.Message
+				if status == 0 {
+					status = http.StatusForbidden
+				}
+				if msg == "" {
+					msg = http.StatusText(status)
+				}
+				http.Error(w, msg, status)
+				return
+			default:
+				// Redirect/RenderAlt are document-navigation outcomes with
+				// no meaning for a fragment RPC. Refuse rather than serve
+				// the rows the policy declined to show.
+				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+				return
+			}
+		}
+		// The entity's RBAC — the same permission the JSON list route
+		// enforces. Without this the island answers 200 for rows
+		// GET /api/<entity> answers 403 for.
+		if g, ok := c.Crud.(interface {
+			CanRead(context.Context) bool
+		}); ok && !g.CanRead(r.Context()) {
+			http.Error(w, "access denied", http.StatusForbidden)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
