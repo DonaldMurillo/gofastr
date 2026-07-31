@@ -67,10 +67,11 @@ func newOAuth2Manager(t *testing.T, provider OAuth2Provider) (*AuthManager, *mem
 	t.Helper()
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    24 * time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     userStore,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		SessionTTL:          24 * time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           userStore,
+		AllowInMemoryStores: true, // unit tests run on the memory session store
 	})
 
 	plugin := NewOAuth2Plugin(OAuth2Config{
@@ -546,7 +547,7 @@ func TestOAuth2Plugin_Callback_NoUserStore(t *testing.T) {
 		userResp:  &OAuth2UserInfo{Email: "x@x.com"},
 	}
 	// Create manager WITHOUT a user store
-	mgr := New(AuthConfig{JWTSecret: "test-secret"}) // prod-mode Init fails closed without one
+	mgr := New(AuthConfig{JWTSecret: "test-secret", AllowInMemoryStores: true}) // prod-mode Init fails closed without one; opt into the memory session store for this unit test
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"mock": mock},
 		StateSecret: "test",
@@ -852,7 +853,7 @@ func TestOAuth_StableUserAcrossEmailChange(t *testing.T) {
 	store := newLinkingUserStore()
 	mgr := New(AuthConfig{
 		JWTSecret:  "test-secret", // prod-mode Init fails closed without one
-		SessionTTL: time.Hour, SessionCookie: "session_id", UserStore: store,
+		SessionTTL: time.Hour, SessionCookie: "session_id", UserStore: store, AllowInMemoryStores: true,
 	})
 	prov := &stubOAuthProvider{
 		name:     "stub",
@@ -902,7 +903,7 @@ func TestOAuth_RefusesEmailCollisionWithExistingAccount(t *testing.T) {
 
 	mgr := New(AuthConfig{
 		JWTSecret:  "test-secret", // prod-mode Init fails closed without one
-		SessionTTL: time.Hour, SessionCookie: "session_id", UserStore: store,
+		SessionTTL: time.Hour, SessionCookie: "session_id", UserStore: store, AllowInMemoryStores: true,
 	})
 	prov := &stubOAuthProvider{
 		name: "stub",

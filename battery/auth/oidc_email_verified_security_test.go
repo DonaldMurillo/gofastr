@@ -193,10 +193,11 @@ func TestOIDCSec_UnverifiedEmailCannotTakeoverPasswordAccount(t *testing.T) {
 	// in the test build) and pre-seed a victim with a real password.
 	store := newMemoryUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret",
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     store,
+		JWTSecret:           "test-secret",
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           store,
+		AllowInMemoryStores: true, // unit tests run on the memory session store
 	})
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"oidc": oidcProv},

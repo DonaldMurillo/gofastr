@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 )
@@ -32,13 +33,33 @@ func (minimumNonLinkerStore) CreateUser(context.Context, string, string, []strin
 	return nil, auth.ErrEmailTaken
 }
 
+// stubDurableSessions is a non-memory SessionStore used by tests that must
+// pass AuthManager.Init's production session-store gate (which rejects the
+// default *MemorySessionStore) so they can isolate a DIFFERENT gate — the
+// OAuth2-linker gate here, or the in-memory-2FA gate in
+// memory_store_warn_test.go — without setting AllowInMemoryStores, which
+// would also bypass those gates. Methods are stubs: these tests call Init
+// only, never serve a session.
+type stubDurableSessions struct{}
+
+func (stubDurableSessions) Create(_ context.Context, userID string, _ time.Duration) (*auth.Session, error) {
+	return &auth.Session{UserID: userID}, nil
+}
+func (stubDurableSessions) Get(_ context.Context, _ string) (*auth.Session, error) {
+	return nil, auth.ErrSessionNotFound
+}
+func (stubDurableSessions) Delete(_ context.Context, _ string) error { return nil }
+func (stubDurableSessions) Cleanup(_ context.Context) (int, error)   { return 0, nil }
+
 // prodOAuth2Manager builds an AuthManager in production posture
-// (DevMode=false, AllowInMemoryStores=false) with the given user store.
-// Used by the fail-closed / dev-mode / ack-mode matrix below.
+// (DevMode=false, AllowInMemoryStores=false) with a durable session store
+// so Init reaches the OAuth2-linker gate rather than the session-store
+// gate. Used by the fail-closed / dev-mode / ack-mode matrix below.
 func prodOAuth2Manager(store auth.UserStore) *auth.AuthManager {
 	mgr := auth.New(auth.AuthConfig{
-		JWTSecret: "test-secret", // prod-mode Init fails closed without one
-		UserStore: store,
+		JWTSecret:    "test-secret", // prod-mode Init fails closed without one
+		SessionStore: stubDurableSessions{},
+		UserStore:    store,
 	})
 	mgr.Use(auth.NewOAuth2Plugin(auth.OAuth2Config{StateSecret: "test"}))
 	return mgr

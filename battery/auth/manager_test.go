@@ -323,7 +323,7 @@ func TestCorePlugin_RegisterDuplicateEmail(t *testing.T) {
 // ============================================================================
 
 func TestAuthManager_PluginLifecycle(t *testing.T) {
-	mgr := New(AuthConfig{JWTSecret: "secret"})
+	mgr := New(AuthConfig{JWTSecret: "secret", AllowInMemoryStores: true})
 	core := NewCorePlugin()
 	mgr.Use(core)
 

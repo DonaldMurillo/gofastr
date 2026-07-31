@@ -121,10 +121,16 @@ func (m *MemorySessionStore) Create(_ context.Context, userID string, ttl time.D
 		CreatedAt: now,
 		ExpiresAt: now.Add(ttl),
 	}
+	// Store the session AND return a copy of it, both under the lock.
+	// Returning the stored pointer would share it with callers that
+	// read/mutate it without the lock (and with the marker methods that
+	// do mutate it under the write lock); the race detector catches the
+	// resulting read/write overlap.
 	m.mu.Lock()
 	m.sessions[tok] = sess
+	cp := *sess
 	m.mu.Unlock()
-	return sess, nil
+	return &cp, nil
 }
 
 // Get returns the session for the given token, or ErrSessionNotFound if
@@ -132,17 +138,22 @@ func (m *MemorySessionStore) Create(_ context.Context, userID string, ttl time.D
 func (m *MemorySessionStore) Get(_ context.Context, token string) (*Session, error) {
 	m.mu.RLock()
 	sess, ok := m.sessions[token]
-	m.mu.RUnlock()
 	if !ok {
+		m.mu.RUnlock()
 		return nil, ErrSessionNotFound
 	}
-	if sess.Expired() {
+	// Copy under the read lock: the marker methods mutate the stored
+	// *Session in place under the write lock, so handing the stored
+	// pointer back to a caller (who holds no lock) races with them.
+	cp := *sess
+	m.mu.RUnlock()
+	if cp.Expired() {
 		m.mu.Lock()
 		delete(m.sessions, token)
 		m.mu.Unlock()
 		return nil, ErrSessionNotFound
 	}
-	return sess, nil
+	return &cp, nil
 }
 
 // Delete drops the session for token. Returns nil even if the token is

@@ -46,10 +46,11 @@ func (s *flakyUserStore) LinkOAuth(_ context.Context, _, _, _ string) error {
 func TestMagicLinkVerify_DBErrorDoesNotAutoCreate(t *testing.T) {
 	store := &flakyUserStore{err: errors.New("connection refused")}
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     store,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           store,
+		AllowInMemoryStores: true, // unit tests run on the memory session store
 	})
 	plugin := NewMagicLinkPlugin(MagicLinkConfig{
 		BaseURL:  "http://localhost",
@@ -88,10 +89,11 @@ func TestMagicLinkVerify_DBErrorDoesNotAutoCreate(t *testing.T) {
 func TestOAuth2Callback_DBErrorDoesNotAutoCreate(t *testing.T) {
 	store := &flakyUserStore{err: errors.New("connection refused")}
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     store,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           store,
+		AllowInMemoryStores: true, // unit tests run on the memory session store
 	})
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers: map[string]OAuth2Provider{

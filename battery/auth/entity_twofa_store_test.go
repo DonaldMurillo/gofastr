@@ -309,7 +309,7 @@ func TestEntityTwoFA_PluginEnsuresSchema(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	mgr := New(AuthConfig{JWTSecret: "k"})
+	mgr := New(AuthConfig{JWTSecret: "k", AllowInMemoryStores: true}) // durable 2FA store; sessions opt into memory for this schema test
 	mgr.Use(NewCorePlugin())
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: NewEntityTwoFAStore(db, "auth_twofa")}))
 	if err := mgr.Init(nil); err != nil {

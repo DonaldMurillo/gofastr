@@ -43,10 +43,11 @@ func linkFixture(t *testing.T, info *OAuth2UserInfo) (*OAuth2Plugin, *router.Rou
 	t.Helper()
 	store := newLinkingUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret",
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     store,
+		JWTSecret:           "test-secret",
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           store,
+		AllowInMemoryStores: true, // unit tests run on the memory session store
 	})
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"stub": &stubOAuthProvider{name: "stub", userInfo: info}},

@@ -21,19 +21,22 @@ func captureSlog(t *testing.T, fn func()) string {
 }
 
 // Production mode on the default in-memory session store is the silent
-// multi-replica failure: replica B never resolves replica A's cookie.
-// Init must say so loudly unless the host explicitly opted into
-// single-node in-memory state.
-func TestProdWarnsOnMemorySessionStore(t *testing.T) {
-	out := captureSlog(t, func() {
-		mgr := auth.New(auth.AuthConfig{JWTSecret: "k"})
-		mgr.Use(auth.NewCorePlugin())
-		if err := mgr.Init(nil); err != nil {
-			t.Fatalf("Init: %v", err)
+// multi-replica failure: replica B never resolves replica A's cookie,
+// and nothing survives a restart. A warn-only Init lets a broken
+// deployment boot undiscovered — so, like the in-memory 2FA store,
+// production must REFUSE to boot unless the host explicitly opts in via
+// AllowInMemoryStores.
+func TestProdMemorySessionStoreFailsClosed(t *testing.T) {
+	mgr := auth.New(auth.AuthConfig{JWTSecret: "k"}) // prod mode, default memory session store
+	mgr.Use(auth.NewCorePlugin())
+	err := mgr.Init(nil)
+	if err == nil {
+		t.Fatal("production Init with the default in-memory session store must fail closed")
+	}
+	for _, want := range []string{"in-memory session store", "AllowInMemoryStores"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal must name %q; got: %v", want, err)
 		}
-	})
-	if !strings.Contains(out, "in-memory session store") {
-		t.Fatalf("production Init with in-memory sessions must warn; got log: %q", out)
 	}
 }
 
@@ -68,7 +71,7 @@ func TestNoMemoryStoreWarnInDevMode(t *testing.T) {
 // password-only. A security control that quietly stops applying is not
 // warning-grade — production must refuse to boot.
 func TestProdRefusesMemoryTwoFAStore(t *testing.T) {
-	mgr := auth.New(auth.AuthConfig{JWTSecret: "k"})
+	mgr := auth.New(auth.AuthConfig{JWTSecret: "k", SessionStore: stubDurableSessions{}}) // durable sessions → Init reaches the 2FA gate, not the session gate
 	mgr.Use(auth.NewCorePlugin())
 	mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
 	err := mgr.Init(nil)
