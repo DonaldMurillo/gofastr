@@ -313,7 +313,18 @@ type inboundJobPayload struct {
 // A job whose payload won't decode or whose envelope is missing returns an
 // error (non-retryable data corruption — the queue will retry per its own
 // dead-letter policy).
-func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEnvelope) error) queue.Handler {
+//
+// The optional ProcessInboundOption lets you inject a logger for warnings
+// the handler can't surface to the caller — chiefly a failed-state
+// UpdateEnvelope after the business handler already errored. The handler's
+// error is still returned so the queue retries; the lost state write is
+// logged so it can't vanish silently. See WithProcessInboundLogger.
+func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEnvelope) error, opts ...ProcessInboundOption) queue.Handler {
+	o := processInboundOpts{logger: log.Printf}
+	for _, opt := range opts {
+		opt(&o)
+	}
+	logf := o.logger
 	return func(ctx context.Context, job queue.Job) error {
 		var p inboundJobPayload
 		if err := json.Unmarshal(job.Payload, &p); err != nil {
@@ -346,8 +357,13 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 			failed.Status = InboundStatusFailed
 			failed.LastError = err.Error()
 			failed.UpdatedAt = time.Now().UTC()
-			_ = store.UpdateEnvelope(ctx, failed)
-			// Return the original error so the queue retries.
+			if uerr := store.UpdateEnvelope(ctx, failed); uerr != nil {
+				// The business handler already failed; the queue retries because
+				// we return err below. But if THIS write is lost the envelope is
+				// stranded "processing" with no LastError and a stale attempt
+				// count — invisible without a log line. Don't swallow it.
+				logf("webhook: envelope %s: mark failed after handler error lost (state left stale; queue retries): %v", env.ID, uerr)
+			}
 			return err
 		}
 
@@ -359,5 +375,25 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 			return fmt.Errorf("webhook: mark envelope processed: %w", err)
 		}
 		return nil
+	}
+}
+
+// ProcessInboundOption configures ProcessInbound's operational logging.
+type ProcessInboundOption func(*processInboundOpts)
+
+type processInboundOpts struct {
+	logger func(format string, args ...any)
+}
+
+// WithProcessInboundLogger installs the logger for warnings ProcessInbound
+// can't surface to the caller (a failed-state UpdateEnvelope). Default
+// log.Printf. Mirrors Options.Logger on the Manager and InboundConfig.Logger
+// on IngestHandler, so a host wiring all three can point them at the same
+// sink.
+func WithProcessInboundLogger(fn func(format string, args ...any)) ProcessInboundOption {
+	return func(o *processInboundOpts) {
+		if fn != nil {
+			o.logger = fn
+		}
 	}
 }

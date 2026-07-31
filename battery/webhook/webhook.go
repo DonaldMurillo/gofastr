@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -190,6 +191,14 @@ type Options struct {
 	AllowPrivateNetworks bool
 	SignatureTolerance   time.Duration
 	LeasePeriod          time.Duration
+
+	// Logger receives operational warnings the worker can't surface to a
+	// caller — chiefly a delivery-state UPDATE failing after an attempt. A DB
+	// blip there leaves the row with its pre-attempt status, so the next tick
+	// re-delivers (at-least-once) with zero signal that the state write was
+	// lost. Default: log.Printf. Mirrors InboundConfig.Logger on IngestHandler;
+	// set to a no-op func to silence.
+	Logger func(format string, args ...any)
 }
 
 // Manager owns the worker goroutine and is the entry point for Publish
@@ -237,6 +246,9 @@ func New(s Store, opts Options) *Manager {
 	if opts.LeasePeriod <= 0 {
 		opts.LeasePeriod = 30 * time.Second
 	}
+	if opts.Logger == nil {
+		opts.Logger = log.Printf
+	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{
 			Timeout: 10 * time.Second,
@@ -261,6 +273,20 @@ func New(s Store, opts Options) *Manager {
 		stopCh: make(chan struct{}),
 		nowFn:  time.Now,
 	}
+}
+
+// logf writes an operational warning through the configured Logger. It
+// exists so the delivery-attempt path never silently drops a store-update
+// error: a lost state write re-delivers on the next tick (at-least-once),
+// so the only correct response is to make the loss observable. The Manager
+// is only built by New (which defaults Logger), so the fallback is defence
+// in depth.
+func (m *Manager) logf(format string, args ...any) {
+	if m.opts.Logger != nil {
+		m.opts.Logger(format, args...)
+		return
+	}
+	log.Printf(format, args...)
 }
 
 // Subscribe registers (or replaces) a Subscriber. The ID is assigned
@@ -446,7 +472,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		// Use background ctx so a canceled worker still records the
 		// terminal state; the cancel signal is the WHY, not a reason
 		// to lose the write.
-		_ = m.store.UpdateDelivery(context.Background(), d)
+		m.saveDelivery(d)
 		return
 	}
 	d.Attempts++
@@ -457,7 +483,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		d.Status = StatusFailed
 		d.LastError = err.Error()
 		m.schedule(&d)
-		_ = m.store.UpdateDelivery(context.Background(), d)
+		m.saveDelivery(d)
 		return
 	}
 	ts := m.nowFn().Unix()
@@ -473,7 +499,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		d.Status = StatusFailed
 		d.LastError = err.Error()
 		m.schedule(&d)
-		_ = m.store.UpdateDelivery(context.Background(), d)
+		m.saveDelivery(d)
 		return
 	}
 	cap := m.opts.MaxResponseBodyBytes
@@ -488,13 +514,29 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		d.Status = StatusSuccess
 		d.LastError = ""
 		d.NextAttemptAt = time.Time{}
-		_ = m.store.UpdateDelivery(context.Background(), d)
+		m.saveDelivery(d)
 		return
 	}
 	d.Status = StatusFailed
 	d.LastError = fmt.Sprintf("http %d", resp.StatusCode)
 	m.schedule(&d)
-	_ = m.store.UpdateDelivery(context.Background(), d)
+	m.saveDelivery(d)
+}
+
+// saveDelivery persists a delivery's post-attempt state, logging (never
+// swallowing) a store error. A lost state write leaves the row at its
+// pre-attempt status, so the next tick re-delivers (at-least-once) with no
+// signal that the prior attempt ever happened — the only correct response is
+// to make the loss observable via the configured Logger. The attempt's HTTP
+// side-effect already occurred, so there is nothing else to do here.
+//
+// A background context is used deliberately: a worker cancellation is the
+// reason the attempt is winding down, not a reason to lose the terminal
+// state write.
+func (m *Manager) saveDelivery(d Delivery) {
+	if err := m.store.UpdateDelivery(context.Background(), d); err != nil {
+		m.logf("webhook: delivery %s: persist %s state failed (row may be stale → duplicate delivery): %v", d.ID, d.Status, err)
+	}
 }
 
 // schedule sets NextAttemptAt or marks the delivery dead when the

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -81,11 +82,16 @@ var (
 // so two principals using the SAME Idempotency-Key value never see
 // each other's cached responses — closing a cross-tenant replay leak.
 // Default: empty principal (no namespacing); apps SHOULD wire one.
-//
 // FailOpen flips behaviour on store error: true falls through to the
 // handler (availability-first), false returns 503 to the client
 // (correctness-first). Default false — a broken store no longer
 // silently allows duplicate writes.
+//
+// Logger records a Finish failure — a DB blip that strands the in-flight
+// claim so later retries of the SAME request get 409 until the entry TTLs.
+// The client already received its response (Finish runs after the handler),
+// so the response is unaffected; this is an observability seam, not a
+// control-flow change. Default slog.Default().
 type IdempotencyConfig struct {
 	Store            IdempotencyStore
 	TTL              time.Duration
@@ -95,6 +101,7 @@ type IdempotencyConfig struct {
 	Required         bool
 	Principal        func(r *http.Request) string
 	FailOpen         bool
+	Logger           *slog.Logger
 }
 
 // headersStrippedFromReplay are response headers the middleware never
@@ -129,6 +136,9 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 	}
 	if cfg.Store == nil {
 		cfg.Store = NewMemoryIdempotencyStore(cfg.TTL)
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
 	}
 	methods := map[string]bool{}
 	for _, m := range cfg.Methods {
@@ -249,18 +259,30 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			// 30-second TTL — that would block legitimate retries.
 			finishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+			// Finish persists (or releases) the claim AFTER the handler has
+			// answered. A failure here strands the entry: the client already
+			// got its response, but the same Idempotency-Key now 409s on
+			// retry until the claim TTLs. The response is already sent, so the
+			// only correct action is to make the loss observable — silently
+			// dropping it is the bug this fixes.
+			finish := func(resp *IdempotentResponse) {
+				if err := cfg.Store.Finish(finishCtx, storeKey, resp); err != nil {
+					cfg.Logger.Error("idempotency: Finish failed (claim stranded; retries of this key will 409 until TTL)",
+						"key", key, "error", err)
+				}
+			}
 			switch {
 			case rec.bodyOverflow:
-				_ = cfg.Store.Finish(finishCtx, storeKey, nil)
+				finish(nil)
 			case rec.status >= 200 && rec.status < 300:
 				snap := &IdempotentResponse{
 					Status: rec.status,
 					Header: rec.handlerHeaders(),
 					Body:   rec.body.Bytes(),
 				}
-				_ = cfg.Store.Finish(finishCtx, storeKey, snap)
+				finish(snap)
 			default:
-				_ = cfg.Store.Finish(finishCtx, storeKey, nil)
+				finish(nil)
 			}
 		})
 	}
