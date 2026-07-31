@@ -38,6 +38,10 @@ const (
 
 // runAgents dispatches the `gofastr agents <subcommand>` family.
 func runAgents(args []string) {
+	if hasHelpFlag(args) {
+		printAgentsUsage()
+		return
+	}
 	if len(args) == 0 {
 		fail("Subcommand required.")
 		info("Usage: gofastr agents [init|sync]")

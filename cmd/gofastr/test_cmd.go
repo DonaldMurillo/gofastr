@@ -9,6 +9,10 @@ import (
 )
 
 func runTest(args []string) {
+	if hasHelpFlag(args) {
+		printTestUsage()
+		return
+	}
 	fmt.Printf("\n  %s\n\n", bold("Running tests..."))
 
 	// Build the go test command

@@ -38,6 +38,10 @@ func buildDevChildEnv(parent []string) []string {
 }
 
 func runDev(args []string) {
+	if hasHelpFlag(args) {
+		printDevUsage()
+		return
+	}
 	// pkg is the package to build, relative to dir. It defaults to dir itself,
 	// which is right for the scaffold layout (main at the project root). Apps
 	// that keep main under cmd/<name>/ need the two to differ: the build target
@@ -230,6 +234,12 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	// rebuild by default. Failing here is a build failure — the watch
 	// loop keeps running and the next save retries.
 	if !devA11yGate(dir, noA11y) {
+		return false
+	}
+	// Same posture as `gofastr build`: the .ui.go hydration-sandbox lint
+	// (no goroutines/channels/unsafe imports) gates the rebuild too, and is
+	// not skipped by --no-a11y — a violating .ui.go breaks hydration.
+	if !buildSandboxGate(dir) {
 		return false
 	}
 

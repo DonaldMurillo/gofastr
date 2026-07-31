@@ -248,7 +248,7 @@ func defaultConfig() Config {
 func discoverConfig(start string) (path, dir string, err error) {
 	dir = start
 	for {
-		for _, name := range []string{"gofastr.yml", "gofastr.yaml"} {
+		for _, name := range []string{"gofastr.isolation.yml", "gofastr.isolation.yaml", "gofastr.yml", "gofastr.yaml"} {
 			path := filepath.Join(dir, name)
 			if _, err := os.Stat(path); err == nil {
 				return path, dir, nil

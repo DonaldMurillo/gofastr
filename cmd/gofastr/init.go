@@ -482,8 +482,8 @@ isolation:
   services:
   env:
 `
-	if err := os.WriteFile(filepath.Join(name, "gofastr.yml"), []byte(content), 0o644); err != nil {
-		fail("Failed to write gofastr.yml: %v", err)
+	if err := os.WriteFile(filepath.Join(name, "gofastr.isolation.yml"), []byte(content), 0o644); err != nil {
+		fail("Failed to write gofastr.isolation.yml: %v", err)
 		osExit(1)
 	}
 }

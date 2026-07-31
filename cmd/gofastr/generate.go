@@ -186,9 +186,11 @@ func parseScaffoldArgs(args []string, kind string) (name string, opts generateOp
 // With no blueprint, a gofastr.codegen.yml extension config (the project
 // extension protocol) is honored; failing both, we error with guidance.
 //
-// Auto-discovery of gofastr.yml is deliberately avoided: that filename is
-// also used for the isolation config (`gofastr init`), so silently treating
-// it as a blueprint would misfire.
+// Auto-discovery of gofastr.yml is deliberately avoided: `--from` keeps
+// generation an explicit, reviewable step. (The isolation config no longer
+// collides — `gofastr init` now writes gofastr.isolation.yml — but a
+// project may still legitimately have no blueprint, so guessing would
+// misfire.)
 func generateProject(args []string) {
 	options := parseGenerateOptions(args)
 	if options.add && options.force {

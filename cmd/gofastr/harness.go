@@ -47,6 +47,10 @@ import (
 )
 
 func runHarness(args []string) {
+	if hasHelpFlag(args) {
+		printHarnessUsage()
+		return
+	}
 	// `gofastr harness mcp` launches the stdio MCP server — the path
 	// other MCP clients (Claude Code, Codex, Cursor) use to spawn
 	// the harness as a subprocess.

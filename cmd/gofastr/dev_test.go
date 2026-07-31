@@ -257,7 +257,7 @@ func TestInitIsolationConfigOmitsDecorativeStrategy(t *testing.T) {
 	}
 
 	writeIsolationConfig("demo", "sqlite")
-	data, err := os.ReadFile(filepath.Join("demo", "gofastr.yml"))
+	data, err := os.ReadFile(filepath.Join("demo", "gofastr.isolation.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -131,7 +131,10 @@ func (e *Engine) LoadSchema() error {
 
 	var sd schemaData
 	if err := json.Unmarshal(data, &sd); err != nil {
-		return nil
+		// Non-empty schema region that won't parse is corruption, not an
+		// empty database — surface it so newDiskEngine can refuse the open
+		// instead of handing back an engine that silently looks fresh.
+		return fmt.Errorf("sqlite: corrupt schema page: %w", err)
 	}
 
 	for _, td := range sd.Tables {
