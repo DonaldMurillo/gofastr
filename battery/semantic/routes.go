@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -86,9 +87,14 @@ func requireAuth(cfg handlerConfig) func(http.Handler) http.Handler {
 				writeErr(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
-			// Constant-time compare so the bearer check is not a timing
-			// oracle for the secret.
-			if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(h[len(bearerPrefix):])), []byte(cfg.authToken)) != 1 {
+			// Compare fixed-width digests, not the raw strings.
+			// subtle.ConstantTimeCompare returns immediately when the two
+			// lengths differ, so comparing tokens directly still tells an
+			// attacker when a candidate is the right LENGTH. Hashing first
+			// makes both sides 32 bytes, so every candidate costs the same.
+			got := sha256.Sum256([]byte(strings.TrimSpace(h[len(bearerPrefix):])))
+			want := sha256.Sum256([]byte(cfg.authToken))
+			if subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
 				writeErr(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
