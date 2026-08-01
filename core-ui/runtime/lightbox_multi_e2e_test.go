@@ -52,6 +52,14 @@ func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
 		// Ensure the lightbox module is loaded so scan() watched both modals.
 		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.lightbox&&window.__gofastr.lightbox.rescan)`,
 			nil, chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
+		// The widgets module self-registers openWidget when it loads, and it
+		// is idle-scheduled off the [data-fui-widget] marker this fixture
+		// carries. Installing the spy first is a race: if widgets lands
+		// afterwards it overwrites the spy, step() calls the real
+		// openWidget, and __lbCall stays "" — which is exactly the ~8%
+		// flake this test had. Wait for it, THEN spy.
+		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.loadedModules&&window.__gofastr.loadedModules.widgets)`,
+			nil, chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
 		// Spy on openWidget — step() calls it with the widget name + parsed params.
 		chromedp.Evaluate(`window.__lbCall='';window.__gofastr.openWidget=function(name,opts){window.__lbCall=name+':'+(((opts&&opts.params)||{}).src||'');};`, nil),
 		chromedp.Click(`#bNext`, chromedp.ByID),
