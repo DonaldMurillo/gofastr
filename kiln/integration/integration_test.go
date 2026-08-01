@@ -253,7 +253,7 @@ func TestUndoUnwindsHistory(t *testing.T) {
 	}
 
 	// Undo three times.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		r := h.tools.Undo(t.Context(), protocol.UndoArgs{})
 		if !r.OK {
 			t.Fatalf("undo %d: %+v", i, r)
@@ -618,7 +618,8 @@ func TestFullBlogScenario(t *testing.T) {
 	}
 }
 
-func floatPtr(f float64) *float64 { return &f }
+//go:fix inline
+func floatPtr(f float64) *float64 { return new(f) }
 
 // --- (13) framework primitives still produce OpenAPI ----------------
 

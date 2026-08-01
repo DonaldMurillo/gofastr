@@ -67,7 +67,8 @@ func runAgent(ctx context.Context, req agentRequest) error {
 		if req.Config.Effort != "" {
 			args = append(args, "--effort", req.Config.Effort)
 		}
-		prompt := req.Prompt
+		var prompt strings.Builder
+		prompt.WriteString(req.Prompt)
 		if req.Judge {
 			schema, err := os.ReadFile(req.SchemaPath)
 			if err != nil {
@@ -78,14 +79,14 @@ func runAgent(ctx context.Context, req agentRequest) error {
 				return fmt.Errorf("adapt judge schema for Claude: %w", err)
 			}
 			args = append(args, "--permission-mode", "dontAsk", "--allowedTools", "Read", "--json-schema", string(schema))
-			prompt += "\n\nRead every evidence image with the Read tool before scoring:\n"
+			prompt.WriteString("\n\nRead every evidence image with the Read tool before scoring:\n")
 			for _, image := range req.Images {
-				prompt += "- " + filepath.Base(image) + "\n"
+				prompt.WriteString("- " + filepath.Base(image) + "\n")
 			}
 		} else {
 			args = append(args, "--permission-mode", "bypassPermissions", "--tools", "default")
 		}
-		args = append(args, prompt)
+		args = append(args, prompt.String())
 		if err := runCapturedAgent(ctx, req.Config, args, req.Workspace, req.Env, req.LogPath); err != nil {
 			return err
 		}

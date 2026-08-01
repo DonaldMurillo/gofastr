@@ -55,7 +55,7 @@ func TestBuildFts5Query(t *testing.T) {
 // caps distinct terms at maxQueryTerms.
 func TestBuildFts5QueryBounded(t *testing.T) {
 	var b []byte
-	for i := 0; i < maxQueryTerms*4; i++ {
+	for i := range maxQueryTerms * 4 {
 		b = append(b, 't')
 		b = append(b, byte('a'+i%26))
 		b = append(b, byte('0'+i%10))

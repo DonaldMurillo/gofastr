@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -13,34 +14,36 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestMemoryQueueGateDefersJob(t *testing.T) {
-	q := NewMemoryQueue(1)
-	q.SetGate(func(jobType string) bool { return false }) // gate everything
-	var ran atomic.Int32
-	q.RegisterHandler("gated", func(_ context.Context, _ Job) error {
-		ran.Add(1)
-		return nil
+	synctest.Test(t, func(t *testing.T) {
+		q := NewMemoryQueue(1)
+		q.SetGate(func(jobType string) bool { return false }) // gate everything
+		var ran atomic.Int32
+		q.RegisterHandler("gated", func(_ context.Context, _ Job) error {
+			ran.Add(1)
+			return nil
+		})
+		q.Start()
+		defer q.Close()
+
+		if err := q.Enqueue(context.Background(), Job{
+			Type:    "gated",
+			Payload: json.RawMessage(`{}`),
+		}); err != nil {
+			t.Fatalf("enqueue: %v", err)
+		}
+
+		time.Sleep(200 * time.Millisecond)
+		if c := ran.Load(); c != 0 {
+			t.Fatalf("gated job ran %d times despite gate", c)
+		}
+
+		// Re-enable and verify the deferred job runs.
+		q.SetGate(func(jobType string) bool { return true })
+		time.Sleep(300 * time.Millisecond)
+		if c := ran.Load(); c != 1 {
+			t.Fatalf("expected 1 run after re-enable, got %d", c)
+		}
 	})
-	q.Start()
-	t.Cleanup(func() { q.Close() })
-
-	if err := q.Enqueue(context.Background(), Job{
-		Type:    "gated",
-		Payload: json.RawMessage(`{}`),
-	}); err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
-
-	time.Sleep(200 * time.Millisecond)
-	if c := ran.Load(); c != 0 {
-		t.Fatalf("gated job ran %d times despite gate", c)
-	}
-
-	// Re-enable and verify the deferred job runs.
-	q.SetGate(func(jobType string) bool { return true })
-	time.Sleep(300 * time.Millisecond)
-	if c := ran.Load(); c != 1 {
-		t.Fatalf("expected 1 run after re-enable, got %d", c)
-	}
 }
 
 // TestMemQueueGateDeferNoPanicOnClose ensures the AfterFunc callback armed by
@@ -48,32 +51,34 @@ func TestMemoryQueueGateDefersJob(t *testing.T) {
 // the closed-check under pmu, the timer firing post-Close would race the
 // shutdown. The test passing == no panic.
 func TestMemQueueGateDeferNoPanicOnClose(t *testing.T) {
-	q := NewMemoryQueue(1)
-	q.SetGate(func(jobType string) bool { return false }) // gate everything
-	var ran atomic.Int32
-	q.RegisterHandler("gated", func(_ context.Context, _ Job) error {
-		ran.Add(1)
-		return nil
+	synctest.Test(t, func(t *testing.T) {
+		q := NewMemoryQueue(1)
+		q.SetGate(func(jobType string) bool { return false }) // gate everything
+		var ran atomic.Int32
+		q.RegisterHandler("gated", func(_ context.Context, _ Job) error {
+			ran.Add(1)
+			return nil
+		})
+		q.Start()
+
+		if err := q.Enqueue(context.Background(), Job{
+			Type:    "gated",
+			Payload: json.RawMessage(`{}`),
+		}); err != nil {
+			t.Fatalf("enqueue: %v", err)
+		}
+
+		// Sleep past gateDeferDelay so the AfterFunc is armed (and re-arms on
+		// each failed re-defer). Close() while a timer is in flight, then wait
+		// again: a callback firing post-Close must not send on the closed chan.
+		time.Sleep(150 * time.Millisecond)
+		_ = q.Close()
+		time.Sleep(150 * time.Millisecond)
+
+		if c := ran.Load(); c != 0 {
+			t.Fatalf("gated job ran %d times despite gate", c)
+		}
 	})
-	q.Start()
-
-	if err := q.Enqueue(context.Background(), Job{
-		Type:    "gated",
-		Payload: json.RawMessage(`{}`),
-	}); err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
-
-	// Sleep past gateDeferDelay so the AfterFunc is armed (and re-arms on
-	// each failed re-defer). Close() while a timer is in flight, then wait
-	// again: a callback firing post-Close must not send on the closed chan.
-	time.Sleep(150 * time.Millisecond)
-	_ = q.Close()
-	time.Sleep(150 * time.Millisecond)
-
-	if c := ran.Load(); c != 0 {
-		t.Fatalf("gated job ran %d times despite gate", c)
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +180,7 @@ func TestDBQueueGateNoClaimChurn(t *testing.T) {
 	// equality check below catches that. With eligibleTypes() filtering,
 	// the value stays exactly as enqueued.
 	sched := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := q.Enqueue(ctx, Job{
 			Type:        "gated",
 			Payload:     json.RawMessage(`{}`),
@@ -250,7 +255,7 @@ func TestDBQueueGateConcurrentSetGate(t *testing.T) {
 		}
 	}()
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if err := q.Enqueue(ctx, Job{Type: "flap", Payload: json.RawMessage(`{}`)}); err != nil {
 			t.Fatalf("enqueue %d: %v", i, err)
 		}
@@ -273,38 +278,40 @@ func TestDBQueueGateConcurrentSetGate(t *testing.T) {
 }
 
 func TestGateDeferNoStrand(t *testing.T) {
-	q := NewMemoryQueue(1)
-	var enabled atomic.Bool
-	q.SetGate(func(jobType string) bool { return enabled.Load() })
-	var gatedRan atomic.Int32
-	q.RegisterHandler("gated", func(_ context.Context, _ Job) error {
-		gatedRan.Add(1)
-		return nil
-	})
-	q.RegisterHandler("filler", func(_ context.Context, _ Job) error { return nil })
+	synctest.Test(t, func(t *testing.T) {
+		q := NewMemoryQueue(1)
+		var enabled atomic.Bool
+		q.SetGate(func(jobType string) bool { return enabled.Load() })
+		var gatedRan atomic.Int32
+		q.RegisterHandler("gated", func(_ context.Context, _ Job) error {
+			gatedRan.Add(1)
+			return nil
+		})
+		q.RegisterHandler("filler", func(_ context.Context, _ Job) error { return nil })
 
-	// Build a backlog of filler jobs before any worker runs, then gate-defer
-	// a job so its re-enqueue timer fires while filler jobs are still
-	// pending. With the priority-heap store (unbounded) the deferred push
-	// always succeeds; this test guards against any regression that would
-	// strand the deferred job behind the backlog.
-	for i := 0; i < 1024; i++ {
-		if err := q.Enqueue(context.Background(), Job{Type: "filler", Payload: json.RawMessage(`{}`)}); err != nil {
-			t.Fatalf("fill %d: %v", i, err)
+		// Build a backlog of filler jobs before any worker runs, then gate-defer
+		// a job so its re-enqueue timer fires while filler jobs are still
+		// pending. With the priority-heap store (unbounded) the deferred push
+		// always succeeds; this test guards against any regression that would
+		// strand the deferred job behind the backlog.
+		for i := range 1024 {
+			if err := q.Enqueue(context.Background(), Job{Type: "filler", Payload: json.RawMessage(`{}`)}); err != nil {
+				t.Fatalf("fill %d: %v", i, err)
+			}
 		}
-	}
-	q.processJob(Job{Type: "gated", Payload: json.RawMessage(`{}`)})
-	time.Sleep(3 * gateDeferDelay) // timer fires while backlog is pending
+		q.processJob(Job{Type: "gated", Payload: json.RawMessage(`{}`)})
+		time.Sleep(3 * gateDeferDelay) // timer fires while backlog is pending
 
-	enabled.Store(true)
-	q.Start()
-	t.Cleanup(func() { q.Close() })
+		enabled.Store(true)
+		q.Start()
+		defer q.Close()
 
-	deadline := time.Now().Add(5 * time.Second)
-	for gatedRan.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if gatedRan.Load() == 0 {
-		t.Fatal("gate-deferred job stranded after re-enable behind a backlog")
-	}
+		deadline := time.Now().Add(5 * time.Second)
+		for gatedRan.Load() == 0 && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if gatedRan.Load() == 0 {
+			t.Fatal("gate-deferred job stranded after re-enable behind a backlog")
+		}
+	})
 }

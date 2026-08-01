@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"strings"
 )
 
@@ -58,10 +59,7 @@ func (f *FixedWindow) Chunk(doc Document) ([]Chunk, error) {
 			byteStart += len(string(runes[prevStart:start]))
 			prevStart = start
 		}
-		end := start + f.Size
-		if end > len(runes) {
-			end = len(runes)
-		}
+		end := min(start+f.Size, len(runes))
 		chunkText := string(runes[start:end])
 		byteEnd := byteStart + len(chunkText)
 		chunks = append(chunks, newChunk(doc, byteStart, byteEnd, chunkText))
@@ -79,9 +77,7 @@ func newChunk(doc Document, byteStart, byteEnd int, text string) Chunk {
 	var md map[string]any
 	if len(doc.Metadata) > 0 {
 		md = make(map[string]any, len(doc.Metadata))
-		for k, v := range doc.Metadata {
-			md[k] = v
-		}
+		maps.Copy(md, doc.Metadata)
 	}
 	return Chunk{
 		ID:       id,

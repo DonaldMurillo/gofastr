@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"maps"
 	"sort"
 	"sync"
 )
@@ -98,9 +99,7 @@ func cloneEnvelope(e InboundEnvelope) InboundEnvelope {
 	cp.Payload = cloneBytes(e.Payload)
 	if e.Headers != nil {
 		cp.Headers = make(map[string]string, len(e.Headers))
-		for k, v := range e.Headers {
-			cp.Headers[k] = v
-		}
+		maps.Copy(cp.Headers, e.Headers)
 	}
 	return cp
 }

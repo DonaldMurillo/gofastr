@@ -201,7 +201,7 @@ func TestComponentSheetDeterministic(t *testing.T) {
 		return ss.MustBuild()
 	}
 	first := build()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		got := build()
 		if got != first {
 			t.Fatalf("non-deterministic at iter %d:\n--- first ---\n%s\n--- got ---\n%s", i, first, got)
@@ -211,7 +211,7 @@ func TestComponentSheetDeterministic(t *testing.T) {
 
 func TestCSSCustomPropertiesDeterministic(t *testing.T) {
 	first := DefaultTheme().CSSCustomProperties()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		got := DefaultTheme().CSSCustomProperties()
 		if got != first {
 			t.Fatalf("non-deterministic at iter %d", i)

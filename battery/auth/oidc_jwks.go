@@ -280,7 +280,7 @@ func buildECKey(crv, xB64, yB64 string) (*ecdsa.PublicKey, error) {
 //  4. JWK kty/crv matches the alg (no RSA-vs-EC confusion);
 //  5. signature verified with crypto/rsa (PKCS1v15) or crypto/ecdsa (raw R||S);
 //  6. iss/aud/exp/iat/sub claims validated.
-func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI string) (map[string]interface{}, error) {
+func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI string) (map[string]any, error) {
 	parts := strings.Split(idToken, ".")
 	if len(parts) != 3 {
 		return nil, errors.New("oidc: malformed id_token")
@@ -354,7 +354,7 @@ func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI strin
 	if err != nil {
 		return nil, errors.New("oidc: malformed id_token payload")
 	}
-	var claims map[string]interface{}
+	var claims map[string]any
 	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
 		return nil, errors.New("oidc: malformed id_token payload")
 	}

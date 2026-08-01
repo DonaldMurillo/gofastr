@@ -16,11 +16,10 @@ import (
 // growth is O(corpus); confirm.
 func BenchmarkMemory_Index(b *testing.B) {
 	for _, n := range []int{100, 1000, 10000} {
-		n := n
 		b.Run(fmt.Sprintf("corpus=%d", n), func(b *testing.B) {
 			idx := NewMemory()
 			ctx := context.Background()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				_ = idx.Index(ctx, Document{
 					ID:   fmt.Sprintf("doc-%d", i),
 					Type: "posts",
@@ -44,11 +43,10 @@ func BenchmarkMemory_Index(b *testing.B) {
 // corpus sizes. The memory backend scans linearly; expect O(corpus).
 func BenchmarkMemory_Search(b *testing.B) {
 	for _, n := range []int{100, 1000, 10000} {
-		n := n
 		b.Run(fmt.Sprintf("corpus=%d", n), func(b *testing.B) {
 			idx := NewMemory()
 			ctx := context.Background()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				_ = idx.Index(ctx, Document{
 					ID:   fmt.Sprintf("doc-%d", i),
 					Type: "posts",

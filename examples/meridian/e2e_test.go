@@ -122,7 +122,7 @@ func e2eFreeAddr(t *testing.T) string {
 
 func e2eWaitReady(t *testing.T, base string) {
 	t.Helper()
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if r, err := http.Get(base + "/"); err == nil {
 			r.Body.Close()
 			return

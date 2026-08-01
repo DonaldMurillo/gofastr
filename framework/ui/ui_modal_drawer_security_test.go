@@ -551,7 +551,7 @@ func TestNotification_ConcurrentRender(t *testing.T) {
 	var wg sync.WaitGroup
 	const goroutines = 50
 	errs := make(chan string, goroutines)
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()

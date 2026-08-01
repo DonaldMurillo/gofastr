@@ -31,7 +31,6 @@ func TestParseFilters_ValuesEquiv(t *testing.T) {
 		"q=hello",
 	}
 	for _, raw := range cases {
-		raw := raw
 		t.Run(raw, func(t *testing.T) {
 			r := httptest.NewRequest("GET", "/things?"+raw, nil)
 			viaReq, reqErr := ParseFilters(r, fields)
@@ -67,7 +66,6 @@ func TestParseSort_ValuesEquiv(t *testing.T) {
 		"sort=unknown",
 	}
 	for _, raw := range cases {
-		raw := raw
 		t.Run(raw, func(t *testing.T) {
 			r := httptest.NewRequest("GET", "/things?"+raw, nil)
 			viaReq, reqErr := ParseSort(r, fields)

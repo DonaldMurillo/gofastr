@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -42,10 +43,5 @@ func TestNoQueryColumnRendersButIsNotSortable(t *testing.T) {
 }
 
 func containsColumn(columns []string, want string) bool {
-	for _, column := range columns {
-		if column == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(columns, want)
 }

@@ -54,8 +54,7 @@ func (e *CoordinatorValidationError) Error() string {
 
 // Is lets callers errors.Is against the rule even when wrapped.
 func (e *CoordinatorValidationError) Is(target error) bool {
-	var cv *CoordinatorValidationError
-	if errors.As(target, &cv) {
+	if cv, ok := errors.AsType[*CoordinatorValidationError](target); ok {
 		return e.Field == cv.Field && e.Rule == cv.Rule
 	}
 	return false
@@ -461,7 +460,7 @@ func lintMigrationSQL(up string) []string {
 		return nil
 	}
 	var hints []string
-	for _, raw := range strings.Split(up, ";") {
+	for raw := range strings.SplitSeq(up, ";") {
 		stmt := stripSQLComments(strings.TrimSpace(raw))
 		if stmt == "" {
 			continue

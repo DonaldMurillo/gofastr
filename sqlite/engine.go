@@ -236,8 +236,8 @@ func (e *Engine) SaveSchema() error {
 
 	sd := schemaData{}
 	for _, ti := range e.schema.tables {
-		d := tableData{Name: ti.Name, RootPage: ti.RootPage, SQL: ti.SQL, AutoInc: ti.AutoInc, PrimaryKey: ti.PrimaryKey}
-		d.UniqueConstraints = ti.UniqueConstraints
+		d := tableData{Name: ti.Name, RootPage: ti.RootPage, SQL: ti.SQL, AutoInc: ti.AutoInc, PrimaryKey: ti.PrimaryKey,
+			UniqueConstraints: ti.UniqueConstraints}
 		for _, c := range ti.Columns {
 			cd := colData{Name: c.Name, Type: c.Type, Affinity: int(c.Affinity), NotNull: c.NotNull, IsPK: c.IsPrimaryKey, IsRowID: c.IsRowID}
 			if c.Default != nil {

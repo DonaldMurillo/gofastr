@@ -85,7 +85,7 @@ func TestDriverCompatCompositePrimaryKeyAndInsertOrIgnore(t *testing.T) {
 	)`); err != nil {
 		t.Fatalf("composite primary key: %v", err)
 	}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if _, err := db.Exec(`INSERT OR IGNORE INTO deliveries
 			(row_id, consumer, status) VALUES ($1, $2, $3)`,
 			"row-a", "consumer-a", "pending"); err != nil {

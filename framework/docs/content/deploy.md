@@ -25,11 +25,11 @@ gofastr build
 gofastr build --pkg ./cmd/server
 ```
 
-> **Go version.** `go.mod` declares `go 1.26`. The framework core only needs
-> Go 1.24 (generic type aliases); the 1.26 floor comes from the optional
-> `battery/print/chromepdf` PDF dependency (`chromedp/cdproto`). If you don't
-> use that battery, an older Go works in practice — but the declared floor is
-> what the toolchain enforces.
+> **Go version.** `go.mod` declares `go 1.27` (rc until the stable
+> release ships). The floor is real: the framework uses the stdlib
+> `uuid` package, `strings.CutLast`, and the `goroutineleak` profile,
+> all new in 1.27. The toolchain directive downloads the right version
+> automatically, so in practice "have any recent Go" is enough to build.
 
 > **SQLite vs Postgres.** The bundled `gofastr` CLI uses SQLite. For a
 > Postgres deployment, import a Postgres driver in your app and pass a
@@ -43,7 +43,7 @@ Multi-stage, distroless runtime, non-root, pure-Go build (Postgres):
 
 ```dockerfile
 # ---- build ----
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -60,7 +60,7 @@ ENTRYPOINT ["/app"]
 ```
 
 > Using the CGO SQLite driver (`mattn/go-sqlite3`) instead? Build with
-> `CGO_ENABLED=1` on `golang:1.26` and run on `gcr.io/distroless/base-debian12`
+> `CGO_ENABLED=1` on `golang:1.27` and run on `gcr.io/distroless/base-debian12`
 > (has libc) rather than `static`.
 
 ## Configuration (env)

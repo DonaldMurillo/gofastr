@@ -73,7 +73,7 @@ func TestRateLimit_TwoFAChallenge(t *testing.T) {
 	}
 
 	body := []byte(`{"code":"000000"}`)
-	for i := 0; i < 2+5; i++ {
+	for i := range 2 + 5 {
 		req := httptest.NewRequest(http.MethodPost, "/auth/2fa/challenge", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = "9.9.9.9:1234"
@@ -143,7 +143,7 @@ func TestRateLimit_IgnoresUnconfiguredXFF(t *testing.T) {
 	// With XFF trusted, each looks like a different IP and rate-limit
 	// never fires. With XFF ignored, the real IP is the key and we
 	// hit 429 on the third attempt.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("10.0.0.%d", i))
@@ -187,7 +187,7 @@ func TestRateLimit_PerAccount_BlocksIPRotationAttack(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"email": "victim@example.com", "password": "wrong"})
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		// Different RemoteAddr each call — simulates IP rotation.
@@ -230,7 +230,7 @@ func TestRateLimit_PerAccount_DifferentEmailsNotBlocked(t *testing.T) {
 
 	// Burn the budget for victim@example.com.
 	bodyVictim, _ := json.Marshal(map[string]string{"email": "victim@example.com", "password": "wrong"})
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(bodyVictim))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = "1.2.3.4:9999"
@@ -266,7 +266,7 @@ func TestRateLimit_TrustForwardedFor_OptIn(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"email": "x@y.com", "password": "wrong"})
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("10.0.0.%d", i))

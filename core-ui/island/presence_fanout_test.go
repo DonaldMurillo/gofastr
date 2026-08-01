@@ -2,6 +2,7 @@ package island
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -191,12 +192,7 @@ func TestPresenceFanoutOnChangeFiresOnRemote(t *testing.T) {
 	waitFor(t, time.Second, "B's OnPresenceChange fires for doc:9", func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		for _, top := range firedOn {
-			if top == "doc:9" {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(firedOn, "doc:9")
 	})
 }
 

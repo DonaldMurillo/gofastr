@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -390,7 +391,7 @@ func leadingAttrName(attrs string) string {
 // string (e.g. "aria-invalid" and "aria-describedby") is already
 // present in the HTML string s. Returns false if any name is missing.
 func allAttrsPresent(s, attrs string) bool {
-	for _, chunk := range strings.Split(strings.TrimSpace(attrs), " ") {
+	for chunk := range strings.SplitSeq(strings.TrimSpace(attrs), " ") {
 		chunk = strings.TrimSpace(chunk)
 		if chunk == "" {
 			continue
@@ -590,9 +591,7 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 	extra := html.Attrs{}
-	for k, val := range cfg.ExtraAttrs {
-		extra[k] = val
-	}
+	maps.Copy(extra, cfg.ExtraAttrs)
 	if cfg.External {
 		extra["target"] = "_blank"
 		extra["rel"] = "noopener noreferrer"

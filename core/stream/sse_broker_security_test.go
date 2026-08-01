@@ -1,7 +1,6 @@
 package stream
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,8 +19,7 @@ func TestSubscriberIDCannotEvictOther(t *testing.T) {
 	b := NewSSEBroker(SSEBrokerConfig{Topic: "t"})
 	defer b.Close()
 
-	victimCtx, cancelVictim := context.WithCancel(context.Background())
-	defer cancelVictim()
+	victimCtx := t.Context()
 	victim := httptest.NewRequest("GET", "/events?subscriber_id=shared", nil).WithContext(victimCtx)
 	victim.RemoteAddr = "10.0.0.1:5000"
 	go b.Subscribe(httptest.NewRecorder(), victim)
@@ -29,8 +27,7 @@ func TestSubscriberIDCannotEvictOther(t *testing.T) {
 	waitForSubscribers(t, b, 1)
 
 	// A different caller asks for the same id.
-	attackerCtx, cancelAttacker := context.WithCancel(context.Background())
-	defer cancelAttacker()
+	attackerCtx := t.Context()
 	attacker := httptest.NewRequest("GET", "/events?subscriber_id=shared", nil).WithContext(attackerCtx)
 	attacker.RemoteAddr = "10.0.0.99:6000"
 	go b.Subscribe(httptest.NewRecorder(), attacker)
@@ -52,8 +49,7 @@ func TestMaxSubscribersRejectsRatherThanEvicts(t *testing.T) {
 	b := NewSSEBroker(SSEBrokerConfig{Topic: "t", MaxSubscribers: 1})
 	defer b.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	first := httptest.NewRequest("GET", "/events?subscriber_id=a", nil).WithContext(ctx)
 	first.RemoteAddr = "10.0.0.1:5000"
 	go b.Subscribe(httptest.NewRecorder(), first)
@@ -84,8 +80,7 @@ func TestSubscriberCapIsExact(t *testing.T) {
 		HeartbeatInterval: time.Hour,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		req := httptest.NewRequest("GET", "/events?subscriber_id=a", nil).WithContext(ctx)
 		b.Subscribe(newFlushRecorder(), req)
@@ -136,8 +131,7 @@ func TestHeartbeatReclaimsDeadSubscriberSeat(t *testing.T) {
 	}
 
 	// The seat really is reusable.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		req := httptest.NewRequest("GET", "/events?subscriber_id=a", nil).WithContext(ctx)
 		b.Subscribe(newFlushRecorder(), req)
@@ -156,7 +150,7 @@ func (w *closedSSEWriter) Flush()                    {}
 
 func waitForSubscribers(t *testing.T, b *SSEBroker, want int) {
 	t.Helper()
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		if b.SubscriberCount() >= want {
 			return
 		}

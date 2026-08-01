@@ -43,7 +43,7 @@ CREATE TABLE bg_nodes (
 	ch.Registry = reg
 
 	seed := []map[string]any{{"id": "root", "parent": "root", "label": "root"}}
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		seed = append(seed, map[string]any{
 			"id": fmt.Sprintf("n%03d", i), "parent": "root", "label": "leaf",
 		})

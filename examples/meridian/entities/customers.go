@@ -267,7 +267,7 @@ func registerCustomers(app *framework.App) {
 		{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
 		{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
 		{Name: "user_id", Type: schema.String, Hidden: true},
-	}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Indices: []framework.Index{
+	}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: new(true), MCP: true}, Indices: []framework.Index{
 		{Name: "idx_customers_email", Columns: []string{"email"}, Unique: true},
 	},
 		Properties: map[string]any{"label": "Customers"},

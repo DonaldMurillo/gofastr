@@ -118,7 +118,7 @@ type lengthReranker struct{}
 // honored.
 func (lengthReranker) Rerank(_ context.Context, _ string, hits []Hit) ([]Hit, error) {
 	// stable selection sort by length desc.
-	for i := 0; i < len(hits); i++ {
+	for i := range hits {
 		best := i
 		for j := i + 1; j < len(hits); j++ {
 			if len(hits[j].Chunk.Text) > len(hits[best].Chunk.Text) {

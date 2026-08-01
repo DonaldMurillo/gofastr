@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -101,9 +102,7 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	} else if cfg.Help != "" {
 		taAttrs["aria-describedby"] = id + "-help"
 	}
-	for k, v := range cfg.ExtraAttrs {
-		taAttrs[k] = v
-	}
+	maps.Copy(taAttrs, cfg.ExtraAttrs)
 
 	children := []render.HTML{
 		render.Tag("label", map[string]string{"for": id, "class": "ui-textarea__label"},

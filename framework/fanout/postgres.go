@@ -308,9 +308,9 @@ func (p *PostgresFanout) dispatch() {
 // pointer) and delivers the routed payload to subscribers.
 func (p *PostgresFanout) handleNotify(extra string) {
 	wrapped := extra
-	if strings.HasPrefix(extra, "t:") {
+	if after, ok := strings.CutPrefix(extra, "t:"); ok {
 		// Table fallback pointer: SELECT the row by id.
-		idStr := strings.TrimPrefix(extra, "t:")
+		idStr := after
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
 			p.logRecvDrop(&p.dropMalformedPtr, "dropped NOTIFY table-pointer with malformed id", err)

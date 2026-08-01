@@ -50,12 +50,10 @@ type BatchResponse struct {
 // leak schema / connection details. The original error is still
 // logged via the caller's tx logger.
 func classifyDoErr(err error) (string, map[string][]string) {
-	var ve *ValidationError
-	if errors.As(err, &ve) {
+	if ve, ok := errors.AsType[*ValidationError](err); ok {
 		return "validation failed", ve.Fields()
 	}
-	var bhe *beforeHookError
-	if errors.As(err, &bhe) {
+	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		return bhe.Error(), nil
 	}
 	if errors.Is(err, errNotFound) {

@@ -102,7 +102,7 @@ func TestCSSCustomPropertiesEmitsAllCategories(t *testing.T) {
 
 func TestCSSCustomPropertiesDeterministic_AllCategories(t *testing.T) {
 	first := DefaultTheme().CSSCustomProperties()
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		got := DefaultTheme().CSSCustomProperties()
 		if got != first {
 			t.Fatalf("non-deterministic at iter %d", i)

@@ -43,7 +43,7 @@ func TestFileSinkRotatesOnSize(t *testing.T) {
 	}
 	// 4 entries of 10 bytes each + newlines = 44 bytes total → at least
 	// one rotation.
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		if err := s.Write([]byte(`xxxxxxxxxx`)); err != nil {
 			t.Fatal(err)
 		}
@@ -78,7 +78,7 @@ func TestFileSinkRespectsMaxBackups(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Force many rotations.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		_ = s.Write([]byte(`xxxxxxxxxx`))
 	}
 	if err := s.Close(); err != nil {

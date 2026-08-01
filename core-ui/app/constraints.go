@@ -9,8 +9,8 @@ func segConstraint(seg string) string {
 		return ""
 	}
 	rest := seg[1:] // drop leading ":"
-	if i := strings.IndexByte(rest, ':'); i >= 0 {
-		return rest[i+1:]
+	if _, after, ok := strings.Cut(rest, ":"); ok {
+		return after
 	}
 	return ""
 }
@@ -89,7 +89,7 @@ func isUUID(s string) bool {
 	if len(s) != 36 {
 		return false
 	}
-	for i := 0; i < 36; i++ {
+	for i := range 36 {
 		c := s[i]
 		switch i {
 		case 8, 13, 18, 23:

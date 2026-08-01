@@ -385,7 +385,7 @@ func (p *OIDCProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2
 	}, nil
 }
 
-func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, claims map[string]interface{}) (*OAuth2UserInfo, error) {
+func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, claims map[string]any) (*OAuth2UserInfo, error) {
 	id := claimString(claims, p.cfg.Claims.IDClaim)
 	email := claimString(claims, p.cfg.Claims.EmailClaim)
 	name := claimString(claims, p.cfg.Claims.NameClaim)
@@ -445,7 +445,7 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 // the OIDC userinfo fallback: a signature-bound id_token claim (even an
 // explicit `false`) must never be overwritten by an unsigned userinfo `true`,
 // so callers consult userinfo only when the id_token did not carry the claim.
-func parseEmailVerifiedClaim(claims map[string]interface{}, claimName string) (value, present bool) {
+func parseEmailVerifiedClaim(claims map[string]any, claimName string) (value, present bool) {
 	if len(claims) == 0 {
 		return false, false
 	}
@@ -468,12 +468,12 @@ func parseEmailVerifiedClaim(claims map[string]interface{}, claimName string) (v
 	return false, true
 }
 
-func parseEmailVerified(claims map[string]interface{}, claimName string) bool {
+func parseEmailVerified(claims map[string]any, claimName string) bool {
 	v, _ := parseEmailVerifiedClaim(claims, claimName)
 	return v
 }
 
-func (p *OIDCProvider) fetchUserinfo(ctx context.Context, token, endpoint string) (map[string]interface{}, error) {
+func (p *OIDCProvider) fetchUserinfo(ctx context.Context, token, endpoint string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -492,7 +492,7 @@ func (p *OIDCProvider) fetchUserinfo(ctx context.Context, token, endpoint string
 	if err != nil {
 		return nil, err
 	}
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
 		return nil, err
 	}
@@ -510,14 +510,14 @@ type orderedCache struct {
 
 type claimsEntry struct {
 	key    string
-	claims map[string]interface{}
+	claims map[string]any
 }
 
 func newOrderedCache(cap int) *orderedCache {
 	return &orderedCache{cap: cap, m: make(map[string]*list.Element), l: list.New()}
 }
 
-func (c *orderedCache) put(key string, claims map[string]interface{}) {
+func (c *orderedCache) put(key string, claims map[string]any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if e, ok := c.m[key]; ok {
@@ -536,7 +536,7 @@ func (c *orderedCache) put(key string, claims map[string]interface{}) {
 	}
 }
 
-func (c *orderedCache) get(key string) (map[string]interface{}, bool) {
+func (c *orderedCache) get(key string) (map[string]any, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.m[key]
@@ -548,7 +548,7 @@ func (c *orderedCache) get(key string) (map[string]interface{}, bool) {
 
 // ─── claim helpers ──────────────────────────────────────────────────────────
 
-func claimString(claims map[string]interface{}, key string) string {
+func claimString(claims map[string]any, key string) string {
 	if claims == nil {
 		return ""
 	}
@@ -560,7 +560,7 @@ func claimString(claims map[string]interface{}, key string) string {
 
 // verifyClaims enforces the id_token claim checks (iss/aud/exp/iat/sub). It is
 // called by verifyIDToken AFTER the signature has been verified.
-func (p *OIDCProvider) verifyClaims(claims map[string]interface{}) error {
+func (p *OIDCProvider) verifyClaims(claims map[string]any) error {
 	const leeway int64 = 60 // seconds — covers clock skew and IdP drift
 	now := time.Now().Unix()
 
@@ -632,11 +632,11 @@ func (p *OIDCProvider) verifyClaims(claims map[string]interface{}) error {
 	return nil
 }
 
-func toStringSlice(v interface{}) []string {
+func toStringSlice(v any) []string {
 	switch a := v.(type) {
 	case string:
 		return []string{a}
-	case []interface{}:
+	case []any:
 		out := make([]string, 0, len(a))
 		for _, x := range a {
 			if s, ok := x.(string); ok {
@@ -648,7 +648,7 @@ func toStringSlice(v interface{}) []string {
 	return nil
 }
 
-func toUnixTime(v interface{}) (int64, error) {
+func toUnixTime(v any) (int64, error) {
 	switch n := v.(type) {
 	case float64:
 		return int64(n), nil

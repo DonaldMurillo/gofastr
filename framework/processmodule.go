@@ -506,8 +506,7 @@ func surfaceCanonical(d ProcessModuleDescriptor) ([]byte, error) {
 
 // Is lets callers errors.Is against DescriptorValidationError if they wrap it.
 func (e *DescriptorValidationError) Is(target error) bool {
-	var dv *DescriptorValidationError
-	if errors.As(target, &dv) {
+	if dv, ok := errors.AsType[*DescriptorValidationError](target); ok {
 		return e.Field == dv.Field && e.Rule == dv.Rule
 	}
 	return false

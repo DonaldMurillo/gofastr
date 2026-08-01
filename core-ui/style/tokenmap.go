@@ -2,6 +2,7 @@ package style
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
 	"sort"
@@ -147,7 +148,7 @@ type tokenSetter func(value string) error
 // token names so ApplyTokens can decide whether a "dark.color-<name>"
 // override targets a real token.
 func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors, lightCode map[string]bool) {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return
 		}
@@ -375,9 +376,7 @@ func copyStringMap(m map[string]string) map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }
 

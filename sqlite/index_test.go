@@ -145,7 +145,7 @@ func TestIndexMultipleColumns(t *testing.T) {
 func BenchmarkIndexScan(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id, val) VALUES (%d, 'v%d')", i+1, i))
 	}
 	e.Execute("CREATE INDEX idx_val ON t (val)")
@@ -159,7 +159,7 @@ func BenchmarkIndexScan(b *testing.B) {
 func BenchmarkTableScanNoIndex(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id, val) VALUES (%d, 'v%d')", i+1, i))
 	}
 

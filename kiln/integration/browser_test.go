@@ -553,13 +553,6 @@ func TestBrowser_SeedRowsVisibleAfterAddSeed(t *testing.T) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // --- (8) build banner + tool-row summary feedback ------------------
 //
 // Verifies the user-facing feedback signals introduced for build mode:
@@ -3460,7 +3453,7 @@ func TestBrowser_LongChatLogScrollsInsidePanel(t *testing.T) {
 	defer cancel()
 
 	// Seed enough content to exceed the panel's max-height.
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		tools.Chat(context.Background(), protocol.ChatArgs{
 			Role: "user", Text: fmt.Sprintf("seed message #%d filler text to take vertical space", i),
 		})

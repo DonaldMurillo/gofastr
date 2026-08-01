@@ -28,7 +28,7 @@ func TestCloseWithoutStartReturns(t *testing.T) {
 // that promise rather than closing an already-closed channel.
 func TestCloseWithoutStartIsIdempotent(t *testing.T) {
 	_, q := openDBQueue(t, 1)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		done := make(chan error, 1)
 		go func() { done <- q.Close() }()
 		select {

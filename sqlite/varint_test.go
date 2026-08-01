@@ -43,7 +43,7 @@ func TestVarintMaxValues(t *testing.T) {
 }
 
 func TestVarintPowersOfTwo(t *testing.T) {
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		v := uint64(1) << uint(i)
 		testVarintRoundtripRaw(t, v, nil)
 	}
@@ -157,7 +157,7 @@ func TestVarintSignedRoundtrip(t *testing.T) {
 
 func TestVarintFuzzValues(t *testing.T) {
 	// Deterministic "fuzz" - test a wide range of values
-	for i := int64(0); i < 10000; i++ {
+	for i := range int64(10000) {
 		testVarintSignedRoundtrip(t, i)
 		testVarintSignedRoundtrip(t, -i)
 	}

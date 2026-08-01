@@ -2,7 +2,8 @@ package schema
 
 import "testing"
 
-func float64Ptr(v float64) *float64 { return &v }
+//go:fix inline
+func float64Ptr(v float64) *float64 { return new(v) }
 
 // TestValidatePartial_RejectsPresentButEmptyRequired pins the data-corruption
 // fix surfaced in adversarial review: when a sparse-update body INCLUDES a
@@ -24,7 +25,6 @@ func TestValidatePartial_RejectsPresentButEmptyRequired(t *testing.T) {
 		"explicit nil": {"name": nil},
 	}
 	for label, body := range cases {
-		label, body := label, body
 		t.Run(label, func(t *testing.T) {
 			vr := ValidatePartial(s, body)
 			if vr.Valid {

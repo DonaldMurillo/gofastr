@@ -142,7 +142,7 @@ func TestWithAdvisoryLock_PostgresCtxCancelWhileWaiting(t *testing.T) {
 	// Always "held by someone else".
 	mock.MatchExpectationsInOrder(false)
 	q := regexp.QuoteMeta("SELECT pg_try_advisory_lock($1)")
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		mock.ExpectQuery(q).WillReturnRows(
 			sqlmock.NewRows([]string{"pg_try_advisory_lock"}).AddRow(false))
 	}

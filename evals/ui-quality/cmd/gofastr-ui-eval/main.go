@@ -17,7 +17,7 @@ type stringList []string
 
 func (s stringSet) String() string { return strings.Join(evalrunner.SortedIDs(s), ",") }
 func (s stringSet) Set(value string) error {
-	for _, item := range strings.Split(value, ",") {
+	for item := range strings.SplitSeq(value, ",") {
 		item = strings.TrimSpace(item)
 		if item != "" {
 			s[item] = true

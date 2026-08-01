@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	"sync"
@@ -2389,20 +2390,20 @@ func (a *App) Shutdown(ctx context.Context) error {
 			// alone would leave it — and the process — hanging).
 			// Force-close the stragglers so shutdown completes.
 			_ = srv.Close()
-			firstErr = err
+			firstErr = fmt.Errorf("draining http server: %w", err)
 		}
 	}
 
 	// Stop batteries in reverse dependency order (dependents first)
 	if err := a.Batteries.StopAll(ctx); err != nil && firstErr == nil {
-		firstErr = err
+		firstErr = fmt.Errorf("stopping batteries: %w", err)
 	}
 
 	// Run OnStop hooks + battery-registered drainers through the
 	// lifecycle coordinator. PrependDrainer in OnStop already encodes
 	// the reverse-of-registration order callers expect.
 	if err := a.lc.Shutdown(ctx); err != nil && firstErr == nil {
-		firstErr = err
+		firstErr = fmt.Errorf("running stop hooks: %w", err)
 	}
 	return firstErr
 }
@@ -2952,13 +2953,45 @@ func (a *App) registerDebugEndpoints() {
 				"gcCycles":    m.NumGC,
 				"gcPauseLast": fmt.Sprintf("%.3fms", float64(m.PauseNs[(m.NumGC+255)%256])/1e6),
 			},
-			"entities": len(a.Registry.All()),
-			"jsonCase": string(a.JSONCasing()),
+			"entities":       len(a.Registry.All()),
+			"jsonCase":       string(a.JSONCasing()),
+			"goroutineLeaks": goroutineLeakCount(),
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
 	}))
+	a.router.Get("/.debug/goroutineleak", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if _, ok := handler.GetUser(r.Context()); !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		p := pprof.Lookup("goroutineleak")
+		if p == nil {
+			http.Error(w, "goroutineleak profile unavailable", http.StatusNotImplemented)
+			return
+		}
+		// Leak detection is GC-reachability-based; force a cycle so the
+		// report reflects now, not the last collection.
+		runtime.GC()
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		// debug=1 is the leak report; debug>=2 degrades to ALL goroutine
+		// stacks (leaked or not) by stdlib design.
+		_ = p.WriteTo(w, 1)
+	}))
+}
+
+// goroutineLeakCount reports how many goroutines the runtime has proven
+// leaked (blocked forever on unreachable primitives). Forces a GC cycle
+// first — detection happens during collection.
+func goroutineLeakCount() int {
+	p := pprof.Lookup("goroutineleak")
+	if p == nil {
+		return -1
+	}
+	runtime.GC()
+	return p.Count()
 }
 
 var startTime = time.Now()

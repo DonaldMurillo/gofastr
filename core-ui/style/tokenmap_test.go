@@ -61,7 +61,7 @@ func assertRoundTripHash(t *testing.T, base style.Theme) {
 func TestThemeToTokens_Deterministic(t *testing.T) {
 	base := uitheme.Default()
 	first := style.ThemeToTokens(base)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		if !tokenMapsEqual(first, style.ThemeToTokens(base)) {
 			t.Fatalf("ThemeToTokens is non-deterministic at iteration %d", i)
 		}

@@ -1,5 +1,7 @@
 package sqlite
 
+import "maps"
+
 import "strings"
 
 // ExistsExpr represents EXISTS (SELECT ...) and carries enough structure for
@@ -54,18 +56,14 @@ func (e *Engine) correlatedExists(s *SelectStmt, outer *ExprEval) (bool, error) 
 		row = append(row, outer.Row...)
 
 		columnMap := make(map[string]int, len(innerColumns)+len(outer.ColumnMap))
-		for name, index := range innerColumns {
-			columnMap[name] = index
-		}
+		maps.Copy(columnMap, innerColumns)
 		for name, index := range outer.ColumnMap {
 			if _, exists := columnMap[name]; !exists {
 				columnMap[name] = innerLen + index
 			}
 		}
 		tableMap := make(map[string]map[string]int, len(innerTableMap)+len(outer.TableMap))
-		for table, columns := range innerTableMap {
-			tableMap[table] = columns
-		}
+		maps.Copy(tableMap, innerTableMap)
 		for table, columns := range outer.TableMap {
 			if _, exists := tableMap[table]; exists {
 				continue

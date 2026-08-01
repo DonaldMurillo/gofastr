@@ -133,7 +133,7 @@ func TestCloseReleasesTheEngineFile(t *testing.T) {
 
 	// Hold every closed handle so nothing can be attributed to GC.
 	var kept []*sql.DB
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		db, err := sql.Open("sqlite", path)
 		if err != nil {
 			t.Fatalf("open %d: %v", i, err)

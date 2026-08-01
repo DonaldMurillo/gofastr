@@ -15,8 +15,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -91,10 +93,7 @@ func (s *entityListScreen) RenderCtx(ctx context.Context) render.HTML {
 func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Values) render.HTML {
 	base := b.entityBase(ent)
 	limit := b.cfg.EntityListLimit
-	page := atoiDefault(q.Get("p"), 1)
-	if page < 1 {
-		page = 1
-	}
+	page := max(atoiDefault(q.Get("p"), 1), 1)
 	cols := listColumns(ent)
 
 	// Sort state. Only honor a sort on a column that is both displayed and
@@ -352,12 +351,7 @@ func patternWith(carry url.Values, tail string) string {
 }
 
 func containsStr(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, want)
 }
 
 // labelField picks the column used to LABEL a row — an FK cell in the grid,
@@ -720,9 +714,7 @@ func (s *entityFormScreen) Load(ctx context.Context) error {
 	// A failed submit redirected here with a one-shot flash token: overlay the
 	// submitted values + field errors so the user keeps their input + context.
 	if fl := s.b.flash.pop(q.Get("e")); fl != nil {
-		for k, v := range fl.values {
-			values[k] = v
-		}
+		maps.Copy(values, fl.values)
 		s.fieldErrs = fl.fieldErrs
 		s.general = fl.general
 	}

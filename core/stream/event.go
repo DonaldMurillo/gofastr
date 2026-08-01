@@ -73,7 +73,7 @@ func Encode(e Event) string {
 	// a single emitted line.
 	data := strings.ReplaceAll(e.Data, "\r", "")
 	data = strings.ReplaceAll(data, "\x00", "")
-	for _, line := range strings.Split(data, "\n") {
+	for line := range strings.SplitSeq(data, "\n") {
 		b.WriteString("data: ")
 		b.WriteString(line)
 		b.WriteByte('\n')

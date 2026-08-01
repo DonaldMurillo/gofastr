@@ -60,7 +60,7 @@ func predictMode(mode int, L, T, TR, TL [4]uint8) [4]uint8 {
 	case 11:
 		// Select: pick L or T based on which is closer to TL.
 		var l, t int32
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			c := int32(TL[i])
 			l += absInt32(c - int32(T[i]))
 			t += absInt32(c - int32(L[i]))
@@ -137,7 +137,7 @@ func scoreModeBlock(src [][4]uint8, w, h, x0, y0, x1, y1, mode int) int {
 				TL := pixelAt(src, x-1, y-1, w, h)
 				pred = predictMode(mode, L, T, TR, TL)
 			}
-			for i := 0; i < 4; i++ {
+			for i := range 4 {
 				r := int32(cur[i]) - int32(pred[i])
 				if r < 0 {
 					r = -r

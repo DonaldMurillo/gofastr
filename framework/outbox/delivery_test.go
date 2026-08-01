@@ -457,9 +457,9 @@ func TestReplay_RedeliversAfterFix(t *testing.T) {
 	o.backoffMax = 5 * time.Millisecond
 	ctx := context.Background()
 
-	var fail int32
+	var fail atomic.Int32
 	o.Consume("svc", "t", func(context.Context, event.Event) error {
-		if atomic.AddInt32(&fail, 1) <= 2 {
+		if fail.Add(1) <= 2 {
 			return errors.New("transient")
 		}
 		return nil // fixed after the dead-letter
@@ -477,7 +477,7 @@ func TestReplay_RedeliversAfterFix(t *testing.T) {
 	waitForParent(t, o, id, "dispatched")
 
 	// Fix the handler (now succeeding) and replay the dead delivery.
-	atomic.StoreInt32(&fail, 100)
+	fail.Store(100)
 	if err := o.ReplayConsumer(ctx, id, "svc"); err != nil {
 		t.Fatalf("replay: %v", err)
 	}

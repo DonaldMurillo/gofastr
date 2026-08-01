@@ -80,12 +80,12 @@ func TestLoad_LoginEndpoint_RateLimiterHoldsUnderConcurrency(t *testing.T) {
 
 	start := make(chan struct{})
 	wg.Add(workers)
-	for w := 0; w < workers; w++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
 			client := &http.Client{Timeout: 5 * time.Second}
 			<-start
-			for i := 0; i < requestsPerWorker; i++ {
+			for range requestsPerWorker {
 				resp, err := client.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(body))
 				if err != nil {
 					t.Errorf("worker request: %v", err)
@@ -145,7 +145,7 @@ func TestLoad_OAuthStateNonces_BoundedUnderRedirectStorm(t *testing.T) {
 	})
 
 	const N = 5000
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if _, err := p.generateState("mock", ""); err != nil {
 			t.Fatalf("generateState %d: %v", i, err)
 		}
@@ -172,7 +172,7 @@ func TestLoad_OAuthStateNonces_GarbageCollectsExpired(t *testing.T) {
 	// Plant > threshold expired entries.
 	p.noncesMu.Lock()
 	past := time.Now().Add(-time.Hour)
-	for i := 0; i < nonceGCThreshold+200; i++ {
+	for i := range nonceGCThreshold + 200 {
 		p.usedNonces["expired-"+stateTestB64.EncodeToString([]byte{byte(i), byte(i >> 8)})] = past
 	}
 	expiredCount := len(p.usedNonces)

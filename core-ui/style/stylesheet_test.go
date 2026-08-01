@@ -290,7 +290,7 @@ func TestStyleSheetDeterministic(t *testing.T) {
 		return ss.CSS()
 	}
 	first := build()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		if build() != first {
 			t.Fatalf("non-deterministic CSS() on iteration %d", i)
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -378,13 +379,7 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	base := s.baseline[role]
 	filtered := make([]Permission, 0, len(base))
 	for _, candidate := range base {
-		revoked := false
-		for _, permission := range perms {
-			if candidate == permission {
-				revoked = true
-				break
-			}
-		}
+		revoked := slices.Contains(perms, candidate)
 		if !revoked {
 			filtered = append(filtered, candidate)
 		}
@@ -798,10 +793,5 @@ func subtractPerms(perms, remove []Permission) []Permission {
 // permIn reports whether want appears in perms (linear scan; grant and
 // tombstone sets are small and admin-driven).
 func permIn(perms []Permission, want Permission) bool {
-	for _, p := range perms {
-		if p == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(perms, want)
 }

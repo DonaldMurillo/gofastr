@@ -42,8 +42,8 @@ func FuzzEncode(f *testing.F) {
 		if ob.Dx() != w || ob.Dy() != h {
 			t.Fatalf("bounds: got %dx%d want %dx%d", ob.Dx(), ob.Dy(), w, h)
 		}
-		for y := 0; y < h; y++ {
-			for x := 0; x < w; x++ {
+		for y := range h {
+			for x := range w {
 				want := color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
 				got := color.NRGBAModel.Convert(out.At(x, y)).(color.NRGBA)
 				if want != got {

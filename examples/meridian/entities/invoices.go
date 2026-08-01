@@ -282,7 +282,7 @@ func registerInvoices(app *framework.App) {
 	},
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
-		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Invoices"},
+		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: new(true), MCP: true}, Properties: map[string]any{"label": "Invoices"},
 	})
 	_ = Invoices{}
 }

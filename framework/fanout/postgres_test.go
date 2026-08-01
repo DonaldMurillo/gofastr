@@ -366,7 +366,7 @@ func TestPostgres_CloseStopsSubQueues(t *testing.T) {
 	f, _ := pgFanout(t)
 	// Subscribe many times, dropping the cancels — Close must stop the
 	// per-subscriber queue goroutines anyway or they park forever.
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		if _, err := f.Subscribe("leak", func([]byte) {}); err != nil {
 			t.Fatalf("subscribe: %v", err)
 		}

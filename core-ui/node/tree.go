@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"maps"
 )
 
 // AssignNodeIDs walks the tree and assigns a stable ID to every node
@@ -79,21 +80,15 @@ func CloneNode(n Node) Node {
 	}
 	if n.Props != nil {
 		out.Props = make(map[string]any, len(n.Props))
-		for k, v := range n.Props {
-			out.Props[k] = v
-		}
+		maps.Copy(out.Props, n.Props)
 	}
 	if n.Bindings != nil {
 		out.Bindings = make(map[string]string, len(n.Bindings))
-		for k, v := range n.Bindings {
-			out.Bindings[k] = v
-		}
+		maps.Copy(out.Bindings, n.Bindings)
 	}
 	if n.Actions != nil {
 		out.Actions = make(map[string]Action, len(n.Actions))
-		for k, v := range n.Actions {
-			out.Actions[k] = v
-		}
+		maps.Copy(out.Actions, n.Actions)
 	}
 	if len(n.Children) > 0 {
 		out.Children = make([]Node, len(n.Children))

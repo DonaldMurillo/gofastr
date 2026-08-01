@@ -349,10 +349,7 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 			// Pick whichever cache field the upstream surfaced (max
 			// because we never want to undercount). Quality is
 			// "explicit" if any cache field was non-zero, else "none".
-			cacheRead := chunk.Usage.PromptCacheHit
-			if chunk.Usage.CacheReadInputTokens > cacheRead {
-				cacheRead = chunk.Usage.CacheReadInputTokens
-			}
+			cacheRead := max(chunk.Usage.CacheReadInputTokens, chunk.Usage.PromptCacheHit)
 			if chunk.Usage.PromptTokensDetails != nil &&
 				chunk.Usage.PromptTokensDetails.CachedTokens > cacheRead {
 				cacheRead = chunk.Usage.PromptTokensDetails.CachedTokens

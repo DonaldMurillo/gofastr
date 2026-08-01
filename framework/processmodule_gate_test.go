@@ -368,8 +368,7 @@ func TestGate_SandboxConformanceSelection(t *testing.T) {
 	d := demoDescriptor(t, []access.Permission{"articles:read"}, "", TrustUntrusted)
 
 	_, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"})
-	var untrusted *UntrustedNoSandboxError
-	if !errors.As(err, &untrusted) {
+	if _, ok := errors.AsType[*UntrustedNoSandboxError](err); !ok {
 		t.Fatalf("Register untrusted w/o sandbox: want UntrustedNoSandboxError, got %v", err)
 	}
 	if !errors.Is(err, ErrSandboxUnavailable) {

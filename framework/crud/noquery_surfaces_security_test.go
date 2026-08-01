@@ -140,7 +140,7 @@ func TestNoQueryAbsentFromAgentSurfaces(t *testing.T) {
 		if !strings.Contains(md, "not filterable/sortable") {
 			t.Error("llm.md field table does not flag the NoQuery column")
 		}
-		for _, line := range strings.Split(md, "\n") {
+		for line := range strings.SplitSeq(md, "\n") {
 			if strings.Contains(line, "secret_like") {
 				t.Errorf("llm.md advertises a filter operator example on a NoQuery field: %q", line)
 			}

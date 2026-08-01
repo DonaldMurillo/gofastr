@@ -19,7 +19,7 @@ func TestMemoryCacheBoundedEvicts(t *testing.T) {
 	ctx := context.Background()
 
 	// Insert far more distinct keys than the cap allows.
-	for i := 0; i < cap*10; i++ {
+	for i := range cap * 10 {
 		if err := c.Set(ctx, "k:"+strconv.Itoa(i), i, 0); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
@@ -72,7 +72,7 @@ func TestMemoryCacheUnboundedByDefault(t *testing.T) {
 	defer c.Close()
 	ctx := context.Background()
 
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		_ = c.Set(ctx, "k:"+strconv.Itoa(i), i, 0)
 	}
 	if c.Len() != 5000 {
@@ -87,10 +87,10 @@ func TestGetOrSetSingleLoaderInvocation(t *testing.T) {
 	ctx := context.Background()
 
 	const goroutines = 200
-	var calls int32
+	var calls atomic.Int32
 
 	loader := func(ctx context.Context) (any, error) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		// Simulate slow work so all goroutines pile up on the same key.
 		time.Sleep(20 * time.Millisecond)
 		return "loaded-value", nil
@@ -100,7 +100,7 @@ func TestGetOrSetSingleLoaderInvocation(t *testing.T) {
 	wg.Add(goroutines)
 	errs := make([]error, goroutines)
 	vals := make([]string, goroutines)
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(idx int) {
 			defer wg.Done()
 			var dest string
@@ -110,10 +110,10 @@ func TestGetOrSetSingleLoaderInvocation(t *testing.T) {
 	}
 	wg.Wait()
 
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("loader invoked %d times, want exactly 1 (thundering herd not collapsed)", got)
 	}
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		if errs[i] != nil {
 			t.Fatalf("GetOrSet[%d] error: %v", i, errs[i])
 		}

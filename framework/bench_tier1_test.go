@@ -61,7 +61,7 @@ func setupBlogDomain(b *testing.B, db *sql.DB, numPosts, commentsPerPost int) *A
 
 	// Seed authors (one author per ~10 posts so the BelongsTo join is meaningful).
 	numAuthors := numPosts/10 + 1
-	for i := 0; i < numAuthors; i++ {
+	for i := range numAuthors {
 		if _, err := db.ExecContext(ctx,
 			"INSERT INTO authors (id, name) VALUES ($1, $2)",
 			fmt.Sprintf("a%d", i), fmt.Sprintf("Author %d", i)); err != nil {
@@ -70,7 +70,7 @@ func setupBlogDomain(b *testing.B, db *sql.DB, numPosts, commentsPerPost int) *A
 	}
 
 	// Seed posts.
-	for i := 0; i < numPosts; i++ {
+	for i := range numPosts {
 		status := "published"
 		if i%5 == 0 {
 			status = "draft"
@@ -89,8 +89,8 @@ func setupBlogDomain(b *testing.B, db *sql.DB, numPosts, commentsPerPost int) *A
 	}
 
 	// Seed comments.
-	for p := 0; p < numPosts; p++ {
-		for c := 0; c < commentsPerPost; c++ {
+	for p := range numPosts {
+		for c := range commentsPerPost {
 			if _, err := db.ExecContext(ctx,
 				"INSERT INTO comments (id, body, post_id) VALUES ($1, $2, $3)",
 				fmt.Sprintf("c%d_%d", p, c),
@@ -168,7 +168,6 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 		app := setupBlogDomain(b, db, 200, commentsPerPost)
 
 		for _, limit := range []int{20, 100} {
-			limit := limit
 			b.Run(fmt.Sprintf("eager-include/limit=%d", limit), func(b *testing.B) {
 				path := fmt.Sprintf("/posts?limit=%d&include=author,comments", limit)
 				req := benchAuthedGet(path)
@@ -244,7 +243,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 		{
 			path := fmt.Sprintf("/posts?cursor=&limit=%d", pageSize)
 			req := httptest.NewRequest(http.MethodGet, path, nil)
-			for hops := 0; hops < N/pageSize-2; hops++ {
+			for range N/pageSize - 2 {
 				rec := httptest.NewRecorder()
 				app.Router().ServeHTTP(rec, req)
 				var page struct {
@@ -336,7 +335,7 @@ func BenchmarkTier1_BatchVsN(b *testing.B) {
 		// per-iter Marshal cost.
 		buildBatch := func(start int) []byte {
 			items := make([]map[string]any, batchSize)
-			for i := 0; i < batchSize; i++ {
+			for i := range batchSize {
 				items[i] = map[string]any{
 					"title":  fmt.Sprintf("Bench post %d", start+i),
 					"body":   "lorem ipsum",
@@ -371,7 +370,7 @@ func BenchmarkTier1_BatchVsN(b *testing.B) {
 		b.Run("n-individual-50", func(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				for j := 0; j < batchSize; j++ {
+				for j := range batchSize {
 					body := single(i*batchSize + j + 1_000_000) // disjoint IDs
 					req := httptest.NewRequest(http.MethodPost, "/posts", bytesReader(body))
 					req.Header.Set("Content-Type", "application/json")

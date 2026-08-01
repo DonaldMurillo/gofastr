@@ -235,11 +235,11 @@ func TestPWAPrecacheDropsSensitive(t *testing.T) {
 	// Parse the PRECACHE array out of the worker source — the deny
 	// list legitimately repeats the sensitive paths, so asserting on
 	// the whole body would be meaningless.
-	i := strings.Index(body, "var PRECACHE = ")
-	if i < 0 {
+	_, after, ok := strings.Cut(body, "var PRECACHE = ")
+	if !ok {
 		t.Fatalf("no PRECACHE array in sw:\n%s", body)
 	}
-	line := body[i+len("var PRECACHE = "):]
+	line := after
 	line = line[:strings.Index(line, ";\n")]
 	var precache []string
 	if err := json.Unmarshal([]byte(line), &precache); err != nil {
@@ -366,11 +366,11 @@ func TestPWAHeadTags(t *testing.T) {
 // service worker.
 func pwaSWPrecache(t *testing.T, sw string) []string {
 	t.Helper()
-	i := strings.Index(sw, "var PRECACHE = ")
-	if i < 0 {
+	_, after, ok := strings.Cut(sw, "var PRECACHE = ")
+	if !ok {
 		t.Fatalf("no PRECACHE array in sw:\n%s", sw)
 	}
-	line := sw[i+len("var PRECACHE = "):]
+	line := after
 	line = line[:strings.Index(line, ";\n")]
 	var precache []string
 	if err := json.Unmarshal([]byte(line), &precache); err != nil {
@@ -687,8 +687,8 @@ func TestStaticServiceWorkerReviewContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := func(s string) string {
-		i := strings.Index(s, "var CACHE_PREFIX = \"")
-		rest := s[i+len("var CACHE_PREFIX = \""):]
+		_, after, _ := strings.Cut(s, "var CACHE_PREFIX = \"")
+		rest := after
 		return rest[:strings.Index(rest, `"`)]
 	}
 	livePrefix, staticPrefix := prefix(liveSW), prefix(sw)

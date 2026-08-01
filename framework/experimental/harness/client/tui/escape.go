@@ -83,9 +83,6 @@ func (t *TUI) scrollEnd() {
 func (t *TUI) pageStep() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	step := t.height - 3
-	if step < 1 {
-		step = 1
-	}
+	step := max(t.height-3, 1)
 	return step
 }

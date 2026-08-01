@@ -89,7 +89,7 @@ func TestEntity_EditPrefillsRelationSelect(t *testing.T) {
 
 // rxSelectedOption reports whether body has an <option ... value="id" ... selected>.
 func rxSelectedOption(body, id string) bool {
-	for _, frag := range strings.Split(body, "<option") {
+	for frag := range strings.SplitSeq(body, "<option") {
 		if strings.Contains(frag, `value="`+id+`"`) && strings.Contains(frag, "selected") {
 			return true
 		}

@@ -50,14 +50,14 @@ func TestDefaultLoginErrorPath_ConcurrentSettersDontRace(t *testing.T) {
 	t.Cleanup(func() { SetDefaultLoginErrorPath(prev) })
 
 	done := make(chan struct{})
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		go func(i int) {
 			SetDefaultLoginErrorPath("/path-" + string(rune('a'+i%26)))
 			_ = getDefaultLoginErrorPath()
 			done <- struct{}{}
 		}(i)
 	}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		<-done
 	}
 }

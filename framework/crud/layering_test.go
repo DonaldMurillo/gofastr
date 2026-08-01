@@ -26,7 +26,7 @@ func TestUploadPathDoesNotLinkImageCodecs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("go list -deps %s: %v\n%s", pkg, err, out)
 		}
-		for _, line := range strings.Split(string(out), "\n") {
+		for line := range strings.SplitSeq(string(out), "\n") {
 			if strings.TrimSpace(line) == banned {
 				t.Errorf("%s depends on %s — implement file.ImageDeriver in "+
 					"framework/imagefield instead of importing the pipeline here", pkg, banned)

@@ -40,7 +40,7 @@ func TestAllThemeOverridesCSSDeterministic(t *testing.T) {
 	th2.Colors.Primary = Color{Name: "primary", Value: "#BBBBBB"}
 	_ = RegisterThemeOverride(th2)
 	first := AllThemeOverridesCSS()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		if got := AllThemeOverridesCSS(); got != first {
 			t.Fatalf("non-deterministic at iter %d", i)
 		}

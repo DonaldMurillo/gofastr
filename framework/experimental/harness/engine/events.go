@@ -25,7 +25,7 @@ import (
 type Bus struct {
 	session ids.SessionID
 
-	nextID uint64 // monotonic, atomic
+	nextID atomic.Uint64 // monotonic, atomic
 
 	mu          sync.RWMutex
 	subscribers map[*subscription]struct{}
@@ -85,7 +85,7 @@ func (b *Bus) Subscribe(ctx context.Context) <-chan control.EventEnvelope {
 // next sequence ID, and broadcasts to every active subscriber. It
 // returns the envelope it published so callers can persist or inspect.
 func (b *Bus) Publish(e control.Event, originator ids.ClientID) (control.EventEnvelope, error) {
-	id := atomic.AddUint64(&b.nextID, 1)
+	id := b.nextID.Add(1)
 	env, err := control.EncodeEvent(id, e, b.session, originator, time.Now().UTC())
 	if err != nil {
 		return control.EventEnvelope{}, err
@@ -108,7 +108,7 @@ func (b *Bus) Replay(envelopes []control.EventEnvelope, dst chan<- control.Event
 
 // NextID returns the next sequence ID that will be assigned. Useful
 // for testing.
-func (b *Bus) NextID() uint64 { return atomic.LoadUint64(&b.nextID) + 1 }
+func (b *Bus) NextID() uint64 { return b.nextID.Load() + 1 }
 
 // Close terminates the bus and all subscriptions.
 func (b *Bus) Close() {

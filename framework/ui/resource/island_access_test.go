@@ -99,14 +99,14 @@ func TestIslandRefusesRedirectPolicy(t *testing.T) {
 func TestIslandEnforcesEntityReadPermission(t *testing.T) {
 	rows := []map[string]any{{"id": "s-1", "name": "LAUNCH CODES"}}
 
-	denied := islandConfig(&gatedSource{stubSource: stubSource{rows: rows}, canRead: false})
+	denied := islandConfig(&gatedSource{rows: rows, canRead: false})
 	if rr := islandRequest(t, denied, "member"); rr.Code != http.StatusForbidden {
 		t.Errorf("without the read permission got %d, want 403\nbody: %s", rr.Code, rr.Body.String())
 	} else if strings.Contains(rr.Body.String(), "LAUNCH CODES") {
 		t.Error("denied response leaked row data")
 	}
 
-	allowed := islandConfig(&gatedSource{stubSource: stubSource{rows: rows}, canRead: true})
+	allowed := islandConfig(&gatedSource{rows: rows, canRead: true})
 	if rr := islandRequest(t, allowed, "member"); rr.Code != http.StatusOK {
 		t.Errorf("with the read permission got %d, want 200", rr.Code)
 	}

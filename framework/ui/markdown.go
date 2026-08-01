@@ -2,6 +2,7 @@ package ui
 
 import (
 	stdhtml "html"
+	"maps"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -46,9 +47,7 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 	body := enrichCodeBlocks(string(markdown.RenderHTML(cfg.Source)))
 	return markdownStyle.WrapHTML(render.Tag("div", attrs, render.HTML(body)))
 }
@@ -100,13 +99,13 @@ func enrichCodeBlocks(body string) string {
 // string, e.g. ` class="language-go"` → "go". Returns "" when absent.
 func langFromCodeAttrs(attrs string) string {
 	const marker = `class="language-`
-	k := strings.Index(attrs, marker)
-	if k < 0 {
+	_, after, ok := strings.Cut(attrs, marker)
+	if !ok {
 		return ""
 	}
-	v := attrs[k+len(marker):]
-	if q := strings.IndexByte(v, '"'); q >= 0 {
-		return v[:q]
+	v := after
+	if before, _, ok := strings.Cut(v, "\""); ok {
+		return before
 	}
 	return ""
 }

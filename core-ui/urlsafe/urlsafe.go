@@ -10,6 +10,8 @@
 // sixth copy.
 package urlsafe
 
+import "slices"
+
 import "strings"
 
 // Policy names the scheme set a surface accepts. The split is not
@@ -133,15 +135,10 @@ func dataImageOK(u string) bool {
 	}
 	meta := strings.ToLower(u[len(prefix):comma])
 	mediaType := meta
-	if semi := strings.IndexByte(meta, ';'); semi >= 0 {
-		mediaType = meta[:semi]
+	if before, _, ok := strings.Cut(meta, ";"); ok {
+		mediaType = before
 	}
-	for _, allowed := range imageDataMediaTypes {
-		if mediaType == allowed {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(imageDataMediaTypes, mediaType)
 }
 
 // Clean returns u when OK(u, p), and "" otherwise. Convenient for the

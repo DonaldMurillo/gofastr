@@ -249,7 +249,7 @@ type tokenKV struct {
 // The two flatteners that disagree is precisely the bug the token-map
 // layer exists to prevent, so the walk is shared rather than duplicated.
 func walkTokens(v reflect.Value, out *[]tokenKV) {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return
 		}
@@ -262,8 +262,8 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 		*out = append(*out, tokenKV{key, val})
 		return
 	}
-	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
+	for _, f := range v.Fields() {
+		f := f
 		if !f.CanInterface() {
 			continue
 		}

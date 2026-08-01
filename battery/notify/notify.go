@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"strings"
 	"sync"
 )
@@ -172,9 +173,7 @@ func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 	n.mu.RLock()
 	chanNames := append([]string(nil), n.chanOrder...)
 	channels := make(map[string]Channel, len(n.channels))
-	for k, v := range n.channels {
-		channels[k] = v
-	}
+	maps.Copy(channels, n.channels)
 	router := n.router
 	templater := n.templater
 	onError := n.onError

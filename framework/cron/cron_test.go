@@ -95,12 +95,12 @@ func TestCron_Matches(t *testing.T) {
 
 func TestCron_RunOnceDispatchesMatchingJobs(t *testing.T) {
 	s := NewScheduler()
-	var fired int32
+	var fired atomic.Int32
 	if err := s.Register(CronJob{
 		Name: "every-minute",
 		Spec: "* * * * *",
 		Run: func(_ context.Context) error {
-			atomic.AddInt32(&fired, 1)
+			fired.Add(1)
 			return nil
 		},
 	}); err != nil {
@@ -110,7 +110,7 @@ func TestCron_RunOnceDispatchesMatchingJobs(t *testing.T) {
 		Name: "midnight-only",
 		Spec: "0 0 * * *",
 		Run: func(_ context.Context) error {
-			atomic.AddInt32(&fired, 1)
+			fired.Add(1)
 			return nil
 		},
 	}); err != nil {
@@ -122,12 +122,12 @@ func TestCron_RunOnceDispatchesMatchingJobs(t *testing.T) {
 
 	// Goroutines launched by runOnce — give them a moment.
 	deadline := time.Now().Add(time.Second)
-	for atomic.LoadInt32(&fired) < 1 && time.Now().Before(deadline) {
+	for fired.Load() < 1 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	// Both jobs match minute=0; "every-minute" matches always, "midnight-only"
 	// only when hour=0. At noon only one should fire.
-	if got := atomic.LoadInt32(&fired); got != 1 {
+	if got := fired.Load(); got != 1 {
 		t.Fatalf("expected 1 firing at noon, got %d", got)
 	}
 }

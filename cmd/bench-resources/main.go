@@ -81,7 +81,7 @@ func main() {
 	if *appsFlag != "" {
 		selection = nil
 		want := map[string]bool{}
-		for _, n := range strings.Split(*appsFlag, ",") {
+		for n := range strings.SplitSeq(*appsFlag, ",") {
 			want[strings.TrimSpace(n)] = true
 		}
 		for _, a := range apps {
@@ -162,7 +162,7 @@ func runtimeRAM(r *result, binPath string, app appSpec, loadReqs int) {
 
 	// Drive load.
 	loadStart := time.Now()
-	for i := 0; i < loadReqs; i++ {
+	for i := range loadReqs {
 		resp, err := http.Get(probeURL)
 		if err != nil {
 			r.RuntimeErr = fmt.Sprintf("load req %d: %v", i, err)

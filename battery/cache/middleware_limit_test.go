@@ -57,7 +57,7 @@ func TestCacheMiddleware_UnderCapStillCaches(t *testing.T) {
 			_, _ = w.Write([]byte("small"))
 		}))
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/small", nil))
 		if rr.Body.String() != "small" {

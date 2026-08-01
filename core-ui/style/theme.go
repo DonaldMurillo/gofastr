@@ -194,7 +194,7 @@ func autofillTokens(v reflect.Value, path []string) {
 	// CodeColor is the one OPTIONAL token type: a fully-unset token
 	// stays zero (skipped by validation + emission, component CSS
 	// falls back), so only autofill the Name once a Value was set.
-	if v.Type() == reflect.TypeOf(CodeColor{}) {
+	if v.Type() == reflect.TypeFor[CodeColor]() {
 		nameField := v.FieldByName("Name")
 		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
 			len(path) > 0 && nameField.CanSet() {
@@ -204,11 +204,11 @@ func autofillTokens(v reflect.Value, path []string) {
 	}
 	// Token leaf? Fill Name if empty.
 	switch v.Type() {
-	case reflect.TypeOf(Color{}), reflect.TypeOf(Spacing{}),
-		reflect.TypeOf(Radius{}), reflect.TypeOf(Font{}),
-		reflect.TypeOf(Breakpoint{}), reflect.TypeOf(Shadow{}),
-		reflect.TypeOf(ZIndexValue{}), reflect.TypeOf(Duration{}),
-		reflect.TypeOf(Easing{}), reflect.TypeOf(FontSize{}):
+	case reflect.TypeFor[Color](), reflect.TypeFor[Spacing](),
+		reflect.TypeFor[Radius](), reflect.TypeFor[Font](),
+		reflect.TypeFor[Breakpoint](), reflect.TypeFor[Shadow](),
+		reflect.TypeFor[ZIndexValue](), reflect.TypeFor[Duration](),
+		reflect.TypeFor[Easing](), reflect.TypeFor[FontSize]():
 		nameField := v.FieldByName("Name")
 		if !nameField.IsValid() || nameField.String() != "" {
 			return
@@ -278,7 +278,7 @@ func (t Theme) MustValidate() {
 }
 
 func validateTokens(v reflect.Value, path string) error {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
 		}

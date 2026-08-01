@@ -39,7 +39,7 @@ func (ch *CrudHandler) projectFromRequestQ(q url.Values) ([]string, error) {
 	out := []string{ch.PrimaryKey}
 	seen := map[string]struct{}{ch.PrimaryKey: {}}
 
-	for _, p := range strings.Split(raw, ",") {
+	for p := range strings.SplitSeq(raw, ",") {
 		name := strings.TrimSpace(p)
 		if name == "" {
 			continue

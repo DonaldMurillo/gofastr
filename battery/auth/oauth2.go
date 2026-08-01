@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -124,9 +125,7 @@ func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 	}
 
 	// Copy providers from config
-	for name, provider := range cfg.Providers {
-		p.providers[name] = provider
-	}
+	maps.Copy(p.providers, cfg.Providers)
 
 	// State signing key
 	if cfg.StateSecret != "" {

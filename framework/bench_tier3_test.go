@@ -23,10 +23,9 @@ import (
 func BenchmarkEventBus_Emit(b *testing.B) {
 	ctx := context.Background()
 	for _, n := range []int{1, 10, 100, 1000} {
-		n := n
 		b.Run(fmt.Sprintf("N=%d", n), func(b *testing.B) {
 			bus := NewEventBus()
-			for i := 0; i < n; i++ {
+			for range n {
 				bus.Subscribe("test.event", func(_ context.Context, _ Event) error { return nil })
 			}
 			ev := Event{Type: "test.event", Data: map[string]any{"k": "v"}}
@@ -45,10 +44,9 @@ func BenchmarkEventBus_Emit(b *testing.B) {
 func BenchmarkEventBus_EmitAsync(b *testing.B) {
 	ctx := context.Background()
 	for _, n := range []int{1, 10, 100} {
-		n := n
 		b.Run(fmt.Sprintf("N=%d", n), func(b *testing.B) {
 			bus := NewEventBus()
-			for i := 0; i < n; i++ {
+			for range n {
 				bus.Subscribe("test.event", func(_ context.Context, _ Event) error { return nil })
 			}
 			ev := Event{Type: "test.event"}
@@ -95,7 +93,7 @@ func BenchmarkSSE_BackpressureDropRate(b *testing.B) {
 	waitForBenchSubscriber(b, broker)
 
 	b.ResetTimer()
-	for i := 0; i < totalEvents; i++ {
+	for i := range totalEvents {
 		broker.Publish(EntityCreated, fmt.Sprintf(`{"id":"p%d"}`, i))
 	}
 	waitForBenchDelivery(rec, requestedBuffer)
@@ -107,10 +105,7 @@ func BenchmarkSSE_BackpressureDropRate(b *testing.B) {
 	if delivered == 0 {
 		b.Skip("no events flowed")
 	}
-	dropped := totalEvents - delivered
-	if dropped < 0 {
-		dropped = 0
-	}
+	dropped := max(totalEvents-delivered, 0)
 	dropRate := float64(dropped) / float64(totalEvents)
 	b.ReportMetric(dropRate, "drop_rate")
 	b.ReportMetric(float64(delivered), "delivered")
@@ -189,11 +184,10 @@ func BenchmarkSSEWriter_Write(b *testing.B) {
 // is the scan itself plus the matches() bitmask check.
 func BenchmarkCronTick(b *testing.B) {
 	for _, n := range []int{1, 10, 100, 1000} {
-		n := n
 		b.Run(fmt.Sprintf("N=%d", n), func(b *testing.B) {
 			sched := NewScheduler()
 			noop := func(_ context.Context) error { return nil }
-			for i := 0; i < n; i++ {
+			for i := range n {
 				// Mix of specs so the bitmask comparisons aren't all hot in cache.
 				spec := "* * * * *"
 				if i%3 == 0 {
@@ -226,7 +220,6 @@ func BenchmarkCronParse(b *testing.B) {
 		"with-list":    "0,15,30,45 * * * *",
 	}
 	for name, spec := range cases {
-		spec := spec
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {

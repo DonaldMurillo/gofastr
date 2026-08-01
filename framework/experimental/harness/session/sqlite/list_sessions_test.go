@@ -82,7 +82,7 @@ func TestListPastSessions_LimitRespected(t *testing.T) {
 	defer store.Close()
 	ctx := context.Background()
 	// Insert 5 distinct sessions.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		sess := ids.NewSessionID()
 		env, _ := control.EncodeEvent(1, control.TextDelta{Text: "x"},
 			sess, ids.NewClientID(), time.Now().Add(time.Duration(i)*time.Second))

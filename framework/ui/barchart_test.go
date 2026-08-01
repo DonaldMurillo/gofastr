@@ -115,11 +115,11 @@ func TestBarChartUniformDataHasHeadroom(t *testing.T) {
 		Height: 180,
 	}))
 	// Grab the first bar's height attribute.
-	idx := strings.Index(h, `class="ui-bar-chart__bar`)
-	if idx < 0 {
+	before, _, ok := strings.Cut(h, `class="ui-bar-chart__bar`)
+	if !ok {
 		t.Fatalf("no bar rendered:\n%s", h)
 	}
-	hi := strings.LastIndex(h[:idx], ` height="`)
+	hi := strings.LastIndex(before, ` height="`)
 	if hi < 0 {
 		t.Fatalf("bar has no height:\n%s", h)
 	}

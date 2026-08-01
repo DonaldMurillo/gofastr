@@ -41,7 +41,7 @@ func TestMultipleDrainersCalled(t *testing.T) {
 	lc := lifecycle.New()
 	var count atomic.Int32
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		lc.RegisterDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
 			count.Add(1)
 			return nil

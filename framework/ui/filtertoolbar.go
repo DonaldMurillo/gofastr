@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -234,9 +235,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.ID != "" {
 		formAttrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		formAttrs[k] = v
-	}
+	maps.Copy(formAttrs, cfg.ExtraAttrs)
 
 	return filterToolbarStyle.WrapHTML(render.Tag("form", flattenAttrs(formAttrs), controls...))
 }

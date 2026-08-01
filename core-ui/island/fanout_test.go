@@ -152,7 +152,7 @@ func TestPushUpdateNonBlockingOnStalledFanout(t *testing.T) {
 	go func() {
 		// PushUpdate runs on HTTP request goroutines (uihost signal updates);
 		// it must never wait on the fanout backend.
-		for i := 0; i < 50; i++ {
+		for range 50 {
 			m.PushUpdate(island.IslandUpdate{IslandID: "i1", HTML: "<b>x</b>"}, "s1")
 		}
 		close(done)

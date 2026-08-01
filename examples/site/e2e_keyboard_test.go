@@ -342,7 +342,7 @@ func kbgateWalk(t *testing.T, ctx context.Context, maxPresses int) (kbgateEnum, 
 		t.Fatalf("kbgate enumerate: %v", err)
 	}
 	var visits []kbgateFocus
-	for i := 0; i < maxPresses; i++ {
+	for i := range maxPresses {
 		if err := chromedp.Run(ctx, chromedp.KeyEvent(kb.Tab)); err != nil {
 			t.Fatalf("tab press %d: %v", i, err)
 		}

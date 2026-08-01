@@ -137,7 +137,7 @@ func TestWhereFieldNameCannotInject(t *testing.T) {
 func TestWhereDepthBounded(t *testing.T) {
 	// Build a tree deeper than maxPredicateDepth.
 	raw := `{"field":"status","value":"x"}`
-	for i := 0; i < maxPredicateDepth+2; i++ {
+	for range maxPredicateDepth + 2 {
 		raw = `{"and":[` + raw + `]}`
 	}
 	if _, err := ParseWhere(raw, predFields()); err == nil {
@@ -147,7 +147,7 @@ func TestWhereDepthBounded(t *testing.T) {
 
 func TestWhereNodeCountBounded(t *testing.T) {
 	var kids []string
-	for i := 0; i < maxPredicateNodes+5; i++ {
+	for range maxPredicateNodes + 5 {
 		kids = append(kids, `{"field":"status","value":"x"}`)
 	}
 	raw := `{"and":[` + strings.Join(kids, ",") + `]}`

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -368,9 +369,7 @@ func TestIncludeSurvivesProjectingAndSortingChildHook(t *testing.T) {
 		out := make([]map[string]any, 0, len(p.Results))
 		for _, row := range p.Results {
 			cp := map[string]any{}
-			for k, v := range row {
-				cp[k] = v
-			}
+			maps.Copy(cp, row)
 			cp["secret"] = "****"
 			out = append(out, cp)
 		}
@@ -461,9 +460,7 @@ func TestIncludeHandlesSharedManyToManyChild(t *testing.T) {
 		out := make([]map[string]any, 0, len(p.Results))
 		for _, row := range p.Results {
 			cp := map[string]any{}
-			for k, v := range row {
-				cp[k] = v
-			}
+			maps.Copy(cp, row)
 			cp["secret"] = "****"
 			out = append(out, cp)
 		}

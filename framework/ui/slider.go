@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -102,9 +103,7 @@ func Slider(cfg SliderConfig) render.HTML {
 	if cfg.Disabled {
 		inputAttrs["disabled"] = ""
 	}
-	for k, v := range cfg.ExtraAttrs {
-		inputAttrs[k] = v
-	}
+	maps.Copy(inputAttrs, cfg.ExtraAttrs)
 
 	header := []render.HTML{
 		render.Tag("label", map[string]string{"for": id, "class": "ui-slider__label"},

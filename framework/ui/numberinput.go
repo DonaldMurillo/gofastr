@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -108,9 +109,7 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 	} else if cfg.Help != "" {
 		inputAttrs["aria-describedby"] = id + "-help"
 	}
-	for k, v := range cfg.ExtraAttrs {
-		inputAttrs[k] = v
-	}
+	maps.Copy(inputAttrs, cfg.ExtraAttrs)
 
 	minusAttrs := map[string]string{
 		"type":                 "button",

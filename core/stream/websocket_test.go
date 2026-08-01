@@ -49,8 +49,8 @@ func TestWebSocketConnWriteRead(t *testing.T) {
 }
 
 func TestWebSocketConnClose(t *testing.T) {
-	var callbackRan int32
-	cb := func() { atomic.StoreInt32(&callbackRan, 1) }
+	var callbackRan atomic.Int32
+	cb := func() { callbackRan.Store(1) }
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
 		sendBuffer: make(chan []byte, 8),
@@ -76,7 +76,7 @@ func TestWebSocketConnClose(t *testing.T) {
 
 	// OnClose runs in a goroutine — eventually fires
 	deadline := time.After(2 * time.Second)
-	for atomic.LoadInt32(&callbackRan) == 0 {
+	for callbackRan.Load() == 0 {
 		select {
 		case <-deadline:
 			t.Fatal("OnClose callback not called")

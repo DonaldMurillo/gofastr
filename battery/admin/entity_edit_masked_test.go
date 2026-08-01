@@ -247,11 +247,11 @@ func formValue(body, name string) string {
 		return ""
 	}
 	rest = rest[j+len(`value="`):]
-	k := strings.Index(rest, `"`)
-	if k < 0 {
+	before, _, ok := strings.Cut(rest, `"`)
+	if !ok {
 		return ""
 	}
-	return rest[:k]
+	return before
 }
 
 // A checkbox cannot express "unchanged" — unchecked and absent look identical

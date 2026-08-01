@@ -356,7 +356,7 @@ func TestMemoryStorageConcurrentAccess(t *testing.T) {
 	errCh := make(chan error, writers+readers)
 
 	// Concurrent writers
-	for i := 0; i < writers; i++ {
+	for i := range writers {
 		go func(id int) {
 			defer wg.Done()
 			key := fmt.Sprintf("key-%d", id%10) // overlapping keys
@@ -368,7 +368,7 @@ func TestMemoryStorageConcurrentAccess(t *testing.T) {
 	}
 
 	// Concurrent readers
-	for i := 0; i < readers; i++ {
+	for i := range readers {
 		go func(id int) {
 			defer wg.Done()
 			key := fmt.Sprintf("key-%d", id%10)

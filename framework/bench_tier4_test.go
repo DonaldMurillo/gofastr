@@ -22,7 +22,6 @@ import (
 func BenchmarkAutoMigrate_Idempotent(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		for _, n := range []int{1, 10, 50} {
-			n := n
 			b.Run(fmt.Sprintf("N=%d", n), func(b *testing.B) {
 				registry := buildBenchRegistry(n)
 				if err := AutoMigrate(db, registry); err != nil {
@@ -46,7 +45,6 @@ func BenchmarkAutoMigrate_Idempotent(b *testing.B) {
 func BenchmarkSchemaDiff(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		for _, n := range []int{1, 10, 50} {
-			n := n
 			b.Run(fmt.Sprintf("N=%d", n), func(b *testing.B) {
 				registry := buildBenchRegistry(n)
 				if err := AutoMigrate(db, registry); err != nil {
@@ -69,7 +67,7 @@ func BenchmarkSchemaDiff(b *testing.B) {
 // to measure scaling with entity count.
 func buildBenchRegistry(n int) *Registry {
 	reg := NewRegistry()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		entity := Define(fmt.Sprintf("ent_%d", i), EntityConfig{
 			Table: fmt.Sprintf("ent_%d", i),
 			Fields: []schema.Field{

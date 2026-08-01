@@ -139,7 +139,7 @@ func TestAppFluentAPI(t *testing.T) {
 		{Name: "title", Type: schema.String, Required: true},
 		{Name: "body", Type: schema.Text},
 		{Name: "author", Type: schema.Relation, To: "users"},
-	}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(true), MCP: true},
+	}, Exposure: &entity.ExposureConfig{CRUD: new(true), MCP: true},
 	})
 
 	// Fluent: Entity returns *App
@@ -259,11 +259,15 @@ func TestEntityValidation(t *testing.T) {
 }
 
 // ptrFloat is a test helper to create a *float64 from a literal.
+//
+//go:fix inline
 func ptrFloat(v float64) *float64 {
-	return &v
+	return new(v)
 }
 
 // boolPtr is a test helper to create a *bool from a literal.
+//
+//go:fix inline
 func boolPtr(v bool) *bool {
-	return &v
+	return new(v)
 }

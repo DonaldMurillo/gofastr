@@ -110,20 +110,20 @@ func TestMemoryCacheConcurrentAccess(t *testing.T) {
 	wg.Add(goroutines * 3) // writers + readers + deleters
 
 	// Writers
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for range iterations {
 				_ = c.Set(ctx, "key", id, 0)
 			}
 		}(i)
 	}
 
 	// Readers
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for range iterations {
 				var v int
 				_ = c.Get(ctx, "key", &v)
 			}
@@ -131,10 +131,10 @@ func TestMemoryCacheConcurrentAccess(t *testing.T) {
 	}
 
 	// Deleters
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for range iterations {
 				_ = c.Delete(ctx, "key")
 			}
 		}()

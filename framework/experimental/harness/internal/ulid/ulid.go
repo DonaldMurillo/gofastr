@@ -168,7 +168,7 @@ func parseClean(s string) (ULID, error) {
 		return ULID{}, fmt.Errorf("ulid: invalid length %d (want %d)", len(s), Length)
 	}
 	// Validate.
-	for i := 0; i < Length; i++ {
+	for i := range Length {
 		if decodeTable[s[i]] == 0xff {
 			return ULID{}, errors.New("ulid: invalid character")
 		}
@@ -213,7 +213,7 @@ func IsValid(s string) bool {
 	if len(s) != Length {
 		return false
 	}
-	for i := 0; i < Length; i++ {
+	for i := range Length {
 		if decodeTable[s[i]] == 0xff {
 			return false
 		}
@@ -253,14 +253,13 @@ func MustNewPrefixed(prefix string) string {
 // SplitPrefixed splits a prefixed ULID into (prefix, ulid). The ULID
 // portion is validated. Returns an error on malformed input.
 func SplitPrefixed(s string) (prefix string, u ULID, err error) {
-	idx := strings.LastIndex(s, "_")
-	if idx <= 0 || idx >= len(s)-1 {
+	prefix, body, ok := strings.CutLast(s, "_")
+	if !ok || prefix == "" || body == "" {
 		return "", ULID{}, errors.New("ulid: missing prefix or body")
 	}
-	body := s[idx+1:]
 	u, err = parseClean(body)
 	if err != nil {
 		return "", ULID{}, err
 	}
-	return s[:idx], u, nil
+	return prefix, u, nil
 }

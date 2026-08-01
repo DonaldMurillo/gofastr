@@ -84,8 +84,7 @@ func TestCodecReadOvercapTerminal(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected read overcap")
 	}
-	var oe *OvercapError
-	if !errors.As(err, &oe) {
+	if _, ok := errors.AsType[*OvercapError](err); !ok {
 		t.Fatalf("expected *OvercapError, got %T: %v", err, err)
 	}
 }

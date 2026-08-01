@@ -45,8 +45,8 @@ func assertPixelEqual(t *testing.T, want, got image.Image) {
 
 func solid(w, h int, c color.RGBA) *image.RGBA {
 	m := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			m.SetRGBA(x, y, c)
 		}
 	}
@@ -55,8 +55,8 @@ func solid(w, h int, c color.RGBA) *image.RGBA {
 
 func gradient(w, h int) *image.RGBA {
 	m := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			m.SetRGBA(x, y, color.RGBA{
 				R: uint8(x * 255 / max(1, w-1)),
 				G: uint8(y * 255 / max(1, h-1)),
@@ -66,13 +66,6 @@ func gradient(w, h int) *image.RGBA {
 		}
 	}
 	return m
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func TestEncodeSolidRed(t *testing.T) {
@@ -107,8 +100,8 @@ func TestEncodeGradientLarger(t *testing.T) {
 
 func TestEncodeWithAlpha(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 8, 8))
-	for y := 0; y < 8; y++ {
-		for x := 0; x < 8; x++ {
+	for y := range 8 {
+		for x := range 8 {
 			src.SetRGBA(x, y, color.RGBA{
 				R: uint8(x * 32),
 				G: uint8(y * 32),
@@ -202,8 +195,8 @@ func TestEncodeLongDistanceBackrefDoesNotPanic(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, w, h))
 	// Fill with a slow gradient so LZ77 doesn't trivially short-match;
 	// it has to reach across the image for the planted signature.
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			src.SetNRGBA(x, y, color.NRGBA{
 				R: uint8(x), G: uint8(y), B: 64, A: 255,
 			})

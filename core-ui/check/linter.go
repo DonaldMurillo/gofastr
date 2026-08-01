@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -352,13 +353,7 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 
 	// Check OR fields (at least one must be set)
 	if len(rule.orFields) > 0 {
-		found := false
-		for _, field := range rule.orFields {
-			if fieldSatisfied(field) {
-				found = true
-				break
-			}
-		}
+		found := slices.ContainsFunc(rule.orFields, fieldSatisfied)
 		if !found {
 			result.add(filename, line,
 				fmt.Sprintf("html.%s: missing required field — must set one of %v in %sConfig", funcName, rule.orFields, funcName))

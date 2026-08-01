@@ -11,9 +11,9 @@ import (
 
 func TestCacheMiddleware_DoesNotCacheSetCookieResponses(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		http.SetCookie(w, &http.Cookie{Name: "session_id", Value: fmt.Sprintf("token-%d", n), Path: "/", HttpOnly: true})
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(fmt.Sprintf("request-%d", n)))
@@ -34,9 +34,9 @@ func TestCacheMiddleware_DoesNotCacheSetCookieResponses(t *testing.T) {
 
 func TestCacheMiddleware_DoesNotCachePrivateResponses(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		w.Header().Set("Cache-Control", "private, max-age=60")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(fmt.Sprintf("private-%d", n)))
@@ -54,9 +54,9 @@ func TestCacheMiddleware_DoesNotCachePrivateResponses(t *testing.T) {
 
 func TestCacheMiddleware_DoesNotCacheNoStoreResponses(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(fmt.Sprintf("nostore-%d", n)))
@@ -97,9 +97,9 @@ func TestCacheMiddleware_HonorsVaryAuthorization(t *testing.T) {
 
 func TestCacheMiddleware_DoesNotCacheVaryStar(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		// Vary: * means the response varies on unstated factors and must
 		// never be reused (RFC 9111 §4.1). Users are distinguished by a
 		// non-credential header here so hasCreds stays false.
@@ -111,10 +111,10 @@ func TestCacheMiddleware_DoesNotCacheVaryStar(t *testing.T) {
 	// Distinct attack shapes: bare "*", "*" mixed with named headers,
 	// and lowercase/spaced "*". Each is the same property at the surface.
 	for _, varyVal := range []string{"*", "Accept-Language, *", " * "} {
-		atomic.StoreInt32(&hits, 0)
+		hits.Store(0)
 		store = NewMemoryCache()
 		handler = CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			n := atomic.AddInt32(&hits, 1)
+			n := hits.Add(1)
 			w.Header().Set("Vary", varyVal)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(fmt.Sprintf("personalized-%d-for-%s", n, r.Header.Get("X-User"))))
@@ -141,9 +141,9 @@ func TestCacheMiddleware_DoesNotCacheVaryStar(t *testing.T) {
 
 func TestCacheMiddleware_DoesNotCacheNoCacheResponses(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		w.Header().Set("Cache-Control", "no-cache")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(fmt.Sprintf("nocache-%d", n)))
@@ -228,9 +228,9 @@ func TestCacheMiddleware_DoesNotCacheCookieAuthenticatedRequestsByDefault(t *tes
 
 func TestCacheMiddleware_DoesNotCacheServerErrors(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(fmt.Sprintf("db-down-%d", n)))
 	}))
@@ -293,9 +293,9 @@ func TestCacheMiddleware_HonorsVaryOrigin(t *testing.T) {
 
 func TestCacheMiddleware_RequestNoCacheBypassesStoredVariant(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(fmt.Sprintf("refresh-%d", n)))
 	}))
@@ -315,10 +315,10 @@ func TestCacheMiddleware_RequestNoCacheBypassesStoredVariant(t *testing.T) {
 
 func TestCacheMiddleware_RangeDoesNotPoisonFullGet(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	const full = "FULL-DOCUMENT-CONTENTS"
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hits, 1)
+		hits.Add(1)
 		if rng := r.Header.Get("Range"); rng != "" {
 			// Emulate http.ServeContent's 206 Partial Content behaviour.
 			w.Header().Set("Content-Range", "bytes 0-5/"+fmt.Sprint(len(full)))
@@ -389,9 +389,9 @@ func TestCacheMiddleware_DoesNotLeakAcrossHosts(t *testing.T) {
 
 func TestCacheMiddleware_RequestNoStoreBypassesStoredVariant(t *testing.T) {
 	store := NewMemoryCache()
-	var hits int32
+	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(fmt.Sprintf("nostore-req-%d", n)))
 	}))
@@ -417,11 +417,11 @@ func TestCacheMiddleware_RequestNoStoreBypassesStoredVariant(t *testing.T) {
 // next grant holder as a HIT without the handler ever running.
 func TestCacheMiddleware_DoesNotCacheEmbedGrantResponses(t *testing.T) {
 	store := NewMemoryCache()
-	var n int32
+	var n atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Stand in for a per-subject render.
 		subject := "alice"
-		if atomic.AddInt32(&n, 1) > 1 {
+		if n.Add(1) > 1 {
 			subject = "bob"
 		}
 		w.WriteHeader(http.StatusOK)

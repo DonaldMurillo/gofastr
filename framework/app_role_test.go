@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -123,9 +124,31 @@ func startOnRandomPort(t *testing.T, app *App) (addr string, stop func()) {
 	var once sync.Once
 	stop = func() {
 		once.Do(func() {
+			// Flush the shared client's keep-alive pool first. Since Go 1.27
+			// Body.Close drains and pools the conn instead of killing it, so
+			// a queued dial can complete unused — the server holds it in
+			// StateNew, and Server.Shutdown spares StateNew conns for 5s
+			// (issue 22682), blowing our 5s deadline.
+			http.DefaultClient.CloseIdleConnections()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := app.Shutdown(ctx); err != nil {
+			// Watchdog: if Shutdown is still in flight at 4s it is about to
+			// blow the deadline — dump stacks WHILE it hangs. A post-mortem
+			// dump is useless: the force-close inside Shutdown has already
+			// torn down whatever it was waiting on.
+			watchdogDone := make(chan struct{})
+			go func() {
+				select {
+				case <-time.After(4 * time.Second):
+					buf := make([]byte, 1<<20)
+					n := runtime.Stack(buf, true)
+					t.Logf("goroutines while Shutdown hangs (4s in):\n%s", buf[:n])
+				case <-watchdogDone:
+				}
+			}()
+			err := app.Shutdown(ctx)
+			close(watchdogDone)
+			if err != nil {
 				t.Fatalf("Shutdown: %v", err)
 			}
 			select {

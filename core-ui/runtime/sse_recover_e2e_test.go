@@ -18,7 +18,7 @@ import (
 // module POSTs /__gofastr/session, rewrites the stream meta to the fresh
 // id, and reconnects — converging a purely idle tab.
 func TestSSEIdleSessionRecovery(t *testing.T) {
-	var minted int32
+	var minted atomic.Int32
 	mux := http.NewServeMux()
 	js, err := RuntimeJS()
 	if err != nil {
@@ -57,7 +57,7 @@ func TestSSEIdleSessionRecovery(t *testing.T) {
 			http.Error(w, "method", http.StatusMethodNotAllowed)
 			return
 		}
-		n := atomic.AddInt32(&minted, 1)
+		n := minted.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"sessionId":"sess-FRESH-%d"}`, n)
 	})
@@ -85,7 +85,7 @@ func TestSSEIdleSessionRecovery(t *testing.T) {
 	); err != nil {
 		t.Fatalf("meta never recovered off the dead session: %v", err)
 	}
-	if atomic.LoadInt32(&minted) == 0 {
+	if minted.Load() == 0 {
 		t.Error("recovery did not POST /__gofastr/session")
 	}
 	if meta == "/__gofastr/sse?session=sess-DEAD" || meta == "" {

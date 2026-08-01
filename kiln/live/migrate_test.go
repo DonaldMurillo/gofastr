@@ -3,6 +3,7 @@ package live_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,12 +110,7 @@ func TestLiveAddsFieldColumn(t *testing.T) {
 }
 
 func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 func TestLiveStartsWithoutEntitiesIsHealthy(t *testing.T) {

@@ -46,7 +46,7 @@ func (s Schedule) Next(after time.Time) time.Time {
 	// 5-year horizon in minutes is an ample bound for any satisfiable spec
 	// (the rarest, e.g. "Feb 29", recurs within four years).
 	const horizon = 5 * 366 * 24 * 60
-	for i := 0; i < horizon; i++ {
+	for range horizon {
 		if s.expr.matches(t) {
 			return t
 		}

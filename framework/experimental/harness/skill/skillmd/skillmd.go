@@ -66,12 +66,12 @@ func ParseBytes(data []byte) (*Skill, error) {
 	rest := src[3:]
 	// Skip optional newline after opening fence.
 	rest = strings.TrimPrefix(rest, "\n")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
+	before, after, ok := strings.Cut(rest, "\n---")
+	if !ok {
 		return nil, errors.New("unterminated frontmatter")
 	}
-	front := rest[:end]
-	body := rest[end+len("\n---"):]
+	front := before
+	body := after
 	body = strings.TrimPrefix(body, "\n")
 
 	s := &Skill{Extra: map[string]string{}}
@@ -131,12 +131,12 @@ func parseFrontmatter(src string, s *Skill) error {
 		if !startsAtCol0(line) {
 			continue
 		}
-		colon := strings.Index(line, ":")
-		if colon < 0 {
+		before, after, ok := strings.Cut(line, ":")
+		if !ok {
 			return fmt.Errorf("frontmatter: line %d missing ':' (%q)", i+1, line)
 		}
-		key := strings.TrimSpace(line[:colon])
-		val := strings.TrimSpace(line[colon+1:])
+		key := strings.TrimSpace(before)
+		val := strings.TrimSpace(after)
 		// Strip surrounding quotes on scalars.
 		val = trimYAMLQuotes(val)
 		if val == "" {

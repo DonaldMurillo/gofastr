@@ -418,12 +418,9 @@ func (s *ProcessModuleSupervisor) Drain(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 	for _, sl := range slots {
-		sl := sl
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			s.drainOneForShutdown(sl, remaining)
-		}()
+		})
 	}
 	wg.Wait()
 	return nil
@@ -1469,8 +1466,7 @@ func isIntegrityFault(err error) bool {
 	if err == nil {
 		return false
 	}
-	var hs *moduleproto.HandshakeMismatchError
-	if errors.As(err, &hs) {
+	if _, ok := errors.AsType[*moduleproto.HandshakeMismatchError](err); ok {
 		return true
 	}
 	if errors.Is(err, moduleproto.ErrNegotiation) {
@@ -1479,8 +1475,7 @@ func isIntegrityFault(err error) bool {
 	if errors.Is(err, moduleproto.ErrCriticalFeature) {
 		return true
 	}
-	var sha *ExecutableSHAMismatchError
-	if errors.As(err, &sha) {
+	if _, ok := errors.AsType[*ExecutableSHAMismatchError](err); ok {
 		return true
 	}
 	// A handshake-stage error (round-trip mismatch surfaced as a wrapped

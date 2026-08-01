@@ -15,7 +15,7 @@ import (
 // `go test -race` to surface the unguarded access.
 func TestShutdownRacesStartHookSetup(t *testing.T) {
 	const iterations = 50
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		app := NewApp(WithoutDefaultMiddleware())
 
 		var wg sync.WaitGroup

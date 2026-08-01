@@ -264,7 +264,7 @@ func registerPlans(app *framework.App) {
 		{Name: "price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
 		{Name: "interval", Type: schema.Enum, Default: "month", Values: []string{"month", "year"}},
 		{Name: "active", Type: schema.Bool, Default: true},
-	}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Plans"},
+	}, Exposure: &framework.ExposureConfig{CRUD: new(true), MCP: true}, Properties: map[string]any{"label": "Plans"},
 	})
 	_ = Plans{}
 }

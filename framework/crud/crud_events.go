@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"reflect"
 	"time"
@@ -296,9 +297,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 	// subscriber's copy or the durable outbox row. The owner and tenant
 	// stamps are carried over untouched — they decide delivery, not content.
 	out := make(map[string]any, len(data))
-	for k, v := range data {
-		out[k] = v
-	}
+	maps.Copy(out, data)
 	out[eventKeyRecord] = payload.Result
 	ev.Data = out
 	return ev

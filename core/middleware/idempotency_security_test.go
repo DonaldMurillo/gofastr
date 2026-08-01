@@ -178,7 +178,7 @@ func (s *recordingStore) Finish(ctx context.Context, key string, resp *Idempoten
 func TestMemoryStore_MaxEntriesEvictsOldest(t *testing.T) {
 	s := NewMemoryIdempotencyStore(time.Hour, WithMemoryStoreMaxEntries(3))
 	ctx := context.Background()
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		key := fmt.Sprintf("k%d", i)
 		_, _, _ = s.Begin(ctx, key, "fp")
 		// micro-spacing so createdAt differs deterministically

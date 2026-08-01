@@ -70,7 +70,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version-file: go.mod
+          go-version: stable  # bootstrap only — the go.mod toolchain directive downloads the real version (rc-safe)
           cache: true
 
       - name: Install Chrome (stable chromedp suites run here too)
@@ -155,7 +155,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version-file: go.mod
+          go-version: stable  # bootstrap only — the go.mod toolchain directive downloads the real version (rc-safe)
           cache: true
 
       - name: Install govulncheck
@@ -166,7 +166,11 @@ jobs:
         # fetch and execute whatever is newest at that moment, which is a
         # supply-chain dependency on a third party's release timing in
         # the middle of the security gate itself. Bump deliberately.
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+        # Built with the repo's own toolchain (from the go.mod directive):
+        # a govulncheck compiled by an older Go embeds an older go/types
+        # and reports parse errors on 1.27 generic methods as
+        # "vulnerabilities found".
+        run: GOTOOLCHAIN=go$(sed -n 's/^go //p' go.mod) go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
       - name: govulncheck (reachable advisories only)
         run: make vulncheck
@@ -192,7 +196,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version-file: go.mod
+          go-version: stable  # bootstrap only — the go.mod toolchain directive downloads the real version (rc-safe)
           cache: true
 
       - name: Install Chrome

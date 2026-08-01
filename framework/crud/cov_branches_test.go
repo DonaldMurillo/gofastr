@@ -75,7 +75,6 @@ func TestAfterHooks_RunOnAllOps(t *testing.T) {
 	ch.Hooks = hook.NewHookRegistry()
 	fired := map[hook.HookType]bool{}
 	for _, ht := range []hook.HookType{hook.AfterCreate, hook.AfterUpdate, hook.AfterDelete, hook.AfterGet, hook.AfterList} {
-		ht := ht
 		ch.Hooks.RegisterHook(ht, func(ctx context.Context, data any) error {
 			fired[ht] = true
 			return nil

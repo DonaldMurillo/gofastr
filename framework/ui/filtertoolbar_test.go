@@ -69,12 +69,12 @@ func TestFilterToolbarSelectSelected(t *testing.T) {
 
 // optionTagFor returns the <option ...> open tag containing value="<val>".
 func optionTagFor(html, val string) string {
-	for _, seg := range strings.Split(html, "<option") {
+	for seg := range strings.SplitSeq(html, "<option") {
 		if !strings.Contains(seg, `value="`+val+`"`) {
 			continue
 		}
-		if end := strings.Index(seg, ">"); end >= 0 {
-			return seg[:end]
+		if before, _, ok := strings.Cut(seg, ">"); ok {
+			return before
 		}
 	}
 	return ""

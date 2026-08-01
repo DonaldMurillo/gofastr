@@ -53,7 +53,7 @@ func TestNotifyFloodBoundedByServeCap(t *testing.T) {
 
 	base := runtime.NumGoroutine()
 	// Four notifications may occupy the four serve slots.
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		if err := flooder.Notify(context.Background(), "block", nil); err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +62,7 @@ func TestNotifyFloodBoundedByServeCap(t *testing.T) {
 
 	// Everything past the cap — registered method or not — must be dropped,
 	// not queued onto a fresh goroutine each.
-	for i := 0; i < 400; i++ {
+	for range 400 {
 		if err := flooder.Notify(context.Background(), "block", nil); err != nil {
 			t.Fatal(err)
 		}
@@ -103,13 +103,13 @@ func TestDuplicateInboundIDsStayCancelable(t *testing.T) {
 	// Two requests, same id — a counterparty is free to reuse ids.
 	raw := NewCodecOnly(connY)
 	id := uint64(1)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		idCopy := id
 		if err := raw.WriteFrame(&Frame{JSONRPC: "2.0", ID: &idCopy, Method: "hang"}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case <-entered:
 		case <-time.After(2 * time.Second):
@@ -118,7 +118,7 @@ func TestDuplicateInboundIDsStayCancelable(t *testing.T) {
 	}
 
 	_ = served.Close()
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		select {
 		case <-cancelled:
 		case <-time.After(2 * time.Second):
@@ -191,16 +191,16 @@ func TestInboundCallerCarriesNoSubject(t *testing.T) {
 	// The decoded value must expose nothing but the handle. Checked by
 	// reflection so the test binds to the TYPE, not to one call site.
 	for _, ty := range []reflect.Type{
-		reflect.TypeOf(EntityQueryParams{}),
-		reflect.TypeOf(EntityMutationParams{}),
-		reflect.TypeOf(SearchQueryParams{}),
-		reflect.TypeOf(EventEmitParams{}),
+		reflect.TypeFor[EntityQueryParams](),
+		reflect.TypeFor[EntityMutationParams](),
+		reflect.TypeFor[SearchQueryParams](),
+		reflect.TypeFor[EventEmitParams](),
 	} {
 		f, ok := ty.FieldByName("Caller")
 		if !ok {
 			t.Fatalf("SECURITY: [moduleproto] %s lost its Caller field", ty.Name())
 		}
-		if f.Type != reflect.TypeOf(CallerRef{}) {
+		if f.Type != reflect.TypeFor[CallerRef]() {
 			t.Fatalf("SECURITY: [moduleproto] %s.Caller is %s, want CallerRef. "+
 				"An inbound reverse call must not carry a child-supplied Subject "+
 				"or Tenant — the broker derives authority from Delegation alone.",

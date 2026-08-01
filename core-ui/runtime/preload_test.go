@@ -129,7 +129,7 @@ func TestDemandLoadMarkersMatchRuntimeJS(t *testing.T) {
 func TestNeededModules_StableSort(t *testing.T) {
 	// Same input → same output ordering, regardless of map iteration.
 	html := `<div data-fui-carousel><div data-fui-toast></div><div data-fui-widget></div></div>`
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		got := NeededModules(html)
 		if !sort.StringsAreSorted(got) {
 			t.Fatalf("NeededModules returned unsorted slice: %v", got)

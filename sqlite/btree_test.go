@@ -325,7 +325,7 @@ func TestBTree_ReplaceMultipleTimes(t *testing.T) {
 	t.Parallel()
 	bt, rootPage, _ := newTestBTree()
 
-	for version := 0; version < 10; version++ {
+	for version := range 10 {
 		bt.Insert(rootPage, 1, &Record{Columns: []Value{IntegerValue(int64(version))}})
 	}
 
@@ -1228,7 +1228,7 @@ func TestBTree_InsertDeleteInsert(t *testing.T) {
 	t.Parallel()
 	bt, rootPage, _ := newTestBTree()
 
-	for round := 0; round < 5; round++ {
+	for round := range 5 {
 		for i := int64(1); i <= 10; i++ {
 			bt.Insert(rootPage, i, &Record{Columns: []Value{IntegerValue(int64(round)*10 + i)}})
 		}
@@ -1281,7 +1281,7 @@ func TestBTree_LargeTextValue(t *testing.T) {
 	}
 	// Actually create a long string
 	var buf bytes.Buffer
-	for i := 0; i < 2000; i++ {
+	for range 2000 {
 		buf.WriteByte('A')
 	}
 	longText = buf.String()

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"maps"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -66,9 +68,7 @@ func ColorField(cfg ColorFieldConfig) render.HTML {
 	if cfg.SwatchValue != "" {
 		swatch["value"] = cfg.SwatchValue
 	}
-	for k, v := range cfg.SwatchAttrs {
-		swatch[k] = v
-	}
+	maps.Copy(swatch, cfg.SwatchAttrs)
 
 	text := html.Attrs{
 		"type":  "text",
@@ -78,9 +78,7 @@ func ColorField(cfg ColorFieldConfig) render.HTML {
 	if cfg.TextID != "" {
 		text["id"] = cfg.TextID
 	}
-	for k, v := range cfg.TextAttrs {
-		text[k] = v
-	}
+	maps.Copy(text, cfg.TextAttrs)
 	// Name the text input unless the caller already did. Applied after the
 	// merge so an explicit aria-label/aria-labelledby wins, and so a caller
 	// pointing at its own visible label is not overridden.

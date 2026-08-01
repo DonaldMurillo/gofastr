@@ -136,7 +136,7 @@ func TestParseDSLCacheHit(t *testing.T) {
 
 func TestParseDSLCacheBounded(t *testing.T) {
 	// Fill cache beyond maxParseCacheSize and verify it doesn't grow unbounded
-	for i := 0; i < maxParseCacheSize+10; i++ {
+	for i := range maxParseCacheSize + 10 {
 		input := strings.Repeat("x", i+1) + ".limit(1)"
 		_, err := ParseDSL(input)
 		if err != nil {

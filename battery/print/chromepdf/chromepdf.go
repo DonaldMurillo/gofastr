@@ -134,8 +134,8 @@ func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConf
 // ("window-size", "1280,720"). A leading "--" is stripped.
 func parseFlag(f string) (string, any) {
 	f = strings.TrimPrefix(f, "--")
-	if i := strings.IndexByte(f, '='); i >= 0 {
-		return f[:i], f[i+1:]
+	if before, after, ok := strings.Cut(f, "="); ok {
+		return before, after
 	}
 	return f, true
 }

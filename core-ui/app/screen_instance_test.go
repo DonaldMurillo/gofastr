@@ -85,8 +85,8 @@ func TestScreen_PerRequestInstance_ParallelIsolation(t *testing.T) {
 
 	const N = 50
 	var wg sync.WaitGroup
-	var mismatches int32
-	for i := 0; i < N; i++ {
+	var mismatches atomic.Int32
+	for i := range N {
 		slug := fmt.Sprintf("food-%d", i)
 		wg.Add(1)
 		go func(s string) {
@@ -98,12 +98,12 @@ func TestScreen_PerRequestInstance_ParallelIsolation(t *testing.T) {
 			}
 			want := "<p>" + s + "</p>"
 			if !contains(string(res.HTML), want) {
-				atomic.AddInt32(&mismatches, 1)
+				mismatches.Add(1)
 			}
 		}(slug)
 	}
 	wg.Wait()
-	if m := atomic.LoadInt32(&mismatches); m > 0 {
+	if m := mismatches.Load(); m > 0 {
 		t.Fatalf("%d/%d parallel renders saw a slug other than the one they requested", m, N)
 	}
 }

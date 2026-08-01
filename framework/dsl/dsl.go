@@ -325,9 +325,9 @@ func parseDSLFilters(args string) ([]DSLFilter, error) {
 func parseDSLFilter(input string) (DSLFilter, error) {
 	ops := []string{" contains ", " in ", ">=", "<=", "!=", "=", ">", "<"}
 	for _, op := range ops {
-		if idx := strings.Index(input, op); idx >= 0 {
-			field := strings.TrimSpace(input[:idx])
-			value := strings.TrimSpace(input[idx+len(op):])
+		if before, after, ok := strings.Cut(input, op); ok {
+			field := strings.TrimSpace(before)
+			value := strings.TrimSpace(after)
 			if field == "" || value == "" {
 				return DSLFilter{}, fmt.Errorf("dsl: invalid filter %q", input)
 			}

@@ -6,7 +6,9 @@ import (
 )
 
 // helper to create a float64 pointer
-func fPtr(v float64) *float64 { return &v }
+//
+//go:fix inline
+func fPtr(v float64) *float64 { return new(v) }
 
 // ---------- String ----------
 

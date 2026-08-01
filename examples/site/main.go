@@ -90,7 +90,7 @@ func main() {
 // the target directory or "" when the flag is absent. Used by main to switch
 // between serving and one-shot static export.
 func exportDir(args []string) string {
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		switch {
 		case args[i] == "--export" && i+1 < len(args):
 			return args[i+1]
@@ -105,7 +105,7 @@ func exportDir(args []string) string {
 // static site is served under, e.g. "/gofastr" for a GitHub Pages project
 // site). Returns "" when absent (apex deploy). Paired with --export.
 func exportBase(args []string) string {
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		switch {
 		case args[i] == "--export-base" && i+1 < len(args):
 			return args[i+1]
@@ -474,7 +474,7 @@ func setupServer() *framework.App {
 		// count — each known card lands at most once.
 		var newCards []kanbanCard
 		seen := make(map[string]bool, len(cardMap))
-		for _, k := range strings.Split(orderStr, ",") {
+		for k := range strings.SplitSeq(orderStr, ",") {
 			k = strings.TrimSpace(k)
 			if k == "" || seen[k] {
 				continue

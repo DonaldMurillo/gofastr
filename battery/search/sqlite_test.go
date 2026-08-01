@@ -250,7 +250,7 @@ func TestSQLitePrefixMatch(t *testing.T) {
 func TestSQLiteAdversarialQuery(t *testing.T) {
 	ctx := context.Background()
 	idx := newSQLiteFTS(t)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_ = idx.Index(ctx, Document{
 			ID:   fmt.Sprintf("safe-%d", i),
 			Text: fmt.Sprintf("benign document number %d about gofastr", i),

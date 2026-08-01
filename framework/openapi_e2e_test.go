@@ -3,6 +3,7 @@ package framework
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/openapi"
@@ -714,7 +715,8 @@ func TestE2E_OpenAPI_FilterParameters_SnakeCase(t *testing.T) {
 // Helpers
 // ============================================================================
 
-func ptrFloat64(f float64) *float64 { return &f }
+//go:fix inline
+func ptrFloat64(f float64) *float64 { return new(f) }
 
 func assertEqual(t *testing.T, label string, expected, actual any) {
 	t.Helper()
@@ -727,10 +729,8 @@ func assertEqual(t *testing.T, label string, expected, actual any) {
 
 func assertContains(t *testing.T, label string, slice []string, item string) {
 	t.Helper()
-	for _, s := range slice {
-		if s == item {
-			return
-		}
+	if slices.Contains(slice, item) {
+		return
 	}
 	t.Errorf("%s: expected to contain %q, got %v", label, item, slice)
 }

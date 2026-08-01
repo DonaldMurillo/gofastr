@@ -1,6 +1,7 @@
 package html
 
 import (
+	"maps"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -18,9 +19,7 @@ func MergeAttrs(attrsList ...Attrs) Attrs {
 	}
 	merged := make(Attrs)
 	for _, a := range attrsList {
-		for k, v := range a {
-			merged[k] = v
-		}
+		maps.Copy(merged, a)
 	}
 	return merged
 }
@@ -123,9 +122,7 @@ func ContainerType(containerType string, name string) Attrs {
 // It never returns nil — always returns a usable map.
 func buildAttrs(base Attrs, id, class string) Attrs {
 	attrs := make(Attrs)
-	for k, v := range base {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, base)
 	if id != "" {
 		attrs["id"] = id
 	}

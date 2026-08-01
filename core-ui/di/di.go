@@ -63,7 +63,7 @@ func (c *Container) Resolve(target any) error {
 	defer c.mu.Unlock()
 
 	tv := reflect.ValueOf(target)
-	if tv.Kind() != reflect.Ptr || tv.IsNil() {
+	if tv.Kind() != reflect.Pointer || tv.IsNil() {
 		return fmt.Errorf("di: target must be a non-nil pointer")
 	}
 
@@ -113,7 +113,7 @@ func (c *Container) Inject(target any) error {
 	defer c.mu.Unlock()
 
 	tv := reflect.ValueOf(target)
-	if tv.Kind() != reflect.Ptr || tv.IsNil() {
+	if tv.Kind() != reflect.Pointer || tv.IsNil() {
 		return fmt.Errorf("di: target must be a non-nil pointer to a struct")
 	}
 

@@ -89,7 +89,7 @@ func FuzzCodecReadLoop(f *testing.F) {
 		}
 		// Drain the codec. Each ReadFrame must either return a frame or an
 		// error — never panic, never hang (bytes.Buffer is finite).
-		for i := 0; i < 64; i++ {
+		for range 64 {
 			fr, err := c.ReadFrame()
 			if err != nil {
 				break // any error ends the stream — that's the contract

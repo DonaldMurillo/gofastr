@@ -663,7 +663,7 @@ func TestEmbedThemeVariantsAreCapped(t *testing.T) {
 // served on the next page load.
 func TestEmbedThemeCapDoesNotLockOutTheCustomer(t *testing.T) {
 	f := newEmbedFixture(t) // MaxVariants: 2
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		f.do(t, http.MethodGet, "/__gofastr/embed/reports?theme="+
 			embedThemeParam(t, map[string]string{"color-primary": fmt.Sprintf("#%06x", i+1)}), "")
 	}
@@ -702,11 +702,11 @@ func TestEmbedThemeVariantCSSIsWellFormed(t *testing.T) {
 	body := f.do(t, http.MethodGet,
 		"/__gofastr/embed/reports?theme="+embedThemeParam(t, map[string]string{"color-primary": "#abcdef"}), "").Body.String()
 
-	idx := strings.Index(body, "app.css?t=")
-	if idx < 0 {
+	_, after, ok := strings.Cut(body, "app.css?t=")
+	if !ok {
 		t.Fatalf("no variant link:\n%s", body)
 	}
-	rest := body[idx+len("app.css?t="):]
+	rest := after
 	key := rest[:strings.IndexByte(rest, '"')]
 
 	rec := getAppCSS(t, f.host, "t="+key)
@@ -717,13 +717,6 @@ func TestEmbedThemeVariantCSSIsWellFormed(t *testing.T) {
 	if strings.Count(css, "{") != strings.Count(css, "}") {
 		t.Fatal("the variant CSS has unbalanced braces — a value escaped its declaration")
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // ---------------------------------------------------------------------------
@@ -870,11 +863,11 @@ func TestEmbedThemeCapHoldsUnderConcurrency(t *testing.T) {
 		max    = 2
 	)
 	var state embedThemeState
-	var admitted int32
+	var admitted atomic.Int32
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 
-	for i := 0; i < racers; i++ {
+	for i := range racers {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -884,7 +877,7 @@ func TestEmbedThemeCapHoldsUnderConcurrency(t *testing.T) {
 			if !ok {
 				return
 			}
-			atomic.AddInt32(&admitted, 1)
+			admitted.Add(1)
 			// Stand in for the CSS render that happens between reserving a slot
 			// and knowing the variant key.
 			time.Sleep(2 * time.Millisecond)
@@ -894,7 +887,7 @@ func TestEmbedThemeCapHoldsUnderConcurrency(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	if got := atomic.LoadInt32(&admitted); got != max {
+	if got := admitted.Load(); got != max {
 		t.Fatalf("%d of %d concurrent distinct themes were admitted against a cap of %d — the cap is checked but not reserved", got, racers, max)
 	}
 	state.mu.Lock()
@@ -912,7 +905,7 @@ func TestEmbedThemeCapHoldsUnderConcurrency(t *testing.T) {
 func TestEmbedThemeRejectionsConsumeNothing(t *testing.T) {
 	f := newEmbedFixture(t) // MaxVariants: 2
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		bad := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("{not json %d", i)))
 		f.do(t, http.MethodGet, "/__gofastr/embed/reports?theme="+bad, "")
 	}
@@ -971,7 +964,7 @@ func TestEmbedFramingKeepsTheRestOfTheCSP(t *testing.T) {
 // value (object-src 'none' is not a framing statement).
 func frameAncestorsOf(t *testing.T, policy string) string {
 	t.Helper()
-	for _, d := range strings.Split(policy, ";") {
+	for d := range strings.SplitSeq(policy, ";") {
 		d = strings.TrimSpace(d)
 		if strings.HasPrefix(d, "frame-ancestors") {
 			return d

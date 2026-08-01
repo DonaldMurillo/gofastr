@@ -666,12 +666,10 @@ func TestPrepareRunDirectoryCreationIsExclusive(t *testing.T) {
 	results := make(chan error, 2)
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			results <- prepareRunDirectory(runDir, false)
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

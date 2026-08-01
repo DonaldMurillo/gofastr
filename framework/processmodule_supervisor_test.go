@@ -216,8 +216,7 @@ func TestSupervisor_UntrustedNoSandbox(t *testing.T) {
 	if err == nil {
 		t.Fatal("untrusted descriptor with no sandbox must fail Register")
 	}
-	var use *UntrustedNoSandboxError
-	if !errors.As(err, &use) {
+	if _, ok := errors.AsType[*UntrustedNoSandboxError](err); !ok {
 		t.Fatalf("want UntrustedNoSandboxError, got %T(%v)", err, err)
 	}
 	// Module never reached Ready.

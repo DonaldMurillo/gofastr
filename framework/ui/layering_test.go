@@ -22,7 +22,7 @@ func TestUIDoesNotImportImagePipeline(t *testing.T) {
 	for _, banned := range []string{
 		"github.com/DonaldMurillo/gofastr/framework/image",
 	} {
-		for _, line := range strings.Split(string(out), "\n") {
+		for line := range strings.SplitSeq(string(out), "\n") {
 			if strings.TrimSpace(line) == banned {
 				t.Errorf("framework/ui depends on %q — decode placeholders in the caller "+
 					"and pass framework/ui a finished data URL instead", banned)

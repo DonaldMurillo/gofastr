@@ -188,10 +188,10 @@ authenticated agent whose request passes the policy sees the full docs.
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
 JSON-RPC + GET Server-Sent Events), replacing the manual
 `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`. Combined with
-`WithMCPIntrospection()`, the ten tools that read the running app's state —
+`WithMCPIntrospection()`, the eleven tools that read the running app's state —
 `app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
-`app_readiness`, `app_routines`, `framework_docs_list`, `framework_docs_get`,
-`framework_docs_search` — are reachable at the canonical endpoint the
+`app_readiness`, `app_goroutine_leaks`, `app_routines`, `framework_docs_list`,
+`framework_docs_get`, `framework_docs_search` — are reachable at the canonical endpoint the
 agent card advertises. Calling `WithMCP` **and** manually mounting `/mcp`
 panics with a route conflict — pick one. Blueprint-generated apps ship with
 both options wired.

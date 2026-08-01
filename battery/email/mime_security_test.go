@@ -84,7 +84,7 @@ func assertBodyCannotInject(t *testing.T, name string, email Email) {
 		// the real delimiter we'd see extra delimiter lines.
 		realDelim := "--" + b
 		var delimCount int
-		for _, line := range strings.Split(string(msg), "\r\n") {
+		for line := range strings.SplitSeq(string(msg), "\r\n") {
 			trimmed := strings.TrimRight(line, "\r")
 			if trimmed == realDelim || trimmed == realDelim+"--" {
 				delimCount++

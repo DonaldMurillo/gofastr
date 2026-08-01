@@ -2,6 +2,7 @@ package journal
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
@@ -426,13 +427,7 @@ func (s *Session) spendPlan(planID string, target PlanTarget) error {
 	if !plan.Approved {
 		return fmt.Errorf("%s %q: plan %q is not approved", target.Op, target.Name, planID)
 	}
-	listed := false
-	for _, tg := range plan.Targets {
-		if tg == target {
-			listed = true
-			break
-		}
-	}
+	listed := slices.Contains(plan.Targets, target)
 	if !listed {
 		return fmt.Errorf("%s %q: plan %q does not list this target", target.Op, target.Name, planID)
 	}

@@ -150,13 +150,12 @@ func BenchmarkT5_MultiQuery(b *testing.B) {
 		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
 
 		for _, queries := range []int{1, 5, 10, 20} {
-			queries := queries
 			b.Run(fmt.Sprintf("queries=%d", queries), func(b *testing.B) {
 				rng := rand.New(rand.NewSource(42))
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					for q := 0; q < queries; q++ {
+					for range queries {
 						id := fmt.Sprintf("w%d", rng.Intn(N))
 						req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
 						rec := httptest.NewRecorder()
@@ -234,13 +233,12 @@ func BenchmarkT5_Updates(b *testing.B) {
 		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
 
 		for _, updates := range []int{1, 5, 10, 20} {
-			updates := updates
 			b.Run(fmt.Sprintf("updates=%d", updates), func(b *testing.B) {
 				rng := rand.New(rand.NewSource(42))
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					for u := 0; u < updates; u++ {
+					for range updates {
 						id := fmt.Sprintf("w%d", rng.Intn(N))
 						// GET
 						req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
@@ -282,7 +280,7 @@ func seedWorldsTable(b *testing.B, db *sql.DB, n int) {
 	if err != nil {
 		b.Fatalf("begin: %v", err)
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if _, err := tx.Exec("INSERT INTO worlds (id, random_number) VALUES ($1, $2)",
 			fmt.Sprintf("w%d", i), i*7%10000); err != nil {
 			_ = tx.Rollback()
@@ -316,7 +314,7 @@ func seedFortunesTable(b *testing.B, db *sql.DB, n int) {
 		"<script>alert('XSS')</script>",
 		"フレームワークのベンチマーク",
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if _, err := db.Exec("INSERT INTO fortunes (id, message) VALUES ($1, $2)",
 			fmt.Sprintf("f%d", i), msgs[i%len(msgs)]); err != nil {
 			b.Fatalf("seed fortune %d: %v", i, err)

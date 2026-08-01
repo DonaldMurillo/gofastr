@@ -586,7 +586,7 @@ func TestTurnStartedFromSelfIsSkipped(t *testing.T) {
 func TestSlashWebShowsUrlAndToken(t *testing.T) {
 	tui := newSnapshotTUI()
 	tui.WebURL = "http://127.0.0.1:18424"
-	tui.WebToken = "eyJ2ZXIiOjEsImp0aSI6IkFCQyJ9.signature-bytes"
+	tui.WebToken = "eyJ2ZXIiOjEsImp0aSI6IkFCQyJ9.signature-bytes" // not-a-secret: fabricated token fixture, unsigned
 	tui.dispatchLocalSlash("/web")
 	if tui.modal == nil {
 		t.Fatal("/web did not open a modal")
@@ -647,7 +647,7 @@ func TestEnterOnNonSlashSubmitsImmediately(t *testing.T) {
 func TestArrowStillScrollsWhenPopupInactive(t *testing.T) {
 	tui := newSnapshotTUI()
 	// fill scrollback so we have something to scroll past
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		tui.scrollback = append(tui.scrollback, "filler")
 	}
 	tui.input = []rune("hello world") // not a slash command
@@ -840,7 +840,7 @@ func TestMultilineInput_EnterStillSubmits(t *testing.T) {
 // without depending on wall time.
 func TestSpinnerFrameCycles(t *testing.T) {
 	frames := []rune{}
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		frames = append(frames, spinnerGlyph(i))
 	}
 	// At least 8 distinct frames (Braille set has 10).

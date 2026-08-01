@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"maps"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -58,9 +60,7 @@ func Workbench(cfg WorkbenchConfig) render.HTML {
 		// to allow. See core-ui/check/noinlinescripts.go.
 		attrs["style"] = "--ui-workbench-rail: " + cfg.RailWidth
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 	return workbenchStyle.WrapHTML(render.Tag("div", attrs,
 		render.Tag("div", html.Attrs{"class": "ui-workbench__rail"}, cfg.Rail),
 		render.Tag("div", html.Attrs{"class": "ui-workbench__pane"}, cfg.Pane),

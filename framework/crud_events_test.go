@@ -100,12 +100,12 @@ func readSSEEvents(t *testing.T, ctx context.Context, body *bufio.Reader) <-chan
 			if strings.HasPrefix(line, ":") {
 				continue
 			}
-			if strings.HasPrefix(line, "event: ") {
-				eventName = strings.TrimPrefix(line, "event: ")
+			if after, ok := strings.CutPrefix(line, "event: "); ok {
+				eventName = after
 				continue
 			}
-			if strings.HasPrefix(line, "data: ") {
-				dataLines = append(dataLines, strings.TrimPrefix(line, "data: "))
+			if after, ok := strings.CutPrefix(line, "data: "); ok {
+				dataLines = append(dataLines, after)
 				continue
 			}
 			if line == "" && eventName != "" {

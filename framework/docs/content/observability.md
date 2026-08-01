@@ -125,6 +125,28 @@ Separate from metrics: the framework auto-registers liveness/readiness
 probes (and a DB readiness check when a DB is configured). See
 [Health checks](health-checks.md).
 
+## Goroutine leak detection
+
+The Go runtime proves some goroutines leaked: blocked forever on a channel
+or sync primitive that no runnable goroutine can still reach. The framework
+exposes that verdict three ways, all backed by the runtime's `goroutineleak`
+profile (a forced GC cycle runs first, so the report reflects now):
+
+- `/.debug/stats` includes a `goroutineLeaks` count next to `goroutines`.
+- `/.debug/goroutineleak` returns the leak report with stacks (text).
+  Auth-gated the same way as `/.debug/stats`: the request must carry an
+  authenticated user.
+- The `app_goroutine_leaks` MCP tool (with `WithMCPIntrospection()`)
+  returns `{count, stacks, truncated}` so a connected agent can check the
+  running app without shell access.
+
+Zero is healthy. A count that grows across calls means a worker, stream,
+or handler is being abandoned — the stacks name the blocked function.
+Detection is conservative: a goroutine blocked on a primitive that is
+still reachable (a global, a live struct) is never reported, so a zero
+count does not prove the absence of every leak, but a nonzero count is
+never a false alarm.
+
 ## Common mistakes
 
 - **Exposing `/metrics` without network-level protection.** The endpoint

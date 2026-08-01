@@ -412,11 +412,10 @@ func verifySignedTokenAny(value string, primary []byte, additional [][]byte) boo
 // verifySignedCSRFToken returns true if `value` is a well-formed signed
 // CSRF token whose HMAC matches `secret`. Constant-time comparison.
 func verifySignedCSRFToken(value string, secret []byte) bool {
-	idx := strings.LastIndexByte(value, '.')
-	if idx <= 0 || idx == len(value)-1 {
+	random, sig, ok := strings.CutLast(value, ".")
+	if !ok || random == "" || sig == "" {
 		return false
 	}
-	random, sig := value[:idx], value[idx+1:]
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(random))
 	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))

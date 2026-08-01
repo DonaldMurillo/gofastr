@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -28,7 +29,7 @@ import (
 
 func b64u(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
-func mustJSONMarshal(t *testing.T, v interface{}) []byte {
+func mustJSONMarshal(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -56,8 +57,8 @@ func mustECKey(t *testing.T) *ecdsa.PrivateKey {
 }
 
 // rsaJWKMap builds the JWK JSON object for an RSA public key.
-func rsaJWKMap(kid string, key *rsa.PublicKey) map[string]interface{} {
-	return map[string]interface{}{
+func rsaJWKMap(kid string, key *rsa.PublicKey) map[string]any {
+	return map[string]any{
 		"kty": "RSA", "use": "sig", "alg": "RS256", "kid": kid,
 		"n": b64u(key.N.Bytes()),
 		"e": b64u(big.NewInt(int64(key.E)).Bytes()),
@@ -65,8 +66,8 @@ func rsaJWKMap(kid string, key *rsa.PublicKey) map[string]interface{} {
 }
 
 // ecJWKMap builds the JWK JSON object for an EC P-256 public key.
-func ecJWKMap(kid string, key *ecdsa.PublicKey) map[string]interface{} {
-	return map[string]interface{}{
+func ecJWKMap(kid string, key *ecdsa.PublicKey) map[string]any {
+	return map[string]any{
 		"kty": "EC", "use": "sig", "alg": "ES256", "kid": kid, "crv": "P-256",
 		"x": b64u(key.X.FillBytes(make([]byte, 32))),
 		"y": b64u(key.Y.FillBytes(make([]byte, 32))),
@@ -138,8 +139,8 @@ func buildCompact(headerJSON, payloadJSON []byte, sig []byte) string {
 }
 
 // standardIDClaims returns a valid claim set for the given issuer/client.
-func standardIDClaims(issuer, clientID string) map[string]interface{} {
-	return map[string]interface{}{
+func standardIDClaims(issuer, clientID string) map[string]any {
+	return map[string]any{
 		"iss":     issuer,
 		"sub":     "user-123",
 		"aud":     clientID,
@@ -166,12 +167,12 @@ type fakeIdP struct {
 
 	// jwksFn returns the key set to serve on the Nth JWKS hit (0-indexed). If
 	// nil, the default set (the signing key(s)) is served every time.
-	jwksFn  func(hit int) []map[string]interface{}
-	jwksHit int32 // atomic
+	jwksFn  func(hit int) []map[string]any
+	jwksHit atomic.Int32 // atomic
 
 	// id-token minting knobs.
-	header    map[string]interface{}           // overrides the default header
-	claims    map[string]interface{}           // claim set
+	header    map[string]any                   // overrides the default header
+	claims    map[string]any                   // claim set
 	signAlg   string                           // "RS256" (default) or "ES256"
 	sign      func(signingInput []byte) []byte // overrides alg-based signing
 	idMissing bool                             // omit id_token from the token response
@@ -179,7 +180,7 @@ type fakeIdP struct {
 	transform func(idToken string) string      // post-process the minted token
 
 	// userinfo.
-	userinfo       map[string]interface{}
+	userinfo       map[string]any
 	userinfoSub    string // if set, used as userinfo "sub"
 	omitUserinfoEp bool
 
@@ -203,7 +204,7 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		issuer := f.issuer
 		ui := issuer + "/userinfo"
-		doc := map[string]interface{}{
+		doc := map[string]any{
 			"issuer":                 f.discoveryIssuer,
 			"authorization_endpoint": issuer + "/authorize",
 			"token_endpoint":         issuer + "/token",
@@ -219,19 +220,19 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	})
 
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, r *http.Request) {
-		hit := atomic.AddInt32(&f.jwksHit, 1) - 1
-		var keys []map[string]interface{}
+		hit := f.jwksHit.Add(1) - 1
+		var keys []map[string]any
 		if f.jwksFn != nil {
 			keys = f.jwksFn(int(hit))
 		} else {
 			keys = f.defaultJWKS()
 		}
-		writeJSON(t, w, map[string]interface{}{"keys": keys})
+		writeJSON(t, w, map[string]any{"keys": keys})
 	})
 
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"access_token":  "test-access-token",
 			"token_type":    "Bearer",
 			"expires_in":    3600,
@@ -248,10 +249,8 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	})
 
 	mux.HandleFunc("/userinfo", func(w http.ResponseWriter, r *http.Request) {
-		ui := map[string]interface{}{}
-		for k, v := range f.userinfo {
-			ui[k] = v
-		}
+		ui := map[string]any{}
+		maps.Copy(ui, f.userinfo)
 		if s := f.userinfoSub; s != "" {
 			ui["sub"] = s
 		}
@@ -264,8 +263,8 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	return f
 }
 
-func (f *fakeIdP) defaultJWKS() []map[string]interface{} {
-	out := []map[string]interface{}{rsaJWKMap(f.rsaKID, &f.rsaKey.PublicKey)}
+func (f *fakeIdP) defaultJWKS() []map[string]any {
+	out := []map[string]any{rsaJWKMap(f.rsaKID, &f.rsaKey.PublicKey)}
 	if f.ecKey != nil {
 		out = append(out, ecJWKMap(f.ecKID, &f.ecKey.PublicKey))
 	}
@@ -273,19 +272,17 @@ func (f *fakeIdP) defaultJWKS() []map[string]interface{} {
 }
 
 // defaultHeader returns the header implied by signAlg/kid.
-func (f *fakeIdP) defaultHeader() map[string]interface{} {
+func (f *fakeIdP) defaultHeader() map[string]any {
 	if f.signAlg == "ES256" {
-		return map[string]interface{}{"alg": "ES256", "kid": f.ecKID, "typ": "JWT"}
+		return map[string]any{"alg": "ES256", "kid": f.ecKID, "typ": "JWT"}
 	}
-	return map[string]interface{}{"alg": "RS256", "kid": f.rsaKID, "typ": "JWT"}
+	return map[string]any{"alg": "RS256", "kid": f.rsaKID, "typ": "JWT"}
 }
 
 func (f *fakeIdP) mintIDToken(t *testing.T) string {
 	t.Helper()
 	header := f.defaultHeader()
-	for k, v := range f.header {
-		header[k] = v
-	}
+	maps.Copy(header, f.header)
 	claims := f.claims
 	if claims == nil {
 		claims = standardIDClaims(f.issuer, f.clientID)
@@ -308,7 +305,7 @@ func (f *fakeIdP) mintIDToken(t *testing.T) string {
 	return tok
 }
 
-func writeJSON(t *testing.T, w http.ResponseWriter, v interface{}) {
+func writeJSON(t *testing.T, w http.ResponseWriter, v any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
@@ -379,8 +376,8 @@ func TestOIDC_RS256_FullFlow(t *testing.T) {
 func TestOIDC_ES256_Flow(t *testing.T) {
 	f := newFakeIdP(t)
 	f.signAlg = "ES256"
-	f.jwksFn = func(hit int) []map[string]interface{} {
-		return []map[string]interface{}{ecJWKMap(f.ecKID, &f.ecKey.PublicKey)}
+	f.jwksFn = func(hit int) []map[string]any {
+		return []map[string]any{ecJWKMap(f.ecKID, &f.ecKey.PublicKey)}
 	}
 	p := newTestProvider(t, f)
 
@@ -400,7 +397,7 @@ func TestOIDC_ES256_Flow(t *testing.T) {
 // TestOIDC_ClaimsMappingOverride: custom claim names are honored.
 func TestOIDC_ClaimsMappingOverride(t *testing.T) {
 	f := newFakeIdP(t)
-	f.claims = map[string]interface{}{
+	f.claims = map[string]any{
 		"iss": f.issuer, "sub": "u-9", "aud": f.clientID,
 		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
 		"upn":         "bob@corp.example",
@@ -448,12 +445,12 @@ func TestOIDC_ClaimsMappingOverride(t *testing.T) {
 // userinfo sub matches the id_token sub.
 func TestOIDC_UserinfoFallback(t *testing.T) {
 	f := newFakeIdP(t)
-	f.claims = map[string]interface{}{
+	f.claims = map[string]any{
 		"iss": f.issuer, "sub": "user-123", "aud": f.clientID,
 		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
 		"name": "Alice", // no email, no picture
 	}
-	f.userinfo = map[string]interface{}{
+	f.userinfo = map[string]any{
 		"email":   "from-userinfo@example.com",
 		"picture": "https://example.com/ui.png",
 	}
@@ -483,7 +480,7 @@ func TestOIDC_UserinfoFallback(t *testing.T) {
 // from userinfo, ID from userinfo sub.
 func TestOIDC_UserinfoOnlyStaleToken(t *testing.T) {
 	f := newFakeIdP(t)
-	f.userinfo = map[string]interface{}{
+	f.userinfo = map[string]any{
 		"email": "stale@example.com", "name": "Stale",
 	}
 	f.userinfoSub = "sub-from-ui"
@@ -508,11 +505,11 @@ func TestOIDC_JWKSRotation(t *testing.T) {
 	// Token is signed with rsaKey (kid rsa-1). Hit 0 serves only a different
 	// key; hit >=1 serves the real one (rotation publishes it).
 	oldKey := mustRSAKey(t, 2048)
-	f.jwksFn = func(hit int) []map[string]interface{} {
+	f.jwksFn = func(hit int) []map[string]any {
 		if hit == 0 {
-			return []map[string]interface{}{rsaJWKMap("old", &oldKey.PublicKey)}
+			return []map[string]any{rsaJWKMap("old", &oldKey.PublicKey)}
 		}
-		return []map[string]interface{}{
+		return []map[string]any{
 			rsaJWKMap("old", &oldKey.PublicKey),
 			rsaJWKMap(f.rsaKID, &f.rsaKey.PublicKey),
 		}
@@ -523,7 +520,7 @@ func TestOIDC_JWKSRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExchangeCode: %v", err)
 	}
-	if hits := atomic.LoadInt32(&f.jwksHit); hits != 2 {
+	if hits := f.jwksHit.Load(); hits != 2 {
 		t.Fatalf("jwks hits = %d, want 2 (initial + one rotation refetch)", hits)
 	}
 	if info, err := p.FetchUserInfo(ctxBg(), tok.AccessToken); err != nil || info.ID != "user-123" {
@@ -534,7 +531,7 @@ func TestOIDC_JWKSRotation(t *testing.T) {
 // TestOIDC_AudArrayWithAzp: multi-audience token with a matching azp passes.
 func TestOIDC_AudArrayWithAzp(t *testing.T) {
 	f := newFakeIdP(t)
-	f.claims = map[string]interface{}{
+	f.claims = map[string]any{
 		"iss": f.issuer, "sub": "user-123",
 		"aud": []string{f.clientID, "other-audience"},
 		"azp": f.clientID,
@@ -629,9 +626,9 @@ func TestOIDC_NewProviderValidation(t *testing.T) {
 // that advertises exactly one signing key.
 func TestOIDC_NoKidSingleKey(t *testing.T) {
 	f := newFakeIdP(t)
-	f.header = map[string]interface{}{"alg": "RS256", "kid": "", "typ": "JWT"} // kid absent/empty
-	f.jwksFn = func(int) []map[string]interface{} {
-		return []map[string]interface{}{rsaJWKMap("", &f.rsaKey.PublicKey)}
+	f.header = map[string]any{"alg": "RS256", "kid": "", "typ": "JWT"} // kid absent/empty
+	f.jwksFn = func(int) []map[string]any {
+		return []map[string]any{rsaJWKMap("", &f.rsaKey.PublicKey)}
 	}
 	p := newTestProvider(t, f)
 	tok, err := p.ExchangeCode(ctxBg(), "any-code")
