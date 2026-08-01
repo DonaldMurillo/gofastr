@@ -376,6 +376,7 @@ var moduleAttrs = map[string][]string{
 	},
 	"taginput": {
 		"data-fui-tag-input",
+		"data-fui-tag-input-id",
 		"data-fui-tag-input-zone",
 	},
 	"textarea": {
