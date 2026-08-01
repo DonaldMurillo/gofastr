@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -126,6 +127,9 @@ func TestDevImpliedMountYieldsToManualMCPRoute(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("server never became ready")
 	}
+	// See startOnRandomPort: unused pooled conns sit in StateNew and stall
+	// Server.Shutdown for 5s — flush them before taking the 5s deadline.
+	http.DefaultClient.CloseIdleConnections()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := app.Shutdown(shutdownCtx); err != nil {
