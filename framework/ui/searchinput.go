@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -77,9 +78,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		"placeholder": placeholder,
 		"aria-label":  i18nui.T(ctx, i18nui.KeySearchLabel),
 	}
-	for k, v := range cfg.ExtraAttrs {
-		inputAttrs[k] = v
-	}
+	maps.Copy(inputAttrs, cfg.ExtraAttrs)
 	// Protect critical attrs from Attrs override.
 	inputAttrs["type"] = "search"
 	inputAttrs["name"] = cfg.Name

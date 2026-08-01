@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -133,19 +134,15 @@ func TestLoopEmitsTurnTiming(t *testing.T) {
 	}}}
 	e := NewEngine(session, bus, prov, "m", d)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sub := bus.Subscribe(ctx)
 
 	_ = e.RunTurn(context.Background(), ids.NewClientID(), SimpleInput("hi"))
 	kinds := drain(sub, 200*time.Millisecond)
 
 	var gotTiming bool
-	for _, k := range kinds {
-		if k == "TurnTiming" {
-			gotTiming = true
-			break
-		}
+	if slices.Contains(kinds, "TurnTiming") {
+		gotTiming = true
 	}
 	if !gotTiming {
 		t.Errorf("missing TurnTiming event in %v", kinds)

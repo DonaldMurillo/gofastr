@@ -116,7 +116,7 @@ type runtime401Sink struct {
 }
 
 func (s *runtime401Sink) listen(ctx context.Context) {
-	chromedp.ListenTarget(ctx, func(ev interface{}) {
+	chromedp.ListenTarget(ctx, func(ev any) {
 		if e, ok := ev.(*network.EventResponseReceived); ok {
 			if e.Response.Status == 401 && strings.Contains(e.Response.URL, "/__gofastr/") {
 				s.mu.Lock()

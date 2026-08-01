@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
@@ -92,10 +93,5 @@ func newEndpointMCPApp(t *testing.T, ep entity.Endpoint) *App {
 }
 
 func hasTool(hay []string, needle string) bool {
-	for _, h := range hay {
-		if h == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(hay, needle)
 }

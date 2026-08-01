@@ -415,10 +415,7 @@ func scanOutboxRow(row interface {
 // backoffMax when positive. Mirrors battery/queue's backoffFor so the
 // two behave consistently.
 func (o *Outbox) backoffFor(attempts int) time.Duration {
-	exp := attempts - 1
-	if exp < 0 {
-		exp = 0
-	}
+	exp := max(attempts-1, 0)
 	d := o.backoffBase
 	for i := 0; i < exp; i++ {
 		if o.backoffMax > 0 && d >= o.backoffMax {

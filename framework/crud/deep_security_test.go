@@ -183,7 +183,7 @@ func TestPagination_TotalPagesRounding(t *testing.T) {
 	}.WithTimestamps(false), `CREATE TABLE round_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Insert 3 rows, request perPage=2 → totalPages should be 2
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		seedRows(t, db, "round_items", []map[string]any{
 			{"id": fmt.Sprintf("ri-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
@@ -425,7 +425,7 @@ func TestCursor_LimitEnforced(t *testing.T) {
 	}.WithTimestamps(false), `CREATE TABLE cl_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Seed 10 items
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		seedRows(t, db, "cl_items", []map[string]any{
 			{"id": fmt.Sprintf("cl-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
@@ -499,14 +499,14 @@ func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE cc_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		seedRows(t, db, "cc_items", []map[string]any{
 			{"id": fmt.Sprintf("cc-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(iter int) {
 			defer wg.Done()
@@ -1150,7 +1150,7 @@ func TestInclude_LimitBypassViaInclude(t *testing.T) {
 	}.WithTimestamps(false), `CREATE TABLE lbv_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Seed 5 items
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		seedRows(t, db, "lbv_items", []map[string]any{
 			{"id": fmt.Sprintf("lbv-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
@@ -1189,7 +1189,7 @@ func TestInclude_CountQueryExcludesRelations(t *testing.T) {
 	}.WithTimestamps(false), `CREATE TABLE cq_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	// Insert 3 items
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		seedRows(t, db, "cq_items", []map[string]any{
 			{"id": fmt.Sprintf("cq-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
@@ -1229,7 +1229,7 @@ func TestStreaming_ContentTypeSet(t *testing.T) {
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE ct_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		seedRows(t, db, "ct_items", []map[string]any{
 			{"id": fmt.Sprintf("ct-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
@@ -1266,7 +1266,7 @@ func TestStreaming_LimitEnforced(t *testing.T) {
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Pagination: &entity.PaginationConfig{MaxListLimit: 3},
 	}.WithTimestamps(false), `CREATE TABLE sl_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		seedRows(t, db, "sl_items", []map[string]any{
 			{"id": fmt.Sprintf("sl-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
@@ -1303,7 +1303,7 @@ func TestStreaming_AbortedConnectionCleanup(t *testing.T) {
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE ac_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		seedRows(t, db, "ac_items", []map[string]any{
 			{"id": fmt.Sprintf("ac-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
@@ -1358,17 +1358,15 @@ func TestStreaming_ConcurrentStreams(t *testing.T) {
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE cs_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		seedRows(t, db, "cs_items", []map[string]any{
 			{"id": fmt.Sprintf("cs-%d", i), "user_id": "alice", "title": fmt.Sprintf("item %d", i)},
 		})
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 5 {
+		wg.Go(func() {
 			req := makeRequest(t, RequestOpts{
 				Method: http.MethodGet,
 				Path:   "/cs_items?stream=true",
@@ -1381,7 +1379,7 @@ func TestStreaming_ConcurrentStreams(t *testing.T) {
 			if rr.Code != http.StatusOK {
 				t.Errorf("SECURITY: [streaming] concurrent stream returned %d, want 200. Attack: concurrent streams cause deadlock", rr.Code)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -1553,7 +1551,7 @@ func TestList_ConcurrentOwnerScope(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for _, user := range users {
-		for i := 0; i < 20; i++ {
+		for range 20 {
 			wg.Add(1)
 			go func(uid string) {
 				defer wg.Done()

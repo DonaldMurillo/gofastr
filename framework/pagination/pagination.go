@@ -101,10 +101,7 @@ func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
 		return cursor, limit, 0
 	}
 
-	page := parseIntDefault(r, "page", 1)
-	if page < 1 {
-		page = 1
-	}
+	page := max(parseIntDefault(r, "page", 1), 1)
 	// Guard against integer overflow: a malicious caller can request a
 	// huge page number (e.g. math.MaxInt) which wraps to a negative
 	// offset when multiplied by limit. Negative offsets are undefined

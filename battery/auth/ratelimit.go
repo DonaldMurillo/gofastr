@@ -296,8 +296,8 @@ func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 func (rl *RateLimiter) clientIP(r *http.Request) string {
 	if rl.cfg.TrustForwardedFor {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if comma := strings.IndexByte(xff, ','); comma >= 0 {
-				return strings.TrimSpace(xff[:comma])
+			if before, _, ok := strings.Cut(xff, ","); ok {
+				return strings.TrimSpace(before)
 			}
 			return strings.TrimSpace(xff)
 		}

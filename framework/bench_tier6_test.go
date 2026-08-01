@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -51,15 +51,12 @@ func (l *latencyRecorder) record(d time.Duration) {
 // report computes the percentiles from collected samples and emits them as
 // custom metrics. Called after b.StopTimer in the parent benchmark.
 func (l *latencyRecorder) report(b *testing.B) {
-	used := int(l.next.Load())
-	if used > len(l.samples) {
-		used = len(l.samples)
-	}
+	used := min(int(l.next.Load()), len(l.samples))
 	if used == 0 {
 		return
 	}
 	samples := l.samples[:used]
-	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	slices.Sort(samples)
 
 	pct := func(p float64) float64 {
 		idx := int(float64(used-1) * p)
@@ -85,7 +82,6 @@ func BenchmarkT6_ListConcurrency(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "/posts?limit=50", nil)
 
 		for _, par := range []int{1, 8, 64} {
-			par := par
 			b.Run(fmt.Sprintf("parallelism=%d", par), func(b *testing.B) {
 				rec := newLatencyRecorder(b.N + par*8)
 				b.SetParallelism(par)
@@ -130,7 +126,6 @@ func BenchmarkT6_CreateConcurrency(b *testing.B) {
 		}
 
 		for _, par := range []int{1, 8, 64} {
-			par := par
 			b.Run(fmt.Sprintf("parallelism=%d", par), func(b *testing.B) {
 				rec := newLatencyRecorder(b.N + par*8)
 				var counter atomic.Int64
@@ -179,7 +174,6 @@ func BenchmarkT6_MixedRW(b *testing.B) {
 		}
 
 		for _, par := range []int{8, 64} {
-			par := par
 			b.Run(fmt.Sprintf("parallelism=%d", par), func(b *testing.B) {
 				rec := newLatencyRecorder(b.N + par*8)
 				var counter atomic.Int64

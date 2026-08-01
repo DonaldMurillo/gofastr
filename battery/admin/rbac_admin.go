@@ -386,8 +386,7 @@ func (b *Battery) handleRBACGrant(w http.ResponseWriter, r *http.Request) {
 	if err := b.cfg.GrantStore.Grant(r.Context(), role, access.Permission(perm)); err != nil {
 		// A strict-mode unknown capability is the admin's typo, not a
 		// server fault — surface the reason instead of a generic 500.
-		var unknown *access.UnknownCapabilityError
-		if errors.As(err, &unknown) {
+		if unknown, ok := errors.AsType[*access.UnknownCapabilityError](err); ok {
 			http.Error(w, unknown.Error(), http.StatusBadRequest)
 			return
 		}
@@ -441,7 +440,7 @@ func (b *Battery) handleRBACAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	// Parse comma-separated roles.
 	var roles []string
-	for _, r := range strings.Split(rolesRaw, ",") {
+	for r := range strings.SplitSeq(rolesRaw, ",") {
 		r = strings.TrimSpace(r)
 		if r != "" {
 			roles = append(roles, r)

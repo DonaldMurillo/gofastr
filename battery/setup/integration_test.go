@@ -90,7 +90,7 @@ func TestSwap_HealthzReturns200(t *testing.T) {
 // pre-setup GET / → 503, POST /setup completes the step, swap is called,
 // and the Complete predicate flips.
 func TestSwap_WizardCompletesAndSwaps(t *testing.T) {
-	var swapped int32
+	var swapped atomic.Int32
 	done := false
 	r := New(Config{
 		DisableToken: true,
@@ -107,7 +107,7 @@ func TestSwap_WizardCompletesAndSwaps(t *testing.T) {
 		},
 	})
 	h := r.Handler(func() {
-		atomic.StoreInt32(&swapped, 1)
+		swapped.Store(1)
 	}, nil, nil)
 
 	// Pre-setup: non-setup path is 503.
@@ -132,7 +132,7 @@ func TestSwap_WizardCompletesAndSwaps(t *testing.T) {
 		t.Fatalf("POST /setup (final step) expected 200 (completion), got %d", w.Code)
 	}
 
-	if atomic.LoadInt32(&swapped) != 1 {
+	if swapped.Load() != 1 {
 		t.Fatal("swap must be called after final step completes")
 	}
 	if !done {
@@ -286,7 +286,7 @@ func TestHeadless_BadPasswordFails(t *testing.T) {
 // TestConsumerGating_DeferredUntilSwap verifies that a consumer (fake
 // queue) is NOT started during interactive setup, only after the swap.
 func TestConsumerGating_DeferredUntilSwap(t *testing.T) {
-	var consumerStarted int32
+	var consumerStarted atomic.Int32
 	done := false
 	r := New(Config{
 		DisableToken: true,
@@ -299,11 +299,11 @@ func TestConsumerGating_DeferredUntilSwap(t *testing.T) {
 		},
 	})
 	h := r.Handler(func() {
-		atomic.StoreInt32(&consumerStarted, 1)
+		consumerStarted.Store(1)
 	}, nil, nil)
 
 	// Before setup: consumer not started.
-	if atomic.LoadInt32(&consumerStarted) != 0 {
+	if consumerStarted.Load() != 0 {
 		t.Fatal("consumer must not start before setup completes")
 	}
 
@@ -314,7 +314,7 @@ func TestConsumerGating_DeferredUntilSwap(t *testing.T) {
 	}
 
 	// After swap: consumer started.
-	if atomic.LoadInt32(&consumerStarted) != 1 {
+	if consumerStarted.Load() != 1 {
 		t.Fatal("consumer must start after swap")
 	}
 }
@@ -556,7 +556,7 @@ func TestAdminStep_EmptyTablePanics(t *testing.T) {
 // NOT render the "Setup Complete" page and must NOT fire the swap — that
 // would show "your application is ready" over a permanently-503 app.
 func TestSwap_CompleteStuckFalseIsHonest(t *testing.T) {
-	var swapped int32
+	var swapped atomic.Int32
 	r := New(Config{
 		DisableToken: true,
 		Complete:     func(_ context.Context) (bool, error) { return false, nil },
@@ -565,10 +565,10 @@ func TestSwap_CompleteStuckFalseIsHonest(t *testing.T) {
 				Run: func(_ context.Context, _ map[string]string) error { return nil }},
 		},
 	})
-	h := r.Handler(func() { atomic.StoreInt32(&swapped, 1) }, nil, nil)
+	h := r.Handler(func() { swapped.Store(1) }, nil, nil)
 
 	w := doPost(h, "/setup", "NAME=alice", nil)
-	if atomic.LoadInt32(&swapped) != 0 {
+	if swapped.Load() != 0 {
 		t.Fatal("swap must not fire while Complete reports false")
 	}
 	body := w.Body.String()
@@ -584,7 +584,7 @@ func TestSwap_CompleteStuckFalseIsHonest(t *testing.T) {
 // recoverable: the error is shown, and a later request (predicate healed)
 // completes and swaps — no restart required.
 func TestSwap_CompleteErrorRecovers(t *testing.T) {
-	var swapped int32
+	var swapped atomic.Int32
 	var failing atomic.Bool
 	failing.Store(true)
 	ran := false
@@ -601,17 +601,17 @@ func TestSwap_CompleteErrorRecovers(t *testing.T) {
 				Run: func(_ context.Context, _ map[string]string) error { ran = true; return nil }},
 		},
 	})
-	h := r.Handler(func() { atomic.StoreInt32(&swapped, 1) }, nil, nil)
+	h := r.Handler(func() { swapped.Store(1) }, nil, nil)
 
 	w := doPost(h, "/setup", "NAME=alice", nil)
-	if strings.Contains(w.Body.String(), "Setup Complete") || atomic.LoadInt32(&swapped) != 0 {
+	if strings.Contains(w.Body.String(), "Setup Complete") || swapped.Load() != 0 {
 		t.Fatal("completion must not be claimed while the Complete check errors")
 	}
 
 	// Predicate heals; a plain GET /setup now completes and swaps.
 	failing.Store(false)
 	w = doGet(h, "/setup")
-	if atomic.LoadInt32(&swapped) != 1 {
+	if swapped.Load() != 1 {
 		t.Fatalf("healed Complete on a later request must fire the swap (code %d)", w.Code)
 	}
 	if !strings.Contains(w.Body.String(), "Setup Complete") {

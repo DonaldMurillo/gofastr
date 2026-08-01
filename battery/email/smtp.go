@@ -369,7 +369,7 @@ func randomBoundary() (string, error) {
 // present in template-rendered content.
 func bodyContainsBoundary(body, boundary string) bool {
 	delim := "--" + boundary
-	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
 		line = strings.TrimRight(line, "\r")
 		if line == delim || line == delim+"--" {
 			return true

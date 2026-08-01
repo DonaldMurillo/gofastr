@@ -420,8 +420,8 @@ func unknownFilterError(key string, fieldNames []string) error {
 func nearestField(key string, fieldNames []string) string {
 	base := key
 	for _, s := range FilterSuffixes {
-		if strings.HasSuffix(base, s.Suffix) {
-			base = strings.TrimSuffix(base, s.Suffix)
+		if before, ok := strings.CutSuffix(base, s.Suffix); ok {
+			base = before
 			break
 		}
 	}

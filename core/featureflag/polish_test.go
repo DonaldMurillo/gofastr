@@ -43,7 +43,7 @@ func TestEvaluator_EmptySubjectOffBelowFullRollout(t *testing.T) {
 	_ = s.Set(Flag{Key: "x", Enabled: true, Rollout: 50})
 	e := NewEvaluator(s)
 	ctx := WithContext(context.Background(), EvalContext{})
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		if e.Bool(ctx, "x") {
 			t.Fatalf("anonymous subject must NOT see a flag below 100%% rollout — that'd be 100%% per key")
 		}
@@ -72,7 +72,7 @@ func TestEvaluator_SaltShiftsBuckets(t *testing.T) {
 	// Salt must change SOMETHING — over many users, the two evaluators
 	// can't produce identical decisions. Use a representative sample.
 	disagreements := 0
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		uid := "user-" + string(rune('A'+i%26)) + string(rune('0'+i%10))
 		c := WithContext(context.Background(), EvalContext{UserID: uid})
 		if e1.Bool(c, "k") != e2.Bool(c, "k") {

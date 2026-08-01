@@ -18,16 +18,16 @@ func TestJWKSCache_PerKidRefetchNotWedged(t *testing.T) {
 	keyA := mustRSAKey(t, 2048)
 	keyB := mustRSAKey(t, 2048)
 
-	var hits int32
+	var hits atomic.Int32
 	// The server publishes kid-b only after the first forced refetch, modeling
 	// a rotation replica catching up.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
-		keys := []map[string]interface{}{rsaJWKMap("kid-a", &keyA.PublicKey)}
+		n := hits.Add(1)
+		keys := []map[string]any{rsaJWKMap("kid-a", &keyA.PublicKey)}
 		if n >= 3 {
 			keys = append(keys, rsaJWKMap("kid-b", &keyB.PublicKey))
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"keys": keys})
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
 	}))
 	defer srv.Close()
 
@@ -48,7 +48,7 @@ func TestJWKSCache_PerKidRefetchNotWedged(t *testing.T) {
 	if _, err := c.getKey(ctx, srv.URL, "kid-b"); err != nil {
 		t.Fatalf("kid-b wedged by bogus kid's spent slot: %v", err)
 	}
-	if got := atomic.LoadInt32(&hits); got != 3 {
+	if got := hits.Load(); got != 3 {
 		t.Fatalf("jwks hits = %d, want 3 (warmup + bogus refetch + kid-b refetch)", got)
 	}
 }
@@ -57,11 +57,11 @@ func TestJWKSCache_PerKidRefetchNotWedged(t *testing.T) {
 // a flood of the SAME unknown kid to one refetch per window.
 func TestJWKSCache_SameKidRateLimited(t *testing.T) {
 	keyA := mustRSAKey(t, 2048)
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&hits, 1)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"keys": []map[string]interface{}{rsaJWKMap("kid-a", &keyA.PublicKey)},
+		hits.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"keys": []map[string]any{rsaJWKMap("kid-a", &keyA.PublicKey)},
 		})
 	}))
 	defer srv.Close()
@@ -71,10 +71,10 @@ func TestJWKSCache_SameKidRateLimited(t *testing.T) {
 	if _, err := c.getKey(ctx, srv.URL, "kid-a"); err != nil { // hit 1
 		t.Fatalf("warmup: %v", err)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, _ = c.getKey(ctx, srv.URL, "same-bogus") // only the first forces hit 2
 	}
-	if got := atomic.LoadInt32(&hits); got != 2 {
+	if got := hits.Load(); got != 2 {
 		t.Fatalf("jwks hits = %d, want 2 (warmup + one throttled refetch)", got)
 	}
 }

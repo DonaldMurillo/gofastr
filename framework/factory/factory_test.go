@@ -218,7 +218,7 @@ func TestSequence_NextIsMonotonicAndConcurrentSafe(t *testing.T) {
 	const N = 100
 	var wg sync.WaitGroup
 	got := make([]int64, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

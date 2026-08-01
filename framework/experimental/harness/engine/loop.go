@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -367,8 +368,8 @@ func (e *Engine) Spawn(ctx context.Context, systemHint, userPrompt string) (stri
 		return "", err
 	}
 	// Walk back through history to find the last assistant text.
-	for i := len(sub.History) - 1; i >= 0; i-- {
-		m := sub.History[i]
+	for _, m := range slices.Backward(sub.History) {
+
 		if m.Role != provider.RoleAssistant {
 			continue
 		}

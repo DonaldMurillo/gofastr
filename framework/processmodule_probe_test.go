@@ -161,8 +161,8 @@ func TestProbeChildBodies_PrintParseableLine(t *testing.T) {
 					t.Fatalf("probe %s body printed nothing", p)
 				}
 				first := line
-				if idx := strings.IndexByte(line, '\n'); idx >= 0 {
-					first = strings.TrimSpace(line[:idx])
+				if before, _, ok := strings.Cut(line, "\n"); ok {
+					first = strings.TrimSpace(before)
 				}
 				switch {
 				case strings.HasPrefix(first, probeOutPass),

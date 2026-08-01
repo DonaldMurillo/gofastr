@@ -133,7 +133,7 @@ func TestGuideDocsEndWithCommonMistakes(t *testing.T) {
 			continue
 		}
 		found := false
-		for _, ln := range strings.Split(string(body), "\n") {
+		for ln := range strings.SplitSeq(string(body), "\n") {
 			if strings.HasPrefix(strings.TrimSpace(ln), heading) {
 				found = true
 				break
@@ -207,7 +207,7 @@ func TestUICapabilityMapLinksResolve(t *testing.T) {
 
 	linkRE := regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
 	for _, match := range linkRE.FindAllStringSubmatch(string(body), -1) {
-		target := strings.Split(strings.Split(match[1], "#")[0], "?")[0]
+		target, _, _ := strings.Cut(strings.Split(match[1], "#")[0], "?")
 		switch {
 		case strings.HasSuffix(target, ".md") && !strings.HasPrefix(target, "../../../examples/"):
 			topic := strings.TrimSuffix(filepath.Base(target), ".md")

@@ -10,7 +10,7 @@ func TestManager_DroppedUpdatesCounter(t *testing.T) {
 	_, cancelS1 := m.Subscribe("s1") // buffered (64), nothing draining it
 	defer cancelS1()
 
-	for i := 0; i < 64; i++ {
+	for range 64 {
 		m.PushUpdate(IslandUpdate{IslandID: "i", HTML: "x"}, "s1")
 	}
 	if got := m.DroppedUpdates(); got != 0 {

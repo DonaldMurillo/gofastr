@@ -124,8 +124,8 @@ func postgresAdminDSN(dsn string) (dbName, adminDSN string, err error) {
 	out := make([]string, 0, len(fields))
 	found := false
 	for _, f := range fields {
-		if strings.HasPrefix(f, "dbname=") {
-			dbName = strings.TrimPrefix(f, "dbname=")
+		if after, ok := strings.CutPrefix(f, "dbname="); ok {
+			dbName = after
 			out = append(out, "dbname=postgres")
 			found = true
 		} else {

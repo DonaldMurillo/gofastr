@@ -174,7 +174,8 @@ func seed(db *sql.DB) {
 	db.Exec(`INSERT INTO customers (id, name, email, vip) VALUES (lower(hex(randomblob(16))), 'Alan Turing', 'alan@example.com', 0)`)
 }
 
-func f64(v float64) *float64 { return &v }
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }
 
 // ----- demo auth ------------------------------------------------------------
 

@@ -61,7 +61,7 @@ func equalUniqueKey(left, right []Value) bool {
 
 func lessUniqueKey(left, right []Value) bool {
 	limit := min(len(left), len(right))
-	for i := 0; i < limit; i++ {
+	for i := range limit {
 		comparison := CompareValues(left[i], right[i])
 		if comparison != CompareEqual {
 			return comparison == CompareLess

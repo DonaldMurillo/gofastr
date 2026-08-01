@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -111,9 +112,7 @@ func (f *Factory) Build(overrides ...map[string]any) map[string]any {
 		out = map[string]any{}
 	}
 	for _, o := range overrides {
-		for k, v := range o {
-			out[k] = v
-		}
+		maps.Copy(out, o)
 	}
 	return out
 }
@@ -135,7 +134,7 @@ func (f *Factory) CreateMany(ctx context.Context, n int, perIndex func(i int) ma
 		return nil, nil
 	}
 	out := make([]map[string]any, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var ix map[string]any
 		if perIndex != nil {
 			ix = perIndex(i)

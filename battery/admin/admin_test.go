@@ -119,7 +119,7 @@ func TestAdmin_QueuePageListsJobs(t *testing.T) {
 	q := newDBQueue(t, db)
 
 	ctx := context.Background()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := q.Enqueue(ctx, queue.Job{Type: "send.email", ScheduledAt: time.Now()}); err != nil {
 			t.Fatalf("enqueue: %v", err)
 		}
@@ -200,11 +200,4 @@ func TestAdmin_ResponseHeadersAreCacheSafe(t *testing.T) {
 	if !strings.HasPrefix(rr.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("admin pages must be HTML; got %q", rr.Header().Get("Content-Type"))
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

@@ -69,18 +69,12 @@ func (t *TUI) drawModal() {
 	}
 	// Geometry: width = min(80, t.width-8). Height = lines + 4 (title
 	// row, blank, body lines, blank, esc hint).
-	maxW := t.width - 8
-	if maxW < 20 {
-		maxW = 20
-	}
+	maxW := max(t.width-8, 20)
 	if maxW > 80 {
 		maxW = 80
 	}
 	// Wrap each body line to maxW-4 (frame chars + padding).
-	innerW := maxW - 4
-	if innerW < 10 {
-		innerW = 10
-	}
+	innerW := max(maxW-4, 10)
 	var bodyVisual []string
 	for _, ln := range t.modal.lines {
 		if ln == "" {
@@ -95,10 +89,7 @@ func (t *TUI) drawModal() {
 	if totalH > maxH {
 		totalH = maxH
 		// Clip body lines from the bottom.
-		bodyH = totalH - 4
-		if bodyH < 0 {
-			bodyH = 0
-		}
+		bodyH = max(totalH-4, 0)
 		bodyVisual = bodyVisual[:bodyH]
 	}
 	// Compute top-left in absolute coords (1-indexed).
@@ -115,10 +106,7 @@ func (t *TUI) drawModal() {
 	}
 	// Top border with title baked in: ┌─ Title ──────...
 	titlePart := " " + t.modal.title + " "
-	dashLen := maxW - 2 - runeLen(titlePart) - 1
-	if dashLen < 0 {
-		dashLen = 0
-	}
+	dashLen := max(maxW-2-runeLen(titlePart)-1, 0)
 	top := "╭─" + titlePart + strings.Repeat("─", dashLen) + "╮"
 	_, _ = fmt.Fprint(t.out, move(startRow, startCol), ansiBold, top, ansiReset)
 	// Blank row.

@@ -87,7 +87,7 @@ func TestBridge_FansEntityEventsToWebhookSubscribers(t *testing.T) {
 }
 
 func TestBridge_DefaultsToEntityLifecycle(t *testing.T) {
-	var hits int32
+	var hits atomic.Int32
 	mgr := New(NewMemoryStore(), Options{
 		MaxAttempts: 1, Backoff: []time.Duration{0}, PollInterval: 5 * time.Millisecond, AllowPrivateNetworks: true,
 	})
@@ -95,7 +95,7 @@ func TestBridge_DefaultsToEntityLifecycle(t *testing.T) {
 	defer mgr.Stop(context.Background())
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hits, 1)
+		hits.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -113,12 +113,12 @@ func TestBridge_DefaultsToEntityLifecycle(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&hits) >= 3 {
+		if hits.Load() >= 3 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if got := atomic.LoadInt32(&hits); got != 3 {
+	if got := hits.Load(); got != 3 {
 		t.Fatalf("expected 3 deliveries (one per default event), got %d", got)
 	}
 }

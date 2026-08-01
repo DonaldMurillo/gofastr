@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -75,9 +76,9 @@ func (h *recordingHandler) warnCount() int {
 func (h *recordingHandler) lastWarnMessage() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for i := len(h.records) - 1; i >= 0; i-- {
-		if h.records[i].Level == slog.LevelWarn {
-			return h.records[i].Message
+	for _, v := range slices.Backward(h.records) {
+		if v.Level == slog.LevelWarn {
+			return v.Message
 		}
 	}
 	return ""
@@ -346,11 +347,11 @@ func TestConcurrentSetAndGet(t *testing.T) {
 
 	var wg sync.WaitGroup
 	ctx := context.Background()
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		wg.Add(2)
 		go func(n int) {
 			defer wg.Done()
-			for j := 0; j < 200; j++ {
+			for j := range 200 {
 				if j%3 == 0 {
 					owner.SetExtractor(nil)
 				} else {
@@ -360,7 +361,7 @@ func TestConcurrentSetAndGet(t *testing.T) {
 		}(i)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < 200; j++ {
+			for range 200 {
 				owner.Get(ctx)
 				owner.GetExtractor()
 			}

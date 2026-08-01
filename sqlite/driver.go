@@ -584,18 +584,18 @@ func (r *rowsWrapper) Next(dest []driver.Value) error {
 // ColumnTypeScanType returns the scan type for a column.
 func (r *rowsWrapper) ColumnTypeScanType(index int) reflect.Type {
 	if index >= len(r.rows) || len(r.rows) == 0 {
-		return reflect.TypeOf("")
+		return reflect.TypeFor[string]()
 	}
 	val := r.rows[0][index]
 	switch val.Type {
 	case DataTypeInteger:
-		return reflect.TypeOf(int64(0))
+		return reflect.TypeFor[int64]()
 	case DataTypeFloat:
-		return reflect.TypeOf(float64(0))
+		return reflect.TypeFor[float64]()
 	case DataTypeText:
-		return reflect.TypeOf("")
+		return reflect.TypeFor[string]()
 	case DataTypeBlob:
-		return reflect.TypeOf([]byte{})
+		return reflect.TypeFor[[]byte]()
 	default:
 		return reflect.TypeOf(nil)
 	}
@@ -641,7 +641,7 @@ func argsToNamedValues(args []driver.Value) []driver.NamedValue {
 	return result
 }
 
-func interfaceToValue(v interface{}) Value {
+func interfaceToValue(v any) Value {
 	if v == nil {
 		return NullValue
 	}
@@ -705,7 +705,7 @@ func interfaceToValue(v interface{}) Value {
 	}
 }
 
-func valueToInterface(v Value) interface{} {
+func valueToInterface(v Value) any {
 	switch v.Type {
 	case DataTypeNull:
 		return nil

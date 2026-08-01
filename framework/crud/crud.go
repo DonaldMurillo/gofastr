@@ -1065,13 +1065,11 @@ var (
 // Sentinel and typed errors are translated to specific status codes; anything
 // else becomes a 500.
 func writeCRUDError(w http.ResponseWriter, err error) {
-	var bhe *beforeHookError
-	if errors.As(err, &bhe) {
+	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, bhe.Error())
 		return
 	}
-	var ve *ValidationError
-	if errors.As(err, &ve) {
+	if ve, ok := errors.AsType[*ValidationError](err); ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]any{
@@ -1081,8 +1079,7 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	var tme *tenantMissingError
-	if errors.As(err, &tme) {
+	if tme, ok := errors.AsType[*tenantMissingError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, tme.Error())
 		return
 	}
@@ -1211,10 +1208,7 @@ func explicitOffsetValues(q url.Values) (int, bool) {
 func listLimitCap(entityMax int) int {
 	limitCap := 100
 	if entityMax > 0 {
-		limitCap = entityMax
-		if limitCap > streamListThreshold {
-			limitCap = streamListThreshold
-		}
+		limitCap = min(entityMax, streamListThreshold)
 	}
 	return limitCap
 }

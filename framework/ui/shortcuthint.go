@@ -88,7 +88,7 @@ type chordPart struct {
 
 func parseChordParts(chord string) []chordPart {
 	out := []chordPart{}
-	for _, raw := range strings.Split(chord, "+") {
+	for raw := range strings.SplitSeq(chord, "+") {
 		t := strings.TrimSpace(raw)
 		if t == "" {
 			continue

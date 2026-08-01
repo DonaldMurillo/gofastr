@@ -54,7 +54,6 @@ func BenchmarkT9_StreamingListRealVolume(b *testing.B) {
 		ch.Registry = app.Registry
 
 		for _, limit := range []int{1000, 5000, 10000} {
-			limit := limit
 			b.Run(fmt.Sprintf("rows=%d", limit), func(b *testing.B) {
 				cols := ch.VisibleFields()
 				ctx := context.Background()
@@ -157,17 +156,15 @@ func BenchmarkT9_SSEEventStream(b *testing.B) {
 			req := httptest.NewRequest(http.MethodGet, "/posts/_events", nil).WithContext(ctx)
 
 			subWG := sync.WaitGroup{}
-			subWG.Add(1)
-			go func() {
-				defer subWG.Done()
+			subWG.Go(func() {
 				ch.EventStream()(rec, req)
-			}()
+			})
 
 			// Tiny pause so the Subscribe call in the handler wins the race
 			// against the first emit.
 			time.Sleep(2 * time.Millisecond)
 
-			for j := 0; j < eventsPerIter; j++ {
+			for j := range eventsPerIter {
 				ch.EmitEvent(context.Background(), EntityCreated,
 					map[string]any{"id": fmt.Sprintf("p%d_%d", i, j), "title": "x"})
 			}
@@ -177,10 +174,7 @@ func BenchmarkT9_SSEEventStream(b *testing.B) {
 			subWG.Wait()
 
 			delivered := rec.eventsDelivered.Load()
-			dropped := int64(eventsPerIter) - delivered
-			if dropped < 0 {
-				dropped = 0
-			}
+			dropped := max(int64(eventsPerIter)-delivered, 0)
 			totalDelivered += delivered
 			totalDropped += dropped
 			totalBytes += int64(rec.bytesWritten.Load())
@@ -297,7 +291,6 @@ func BenchmarkT9_IslandRPC(b *testing.B) {
 	})
 
 	for _, pages := range []int{1, 5, 25} {
-		pages := pages
 		b.Run(fmt.Sprintf("pages=%d", pages), func(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -331,7 +324,6 @@ func BenchmarkT9_IslandRPC_Concurrency(b *testing.B) {
 	})
 
 	for _, workers := range []int{1, 8, 64} {
-		workers := workers
 		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
 			rec := newLatencyRecorder(b.N)
 			var next atomic.Int64
@@ -339,7 +331,7 @@ func BenchmarkT9_IslandRPC_Concurrency(b *testing.B) {
 			start := make(chan struct{})
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < workers; i++ {
+			for range workers {
 				wg.Add(1)
 				req := httptest.NewRequest(http.MethodGet,
 					"/islands/posts/state?p=1", nil)
@@ -375,7 +367,7 @@ func BenchmarkT9_IslandRPC_Concurrency(b *testing.B) {
 // fragments. Representative payload for an island swap.
 func renderRows(label string, n int) []render.HTML {
 	out := make([]render.HTML, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = render.Tag("div", map[string]string{"class": "row"},
 			render.Tag("span", map[string]string{"class": "title"},
 				render.Text(fmt.Sprintf("Post %s.%d", label, i))),
@@ -425,7 +417,6 @@ func BenchmarkT9_UIHostPageRender(b *testing.B) {
 	fwApp.Mount(host)
 
 	for _, path := range []string{"/", "/about"} {
-		path := path
 		b.Run(path, func(b *testing.B) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			b.ResetTimer()
@@ -464,7 +455,7 @@ func (s *benchAboutScreen) ScreenDescription() string  { return "bench about" }
 func (s *benchAboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *benchAboutScreen) Render() render.HTML {
 	rows := make([]render.HTML, 50)
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		rows[i] = render.Tag("li", nil, render.Text(fmt.Sprintf("Item %d", i)))
 	}
 	return render.Tag("main", nil,

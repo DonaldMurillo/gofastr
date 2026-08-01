@@ -374,7 +374,7 @@ func TestSessionTokenPortableAcrossHosts(t *testing.T) {
 func TestUIHostSessionIDsUniqueAtScale(t *testing.T) {
 	ds := newTestUIHost()
 	seen := make(map[string]struct{}, 5000)
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		s := ds.CreateSession()
 		if _, dup := seen[s.ID]; dup {
 			t.Fatalf("session ID collision at i=%d: %q", i, s.ID)
@@ -755,7 +755,7 @@ func TestUIHost_ServerActionInvokesHandler(t *testing.T) {
 		t.Error("expected Go handler to be invoked")
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	json.NewDecoder(rec.Body).Decode(&result)
 	if result["status"] != "ok" {
 		t.Errorf("expected status ok, got %v", result["status"])

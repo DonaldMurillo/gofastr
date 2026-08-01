@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"maps"
 )
 
 // AppResourceMimeType is the MIME type an MCP App's UI resource is served
@@ -103,17 +104,13 @@ func (s *Server) RegisterApp(cfg AppConfig) error {
 	// can add ui.preferredSize etc. via ToolMeta{"ui": {...}} without
 	// clobbering the ui.resourceUri linkage the App exists to create.
 	meta := map[string]any{}
-	for k, v := range cfg.ToolMeta {
-		meta[k] = v
-	}
+	maps.Copy(meta, cfg.ToolMeta)
 	// Clone the caller's nested ui map rather than mutating it in place — a
 	// developer may reuse one shared ToolMeta["ui"] across RegisterApp calls,
 	// and writing resourceUri into their map would bleed between tools.
 	ui := map[string]any{}
 	if existing, ok := meta["ui"].(map[string]any); ok {
-		for k, v := range existing {
-			ui[k] = v
-		}
+		maps.Copy(ui, existing)
 	}
 	ui["resourceUri"] = cfg.ResourceURI
 	meta["ui"] = ui

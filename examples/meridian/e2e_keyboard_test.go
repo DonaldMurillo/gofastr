@@ -360,7 +360,7 @@ func kbgateWalk(t *testing.T, ctx context.Context, maxPresses int) (kbgateEnum, 
 		t.Fatalf("kbgate enumerate: %v", err)
 	}
 	var visits []kbgateFocus
-	for i := 0; i < maxPresses; i++ {
+	for i := range maxPresses {
 		if err := chromedp.Run(ctx, chromedp.KeyEvent(kb.Tab)); err != nil {
 			t.Fatalf("tab press %d: %v", i, err)
 		}
@@ -578,7 +578,7 @@ func TestModalFocusTrap(t *testing.T) {
 	var failVis, failInd []string
 	cycled := false
 	presses := 0
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		if err := chromedp.Run(ctx, chromedp.KeyEvent(kb.Tab)); err != nil {
 			t.Fatalf("modal tab %d: %v", i, err)
 		}

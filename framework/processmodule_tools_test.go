@@ -209,8 +209,7 @@ func TestVerifyToolSurface_DigestMismatch(t *testing.T) {
 		t.Fatalf("handle: %v", err)
 	}
 	err := sl.verifyToolSurface(context.Background(), host)
-	var hs *moduleproto.HandshakeMismatchError
-	if !errors.As(err, &hs) {
+	if _, ok := errors.AsType[*moduleproto.HandshakeMismatchError](err); !ok {
 		t.Fatalf("want HandshakeMismatchError for digest mismatch, got %T %v", err, err)
 	}
 }
@@ -231,8 +230,7 @@ func TestVerifyToolSurface_ExtraToolRejected(t *testing.T) {
 		t.Fatalf("handle: %v", err)
 	}
 	err := sl.verifyToolSurface(context.Background(), host)
-	var hs *moduleproto.HandshakeMismatchError
-	if !errors.As(err, &hs) {
+	if _, ok := errors.AsType[*moduleproto.HandshakeMismatchError](err); !ok {
 		t.Fatalf("want HandshakeMismatchError for extra tool, got %T %v", err, err)
 	}
 }

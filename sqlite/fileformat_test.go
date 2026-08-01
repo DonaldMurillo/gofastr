@@ -134,25 +134,25 @@ func TestDatabaseHeader_RoundTrip(t *testing.T) {
 		fields := []struct {
 			name    string
 			modify  func(h *DatabaseHeader)
-			extract func(h *DatabaseHeader) interface{}
+			extract func(h *DatabaseHeader) any
 		}{
-			{"FileFormatWriteVersion=2", func(h *DatabaseHeader) { h.FileFormatWriteVersion = 2 }, func(h *DatabaseHeader) interface{} { return h.FileFormatWriteVersion }},
-			{"FileFormatReadVersion=2", func(h *DatabaseHeader) { h.FileFormatReadVersion = 2 }, func(h *DatabaseHeader) interface{} { return h.FileFormatReadVersion }},
-			{"ReservedSpace=10", func(h *DatabaseHeader) { h.ReservedSpace = 10 }, func(h *DatabaseHeader) interface{} { return h.ReservedSpace }},
-			{"FileChangeCounter=42", func(h *DatabaseHeader) { h.FileChangeCounter = 42 }, func(h *DatabaseHeader) interface{} { return h.FileChangeCounter }},
-			{"DatabaseSizePages=100", func(h *DatabaseHeader) { h.DatabaseSizePages = 100 }, func(h *DatabaseHeader) interface{} { return h.DatabaseSizePages }},
-			{"FirstFreelistTrunkPage=5", func(h *DatabaseHeader) { h.FirstFreelistTrunkPage = 5 }, func(h *DatabaseHeader) interface{} { return h.FirstFreelistTrunkPage }},
-			{"TotalFreelistPages=3", func(h *DatabaseHeader) { h.TotalFreelistPages = 3 }, func(h *DatabaseHeader) interface{} { return h.TotalFreelistPages }},
-			{"SchemaCookie=7", func(h *DatabaseHeader) { h.SchemaCookie = 7 }, func(h *DatabaseHeader) interface{} { return h.SchemaCookie }},
-			{"SchemaFormatNumber=4", func(h *DatabaseHeader) { h.SchemaFormatNumber = 4 }, func(h *DatabaseHeader) interface{} { return h.SchemaFormatNumber }},
-			{"DefaultPageCacheSize=50", func(h *DatabaseHeader) { h.DefaultPageCacheSize = 50 }, func(h *DatabaseHeader) interface{} { return h.DefaultPageCacheSize }},
-			{"LargestRootBTreePage=8", func(h *DatabaseHeader) { h.LargestRootBTreePage = 8 }, func(h *DatabaseHeader) interface{} { return h.LargestRootBTreePage }},
-			{"TextEncoding=UTF16le", func(h *DatabaseHeader) { h.TextEncoding = 2 }, func(h *DatabaseHeader) interface{} { return h.TextEncoding }},
-			{"UserVersion=99", func(h *DatabaseHeader) { h.UserVersion = 99 }, func(h *DatabaseHeader) interface{} { return h.UserVersion }},
-			{"IncrementalVacuum=1", func(h *DatabaseHeader) { h.IncrementalVacuum = 1 }, func(h *DatabaseHeader) interface{} { return h.IncrementalVacuum }},
-			{"ApplicationID=0x12345678", func(h *DatabaseHeader) { h.ApplicationID = 0x12345678 }, func(h *DatabaseHeader) interface{} { return h.ApplicationID }},
-			{"VersionValidFor=1000", func(h *DatabaseHeader) { h.VersionValidFor = 1000 }, func(h *DatabaseHeader) interface{} { return h.VersionValidFor }},
-			{"SQLiteVersionNumber=3039004", func(h *DatabaseHeader) { h.SQLiteVersionNumber = 3039004 }, func(h *DatabaseHeader) interface{} { return h.SQLiteVersionNumber }},
+			{"FileFormatWriteVersion=2", func(h *DatabaseHeader) { h.FileFormatWriteVersion = 2 }, func(h *DatabaseHeader) any { return h.FileFormatWriteVersion }},
+			{"FileFormatReadVersion=2", func(h *DatabaseHeader) { h.FileFormatReadVersion = 2 }, func(h *DatabaseHeader) any { return h.FileFormatReadVersion }},
+			{"ReservedSpace=10", func(h *DatabaseHeader) { h.ReservedSpace = 10 }, func(h *DatabaseHeader) any { return h.ReservedSpace }},
+			{"FileChangeCounter=42", func(h *DatabaseHeader) { h.FileChangeCounter = 42 }, func(h *DatabaseHeader) any { return h.FileChangeCounter }},
+			{"DatabaseSizePages=100", func(h *DatabaseHeader) { h.DatabaseSizePages = 100 }, func(h *DatabaseHeader) any { return h.DatabaseSizePages }},
+			{"FirstFreelistTrunkPage=5", func(h *DatabaseHeader) { h.FirstFreelistTrunkPage = 5 }, func(h *DatabaseHeader) any { return h.FirstFreelistTrunkPage }},
+			{"TotalFreelistPages=3", func(h *DatabaseHeader) { h.TotalFreelistPages = 3 }, func(h *DatabaseHeader) any { return h.TotalFreelistPages }},
+			{"SchemaCookie=7", func(h *DatabaseHeader) { h.SchemaCookie = 7 }, func(h *DatabaseHeader) any { return h.SchemaCookie }},
+			{"SchemaFormatNumber=4", func(h *DatabaseHeader) { h.SchemaFormatNumber = 4 }, func(h *DatabaseHeader) any { return h.SchemaFormatNumber }},
+			{"DefaultPageCacheSize=50", func(h *DatabaseHeader) { h.DefaultPageCacheSize = 50 }, func(h *DatabaseHeader) any { return h.DefaultPageCacheSize }},
+			{"LargestRootBTreePage=8", func(h *DatabaseHeader) { h.LargestRootBTreePage = 8 }, func(h *DatabaseHeader) any { return h.LargestRootBTreePage }},
+			{"TextEncoding=UTF16le", func(h *DatabaseHeader) { h.TextEncoding = 2 }, func(h *DatabaseHeader) any { return h.TextEncoding }},
+			{"UserVersion=99", func(h *DatabaseHeader) { h.UserVersion = 99 }, func(h *DatabaseHeader) any { return h.UserVersion }},
+			{"IncrementalVacuum=1", func(h *DatabaseHeader) { h.IncrementalVacuum = 1 }, func(h *DatabaseHeader) any { return h.IncrementalVacuum }},
+			{"ApplicationID=0x12345678", func(h *DatabaseHeader) { h.ApplicationID = 0x12345678 }, func(h *DatabaseHeader) any { return h.ApplicationID }},
+			{"VersionValidFor=1000", func(h *DatabaseHeader) { h.VersionValidFor = 1000 }, func(h *DatabaseHeader) any { return h.VersionValidFor }},
+			{"SQLiteVersionNumber=3039004", func(h *DatabaseHeader) { h.SQLiteVersionNumber = 3039004 }, func(h *DatabaseHeader) any { return h.SQLiteVersionNumber }},
 		}
 
 		for _, f := range fields {

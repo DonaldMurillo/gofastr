@@ -29,7 +29,7 @@ func TestRateLimit_TrustProxyHeadersXFFRotationDoesNotBypass(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "203.0.113.10:1234"
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i))
@@ -47,7 +47,7 @@ func TestRateLimit_TrustProxyHeadersRejectsPrivateXFFSpoofing(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "203.0.113.10:1234"
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("10.0.0.%d", i))
@@ -65,7 +65,7 @@ func TestRateLimit_TrustProxyHeadersRejectsArbitraryXFFValues(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "203.0.113.10:1234"
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("attacker-%d", i))
@@ -83,7 +83,7 @@ func TestRateLimit_TrustProxyHeadersXRealIPRotationDoesNotBypass(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "203.0.113.10:1234"
 		req.Header.Set("X-Real-IP", fmt.Sprintf("198.51.100.%d", i))

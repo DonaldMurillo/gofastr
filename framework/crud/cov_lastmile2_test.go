@@ -357,7 +357,7 @@ func TestSSE_BufferFullDrop(t *testing.T) {
 	ch, bus := covTenantNotesHandler(t)
 	ctx := ctxWithUser("alice")
 	covRunEventStream(t, ch, ctx, func() {
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			_ = bus.Emit(ctx, event.Event{Type: event.EntityCreated, Data: map[string]any{
 				eventKeyEntity: "tnotes",
 			}})

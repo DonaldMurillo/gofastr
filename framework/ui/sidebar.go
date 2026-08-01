@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -148,10 +149,8 @@ func sidebarVisible(ctx context.Context, it SidebarItem) bool {
 	}
 	have := rolesExtractor(ctx)
 	for _, want := range it.Roles {
-		for _, h := range have {
-			if h == want {
-				return true
-			}
+		if slices.Contains(have, want) {
+			return true
 		}
 	}
 	return false

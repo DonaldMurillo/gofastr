@@ -51,7 +51,7 @@ func TestMetricsBoundsMethodCardinality(t *testing.T) {
 		req.Method = tok
 		h.ServeHTTP(httptest.NewRecorder(), req)
 	}
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		req := httptest.NewRequest("GET", "/", nil)
 		req.Method = "M" + strings.Repeat("z", i%7) + string(rune('A'+i%26)) + string(rune('0'+i%10))
 		h.ServeHTTP(httptest.NewRecorder(), req)

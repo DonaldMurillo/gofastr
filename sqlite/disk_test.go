@@ -157,11 +157,11 @@ func TestConcurrentReads(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, 20)
 
-	for g := 0; g < 20; g++ {
+	for g := range 20 {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
-			for i := 0; i < 50; i++ {
+			for i := range 50 {
 				var val string
 				err := db.QueryRow("SELECT val FROM t WHERE id = ?", (gid*50+i)%100+1).Scan(&val)
 				if err != nil {
@@ -186,11 +186,11 @@ func TestConcurrentWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, 10)
 
-	for g := 0; g < 10; g++ {
+	for g := range 10 {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				_, err := db.Exec("INSERT INTO t (id, val) VALUES (?, ?)", gid*10+i+1, fmt.Sprintf("g%d_i%d", gid, i))
 				if err != nil {
 					errors <- err
@@ -224,11 +224,11 @@ func TestConcurrentReadWrite(t *testing.T) {
 	errors := make(chan error, 30)
 
 	// Writers
-	for g := 0; g < 10; g++ {
+	for g := range 10 {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				_, err := db.Exec("INSERT INTO t (id, val) VALUES (?, ?)", 50+gid*10+i+1, fmt.Sprintf("new_g%d", gid))
 				if err != nil {
 					errors <- err
@@ -239,11 +239,11 @@ func TestConcurrentReadWrite(t *testing.T) {
 	}
 
 	// Readers
-	for g := 0; g < 20; g++ {
+	for g := range 20 {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
-			for i := 0; i < 20; i++ {
+			for range 20 {
 				rows, err := db.Query("SELECT val FROM t WHERE id <= 50")
 				if err != nil {
 					errors <- err
@@ -278,7 +278,7 @@ func TestConcurrentTransactions(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, 10)
 
-	for g := 0; g < 10; g++ {
+	for g := range 10 {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
@@ -287,7 +287,7 @@ func TestConcurrentTransactions(t *testing.T) {
 				errors <- err
 				return
 			}
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				_, err := tx.Exec("INSERT INTO t (id, val) VALUES (?, ?)", gid*5+i+1, fmt.Sprintf("tx_%d_%d", gid, i))
 				if err != nil {
 					tx.Rollback()
@@ -341,7 +341,7 @@ func TestConnectionPool(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for g := 0; g < 50; g++ {
+	for g := range 50 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

@@ -4,9 +4,9 @@ import (
 	"context"
 	"log"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -143,12 +143,7 @@ type presenceConn struct {
 }
 
 func (c *presenceConn) hasTopic(topic string) bool {
-	for _, t := range c.topics {
-		if t == topic {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.topics, topic)
 }
 
 // PresenceHandle is returned by PresenceJoin and removed by Leave. It is
@@ -241,7 +236,7 @@ func (m *Manager) PresenceJoin(sessionID string, identity PresenceIdentity, topi
 	if identity.UserID == "" {
 		identity = anonIdentity(sessionID)
 	}
-	id := atomic.AddUint64(&m.nextPresenceID, 1)
+	id := m.nextPresenceID.Add(1)
 	conn := &presenceConn{
 		id:        id,
 		sessionID: sessionID,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -67,7 +68,7 @@ func TestMultipleWorkers(t *testing.T) {
 
 	q.Start()
 
-	for i := 0; i < numJobs; i++ {
+	for i := range numJobs {
 		err := q.Enqueue(context.Background(), Job{Type: "work"})
 		if err != nil {
 			t.Fatalf("Enqueue %d: %v", i, err)
@@ -162,7 +163,7 @@ func TestCloseDrainsPendingJobs(t *testing.T) {
 
 	q.Start()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_ = q.Enqueue(context.Background(), Job{Type: "slow"})
 	}
 
@@ -203,7 +204,7 @@ func TestJobPriorityOrdering(t *testing.T) {
 
 	// Collect jobs in priority order.
 	var order []string
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		job, err := q.Dequeue(context.Background())
 		if err != nil {
 			t.Fatalf("Dequeue %d: %v", i, err)
@@ -241,11 +242,9 @@ func TestSchedulerFiresAtInterval(t *testing.T) {
 	defer cancel()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		sched.Start(ctx)
-	}()
+	})
 
 	// Poll until at least 2 interval firings have been executed, instead of
 	// trusting a fixed window to contain N ticks on a loaded machine.
@@ -303,7 +302,7 @@ func newMockRedis() *mockRedis {
 	}
 }
 
-func (m *mockRedis) LPush(_ context.Context, key string, values ...interface{}) error {
+func (m *mockRedis) LPush(_ context.Context, key string, values ...any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, v := range values {
@@ -333,7 +332,7 @@ func (m *mockRedis) RPop(_ context.Context, key string) (string, error) {
 	return val, nil
 }
 
-func (m *mockRedis) HSet(_ context.Context, key string, values ...interface{}) error {
+func (m *mockRedis) HSet(_ context.Context, key string, values ...any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.hashes[key] == nil {
@@ -378,9 +377,7 @@ func (m *mockRedis) HGetAll(_ context.Context, key string) (map[string]string, e
 		return map[string]string{}, nil
 	}
 	out := make(map[string]string, len(h))
-	for k, v := range h {
-		out[k] = v
-	}
+	maps.Copy(out, h)
 	return out, nil
 }
 

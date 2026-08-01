@@ -241,7 +241,7 @@ func WithRedirectOnFail(path string) RequireSessionOption {
 // callers usually don't.
 func wantsHTML(r *http.Request) bool {
 	accept := r.Header.Get("Accept")
-	for _, part := range strings.Split(accept, ",") {
+	for part := range strings.SplitSeq(accept, ",") {
 		part = strings.TrimSpace(part)
 		if i := strings.IndexByte(part, ';'); i >= 0 {
 			part = part[:i]

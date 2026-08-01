@@ -71,7 +71,7 @@ func SearchConditions(fields []string, term string) []Condition {
 func tokenizeSearch(term string) []string {
 	seen := make(map[string]bool)
 	var out []string
-	for _, raw := range strings.Fields(term) {
+	for raw := range strings.FieldsSeq(term) {
 		t := strings.TrimSpace(raw)
 		if t == "" || seen[t] {
 			continue

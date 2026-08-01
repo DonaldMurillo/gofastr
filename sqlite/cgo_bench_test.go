@@ -50,7 +50,7 @@ func BenchmarkCGO_InsertPrepared(b *testing.B) {
 func BenchmarkCGO_SelectAll(b *testing.B) {
 	db := openCGO()
 	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		db.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
 	}
 	b.ResetTimer()
@@ -70,7 +70,7 @@ func BenchmarkCGO_SelectAll(b *testing.B) {
 func BenchmarkCGO_SelectWhere(b *testing.B) {
 	db := openCGO()
 	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		name := "user_a"
 		if i%2 == 0 {
 			name = "user_b"
@@ -113,7 +113,7 @@ func BenchmarkCGO_Transaction(b *testing.B) {
 		db := openCGO()
 		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
 		tx, _ := db.Begin()
-		for j := 0; j < 50; j++ {
+		for range 50 {
 			tx.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
 		}
 		tx.Commit()
@@ -143,7 +143,7 @@ func BenchmarkCGO_OLTP(b *testing.B) {
 func BenchmarkCGO_OrderByLimit(b *testing.B) {
 	db := openCGO()
 	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)")
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		db.Exec("INSERT INTO t(name) VALUES('hello')")
 	}
 	b.ResetTimer()
@@ -165,7 +165,7 @@ func BenchmarkCGO_DriverTransaction(b *testing.B) {
 		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
 		tx, _ := db.Begin()
 		stmt, _ := tx.Prepare("INSERT INTO t(name, score) VALUES(?, ?)")
-		for j := 0; j < 50; j++ {
+		for range 50 {
 			stmt.Exec("hello", 1.5)
 		}
 		stmt.Close()

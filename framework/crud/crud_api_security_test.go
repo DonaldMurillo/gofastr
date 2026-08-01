@@ -185,7 +185,7 @@ func TestCrud_MissingOwnerContextRejects(t *testing.T) {
 // thousands of bind parameters.
 func TestParseScopedFilters_CapsInListSize(t *testing.T) {
 	values := ""
-	for i := 0; i < maxScopedINEntries+1; i++ {
+	for i := range maxScopedINEntries + 1 {
 		if i > 0 {
 			values += "|"
 		}

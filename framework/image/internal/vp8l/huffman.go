@@ -93,7 +93,7 @@ func packageMerge(leaves []hufLeaf, L int) []int {
 		// Pair items into packages.
 		packCount := len(current) / 2
 		packed := make([]item, 0, packCount)
-		for k := 0; k < packCount; k++ {
+		for k := range packCount {
 			a := current[2*k]
 			b := current[2*k+1]
 			// Merge origins (a's then b's).
@@ -124,10 +124,7 @@ func packageMerge(leaves []hufLeaf, L int) []int {
 	}
 
 	// First 2N-2 items determine code lengths.
-	take := 2*n - 2
-	if take > len(current) {
-		take = len(current)
-	}
+	take := min(2*n-2, len(current))
 	counts := make([]int, n)
 	for _, it := range current[:take] {
 		for k := 0; k < it.oLen; k++ {

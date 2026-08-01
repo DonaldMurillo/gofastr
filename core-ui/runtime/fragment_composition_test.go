@@ -189,7 +189,7 @@ func TestComposedRuntimeIsSymbolComplete(t *testing.T) {
 // not header prose.
 func manifestLines(s string) []string {
 	var out []string
-	for _, l := range strings.Split(s, "\n") {
+	for l := range strings.SplitSeq(s, "\n") {
 		if l == "" || strings.HasPrefix(l, "#") {
 			continue
 		}

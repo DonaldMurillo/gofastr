@@ -38,7 +38,7 @@ func (c *tallEmbedComp) RenderCtx(ctx context.Context) render.HTML {
 	// on a timer, so this needs no click and works across the origin boundary
 	// where chromedp cannot reach into the frame.
 	b.WriteString(`<div data-fui-poll="5s" data-fui-poll-src="/polled">waiting</div>`)
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		fmt.Fprintf(&b, "<p>row %d</p>", i)
 	}
 	return render.HTML(b.String())

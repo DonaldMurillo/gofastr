@@ -57,11 +57,11 @@ func TestBuildChildEnv_dedupAndOverride(t *testing.T) {
 	)
 	have := map[string]string{}
 	for _, kv := range env {
-		idx := strings.IndexByte(kv, '=')
-		if idx < 0 {
+		before, after, ok := strings.Cut(kv, "=")
+		if !ok {
 			continue
 		}
-		have[kv[:idx]] = kv[idx+1:]
+		have[before] = after
 	}
 	if have["EXPLICIT"] != "1" {
 		t.Errorf("EXPLICIT = %q, want 1 (first wins)", have["EXPLICIT"])

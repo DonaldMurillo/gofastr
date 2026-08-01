@@ -10,7 +10,7 @@ import (
 func BenchmarkEngineOLTP_Cached(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, score INTEGER)")
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		e.Execute(fmt.Sprintf("INSERT INTO users (id, name, email, score) VALUES (%d, 'user_%d', 'user_%d@example.com', %d)",
 			i, i, i, i*10))
 	}

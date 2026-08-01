@@ -173,7 +173,7 @@ func NewSchemaName(t *testing.T) string {
 // the total deadline expires. Bounded to ~5s.
 func WaitPGReady(db *sql.DB) error {
 	const maxAttempts = 25
-	for i := 0; i < maxAttempts; i++ {
+	for range maxAttempts {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		err := db.PingContext(ctx)
 		cancel()

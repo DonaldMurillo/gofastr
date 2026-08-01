@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"maps"
 	"net/url"
 	"strconv"
 
@@ -150,10 +151,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	if cfg.Variant == GalleryGrid || cfg.Variant == GalleryMasonry {
 		// Cap at 12 for the precomputed class set; very wide grids
 		// fall back to 12.
-		c := cols
-		if c < 1 {
-			c = 1
-		}
+		c := max(cols, 1)
 		if c > 12 {
 			c = 12
 		}
@@ -162,9 +160,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 
 	rows := make([]render.HTML, 0, len(cfg.Items))
 	for i, it := range cfg.Items {

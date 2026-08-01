@@ -35,7 +35,7 @@ func (e *CSSExtractor) ExtractFromHTML(html string) []string {
 		if len(match) < 2 {
 			continue
 		}
-		for _, c := range strings.Fields(match[1]) {
+		for c := range strings.FieldsSeq(match[1]) {
 			if c != "" {
 				seen[c] = true
 			}

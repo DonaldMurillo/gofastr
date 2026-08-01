@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -546,8 +547,8 @@ func (m *AuthManager) OnStart(ctx context.Context) error {
 // OnStop stops plugins that implement AuthPluginOnStop.
 func (m *AuthManager) OnStop(ctx context.Context) error {
 	var firstErr error
-	for i := len(m.order) - 1; i >= 0; i-- {
-		name := m.order[i]
+	for _, name := range slices.Backward(m.order) {
+
 		if sp, ok := m.plugins[name].(AuthPluginOnStop); ok {
 			if err := sp.OnStop(ctx); err != nil && firstErr == nil {
 				firstErr = fmt.Errorf("auth plugin %q stop failed: %w", name, err)
@@ -576,8 +577,8 @@ func (m *AuthManager) Middleware() func(http.Handler) http.Handler {
 		// Apply plugin middleware in reverse order so the first registered
 		// plugin is the outermost middleware.
 		handler := next
-		for i := len(m.order) - 1; i >= 0; i-- {
-			if pmw, ok := m.plugins[m.order[i]].(AuthPluginMiddleware); ok {
+		for _, v := range slices.Backward(m.order) {
+			if pmw, ok := m.plugins[v].(AuthPluginMiddleware); ok {
 				handler = pmw.Middleware()(handler)
 			}
 		}

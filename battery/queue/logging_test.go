@@ -20,7 +20,7 @@ import (
 // both fragments must appear on the same line.
 func assertLogLine(t *testing.T, buf *bytes.Buffer, wantLevel, wantMsg string) {
 	t.Helper()
-	for _, line := range strings.Split(buf.String(), "\n") {
+	for line := range strings.SplitSeq(buf.String(), "\n") {
 		if strings.Contains(line, "level="+wantLevel) && strings.Contains(line, wantMsg) {
 			return
 		}

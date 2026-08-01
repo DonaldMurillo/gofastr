@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -100,12 +101,7 @@ type Grant struct {
 
 // HasScope reports whether the grant carries scope.
 func (g Grant) HasScope(scope string) bool {
-	for _, s := range g.Scopes {
-		if s == scope {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(g.Scopes, scope)
 }
 
 var b64 = base64.RawURLEncoding

@@ -8,8 +8,8 @@ import (
 func (p *Parser) parseParameter() (Expr, error) {
 	value := p.cur.Value
 	p.advance()
-	if strings.HasPrefix(value, "$") {
-		n, err := strconv.Atoi(strings.TrimPrefix(value, "$"))
+	if after, ok := strings.CutPrefix(value, "$"); ok {
+		n, err := strconv.Atoi(after)
 		if err != nil || n <= 0 {
 			return nil, p.errorf("invalid numbered parameter %q", value)
 		}

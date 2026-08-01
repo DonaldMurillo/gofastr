@@ -143,8 +143,7 @@ func TestLoadSnapshotRefusesModelMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ModelMismatchError, got nil")
 	}
-	var mm *ModelMismatchError
-	if !errors.As(err, &mm) {
+	if _, ok := errors.AsType[*ModelMismatchError](err); !ok {
 		t.Fatalf("err type = %T (%v), want *ModelMismatchError", err, err)
 	}
 }

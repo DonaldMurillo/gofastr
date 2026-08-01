@@ -120,7 +120,7 @@ func tabsCSS(_ style.Theme) string {
 	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab-panel{display:none}`)
 	// Active button + visible panel both keyed off the wrapper's
 	// data-active so the highlight follows the selected tab.
-	for i := 0; i < tabsMaxPanels; i++ {
+	for i := range tabsMaxPanels {
 		b.WriteString(fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-fui-tab-index="%d"]{color:var(--fui-primary, var(--color-primary, #3b82f6));border-bottom-color:var(--fui-primary, var(--color-primary, #3b82f6))}`, i, i))
 		b.WriteString(fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-fui-tab-index="%d"]{display:block}`, i, i))
 	}

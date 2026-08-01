@@ -514,8 +514,8 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 	// The child prints its result line; the first line wins (any output
 	// after it is diagnostic, captured in stderr/Detail).
 	first := stdout
-	if idx := strings.IndexByte(stdout, '\n'); idx >= 0 {
-		first = strings.TrimSpace(stdout[:idx])
+	if before, _, ok := strings.Cut(stdout, "\n"); ok {
+		first = strings.TrimSpace(before)
 	}
 	if timedOut {
 		// P6's whole point is "the limit fires and caps the child". A

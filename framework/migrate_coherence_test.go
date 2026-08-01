@@ -162,4 +162,5 @@ func keysOf(m map[string]string) []string {
 	return out
 }
 
-func f64(v float64) *float64 { return &v }
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }

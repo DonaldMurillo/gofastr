@@ -192,7 +192,7 @@ func toOpenAPIPath(p string) string {
 // Both GoFastr style (:id) and Go 1.22 style ({id}) are recognised.
 func extractPathParams(path string) []string {
 	var params []string
-	for _, part := range strings.Split(path, "/") {
+	for part := range strings.SplitSeq(path, "/") {
 		if strings.HasPrefix(part, ":") {
 			params = append(params, part[1:])
 		} else if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {

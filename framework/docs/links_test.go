@@ -72,7 +72,7 @@ func isExternal(target string) bool {
 // headingsIn returns the set of GitHub heading slugs present in doc text.
 func headingsIn(text string) map[string]bool {
 	out := make(map[string]bool)
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		if m := headingLineRE.FindStringSubmatch(line); m != nil {
 			out[ghSlugify(m[1])] = true
 		}

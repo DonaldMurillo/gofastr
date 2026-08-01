@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -143,9 +144,7 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 	return rangeSliderStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 

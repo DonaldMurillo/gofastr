@@ -80,7 +80,7 @@ func TestCounterCarriesCompMarker(t *testing.T) {
 }
 
 // Helper to extract string from panic value.
-func resultFromPanic(r interface{}) string {
+func resultFromPanic(r any) string {
 	if s, ok := r.(string); ok {
 		return s
 	}

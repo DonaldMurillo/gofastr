@@ -68,7 +68,7 @@ func snapshotIDs(n *Node) string {
 
 func TestNewElementID_FormatAndUniqueness(t *testing.T) {
 	seen := map[string]bool{}
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		id := NewElementID()
 		if !strings.HasPrefix(id, "el_") {
 			t.Errorf("id %q missing el_ prefix", id)

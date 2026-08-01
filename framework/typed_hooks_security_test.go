@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"errors"
+	"maps"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -68,9 +69,7 @@ func TestTypedHook_ForcedZeroOverrides(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			body := make(map[string]any, len(tc.client))
-			for k, v := range tc.client {
-				body[k] = v
-			}
+			maps.Copy(body, tc.client)
 			var v hookSecPost
 			if err := unmarshalHookPayload(body, &v); err != nil {
 				t.Fatalf("unmarshal: %v", err)

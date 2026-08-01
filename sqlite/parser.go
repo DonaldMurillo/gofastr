@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -42,22 +43,12 @@ func (p *Parser) expect(t TokenType) (Token, error) {
 
 // match returns true if the current token type is one of the given types.
 func (p *Parser) match(types ...TokenType) bool {
-	for _, t := range types {
-		if p.cur.Type == t {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(types, p.cur.Type)
 }
 
 // matchKeyword checks if cur is a keyword token matching one of the given types.
 func (p *Parser) matchKeyword(types ...TokenType) bool {
-	for _, t := range types {
-		if p.cur.Type == t {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(types, p.cur.Type)
 }
 
 // curIsIdent checks if cur is an identifier (TokenIdent or TokenQuotedID).
@@ -111,7 +102,7 @@ func (p *Parser) parseIdentifierOrKeyword() (string, error) {
 }
 
 // errorf creates a parse error.
-func (p *Parser) errorf(format string, args ...interface{}) error {
+func (p *Parser) errorf(format string, args ...any) error {
 	msg := format
 	if len(args) > 0 {
 		// Simple fmt.Sprintf replacement
@@ -132,7 +123,7 @@ func (e *ParseError) Error() string {
 }
 
 // sprintf is a minimal sprintf for parser error messages.
-func sprintf(format string, args ...interface{}) string {
+func sprintf(format string, args ...any) string {
 	var buf strings.Builder
 	argIdx := 0
 	for i := 0; i < len(format); i++ {
@@ -2481,18 +2472,19 @@ func (e ParenExpr) String() string {
 }
 
 func (e CaseExpr) String() string {
-	s := "CASE "
+	var s strings.Builder
+	s.WriteString("CASE ")
 	if e.Operand != nil {
-		s += exprStr(e.Operand) + " "
+		s.WriteString(exprStr(e.Operand) + " ")
 	}
 	for _, w := range e.Whens {
-		s += "WHEN " + exprStr(w.Condition) + " THEN " + exprStr(w.Result) + " "
+		s.WriteString("WHEN " + exprStr(w.Condition) + " THEN " + exprStr(w.Result) + " ")
 	}
 	if e.Else != nil {
-		s += "ELSE " + exprStr(e.Else) + " "
+		s.WriteString("ELSE " + exprStr(e.Else) + " ")
 	}
-	s += "END"
-	return s
+	s.WriteString("END")
+	return s.String()
 }
 
 func (e CastExpr) String() string {

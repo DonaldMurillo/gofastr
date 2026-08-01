@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -46,12 +48,7 @@ func (c Claims) AllowsCommand(kind string) bool {
 	if len(c.Commands) == 0 {
 		return true
 	}
-	for _, k := range c.Commands {
-		if k == kind {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Commands, kind)
 }
 
 // AllowsSession reports whether the token may attach to the given
@@ -61,12 +58,7 @@ func (c Claims) AllowsSession(s ids.SessionID) bool {
 	if len(c.Sessions) == 0 {
 		return true
 	}
-	for _, x := range c.Sessions {
-		if x == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Sessions, s)
 }
 
 // Expired reports whether the token is past its exp at the given time.
@@ -211,9 +203,7 @@ func (r *RevocationList) Snapshot() map[ids.JTI]int64 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make(map[ids.JTI]int64, len(r.revoked))
-	for k, v := range r.revoked {
-		out[k] = v
-	}
+	maps.Copy(out, r.revoked)
 	return out
 }
 

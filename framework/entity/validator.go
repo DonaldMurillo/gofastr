@@ -3,6 +3,7 @@ package entity
 import (
 	"context"
 	"fmt"
+	"maps"
 )
 
 // ValidatorFunc validates entity data and returns field-level errors.
@@ -30,9 +31,7 @@ func (vr *ValidationRegistry) Validate(ctx context.Context, data map[string]any)
 	errors := make(map[string]string)
 	for _, fn := range vr.validators {
 		fieldErrors := fn(ctx, data)
-		for field, msg := range fieldErrors {
-			errors[field] = msg
-		}
+		maps.Copy(errors, fieldErrors)
 	}
 	return errors
 }

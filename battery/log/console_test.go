@@ -143,7 +143,7 @@ func TestConsoleSinkWriteAfterClose(t *testing.T) {
 func TestConsoleSinkOneLinePerEntry(t *testing.T) {
 	var buf bytes.Buffer
 	s := sinkFor(&buf, false)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := s.Write([]byte(`{"time":"2026-06-17T14:32:07.412Z","level":"INFO","msg":"m","i":0}`)); err != nil {
 			t.Fatal(err)
 		}

@@ -277,7 +277,7 @@ func RequireAPIScopes(apiPrefix string) middleware.Middleware {
 			// would otherwise leave resource empty, and the empty case falls
 			// through unchecked: an authorization bypass, not a naming quirk.
 			segs := make([]string, 0, 4)
-			for _, seg := range strings.Split(rest, "/") {
+			for seg := range strings.SplitSeq(rest, "/") {
 				if seg != "" {
 					segs = append(segs, seg)
 				}

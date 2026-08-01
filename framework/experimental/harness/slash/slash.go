@@ -48,9 +48,9 @@ func Parse(input string) (Cmd, error) {
 	// Split head from args at the first space.
 	head, rest := splitHead(body)
 	c := Cmd{Raw: input, Args: splitArgs(rest)}
-	if i := strings.Index(head, ":"); i >= 0 {
-		c.Namespace = head[:i]
-		c.Name = head[i+1:]
+	if before, after, ok := strings.Cut(head, ":"); ok {
+		c.Namespace = before
+		c.Name = after
 		if c.Name == "" {
 			return Cmd{}, fmt.Errorf("slash: missing name after %q:", c.Namespace)
 		}

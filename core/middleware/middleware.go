@@ -4,6 +4,8 @@
 // Middleware can be composed with Chain and assembled into a Pipeline.
 package middleware
 
+import "slices"
+
 import "net/http"
 
 // Middleware is a function that wraps an http.Handler, returning a new one.
@@ -19,8 +21,8 @@ type Middleware func(next http.Handler) http.Handler
 // With no arguments, Chain returns a no-op middleware.
 func Chain(mw ...Middleware) Middleware {
 	return func(final http.Handler) http.Handler {
-		for i := len(mw) - 1; i >= 0; i-- {
-			final = mw[i](final)
+		for _, m := range slices.Backward(mw) {
+			final = m(final)
 		}
 		return final
 	}

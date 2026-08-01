@@ -2,6 +2,7 @@ package crud
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -431,9 +432,7 @@ func (r *testRegistry) addByName(e *entity.Entity) {
 }
 func (r *testRegistry) All() map[string]*entity.Entity {
 	out := make(map[string]*entity.Entity, len(r.mu))
-	for k, v := range r.mu {
-		out[k] = v
-	}
+	maps.Copy(out, r.mu)
 	return out
 }
 func (r *testRegistry) AllSorted() []*entity.Entity {

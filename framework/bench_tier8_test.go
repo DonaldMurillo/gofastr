@@ -73,14 +73,14 @@ func BenchmarkT8_ColdStart_TenEntities(b *testing.B) {
 			b.Fatalf("open: %v", err)
 		}
 		db.SetMaxOpenConns(1)
-		for j := 0; j < 10; j++ {
+		for j := range 10 {
 			if _, err := db.Exec(fmt.Sprintf(
 				`CREATE TABLE ent_%d (id TEXT PRIMARY KEY, name TEXT, val INTEGER)`, j)); err != nil {
 				b.Fatalf("ddl %d: %v", j, err)
 			}
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		for j := 0; j < 10; j++ {
+		for j := range 10 {
 			ent := Define(fmt.Sprintf("ent_%d", j), EntityConfig{
 				Table: fmt.Sprintf("ent_%d", j),
 				Fields: []schema.Field{
@@ -132,7 +132,7 @@ func BenchmarkT8_HeapAfterLoad(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			for j := 0; j < reqs; j++ {
+			for range reqs {
 				rec := httptest.NewRecorder()
 				app.Router().ServeHTTP(rec, req)
 			}
@@ -169,7 +169,7 @@ func BenchmarkT8_GoroutinesAfterLoad(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			for j := 0; j < reqs; j++ {
+			for range reqs {
 				rec := httptest.NewRecorder()
 				app.Router().ServeHTTP(rec, req)
 			}

@@ -184,7 +184,7 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 	if firstContent == 0 || firstContent > pageSize {
 		firstContent = pageSize
 		// Fallback: scan cell pointers for minimum offset
-		for i := 0; i < cellCount; i++ {
+		for i := range cellCount {
 			ptrOff := cellPtrStart + i*2
 			if ptrOff+2 <= len(data) {
 				co := int(binary.BigEndian.Uint16(data[ptrOff : ptrOff+2]))
@@ -318,10 +318,7 @@ func (b *BTree) readLeafCellsInto(buf []leafCell, data []byte, offset int, ph Pa
 			continue
 		}
 
-		cellEnd := cellOff + n1 + n2 + int(payloadSize)
-		if cellEnd > len(data) {
-			cellEnd = len(data)
-		}
+		cellEnd := min(cellOff+n1+n2+int(payloadSize), len(data))
 		cellData := data[cellOff:cellEnd]
 
 		cells = append(cells, leafCell{rowid: rowid, data: cellData})
@@ -548,7 +545,7 @@ func (b *BTree) searchInterior(pageNum int, data []byte, offset int, ph PageHead
 	cellCount := int(ph.CellCount)
 	childPage := int(ph.RightMostPtr) // default: rightmost child
 
-	for i := 0; i < cellCount; i++ {
+	for i := range cellCount {
 		ptrOff := headerEnd + i*2
 		if ptrOff+2 > len(data) {
 			break

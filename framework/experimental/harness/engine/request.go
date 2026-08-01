@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 )
@@ -20,8 +21,8 @@ type RequestMiddleware func(ctx context.Context, req *provider.Request, next Req
 // sequence of middleware. First middleware listed is outermost.
 func ChainRequest(base RequestHandler, ms ...RequestMiddleware) RequestHandler {
 	h := base
-	for i := len(ms) - 1; i >= 0; i-- {
-		m := ms[i]
+	for _, m := range slices.Backward(ms) {
+
 		next := h
 		h = func(ctx context.Context, req *provider.Request) (<-chan provider.StreamEvent, error) {
 			return m(ctx, req, next)

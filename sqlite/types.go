@@ -298,10 +298,7 @@ func compareString(a, b string) CompareResult {
 }
 
 func compareBytes(a, b []byte) CompareResult {
-	minLen := len(a)
-	if len(b) < minLen {
-		minLen = len(b)
-	}
+	minLen := min(len(b), len(a))
 	for i := 0; i < minLen; i++ {
 		if a[i] < b[i] {
 			return CompareLess

@@ -76,8 +76,8 @@ func resolveUtilityClass(class string, theme Theme) string {
 	}
 
 	// Overflow
-	if strings.HasPrefix(class, "overflow-") {
-		val := strings.TrimPrefix(class, "overflow-")
+	if after, ok := strings.CutPrefix(class, "overflow-"); ok {
+		val := after
 		switch val {
 		case "auto", "hidden", "scroll", "visible":
 			return fmt.Sprintf("overflow: %s;", val)
@@ -85,8 +85,8 @@ func resolveUtilityClass(class string, theme Theme) string {
 	}
 
 	// Align items
-	if strings.HasPrefix(class, "items-") {
-		val := strings.TrimPrefix(class, "items-")
+	if after, ok := strings.CutPrefix(class, "items-"); ok {
+		val := after
 		cssVal := alignValue(val)
 		if cssVal != "" {
 			return fmt.Sprintf("align-items: %s;", cssVal)
@@ -94,8 +94,8 @@ func resolveUtilityClass(class string, theme Theme) string {
 	}
 
 	// Justify content
-	if strings.HasPrefix(class, "justify-") {
-		val := strings.TrimPrefix(class, "justify-")
+	if after, ok := strings.CutPrefix(class, "justify-"); ok {
+		val := after
 		cssVal := justifyValue(val)
 		if cssVal != "" {
 			return fmt.Sprintf("justify-content: %s;", cssVal)
@@ -109,12 +109,12 @@ func resolveUtilityClass(class string, theme Theme) string {
 	if class == "h-full" {
 		return "height: 100%;"
 	}
-	if strings.HasPrefix(class, "w-") {
-		token := strings.TrimPrefix(class, "w-")
+	if after, ok := strings.CutPrefix(class, "w-"); ok {
+		token := after
 		return fmt.Sprintf("width: var(--spacing-%s);", token)
 	}
-	if strings.HasPrefix(class, "h-") {
-		token := strings.TrimPrefix(class, "h-")
+	if after, ok := strings.CutPrefix(class, "h-"); ok {
+		token := after
 		return fmt.Sprintf("height: var(--spacing-%s);", token)
 	}
 
@@ -132,8 +132,8 @@ func resolveUtilityClass(class string, theme Theme) string {
 	}
 
 	// Font size utilities — `text-base`, `text-lg`, etc. → font-size token.
-	if strings.HasPrefix(class, "text-") {
-		token := strings.TrimPrefix(class, "text-")
+	if after, ok := strings.CutPrefix(class, "text-"); ok {
+		token := after
 		if isFontSizeToken(token) {
 			return fmt.Sprintf("font-size: var(--text-%s);", token)
 		}
@@ -142,14 +142,14 @@ func resolveUtilityClass(class string, theme Theme) string {
 	}
 
 	// Background color
-	if strings.HasPrefix(class, "bg-") {
-		token := strings.TrimPrefix(class, "bg-")
+	if after, ok := strings.CutPrefix(class, "bg-"); ok {
+		token := after
 		return fmt.Sprintf("background-color: var(--color-%s);", token)
 	}
 
 	// Border color / width
-	if strings.HasPrefix(class, "border-") {
-		token := strings.TrimPrefix(class, "border-")
+	if after, ok := strings.CutPrefix(class, "border-"); ok {
+		token := after
 		if _, err := strconv.Atoi(token); err == nil {
 			return fmt.Sprintf("border-width: %spx;", token)
 		}
@@ -163,14 +163,14 @@ func resolveUtilityClass(class string, theme Theme) string {
 	}
 
 	// Border radius
-	if strings.HasPrefix(class, "rounded-") {
-		token := strings.TrimPrefix(class, "rounded-")
+	if after, ok := strings.CutPrefix(class, "rounded-"); ok {
+		token := after
 		return fmt.Sprintf("border-radius: var(--radii-%s);", token)
 	}
 
 	// Font weight
-	if strings.HasPrefix(class, "font-") {
-		weight := strings.TrimPrefix(class, "font-")
+	if after, ok := strings.CutPrefix(class, "font-"); ok {
+		weight := after
 		if w, ok := fontWeightMap()[weight]; ok {
 			return fmt.Sprintf("font-weight: %s;", w)
 		}
@@ -235,16 +235,16 @@ func marginCSS(class string) string {
 }
 
 func gapCSS(class string) string {
-	if strings.HasPrefix(class, "gap-x-") {
-		token := strings.TrimPrefix(class, "gap-x-")
+	if after, ok := strings.CutPrefix(class, "gap-x-"); ok {
+		token := after
 		return fmt.Sprintf("column-gap: var(--spacing-%s);", token)
 	}
-	if strings.HasPrefix(class, "gap-y-") {
-		token := strings.TrimPrefix(class, "gap-y-")
+	if after, ok := strings.CutPrefix(class, "gap-y-"); ok {
+		token := after
 		return fmt.Sprintf("row-gap: var(--spacing-%s);", token)
 	}
-	if strings.HasPrefix(class, "gap-") {
-		token := strings.TrimPrefix(class, "gap-")
+	if after, ok := strings.CutPrefix(class, "gap-"); ok {
+		token := after
 		return fmt.Sprintf("gap: var(--spacing-%s);", token)
 	}
 	return ""

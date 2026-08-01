@@ -144,19 +144,20 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 
 	// Build the path. For area, append baseline-close so the fill
 	// looks like a hill silhouette; for line, just the polyline.
-	pathD := "M" + pts[0]
+	var pathD strings.Builder
+	pathD.WriteString("M" + pts[0])
 	for i := 1; i < len(pts); i++ {
-		pathD += " L" + pts[i]
+		pathD.WriteString(" L" + pts[i])
 	}
-	areaD := pathD + " L" + ftoa(plotW) + "," + ftoa(float64(h)) +
+	areaD := pathD.String() + " L" + ftoa(plotW) + "," + ftoa(float64(h)) +
 		" L0," + ftoa(float64(h)) + " Z"
 
 	var body string
 	if cfg.Shape == SparklineArea {
 		body = `<path d="` + areaD + `" class="ui-sparkline__area"/><path d="` +
-			pathD + `" class="ui-sparkline__line"/>`
+			pathD.String() + `" class="ui-sparkline__line"/>`
 	} else {
-		body = `<path d="` + pathD + `" class="ui-sparkline__line"/>`
+		body = `<path d="` + pathD.String() + `" class="ui-sparkline__line"/>`
 	}
 
 	out := `<svg ` + svgAttrs.String() + ` data-fui-comp="ui-sparkline">` + body + `</svg>`

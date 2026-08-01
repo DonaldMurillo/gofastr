@@ -64,7 +64,6 @@ func TestE2E_HeadInjection_AllGlobalTagsPresent(t *testing.T) {
 	}
 
 	for _, tc := range checks {
-		tc := tc
 		t.Run(tc.label, func(t *testing.T) {
 			if !strings.Contains(headHTML, tc.want) {
 				t.Errorf("head missing %s tag:\n  want: %s\n  head:\n%s", tc.label, tc.want, headHTML)
@@ -127,7 +126,6 @@ func TestE2E_HeadInjection_MultiplePagesAllGetGlobalTags(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 
 	for _, path := range []string{"/", "/components/accordion", "/components/tabs"} {
-		path := path
 		t.Run(path, func(t *testing.T) {
 			headHTML := collectHeadHTML(t, ctx, base+path)
 			// All pages should carry the global OG title.

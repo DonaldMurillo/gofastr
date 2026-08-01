@@ -253,9 +253,7 @@ func TestInterleavedBidirectional(t *testing.T) {
 		defer wg.Done()
 		for i := 1; i <= N; i++ {
 			i := i
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				raw, err := p.Call(ctx, method, map[string]any{"tag": i})
 				if err != nil {
 					out <- outcome{peerRole: peerRole, tag: i, err: err}
@@ -270,7 +268,7 @@ func TestInterleavedBidirectional(t *testing.T) {
 					return
 				}
 				out <- outcome{peerRole: peerRole, tag: i, respRole: r.Role}
-			}()
+			})
 		}
 	}
 	wg.Add(2)
@@ -671,7 +669,7 @@ func TestServeSideInflightCap(t *testing.T) {
 		err error
 	}
 	results := make(chan res, 3)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -697,7 +695,7 @@ func TestServeSideInflightCap(t *testing.T) {
 	}
 
 	close(release)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		r := <-results
 		if r.err != nil {
 			t.Fatalf("blocked call %d failed after release: %v", i, r.err)

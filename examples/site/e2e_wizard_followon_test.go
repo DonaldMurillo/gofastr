@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -395,12 +396,7 @@ func TestE2E_SearchInputClearOnEsc(t *testing.T) {
 
 // containsAny reports whether any element of haystack equals needle.
 func containsAny(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 // Compile-time hint: wizardDemoReset / wizardDemoLast are in screen_wizard.go.

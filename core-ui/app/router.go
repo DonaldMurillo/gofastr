@@ -117,8 +117,8 @@ func normalizeRoutePath(path string) string {
 			continue
 		}
 		inner := p[1 : len(p)-1] // strip braces
-		if strings.HasSuffix(inner, "...") {
-			parts[i] = ":" + strings.TrimSuffix(inner, "...") + "*"
+		if before, ok := strings.CutSuffix(inner, "..."); ok {
+			parts[i] = ":" + before + "*"
 		} else {
 			parts[i] = ":" + inner
 		}
@@ -198,7 +198,7 @@ func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 		return nil, false
 	}
 	params := make(map[string]string)
-	for i := 0; i < lastIdx; i++ {
+	for i := range lastIdx {
 		seg := segments[i]
 		if isParamSeg(seg) {
 			if !constraintOK(seg, pathParts[i]) {

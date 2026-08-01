@@ -168,7 +168,7 @@ func parseClean(s string) (ULID, error) {
 		return ULID{}, fmt.Errorf("ulid: invalid length %d (want %d)", len(s), Length)
 	}
 	// Validate.
-	for i := 0; i < Length; i++ {
+	for i := range Length {
 		if decodeTable[s[i]] == 0xff {
 			return ULID{}, errors.New("ulid: invalid character")
 		}
@@ -213,7 +213,7 @@ func IsValid(s string) bool {
 	if len(s) != Length {
 		return false
 	}
-	for i := 0; i < Length; i++ {
+	for i := range Length {
 		if decodeTable[s[i]] == 0xff {
 			return false
 		}

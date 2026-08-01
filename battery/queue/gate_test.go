@@ -175,7 +175,7 @@ func TestDBQueueGateNoClaimChurn(t *testing.T) {
 	// equality check below catches that. With eligibleTypes() filtering,
 	// the value stays exactly as enqueued.
 	sched := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := q.Enqueue(ctx, Job{
 			Type:        "gated",
 			Payload:     json.RawMessage(`{}`),
@@ -250,7 +250,7 @@ func TestDBQueueGateConcurrentSetGate(t *testing.T) {
 		}
 	}()
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if err := q.Enqueue(ctx, Job{Type: "flap", Payload: json.RawMessage(`{}`)}); err != nil {
 			t.Fatalf("enqueue %d: %v", i, err)
 		}
@@ -288,7 +288,7 @@ func TestGateDeferNoStrand(t *testing.T) {
 	// pending. With the priority-heap store (unbounded) the deferred push
 	// always succeeds; this test guards against any regression that would
 	// strand the deferred job behind the backlog.
-	for i := 0; i < 1024; i++ {
+	for i := range 1024 {
 		if err := q.Enqueue(context.Background(), Job{Type: "filler", Payload: json.RawMessage(`{}`)}); err != nil {
 			t.Fatalf("fill %d: %v", i, err)
 		}

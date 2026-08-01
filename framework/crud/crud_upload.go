@@ -81,8 +81,7 @@ func limitJSONBody(w http.ResponseWriter, r *http.Request) {
 // limitJSONBody first.
 func decodeJSONBody(r *http.Request, v any) error {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return errBodyTooLarge
 		}
 		// http.MaxBytesReader may also report a generic

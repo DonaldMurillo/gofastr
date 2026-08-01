@@ -44,8 +44,8 @@ func assertNRGBAEqual(t *testing.T, want, got image.Image) {
 
 func TestRoundTripTypeRGBA(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 8, 6))
-	for y := 0; y < 6; y++ {
-		for x := 0; x < 8; x++ {
+	for y := range 6 {
+		for x := range 8 {
 			src.SetRGBA(x, y, color.RGBA{R: uint8(x * 16), G: uint8(y * 32), B: 64, A: 128})
 		}
 	}
@@ -55,8 +55,8 @@ func TestRoundTripTypeRGBA(t *testing.T) {
 
 func TestRoundTripTypeNRGBA(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 8, 6))
-	for y := 0; y < 6; y++ {
-		for x := 0; x < 8; x++ {
+	for y := range 6 {
+		for x := range 8 {
 			src.SetNRGBA(x, y, color.NRGBA{R: uint8(x * 32), G: uint8(y * 40), B: 200, A: uint8(x*y) % 255})
 		}
 	}
@@ -66,8 +66,8 @@ func TestRoundTripTypeNRGBA(t *testing.T) {
 
 func TestRoundTripTypeGray(t *testing.T) {
 	src := image.NewGray(image.Rect(0, 0, 8, 6))
-	for y := 0; y < 6; y++ {
-		for x := 0; x < 8; x++ {
+	for y := range 6 {
+		for x := range 8 {
 			src.SetGray(x, y, color.Gray{Y: uint8(x*y) % 255})
 		}
 	}
@@ -83,8 +83,8 @@ func TestRoundTripTypePaletted(t *testing.T) {
 		color.RGBA{0, 0, 255, 255},
 	}
 	src := image.NewPaletted(image.Rect(0, 0, 8, 6), pal)
-	for y := 0; y < 6; y++ {
-		for x := 0; x < 8; x++ {
+	for y := range 6 {
+		for x := range 8 {
 			src.SetColorIndex(x, y, uint8((x+y)%4))
 		}
 	}
@@ -107,8 +107,8 @@ func TestRoundTripTypeYCbCr(t *testing.T) {
 
 func TestRoundTripTypeCMYK(t *testing.T) {
 	src := image.NewCMYK(image.Rect(0, 0, 8, 6))
-	for y := 0; y < 6; y++ {
-		for x := 0; x < 8; x++ {
+	for y := range 6 {
+		for x := range 8 {
 			src.SetCMYK(x, y, color.CMYK{C: uint8(x * 16), M: uint8(y * 32), Y: 100, K: 10})
 		}
 	}
@@ -149,7 +149,7 @@ func TestRoundTripTypeCustomImage(t *testing.T) {
 
 func TestRoundTripAR16384x1(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 16384, 1))
-	for x := 0; x < 16384; x++ {
+	for x := range 16384 {
 		src.SetNRGBA(x, 0, color.NRGBA{R: uint8(x), G: uint8(x >> 4), B: uint8(x >> 8), A: 255})
 	}
 	out := roundTripTo(t, src)
@@ -158,7 +158,7 @@ func TestRoundTripAR16384x1(t *testing.T) {
 
 func TestRoundTripAR1x16384(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 1, 16384))
-	for y := 0; y < 16384; y++ {
+	for y := range 16384 {
 		src.SetNRGBA(0, y, color.NRGBA{R: uint8(y), G: uint8(y >> 4), B: uint8(y >> 8), A: 255})
 	}
 	out := roundTripTo(t, src)
@@ -193,8 +193,8 @@ func TestRoundTripAlphaAllZero(t *testing.T) {
 
 func TestRoundTripAlphaVaryGrayMid(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 32, 32))
-	for y := 0; y < 32; y++ {
-		for x := 0; x < 32; x++ {
+	for y := range 32 {
+		for x := range 32 {
 			src.SetNRGBA(x, y, color.NRGBA{R: 128, G: 128, B: 128, A: uint8((x*8 + y*8) % 255)})
 		}
 	}
@@ -206,8 +206,8 @@ func TestRoundTripAlphaVaryGrayMid(t *testing.T) {
 
 func TestRoundTripWrapAroundBoundary(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 64, 64))
-	for y := 0; y < 64; y++ {
-		for x := 0; x < 64; x++ {
+	for y := range 64 {
+		for x := range 64 {
 			var r uint8
 			switch x % 3 {
 			case 0:

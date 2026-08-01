@@ -326,21 +326,21 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		{"_like", filter.OpLike}, {"_in", filter.OpIn},
 	}
 	var out []filter.ParsedFilter
-	for _, kv := range strings.Split(raw, ",") {
+	for kv := range strings.SplitSeq(raw, ",") {
 		kv = strings.TrimSpace(kv)
 		if kv == "" {
 			continue
 		}
-		eq := strings.IndexByte(kv, '=')
-		if eq < 0 {
+		before, after, ok := strings.Cut(kv, "=")
+		if !ok {
 			return nil, fmt.Errorf("include %q: scoped filter %q missing =", pathForErrors, kv)
 		}
-		key, value := kv[:eq], kv[eq+1:]
+		key, value := before, after
 		field := key
 		op := filter.OpEq
 		for _, s := range suffixes {
-			if strings.HasSuffix(key, s.suffix) {
-				field = strings.TrimSuffix(key, s.suffix)
+			if before, ok := strings.CutSuffix(key, s.suffix); ok {
+				field = before
 				op = s.op
 				break
 			}

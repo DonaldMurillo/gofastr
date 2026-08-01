@@ -119,7 +119,7 @@ func (l *Lexer) advance() {
 
 // advanceN moves forward n characters.
 func (l *Lexer) advanceN(n int) {
-	for i := 0; i < n; i++ {
+	for range n {
 		l.advance()
 	}
 }

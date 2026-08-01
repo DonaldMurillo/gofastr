@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-func f64(v float64) *float64 { return &v }
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }
 
 // Decimal/Float must reject non-finite values so Min/Max bounds can't be
 // bypassed via NaN/Inf (IEEE-754 makes every comparison false for NaN).
@@ -48,7 +49,7 @@ func TestIntFloatOverflowRejected(t *testing.T) {
 // Int Min/Max must be enforced in integer space; widening to float64 loses
 // precision above 2^53 and admits values strictly greater than Max.
 func TestIntBoundPrecision(t *testing.T) {
-	capped := Field{Name: "n", Type: Int, Max: f64(1e18)}
+	capped := Field{Name: "n", Type: Int, Max: new(1e18)}
 	// 1e18 + 1 is strictly over the bound but rounds to the same float64.
 	if err := validateField(capped, "1000000000000000001"); err == nil {
 		t.Error("Int Max:1e18 accepted 1e18+1 (float64 precision bypass)")

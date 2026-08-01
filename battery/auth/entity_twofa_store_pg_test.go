@@ -41,7 +41,7 @@ func openPGMultiConn(t *testing.T) *sql.DB {
 	}
 	// Ping-retry: the container connection can be cold/reset on first touch
 	// (same reason openPGForBattery does this before use).
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		err = admin.PingContext(ctx)
 		cancel()
@@ -164,7 +164,7 @@ func TestEntityTwoFA_Postgres_EnsureSchemaIdempotent(t *testing.T) {
 	db := openPGMultiConn(t)
 	ctx := context.Background()
 	s := NewEntityTwoFAStore(db, "auth_twofa")
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := s.EnsureSchema(ctx); err != nil {
 			t.Fatalf("EnsureSchema call %d must be idempotent: %v", i+1, err)
 		}
@@ -323,7 +323,7 @@ func TestEntityTwoFA_Postgres_ConcurrentConsumeSingleUse(t *testing.T) {
 	const racers = 8
 	results := make(chan bool, racers)
 	start := make(chan struct{})
-	for i := 0; i < racers; i++ {
+	for range racers {
 		go func() {
 			<-start
 			ok, err := s.ConsumeBackupCode(ctx, "u1", "shared")
@@ -335,7 +335,7 @@ func TestEntityTwoFA_Postgres_ConcurrentConsumeSingleUse(t *testing.T) {
 	}
 	close(start)
 	wins := 0
-	for i := 0; i < racers; i++ {
+	for range racers {
 		if <-results {
 			wins++
 		}
@@ -385,7 +385,7 @@ func TestEntityTwoFA_Postgres_ConcurrentDistinctCodesAllSucceed(t *testing.T) {
 
 	results := make(chan bool, n)
 	start := make(chan struct{})
-	for i := 0; i < n; i++ {
+	for i := range n {
 		go func(code string) {
 			<-start
 			ok, err := s.ConsumeBackupCode(ctx, "u1", code)
@@ -397,7 +397,7 @@ func TestEntityTwoFA_Postgres_ConcurrentDistinctCodesAllSucceed(t *testing.T) {
 	}
 	close(start)
 	got := 0
-	for i := 0; i < n; i++ {
+	for range n {
 		if <-results {
 			got++
 		}

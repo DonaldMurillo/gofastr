@@ -32,7 +32,7 @@ func TestWithIdempotency_OmittedMeansNoExtraMiddleware(t *testing.T) {
 	withTestRoute(a, &calls, http.StatusCreated, "ok")
 	// Without idempotency wired, two identical POSTs hit the handler
 	// twice — same as before.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		req := httptest.NewRequest(http.MethodPost, "/r", strings.NewReader("{}"))
 		req.Header.Set("Idempotency-Key", "x")
 		rr := httptest.NewRecorder()

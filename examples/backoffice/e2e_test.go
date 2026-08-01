@@ -48,7 +48,7 @@ func backofficeBrowser(t *testing.T) context.Context {
 	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
 	t.Cleanup(cancel)
 	// Auto-accept any window.confirm (the data-fui-confirm delete dialog).
-	chromedp.ListenTarget(ctx, func(ev interface{}) {
+	chromedp.ListenTarget(ctx, func(ev any) {
 		if _, ok := ev.(*page.EventJavascriptDialogOpening); ok {
 			go func() { _ = chromedp.Run(ctx, page.HandleJavaScriptDialog(true)) }()
 		}

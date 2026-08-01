@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -114,9 +115,7 @@ func Banner(cfg BannerConfig) render.HTML {
 		attrs["role"] = "status"
 		attrs["aria-live"] = "polite"
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 
 	children := []render.HTML{
 		render.Tag("div", map[string]string{"class": "ui-banner__icon", "aria-hidden": "true"},

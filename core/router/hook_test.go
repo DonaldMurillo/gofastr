@@ -241,12 +241,12 @@ func TestRouteGateConcurrentSafe(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			r.SetRouteGate(func(key string) bool { return true })
 		}
 	}()
 
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/hot", nil))
 	}

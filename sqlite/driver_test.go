@@ -16,7 +16,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func mustExec(t *testing.T, db *sql.DB, query string, args ...interface{}) sql.Result {
+func mustExec(t *testing.T, db *sql.DB, query string, args ...any) sql.Result {
 	t.Helper()
 	r, err := db.Exec(query, args...)
 	if err != nil {
@@ -25,7 +25,7 @@ func mustExec(t *testing.T, db *sql.DB, query string, args ...interface{}) sql.R
 	return r
 }
 
-func mustQuery(t *testing.T, db *sql.DB, query string, args ...interface{}) *sql.Rows {
+func mustQuery(t *testing.T, db *sql.DB, query string, args ...any) *sql.Rows {
 	t.Helper()
 	r, err := db.Query(query, args...)
 	if err != nil {

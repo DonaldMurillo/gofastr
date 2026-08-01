@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -65,9 +66,7 @@ func Run(ctx context.Context, cfg Config) (*Aggregate, error) {
 	errs := make(chan error, cfg.Concurrency)
 	var workers sync.WaitGroup
 	for range cfg.Concurrency {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			for current := range jobs {
 				result, runErr := runTrial(ctx, cfg, runDir, cliPath, version,
 					current.framework, current.repetition)
@@ -77,7 +76,7 @@ func Run(ctx context.Context, cfg Config) (*Aggregate, error) {
 				}
 				results <- result
 			}
-		}()
+		})
 	}
 	go func() {
 		for repetition := 1; repetition <= cfg.Runs; repetition++ {
@@ -575,10 +574,5 @@ func executableName(name string) string {
 }
 
 func contains(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, target)
 }

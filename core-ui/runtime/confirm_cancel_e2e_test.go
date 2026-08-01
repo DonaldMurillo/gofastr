@@ -34,11 +34,11 @@ func TestDispatchRPC_ConfirmCancelDoesNotAbortInFlight(t *testing.T) {
 		w.Write([]byte(js))
 	})
 	handleRuntimeModules(t, mux)
-	var completed int32
+	var completed atomic.Int32
 	mux.HandleFunc("/rpc/slow", func(w http.ResponseWriter, r *http.Request) {
 		// Slow enough that click 2's cancel lands while click 1 is in flight.
 		time.Sleep(600 * time.Millisecond)
-		atomic.AddInt32(&completed, 1)
+		completed.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"v":1}`)
 	})

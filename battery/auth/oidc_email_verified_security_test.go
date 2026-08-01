@@ -136,7 +136,7 @@ func TestOIDCSec_EmailVerified_StringFalse(t *testing.T) {
 func TestOIDCSec_EmailVerified_CustomClaim(t *testing.T) {
 	f := newFakeIdP(t)
 	// Use a non-standard claim name and leave email_verified absent.
-	f.claims = map[string]interface{}{
+	f.claims = map[string]any{
 		"iss":                   f.issuer,
 		"sub":                   "user-9",
 		"aud":                   f.clientID,

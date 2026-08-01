@@ -116,7 +116,7 @@ func TestDBQueue_PriorityOrdering(t *testing.T) {
 	q.Enqueue(ctx, Job{ID: "boost", Type: "x", Priority: 10, CreatedAt: now})
 
 	got := []string{}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		j, err := q.Dequeue(ctx)
 		if err != nil {
 			t.Fatalf("dequeue %d: %v", i, err)
@@ -233,7 +233,7 @@ func TestDBQueue_WorkerLoopProcessesJobs(t *testing.T) {
 
 	q.Start(ctx)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if err := q.Enqueue(ctx, Job{Type: "ping"}); err != nil {
 			t.Fatalf("enqueue %d: %v", i, err)
 		}

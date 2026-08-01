@@ -22,8 +22,8 @@ func TestMultiVersionSameNameNoPanic(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	v1 := app.Group("/api/v1")
 	v2 := app.Group("/api/v2")
-	app.GroupEntity(v1, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}})
-	app.GroupEntity(v2, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}})
+	app.GroupEntity(v1, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: new(false)}})
+	app.GroupEntity(v2, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: new(false)}})
 
 	if _, err := app.Registry.Get("posts"); err == nil {
 		t.Fatal("expected ambiguity error for multi-version Get by name")
@@ -93,10 +93,10 @@ func TestVersionedOpenAPI(t *testing.T) {
 	v1 := app.Group("/api/v1", routegroup.WithOpenAPITag("v1"))
 	v2 := app.Group("/api/v2", routegroup.WithOpenAPITag("v2"))
 	app.GroupEntity(v1, "posts", entity.EntityConfig{Table: "posts",
-		Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
+		Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: new(false)},
 	})
 	app.GroupEntity(v2, "posts", entity.EntityConfig{Table: "posts",
-		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "summary", Type: schema.Text}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
+		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "summary", Type: schema.Text}}, Exposure: &entity.ExposureConfig{CRUD: new(false)},
 	})
 
 	spec := frameworkopenapi.EntityOpenAPI(app.Registry, "Test", "1.0.0")

@@ -62,12 +62,10 @@ func TestConcurrentStopsDontPanic(t *testing.T) {
 	s := NewScheduler()
 	s.Start(context.Background())
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 4 {
+		wg.Go(func() {
 			s.Stop()
-		}()
+		})
 	}
 	wg.Wait()
 }

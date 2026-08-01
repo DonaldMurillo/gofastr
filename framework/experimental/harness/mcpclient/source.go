@@ -91,8 +91,8 @@ func (t *mcpTool) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink)
 	// own canonical tool name.
 	remoteName := call.Name
 	prefix := t.source.name + "."
-	if strings.HasPrefix(remoteName, prefix) {
-		remoteName = strings.TrimPrefix(remoteName, prefix)
+	if after, ok := strings.CutPrefix(remoteName, prefix); ok {
+		remoteName = after
 	}
 	result, err := t.source.client.CallTool(ctx, remoteName, call.Input)
 	if err != nil {

@@ -175,8 +175,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			var mbErr *http.MaxBytesError
-			if errors.As(err, &mbErr) {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 				return
 			}

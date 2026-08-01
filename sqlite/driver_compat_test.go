@@ -61,7 +61,7 @@ func TestDriverCompatPreparedStmt(t *testing.T) {
 	}
 	defer stmt.Close()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_, err := stmt.Exec(fmt.Sprintf("row_%d", i))
 		if err != nil {
 			t.Fatal(err)
@@ -352,18 +352,18 @@ func TestDriverCompatConcurrentReads(t *testing.T) {
 	defer db.Close()
 
 	db.Exec("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		db.Exec("INSERT INTO t (val) VALUES (?)", fmt.Sprintf("row_%d", i))
 	}
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, 10)
 
-	for g := 0; g < 10; g++ {
+	for g := range 10 {
 		wg.Add(1)
 		go func(g int) {
 			defer wg.Done()
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				var val string
 				err := db.QueryRow("SELECT val FROM t WHERE id = ?", (g*10+i)%100+1).Scan(&val)
 				if err != nil {

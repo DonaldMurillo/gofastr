@@ -16,7 +16,7 @@ func benchPager(b *testing.B, pageSize int) {
 		mf := NewMemFile()
 		p, _ := NewPager(mf, pageSize)
 		p.InitNew()
-		for j := 0; j < 100; j++ {
+		for j := range 100 {
 			pn, _ := p.AllocatePage()
 			data := make([]byte, pageSize)
 			data[0] = byte(j)
@@ -48,7 +48,7 @@ func BenchmarkPagerRead(b *testing.B) {
 	mf := NewMemFile()
 	p, _ := NewPager(mf, 4096)
 	p.InitNew()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		pn, _ := p.AllocatePage()
 		data := make([]byte, 4096)
 		data[0] = byte(i)
@@ -79,7 +79,7 @@ func BenchmarkPagerFlush(b *testing.B) {
 		mf := NewMemFile()
 		p, _ := NewPager(mf, 4096)
 		p.InitNew()
-		for j := 0; j < 50; j++ {
+		for j := range 50 {
 			pn, _ := p.AllocatePage()
 			data := make([]byte, 4096)
 			data[0] = byte(j)
@@ -162,7 +162,7 @@ func benchBTreeInsert(b *testing.B, n int) {
 		bt := NewBTree(p)
 		root, _ := bt.CreateBTree()
 		rec := &Record{Columns: []Value{TextValue("benchmark data")}}
-		for j := 0; j < n; j++ {
+		for j := range n {
 			bt.Insert(root, int64(j), rec)
 		}
 	}
@@ -193,7 +193,7 @@ func BenchmarkBTreeSearch(b *testing.B) {
 	bt := NewBTree(p)
 	root, _ := bt.CreateBTree()
 	rec := &Record{Columns: []Value{TextValue("data")}}
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		bt.Insert(root, int64(i), rec)
 	}
 	b.ResetTimer()
@@ -209,7 +209,7 @@ func BenchmarkBTreeSearch_Miss(b *testing.B) {
 	bt := NewBTree(p)
 	root, _ := bt.CreateBTree()
 	rec := &Record{Columns: []Value{TextValue("data")}}
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		bt.Insert(root, int64(i), rec)
 	}
 	b.ResetTimer()
@@ -225,7 +225,7 @@ func BenchmarkBTreeScan(b *testing.B) {
 	bt := NewBTree(p)
 	root, _ := bt.CreateBTree()
 	rec := &Record{Columns: []Value{TextValue("data"), IntegerValue(42)}}
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		bt.Insert(root, int64(i), rec)
 	}
 	b.ResetTimer()
@@ -432,7 +432,7 @@ func BenchmarkEngineInsert_WithParams(b *testing.B) {
 func BenchmarkEngineSelectAll(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id, name) VALUES (%d, 'name_%d')", i, i))
 	}
 	b.ResetTimer()
@@ -445,7 +445,7 @@ func BenchmarkEngineSelectAll(b *testing.B) {
 func BenchmarkEngineSelectWhere(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, score INTEGER)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id, name, score) VALUES (%d, 'name_%d', %d)", i, i, i*10))
 	}
 	b.ResetTimer()
@@ -458,7 +458,7 @@ func BenchmarkEngineSelectWhere(b *testing.B) {
 func BenchmarkEngineSelectCount(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id) VALUES (%d)", i))
 	}
 	b.ResetTimer()
@@ -471,7 +471,7 @@ func BenchmarkEngineSelectCount(b *testing.B) {
 func BenchmarkEngineUpdate(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id, val) VALUES (%d, 'old_%d')", i, i))
 	}
 	b.ResetTimer()
@@ -493,7 +493,7 @@ func BenchmarkEngineDelete(b *testing.B) {
 func BenchmarkEngineOrderBy(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, score INTEGER)")
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id, score) VALUES (%d, %d)", i, 100-i))
 	}
 	b.ResetTimer()
@@ -506,7 +506,7 @@ func BenchmarkEngineOrderBy(b *testing.B) {
 func BenchmarkEngineLimitOffset(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id) VALUES (%d)", i))
 	}
 	b.ResetTimer()
@@ -519,7 +519,7 @@ func BenchmarkEngineLimitOffset(b *testing.B) {
 func BenchmarkEngineLimitOffset_NoOrder(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id) VALUES (%d)", i))
 	}
 	b.ResetTimer()
@@ -534,7 +534,7 @@ func BenchmarkEngineTransaction(b *testing.B) {
 		e := newBenchEngine(b)
 		e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
 		e.Execute("BEGIN")
-		for j := 0; j < 100; j++ {
+		for j := range 100 {
 			e.Execute(fmt.Sprintf("INSERT INTO t (id, val) VALUES (%d, 'data_%d')", j, j))
 		}
 		e.Execute("COMMIT")
@@ -546,7 +546,7 @@ func BenchmarkEngineRollback(b *testing.B) {
 		e := newBenchEngine(b)
 		e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
 		e.Execute("BEGIN")
-		for j := 0; j < 100; j++ {
+		for j := range 100 {
 			e.Execute(fmt.Sprintf("INSERT INTO t (id, val) VALUES (%d, 'data_%d')", j, j))
 		}
 		e.Execute("ROLLBACK")
@@ -560,7 +560,7 @@ func BenchmarkEngineRollback(b *testing.B) {
 func BenchmarkEngineOLTP(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, score INTEGER)")
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		e.Execute(fmt.Sprintf("INSERT INTO users (id, name, email, score) VALUES (%d, 'user_%d', 'user_%d@example.com', %d)",
 			i, i, i, i*10))
 	}
@@ -607,7 +607,7 @@ func BenchmarkDriverInsert(b *testing.B) {
 func BenchmarkDriverSelect(b *testing.B) {
 	db := openBenchDB(b)
 	db.Exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		db.Exec("INSERT INTO t (id, name) VALUES (?, ?)", i, fmt.Sprintf("name_%d", i))
 	}
 	b.ResetTimer()
@@ -625,7 +625,7 @@ func BenchmarkDriverSelect(b *testing.B) {
 func BenchmarkDriverSelectWhere(b *testing.B) {
 	db := openBenchDB(b)
 	db.Exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, score INTEGER)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		db.Exec("INSERT INTO t (id, name, score) VALUES (?, ?, ?)", i, fmt.Sprintf("name_%d", i), i*10)
 	}
 	b.ResetTimer()
@@ -660,7 +660,7 @@ func BenchmarkDriverTransaction(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		tx, _ := db.Begin()
-		for j := 0; j < 50; j++ {
+		for j := range 50 {
 			tx.Exec("INSERT INTO t (id, val) VALUES (?, ?)", i*50+j, fmt.Sprintf("v_%d", i*50+j))
 		}
 		tx.Commit()
@@ -673,14 +673,14 @@ func BenchmarkDriverTransactionFixed(b *testing.B) {
 	db := openBenchDB(b)
 	db.Exec("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
 	// Pre-populate
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		db.Exec("INSERT INTO t (id, val) VALUES (?, ?)", i, fmt.Sprintf("v_%d", i))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		tx, _ := db.Begin()
 		base := int64(1000000 + i*50)
-		for j := 0; j < 50; j++ {
+		for j := range 50 {
 			tx.Exec("INSERT INTO t (id, val) VALUES (?, ?)", base+int64(j), fmt.Sprintf("v_%d", base+int64(j)))
 		}
 		tx.Commit()
@@ -726,7 +726,7 @@ func BenchmarkFullPipeline(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		e := newBenchEngine(b)
 		e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
-		for j := 0; j < 50; j++ {
+		for j := range 50 {
 			e.Execute(fmt.Sprintf("INSERT INTO t (id, val) VALUES (%d, 'val_%d')", j, j))
 		}
 		e.Execute("SELECT * FROM t")
@@ -793,7 +793,7 @@ func BenchmarkFair_SelectAll(b *testing.B) {
 	db := openBenchDBForCompare(b)
 	defer db.Close()
 	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		db.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
 	}
 	b.ResetTimer()
@@ -814,7 +814,7 @@ func BenchmarkFair_SelectWhere(b *testing.B) {
 	db := openBenchDBForCompare(b)
 	defer db.Close()
 	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		name := "user_a"
 		if i%2 == 0 {
 			name = "user_b"
@@ -858,7 +858,7 @@ func BenchmarkFair_Transaction(b *testing.B) {
 		db := openBenchDBForCompare(b)
 		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
 		tx, _ := db.Begin()
-		for j := 0; j < 50; j++ {
+		for range 50 {
 			tx.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
 		}
 		tx.Commit()
@@ -891,7 +891,7 @@ func BenchmarkFair_OrderByLimit(b *testing.B) {
 	db := openBenchDBForCompare(b)
 	defer db.Close()
 	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)")
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		db.Exec("INSERT INTO t(name) VALUES('hello')")
 	}
 	b.ResetTimer()
@@ -915,7 +915,7 @@ func BenchmarkFair_DriverTransaction(b *testing.B) {
 		db := openBenchDBForCompare(b)
 		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
 		tx, _ := db.Begin()
-		for j := 0; j < 50; j++ {
+		for range 50 {
 			tx.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
 		}
 		tx.Commit()

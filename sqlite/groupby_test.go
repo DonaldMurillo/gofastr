@@ -238,7 +238,7 @@ func TestGroupByWithOrderBy(t *testing.T) {
 func TestGroupByWithLimit(t *testing.T) {
 	e := newTestEngine(t)
 	exec(t, e, "CREATE TABLE t (id INTEGER PRIMARY KEY, cat TEXT, val INTEGER)")
-	for i := 0; i < 9; i++ {
+	for i := range 9 {
 		cat := string(rune('a' + i%3))
 		exec(t, e, "INSERT INTO t (cat, val) VALUES (?, ?)", TextValue(cat), IntegerValue(int64((i+1)*10)))
 	}
@@ -392,7 +392,7 @@ func TestGroupByColumnAlias(t *testing.T) {
 func TestGroupByLargeDataset(t *testing.T) {
 	e := newTestEngine(t)
 	exec(t, e, "CREATE TABLE t (id INTEGER PRIMARY KEY, cat TEXT, val INTEGER)")
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		cat := string(rune('a' + i%5))
 		exec(t, e, "INSERT INTO t (cat, val) VALUES (?, ?)", TextValue(cat), IntegerValue(int64(i+1)))
 	}
@@ -402,7 +402,7 @@ func TestGroupByLargeDataset(t *testing.T) {
 		t.Fatalf("expected 5 groups, got %d", len(r.Rows))
 	}
 	// Each group should have 20 rows
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if r.Rows[i][1].IntVal != 20 {
 			t.Fatalf("group %s: expected COUNT=20, got %d", r.Rows[i][0].TextVal, r.Rows[i][1].IntVal)
 		}

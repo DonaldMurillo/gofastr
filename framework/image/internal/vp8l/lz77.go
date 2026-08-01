@@ -119,10 +119,7 @@ func buildStream(pixels [][4]uint8, cacheBits uint) (
 				continue
 			}
 			n := 0
-			limit := len(pixels) - p
-			if limit > matchMaxLen {
-				limit = matchMaxLen
-			}
+			limit := min(len(pixels)-p, matchMaxLen)
 			for n < limit && pixels[c+n] == pixels[p+n] {
 				n++
 			}
@@ -168,7 +165,7 @@ func buildStream(pixels [][4]uint8, cacheBits uint) (
 				extraLenBits:  uint8(lenExtra.bits),
 				extraDistBits: uint8(distExtra.bits),
 			})
-			for k := 0; k < matchLen; k++ {
+			for k := range matchLen {
 				insertHash(i + k)
 				cacheUpdate(pixels[i+k])
 			}

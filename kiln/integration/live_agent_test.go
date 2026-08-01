@@ -201,7 +201,7 @@ func (s *liveServer) dumpJournal() []journalSummary {
 		return nil
 	}
 	var out []journalSummary
-	for _, line := range strings.Split(string(buf), "\n") {
+	for line := range strings.SplitSeq(string(buf), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

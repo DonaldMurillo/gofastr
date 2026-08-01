@@ -15,7 +15,7 @@ import (
 func TestMemoryAppendReadTruncate(t *testing.T) {
 	j := journal.NewMemory()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		e, err := journal.NewEntry("e"+itoa(i), time.Unix(int64(i), 0).UTC(), journal.KindChatUser, "", journal.ChatMessagePayload{Text: "m" + itoa(i)})
 		if err != nil {
 			t.Fatalf("new entry: %v", err)
@@ -64,7 +64,7 @@ func TestJSONLAppendReadAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		e, _ := journal.NewEntry("e"+itoa(i), time.Unix(int64(i), 0).UTC(), journal.KindChatUser, "", journal.ChatMessagePayload{Text: "m" + itoa(i)})
 		if _, err := j.Append(e); err != nil {
 			t.Fatalf("append: %v", err)
@@ -112,7 +112,7 @@ func TestJSONLTruncateAfter(t *testing.T) {
 	}
 	defer j.Close()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		e, _ := journal.NewEntry("e"+itoa(i), time.Unix(int64(i), 0).UTC(), journal.KindChatUser, "", journal.ChatMessagePayload{Text: "m" + itoa(i)})
 		if _, err := j.Append(e); err != nil {
 			t.Fatalf("append: %v", err)

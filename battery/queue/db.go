@@ -566,10 +566,7 @@ func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
 // positive). attempts is expected to be >= 1 (Dequeue increments it before
 // the handler runs).
 func (q *DBQueue) backoffFor(attempts int) time.Duration {
-	exp := attempts - 1
-	if exp < 0 {
-		exp = 0
-	}
+	exp := max(attempts-1, 0)
 	d := q.backoffBase
 	for i := 0; i < exp; i++ {
 		// Stop doubling once we hit the cap or risk int64 overflow.

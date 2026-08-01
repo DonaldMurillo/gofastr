@@ -152,7 +152,7 @@ func goInteractiveAttrs(t *testing.T) []string {
 // they just add extra names to the checked set.
 func stripGoLineComments(src string) string {
 	var out strings.Builder
-	for _, line := range strings.Split(src, "\n") {
+	for line := range strings.SplitSeq(src, "\n") {
 		// Locate // that isn't inside a string. Simple heuristic: find the
 		// first // that appears before any unpaired " on the line.
 		trimmed := line

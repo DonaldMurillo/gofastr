@@ -296,16 +296,16 @@ func parse(raw string) (*Entry, error) {
 	}
 	rest := strings.TrimPrefix(raw, "---")
 	rest = strings.TrimPrefix(rest, "\n")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
+	before, after, ok := strings.Cut(rest, "\n---")
+	if !ok {
 		return nil, errors.New("unterminated frontmatter")
 	}
-	front := rest[:end]
-	body := strings.TrimPrefix(rest[end+len("\n---"):], "\n")
+	front := before
+	body := strings.TrimPrefix(after, "\n")
 
 	e := &Entry{Body: body}
 	inMetadata := false
-	for _, line := range strings.Split(front, "\n") {
+	for line := range strings.SplitSeq(front, "\n") {
 		trim := strings.TrimSpace(line)
 		if trim == "" || strings.HasPrefix(trim, "#") {
 			continue
@@ -314,12 +314,12 @@ func parse(raw string) (*Entry, error) {
 		// are its keys.
 		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
 			inMetadata = false
-			colon := strings.Index(line, ":")
-			if colon < 0 {
+			before, after, ok := strings.Cut(line, ":")
+			if !ok {
 				continue
 			}
-			key := strings.TrimSpace(line[:colon])
-			val := strings.TrimSpace(line[colon+1:])
+			key := strings.TrimSpace(before)
+			val := strings.TrimSpace(after)
 			val = strings.Trim(val, `"'`)
 			switch key {
 			case "name":
@@ -332,12 +332,12 @@ func parse(raw string) (*Entry, error) {
 			continue
 		}
 		if inMetadata {
-			colon := strings.Index(line, ":")
-			if colon < 0 {
+			before, after, ok := strings.Cut(line, ":")
+			if !ok {
 				continue
 			}
-			key := strings.TrimSpace(line[:colon])
-			val := strings.TrimSpace(line[colon+1:])
+			key := strings.TrimSpace(before)
+			val := strings.TrimSpace(after)
 			if key == "type" {
 				e.Type = Type(strings.Trim(val, `"'`))
 			}

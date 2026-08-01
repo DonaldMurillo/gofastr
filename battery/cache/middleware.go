@@ -206,7 +206,7 @@ func isStoreable(rec *responseRecorder, hasCreds, reqNoStore bool) bool {
 // varyHasStar reports whether a Vary header value contains the "*" token,
 // which per RFC 9111 §4.1 marks the response as uncacheable.
 func varyHasStar(v string) bool {
-	for _, p := range strings.Split(v, ",") {
+	for p := range strings.SplitSeq(v, ",") {
 		if strings.TrimSpace(p) == "*" {
 			return true
 		}
@@ -221,7 +221,7 @@ func parseCacheControl(v string) map[string]bool {
 	if v == "" {
 		return out
 	}
-	for _, part := range strings.Split(v, ",") {
+	for part := range strings.SplitSeq(v, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -279,11 +279,11 @@ func captureVariant(r *http.Request, vary []string) []string {
 // those recorded on the cached entry.
 func variantMatches(r *http.Request, vary []string) bool {
 	for _, hv := range vary {
-		i := strings.IndexByte(hv, ':')
-		if i < 0 {
+		before, after, ok := strings.Cut(hv, ":")
+		if !ok {
 			return false
 		}
-		name, want := hv[:i], hv[i+1:]
+		name, want := before, after
 		if r.Header.Get(name) != want {
 			return false
 		}

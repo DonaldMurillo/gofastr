@@ -3,6 +3,8 @@ package protocol
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -28,7 +30,7 @@ type Tools struct {
 	live *live.Live
 
 	mu      sync.Mutex
-	counter int64
+	counter atomic.Int64
 }
 
 // New constructs Tools bound to a Live runtime.
@@ -42,7 +44,7 @@ func (t *Tools) Live() *live.Live { return t.live }
 
 // nextEntryID returns a monotonic ID with a per-process random suffix.
 func (t *Tools) nextEntryID() string {
-	n := atomic.AddInt64(&t.counter, 1)
+	n := t.counter.Add(1)
 	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), n)
 }
 
@@ -206,16 +208,16 @@ func (t *Tools) WorldGet(_ context.Context, args WorldGetArgs) Result {
 	case "_plans":
 		return ok(sess.Plans)
 	}
-	if strings.HasPrefix(args.Path, "entities.") {
-		name := strings.TrimPrefix(args.Path, "entities.")
+	if after, ok0 := strings.CutPrefix(args.Path, "entities."); ok0 {
+		name := after
 		ent, ok2 := sess.World.Entities[name]
 		if !ok2 {
 			return notFound("entity %q not found", name)
 		}
 		return ok(ent)
 	}
-	if strings.HasPrefix(args.Path, "pages.") {
-		path := strings.TrimPrefix(args.Path, "pages.")
+	if after, ok0 := strings.CutPrefix(args.Path, "pages."); ok0 {
+		path := after
 		page, ok2 := sess.World.Pages[path]
 		if !ok2 {
 			return notFound("page %q not found", path)
@@ -484,9 +486,7 @@ func applyPageElementPatch(target, parent *world.Node, idx int, patch PageElemen
 		if target.Props == nil {
 			target.Props = map[string]any{}
 		}
-		for k, v := range patch.SetProps {
-			target.Props[k] = v
-		}
+		maps.Copy(target.Props, patch.SetProps)
 		return Result{OK: true}
 
 	case "replace_props":
@@ -496,9 +496,7 @@ func applyPageElementPatch(target, parent *world.Node, idx int, patch PageElemen
 		target.Props = nil
 		if patch.SetProps != nil {
 			target.Props = map[string]any{}
-			for k, v := range patch.SetProps {
-				target.Props[k] = v
-			}
+			maps.Copy(target.Props, patch.SetProps)
 		}
 		return Result{OK: true}
 
@@ -707,9 +705,7 @@ func (t *Tools) SetTheme(_ context.Context, args SetThemeArgs) Result {
 		next.Theme = nil
 	} else {
 		next.Theme = map[string]string{}
-		for k, v := range args.Theme {
-			next.Theme[k] = v
-		}
+		maps.Copy(next.Theme, args.Theme)
 	}
 	return t.applyEdit(journal.OpSetAppConfig, journal.SetAppConfigPayload{Config: next, Prev: &prev})
 }
@@ -798,13 +794,7 @@ func (t *Tools) requirePlan(planID string, target journal.PlanTarget) Result {
 	if !plan.Approved {
 		return needsPlan(target, fmt.Sprintf("plan %q is not yet approved by the user", planID))
 	}
-	matched := false
-	for _, tg := range plan.Targets {
-		if tg == target {
-			matched = true
-			break
-		}
-	}
+	matched := slices.Contains(plan.Targets, target)
 	if !matched {
 		return needsPlan(target, fmt.Sprintf("plan %q does not list this op in `targets` — propose a plan that includes %+v", planID, target))
 	}

@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -13,8 +12,7 @@ func TestSchedulerFiresJobsRegisteredAfterStart(t *testing.T) {
 	q := &recordQueue{}
 	sched := NewScheduler(q)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go sched.Start(ctx)
 
 	// Register AFTER Start, and after the loop has already picked its first

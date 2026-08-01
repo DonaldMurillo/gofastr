@@ -29,7 +29,7 @@ func BenchmarkCache_CachedInsert(b *testing.B) {
 func BenchmarkCache_UncachedSelect(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id, name) VALUES (%d, 'hello')", i))
 	}
 	b.ResetTimer()
@@ -41,7 +41,7 @@ func BenchmarkCache_UncachedSelect(b *testing.B) {
 func BenchmarkCache_CachedSelect(b *testing.B) {
 	e := newBenchEngine(b)
 	e.Execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		e.Execute(fmt.Sprintf("INSERT INTO t (id, name) VALUES (%d, 'hello')", i))
 	}
 	b.ResetTimer()

@@ -296,10 +296,7 @@ func candidateWidth(k int) int {
 	if k > maxQueryK {
 		k = maxQueryK
 	}
-	w := k * 4
-	if w < 50 {
-		w = 50
-	}
+	w := max(k*4, 50)
 	return w
 }
 

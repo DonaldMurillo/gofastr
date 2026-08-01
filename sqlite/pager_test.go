@@ -604,7 +604,7 @@ func TestPager_MultiplePagesRoundTrip(t *testing.T) {
 
 	const N = 5
 	pages := make([][]byte, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		p.AllocatePage()
 		pages[i] = make([]byte, 4096)
 		for j := range pages[i] {
@@ -613,7 +613,7 @@ func TestPager_MultiplePagesRoundTrip(t *testing.T) {
 		p.SetPageData(i+1, pages[i])
 	}
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		got, err := p.GetPageData(i + 1)
 		if err != nil {
 			t.Fatalf("GetPageData(%d): %v", i+1, err)
@@ -858,15 +858,15 @@ func TestPager_UpdateHeaderFieldsRoundTrip(t *testing.T) {
 	tests := []struct {
 		name    string
 		modify  func(h *DatabaseHeader)
-		extract func(h *DatabaseHeader) interface{}
+		extract func(h *DatabaseHeader) any
 	}{
-		{"FileChangeCounter", func(h *DatabaseHeader) { h.FileChangeCounter = 12345 }, func(h *DatabaseHeader) interface{} { return h.FileChangeCounter }},
-		{"DatabaseSizePages", func(h *DatabaseHeader) { h.DatabaseSizePages = 77 }, func(h *DatabaseHeader) interface{} { return h.DatabaseSizePages }},
-		{"TextEncoding_UTF16le", func(h *DatabaseHeader) { h.TextEncoding = 2 }, func(h *DatabaseHeader) interface{} { return h.TextEncoding }},
-		{"TextEncoding_UTF16be", func(h *DatabaseHeader) { h.TextEncoding = 3 }, func(h *DatabaseHeader) interface{} { return h.TextEncoding }},
-		{"SchemaCookie", func(h *DatabaseHeader) { h.SchemaCookie = 42 }, func(h *DatabaseHeader) interface{} { return h.SchemaCookie }},
-		{"UserVersion", func(h *DatabaseHeader) { h.UserVersion = 999 }, func(h *DatabaseHeader) interface{} { return h.UserVersion }},
-		{"ApplicationID", func(h *DatabaseHeader) { h.ApplicationID = 0xDEADBEEF }, func(h *DatabaseHeader) interface{} { return h.ApplicationID }},
+		{"FileChangeCounter", func(h *DatabaseHeader) { h.FileChangeCounter = 12345 }, func(h *DatabaseHeader) any { return h.FileChangeCounter }},
+		{"DatabaseSizePages", func(h *DatabaseHeader) { h.DatabaseSizePages = 77 }, func(h *DatabaseHeader) any { return h.DatabaseSizePages }},
+		{"TextEncoding_UTF16le", func(h *DatabaseHeader) { h.TextEncoding = 2 }, func(h *DatabaseHeader) any { return h.TextEncoding }},
+		{"TextEncoding_UTF16be", func(h *DatabaseHeader) { h.TextEncoding = 3 }, func(h *DatabaseHeader) any { return h.TextEncoding }},
+		{"SchemaCookie", func(h *DatabaseHeader) { h.SchemaCookie = 42 }, func(h *DatabaseHeader) any { return h.SchemaCookie }},
+		{"UserVersion", func(h *DatabaseHeader) { h.UserVersion = 999 }, func(h *DatabaseHeader) any { return h.UserVersion }},
+		{"ApplicationID", func(h *DatabaseHeader) { h.ApplicationID = 0xDEADBEEF }, func(h *DatabaseHeader) any { return h.ApplicationID }},
 	}
 
 	for _, tt := range tests {

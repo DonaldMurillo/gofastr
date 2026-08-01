@@ -56,15 +56,15 @@ func Parse(r io.Reader) (map[string]string, error) {
 		} else if rest, ok := strings.CutPrefix(trimmed, "export\t"); ok {
 			trimmed = strings.TrimSpace(rest)
 		}
-		eq := strings.IndexByte(trimmed, '=')
-		if eq < 0 {
+		before, after, ok := strings.Cut(trimmed, "=")
+		if !ok {
 			return nil, fmt.Errorf("dotenv: line %d: missing '=' in %q", lineNum, raw)
 		}
-		key := strings.TrimSpace(trimmed[:eq])
+		key := strings.TrimSpace(before)
 		if !isValidKey(key) {
 			return nil, fmt.Errorf("dotenv: line %d: invalid key %q", lineNum, key)
 		}
-		valRaw := strings.TrimSpace(trimmed[eq+1:])
+		valRaw := strings.TrimSpace(after)
 		val, err := parseValue(valRaw, out)
 		if err != nil {
 			return nil, fmt.Errorf("dotenv: line %d: %w", lineNum, err)

@@ -96,7 +96,7 @@ func TestDemoStoreTTLTouchKeepsAlive(t *testing.T) {
 	s := bareStore(0, time.Minute, &now)
 
 	s.getOrCreate("a")
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		now = now.Add(30 * time.Second)
 		if _, ok := s.get("a"); !ok {
 			t.Fatalf("a expired at step %d despite steady access", i)
@@ -125,17 +125,15 @@ func TestDemoStoreConcurrentSingleSession(t *testing.T) {
 	seen := map[*demoState]bool{}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 200; j++ {
+	for range 50 {
+		wg.Go(func() {
+			for range 200 {
 				p := s.getOrCreate("shared")
 				mu.Lock()
 				seen[p] = true
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

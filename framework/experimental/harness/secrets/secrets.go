@@ -79,12 +79,12 @@ func loadFile(path string) error {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		eq := strings.IndexByte(line, '=')
-		if eq < 0 {
+		before, after, ok := strings.Cut(line, "=")
+		if !ok {
 			return fmt.Errorf("secrets: %s:%d: missing '='", path, lineNo)
 		}
-		key := strings.TrimSpace(line[:eq])
-		val := strings.TrimSpace(line[eq+1:])
+		key := strings.TrimSpace(before)
+		val := strings.TrimSpace(after)
 		val = trimQuotes(val)
 		if val == "" {
 			continue // empty value → don't set; lets shell env stay authoritative

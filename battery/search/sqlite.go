@@ -175,10 +175,7 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	}
 	args = extra
 
-	offset := q.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(q.Offset, 0)
 	var paging strings.Builder
 	if q.Limit > 0 {
 		args = append(args, q.Limit)
@@ -221,10 +218,7 @@ func (s *SQLiteFTS) searchAll(ctx context.Context, q Query) ([]Result, error) {
 	}
 	args = extra
 
-	offset := q.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(q.Offset, 0)
 	var paging strings.Builder
 	if q.Limit > 0 {
 		args = append(args, q.Limit)

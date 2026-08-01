@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-func fp(v float64) *float64 { return &v }
+//go:fix inline
+func fp(v float64) *float64 { return new(v) }
 
 type stringerT struct{ s string }
 
@@ -207,10 +208,10 @@ func TestValidateDecimal(t *testing.T) {
 		t.Error("above max")
 	}
 	// NaN bound -> SetFloat64 returns nil -> fail closed.
-	if err := validateField(Field{Type: Decimal, Min: fp(math.NaN())}, "5"); err == nil {
+	if err := validateField(Field{Type: Decimal, Min: new(math.NaN())}, "5"); err == nil {
 		t.Error("NaN min should fail closed")
 	}
-	if err := validateField(Field{Type: Decimal, Max: fp(math.NaN())}, "5"); err == nil {
+	if err := validateField(Field{Type: Decimal, Max: new(math.NaN())}, "5"); err == nil {
 		t.Error("NaN max should fail closed")
 	}
 	if err := validateField(Field{Type: Decimal, Min: fp(0), Max: fp(100)}, "12.50"); err != nil {

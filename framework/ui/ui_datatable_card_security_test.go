@@ -251,7 +251,7 @@ func TestDataTable_ConcurrentRender(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -397,14 +397,14 @@ func TestContainer_VeryDeepNesting(t *testing.T) {
 	t.Parallel()
 	// 100 levels of nested containers.
 	inner := render.Text("leaf")
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		inner = ui.Container(ui.ContainerConfig{ID: fmt.Sprintf("nest-%d", i)}, inner)
 	}
 	s := string(inner)
 	if !strings.Contains(s, "leaf") {
 		t.Errorf("SECURITY: [container-deep-nesting] leaf text missing from deeply nested output")
 	}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		if !strings.Contains(s, fmt.Sprintf("nest-%d", i)) {
 			t.Errorf("SECURITY: [container-deep-nesting] level %d ID missing", i)
 			break

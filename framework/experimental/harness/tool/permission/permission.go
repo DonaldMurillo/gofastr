@@ -308,7 +308,7 @@ var execArgFlags = map[string]bool{
 // check, so it cannot miss a flag. Erring toward refusing is the correct
 // direction for an auto-allow with no human in the loop.
 func hasExecArg(cmd string) bool {
-	for _, tok := range strings.Fields(cmd) {
+	for tok := range strings.FieldsSeq(cmd) {
 		if name, _, ok := strings.Cut(tok, "="); ok {
 			tok = name
 		}

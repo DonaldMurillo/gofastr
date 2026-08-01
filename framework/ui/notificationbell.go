@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -117,9 +118,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if cfg.ID != "" {
 		btnAttrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		btnAttrs[k] = v
-	}
+	maps.Copy(btnAttrs, cfg.ExtraAttrs)
 
 	// Badge — server-rendered count + optional signal-bound override.
 	badgeAttrs := html.Attrs{"class": "ui-notification-bell__badge", "aria-hidden": "true"}

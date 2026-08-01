@@ -17,7 +17,7 @@ func TestRateLimiter_BoundedUnderKeyFlood(t *testing.T) {
 
 	// Flood with far more distinct keys than the cap allows.
 	const flood = maxRateLimitKeys * 3
-	for i := 0; i < flood; i++ {
+	for i := range flood {
 		rl.Allow(uniqueKey(i))
 	}
 
@@ -42,7 +42,7 @@ func TestRateLimiter_EvictsIdleStates(t *testing.T) {
 		BlockDuration: 20 * time.Millisecond,
 	})
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		rl.Allow(uniqueKey(i))
 	}
 	// Let every attempt age out of the window.
@@ -77,7 +77,7 @@ func TestRateLimiter_BlockSurvivesEviction(t *testing.T) {
 	}
 
 	// Flood with unrelated keys to drive eviction.
-	for i := 0; i < 100_000; i++ {
+	for i := range 100_000 {
 		rl.Allow(uniqueKey(i))
 	}
 
@@ -92,7 +92,7 @@ func uniqueKey(i int) string {
 	// in hot loops is fine here; readability over micro-optimisation.
 	const hex = "0123456789abcdef"
 	var b [8]byte
-	for j := 0; j < 8; j++ {
+	for j := range 8 {
 		b[j] = hex[(i>>(uint(j)*4))&0xF]
 	}
 	return "account:" + string(b[:])

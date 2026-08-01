@@ -240,20 +240,20 @@ func parseMigration(r io.Reader) (*Migration, error) {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, "-- +migrate") {
-			directive := strings.TrimSpace(strings.TrimPrefix(trimmed, "-- +migrate"))
+		if after, ok := strings.CutPrefix(trimmed, "-- +migrate"); ok {
+			directive := strings.TrimSpace(after)
 
-			if strings.HasPrefix(directive, "Version") {
-				vStr := strings.TrimSpace(strings.TrimPrefix(directive, "Version"))
+			if after, ok := strings.CutPrefix(directive, "Version"); ok {
+				vStr := strings.TrimSpace(after)
 				v, err := strconv.ParseUint(vStr, 10, 64)
 				if err != nil {
 					return nil, fmt.Errorf("parsing migration version: %w", err)
 				}
 				version = v
-			} else if strings.HasPrefix(directive, "Name") {
-				name = strings.TrimSpace(strings.TrimPrefix(directive, "Name"))
-			} else if strings.HasPrefix(directive, "Group") {
-				group = strings.TrimSpace(strings.TrimPrefix(directive, "Group"))
+			} else if after, ok := strings.CutPrefix(directive, "Name"); ok {
+				name = strings.TrimSpace(after)
+			} else if after, ok := strings.CutPrefix(directive, "Group"); ok {
+				group = strings.TrimSpace(after)
 				if err := validateGroupName(group); err != nil {
 					return nil, err
 				}

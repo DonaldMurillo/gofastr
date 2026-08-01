@@ -86,7 +86,7 @@ func (m Manifest) Validate() error {
 	// whitespace-split) so a case/whitespace variant can't dodge the check.
 	var norm []string
 	for _, raw := range m.Sandbox {
-		for _, token := range strings.Fields(strings.ToLower(raw)) {
+		for token := range strings.FieldsSeq(strings.ToLower(raw)) {
 			if token == "allow-same-origin" {
 				return errors.New("pluginhost: sandbox \"allow-same-origin\" is forbidden — it breaks opaque-origin isolation (protocol-v1.md §1)")
 			}
@@ -186,7 +186,7 @@ func sanitizeSandboxTokens(tokens []string) string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(tokens)+1)
 	for _, raw := range tokens {
-		for _, tok := range strings.Fields(strings.ToLower(raw)) {
+		for tok := range strings.FieldsSeq(strings.ToLower(raw)) {
 			if !allowedSandboxTokens[tok] || seen[tok] {
 				continue
 			}

@@ -213,7 +213,7 @@ func TestStatusEndpointFieldsParam(t *testing.T) {
 
 func TestStatusEndpointRecentN(t *testing.T) {
 	l, tools := setup(t)
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		tools.Chat(t.Context(), protocol.ChatArgs{Role: "user", Text: "msg"})
 	}
 

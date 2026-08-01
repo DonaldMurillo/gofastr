@@ -164,10 +164,10 @@ func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
 
 // extractTitle returns the first H1 heading or a humanised fallback.
 func extractTitle(body []byte, fallback string) string {
-	for _, ln := range strings.Split(string(body), "\n") {
+	for ln := range strings.SplitSeq(string(body), "\n") {
 		ln = strings.TrimSpace(ln)
-		if strings.HasPrefix(ln, "# ") {
-			return strings.TrimSpace(strings.TrimPrefix(ln, "# "))
+		if after, ok := strings.CutPrefix(ln, "# "); ok {
+			return strings.TrimSpace(after)
 		}
 	}
 	return humanise(fallback)
@@ -176,7 +176,7 @@ func extractTitle(body []byte, fallback string) string {
 // extractSummary returns the first non-empty, non-heading paragraph.
 // Truncated to ~200 chars so summaries fit on one terminal line.
 func extractSummary(body []byte) string {
-	for _, ln := range strings.Split(string(body), "\n") {
+	for ln := range strings.SplitSeq(string(body), "\n") {
 		t := strings.TrimSpace(ln)
 		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "<!--") {
 			continue

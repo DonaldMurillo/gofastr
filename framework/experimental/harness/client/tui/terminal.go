@@ -670,10 +670,7 @@ func (t *TUI) recallHistory(delta int) {
 	case t.historyIdx == -1 && delta > 0:
 		return // already at "fresh input"; no-op
 	default:
-		next := t.historyIdx + delta
-		if next < 0 {
-			next = 0
-		}
+		next := max(t.historyIdx+delta, 0)
 		if next >= n {
 			// Walking past the newest entry returns to a fresh prompt.
 			t.input = nil
@@ -1124,10 +1121,7 @@ func (t *TUI) draw() {
 	// the available vertical space.
 	var popupItems []string
 	var popupNames []string
-	maxPopup := (t.height - 1 - inputRows) / 2
-	if maxPopup > 8 {
-		maxPopup = 8
-	}
+	maxPopup := min((t.height-1-inputRows)/2, 8)
 	if maxPopup < 2 {
 		maxPopup = 0 // not enough room — skip the popup on tiny screens
 	}
@@ -1144,18 +1138,12 @@ func (t *TUI) draw() {
 	}
 	popupRows := len(popupItems)
 
-	scrollRows := t.height - 1 - inputRows - popupRows
-	if scrollRows < 0 {
-		scrollRows = 0
-	}
+	scrollRows := max(t.height-1-inputRows-popupRows, 0)
 
 	// Flatten logical scrollback into visual rows. Wrap width is
 	// reduced by gutterWidth so the gutter space doesn't push
 	// content off the right edge.
-	contentWidth := t.width - gutterWidth
-	if contentWidth < 10 {
-		contentWidth = 10
-	}
+	contentWidth := max(t.width-gutterWidth, 10)
 	visual := make([]string, 0, len(t.scrollback)*2)
 	for _, line := range t.scrollback {
 		if strings.HasPrefix(line, spinnerLineMarker) {
@@ -1166,21 +1154,12 @@ func (t *TUI) draw() {
 
 	// Clamp scrollOffset to [0, len(visual)-scrollRows] so Home key
 	// can be a "go-to-top" by setting offset to a huge number.
-	maxOffset := len(visual) - scrollRows
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
+	maxOffset := max(len(visual)-scrollRows, 0)
 	if t.scrollOffset > maxOffset {
 		t.scrollOffset = maxOffset
 	}
-	end := len(visual) - t.scrollOffset
-	if end < 0 {
-		end = 0
-	}
-	start := end - scrollRows
-	if start < 0 {
-		start = 0
-	}
+	end := max(len(visual)-t.scrollOffset, 0)
+	start := max(end-scrollRows, 0)
 	for i := start; i < end; i++ {
 		styled := renderMarkdownInline(colorizeMarker(visual[i]))
 		_, _ = fmt.Fprintf(t.out, "%s%s\r\n", gutter(), styled)
@@ -1230,14 +1209,12 @@ func (t *TUI) drawInput(boxed bool) {
 	// Inside width = t.width - gutterWidth - 4 (two `│` chars + two
 	// spaces of inner padding).
 	boxLeft := gutter()
-	frameWidth := t.width - gutterWidth // total width of the box
-	if frameWidth < 8 {
-		frameWidth = 8
-	}
-	innerWidth := frameWidth - 4 // 2 frame chars + 2 inner pad spaces
-	if innerWidth < 4 {
-		innerWidth = 4
-	}
+	frameWidth := max(
+		// total width of the box
+		t.width-gutterWidth, 8)
+	innerWidth := max(
+		// 2 frame chars + 2 inner pad spaces
+		frameWidth-4, 4)
 	// Top border.
 	_, _ = fmt.Fprintf(t.out, "%s%s╭%s╮%s\r\n",
 		boxLeft, ansiDim,
@@ -1259,10 +1236,7 @@ func (t *TUI) drawInput(boxed bool) {
 		ansiDim+indicator+ansiReset,
 		visible, ansiReset)
 	innerVisibleLen := runeLen(prompt) + runeLen(indicator) + runeLen(visible)
-	pad := innerWidth - innerVisibleLen
-	if pad < 0 {
-		pad = 0
-	}
+	pad := max(innerWidth-innerVisibleLen, 0)
 	_, _ = fmt.Fprintf(t.out, "%s%s│%s %s%s %s│%s\r\n",
 		boxLeft, ansiDim, ansiReset,
 		inner, strings.Repeat(" ", pad),

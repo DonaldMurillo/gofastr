@@ -146,7 +146,7 @@ func TestE2E_HoverPrefetchLoadsModule(t *testing.T) {
 	}
 
 	popoverFetches := 0
-	urls.Range(func(k, _ interface{}) bool {
+	urls.Range(func(k, _ any) bool {
 		if strings.Contains(k.(string), "/runtime/popover.js") {
 			popoverFetches++
 		}
@@ -154,7 +154,7 @@ func TestE2E_HoverPrefetchLoadsModule(t *testing.T) {
 	})
 	if popoverFetches == 0 {
 		var listed []string
-		urls.Range(func(k, _ interface{}) bool { listed = append(listed, k.(string)); return true })
+		urls.Range(func(k, _ any) bool { listed = append(listed, k.(string)); return true })
 		t.Errorf("hover on data-fui-prefetch did not fetch popover module; urls: %v", listed)
 	}
 	if popoverFetches > 1 {

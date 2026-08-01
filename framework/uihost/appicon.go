@@ -5,6 +5,7 @@ import (
 	stdimage "image"
 	"image/draw"
 	"log/slog"
+	"maps"
 	"net/http"
 	"sort"
 
@@ -93,9 +94,7 @@ func (ds *UIHost) AppIconAssets() map[string][]byte {
 		return nil
 	}
 	out := make(map[string][]byte, len(ds.appIcons)+1)
-	for p, b := range ds.appIcons {
-		out[p] = b
-	}
+	maps.Copy(out, ds.appIcons)
 	out["/favicon.ico"] = ds.appIcons[appIconPath(32)]
 	return out
 }

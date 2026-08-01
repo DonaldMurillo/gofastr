@@ -103,14 +103,14 @@ type ConfigValidator interface {
 //
 // Supported field types: string, int, int64, float64, bool, Duration,
 // and nested structs.
-func Load(cfg interface{}, sources ...Source) error {
+func Load(cfg any, sources ...Source) error {
 	return LoadWith(cfg, sources...)
 }
 
 // LoadWith is an alias for Load. Populates config from sources.
-func LoadWith(cfg interface{}, sources ...Source) error {
+func LoadWith(cfg any, sources ...Source) error {
 	v := reflect.ValueOf(cfg)
-	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
+	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("config: expected pointer to struct, got %T", cfg)
 	}
 
@@ -176,7 +176,7 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 		}
 
 		// Recurse into nested structs (but not time.Duration, which is an int64).
-		if fieldVal.Kind() == reflect.Struct && fieldVal.Type() != reflect.TypeOf(time.Duration(0)) {
+		if fieldVal.Kind() == reflect.Struct && fieldVal.Type() != reflect.TypeFor[time.Duration]() {
 			nestedPrefix := prefix + strings.ToUpper(field.Name) + "_"
 			if err := bindStruct(fieldVal, nestedPrefix, src, secrets); err != nil {
 				return err
@@ -301,7 +301,7 @@ func parseGoDuration(s string) (int64, error) {
 }
 
 // MustLoad is like Load but panics on error. Use in init() or main().
-func MustLoad(cfg interface{}, sources ...Source) {
+func MustLoad(cfg any, sources ...Source) {
 	if err := Load(cfg, sources...); err != nil {
 		panic(err)
 	}

@@ -426,8 +426,7 @@ func unmarshalMeta(b []byte, m *map[string]any) error {
 
 // pqCode extracts the SQLSTATE code from a lib/pq error, or "" otherwise.
 func pqCode(err error) string {
-	var pe *pq.Error
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*pq.Error](err); ok {
 		return string(pe.Code)
 	}
 	return ""

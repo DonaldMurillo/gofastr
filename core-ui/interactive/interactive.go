@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -575,9 +576,7 @@ func (a Action) attrs() map[string]string {
 		m["data-fui-rpc-body"] = a.body
 	}
 	for _, e := range a.effects {
-		for k, v := range e.rpcAttrs() {
-			m[k] = v
-		}
+		maps.Copy(m, e.rpcAttrs())
 	}
 	return m
 }

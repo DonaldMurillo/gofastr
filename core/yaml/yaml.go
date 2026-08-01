@@ -2,6 +2,7 @@ package yaml
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 )
@@ -222,9 +223,7 @@ func (p *parser) parseList(indent int) (*Node, error) {
 				if err != nil {
 					return nil, err
 				}
-				for k, v := range more.Map {
-					child.Map[k] = v
-				}
+				maps.Copy(child.Map, more.Map)
 			}
 			out.List = append(out.List, child)
 			continue

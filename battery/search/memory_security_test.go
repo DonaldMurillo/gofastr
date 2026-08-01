@@ -69,7 +69,7 @@ func TestSearchQueryTermsBounded(t *testing.T) {
 	// An over-long query must be bounded (truncated/capped), never scanned
 	// as O(terms x corpus). A 1 MB query of distinct tokens must still return.
 	var sb strings.Builder
-	for i := 0; i < 200_000; i++ {
+	for range 200_000 {
 		sb.WriteString("alpha ")
 	}
 	res, err := index.Search(ctx, Query{Text: sb.String()})

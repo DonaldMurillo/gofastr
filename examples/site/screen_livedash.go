@@ -329,11 +329,11 @@ func dashRandomEvent(depth, p99 int64) ui.TimelineEvent {
 }
 
 // dashJobCounter makes dashRandomJob produce stable, unique IDs.
-var dashJobCounter uint64
+var dashJobCounter atomic.Uint64
 
 // dashRandomJob synthesizes a fresh queued job.
 func dashRandomJob() liveDashJob {
-	n := atomic.AddUint64(&dashJobCounter, 1)
+	n := dashJobCounter.Add(1)
 	names := []string{"ingest-batch", "reindex", "export-csv", "compact-segments", "snapshot-upload"}
 	pick := names[int(n)%len(names)]
 	suffix := strconv.FormatUint(n, 10)

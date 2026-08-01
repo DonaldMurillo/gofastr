@@ -234,10 +234,7 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 
 	// Clamp pagination exactly like Memory: negative offset becomes 0, and a
 	// non-positive limit means "no limit". OFFSET/LIMIT are bound as params.
-	offset := q.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(q.Offset, 0)
 	limit := q.Limit
 
 	var paging strings.Builder
@@ -283,10 +280,7 @@ func (p *PostgresSearch) searchAll(ctx context.Context, q Query) ([]Result, erro
 		fmt.Fprintf(&where, " AND fields @> $%d::jsonb", len(args))
 	}
 
-	offset := q.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(q.Offset, 0)
 
 	var paging strings.Builder
 	if q.Limit > 0 {

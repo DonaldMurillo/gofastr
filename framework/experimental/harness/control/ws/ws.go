@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -140,12 +141,7 @@ func (h *Handler) hostOK(r *http.Request) bool {
 	if len(h.AllowedHosts) == 0 {
 		return true
 	}
-	for _, x := range h.AllowedHosts {
-		if r.Host == x {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(h.AllowedHosts, r.Host)
 }
 
 // originOK reports whether the request's Origin is permitted.
@@ -163,12 +159,7 @@ func (h *Handler) originOK(r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
-	for _, x := range h.AllowedOrigins {
-		if origin == x {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(h.AllowedOrigins, origin)
 }
 
 // completeHandshake writes the 101 Switching Protocols response.

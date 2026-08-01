@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 
@@ -283,8 +284,6 @@ func marshalMergeIntoMap(src any, dest map[string]any) error {
 		return err
 	}
 	snake := casing.MapToSnake(fresh)
-	for k, v := range snake {
-		dest[k] = v
-	}
+	maps.Copy(dest, snake)
 	return nil
 }

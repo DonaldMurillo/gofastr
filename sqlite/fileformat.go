@@ -304,12 +304,10 @@ func readLeafTableCell(data []byte) (*Cell, int, error) {
 	// responsible for splitting local vs overflow. We read the payload
 	// that is present.
 	remaining := uint64(len(data) - off)
-	payloadLen := payloadSize
-	if payloadLen > remaining {
-		payloadLen = remaining
+	payloadLen := min(payloadSize,
 		// If payload overflows, last 4 bytes of local payload are overflow page
 		// We'll handle that below
-	}
+		remaining)
 
 	payload := make([]byte, payloadLen)
 	copy(payload, data[off:off+int(payloadLen)])
@@ -384,10 +382,7 @@ func readLeafIndexCell(data []byte) (*Cell, int, error) {
 	off += n
 
 	remaining := uint64(len(data) - off)
-	payloadLen := payloadSize
-	if payloadLen > remaining {
-		payloadLen = remaining
-	}
+	payloadLen := min(payloadSize, remaining)
 
 	payload := make([]byte, payloadLen)
 	copy(payload, data[off:off+int(payloadLen)])
@@ -426,10 +421,7 @@ func readInteriorIndexCell(data []byte) (*Cell, int, error) {
 	off += n
 
 	remaining := uint64(len(data) - off)
-	payloadLen := payloadSize
-	if payloadLen > remaining {
-		payloadLen = remaining
-	}
+	payloadLen := min(payloadSize, remaining)
 
 	payload := make([]byte, payloadLen)
 	copy(payload, data[off:off+int(payloadLen)])
@@ -525,7 +517,7 @@ type Record struct {
 
 // recordPool caches Record objects to reduce GC pressure during scans.
 var recordPool = sync.Pool{
-	New: func() interface{} { return &Record{} },
+	New: func() any { return &Record{} },
 }
 
 // GetRecord fetches a Record from the pool.
@@ -1365,7 +1357,7 @@ func WriteFreelistTrunk(trunk *FreelistTrunk, usableSize int) []byte {
 // offset is where the cell pointer array starts (after the page header).
 func ReadCellPointers(data []byte, offset int, count int) []uint16 {
 	ptrs := make([]uint16, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		ptrs[i] = binary.BigEndian.Uint16(data[offset+i*2 : offset+i*2+2])
 	}
 	return ptrs

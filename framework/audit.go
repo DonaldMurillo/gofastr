@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -467,9 +468,7 @@ func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]a
 		return defaultRedact(row)
 	}
 	copied := make(map[string]any, len(row))
-	for k, v := range row {
-		copied[k] = v
-	}
+	maps.Copy(copied, row)
 	var out map[string]any
 	panicked := false
 	func() {

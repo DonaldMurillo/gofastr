@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -159,10 +160,8 @@ func TestResolveCustomerOriginsRejectsNilSource(t *testing.T) {
 // real source indexes it.
 func (s *stubOriginSource) Allows(_ context.Context, _, origin string) (bool, error) {
 	for _, list := range s.byCustomer {
-		for _, o := range list {
-			if o == origin {
-				return true, nil
-			}
+		if slices.Contains(list, origin) {
+			return true, nil
 		}
 	}
 	return false, nil

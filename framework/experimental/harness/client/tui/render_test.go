@@ -87,7 +87,7 @@ func TestDrawTruncatesLongLines(t *testing.T) {
 	out := buf.String()
 	// A 500-char line must shrink to fit `width` (120 here, plus a
 	// little slack for ANSI codes and the ellipsis).
-	for _, line := range strings.Split(out, "\r\n") {
+	for line := range strings.SplitSeq(out, "\r\n") {
 		if strings.Contains(line, "xxxxxxxxxxxxxxxxxxxx") && len(line) > tui.width+10 {
 			t.Errorf("line not truncated: len=%d width=%d", len(line), tui.width)
 		}

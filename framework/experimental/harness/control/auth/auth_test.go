@@ -86,8 +86,7 @@ func TestVerifyExpired(t *testing.T) {
 	c.ExpiresAt = time.Now().Add(-time.Minute).Unix()
 	tok, _ := enc.Encode(c)
 	_, err := Verify(enc, nil, tok, time.Now())
-	var expErr *ExpiredError
-	if !errors.As(err, &expErr) {
+	if _, ok := errors.AsType[*ExpiredError](err); !ok {
 		t.Fatalf("err = %v, want *ExpiredError", err)
 	}
 }
@@ -100,8 +99,7 @@ func TestRevocationListBlocksToken(t *testing.T) {
 	rl := NewRevocationList()
 	rl.Revoke(parsed.JTI)
 	_, err := Verify(enc, rl, tok, time.Now())
-	var revErr *RevokedError
-	if !errors.As(err, &revErr) {
+	if _, ok := errors.AsType[*RevokedError](err); !ok {
 		t.Fatalf("err = %v, want *RevokedError", err)
 	}
 }
@@ -166,11 +164,11 @@ func TestIssuerRequiresChannel(t *testing.T) {
 
 func extractCode(t *testing.T, s string) string {
 	t.Helper()
-	idx := strings.Index(s, "code: ")
-	if idx < 0 {
+	_, after, ok := strings.Cut(s, "code: ")
+	if !ok {
 		t.Fatalf("no code in output: %q", s)
 	}
-	tail := s[idx+len("code: "):]
+	tail := after
 	end := strings.IndexAny(tail, " \n")
 	if end < 0 {
 		end = len(tail)

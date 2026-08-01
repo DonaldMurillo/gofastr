@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -334,9 +335,7 @@ func requestFingerprint(r *http.Request, body []byte, principal string) string {
 // headers the handler itself wrote and never include Set-Cookie,
 // Authorization, or other identity-bearing headers.
 func writeReplay(w http.ResponseWriter, replay *IdempotentResponse) {
-	for k, vs := range replay.Header {
-		w.Header()[k] = vs
-	}
+	maps.Copy(w.Header(), replay.Header)
 	w.Header().Set("Idempotent-Replay", "true")
 	w.WriteHeader(replay.Status)
 	_, _ = w.Write(replay.Body)

@@ -15,7 +15,7 @@ func TestAcceptLanguageBounded(t *testing.T) {
 
 	build := func(seg string, n int) string {
 		b := make([]byte, 0, len(seg)*n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if i > 0 {
 				b = append(b, ',')
 			}

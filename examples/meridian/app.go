@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -54,10 +55,8 @@ func authPolicy(loginPath, role string) app.Policy {
 		}
 		if role != "" {
 			if rh, ok := u.(interface{ GetRoles() []string }); ok {
-				for _, r := range rh.GetRoles() {
-					if r == role {
-						return decide.Allow()
-					}
+				if slices.Contains(rh.GetRoles(), role) {
+					return decide.Allow()
 				}
 			}
 			return decide.Block(403, "Forbidden")
@@ -294,9 +293,9 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// secret minted at startup. Do NOT deploy like this: set
 		// `dev_mode: false` and `jwt_secret` under app.auth in the
 		// blueprint, serve over HTTPS, then regenerate.
-		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET")}
-		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
-		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
+		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET"),
+			UserStore:    auth.NewEntityUserStore(db, "auth_users"),
+			SessionStore: auth.NewEntitySessionStore(db, "auth_sessions")}
 		authMgr := auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
 		// Scoped API tokens (PATs): logged-in users mint them at

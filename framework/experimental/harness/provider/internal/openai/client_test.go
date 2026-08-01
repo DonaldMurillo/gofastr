@@ -90,7 +90,7 @@ func TestChatToolUseStreaming(t *testing.T) {
 		}{ToolCalls: []deltaToolCall{{
 			Index:    0,
 			Function: &deltaToolCallFunc{Arguments: `"hi"}`},
-		}}}, FinishReason: stringPtr("tool_calls")}}}
+		}}}, FinishReason: new("tool_calls")}}}
 		b1, _ := json.Marshal(c1)
 		b2, _ := json.Marshal(c2)
 		fmt.Fprint(w, scriptedSSE(string(b1), string(b2)))
@@ -208,4 +208,5 @@ func TestTranslateOutboundUserToolResult(t *testing.T) {
 	}
 }
 
-func stringPtr(s string) *string { return &s }
+//go:fix inline
+func stringPtr(s string) *string { return new(s) }
