@@ -40,10 +40,32 @@ type CronJob struct {
 	Run  func(ctx context.Context) error
 }
 
+// LeaderElection gates a Scheduler so only one replica fires jobs each tick,
+// making cron safe to run across multiple replicas. Install one via
+// [Scheduler.WithLeaderElection]; when set, the tick loop acquires the lease
+// before firing and releases it after the jobs finish, so a non-leader replica
+// skips the tick. The built-in [PostgresAdvisoryLease] uses a Postgres
+// advisory lock; a custom implementation can back it with Redis, etcd, etc.
+//
+// This is per-tick mutual exclusion (two replicas never fire the same job in
+// the same minute), NOT exactly-once execution for a job that overruns the
+// tick interval — for durable, exactly-once background work use the DB-backed
+// queue (battery/queue.DurableScheduler).
+type LeaderElection interface {
+	// Acquire attempts to take the lease for this tick. held is true when the
+	// caller is the leader and should fire jobs; in that case release (non-nil)
+	// relinquishes it. A non-leader returns (false, nil, nil). Acquire must not
+	// block indefinitely — a non-leader should return promptly so the replica
+	// can skip to the next tick.
+	Acquire(ctx context.Context) (held bool, release func(), err error)
+}
+
 // Scheduler is a tiny in-process cron driver. It is intentionally minimal:
-// no persistence, no distributed locks, no overlap protection across
-// replicas. For single-instance background work it is sufficient; for
-// horizontally scaled deployments use the DB-backed queue instead.
+// no persistence, and by default no overlap protection across replicas (every
+// replica fires every tick — fine for a single instance). For horizontally
+// scaled deployments, install a [LeaderElection] via WithLeaderElection so
+// only one replica fires each tick, or use the DB-backed queue
+// (battery/queue.DurableScheduler) for durable, exactly-once work.
 type Scheduler struct {
 	mu        sync.RWMutex
 	jobs      []scheduledJob
@@ -60,6 +82,10 @@ type Scheduler struct {
 	// inflight.Add. Returning false skips the job for this tick.
 	// Framework code uses it to skip jobs owned by a disabled module.
 	gate func(jobName string) bool
+
+	// leader, when set, gates the whole tick to the lease holder so cron is
+	// safe across replicas. nil = every replica fires (single-instance mode).
+	leader LeaderElection
 }
 
 type scheduledJob struct {
@@ -105,6 +131,42 @@ func (s *Scheduler) SetGate(gate func(jobName string) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.gate = gate
+}
+
+// WithLeaderElection installs a leader-election gate so the scheduler fires
+// jobs only when it holds the lease — making cron safe across replicas. With
+// none set (the default) every replica fires every tick. Build a lease with
+// [NewPostgresAdvisoryLease] or supply a custom [LeaderElection].
+func (s *Scheduler) WithLeaderElection(le LeaderElection) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.leader = le
+}
+
+// runTick is one tick: acquire leadership (if configured), fire the matching
+// jobs, then release the lease once they finish. It reports whether this
+// replica fired. Extracted from the run loop so the leader-gating is testable
+// without the wall clock.
+func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
+	if s.leader == nil {
+		s.RunOnce(ctx, now)
+		s.inflight.Wait() // hold the tick open until jobs finish (matches leased path)
+		return true
+	}
+	held, release, err := s.leader.Acquire(ctx)
+	if err != nil {
+		if s.OnError != nil {
+			s.OnError("(leader-election)", err)
+		}
+		return false
+	}
+	if !held {
+		return false
+	}
+	s.RunOnce(ctx, now)
+	s.inflight.Wait() // keep the lease held until the jobs finish
+	release()
+	return true
 }
 
 // Start begins the tick loop in a goroutine. Returns immediately. Idempotent:
@@ -214,7 +276,7 @@ func (s *Scheduler) run(ctx context.Context) {
 		case <-s.stop:
 			return
 		case t := <-timer.C:
-			s.RunOnce(ctx, t)
+			s.runTick(ctx, t)
 			timer.Reset(s.tickEv)
 		}
 	}

@@ -177,10 +177,47 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 
 	var changes []SchemaChange
 
+	// RENAME COLUMN for explicitly-declared renames (EntityConfig.Renames:
+	// old → new). Rename is indistinguishable from drop+add without the hint,
+	// so it requires the explicit declaration. A rename only fires when the
+	// old column is live and the new name is declared; it is non-destructive
+	// (preserves row data). The renamed pair is then skipped by the ADD and
+	// DROP loops below so it does not also surface as drop+add.
+	renameTargets := map[string]bool{} // new column names consumed by a rename
+	renameSources := map[string]bool{} // old column names consumed by a rename
+	for oldName, newName := range ent.Config.Renames {
+		oldLow := strings.ToLower(oldName)
+		newLow := strings.ToLower(newName)
+		if _, oldLive := liveLower[oldLow]; !oldLive {
+			continue // old column already gone — nothing to rename
+		}
+		if _, newDeclared := declared[newLow]; !newDeclared {
+			continue // new name not declared — stale/mis-declared hint, skip
+		}
+		qOld, err := query.SafeIdent(oldName)
+		if err != nil {
+			return nil, fmt.Errorf("invalid rename source %q: %w", oldName, err)
+		}
+		qNew, err := query.SafeIdent(newName)
+		if err != nil {
+			return nil, fmt.Errorf("invalid rename target %q: %w", newName, err)
+		}
+		changes = append(changes, SchemaChange{
+			Summary: fmt.Sprintf("%s: rename column %s → %s", ent.GetName(), oldName, newName),
+			SQL:     fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", qtable, qOld, qNew),
+			Down:    fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", qtable, qNew, qOld),
+		})
+		renameTargets[newLow] = true
+		renameSources[oldLow] = true
+	}
+
 	// ADD COLUMN for declared-but-missing fields.
 	for _, f := range ent.GetFields() {
 		if _, ok := liveLower[strings.ToLower(f.Name)]; ok {
 			continue
+		}
+		if renameTargets[strings.ToLower(f.Name)] {
+			continue // handled by RENAME COLUMN above
 		}
 		qcol, err := query.SafeIdent(f.Name)
 		if err != nil {
@@ -211,6 +248,34 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		})
 	}
 
+	// TYPE CHANGE for declared-and-present columns whose type drifted. A type
+	// change can need a data-specific conversion (a Postgres USING clause; a
+	// SQLite table rebuild), so it is flagged Destructive and refused by
+	// default — surfaced for review, never silently applied. Types are
+	// normalized per dialect (see canonicalType) so PG information_schema
+	// names ("character varying", "timestamp with time zone") don't
+	// false-positive against the SQLType forms ("VARCHAR(n)", "TIMESTAMPTZ").
+	for _, f := range ent.GetFields() {
+		liveType, ok := liveLower[strings.ToLower(f.Name)]
+		if !ok {
+			continue // absent from live → handled by ADD COLUMN above
+		}
+		declaredType := SQLType(f, dialect)
+		if typesEquivalent(declaredType, liveType, dialect) {
+			continue
+		}
+		qcol, err := query.SafeIdent(f.Name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
+		}
+		changes = append(changes, SchemaChange{
+			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
+			SQL:         alterColumnTypeSQL(qtable, qcol, declaredType, dialect),
+			Down:        alterColumnTypeSQL(qtable, qcol, liveType, dialect),
+			Destructive: true,
+		})
+	}
+
 	// DROP COLUMN for live-but-undeclared (skip framework-managed columns).
 	// Sorted for stable output.
 	liveNames := make([]string, 0, len(live))
@@ -224,6 +289,9 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		}
 		if isFrameworkManagedColumn(name, ent) {
 			continue
+		}
+		if renameSources[strings.ToLower(name)] {
+			continue // handled by RENAME COLUMN above
 		}
 		qcol, err := query.SafeIdent(name)
 		if err != nil {
@@ -269,6 +337,57 @@ func isFrameworkManagedColumn(name string, ent *entity.Entity) bool {
 		return ent.Config.Scope.SoftDelete
 	}
 	return false
+}
+
+// canonicalType normalizes a SQL type string for equivalence comparison
+// across the declared (SQLType-emitted) and live-DB forms. It lowercases,
+// strips parenthetical sizes ("VARCHAR(255)" → "varchar",
+// "DECIMAL(19,4)" → "decimal"), and maps the dialect-specific aliases
+// information_schema reports on Postgres to the canonical names SQLType
+// emits — without this, every PG VARCHAR/TIMESTAMPTZ/DECIMAL column would
+// false-positive as a type change.
+func canonicalType(s string, dialect Dialect) string {
+	t := strings.ToLower(strings.TrimSpace(s))
+	if i := strings.IndexByte(t, '('); i >= 0 {
+		t = strings.TrimSpace(t[:i])
+	}
+	if dialect == DialectPostgres {
+		switch t {
+		case "character varying":
+			t = "varchar"
+		case "timestamp with time zone":
+			t = "timestamptz"
+		case "timestamp without time zone":
+			t = "timestamp"
+		case "numeric":
+			t = "decimal"
+		case "serial":
+			t = "integer" // SERIAL is an integer column + a sequence
+		case "bigserial":
+			t = "bigint"
+		}
+	}
+	return t
+}
+
+// typesEquivalent reports whether a declared type and a live-DB type are the
+// same after per-dialect canonicalization. Conservative by design: it only
+// asserts equality, never "close enough" — a real type change always differs
+// canonically, and a dialect-naming variant never does.
+func typesEquivalent(declared, live string, dialect Dialect) bool {
+	return canonicalType(declared, dialect) == canonicalType(live, dialect)
+}
+
+// alterColumnTypeSQL renders the dialect-appropriate DDL for a column type
+// change. Postgres supports an in-place ALTER COLUMN TYPE (a data-specific
+// USING clause may be required and is left for the reviewer); SQLite has no
+// in-place ALTER COLUMN TYPE, so a comment flags the rebuild need rather than
+// emitting DDL that would silently no-op or fail.
+func alterColumnTypeSQL(qtable, qcol, newType string, dialect Dialect) string {
+	if dialect == DialectPostgres {
+		return fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", qtable, qcol, newType)
+	}
+	return fmt.Sprintf("-- SQLite has no in-place ALTER COLUMN TYPE; rebuild the table to set %s to %s", qcol, newType)
 }
 
 // queryer is the read-only subset of *sql.DB / *sql.Tx the live-schema

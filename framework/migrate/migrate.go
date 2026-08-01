@@ -812,6 +812,15 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	case schema.Text:
 		return "TEXT"
 	case schema.Int:
+		// On Postgres an auto-incrementing integer needs a real sequence:
+		// SERIAL is INTEGER + NOT NULL + a backing sequence + DEFAULT
+		// nextval(). A plain "INTEGER PRIMARY KEY" has no sequence on
+		// Postgres and never auto-increments. SQLite keeps INTEGER — its
+		// "INTEGER PRIMARY KEY" aliases the rowid and auto-increments when
+		// the column is omitted from INSERT.
+		if dialect == DialectPostgres && f.AutoGenerate == schema.AutoIncrement {
+			return "SERIAL"
+		}
 		return "INTEGER"
 	case schema.Float:
 		if dialect == DialectPostgres {

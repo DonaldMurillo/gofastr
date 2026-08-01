@@ -6,10 +6,14 @@ GoFastr has two migration paths:
    `framework.AutoMigrate(db, app.Registry)` converges the database
    with the entity declarations: it creates missing tables (with
    indexes and foreign keys) **and adds missing columns to existing
-   tables** (`ALTER TABLE ADD COLUMN` — additive only, never a drop,
-   rename, or type change). Runs on `App.Start`. Best for development
-   and for apps that keep their schema in entity declarations rather
-   than hand-written SQL.
+   tables** (`ALTER TABLE ADD COLUMN` — additive only: boot never drops,
+   renames, or retypes). Type changes and renames are surfaced by the
+   declarative diff (`DiffSchema` / `migrate generate`) — type changes as
+   destructive changes refused by default, renames as non-destructive
+   `RENAME COLUMN` when declared via `EntityConfig.Renames` — but
+   auto-migrate on `App.Start` applies only the additive ones. Runs on
+   `App.Start`. Best for development, and for apps that keep their schema
+   in entity declarations rather than hand-written SQL.
 2. **SQL files with directives.** `core/migrate` runs versioned `.sql`
    files. Best when you need to express data backfills, complex
    constraints, or anything the entity declaration can't.
@@ -263,9 +267,13 @@ have applied. A new **required** field with **no default** is added
 rows fails on a populated table, so the constraint is deferred (the
 change summary notes this); backfill the rows and tighten it in a later
 migration. A required field that has a default keeps `NOT NULL`, since
-every existing row gets the default. Type changes are out of scope; express
-those as a hand-written migration. The snapshot is offline state — pick
-`--driver` to match your production engine so the emitted types are
+every existing row gets the default. Type changes are DETECTED and surfaced
+as destructive changes (refused unless `AllowDestructive` is set) — they
+often need a data-specific `USING` conversion on Postgres or a table rebuild
+on SQLite, so review and hand-tighten the generated SQL. Renames: declare
+`EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
+`RENAME COLUMN` instead of a data-losing drop+add. The snapshot is offline
+state — pick `--driver` to match your production engine so the emitted types are
 right.
 
 Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`

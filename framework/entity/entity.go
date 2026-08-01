@@ -94,6 +94,14 @@ type EntityConfig struct {
 	// entirely). Reserved list controls are always allowed and need not be
 	// listed here.
 	AllowedFilterParams []string
+	// Renames declares column renames (old name → new name) so the schema
+	// diff emits a non-destructive ALTER TABLE … RENAME COLUMN instead of a
+	// data-losing DROP of the old column + ADD of the new one. Rename is
+	// otherwise indistinguishable from drop+add, so it requires this explicit
+	// declaration; auto-detection is unsafe. A rename only fires when the old
+	// column is present in the live schema and the new name is declared on the
+	// entity. Go-declared opt-in (blueprint YAML support is a follow-up).
+	Renames map[string]string
 }
 
 // ScopeConfig groups the rules that constrain which rows a request can read

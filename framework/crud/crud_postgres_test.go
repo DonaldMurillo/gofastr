@@ -490,3 +490,39 @@ func TestAutoTimestampRoundTripsMicrosecPG(t *testing.T) {
 		}
 	}
 }
+
+// TestPG_AutoIncrementSerial proves a Postgres SERIAL primary key is assigned
+// by the sequence: the framework omits the column from INSERT and RETURNING
+// reads back the sequence value. Two creates must yield 1 then 2 — a plain
+// INTEGER PRIMARY KEY (no sequence) would never increment, and sending a 0
+// placeholder would collide.
+func TestPG_AutoIncrementSerial(t *testing.T) {
+	cfg := entity.EntityConfig{
+		Name: "counters", Table: "counters",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.Int, AutoGenerate: schema.AutoIncrement, ReadOnly: true},
+			{Name: "label", Type: schema.String, Required: true},
+		},
+	}.WithTimestamps(false)
+	ch, _ := pgCrudSetup(t, cfg, `CREATE TABLE counters (id SERIAL PRIMARY KEY, label TEXT)`)
+
+	create := func(label string) string {
+		req := withTestUser(httptest.NewRequest(http.MethodPost, "/counters",
+			strings.NewReader(`{"label":"`+label+`"}`)), "u1")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		ch.Create()(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create %q = %d, body=%s", label, rec.Code, rec.Body.String())
+		}
+		return rec.Body.String()
+	}
+	first := create("a")
+	second := create("b")
+	if !strings.Contains(first, `"id":1`) {
+		t.Errorf("first create: expected sequence-assigned id 1, got %s", first)
+	}
+	if !strings.Contains(second, `"id":2`) {
+		t.Errorf("second create: expected sequence-assigned id 2, got %s", second)
+	}
+}
