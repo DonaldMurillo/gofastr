@@ -478,3 +478,46 @@ func TestSignalMutationTakesPrecedenceOverRPC(t *testing.T) {
 		t.Error("the RPC bridge does not skip signal-mutation elements — a node with both attributes would fire the signal AND dispatch an RPC")
 	}
 }
+
+// Every site that prevents the default action and THEN awaits the rpc
+// module has to recover when the module never arrives, or it eats the
+// user's click in silence. The document bridge in boot.js does this, and
+// deliberately skips anything inside [data-fui-widget] — so the
+// widget-scoped listeners in src/widgets.js cannot be covered by it and
+// must handle their own failure. They shipped with a bare `catch (_) {}`,
+// which is exactly the swallow the bridge was written to prevent.
+func TestWidgetRPCListenersRecoverFromMissingModule(t *testing.T) {
+	src, ok := Module("widgets")
+	if !ok {
+		t.Fatal("widgets module not embedded")
+	}
+	// Each await of the rpc module must be followed by a catch that calls
+	// one of the recovery helpers rather than discarding the error.
+	const await = "await NS.loadModule('rpc')"
+	if n := strings.Count(src, await); n == 0 {
+		t.Fatalf("no %q in the widgets module — did the delegation change?", await)
+	}
+	for i, seg := range strings.Split(src, await)[1:] {
+		// Scan to the end of the enclosing try/catch.
+		end := strings.Index(seg, "}")
+		window := seg
+		if end >= 0 {
+			window = seg[:min(len(seg), end+220)]
+		}
+		if !strings.Contains(window, "_rpcUnavailable") && !strings.Contains(window, "_rpcFormFallback") {
+			t.Errorf("rpc await #%d in src/widgets.js swallows a module-load failure — "+
+				"call NS._rpcUnavailable()/NS._rpcFormFallback() so the action is not lost silently:\n%s",
+				i+1, window)
+		}
+	}
+	// The helpers must actually be exported from core for the module to reach.
+	boot, err := fs.ReadFile(fragFS, "frag/boot.js")
+	if err != nil {
+		t.Fatalf("read boot fragment: %v", err)
+	}
+	for _, sym := range []string{"__gofastr._rpcUnavailable", "__gofastr._rpcFormFallback"} {
+		if !strings.Contains(string(boot), sym) {
+			t.Errorf("boot.js does not expose %s — the widgets module cannot recover without it", sym)
+		}
+	}
+}

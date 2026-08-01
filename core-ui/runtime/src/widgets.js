@@ -316,7 +316,7 @@
         try {
           await NS.loadModule('rpc');
           await NS.dispatchRPC(btn);
-        } catch (_) {}
+        } catch (_) { NS._rpcUnavailable?.(); }
         return;
       }
       const closeBtn = e.target.closest('[data-fui-action="close"]');
@@ -332,7 +332,7 @@
         try {
           await NS.loadModule('rpc');
           await NS.dispatchRPC(form);
-        } catch (_) {}
+        } catch (_) { NS._rpcFormFallback?.(form); }
       }
     });
 

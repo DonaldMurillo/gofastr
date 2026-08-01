@@ -1818,12 +1818,30 @@
   };
   const _rpcFormFallback = (form) => {
     _rpcUnavailable();
-    // A JSON-enctype form cannot be submitted natively (browsers fall back
-    // to urlencoded, which the endpoint would reject), so warning is all
-    // that is honest there. Every other intercepted form submits natively.
+    // Native submit is correct ONLY for a form the browser could have
+    // submitted itself — a data-fui-spa form with an ordinary enctype.
+    //
+    // A data-fui-rpc form targets a JSON API: the resource engine emits it
+    // with no enctype at all and rpc.js builds the JSON body, so submitting
+    // it natively posts urlencoded (415) or cannot issue its declared
+    // PUT/PATCH at all (405). Either way the user is navigated off the page
+    // to a raw error and everything they typed is gone — strictly worse
+    // than staying put. An application/json enctype is unsendable natively
+    // for the same reason. In those cases the warning is the whole remedy.
+    if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) return;
     if ((form.getAttribute('enctype') || '').toLowerCase() === 'application/json') return;
-    try { form.submit(); } catch (_) {}
+    // Call the prototype method, not form.submit: HTML named-property
+    // lookup shadows it with any control named "submit", so a form
+    // carrying <button name="submit"> would throw here and the catch
+    // would swallow the user's submission after we already prevented it.
+    try { HTMLFormElement.prototype.submit.call(form); } catch (_) {}
   };
+  // Widget-scoped listeners live in the widgets MODULE and prevent the
+  // default before awaiting rpc too, so they need the same recovery — the
+  // document bridge deliberately skips anything inside [data-fui-widget]
+  // and cannot cover for them.
+  window.__gofastr._rpcUnavailable = _rpcUnavailable;
+  window.__gofastr._rpcFormFallback = _rpcFormFallback;
 
   if (!document.__fuiStaticDispatch && !document.__fuiGlobalDispatch) {
     document.__fuiGlobalDispatch = true;
