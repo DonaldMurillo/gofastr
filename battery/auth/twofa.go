@@ -112,14 +112,33 @@ func NewMemoryTwoFAStore() *MemoryTwoFAStore {
 func (m *MemoryTwoFAStore) GetTwoFA(_ context.Context, userID string) (*TwoFAState, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.states[userID], nil
+	return cloneTwoFAState(m.states[userID]), nil
 }
 
 func (m *MemoryTwoFAStore) SetTwoFA(_ context.Context, userID string, state *TwoFAState) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.states[userID] = state
+	m.states[userID] = cloneTwoFAState(state)
 	return nil
+}
+
+// cloneTwoFAState deep-copies the state so the store never shares a
+// pointer with its callers, matching MemorySessionStore.
+//
+// A struct copy alone is not enough here: BackupCodes is a slice, so a
+// shallow copy still shares the backing array and two concurrent
+// regenerations would write the same memory. Handing out the stored
+// pointer let callers mutate the map's value with no lock at all, which
+// the race detector flags on two simultaneous backup-code requests.
+func cloneTwoFAState(st *TwoFAState) *TwoFAState {
+	if st == nil {
+		return nil
+	}
+	cp := *st
+	if st.BackupCodes != nil {
+		cp.BackupCodes = append([]string(nil), st.BackupCodes...)
+	}
+	return &cp
 }
 
 func (m *MemoryTwoFAStore) DeleteTwoFA(_ context.Context, userID string) error {
