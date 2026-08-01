@@ -2,6 +2,7 @@ package queue
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -9,25 +10,27 @@ import (
 // registered after Start must still fire — the old snapshot-once + return-
 // on-empty loop dropped everything registered late.
 func TestSchedulerFiresJobsRegisteredAfterStart(t *testing.T) {
-	q := &recordQueue{}
-	sched := NewScheduler(q)
+	synctest.Test(t, func(t *testing.T) {
+		q := &recordQueue{}
+		sched := NewScheduler(q)
 
-	ctx := t.Context()
-	go sched.Start(ctx)
+		ctx := t.Context()
+		go sched.Start(ctx)
 
-	// Register AFTER Start, and after the loop has already picked its first
-	// (empty) tick interval.
-	time.Sleep(30 * time.Millisecond)
-	sched.Every(20*time.Millisecond).Job("late", nil).Register()
+		// Register AFTER Start, and after the loop has already picked its first
+		// (empty) tick interval.
+		time.Sleep(30 * time.Millisecond)
+		sched.Every(20*time.Millisecond).Job("late", nil).Register()
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if q.count() > 0 {
-			return // fired — the late registration was picked up
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if q.count() > 0 {
+				return // fired — the late registration was picked up
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("job registered after Start never fired — scheduler dropped late registrations")
+		t.Fatal("job registered after Start never fired — scheduler dropped late registrations")
+	})
 }
 
 // tickInterval must never return a value that would busy-loop or stall.
