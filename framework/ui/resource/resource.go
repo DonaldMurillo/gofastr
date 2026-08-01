@@ -224,8 +224,8 @@ func (c Config) WithIsland(endpoint string) Config {
 // RPC responses: one per resource, derived from the base path.
 func (c Config) islandSignal() string {
 	seg := c.BasePath
-	if i := strings.LastIndexByte(seg, '/'); i >= 0 {
-		seg = seg[i+1:]
+	if _, after, ok := strings.CutLast(seg, "/"); ok {
+		seg = after
 	}
 	return "table-" + seg
 }
