@@ -422,7 +422,7 @@ func TestTimeoutContextCancelled(t *testing.T) {
 	ctxErrCh := make(chan error, 1)
 	handler := Timeout(50 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
-		ctxErrCh <- context.Cause(r.Context())
+		ctxErrCh <- r.Context().Err()
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -434,10 +434,8 @@ func TestTimeoutContextCancelled(t *testing.T) {
 		if ctxErr == nil {
 			t.Error("expected context to be cancelled")
 		}
-		// The deadline is conditional (streams shed it), so the ctx is
-		// cancelled rather than deadlined; the cause records why.
 		if ctxErr != context.DeadlineExceeded {
-			t.Errorf("expected DeadlineExceeded cause, got %v", ctxErr)
+			t.Errorf("expected DeadlineExceeded, got %v", ctxErr)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for context cancellation")
