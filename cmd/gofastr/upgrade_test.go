@@ -255,3 +255,33 @@ func TestSemverPrereleaseAndPseudoVersions(t *testing.T) {
 		t.Errorf("pseudo-version current must not re-include older notes, got %+v", got)
 	}
 }
+
+// A breaking note in the release being shipped must carry a detector.
+// `gofastr upgrade` uses it to point at the exact lines the release will
+// break; without one the note is advice the tool cannot locate for you.
+//
+// Scoped to the newest release deliberately. Older entries are
+// grandfathered: several describe changes no regex can find (a removed
+// CLI subcommand, a default that flipped from allow to deny), and
+// backfilling them would mean inventing detectors that match nothing.
+// The rule that matters is that each new release ships complete.
+func TestNewestReleaseBreakingNotesHaveDetectors(t *testing.T) {
+	reg, through, err := loadUpgradeRegistryFull()
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	var newest *upgradeRelease
+	for i := range reg {
+		if reg[i].Version == through {
+			newest = &reg[i]
+		}
+	}
+	if newest == nil {
+		t.Fatalf("no release matching through=%s", through)
+	}
+	for _, note := range newest.Notes {
+		if note.Breaking && strings.TrimSpace(note.Detect) == "" {
+			t.Errorf("%s: breaking note %q has no detect regex — `gofastr upgrade` cannot show the user where it bites", newest.Version, note.Change)
+		}
+	}
+}

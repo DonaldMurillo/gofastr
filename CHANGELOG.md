@@ -98,6 +98,13 @@ atomicity and the static ETag cache. Those are fixed here as well.
   caught during validation. Declarations that previously panicked
   mid-commit — leaving the entity in the registry and its CRUD routes
   mounted — now return an error having registered nothing.
+- **BREAKING: `RedisClient.RPop` must report an empty list as
+  `queue.ErrRedisEmpty`.** `Dequeue` used to treat any `RPop` error as an
+  empty queue, which masked a backend outage as an idle worker. It now
+  surfaces every error except that sentinel. `RedisClient` is a public
+  interface hosts implement, so an adapter returning its driver's own
+  nil-sentinel (go-redis's `redis.Nil`) now errors on every idle poll
+  rather than reporting `ErrNoJob`. Map it with `errors.Is` in the wrapper.
 - **BREAKING: production re-checks the session store after plugin init.**
   A plugin's `Init` could call `SetSessionStore(NewMemorySessionStore())`
   after the only fail-closed check, so `Init` returned nil with every

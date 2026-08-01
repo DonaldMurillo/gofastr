@@ -535,7 +535,7 @@ releases:
       - change: battery/semantic routes require a bearer token
         breaking: true
         guidance: "The handler accepted any non-empty Authorization header, so 'Authorization: x' granted index write, query and delete. Pass semantic.WithAuthToken(token) to Handler or Plugin (compared in constant time), or semantic.WithInsecureDisabledAuth() for local development. Configure neither and every route returns 401 instead of mounting open."
-        detect: "semantic\\.(Handler|Plugin)\\("
+        detect: "semantic\\.(New)?(Handler|Plugin)\\("
       - change: gofastr init writes gofastr.isolation.yml
         breaking: true
         guidance: "The isolation config used the blueprint's gofastr.yml filename, so running the CLI's own example sequence failed with 'unknown key version'. New projects get gofastr.isolation.yml; framework/isolation reads that name first and still falls back to gofastr.yml, so existing projects keep working until they rename."
@@ -562,7 +562,12 @@ releases:
         detect: "/api/tables/"
       - change: TryEntity rejects route collisions it used to half-commit
         breaking: true
+        detect: "TryEntity\\("
         guidance: "Registration pre-flighted a guessed pair of paths. It now asks crud.CrudRoutePatterns for the full set it will mount and compares wildcard SHAPE, so a screen at /posts/{slug} colliding with the generated /posts/{id}, or an endpoint shadowing /posts/_batch, is caught during validation. A declaration that previously panicked mid-commit — leaving the entity registered and its CRUD routes mounted — now returns an error having registered nothing. Move the conflicting screen or endpoint, or mount entity routes under an APIPrefix."
+      - change: RedisClient.RPop must report an empty list as queue.ErrRedisEmpty
+        breaking: true
+        detect: "RPop\\("
+        guidance: "RedisQueue.Dequeue previously treated ANY RPop error as an empty queue, which masked a backend outage as an idle worker. It now surfaces every error except queue.ErrRedisEmpty. RedisClient is a public interface you implement, so an adapter that returns its driver's own nil-sentinel (go-redis's redis.Nil, redigo's redis.ErrNil) now reports an error on every idle poll instead of ErrNoJob. Map that sentinel onto queue.ErrRedisEmpty with errors.Is in your RPop wrapper."
       - change: Production re-checks the session store after plugin init
         breaking: true
         guidance: "An auth plugin's Init could call SetSessionStore(NewMemorySessionStore()) after the only fail-closed check, so Init returned nil with every session in process memory. The gate now runs again once plugins are initialised. A plugin that installs an in-memory store in production must stop, or the app must set AuthConfig.AllowInMemoryStores to acknowledge a single-node deployment."
