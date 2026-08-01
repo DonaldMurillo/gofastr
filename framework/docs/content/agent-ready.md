@@ -20,12 +20,16 @@ each piece granularly.
 package main
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 func main() {
-	host := uihost.New(app, uihost.WithAgentReady(uihost.AgentReadyConfig{
+	site := app.NewApp("Acme")
+	// …register your screens on site…
+
+	host := uihost.New(site, uihost.WithAgentReady(uihost.AgentReadyConfig{
 		BaseURL: "https://example.com",
 		Title:   "Acme",
 		Summary: "Acme is a billing console. MCP tools live at /mcp.",

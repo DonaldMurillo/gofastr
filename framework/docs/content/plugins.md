@@ -228,7 +228,7 @@ both in one call and return a typed error when the assertion fails:
 logp, err := framework.PluginGetAs[*logplugin.Plugin](app.Plugins, "log")
 
 // Battery equivalent:
-searcher, err := framework.GetAs[search.Indexer](app.Batteries, "search")
+searcher, err := framework.GetAs[search.Backend](app.Batteries, "search")
 ```
 
 Both return an error (never a usable zero value) when the name is

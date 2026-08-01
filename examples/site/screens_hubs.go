@@ -193,7 +193,7 @@ company.Bind(ctx, "span", map[string]string{"id": "co-name"})`,
 				CodeFile: "presence.go",
 				CodeLang: "go",
 				Code: `// On a background change, re-render and push to each open session.
-host.Islands.OnPresenceChange = func(topic string) {
+host.Islands.SetOnPresenceChange(func(topic string) {
     roster := renderRoster(host.Islands.PresenceRoster(topic))
     for _, sid := range host.Islands.PresenceSessions(topic) {
         host.Islands.PushUpdate(island.IslandUpdate{
@@ -201,7 +201,7 @@ host.Islands.OnPresenceChange = func(topic string) {
             HTML:     string(roster),
         }, sid)
     }
-}`,
+})`,
 				RefSlug: "runtime-contract",
 			},
 			{

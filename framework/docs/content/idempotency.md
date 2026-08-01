@@ -55,12 +55,22 @@ separate caches. Wire it from your auth middleware:
 
 ```go
 Principal: func(r *http.Request) string {
-    if u := auth.UserID(r.Context()); u != "" {
-        return u
+    // handler.GetUser returns the value your auth middleware stored,
+    // as `any` — assert it to whatever your app puts there.
+    if u, ok := handler.GetUser(r.Context()); ok {
+        if user, ok := u.(auth.User); ok && user.GetID() != "" {
+            return user.GetID()
+        }
     }
-    return auth.TenantID(r.Context()) // fall back to tenant for service-to-service
+    // Fall back to the tenant for service-to-service calls.
+    return framework.GetTenantID(r.Context())
 },
 ```
+
+`handler` is `core/handler` and `framework.GetTenantID` re-exports
+`tenant.GetTenantID`. There is no exported "current user id" accessor —
+the user value is whatever your middleware stored, so the assertion is
+yours to write.
 
 When `Principal` is unset, the middleware still runs — but the cache
 is shared globally across callers and you accept the cross-request
