@@ -2389,20 +2389,20 @@ func (a *App) Shutdown(ctx context.Context) error {
 			// alone would leave it — and the process — hanging).
 			// Force-close the stragglers so shutdown completes.
 			_ = srv.Close()
-			firstErr = err
+			firstErr = fmt.Errorf("draining http server: %w", err)
 		}
 	}
 
 	// Stop batteries in reverse dependency order (dependents first)
 	if err := a.Batteries.StopAll(ctx); err != nil && firstErr == nil {
-		firstErr = err
+		firstErr = fmt.Errorf("stopping batteries: %w", err)
 	}
 
 	// Run OnStop hooks + battery-registered drainers through the
 	// lifecycle coordinator. PrependDrainer in OnStop already encodes
 	// the reverse-of-registration order callers expect.
 	if err := a.lc.Shutdown(ctx); err != nil && firstErr == nil {
-		firstErr = err
+		firstErr = fmt.Errorf("running stop hooks: %w", err)
 	}
 	return firstErr
 }
