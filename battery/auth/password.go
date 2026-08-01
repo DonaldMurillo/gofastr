@@ -3,10 +3,14 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
+	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,32 +31,39 @@ var ErrPasswordEmpty = errors.New("auth: password is empty")
 // input is shorter than RecommendedMinPasswordBytes.
 var ErrPasswordTooShort = errors.New("auth: password too short")
 
-// HashPassword hashes a plaintext password using bcrypt.
+// PasswordHasher hashes and verifies passwords. The package ships two
+// implementations: [BcryptHasher] (the default, what HashPassword has always
+// used) and [Argon2Hasher] (argon2id — the modern memory-hard alternative).
+//
+// To change the algorithm used for NEW passwords, set [DefaultHasher] before
+// auth.Init. Verification auto-detects the stored hash's format from its PHC
+// prefix, so an existing user base migrates gradually: old bcrypt rows keep
+// verifying, new rows use the configured hasher.
+type PasswordHasher interface {
+	Hash(password string) (string, error)
+	Verify(password, hash string) bool
+}
+
+// DefaultHasher is used by [HashPassword] for new passwords. It is
+// [BcryptHasher] by default; set it to [Argon2Hasher]{} (or a tuned
+// Argon2Hasher{...}) before auth.Init to hash new registrations with argon2id.
+var DefaultHasher PasswordHasher = BcryptHasher{}
+
+// HashPassword hashes a plaintext password using [DefaultHasher] (bcrypt by
+// default).
 //
 // The empty string is rejected with ErrPasswordEmpty. No other length
-// policy is enforced — call [ValidatePasswordStrength] from the
-// registration flow when you want to require a minimum length.
+// policy is enforced — call [ValidatePasswordStrength] from the registration
+// flow when you want to require a minimum length.
 //
-// Inputs longer than 72 bytes are pre-hashed with SHA-256 before
-// bcrypt. bcrypt silently truncates anything past 72 bytes, so without
-// the pre-hash a 200-character passphrase would be indistinguishable
-// from its first 72 characters. The pre-hash is base64-encoded to
-// stay within bcrypt's usual byte-range and to avoid NUL bytes that
-// bcrypt would terminate on.
+// Verification is algorithm-agnostic: [CheckPassword] detects the stored
+// hash's format, so a bcrypt hash verifies whether or not DefaultHasher was
+// changed.
 func HashPassword(password string) (string, error) {
 	if password == "" {
 		return "", ErrPasswordEmpty
 	}
-	input := []byte(password)
-	if len(input) > 72 {
-		sum := sha256.Sum256(input)
-		input = []byte(base64.RawStdEncoding.EncodeToString(sum[:]))
-	}
-	bytes, err := bcrypt.GenerateFromPassword(input, bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-	return string(bytes), nil
+	return DefaultHasher.Hash(password)
 }
 
 // ValidatePasswordStrength returns ErrPasswordEmpty for an empty input
@@ -70,20 +81,178 @@ func ValidatePasswordStrength(password string) error {
 	return nil
 }
 
-// CheckPassword compares a plaintext password against a bcrypt hash.
-// Returns true if the password matches.
+// CheckPassword compares a plaintext password against a stored hash and returns
+// true if it matches. It auto-detects the algorithm from the hash's PHC prefix
+// — "$argon2id$" dispatches to argon2id, anything else to bcrypt — so a single
+// user table can hold a mix during a gradual migration.
 //
-// The same SHA-256 pre-hash applied in [HashPassword] is applied here
-// for inputs longer than 72 bytes, so a long passphrase that was hashed
-// at registration time still verifies at login time.
+// For bcrypt hashes, the same SHA-256 pre-hash applied in [BcryptHasher.Hash]
+// is applied here for inputs longer than 72 bytes, so a long passphrase that
+// was hashed at registration time still verifies at login time.
 func CheckPassword(password, hash string) bool {
+	if strings.HasPrefix(hash, "$argon2id$") {
+		return Argon2Hasher{}.Verify(password, hash)
+	}
+	return BcryptHasher{}.Verify(password, hash)
+}
+
+// BcryptHasher hashes with bcrypt at DefaultCost and a SHA-256 pre-hash for
+// inputs longer than 72 bytes. It is the default hasher and what existing rows
+// store.
+type BcryptHasher struct{}
+
+// Hash produces a bcrypt hash. Inputs longer than 72 bytes are pre-hashed with
+// SHA-256 (then base64-encoded) before bcrypt: bcrypt silently truncates past
+// 72 bytes, so without the pre-hash a 200-character passphrase would be
+// indistinguishable from its first 72 characters, and the pre-hash avoids NUL
+// bytes bcrypt would terminate on.
+func (BcryptHasher) Hash(password string) (string, error) {
+	if password == "" {
+		return "", ErrPasswordEmpty
+	}
 	input := []byte(password)
 	if len(input) > 72 {
 		sum := sha256.Sum256(input)
 		input = []byte(base64.RawStdEncoding.EncodeToString(sum[:]))
 	}
-	err := bcrypt.CompareHashAndPassword([]byte(hash), input)
-	return err == nil
+	b, err := bcrypt.GenerateFromPassword(input, bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// Verify applies the same >72-byte pre-hash then compares against the bcrypt
+// hash in constant time (bcrypt.CompareHashAndPassword is already
+// constant-time).
+func (BcryptHasher) Verify(password, hash string) bool {
+	input := []byte(password)
+	if len(input) > 72 {
+		sum := sha256.Sum256(input)
+		input = []byte(base64.RawStdEncoding.EncodeToString(sum[:]))
+	}
+	return bcrypt.CompareHashAndPassword([]byte(hash), input) == nil
+}
+
+// Argon2Hasher hashes with argon2id (RFC 9106), emitting a PHC-format string
+// that Verify parses back:
+//
+//	$argon2id$v=19$m=<memory>,t=<time>,p=<threads>$<base64 salt>$<base64 key>
+//
+// Unlike bcrypt, argon2 accepts arbitrarily long inputs, so no pre-hash is
+// needed. A zero value uses conservative OWASP-recommended parameters
+// (memory 64 MiB, time 3, threads 2, 32-byte key). Tune via the exported
+// fields; verify always re-derives with the parameters encoded in the stored
+// hash, so a row from a differently-tuned hasher still verifies.
+type Argon2Hasher struct {
+	Time    uint32 // iterations.     0 → 3.
+	Memory  uint32 // KiB.            0 → 65536 (64 MiB).
+	Threads uint8  // parallelism.    0 → 2.
+	KeyLen  uint32 // output bytes.   0 → 32.
+}
+
+// Hash produces an argon2id hash in PHC string format with a random 16-byte
+// salt.
+func (h Argon2Hasher) Hash(password string) (string, error) {
+	if password == "" {
+		return "", ErrPasswordEmpty
+	}
+	time, memory, threads, keyLen := h.params()
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("auth: argon2 salt: %w", err)
+	}
+	key := argon2.IDKey([]byte(password), salt, time, memory, threads, keyLen)
+	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
+		memory, time, threads,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(key)), nil
+}
+
+// Verify parses the PHC string, re-derives the key with the encoded salt and
+// parameters, and compares in constant time. A malformed string returns false
+// (never an error) — a verify call must never distinguish "bad hash" from
+// "wrong password" in control flow.
+func (h Argon2Hasher) Verify(password, hash string) bool {
+	p, ok := parseArgon2PHC(hash)
+	if !ok {
+		return false
+	}
+	key := argon2.IDKey([]byte(password), p.salt, p.time, p.memory, p.threads, uint32(len(p.key)))
+	return subtle.ConstantTimeCompare(key, p.key) == 1
+}
+
+func (h Argon2Hasher) params() (time, memory uint32, threads uint8, keyLen uint32) {
+	time, memory, threads, keyLen = h.Time, h.Memory, h.Threads, h.KeyLen
+	if time == 0 {
+		time = 3
+	}
+	if memory == 0 {
+		memory = 64 * 1024
+	}
+	if threads == 0 {
+		threads = 2
+	}
+	if keyLen == 0 {
+		keyLen = 32
+	}
+	return
+}
+
+// argon2PHC holds the parameters and material parsed from a PHC-format
+// $argon2id$ string.
+type argon2PHC struct {
+	time, memory uint32
+	threads      uint8
+	salt, key    []byte
+}
+
+// parseArgon2PHC parses "$argon2id$v=19$m=M,t=T,p=P$<b64 salt>$<b64 key>".
+// Returns ok=false for anything that is not that exact shape — a verify path
+// must never panic or error on a malformed stored hash.
+func parseArgon2PHC(hash string) (argon2PHC, bool) {
+	// strings.Split yields ["", "argon2id", "v=19", "m=M,t=T,p=P", salt, key].
+	parts := strings.Split(hash, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return argon2PHC{}, false
+	}
+	// parts[2] is "v=19"; only argon2id v19 exists, so it is not parsed
+	// further — but it must be present and well-formed.
+	if !strings.HasPrefix(parts[2], "v=") {
+		return argon2PHC{}, false
+	}
+	var p argon2PHC
+	for _, field := range strings.Split(parts[3], ",") {
+		kv := strings.SplitN(field, "=", 2)
+		if len(kv) != 2 {
+			return argon2PHC{}, false
+		}
+		n, err := strconv.ParseUint(kv[1], 10, 32)
+		if err != nil {
+			return argon2PHC{}, false
+		}
+		switch kv[0] {
+		case "m":
+			p.memory = uint32(n)
+		case "t":
+			p.time = uint32(n)
+		case "p":
+			p.threads = uint8(n)
+		}
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return argon2PHC{}, false
+	}
+	key, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return argon2PHC{}, false
+	}
+	if p.memory == 0 || p.time == 0 || p.threads == 0 || len(salt) == 0 || len(key) == 0 {
+		return argon2PHC{}, false
+	}
+	p.salt, p.key = salt, key
+	return p, true
 }
 
 // dummyBcryptHash is a pre-computed bcrypt hash used to keep loginHandler
@@ -92,6 +261,12 @@ func CheckPassword(password, hash string) bool {
 // as when the user exists with a wrong password. Without this, an attacker
 // can enumerate registered emails by measuring response time
 // (bcrypt at default cost is ~50ms vs ~10µs for "no user").
+//
+// NOTE: this dummy is bcrypt-shaped. If you switch DefaultHasher to
+// Argon2Hasher, real-user logins run argon2 (~tens of ms) while the
+// unknown-user path still runs bcrypt against this dummy — re-aligning the
+// dummy to the configured hasher's cost is a follow-up to preserve exact
+// anti-enumeration timing under a full algorithm switch.
 var dummyBcryptHash string
 
 // passwordPlaceholderHash is stored as the password_hash for users created

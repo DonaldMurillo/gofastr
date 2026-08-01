@@ -417,6 +417,11 @@ entities you didn't get told about. See
 [entity-declarations](entity-declarations.md) → "Default CRUD
 authentication" for the blueprint YAML shape.
 
+`gofastr audit lint` flags this as rule `unscoped-pii`, and it inspects
+Go-declared entities (`app.Entity(...)` with an unscoped PII-shaped field
+exposed via auto-CRUD) as well as `gofastr.yml` — the cross-user exposure
+is identical either way.
+
 ## Common mistakes
 
 - **Relaxing CSP to fix a broken third-party script.** Override only

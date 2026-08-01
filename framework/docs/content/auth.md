@@ -8,7 +8,7 @@ service that only needs OAuth and 2FA never compiles the
 password-reset code in.
 
 The lower-level primitives live in `battery/auth` alongside the plugins
-that use them: password hashing (bcrypt, `password.go`), the rate-limit
+that use them: password hashing (bcrypt by default, argon2id optional — set `auth.DefaultHasher` before Init), the rate-limit
 `Guard` (`ratelimit.go`), and the session/token stores. They are
 dependencies of the plugins, not a second API to reach for directly —
 apps wire the `AuthManager` and its plugins.
