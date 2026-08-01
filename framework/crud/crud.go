@@ -2,7 +2,6 @@ package crud
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -1461,12 +1461,7 @@ func generateFieldValue(strategy schema.AutoGenerate) any {
 
 // generateUUID creates a new random UUID v4 string.
 func generateUUID() string {
-	var uuid [16]byte
-	rand.Read(uuid[:])
-	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4
-	uuid[8] = (uuid[8] & 0x3f) | 0x80 // variant 10
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
+	return uuid.NewV4().String()
 }
 
 // compile-time check
