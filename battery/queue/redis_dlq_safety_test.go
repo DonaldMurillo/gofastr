@@ -125,3 +125,30 @@ func TestRedisNackKeepsJobWhenPushFails(t *testing.T) {
 		})
 	}
 }
+
+// A type-filtered Dequeue pops non-matching jobs off the main list and
+// holds them in memory until it restores them. Discarding a restore
+// failure left a valid job in NO list while Dequeue reported an ordinary
+// empty queue — the same silent-loss class as the Nack ordering bug, in
+// the sibling path.
+func TestRedisSkippedJobLossIsReported(t *testing.T) {
+	r := newMockRedis()
+	ctx := context.Background()
+
+	job := Job{ID: "a1", Type: "type-a", MaxAttempts: 3}
+	data, _ := json.Marshal(job)
+	_ = r.LPush(ctx, "test", data)
+
+	fail := &pushFailingRedis{RedisClient: r, err: errors.New("redis down")}
+	q := NewRedisQueue(fail, "test")
+
+	// Ask for a type the queued job does not match: it is popped, skipped,
+	// and then the restoring push fails.
+	_, err := q.Dequeue(ctx, "type-b")
+	if err == nil || errors.Is(err, ErrNoJob) {
+		t.Fatalf("a failed restore must not be reported as an empty queue, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "restore skipped job") {
+		t.Errorf("error should name the failed restore, got: %v", err)
+	}
+}

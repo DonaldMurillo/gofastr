@@ -126,10 +126,18 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		typeSet[t] = struct{}{}
 	}
 
-	requeueSkipped := func(skipped []string) {
+	// Restoring a type-miss job is the same durability step as Nack's push:
+	// the job was already RPop'd off the main list, so a discarded error
+	// here leaves it in no list at all while Dequeue reports an ordinary
+	// empty queue. Surface the first failure instead.
+	requeueSkipped := func(skipped []string) error {
+		var firstErr error
 		for _, s := range skipped {
-			_ = q.client.LPush(ctx, q.queueName, s)
+			if err := q.client.LPush(ctx, q.queueName, s); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("restore skipped job: %w", err)
+			}
 		}
+		return firstErr
 	}
 
 	var skipped []string
@@ -139,7 +147,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		// (OOM). When the bound is hit, re-enqueue what we drained and report
 		// no job — the caller retries.
 		if len(skipped) >= maxSkipDrain {
-			requeueSkipped(skipped)
+			if rerr := requeueSkipped(skipped); rerr != nil {
+				return Job{}, rerr
+			}
 			return Job{}, ErrNoJob
 		}
 
@@ -150,7 +160,12 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// an outage look like an idle queue, so workers stop pulling jobs
 			// with no signal that anything is wrong.
 			isEmpty := errors.Is(err, ErrRedisEmpty)
-			requeueSkipped(skipped)
+			// A restore failure outranks "empty": reporting ErrNoJob here
+			// would tell the caller the queue is idle while a valid job
+			// sits in no list at all.
+			if rerr := requeueSkipped(skipped); rerr != nil {
+				return Job{}, rerr
+			}
 			if isEmpty {
 				return Job{}, ErrNoJob
 			}
@@ -162,8 +177,11 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// A malformed entry must not take down the valid jobs we already
 			// RPop'd: re-enqueue them, then quarantine the bad entry to the
 			// dead-letter queue instead of silently dropping it.
-			requeueSkipped(skipped)
+			rerr := requeueSkipped(skipped)
 			_ = q.client.LPush(ctx, q.deadLetterQueue, data)
+			if rerr != nil {
+				return Job{}, errors.Join(fmt.Errorf("unmarshal job: %w", err), rerr)
+			}
 			return Job{}, fmt.Errorf("unmarshal job: %w", err)
 		}
 
@@ -192,7 +210,10 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			dlqData, _ := json.Marshal(job)
 			if err := q.client.LPush(ctx, q.deadLetterQueue, dlqData); err != nil {
 				_ = q.client.LPush(ctx, q.queueName, string(dlqData))
-				requeueSkipped(skipped)
+				rerr := requeueSkipped(skipped)
+				if rerr != nil {
+					return Job{}, errors.Join(fmt.Errorf("dequeue: dead-letter exhausted job: %w", err), rerr)
+				}
 				return Job{}, fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
 			}
 			continue
@@ -214,12 +235,19 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// unrecoverable, but the common single-failure case (pop ok,
 			// processing write blip) no longer loses it.
 			_ = q.client.LPush(ctx, q.queueName, string(bumped))
-			requeueSkipped(skipped)
+			rerr := requeueSkipped(skipped)
+			if rerr != nil {
+				return Job{}, errors.Join(fmt.Errorf("dequeue: track in processing: %w", err), rerr)
+			}
 			return Job{}, fmt.Errorf("dequeue: track in processing: %w", err)
 		}
 
-		// Re-enqueue skipped jobs.
-		requeueSkipped(skipped)
+		// Re-enqueue skipped jobs. The claimed job is already recorded in
+		// the processing hash, so it survives; a skipped job that failed to
+		// restore does not, and the caller has to hear about it.
+		if rerr := requeueSkipped(skipped); rerr != nil {
+			return job, rerr
+		}
 
 		return job, nil
 	}
