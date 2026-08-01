@@ -287,6 +287,37 @@ func renumberPlaceholders(condition string, startIdx int) string {
 			// drop the lexer out of the string early and renumber the rest
 			// of it.
 			i = copyStringLiteral(&sb, condition, i)
+		case c == '-' && i+1 < len(condition) && condition[i+1] == '-':
+			// A -- line comment runs to the newline. Its text is not SQL,
+			// so a $N inside it is not a placeholder; renumbering it
+			// consumed an index and shifted every real placeholder after.
+			j := strings.IndexByte(condition[i:], '\n')
+			if j < 0 {
+				sb.WriteString(condition[i:])
+				i = len(condition)
+				continue
+			}
+			sb.WriteString(condition[i : i+j+1])
+			i += j + 1
+		case c == '/' && i+1 < len(condition) && condition[i+1] == '*':
+			// Block comments nest in PostgreSQL, so track the depth rather
+			// than scanning for the first */.
+			depth, j := 1, i+2
+			for j < len(condition) && depth > 0 {
+				if j+1 < len(condition) && condition[j] == '/' && condition[j+1] == '*' {
+					depth++
+					j += 2
+					continue
+				}
+				if j+1 < len(condition) && condition[j] == '*' && condition[j+1] == '/' {
+					depth--
+					j += 2
+					continue
+				}
+				j++
+			}
+			sb.WriteString(condition[i:j])
+			i = j
 		case c == '$':
 			// $tag$…$tag$ (and bare $$…$$) is a dollar-quoted literal —
 			// also data. Its body regularly contains $1-looking text.

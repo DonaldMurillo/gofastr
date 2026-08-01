@@ -132,3 +132,49 @@ func TestRenumberLeavesLiteralsAlone(t *testing.T) {
 		})
 	}
 }
+
+// A $N inside a comment is not a placeholder either. Renumbering it
+// consumed a positional index and shifted every real placeholder after it,
+// so the statement asked PostgreSQL for a parameter the caller never bound
+// ("could not determine data type of parameter $1").
+func TestRenumberSkipsComments(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			"block comment",
+			`active = TRUE /* keep $1 literal */ AND id = $1`,
+			`active = TRUE /* keep $1 literal */ AND id = $1`,
+		},
+		{
+			"line comment",
+			"active = TRUE -- keep $1 literal\n AND id = $1",
+			"active = TRUE -- keep $1 literal\n AND id = $1",
+		},
+		{
+			// PostgreSQL block comments nest.
+			"nested block comment",
+			`a = $1 /* outer /* inner $9 */ still comment */ AND b = $1`,
+			`a = $1 /* outer /* inner $9 */ still comment */ AND b = $2`,
+		},
+		{
+			"unterminated line comment runs to the end",
+			"id = $1 -- trailing $9",
+			"id = $1 -- trailing $9",
+		},
+		{
+			// A bare minus or slash is arithmetic, not a comment.
+			"arithmetic is untouched",
+			`qty - $1 > total / $1`,
+			`qty - $1 > total / $2`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := renumberPlaceholders(tc.in, 1); got != tc.want {
+				t.Errorf("got  %s\nwant %s", got, tc.want)
+			}
+		})
+	}
+}
