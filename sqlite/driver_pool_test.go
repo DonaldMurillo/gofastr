@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -152,5 +153,55 @@ func TestCloseReleasesTheEngineFile(t *testing.T) {
 	}
 	if open := strings.Count(string(out), "handles.db"); open > 0 {
 		t.Fatalf("%d file handles still open after closing %d databases", open, len(kept))
+	}
+}
+
+// flakyBackend fails the write that Close's flush performs, while recording
+// whether its own Close was reached.
+type flakyBackend struct {
+	FileBackend
+	failWrites bool
+	closes     int
+}
+
+func (f *flakyBackend) WriteAt(p []byte, off int64) (int, error) {
+	if f.failWrites {
+		return 0, errors.New("injected write failure")
+	}
+	return f.FileBackend.WriteAt(p, off)
+}
+
+func (f *flakyBackend) Close() error {
+	f.closes++
+	return f.FileBackend.Close()
+}
+
+// Close must release the backing file even when the final flush fails —
+// an I/O error is exactly the path where leaking the descriptor matters,
+// and returning early on it left the handle open.
+func TestCloseReleasesFileEvenWhenFlushFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "flaky.db")
+	disk, err := OpenDiskFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &flakyBackend{FileBackend: disk}
+
+	pager, err := NewPager(backend, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Dirty a page so Close has something to flush, then break writes.
+	if _, err := pager.AllocatePage(); err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	backend.failWrites = true
+
+	err = pager.Close()
+	if err == nil {
+		t.Error("Close should report the flush failure")
+	}
+	if backend.closes == 0 {
+		t.Error("Close returned before releasing the backing file — the descriptor leaks on exactly the path where it matters")
 	}
 }

@@ -471,17 +471,22 @@ func (p *Pager) Flush() error {
 
 // Close flushes and clears the cache.
 func (p *Pager) Close() error {
-	if err := p.Flush(); err != nil {
-		return err
-	}
+	// Flush first, but do NOT return early on failure: an I/O error is
+	// precisely the path where leaking the descriptor matters most, and
+	// returning here left the backing file open. Release it either way and
+	// report the flush error, which is the more informative of the two.
+	flushErr := p.Flush()
 	p.pages = nil
 	p.dirty = nil
-	// Release the backing file too. Dropping the page cache without
-	// closing it left a DiskFile's *os.File open for the life of the
-	// process, so opening and closing databases in a loop exhausted the
-	// descriptor limit while every handle looked closed. MemFile.Close is
-	// a no-op.
-	return p.file.Close()
+	// Dropping the page cache without closing the file left a DiskFile's
+	// *os.File open for the life of the process, so opening and closing
+	// databases in a loop exhausted the descriptor limit while every handle
+	// looked closed. MemFile.Close is a no-op.
+	closeErr := p.file.Close()
+	if flushErr != nil {
+		return flushErr
+	}
+	return closeErr
 }
 
 // pagerStatementSnapshot captures in-memory pager state at a statement
