@@ -58,7 +58,12 @@
       for (const fn of s.listeners) {
         try { fn(value); } catch (_) {}
       }
-      document.querySelectorAll('[data-fui-signal="' + name + '"]').forEach((node) => {
+      // Escape the signal name before it enters the selector — a name
+      // containing selector metacharacters (e.g. '"]') would otherwise
+      // produce an invalid selector and querySelectorAll would THROW,
+      // taking setSignal (and every listener it drives) down with it.
+      // Same shape as sse.js:76.
+      document.querySelectorAll('[data-fui-signal="' + CSS.escape(String(name)) + '"]').forEach((node) => {
         const mode = node.getAttribute('data-fui-signal-mode') || 'text';
         if (mode === 'html') {
           // The html escape hatch is for TRUSTED HTML *strings* only.
@@ -167,6 +172,37 @@
     signal(name) {
       return this._signals[name]?.value;
     },
+  });
+
+  // Client signal mutations are core behavior. Keep this delegated listener
+  // outside RPC so tabs, counters, and toggles work before any network module
+  // loads. Widget roots retain their own event ownership.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-fui-widget]')) return;
+    const node = e.target.closest('[data-fui-signal-set],[data-fui-signal-inc],[data-fui-signal-toggle]');
+    if (!node) return;
+    e.preventDefault();
+    const G = window.__gofastr;
+
+    const set = node.getAttribute('data-fui-signal-set');
+    if (set) {
+      const sep = set.indexOf(':');
+      if (sep > 0) G.setSignal(set.substring(0, sep), set.substring(sep + 1));
+    }
+
+    const inc = node.getAttribute('data-fui-signal-inc');
+    if (inc) {
+      const sep = inc.indexOf(':');
+      const name = sep > 0 ? inc.substring(0, sep) : inc;
+      const delta = sep > 0 ? Number(inc.substring(sep + 1)) : 1;
+      G.setSignal(name, (Number(G.getSignal(name)) || 0) + delta);
+    }
+
+    const toggle = node.getAttribute('data-fui-signal-toggle');
+    if (toggle) {
+      const current = G.getSignal(toggle);
+      G.setSignal(toggle, !current || current === 'false' || current === '0');
+    }
   });
 
 

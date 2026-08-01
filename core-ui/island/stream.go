@@ -58,7 +58,19 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	// first guarantees the buffered stream exists before the client can
 	// observe the connection as ready. This was a timing-dependent CI flake
 	// in TestServeSSE (5s timeout) on loaded runners.
-	ch, cancel := m.ConnectSession(sessionID)
+	ch, cancel, err := m.ConnectSession(sessionID)
+	if err != nil {
+		// Reject-not-evict: a stream over the cap is refused with a clear
+		// status and the streams already held are left alone. 429 is the
+		// semantically correct code for a capacity limit; Retry-After keeps
+		// a well-behaved client (e.g. EventSource auto-reconnect) from
+		// hammering the endpoint. No SSE headers have been committed yet
+		// (NewSSEWriter defers them to the first write), so this is a clean
+		// error response, not a superfluous WriteHeader.
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, err.Error(), http.StatusTooManyRequests)
+		return
+	}
 	// cancel is deferred IMMEDIATELY: PresenceJoin fires the app-supplied
 	// OnPresenceChange hook, and a panicking hook (net/http recovers it)
 	// must not strand the subscription we just created. Same reasoning as
@@ -104,7 +116,10 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 }
 
 // ConnectSession establishes one SSE subscriber on the session's stream,
-// returning this connection's private update channel and its cancel.
-func (m *Manager) ConnectSession(sessionID string) (<-chan IslandUpdate, func()) {
-	return m.Subscribe(sessionID)
+// returning this connection's private update channel, its cancel, and an
+// error when the concurrent-stream caps refuse the connect (see
+// WithStreamCaps). A refused connect returns a nil channel and a no-op
+// cancel; the caller (ServeSSEWithPresence) surfaces a clear HTTP status.
+func (m *Manager) ConnectSession(sessionID string) (<-chan IslandUpdate, func(), error) {
+	return m.subscribeImpl(sessionID)
 }

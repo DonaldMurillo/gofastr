@@ -7,9 +7,11 @@ own individual authentication methods. Every plugin is opt-in — a
 service that only needs OAuth and 2FA never compiles the
 password-reset code in.
 
-The lower-level primitives in `framework/auth` (argon2id, the typed
-`Guard`, dialect detection, the `TokenStore`) are dependencies of the
-plugins, not a second API to use directly. Apps wire `battery/auth`.
+The lower-level primitives live in `battery/auth` alongside the plugins
+that use them: password hashing (bcrypt, `password.go`), the rate-limit
+`Guard` (`ratelimit.go`), and the session/token stores. They are
+dependencies of the plugins, not a second API to reach for directly —
+apps wire the `AuthManager` and its plugins.
 
 ## Quickstart
 
@@ -88,6 +90,7 @@ type UserStore interface {
     FindByEmail(ctx, email) (User, hashedPassword string, error)
     FindByID(ctx, id) (User, error)
     CreateUser(ctx, email, hashedPassword, roles) (User, error)
+    UpdateRoles(ctx, userID string, roles []string) error
 }
 ```
 
@@ -131,9 +134,9 @@ The default stores are **in-memory**: fine for dev and tests, a trap
 in production — sessions vanish on restart and never resolve on a
 second replica, and in-memory 2FA enrollment reverts accounts to
 password-only auth after a restart. Production mode enforces this at
-Init: the in-memory session store logs a WARN; the in-memory 2FA
-store **fails Init** — a silently-expiring security control is not
-warning-grade. Wire the durable store:
+Init: **both** the in-memory session store and the in-memory 2FA store
+**fail Init** (a warn-only boot lets a broken deployment go unnoticed).
+Wire the durable store:
 
 ```go
 mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{
@@ -142,8 +145,9 @@ mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{
 ```
 
 or set `AuthConfig.AllowInMemoryStores: true` to acknowledge a
-deliberate single-node deployment (the 2FA refusal downgrades to a
-WARN). See [Horizontal scaling](scaling.md).
+deliberate single-node deployment (both stores then boot; the 2FA store
+still leaves a WARN trace so the downgrade stays visible). See
+[Horizontal scaling](scaling.md).
 
 ## Default roles for new accounts
 
@@ -1244,8 +1248,15 @@ path.
   refuse to accept the production `__Host-session` cookie over an
   insecure connection, and the user appears never to log in. The
   symptom is "login returns 200 but `/auth/me` returns 401".
-- **Leaving `EmailSender` nil in production.** Magic-link,
-  verification, and reset plugins all fail closed (503) in that case.
+- **Leaving `EmailSender` nil in production.** Magic-link and email
+  verification fail closed with a 503 (`magic link delivery not
+  configured` / `email delivery not configured`). Password reset is the
+  exception: to preserve its anti-enumeration guarantee it still returns
+  200 and simply sends nothing — so the reset flow is silently
+  non-functional until an `EmailSender` is wired. A failing (non-nil)
+  sender now logs a server-side `password-reset email send failed`
+  warning while keeping the 200; a nil sender is the quiet footgun to
+  watch for.
   Don't set `DevMode=true` as a workaround — that logs live tokens.
 - **Trusting X-Forwarded-For without a proxy.** Per the docs above:
   default is off, and turning it on without a stripping proxy

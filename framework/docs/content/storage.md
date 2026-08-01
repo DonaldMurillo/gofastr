@@ -12,10 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-store, err := storage.NewLocalStorage("./uploads")
-if err != nil {
-	log.Fatal(err)
-}
+store := storage.NewLocalStorage("./uploads")
 
 app := framework.NewApp(
 	framework.WithDB(db),
@@ -43,7 +40,7 @@ rewrite the key.
 ## Local backend
 
 ```go
-store, err := storage.NewLocalStorage("./uploads",
+store := storage.NewLocalStorage("./uploads",
 	storage.WithPermissions(0o644),
 )
 ```

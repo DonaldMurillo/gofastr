@@ -170,7 +170,7 @@ func (h *PresenceHandle) Leave() {
 	m := h.manager
 	m.mu.Lock()
 	delete(m.presenceConns, h.id)
-	cb := m.OnPresenceChange
+	cb := m.presenceCallback()
 	m.mu.Unlock()
 	firePresenceChange(cb, h.topics)
 	// Announce the updated local roster so peers drop this member promptly.
@@ -207,15 +207,12 @@ func (m *Manager) filterAuthorizedTopics(ctx context.Context, topics []string) [
 	if len(topics) == 0 {
 		return topics
 	}
-	// Read the hook under the lock — matching how PresenceJoin reads
-	// OnPresenceChange — then call it OUTSIDE the lock so an app hook may
-	// safely read the roster (PresenceRoster/PresenceSessions) without
-	// deadlocking. AuthorizeTopic is expected set-once before serving
-	// traffic (see the field doc); the locked read keeps a concurrent
-	// hot-swap from being a torn read.
-	m.mu.RLock()
-	auth := m.AuthorizeTopic
-	m.mu.RUnlock()
+	// Read the hook via its atomic getter (the install goes through
+	// SetAuthorizeTopic's atomic.Pointer, so this races nothing), then call it
+	// OUTSIDE any lock so an app hook may safely read the roster
+	// (PresenceRoster/PresenceSessions) without deadlocking. A nil hook (the
+	// default) authorizes every topic.
+	auth := m.topicAuthorizer()
 	if auth == nil {
 		return topics
 	}
@@ -256,7 +253,7 @@ func (m *Manager) PresenceJoin(sessionID string, identity PresenceIdentity, topi
 		m.presenceConns = make(map[uint64]*presenceConn)
 	}
 	m.presenceConns[id] = conn
-	cb := m.OnPresenceChange
+	cb := m.presenceCallback()
 	m.mu.Unlock()
 
 	firePresenceChange(cb, conn.topics)

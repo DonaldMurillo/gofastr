@@ -159,29 +159,52 @@ func TestStreamSSE_StripsInjectedEventNUL(t *testing.T) {
 	}
 }
 
+// TestStreamSSE_DataCannotInjectSecondEvent verifies that a payload shaped
+// like a forged SSE frame is delivered as DATA, not parsed as a second
+// event. With spec multi-line `data:` framing, every line of the payload
+// is re-prefixed with "data: " — so "event: forged" survives only as the
+// *content* of a data line — and exactly one event is dispatched, carrying
+// the original payload byte-for-byte. (Previously this asserted a brittle
+// substring absence that the correct framing now legitimately produces.)
 func TestStreamSSE_DataCannotInjectSecondEvent(t *testing.T) {
+	payload := "hello\n\nevent: forged\ndata: owned"
 	var buf bytes.Buffer
-	StreamSSE(&buf, "message", "hello\n\nevent: forged\ndata: owned")
+	StreamSSE(&buf, "message", payload)
 
-	if strings.Contains(buf.String(), "event: forged") {
-		t.Fatalf("SECURITY: [mcp-sse] StreamSSE data injected a second event frame: %q", buf.String())
+	evs := parseSSEEvents(buf.String())
+	if len(evs) != 1 {
+		t.Fatalf("SECURITY: [mcp-sse] StreamSSE data injected %d events (want 1): %q", len(evs), buf.String())
+	}
+	if evs[0].event != "message" {
+		t.Errorf("SECURITY: [mcp-sse] injected event name %q (want message): %q", evs[0].event, buf.String())
+	}
+	if evs[0].data != payload {
+		t.Errorf("SECURITY: [mcp-sse] payload not delivered intact: got %q want %q", evs[0].data, payload)
 	}
 }
 
+// TestStreamSSE_DataCannotInjectIDDirective verifies an "id:"-looking line
+// in the payload is delivered as data, not as an id directive.
 func TestStreamSSE_DataCannotInjectIDDirective(t *testing.T) {
+	payload := "hello\nid: forged"
 	var buf bytes.Buffer
-	StreamSSE(&buf, "message", "hello\nid: forged")
+	StreamSSE(&buf, "message", payload)
 
-	if strings.Contains(buf.String(), "\nid: forged\n") {
-		t.Fatalf("SECURITY: [mcp-sse] StreamSSE data injected an id directive: %q", buf.String())
+	evs := parseSSEEvents(buf.String())
+	if len(evs) != 1 || evs[0].data != payload {
+		t.Fatalf("SECURITY: [mcp-sse] StreamSSE data leaked/id-directive parsed: %q", buf.String())
 	}
 }
 
+// TestStreamSSE_DataCannotInjectRetryDirective verifies a "retry:"-looking
+// line in the payload is delivered as data, not as a retry directive.
 func TestStreamSSE_DataCannotInjectRetryDirective(t *testing.T) {
+	payload := "hello\nretry: 1"
 	var buf bytes.Buffer
-	StreamSSE(&buf, "message", "hello\nretry: 1")
+	StreamSSE(&buf, "message", payload)
 
-	if strings.Contains(buf.String(), "\nretry: 1\n") {
-		t.Fatalf("SECURITY: [mcp-sse] StreamSSE data injected a retry directive: %q", buf.String())
+	evs := parseSSEEvents(buf.String())
+	if len(evs) != 1 || evs[0].data != payload {
+		t.Fatalf("SECURITY: [mcp-sse] StreamSSE data leaked/retry-directive parsed: %q", buf.String())
 	}
 }

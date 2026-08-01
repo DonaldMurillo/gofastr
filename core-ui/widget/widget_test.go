@@ -27,9 +27,6 @@ func TestBuilderDefaults(t *testing.T) {
 	if def.Position != widget.BottomRight {
 		t.Errorf("default Position = %q, want bottom-right", def.Position)
 	}
-	if def.Bootstrap != widget.AutoScript {
-		t.Errorf("default Bootstrap = %q, want auto-script", def.Bootstrap)
-	}
 	if def.Backdrop {
 		t.Errorf("default Backdrop should be false")
 	}

@@ -523,12 +523,12 @@ func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 	app.Registry.Register(posts)
 
 	spec := EntityOpenAPI(app.Registry, "Blog", "1.0.0")
-	// SwaggerUIHandler / Handler now 401 anonymous callers (see
+	// DocsHandler / Handler now 401 anonymous callers (see
 	// exposure_security_test.go). The E2E test exercises the
 	// happy-path content, so inject a stub user via middleware.
 	app.Router().Use(stubAuthMiddleware)
 	app.Router().Get("/api/docs/openapi.json", openapi.Handler(spec))
-	app.Router().Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
+	app.Router().Get("/api/docs/", openapi.DocsHandler(spec, "/api/docs", false))
 
 	ta := TestHarness(t, app)
 	defer ta.Close()

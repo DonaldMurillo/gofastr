@@ -11,6 +11,10 @@ import (
 )
 
 func runBuild(args []string) {
+	if hasHelpFlag(args) {
+		printBuildUsage()
+		return
+	}
 	fmt.Printf("\n  %s Building project...\n\n", bold("GoFastr"))
 
 	start := time.Now()
@@ -71,6 +75,18 @@ func runBuild(args []string) {
 		}
 		success("accessibility lint passed")
 	}
+
+	// Step 3b: .ui.go hydration-sandbox lint. The sandbox rules forbid
+	// goroutines, channels, type switches, and imports outside the safe
+	// allow-list in client-hydrated .ui.go files — they break hydration at
+	// runtime. This is a correctness floor (not a WCAG nicety), so unlike
+	// a11y it is NOT skippable: no valid .ui.go violates it.
+	info("Checking .ui.go sandbox...")
+	if !buildSandboxGate(".") {
+		fail(".ui.go sandbox lint failed — move goroutines/channels/IO out of .ui.go (see findings above)")
+		osExit(1)
+	}
+	success(".ui.go sandbox lint passed")
 
 	// Step 4: embed surface server-action gate. G.serverAction is refused inside
 	// a frame (the action registry is app-global, so honouring an embed grant

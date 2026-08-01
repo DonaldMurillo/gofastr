@@ -211,7 +211,8 @@ With the blog example running (`go run ./examples/blog`), open
 curl http://localhost:8080/posts
 curl 'http://localhost:8080/posts/search?q=gofastr'   # custom route the example adds
 # /openapi.json is auth-gated by default (it enumerates every route).
-# Browse it via Swagger UI at /api/docs/, or expose the raw spec with
+# /api/docs/ serves a page linking the spec (load it in Swagger UI,
+# Insomnia, …), or expose the raw spec with
 # framework.WithPublicOpenAPI() and then:
 curl http://localhost:8080/openapi.json | jq .info     # auto-generated spec
 ```
@@ -273,7 +274,7 @@ app.Entity("posts", framework.EntityConfig{
 | Migrations       | Versioned runner — advisory-lock serialization, checksum-drift + dirty-state guards, `NoTransaction` escape hatch, a down section when a safe inverse exists; declarative incremental generation; real-Postgres tested |
 | FK constraints   | BelongsTo relations emit `FOREIGN KEY` clauses; `AutoMigrate` topo-sorts tables |
 | Transactions     | `Create/Update/Delete` + hooks share one tx; `TxFromContext(ctx)` exposes it    |
-| OpenAPI 3        | `/openapi.json` and Swagger UI at `/api/docs/`                                  |
+| OpenAPI 3        | `/openapi.json` plus a spec-viewer page at `/api/docs/`                         |
 | MCP              | `posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`       |
 | Soft delete      | `deleted_at` column + automatic filter                                          |
 | Multi-tenant     | `tenant_id` column + automatic scope from request context                       |
@@ -420,7 +421,7 @@ large alongside AI. A few things I wanted to dig into:
 
 This repo is a personal research tree at the moment. Issues and PRs are welcome but expect strong opinions about scope: the goal is a framework an AI agent can drive end-to-end, not a kitchen-sink CMS.
 
-Before pushing, the `.githooks/pre-push` gate runs `go test -race -count=1 ./...` and `govulncheck`. Enable hooks once with:
+Before pushing, the `.githooks/pre-push` gate re-runs the deterministic CI test sweep (when a commit skipped it), module-integrity checks, and `govulncheck`. The race pass is separate — run `make test-race` for that. Enable hooks once with:
 
 ```bash
 git config core.hooksPath .githooks

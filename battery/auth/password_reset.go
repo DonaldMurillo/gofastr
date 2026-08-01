@@ -167,7 +167,18 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		if p.cfg.BodyTemplate != nil {
 			emailBody = p.cfg.BodyTemplate(resetURL)
 		}
-		_ = p.cfg.EmailSender.Send(r.Context(), user.GetEmail(), emailBody)
+		if err := p.cfg.EmailSender.Send(r.Context(), user.GetEmail(), emailBody); err != nil {
+			// The client still receives the anti-enumeration 200 (the deferred
+			// encode below), but the operator must see that delivery broke.
+			// Discarding the error silently makes a misconfigured sender
+			// invisibly break the whole reset pipeline. Log hashed identifiers
+			// only: the URL embeds the takeover token, and the email is
+			// request input.
+			slog.Warn("password-reset email send failed",
+				"plugin", "password-reset",
+				"email_hash", hashedIdentifier(user.GetEmail()),
+				"err", err)
+		}
 	case p.cfg.DevMode:
 		// SECURITY: do not log the live reset URL. The URL embeds the
 		// raw token, which is a takeover credential — anyone with read

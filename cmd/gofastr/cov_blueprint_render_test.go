@@ -213,29 +213,6 @@ func TestRenderBlueprintMainSqliteDefault(t *testing.T) {
 	}
 }
 
-func TestEntityListHelpers(t *testing.T) {
-	block := BlueprintBlock{Kind: "entity_list", Entity: "posts", Limit: 0, EmptyText: ""}
-	screen := BlueprintScreen{Name: "home"}
-	expr := renderBlueprintEntityListNodeExpression(screen, block, []int{0})
-	if !strings.Contains(expr, "gofastr-entity-list") {
-		t.Fatalf("entity list expr: %s", expr)
-	}
-	name := blueprintEntityListActionName(screen, block, []int{0, 1})
-	if !strings.Contains(name, "entity_list") {
-		t.Fatalf("action name: %s", name)
-	}
-	js := blueprintEntityListClientJS(block, "/api")
-	if js == "" {
-		t.Fatal("client JS empty")
-	}
-	if !strings.Contains(js, "/api") {
-		t.Fatalf("client JS should fetch under api base: %s", js)
-	}
-	if !isEntityListBlock(BlueprintBlock{Type: "entity_list"}) {
-		t.Fatal("isEntityListBlock by Type")
-	}
-}
-
 // TestRenderBlueprintNodeAppBuildsWithoutAuthoringEngine is the build test the
 // G1 audit flagged as missing: it renders a blueprint with freeform node
 // blocks to a temp module, compiles it, and asserts the generated `blueprint`

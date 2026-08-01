@@ -4,7 +4,7 @@ GoFastr can isolate local runtime resources for linked Git worktrees so a
 feature worktree can run beside the main checkout without port or database
 collisions.
 
-Isolation is configured in `gofastr.yml`:
+Isolation is configured in `gofastr.isolation.yml`:
 
 ```yaml
 version: 1

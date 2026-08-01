@@ -194,8 +194,8 @@ func (l *Live) rebuild() error {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
 	}
-	// Mount OpenAPI + Swagger UI after the registry is populated. Live
-	// bypasses framework.App.Start, which is where the framework would
+	// Mount OpenAPI + the API docs page after the registry is populated.
+	// Live bypasses framework.App.Start, which is where the framework would
 	// normally attach these — wire them here so they're always available.
 	if len(app.Registry.All()) > 0 {
 		appName := app.Config.Name
@@ -208,7 +208,9 @@ func (l *Live) rebuild() error {
 		// the auth chain the framework adds by default. PublicHandler
 		// serves the spec without the auth gate.
 		app.Router().Get("/openapi.json", openapi.PublicHandler(spec))
-		app.Router().Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
+		// public=true to match the spec above — Live has no auth chain,
+		// so a gated docs page here would 401 for everyone, always.
+		app.Router().Get("/api/docs/", openapi.DocsHandler(spec, "/api/docs", true))
 	}
 	l.app = app
 	return nil

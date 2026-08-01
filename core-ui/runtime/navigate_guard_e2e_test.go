@@ -32,6 +32,7 @@ func TestRpcNavigateRefusesJavascriptScheme(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/mutate", func(w http.ResponseWriter, r *http.Request) {
 		mutateN.Add(1)
 		w.Header().Set("Content-Type", "text/plain")

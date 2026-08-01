@@ -24,7 +24,7 @@ func TestEmbedDemoSmoke(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	seed(idx)
-	app.RegisterPlugin(semantic.NewPlugin(idx))
+	app.RegisterPlugin(semantic.NewPlugin(idx).WithAuthToken("test"))
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}

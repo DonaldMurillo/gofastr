@@ -215,7 +215,7 @@ func setupServer() *framework.App {
 	// AvatarGroup and push it to every session on that topic via the existing
 	// island SSE lane. This reuses PushUpdate — no new transport.
 	siteIslands = host.Islands
-	host.Islands.OnPresenceChange = func(topic string) {
+	host.Islands.SetOnPresenceChange(func(topic string) {
 		rosterHTML := string(renderPresenceRoster(host.Islands.PresenceRoster(topic)))
 		for _, sid := range host.Islands.PresenceSessions(topic) {
 			host.Islands.PushUpdate(island.IslandUpdate{
@@ -223,7 +223,7 @@ func setupServer() *framework.App {
 				HTML:     rosterHTML,
 			}, sid)
 		}
-	}
+	})
 
 	fwApp := framework.NewUIHostApp(host,
 		framework.WithConfig(framework.AppConfig{Name: "site"}),

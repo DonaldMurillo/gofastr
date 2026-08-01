@@ -21,6 +21,11 @@ config struct*: `html.Image` has an `Alt` field, `html.Button` a
 `Label`, `html.Nav` a `Label`/`LabelledBy` pair, `html.FieldSet` a
 `Legend`. The audit below checks that you actually set them.
 
+The document language (WCAG 3.1.1) defaults to `en`. Set it for a
+non-English app with `app.WithLang("…")` (or `uihost.WithLang("…")`),
+which stamps `<html lang>` on every rendered surface — pages, error
+screens, and the PWA offline shell.
+
 ## `gofastr audit a11y` — the guided static lint
 
 ```

@@ -255,25 +255,158 @@ func (qb *QueryBuilder) Build() (string, []any) {
 	return sb.String(), args
 }
 
-// renumberPlaceholders replaces $N placeholders in a condition string
-// with the correct sequential parameter index.
+// renumberPlaceholders rewrites the $N placeholders in a condition string
+// into a fresh sequential run starting at startIdx.
+//
+// Semantics are POSITIONAL by encounter, not value-mapping: the first
+// placeholder token found becomes $startIdx, the next $startIdx+1, and so
+// on, regardless of the original digits. This is the contract the whole
+// fragment-composition model depends on — And/Or/Not (framework/entity's
+// Condition), the DSL, and nested-filter EXISTS subqueries each emit their
+// own args numbered from $1, and Build concatenates the arg slices in the
+// same order it renumbers. A composed "(name = $1 OR name = $1)" with two
+// args therefore correctly becomes "(name = $1 OR name = $2)". Callers who
+// need one argument referenced twice must pass it twice; a repeated $N is
+// NOT a back-reference to the same bind.
+//
+// Quote-aware: a $N inside a single-quoted SQL string literal is data, not
+// a placeholder, and is left untouched (a doubled ” is an escaped quote
+// that does not close the literal). This is the one behavior the older
+// positional renumberer got wrong — it rewrote digits inside literals.
 func renumberPlaceholders(condition string, startIdx int) string {
 	var sb strings.Builder
+	next := startIdx
 	i := 0
 	for i < len(condition) {
-		if condition[i] == '$' && i+1 < len(condition) && condition[i+1] >= '0' && condition[i+1] <= '9' {
-			// Found a placeholder, replace with sequential index
-			fmt.Fprintf(&sb, "$%d", startIdx)
-			startIdx++
-			// Skip the original placeholder number
-			i++
-			for i < len(condition) && condition[i] >= '0' && condition[i] <= '9' {
-				i++
+		c := condition[i]
+		switch {
+		case c == '\'':
+			// A string literal is data: copy it byte for byte, including
+			// any $N inside it. E'…' honours backslash escapes, so \' does
+			// NOT end that literal — reading it as a terminator used to
+			// drop the lexer out of the string early and renumber the rest
+			// of it.
+			i = copyStringLiteral(&sb, condition, i)
+		case c == '-' && i+1 < len(condition) && condition[i+1] == '-':
+			// A -- line comment runs to the newline. Its text is not SQL,
+			// so a $N inside it is not a placeholder; renumbering it
+			// consumed an index and shifted every real placeholder after.
+			j := strings.IndexByte(condition[i:], '\n')
+			if j < 0 {
+				sb.WriteString(condition[i:])
+				i = len(condition)
+				continue
 			}
-		} else {
-			sb.WriteByte(condition[i])
+			sb.WriteString(condition[i : i+j+1])
+			i += j + 1
+		case c == '/' && i+1 < len(condition) && condition[i+1] == '*':
+			// Block comments nest in PostgreSQL, so track the depth rather
+			// than scanning for the first */.
+			depth, j := 1, i+2
+			for j < len(condition) && depth > 0 {
+				if j+1 < len(condition) && condition[j] == '/' && condition[j+1] == '*' {
+					depth++
+					j += 2
+					continue
+				}
+				if j+1 < len(condition) && condition[j] == '*' && condition[j+1] == '/' {
+					depth--
+					j += 2
+					continue
+				}
+				j++
+			}
+			sb.WriteString(condition[i:j])
+			i = j
+		case c == '$':
+			// $tag$…$tag$ (and bare $$…$$) is a dollar-quoted literal —
+			// also data. Its body regularly contains $1-looking text.
+			if body, ok := dollarQuoteEnd(condition, i); ok {
+				sb.WriteString(condition[i:body])
+				i = body
+				continue
+			}
+			if i+1 < len(condition) && isASCIIDigit(condition[i+1]) {
+				// A placeholder token: consume the digit run and emit the
+				// next sequential index, whatever the original digits were.
+				j := i + 1
+				for j < len(condition) && isASCIIDigit(condition[j]) {
+					j++
+				}
+				fmt.Fprintf(&sb, "$%d", next)
+				next++
+				i = j
+				continue
+			}
+			sb.WriteByte(c)
+			i++
+		default:
+			sb.WriteByte(c)
 			i++
 		}
 	}
 	return sb.String()
+}
+
+func isASCIIDigit(b byte) bool { return b >= '0' && b <= '9' }
+
+func isIdentByte(b byte) bool {
+	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || isASCIIDigit(b)
+}
+
+// copyStringLiteral copies the single-quoted literal starting at s[i] into
+// sb and returns the index just past it. An unterminated literal copies to
+// the end of the string.
+func copyStringLiteral(sb *strings.Builder, s string, i int) int {
+	// E'…' (Postgres escape-string syntax) treats backslash as an escape;
+	// a plain '…' does not.
+	escapes := i > 0 && (s[i-1] == 'E' || s[i-1] == 'e')
+	sb.WriteByte('\'')
+	i++
+	for i < len(s) {
+		if escapes && s[i] == '\\' && i+1 < len(s) {
+			sb.WriteByte(s[i])
+			sb.WriteByte(s[i+1])
+			i += 2
+			continue
+		}
+		if s[i] == '\'' {
+			// A doubled '' is an escaped quote that does not close the
+			// literal.
+			if i+1 < len(s) && s[i+1] == '\'' {
+				sb.WriteString("''")
+				i += 2
+				continue
+			}
+			sb.WriteByte('\'')
+			return i + 1
+		}
+		sb.WriteByte(s[i])
+		i++
+	}
+	return i
+}
+
+// dollarQuoteEnd reports whether a dollar-quoted literal opens at s[i] and,
+// if so, returns the index just past its closing tag. An unterminated
+// literal runs to the end of the string.
+func dollarQuoteEnd(s string, i int) (int, bool) {
+	j := i + 1
+	// $1 is a placeholder, never a tag — tags cannot start with a digit.
+	if j < len(s) && isASCIIDigit(s[j]) {
+		return 0, false
+	}
+	for j < len(s) && isIdentByte(s[j]) {
+		j++
+	}
+	if j >= len(s) || s[j] != '$' {
+		return 0, false
+	}
+	tag := s[i : j+1] // "$$" or "$tag$"
+	rest := s[j+1:]
+	end := strings.Index(rest, tag)
+	if end < 0 {
+		return len(s), true
+	}
+	return j + 1 + end + len(tag), true
 }

@@ -24,6 +24,49 @@ type CrudRouteOptions struct {
 	ReadOnly bool // register only the read routes (List/Get/events) — for views and other read-only objects
 }
 
+// CrudRoutePatterns returns the "METHOD /pattern" set RegisterCrudRoutes
+// mounts for path, without mounting anything.
+//
+// It exists so a caller can pre-flight a collision BEFORE the first route
+// is registered. App.TryEntity needs that: it mounts CRUD routes and then
+// custom endpoints, so an endpoint shadowing one of these (a "_batch"
+// endpoint on an entity at /posts) would panic mid-commit, after the
+// registry entry and the CRUD routes are already published and with no
+// way to un-publish them.
+//
+// TestCrudRoutePatternsMatchRegistration pins this list against what
+// RegisterCrudRoutes actually registers — a route added to one and not
+// the other fails that test rather than silently reopening the gap.
+func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
+	path = NormalizePath(path)
+
+	var opt CrudRouteOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	patterns := []string{
+		"GET " + path,
+		"GET " + path + "/{id}",
+	}
+	if !opt.ReadOnly {
+		patterns = append(patterns,
+			"POST "+path,
+			"PUT "+path+"/{id}",
+			"PATCH "+path+"/{id}",
+			"DELETE "+path+"/{id}",
+			"POST "+path+"/_batch",
+			"PATCH "+path+"/_batch",
+			"DELETE "+path+"/_batch",
+		)
+	}
+	patterns = append(patterns, "GET "+path+"/_events")
+	if !opt.NoLLMMD {
+		patterns = append(patterns, "GET "+path+"/llm.md")
+	}
+	return patterns
+}
+
 // RegisterCrudRoutes registers the standard CRUD routes plus batch endpoints
 // on the given router.
 //

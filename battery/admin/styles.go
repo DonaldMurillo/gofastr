@@ -252,5 +252,49 @@ func adminCSS(_ style.Theme) string {
   overflow: auto; max-block-size: 20rem;
 }
 .admin-prose { white-space: pre-wrap; line-height: 1.6; }
+/* ── standalone ops pages (queue / audit / rbac / modules) ───────────────
+   These pages skip the host UI host, so the registered ui-admin sheet also
+   owns the body reset the host would otherwise supply, plus the small set
+   of scoped helpers for the compact inline forms (grant / revoke / assign /
+   module lifecycle) that live inside DataTable cells — no framework/ui form
+   component fits a dense table-cell POST form. Everything here is token-based
+   and namespaced under .admin-*, composing the same shell (.layout-admin)
+   the entity screens receive from the host. */
+body.admin-standalone {
+  margin: 0;
+  font-family: var(--font-body, -apple-system, system-ui, sans-serif);
+  background: var(--color-background, #0c0c0d);
+  color: var(--color-text, #f2f2f3);
+  line-height: 1.5;
+}
+/* Nav active link — the standalone nav is a row of ui.Link action targets;
+   the current page's link carries aria-current="page". */
+.admin-nav .ui-link[aria-current="page"] {
+  color: var(--color-primary, #f0b429);
+  font-weight: 600;
+}
+/* Compact text input for inline cell forms (grant / revoke / assign-roles). */
+.admin-input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border, #2a2b2e);
+  border-radius: var(--radii-md, 6px);
+  background: var(--color-surface, #17181a);
+  color: var(--color-text, #f2f2f3);
+  min-inline-size: 8rem;
+}
+.admin-input::placeholder { color: var(--color-text-muted, #a8a8ad); }
+.admin-input:focus-visible {
+  outline: 2px solid var(--color-primary, #f0b429);
+  outline-offset: 0;
+}
+/* Inline POST form cluster: lays its hidden inputs + input + ui.Button out
+   on one wrapped row so a cell's action controls stay compact. */
+.admin-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs, 4px);
+  flex-wrap: wrap;
+}
 `
 }

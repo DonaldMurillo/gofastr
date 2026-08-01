@@ -95,15 +95,29 @@ func stripComment(line string) string {
 	return line
 }
 
+// maxNestingDepth bounds parser recursion. Each indentation level recurses
+// through parseBlock → parseMap/parseList → parseBlock, so deeply nested
+// input drives unbounded recursion — a stack-exhaustion DoS on any user-
+// supplied YAML. Past the cap we stop recursing and return an error,
+// mirroring core/markdown's maxBlockquoteDepth.
+const maxNestingDepth = 128
+
 type parser struct {
 	lines []line
 	pos   int
+	depth int
 }
 
 func (p *parser) parseBlock(indent int) (*Node, error) {
 	if p.pos >= len(p.lines) {
 		return &Node{Kind: Map, Map: map[string]*Node{}}, nil
 	}
+	if p.depth >= maxNestingDepth {
+		l := p.lines[p.pos]
+		return nil, fmt.Errorf("yaml:%d:%d: nesting depth exceeds maximum of %d", l.line, l.indent+1, maxNestingDepth)
+	}
+	p.depth++
+	defer func() { p.depth-- }()
 	line := p.lines[p.pos]
 	if line.indent < indent {
 		return &Node{Kind: Map, Map: map[string]*Node{}}, nil

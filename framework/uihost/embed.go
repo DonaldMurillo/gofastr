@@ -727,7 +727,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var b strings.Builder
-	b.WriteString("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n")
+	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + stdhtml.EscapeString(ds.EffectiveLang()) + "\">\n<head>\n")
 	b.WriteString(`<meta charset="utf-8">` + "\n")
 	b.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
 	// An embed is a fragment of an app rendered inside someone else's page. It

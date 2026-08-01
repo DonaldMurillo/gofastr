@@ -2,15 +2,14 @@
 //
 // Two surfaces are exposed:
 //
-//   - The bundled runtime (`runtime.js`) — the one-script payload that
-//     handles every framework primitive (dispatchRPC, SPA router,
-//     screen cache, signals, widgets, etc). Served at
-//     `/__gofastr/runtime.js`. This is the default surface.
+//   - The core runtime (`runtime.js`) — the one-script substrate for SPA
+//     navigation, signals, widgets, hydration, and demand-module loading.
+//     Served at `/__gofastr/runtime.js`.
 //
-//   - Per-module bundles (`src/<name>.js`) — small payloads loaded on
-//     demand via `__gofastr.loadModule(name)`. Used for the optional
-//     code-splitting path; pages opt into individual modules instead
-//     of the bundled runtime when bundle size matters.
+//   - Per-module bundles (`src/<name>.js`) — payloads loaded on demand via
+//     `__gofastr.loadModule(name)`. RPC is prefetched when its marker exists
+//     and awaited by the core delegation bridge; optional UI behaviors use
+//     the same loader.
 //
 // The HTTP server (core-ui/widget/server.go) consumes Module(name) +
 // ModuleNames() to wire `/__gofastr/runtime/<name>.js` routes; the
@@ -113,21 +112,17 @@ var (
 	modulesData map[string]string
 )
 
-// composeFull assembles the `full` runtime composition: every fragment
-// (kernel + rpc + signals + nav + widgets-boot) plus boot.js (the kernel
-// boot tail), concatenated INSIDE the single IIFE wrapper. Closure
-// semantics are preserved exactly — every fragment sees the same lexical
-// scope it does in the unsplit source.
+// composeFull assembles the `full` core runtime: kernel + signals + nav +
+// widgets-boot plus boot.js (the kernel boot tail), concatenated inside one
+// IIFE. RPC request machinery is a demand module; boot retains its delegated
+// interaction bridge.
 //
-// The served runtime.js is ASSEMBLED rather than monolithic so future
-// compositions (static / embed / per-page) can omit fragments by name.
-// For step 2 only the `full` composition is wired; it must behave
-// identically to the pre-split runtime.js (verified by the symbol-
-// completeness test and the full chromedp e2e suite).
+// The served runtime.js is assembled from fragments so static and embed
+// compositions can select their boot behavior without copying code.
 //
 // Composed once at init and cached (bundleOnce in RuntimeJS); the
 // token-aware minifier runs on the composed output, unchanged.
-const iifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: full = kernel+rpc+signals+nav+widgets-boot)\n" +
+const iifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: full = kernel+signals+nav+widgets-boot)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeFull) from\n" +
 	"// core-ui/runtime/frag/*.js. This file is the on-disk canonical form the gate\n" +
 	"// tests scan (attrdoc_test.go / integrity_test.go read it via os.ReadFile);\n" +
@@ -138,13 +133,10 @@ const iifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: full 
 const iifeFooter = "\n})();\n"
 
 // fullFragmentOrder is the composition order for the `full` bundle.
-// kernel first (it creates window.__gofastr); boot last (its _initialPass
-// synchronously calls nav + signals helpers, so those fragments must have
-// declared their consts first). rpc/signals/nav/widgets-boot fall between
-// in dependency order. Every function declaration in a fragment is hoisted
-// into the shared IIFE scope, so earlier fragments can reference later
-// fragments' functions at event time without a temporal-dead-zone fault.
-var fullFragmentOrder = []string{"kernel", "rpc", "signals", "nav", "widgets-boot", "boot"}
+// kernel creates window.__gofastr; boot runs last because its initial pass
+// calls nav and signal helpers. The RPC implementation is src/rpc.js and is
+// loaded through boot's delegated interaction bridge.
+var fullFragmentOrder = []string{"kernel", "signals", "nav", "widgets-boot", "boot"}
 
 // composeFragments concatenates the named fragments inside one IIFE. Every
 // composition goes through it, so a new bundle cannot accidentally assemble
@@ -219,18 +211,10 @@ const staticIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed:
 	"  'use strict';\n"
 
 // staticFragmentOrder is the composition order for the `static` bundle.
-// kernel first (creates window.__gofastr); boot last (its _initialPass
-// synchronously calls nav + signals helpers). rpc-stub replaces rpc — the
-// two are mutually exclusive, never compose both. widgets-boot-static
-// replaces widgets-boot (also mutually exclusive): the static exporter
-// (framework/static.Builder.dumpWidgetAssets) writes the catalog to
-// /__gofastr/widgets.json and each widget's chrome HTML to
-// /core-ui/widget/<name>/chrome, so openWidget resolves against the
-// static tree — RPCs are still server-backed and rpc-stub surfaces a
-// "Needs the Go server" notice for them. nav stays: SPA navigation
-// works against static HTML (fetch + DOMParser extracts <main>; no
-// server-only response headers required), confirmed against the
-// static-export path.
+// rpc-stub runs before the shared boot tail, installs the serverless notice,
+// and prevents boot from installing or prefetching the live RPC bridge.
+// widgets-boot-static fetches the exported widget catalog and chrome while nav
+// continues to work against static HTML.
 var staticFragmentOrder = []string{"kernel", "rpc-stub", "signals", "nav", "widgets-boot-static", "boot"}
 
 // composeStatic assembles the `static` runtime composition for SSG export.
@@ -246,13 +230,10 @@ var (
 	staticErr  error
 )
 
-// StaticJS returns the `static` runtime composition — the bundle the SSG
-// exporter (framework/static.Builder) serves for serverless deploys. Omits
-// rpc (replaced by rpc-stub), sse, and compute: none function without the
-// Go server behind them. widgets-boot is replaced by widgets-boot-static,
-// which fetches the dumped /__gofastr/widgets.json catalog so
-// data-fui-open overlays resolve against the static tree. Composed once at
-// first read and cached (staticOnce), minified unless RUNTIME_NOMINIFY=1.
+// StaticJS returns the `static` runtime composition used by serverless exports.
+// rpc-stub intercepts server-backed controls and boot skips the RPC module
+// marker. widgets-boot-static reads the dumped widget catalog so overlays still
+// resolve from exported files.
 func StaticJS() (string, error) {
 	staticOnce.Do(func() {
 		raw, err := composeStatic()
@@ -280,7 +261,7 @@ func MustStaticJS() string {
 
 // embedIifeHeader is the IIFE wrapper for the `embed` composition — the
 // runtime that ships INSIDE an embedded surface's iframe.
-const embedIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: embed = kernel+rpc+signals+widgets-boot+boot-embed)\n" +
+const embedIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: embed = kernel+signals+widgets-boot+boot-embed)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeEmbed) from\n" +
 	"// core-ui/runtime/frag/*.js. Served at /__gofastr/embed-runtime.js and loaded\n" +
 	"// only inside an embed frame.\n" +
@@ -293,12 +274,10 @@ const embedIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: 
 // inside a frame is impossible because the code is not there, not because a
 // flag is off. Nothing downstream can re-enable it by mistake.
 //
-// boot still ships — it is the kernel's boot tail (hydration, the mutation
-// observer, module demand-loading), none of which is navigation. It calls one
-// nav symbol, updateActiveLink, behind a typeof probe for exactly this
-// composition. boot-embed comes last: it runs after _initialPass and calls into
-// the namespace every earlier fragment has finished assembling.
-var embedFragmentOrder = []string{"kernel", "rpc", "signals", "widgets-boot", "boot", "boot-embed"}
+// boot still ships for hydration, mutation observation, and demand loading.
+// Its updateActiveLink call is guarded because nav is absent. boot-embed runs
+// last after the core namespace is complete.
+var embedFragmentOrder = []string{"kernel", "signals", "widgets-boot", "boot", "boot-embed"}
 
 func composeEmbed() (string, error) {
 	return composeFragments(embedIifeHeader, embedFragmentOrder)

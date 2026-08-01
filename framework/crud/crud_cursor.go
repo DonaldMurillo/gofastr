@@ -89,13 +89,17 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 			writeJSONError(w, http.StatusBadRequest, "invalid cursor: "+err.Error())
 			return
 		}
+		// Build the keyset WHERE only. ORDER BY is owned by the single
+		// loop below so it is emitted exactly once per field; calling
+		// qb.Cursor here would append its OWN ORDER BY and duplicate the
+		// single-field clause (ORDER BY f ASC, f ASC).
+		op := ">"
+		if direction == "backward" {
+			op = "<"
+		}
 		if len(fields) == 1 {
-			qb.Cursor(fields[0], decoded[fields[0]], direction)
+			qb.Where(fmt.Sprintf("%s %s $1", fields[0], op), decoded[fields[0]])
 		} else {
-			op := ">"
-			if direction == "backward" {
-				op = "<"
-			}
 			cols := strings.Join(fields, ", ")
 			placeholders := make([]string, len(fields))
 			args := make([]any, len(fields))

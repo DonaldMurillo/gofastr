@@ -22,18 +22,17 @@ shared store) or run on exactly one replica.
 | Login rate limits | in-process `RateLimiter` | attacker gets N attempts **per replica**; blocks don't propagate | set `RateLimiterConfig.Store: auth.NewSQLRateLimitStore(db, "auth_rate_limits")` — one budget across replicas, blocks propagate |
 | `framework/cron` scheduler | ticks in every process | every replica fires every job | one `GOFASTR_ROLE=worker` process owns it (see "Serve/worker roles"), or use `battery/queue`'s `DBQueue` (see below) |
 | `battery/queue` in-memory queue + Scheduler | per-process | duplicate jobs, lost jobs on restart | `queue.DBQueue` — `FOR UPDATE SKIP LOCKED` makes competing workers safe |
-| Live events / SSE / island push | in-process `EventBus` + `island.Manager` | an event emitted on A never reaches a browser connected to B | `framework.WithFanout(fanout.NewPostgres(dsn, db))` — see "SSE across replicas" below |
+| Live events / SSE / island push | in-process `EventBus` + `island.Manager` | an event emitted on A never reaches a browser connected to B | `fanout.NewPostgres(dsn, db)` (returns an error — check it) then `framework.WithFanout(f)` — see "SSE across replicas" below |
 | `battery/cache` memory backend | per-process | stale reads after another replica writes | `cache.NewRedisCache(client)`, or accept per-replica caching for derived-only data |
 | File uploads on local storage | per-replica disk (`storage.NewLocalStorage`, `upload.NewLocalStorage`) | upload lands on A, download from B 404s | S3-compatible backend (`battery/storage`'s S3 client), or a shared volume mounted on every replica |
 | Runtime RBAC grants (`access.GrantStore`) | in-memory `RolePolicy` cache per process | editor granted on A still denied on B until B restarts; a revoked code-seeded grant re-appears on peers and on restart | `framework.WithGrantStore(store)` + `framework.WithFanout(...)` — grant/revoke publishes a refresh-signal on the `gofastr.access` lane; every replica re-reads the role's grants from `access_grants`. A revoke also writes a revocation tombstone to `access_grants_revoked`, so revokes propagate to peers AND survive replica restarts even for grants declared in code; re-granting via `GrantStore.Grant` lifts the tombstone |
 
 Auth enforces the first two at boot in production mode (`DevMode:
-false`): the in-memory session store logs a WARN; the in-memory 2FA
-store **refuses to boot** — a security control that silently stops
-applying is not warning-grade. Setting
-`AuthConfig.AllowInMemoryStores: true` acknowledges a deliberate
-single-node deployment: the session warning is silenced and the 2FA
-refusal downgrades to a WARN.
+false`): **both** the in-memory session store and the in-memory 2FA
+store **refuse to boot** — a warn-only start lets a broken multi-replica
+deployment go unnoticed. Setting `AuthConfig.AllowInMemoryStores: true`
+acknowledges a deliberate single-node deployment: both stores then boot,
+and the 2FA store still leaves a WARN trace.
 
 ## What is already replica-safe
 
@@ -100,8 +99,8 @@ distributed lock; the queue's claim semantics are the sanctioned
 coordination point.
 
 **Single node, on purpose.** Vertical scaling is underrated. Set
-`AuthConfig.AllowInMemoryStores: true` to silence the boot warning and
-skip this whole page until you add a replica. A restart still logs
+`AuthConfig.AllowInMemoryStores: true` to let the in-memory stores boot
+and skip this whole page until you add a replica. A restart still logs
 everyone out and wipes in-memory 2FA enrollment — use the entity-backed
 stores anyway if either matters.
 

@@ -70,11 +70,10 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 	}
 
 	for _, rel := range relations {
-		// Validate all relation-derived identifiers before building SQL.
-		safeRelEntity, err := query.SafeIdent(rel.Entity)
-		if err != nil {
-			return nil, fmt.Errorf("eager load %s: invalid relation entity %q: %w", rel.Name, rel.Entity, err)
-		}
+		// Validate the FK identifier up front. The target TABLE is
+		// resolved after the registry lookup below, so its identifier
+		// check happens there against the real table — which may differ
+		// from rel.Entity when a host declares Name != Table.
 		safeFK, err := query.SafeIdent(rel.ForeignKey)
 		if err != nil {
 			return nil, fmt.Errorf("eager load %s: invalid FK %q: %w", rel.Name, rel.ForeignKey, err)
@@ -104,6 +103,20 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 				return nil, fmt.Errorf("eager load %s: relation target %q resolved to no entity", rel.Name, rel.Entity)
 			}
 			target = t
+		}
+		// The SELECT targets the entity's TABLE, not Relation.Entity —
+		// that field is the registry key (the entity NAME), and the two
+		// differ whenever a host declares Name != Table. Mirror the live
+		// include path (loadIncludeNode → node.Target.GetTable()). With no
+		// registry the target schema is unknown, so fall back to rel.Entity
+		// (the historical no-registry contract).
+		relTable := rel.Entity
+		if target != nil && target.GetTable() != "" {
+			relTable = target.GetTable()
+		}
+		safeRelEntity, err := query.SafeIdent(relTable)
+		if err != nil {
+			return nil, fmt.Errorf("eager load %s: invalid relation table %q: %w", rel.Name, relTable, err)
 		}
 		softDeleteFilter := ""
 		if target != nil && target.Config.Scope.SoftDelete {

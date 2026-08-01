@@ -14,13 +14,20 @@
 //
 //	go run ./examples/semantic-demo
 //
+// The mounted routes require a bearer token. The demo reads it from
+// SEMANTIC_DEMO_TOKEN (default "demo-token"); export it to change it.
+//
 // Then exercise the API:
 //
-//	curl 'http://localhost:8086/semantic/stats'
+//	export SEMANTIC_DEMO_TOKEN=demo-token
+//	curl -H 'Authorization: Bearer demo-token' \
+//	    'http://localhost:8086/semantic/stats'
 //	curl -X POST 'http://localhost:8086/semantic/query' \
+//	    -H 'Authorization: Bearer demo-token' \
 //	    -H 'content-type: application/json' \
 //	    -d '{"text":"cache battery","k":3,"hybrid":true}'
 //	curl -X POST 'http://localhost:8086/semantic/index' \
+//	    -H 'Authorization: Bearer demo-token' \
 //	    -H 'content-type: application/json' \
 //	    -d '{"documents":[{"id":"new","text":"my new doc"}]}'
 //
@@ -34,6 +41,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/DonaldMurillo/gofastr/battery/semantic"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -54,14 +62,24 @@ func main() {
 
 	seed(idx)
 
-	app.RegisterPlugin(semantic.NewPlugin(idx))
+	// The semantic routes require a bearer token. Default to a fixed demo
+	// token so `go run ./examples/semantic-demo` works out of the box; set
+	// SEMANTIC_DEMO_TOKEN to use something else. (Real deployments MUST set
+	// their own secret — never ship this default.)
+	token := os.Getenv("SEMANTIC_DEMO_TOKEN")
+	if token == "" {
+		token = "demo-token" // not-a-secret: published demo default, overridden by SEMANTIC_DEMO_TOKEN
+	}
+
+	app.RegisterPlugin(semantic.NewPlugin(idx).WithAuthToken(token))
 	if err := app.InitPlugins(); err != nil {
 		log.Fatalf("InitPlugins: %v", err)
 	}
 
 	addr := ":8086"
 	fmt.Printf("semantic-demo listening on http://localhost%s\n", addr)
-	fmt.Printf("try: curl 'http://localhost%s/semantic/stats'\n", addr)
+	fmt.Printf("auth token: %q (set SEMANTIC_DEMO_TOKEN to change it)\n", token)
+	fmt.Printf("try: curl -H 'Authorization: Bearer %s' 'http://localhost%s/semantic/stats'\n", token, addr)
 	if err := http.ListenAndServe(addr, app.Router()); err != nil {
 		log.Fatal(err)
 	}

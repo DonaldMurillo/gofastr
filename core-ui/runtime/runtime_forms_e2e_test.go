@@ -52,6 +52,7 @@ func startFormE2EServer(t *testing.T, recv *atomic.Pointer[formRequest]) string 
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
+	handleRuntimeModules(t, mux)
 
 	mux.HandleFunc("/landing", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

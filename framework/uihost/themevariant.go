@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
@@ -103,20 +104,40 @@ func (ds *UIHost) RegisterThemeVariant(t style.Theme) string {
 // entry to really go away, or it trades a lockout for unbounded growth.
 //
 // A released key whose URL is still in flight degrades to the app theme, which
-// is the same thing an unknown hash already does.
+// is the same thing an unknown hash already does. Releasing the last holder
+// also evicts that theme's entries from the per-component CSS caches.
 func (ds *UIHost) ReleaseThemeVariant(key string) {
 	if key == "" {
 		return
 	}
+	var evictHash string
 	ds.variants.mu.Lock()
-	defer ds.variants.mu.Unlock()
 	n := ds.variants.refs[key]
 	if n <= 1 {
+		// Capture the variant's theme hash BEFORE deleting so the per-component
+		// CSS caches it warmed (registry.Entry.cssCache, keyed by theme hash)
+		// can be swept. Without this, cycling ?theme= values — or an embed
+		// rebranding per request — grew those caches forever: the variant went
+		// away but the CSS it generated stayed pinned in RAM. Skip the app's
+		// OWN theme: its cache is the hot path every other request still rides.
+		if t, ok := ds.variants.m[key]; ok {
+			if h := style.ThemeHash(t); h != style.ThemeHash(ds.activeTheme()) {
+				evictHash = h
+			}
+		}
 		delete(ds.variants.refs, key)
 		delete(ds.variants.m, key)
-		return
+	} else {
+		ds.variants.refs[key] = n - 1
 	}
-	ds.variants.refs[key] = n - 1
+	ds.variants.mu.Unlock()
+
+	// Sweep the registry after releasing variants.mu so the lock order stays
+	// single-direction (no registry lock is ever held while acquiring
+	// variants.mu). registry.EvictTheme is a no-op for hashes no entry cached.
+	if evictHash != "" {
+		registry.EvictTheme(evictHash)
+	}
 }
 
 // copyStringMap returns an independently-owned copy, or nil for an empty input

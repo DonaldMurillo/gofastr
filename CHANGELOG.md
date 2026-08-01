@@ -7,6 +7,284 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-07-31
+
+Five independent analyses of the whole framework — three in-repo passes
+plus two external models, none given the others' findings — turned up
+bugs the v0.54 sweep did not reach. This release fixes all of them, each
+with a test that failed first. A three-model review of the resulting
+branch then found four more, including a regression this wave itself had
+introduced into the timeout middleware; those are fixed here too.
+
+A second six-reviewer round (Claude, GLM and Sol, each over half the
+diff) then found nine more, including a data leak this branch had itself
+introduced: the generated list-island endpoint served rows without the
+screen's own gate. Three reviewers independently hit entity-registration
+atomicity and the static ETag cache. Those are fixed here as well.
+
+### Breaking
+
+- **BREAKING: `openapi.SwaggerUIHandler` is now `openapi.DocsHandler`.**
+  It takes a third argument, `public bool`, which gates the landing page
+  and its nested spec route together. `framework` passes `PublicOpenAPI`,
+  so `WithPublicOpenAPI()` now opens `/api/docs/` as well as
+  `/openapi.json`. Previously the page was auth-gated unconditionally,
+  which left a published spec with no browsable page. The startup banner
+  says "API docs" instead of "Swagger UI"; the handler serves a static
+  landing page and has not embedded Swagger UI since the CDN reference
+  was removed.
+- **BREAKING: `island.Manager` presence hooks are set through methods.**
+  The public `OnPresenceChange` and `AuthorizeTopic` fields are gone; use
+  `SetOnPresenceChange` and `SetAuthorizeTopic`. Apps assigned the fields
+  without the lock the hooks were read under. `ConnectSession` now
+  returns `(ch, cancel, error)` so it can refuse a connection over the
+  new stream caps.
+- **BREAKING: dead widget-builder API removed.** `BootstrapMode`,
+  `Definition.Bootstrap`, `Definition.BootstrapPath`, `Builder.Bootstrap`,
+  `Builder.RPCWithSignal`, and `RPCEndpoint.ResponseSignal` are deleted.
+  `Mount` never applied the documented bootstrap default and
+  `ResponseSignal` was written but never read; signal routing goes
+  through the `data-fui-rpc-signal` attribute.
+- **BREAKING: production refuses the in-memory session store.** With
+  `DevMode: false` and no `SessionStore`, `Init` now returns an error
+  instead of logging a warning. Sessions in process memory do not survive
+  a restart and never resolve on a second replica. Set
+  `AllowInMemoryStores: true` to acknowledge a single-node deployment, or
+  wire `EntitySessionStore`. The in-memory 2FA store already failed this
+  way; both stores now behave the same.
+- **BREAKING: `battery/semantic` routes require a bearer token.** The
+  handler accepted any non-empty `Authorization` header, so
+  `Authorization: x` granted index write, query, and delete. Configure
+  `semantic.WithAuthToken(token)` (compared in constant time) or
+  `WithInsecureDisabledAuth()` for local development. With neither, every
+  route returns 401 rather than mounting open.
+- **BREAKING: `gofastr init` writes `gofastr.isolation.yml`.** The
+  isolation config used the blueprint's `gofastr.yml` filename, so
+  following the CLI's own example sequence failed with `unknown key
+  "version"`. `framework/isolation` reads the new name first and still
+  falls back to `gofastr.yml`.
+- **BREAKING: an over-length `?field_in=` list is a 400.** Above 1000
+  entries the parser silently dropped the remainder, narrowing the
+  predicate without telling the caller. It now errors, matching the
+  include-scoped IN cap.
+- **BREAKING: `AutoTimestamp` writes microsecond precision.** Values were
+  whole seconds, so rows written in the same second shared a
+  `created_at` and stalled single-field cursor pagination on the tie. The
+  format is fixed-width (`.000000`) because SQLite compares these as
+  strings and a zero-stripped fraction sorts wrongly.
+- **BREAKING: out-of-range integers fail to bind.** `core/handler`
+  parsed every integer at 64 bits and let `SetInt` truncate, so
+  `?small=300` bound 44 to an `int8` with a nil error. Binding now uses
+  the destination's bit width and returns a range error.
+- **BREAKING: island endpoints enforce the entity's read permission.**
+  `resource.Config.TableHandler` checked only that someone was signed in,
+  so a list's sort/paginate endpoint served rows that `GET /api/<entity>`
+  refused with 403. It now also applies the entity's declared read
+  permission (via the new `crud.CrudHandler.CanRead`) and the screen's own
+  policy (the new `Config.IslandPolicy`). A role-gated screen MUST set
+  `IslandPolicy`; a public one declares `resource.PublicIsland()`, because
+  with no policy the handler still requires sign-in.
+- **BREAKING: generated island endpoints moved to
+  `/api/tables/<screen>/<entity>`.** They were one per entity, mounted on
+  the bare registry entry — so two screens showing the same entity shared
+  one endpoint, and a sort click on a filtered list came back unfiltered.
+  Each screen now gets its own endpoint serving that screen's refined
+  config behind that screen's policy.
+- **BREAKING: entity registration rejects route collisions it used to
+  half-commit.** `TryEntity` pre-flighted a guessed pair of paths; it now
+  asks `crud` for the full set it will mount (the new
+  `crud.CrudRoutePatterns`) and compares wildcard SHAPE, so a screen at
+  `/posts/{slug}` and an endpoint shadowing `/posts/_batch` are both
+  caught during validation. Declarations that previously panicked
+  mid-commit — leaving the entity in the registry and its CRUD routes
+  mounted — now return an error having registered nothing.
+- **BREAKING: `RedisClient.RPop` must report an empty list as
+  `queue.ErrRedisEmpty`.** `Dequeue` used to treat any `RPop` error as an
+  empty queue, which masked a backend outage as an idle worker. It now
+  surfaces every error except that sentinel. `RedisClient` is a public
+  interface hosts implement, so an adapter returning its driver's own
+  nil-sentinel (go-redis's `redis.Nil`) now errors on every idle poll
+  rather than reporting `ErrNoJob`. Map it with `errors.Is` in the wrapper.
+- **BREAKING: production re-checks the session store after plugin init.**
+  A plugin's `Init` could call `SetSessionStore(NewMemorySessionStore())`
+  after the only fail-closed check, so `Init` returned nil with every
+  session in RAM. The gate now runs again once plugins are initialised.
+
+### Fixed
+
+- **`DisableRequestTimeout` also drops the server read/write timeouts.**
+  Setting it removed the middleware deadline but left the server's fixed
+  60s limits in place, so a request that legitimately runs longer — an
+  upload over a minute — was still cut off.
+- **`TryEntity` rejects a declaration without publishing part of it.**
+  Entity validation, the CRUD/MCP contract, route collisions (including
+  custom endpoint paths), and MCP tool names are all checked before the
+  registry, router, or MCP server is touched. A rejected declaration used
+  to leave its registry entry and routes behind, which made the corrected
+  retry fail under the same name.
+- **`MemorySessionStore` no longer races on two-factor state.** `Get` and
+  `Create` returned the stored `*Session` while the marker methods
+  mutated it under the store lock; both now return a copy taken under the
+  lock. `go test -race` reported three races on authentication state.
+- **The Redis queue no longer loses jobs.** A failed processing-hash
+  write after `RPOP` dropped the job entirely; it is now pushed back.
+  Attempts are counted at claim (matching the DB backend), so a worker
+  that crashes before `Nack` cannot redeliver a poison message forever. A
+  backend error during dequeue is returned instead of being reported as
+  an empty queue.
+- **`core/static` serves whole files.** Files over 32MB were sent
+  truncated under a matching `Content-Length` and ETag. On a filesystem
+  whose handles do not implement `io.Seeker`, the body was empty after
+  the ETag hash consumed the file; the handler now reopens. Read errors
+  other than "not found" return 500 instead of 404, and the content
+  digest is cached per file rather than recomputed per request.
+- **`$N` inside a SQL string literal is no longer rewritten.** The
+  placeholder renumberer was quote-blind, so `label = '$5 off'` became
+  `'$1 off'` and shifted the real placeholders. Renumbering stays
+  positional, which is what `entity.Condition` composition depends on.
+- **MCP SSE frames carry their payload intact.** The writer collapsed
+  newlines and rewrote any `event:`/`data:` substring in the body,
+  corrupting JSON-RPC content. It now emits one `data:` line per payload
+  line, so a spec-conforming client reassembles the exact bytes.
+- **The pure-Go SQLite driver honors its DSN and shares one engine per
+  pool.** `sql.Open("sqlite", "file.db")` returned a fresh in-memory
+  engine and discarded every write. Each pooled connection then got its
+  own engine over the same file, with separate page caches and no
+  locking: 25 of 50 concurrent inserts survived. A corrupt schema page
+  now surfaces as an open error instead of reading as an empty database.
+- **`gofastr migrate` with no subcommand runs `up`** instead of panicking
+  on a slice bounds error.
+- **The `.ui.go` sandbox lint runs in `gofastr build` and `gofastr dev`.**
+  The goroutine, channel, and import rules were implemented and tested
+  but had no caller outside their own tests, so a `.ui.go` file with
+  `go func()` or `import "os"` passed the build.
+- **Concurrent SSE streams are capped** at 16 per session and 4096 per
+  replica (`island.WithStreamCaps`). An over-cap connect gets a 429 with
+  `Retry-After`; existing streams are never dropped to make room. Any
+  same-origin caller could previously hold unbounded streams, each with a
+  goroutine and a 64-slot channel.
+- **Per-theme component CSS is evicted** when a theme variant is
+  released, and `MemoryBurnStore` prunes expired nonces. Both grew for
+  the life of the process.
+- **Failed writes are reported.** Admin RBAC and process-module audit
+  rows, webhook delivery-state updates, idempotency `Finish`, and
+  password-reset email sends discarded their errors while the surrounding
+  docs promised the write happened. Each now logs.
+- **Client runtime:** a slow page load can no longer swap its content
+  over a newer navigation; `data-fui-confirm` is honored inside widgets
+  (a delete in a drawer fired without confirming); an SSE island swap
+  loads the CSS for components it introduces; repeated form fields keep
+  every value instead of the last; computed and animate teardown runs on
+  island swaps, not only on navigation; two lightboxes on one page no
+  longer share state.
+- **Redis `Nack` no longer loses the job.** It deleted the processing
+  entry before pushing to the retry or dead-letter list, so a failed push
+  left the job in no list and invisible to `Reclaim`. It now writes the
+  destination first; a failure between the two re-delivers rather than
+  drops, which is what an at-least-once queue promises.
+- **`sql.DB.Close` releases the sqlite engine's file.** `Pager.Close`
+  dropped the page cache without closing the backing `*os.File`, so a
+  program that opened and closed databases in a loop exhausted its
+  descriptor limit while every handle looked closed.
+- **Static files:** the content-digest cache is per handler, not
+  process-wide. `embed.FS` reports the zero modtime for every file, so
+  two handlers over different filesystems serving a same-name, same-size
+  file shared an ETag and answered `304` for content the client had never
+  seen. A path that is not valid UTF-8 (`/%ff`) is now a 404 rather than a
+  500 — `fs.ValidPath` rejects it as `fs.ErrInvalid`, which any client
+  could use to drive a 5xx.
+- **SQL placeholders inside string literals are left alone.** The
+  renumberer understood `'…'` but not `$$…$$`, `$tag$…$tag$`, or the
+  backslash escapes `E'…'` allows, so a `$5` inside a literal was
+  rewritten and every real placeholder after it shifted.
+- **The semantic bearer check is constant-time in the token's length.**
+  `subtle.ConstantTimeCompare` returns immediately when lengths differ,
+  so comparing raw tokens still revealed when a candidate was the right
+  length. Both sides are hashed to 32 bytes first.
+- **A form field named after an `Object.prototype` member posts its
+  value.** The multi-value merge read `obj[k]` on a plain object, where
+  `constructor` and `toString` resolve up the prototype chain and are
+  never `undefined`, so a single such field posted `[null, value]`.
+- **SPA navigation A→B→A leaves the URL and the content agreeing.** The
+  in-flight dedup returned before the epoch bump, so re-requesting an
+  earlier path never became the current intent and the page showed B at
+  the URL `/a`.
+
+### Changed
+
+- **The RPC engine ships as a demand-loaded module.** `frag/rpc.js` is
+  gone; the network machinery (dispatch, CSRF, form encoding, abort
+  controllers, response-header effects, the kiln tool POST) now lives in
+  `src/rpc.js`, and the core bundle fell from 14,338 to 12,368 gzip bytes
+  — from 2 bytes over the 14,336-byte initial congestion window to nearly
+  2 KB under it. A page carrying `[data-fui-rpc]` or `[data-kiln-tool]`
+  starts fetching the module at boot, fire-and-forget, so it is normally
+  resident before the first click; core keeps one delegated bridge that
+  calls `preventDefault()` synchronously and then awaits the module, so a
+  click landing mid-download is still dispatched rather than falling
+  through to a native submit. A module that never arrives (a host serving
+  `runtime.js` but not `/__gofastr/runtime/<name>.js`, or a network blip)
+  warns rather than swallowing the action, and a non-JSON intercepted form
+  falls back to a native submit — prevented-then-never-dispatched would
+  lose the submission silently, which could not happen while RPC was
+  compiled into core. Static exports keep `rpc-stub` and never request the
+  module. Client-only signal mutations
+  (`data-fui-signal-set`/`-inc`/`-toggle`) moved to the signals fragment
+  and work with no module load at all; the same-origin guards moved to
+  the kernel, which also deletes the copy `rpc-stub` was carrying. No
+  public Go API changed.
+- Generated blueprint apps sort and paginate list screens through the
+  resource island endpoint rather than a full page navigation, and no
+  longer emit `.gofastr-entity-*` or `.detail-*` markup — the dead
+  client-JS list and detail renderers are deleted.
+- `battery/admin` composes `ui.DataTable`, `ui.StatCard`,
+  `ui.FilterToolbar`, and `ui.Tag`; its second stylesheet (a `baseCSS`
+  string of unprefixed `.card`/`.btn`/`body`/`table` rules served outside
+  the registry) is gone, along with two `.badge` classes that had no CSS
+  anywhere.
+- `<html lang>` is configurable through `app.WithLang` and
+  `uihost.WithLang`, defaulting to `en` (WCAG 3.1.1). It was hardcoded on
+  every rendered surface.
+- SSR-inlined widget chrome renders with the request context, so a
+  context-aware slot no longer renders anonymous on first paint and
+  personalized when reopened.
+- The route table and component catalog are serialized once instead of on
+  every request.
+- Documentation corrections, with tests pinning them to the code:
+  `auth.md` described a `framework/auth` package that does not exist and
+  argon2id hashing (it is bcrypt in `battery/auth/password.go`), and said
+  password reset fails closed when it returns 200 and sends nothing;
+  `security.md` used two `CORSConfig` fields and a `Tracing` signature
+  that do not exist, named a `gofastr export` subcommand that does not
+  exist, and said `app.Use` disables the default middleware chain;
+  `query-dsl.md`'s quickstart did not compile and omitted that the DSL
+  applies no owner, tenant, or soft-delete scoping;
+  `hooks-and-transactions.md` had `BeforeCreate`/`BeforeUpdate` running
+  after validation when they run before.
+- A second documentation pass, likewise pinned by tests, caught pages
+  teaching APIs this release deletes: `widgets.md` opened its quickstart
+  with `Builder.RPCWithSignal` and listed `Definition.Bootstrap`, and
+  `presence.md` and `live-dashboards.md` assigned to
+  `Manager.AuthorizeTopic` / `OnPresenceChange`, now setters — the
+  roster-disclosure remediation snippet on the security page was among
+  the samples that did not compile. Also: `isolation.md` pointed at
+  `gofastr.yml` when `gofastr.isolation.yml` wins the discovery order, so
+  following it configured nothing; `semantic-search.md` documented 200s
+  for routes that answer 401 without a token; `queue.md` told you to
+  write a `RedisClient` adapter without mentioning that `RPop` must map
+  its driver's empty-sentinel onto `queue.ErrRedisEmpty`; `auth.md`'s
+  `UserStore` omitted `UpdateRoles`; `access-control.md` used a
+  `framework.Wildcard` that is not re-exported; `query-dsl.md` named a
+  `framework.ParseDSL` that does not exist and claimed an uncapped
+  `limit()` executes when the parser rejects anything over 10,000; and
+  the README twice called `/api/docs/` "Swagger UI", the claim this
+  release renamed the handler to stop making.
+- `gofastr test` and `gofastr build` document the flags they actually
+  parse — the help advertised `-v`, `-count N`, `-race`, `-run <regex>`
+  and a bare `-o <output>` that the parsers ignore or reject — and
+  `gofastr init` names `gofastr.isolation.yml` in its created-files list
+  instead of the `gofastr.yml` it does not write.
+
 ## [0.54.0] - 2026-07-31
 
 The zero-carryover release: a three-agent deep analysis of the whole

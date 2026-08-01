@@ -86,15 +86,16 @@ type AuthConfig struct {
 	DevMode bool
 
 	// AllowInMemoryStores acknowledges a deliberate single-node
-	// deployment. Without it, production mode (DevMode=false) logs a
-	// WARN at Init when sessions live in the default in-memory store
-	// (they don't survive restarts and never resolve on a second
-	// replica), and REFUSES to boot when 2FA state does — a restart
+	// deployment. Without it, production mode (DevMode=false) REFUSES to
+	// boot when sessions live in the default in-memory store — they
+	// don't survive restarts and never resolve on a second replica — and
+	// likewise REFUSES to boot when 2FA state does, since a restart
 	// silently reverting enrolled accounts to password-only auth is a
-	// security downgrade, not a scaling nuisance. With the flag set,
-	// the session warning is silenced and the 2FA refusal downgrades
-	// to a WARN. See the horizontal-scaling doc for the DB-backed
-	// alternatives (EntitySessionStore, EntityTwoFAStore).
+	// security downgrade, not a scaling nuisance. With the flag set, both
+	// stores boot; the 2FA store still leaves a WARN trace in the log so
+	// the downgrade risk stays visible. See the horizontal-scaling doc
+	// for the DB-backed alternatives (EntitySessionStore,
+	// EntityTwoFAStore).
 	AllowInMemoryStores bool
 
 	// DefaultRoles are the server-assigned roles stamped onto every
@@ -303,7 +304,19 @@ type AuthManager struct {
 }
 
 // New creates a new AuthManager with the given configuration.
-// The core auth plugin (email/password + sessions + JWT) is always loaded first.
+//
+// New does NOT install any auth plugin: AuthManager starts with an empty
+// plugin set, and no auth routes are registered until plugins are added
+// with Use. Install the plugins you need, in order — the core plugin
+// (email/password + sessions + JWT) is the usual starting point:
+//
+//	mgr := auth.New(auth.AuthConfig{JWTSecret: "..."})
+//	mgr.Use(auth.NewCorePlugin()) // login, logout, me, register
+//	mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
+//	app.RegisterBattery(mgr)
+//
+// RegisterRoutes / Middleware only see plugins registered via Use, so a
+// manager built without any Use call exposes no auth surface.
 func New(config AuthConfig) *AuthManager {
 	config.defaults()
 	mgr := &AuthManager{
@@ -414,6 +427,19 @@ func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []s
 	return m.userStore.UpdateRoles(ctx, userID, roles)
 }
 
+// refuseInMemorySessionStore is the production gate on single-node session
+// state. Init runs it twice — before and after plugin init — because a
+// plugin can swap the store out from under the first check.
+func (m *AuthManager) refuseInMemorySessionStore() error {
+	if m.config.DevMode || m.config.AllowInMemoryStores {
+		return nil
+	}
+	if _, ok := m.sessionStore.(*MemorySessionStore); ok {
+		return fmt.Errorf("auth: production mode refuses to boot on the default in-memory session store — sessions won't survive a restart and won't resolve on a second replica; set AuthConfig.AllowInMemoryStores: true to acknowledge a single-node deployment, or use NewEntitySessionStore(db, ...) (or another durable SessionStore)")
+	}
+	return nil
+}
+
 // initPlugins initializes all registered plugins in order.
 func (m *AuthManager) initPlugins() error {
 	for _, name := range m.order {
@@ -448,15 +474,14 @@ func (m *AuthManager) Init(app *framework.App) error {
 		return fmt.Errorf("auth: production mode requires AuthConfig.JWTSecret — set it from your secret store, or set DevMode: true for local development")
 	}
 
-	// Single-node state in production is the silent multi-replica
-	// failure: the second replica never resolves the first one's
-	// cookies. Warn loudly unless the host explicitly opted in.
-	if !m.config.DevMode && !m.config.AllowInMemoryStores {
-		if _, ok := m.sessionStore.(*MemorySessionStore); ok {
-			slog.Default().Warn("auth: production mode is running on the in-memory session store — sessions won't survive a restart and won't resolve on a second replica",
-				"fix", "use NewEntitySessionStore(db, ...) (or another durable SessionStore)",
-				"single-node opt-in", "set AuthConfig.AllowInMemoryStores: true to acknowledge and silence this")
-		}
+	// Single-node session state in production is the silent multi-replica
+	// failure: the second replica never resolves the first one's cookies,
+	// and nothing survives a restart. A warn-only Init lets a broken
+	// deployment boot undiscovered, so — matching the in-memory 2FA store
+	// policy — production REFUSES to boot on the default in-memory session
+	// store unless the host explicitly opts in via AllowInMemoryStores.
+	if err := m.refuseInMemorySessionStore(); err != nil {
+		return err
 	}
 
 	// Initialize JWT if secret is configured
@@ -484,6 +509,14 @@ func (m *AuthManager) Init(app *framework.App) error {
 
 	// Init all plugins
 	if err := m.initPlugins(); err != nil {
+		return err
+	}
+
+	// Re-check: a plugin's Init may call SetSessionStore, and the gate has
+	// to describe the store the app will actually RUN with. Checking only
+	// before plugin init let a plugin install the refused in-memory store
+	// and still return a nil error.
+	if err := m.refuseInMemorySessionStore(); err != nil {
 		return err
 	}
 

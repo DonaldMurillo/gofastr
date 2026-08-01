@@ -15,14 +15,15 @@ func newTestServer(t *testing.T) (*httptest.Server, Index) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	srv := httptest.NewServer(Handler(idx))
+	srv := httptest.NewServer(Handler(idx, WithAuthToken("test")))
 	t.Cleanup(srv.Close)
 	return srv, idx
 }
 
-// doAuthed performs an HTTP request with a dummy Authorization header.
-// Handler() requires a non-empty Authorization on every route — see the
-// security tests in routes_security_test.go for the contract.
+// doAuthed performs an HTTP request with the test bearer token. The test
+// server (newTestServer) configures Handler with WithAuthToken("test"), so
+// "Bearer test" is a genuinely valid credential — see routes_auth_test.go
+// and routes_security_test.go for the auth contract.
 func doAuthed(t *testing.T, req *http.Request) *http.Response {
 	t.Helper()
 	req.Header.Set("Authorization", "Bearer test")

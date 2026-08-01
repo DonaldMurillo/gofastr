@@ -150,6 +150,8 @@ func (i *index) Remove(ctx context.Context, docIDs ...string) error {
 }
 
 func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
 	if i.wal != nil {
 		if err := i.wal.append(walEntry{Op: walOpAdd, Chunks: chunks}); err != nil {
 			return err
@@ -161,10 +163,18 @@ func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) error {
 	if err := i.keywordIndexChunks(ctx, chunks); err != nil {
 		return err
 	}
-	return i.maybeAutoSnapshot()
+	i.opsSinceSnap++
+	if i.dueSnapshotLocked() {
+		return i.snapshotLocked()
+	}
+	return nil
 }
 
 func (i *index) logAndApplyRemove(ctx context.Context, docID string) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	// Collect prior chunk IDs under the same lock as the mutation so the
+	// keyword cleanup matches the exact state being removed.
 	priorChunkIDs := i.collectChunkIDs(docID)
 	if i.wal != nil {
 		if err := i.wal.append(walEntry{Op: walOpRemove, DocID: docID}); err != nil {
@@ -177,7 +187,11 @@ func (i *index) logAndApplyRemove(ctx context.Context, docID string) error {
 	if err := i.keywordRemoveDoc(ctx, docID, priorChunkIDs); err != nil {
 		return err
 	}
-	return i.maybeAutoSnapshot()
+	i.opsSinceSnap++
+	if i.dueSnapshotLocked() {
+		return i.snapshotLocked()
+	}
+	return nil
 }
 
 func (i *index) collectChunkIDs(docID string) []string {
@@ -215,22 +229,26 @@ func (i *index) keywordRemoveDoc(ctx context.Context, _ string, priorChunkIDs []
 	return nil
 }
 
-func (i *index) maybeAutoSnapshot() error {
-	if i.wal == nil || i.snapshotEvery == 0 {
-		return nil
+// dueSnapshotLocked reports whether an auto-snapshot is due. The caller MUST
+// hold i.mu. snapshotEvery<0 means "snapshot after every op" (a test helper);
+// >0 is the periodic threshold; 0 disables auto-snapshot entirely.
+func (i *index) dueSnapshotLocked() bool {
+	if i.snapshotEvery == 0 {
+		return false
 	}
-	i.mu.Lock()
-	i.opsSinceSnap++
-	due := i.snapshotEvery > 0 && i.opsSinceSnap >= i.snapshotEvery
-	due = due || i.snapshotEvery < 0
-	i.mu.Unlock()
-	if !due {
-		return nil
+	if i.snapshotEvery < 0 {
+		return true
 	}
-	return i.Snapshot()
+	return i.opsSinceSnap >= i.snapshotEvery
 }
 
-func (i *index) Snapshot() error {
+// snapshotLocked writes a consistent cut of the store and truncates the WAL to
+// match. The caller MUST hold i.mu: that is what makes the store copy and the
+// WAL truncation bracket exactly the same set of applied operations. A write
+// that lands concurrently is then either fully included in the snapshot (its
+// WAL entry safely truncated) or fully after it (its WAL entry preserved) —
+// never straddling the copy→truncate window where it would be lost.
+func (i *index) snapshotLocked() error {
 	if i.path == "" {
 		return nil
 	}
@@ -247,10 +265,17 @@ func (i *index) Snapshot() error {
 			return err
 		}
 	}
-	i.mu.Lock()
 	i.opsSinceSnap = 0
-	i.mu.Unlock()
 	return nil
+}
+
+// Snapshot writes a full snapshot and truncates the WAL, serializing against
+// concurrent mutations (Add/Remove) so the on-disk snapshot and the surviving
+// WAL together represent one consistent cut of the index.
+func (i *index) Snapshot() error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.snapshotLocked()
 }
 
 // maxQueryK caps the attacker-controllable result count K. K only
@@ -384,9 +409,11 @@ func (i *index) Stats() Stats {
 }
 
 func (i *index) Close() error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
 	var errs []error
 	if i.path != "" {
-		if err := i.Snapshot(); err != nil {
+		if err := i.snapshotLocked(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -394,6 +421,9 @@ func (i *index) Close() error {
 		if err := i.wal.close(); err != nil {
 			errs = append(errs, err)
 		}
+		// Nilled under i.mu so it is synchronized with every other i.wal
+		// reader (logAndApply*, snapshotLocked) — Close no longer races an
+		// in-flight mutation on the wal pointer.
 		i.wal = nil
 	}
 	if c, ok := i.store.(interface{ Close() error }); ok {

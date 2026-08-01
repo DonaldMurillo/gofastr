@@ -60,8 +60,14 @@ type ListPayload struct {
 	Results []map[string]any
 }
 
-// AddWhere appends a parameterised WHERE clause. Use $1, $2, … placeholders
-// to match the query builder's PostgreSQL-style binding.
+// AddWhere appends a parameterised WHERE clause. Use $1, $2, … placeholders,
+// one per argument, in order: when the clause is composed into the final
+// query its placeholders are renumbered positionally (by encounter), so
+// pass exactly one argument per placeholder token and do NOT reuse a number
+// as a back-reference to an earlier bind — write the value twice if you need
+// it twice. The clause is parenthesised when composed, so OR/AND inside it
+// cannot leak past framework-injected scopes, and a $N appearing inside a
+// single-quoted string literal is treated as data and left untouched.
 func (p *ListPayload) AddWhere(sql string, args ...any) {
 	p.Where = append(p.Where, WhereClause{SQL: sql, Args: args})
 }

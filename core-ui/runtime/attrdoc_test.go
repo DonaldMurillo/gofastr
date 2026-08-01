@@ -410,7 +410,7 @@ func TestFragmentNamesValid(t *testing.T) {
 	for frag := range fragmentAttrs {
 		if _, ok := fragments[frag]; !ok {
 			t.Errorf("fragmentAttrs key %q is not in the declared fragment set `fragments` "+
-				"(valid names: kernel, rpc, signals, nav, widgets-boot, sse, compute, boot-embed) "+
+				"(valid names: kernel, signals, nav, widgets-boot, sse, compute, boot-embed) "+
 				"— fix the typo or add the fragment to `fragments`.", frag)
 		}
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -41,7 +42,7 @@ func (s *PricingScreen) ScreenSEO() uihost.SEO {
 }
 
 func (s *PricingScreen) Render() render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Pricing", Subtitle: "Start free. Upgrade when revenue does.", Eyebrow: ""}),
 		ui.Grid(ui.GridConfig{Min: "16rem"}, ui.PricingCard(ui.PricingCardConfig{Name: "Starter", HeadingLevel: 2, Price: "$29", Period: "/mo", Description: "For solo founders finding their first customers.", Features: []string{"Up to 100 customers", "Core billing & invoices", "Email support"}, CTALabel: "Start free", CTAHref: "/signup"}), ui.PricingCard(ui.PricingCardConfig{Name: "Pro", HeadingLevel: 2, Price: "$99", Period: "/mo", Description: "For growing teams that live in their revenue.", Features: []string{"Unlimited customers", "MRR & churn analytics", "Subscription workflows", "Priority support"}, CTALabel: "Start free", CTAHref: "/signup", Featured: true}), ui.PricingCard(ui.PricingCardConfig{Name: "Scale", HeadingLevel: 2, Price: "$299", Period: "/mo", Description: "For high-volume revenue and finance teams.", Features: []string{"Everything in Pro", "SSO & audit log", "Dedicated success manager", "99.9% uptime SLA"}, CTALabel: "Contact sales", CTAHref: "/signup"})),
 	)

@@ -1,4 +1,4 @@
-// widgets-boot.js (spec fragment `widgets-boot`, boot class; deps: kernel+rpc).
+// widgets-boot.js (spec fragment `widgets-boot`, boot class; deps: kernel).
 // Owns: the /__gofastr/widgets catalog fetch + auto-mount pass, the
 // _widgetCatalog readiness Promise, and the eager open/toast click
 // delegators that must be installed before the catalog resolves.
@@ -107,10 +107,8 @@
       }
       const btn = e.target.closest && e.target.closest('[data-fui-open]');
       if (!btn) return;
-      // Static mode no longer short-circuits here: the exporter dumps the
-      // widget catalog + chrome as static files, so openWidget resolves
-      // against the file tree. (Server-backed RPCs inside a widget are
-      // still gated in dispatchRPC.)
+      // The live catalog path mounts the widget module; RPC controls inside
+      // the mounted chrome await src/rpc.js in their scoped listeners.
       const name = btn.getAttribute('data-fui-open');
       if (!name) return;
       e.preventDefault();

@@ -2032,11 +2032,18 @@ func isSynthesizedBody(body []BlueprintBlock) bool {
 	return len(body) == 1 && (body[0].Kind == "entity_create" || body[0].Kind == "entity_edit")
 }
 
-// reverseRenderBody finds the screen's `return render.Tag("div", attrs, …)` and
-// reverses each child expression into a block. helpers maps package-local
-// zero-arg function names to their single return expression, so a resource
-// chain extracted into a shared helper (screen + island endpoint reusing one
-// config) still reverses.
+// reverseRenderBody finds the screen's root call and reverses each child
+// expression into a block. helpers maps package-local zero-arg function
+// names to their single return expression, so a resource chain extracted
+// into a shared helper (screen + island endpoint reusing one config) still
+// reverses.
+//
+// Two root shapes are accepted. The generator emits
+// `html.Div(html.DivConfig{…}, children…)` — the design system's 1:1 tag
+// primitive. Apps generated before that switch (and hand-written screens
+// that never moved) use `render.Tag("div", attrs, children…)`. pack has to
+// read both or it silently returns no blocks for the other one, which is
+// how a round-trip loses screens.
 func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []BlueprintBlock {
 	if fn.Body == nil {
 		return nil
@@ -2047,11 +2054,27 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 			continue
 		}
 		call, ok := ret.Results[0].(*ast.CallExpr)
-		if !ok || callSel(call) != "render.Tag" || len(call.Args) < 2 {
+		if !ok {
+			continue
+		}
+		// Index of the first child argument: render.Tag takes (tag, attrs)
+		// first, html.Div takes a single config.
+		firstChild := -1
+		switch callSel(call) {
+		case "render.Tag":
+			if len(call.Args) >= 2 {
+				firstChild = 2
+			}
+		case "html.Div":
+			if len(call.Args) >= 1 {
+				firstChild = 1
+			}
+		}
+		if firstChild < 0 {
 			continue
 		}
 		var out []BlueprintBlock
-		for _, arg := range call.Args[2:] {
+		for _, arg := range call.Args[firstChild:] {
 			if b, ok := reverseBlock(arg, helpers); ok {
 				out = append(out, b)
 			}

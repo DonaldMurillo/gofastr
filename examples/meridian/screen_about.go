@@ -15,7 +15,7 @@ func (s *AboutScreen) ScreenDescription() string  { return "Why we built a calme
 func (s *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *AboutScreen) Render() render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("We think billing should feel calm.")),
 		render.Tag("p", nil, render.Text("Meridian is a demonstration product built entirely from a GoFastr blueprint — a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.")),
 		render.Tag("p", nil, render.Text("It exists to show that a framework can generate a real, polished web application — not a CRUD scaffold.")),

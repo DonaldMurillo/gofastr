@@ -22,7 +22,7 @@ func TestInit_ProdEmptySecretFailsClosed(t *testing.T) {
 }
 
 func TestInit_ProdWithSecretOK(t *testing.T) {
-	mgr := New(AuthConfig{DevMode: false, JWTSecret: "a-real-secret"})
+	mgr := New(AuthConfig{DevMode: false, JWTSecret: "a-real-secret", AllowInMemoryStores: true}) // opt into the memory session store; this test targets the JWT-secret path
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init with explicit secret should succeed: %v", err)
 	}

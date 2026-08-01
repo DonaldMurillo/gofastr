@@ -526,11 +526,20 @@ type RedisClient interface {
 Wrap your preferred driver (go-redis, redigo, etc.) with a thin adapter
 that maps to this interface.
 
+**`RPop` must report an empty list as `queue.ErrRedisEmpty`.** Drivers
+signal "nothing there" with their own sentinel (go-redis returns
+`redis.Nil`); translate it. An adapter that passes its driver's sentinel
+through unchanged turns every empty poll into a backend error, and a
+worker loop that only branches on `ErrNoJob` will fall through and handle
+a zero-valued `Job`.
+
 ## Sentinel errors
 
 ```go
 queue.ErrNoJob       // Dequeue: nothing ready right now
 queue.ErrQueueClosed // Enqueue: queue was already closed
+queue.ErrRedisEmpty  // RedisClient.RPop: the list is empty (adapters MUST
+                     // map their driver's nil-sentinel onto this)
 ```
 
 ## Common mistakes

@@ -120,6 +120,14 @@ sensibly reflect (sub-second internal dashboards).
   subscribers connected to another. Without it, push stays per-process.
 - Push only. The result of a user action arrives in the RPC response, never
   on the event stream.
+- Streams outlive the request timeout. A response that flushes (every SSE
+  subscription does) sheds the middleware deadline and the server-level
+  read/write deadlines at its first flush, so `RequestTimeout` never cuts
+  a live subscriber; buffered responses keep the hard cap.
+- Concurrent streams are capped (default 16 per session, 4096 per replica;
+  configurable via `island.WithStreamCaps`). The policy is reject-not-evict:
+  an over-cap connect gets a `429 Too Many Requests` with `Retry-After`, and
+  existing streams are never dropped to make room.
 
 See [Events and SSE](events.md) for the broker contract, [Presence](presence.md)
 for the canonical push case, and [Live dashboards](live-dashboards.md) for the

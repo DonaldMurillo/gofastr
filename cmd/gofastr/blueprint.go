@@ -1744,6 +1744,36 @@ func decodeNamedStubs(node *coreyaml.Node, label string) ([]BlueprintNamedStub, 
 	return out, nil
 }
 
+// validateIslandPathsAreDistinct refuses a blueprint whose list screens
+// would derive a shared island endpoint. See the call site for why a
+// collision cannot be resolved silently.
+func validateIslandPathsAreDistinct(bp Blueprint) error {
+	type owner struct {
+		screen string
+		blocks int
+	}
+	seen := map[string]*owner{}
+	for _, decl := range bp.Entities {
+		entity := decl.Name
+		for _, p := range entityListPlacements(bp, entity) {
+			path := blueprintIslandPath(blueprintAPIBase(bp.App.APIPrefix), p.screen, entity)
+			prev, ok := seen[path]
+			if !ok {
+				seen[path] = &owner{screen: p.screen.Name, blocks: 1}
+				continue
+			}
+			if prev.screen == p.screen.Name {
+				prev.blocks++
+				return fmt.Errorf("blueprint: screen %q lists entity %q more than once, and both lists would share the island endpoint %s — sorting or paging either table would rewrite both from the first list's columns. Split them onto separate screens, or render one of them as a different block kind",
+					p.screen.Name, entity, path)
+			}
+			return fmt.Errorf("blueprint: screens %q and %q both derive the island endpoint %s for entity %q — only one mount would be emitted, silently discarding the other screen's columns, filters and access policy. Rename one screen so the two differ by more than case or punctuation",
+				prev.screen, p.screen.Name, path, entity)
+		}
+	}
+	return nil
+}
+
 func validateBlueprint(bp Blueprint) error {
 	// Production auth without a signing key: the generated app's auth
 	// battery fails closed at boot (battery/auth Init refuses an empty
@@ -1762,6 +1792,19 @@ func validateBlueprint(bp Blueprint) error {
 		if entityDeclarationScope(decl).MultiTenant {
 			return fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy — subdomain, JWT claim, user's org — is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name)
 		}
+	}
+	// Island endpoints are keyed by toSnakeCase(screen name) + entity, so
+	// two screens whose names normalize to the same slug would derive the
+	// same endpoint. The generator would then emit ONE mount and silently
+	// discard the other screen's refined config and its policy — the second
+	// screen ends up pointing at a table it does not own, gated by a rule it
+	// never declared. Reject it here rather than generate that.
+	//
+	// The same collapse happens when one screen lists the same entity twice:
+	// both blocks derive one endpoint and one signal, so sorting either table
+	// rewrites both from the first block's columns.
+	if err := validateIslandPathsAreDistinct(bp); err != nil {
+		return err
 	}
 	if bp.App.PWA.Enabled {
 		switch bp.App.PWA.Display {
@@ -2362,26 +2405,6 @@ func validateBlueprintActions(screenName string, blocks []BlueprintBlock) error 
 		if err := walk(block); err != nil {
 			return err
 		}
-	}
-	var checkSynthetic func([]BlueprintBlock, []int) error
-	checkSynthetic = func(blocks []BlueprintBlock, path []int) error {
-		for i, block := range blocks {
-			blockPath := append(append([]int(nil), path...), i)
-			if isEntityListBlock(block) {
-				name := blueprintEntityListActionName(BlueprintScreen{Name: screenName}, block, blockPath)
-				if names[name] {
-					return fmt.Errorf("blueprint: screen %q duplicate action %q", screenName, name)
-				}
-				names[name] = true
-			}
-			if err := checkSynthetic(block.Children, blockPath); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if err := checkSynthetic(blocks, nil); err != nil {
-		return err
 	}
 	return nil
 }
@@ -3963,6 +3986,9 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	if withMount {
 		sb.WriteString("\t\"database/sql\"\n")
 	}
+	if needs.nethttp {
+		sb.WriteString("\t\"net/http\"\n")
+	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
 	if hasScreens && (needs.component || anyCtx) {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/component\"\n")
@@ -4054,19 +4080,22 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 		renderMethod = "RenderCtx(ctx context.Context) render.HTML"
 	}
 	sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
-	rootAttrs := "nil"
+	// Screen root goes through core-ui/html, the design system's 1:1 tag
+	// primitive, rather than raw render.Tag — CLAUDE.md's rule for markup
+	// that maps directly to an element. Output is byte-identical.
+	rootCfg := "html.DivConfig{}"
 	if hasActions {
-		rootAttrs = fmt.Sprintf("map[string]string{\"data-component\": s.ComponentID()}")
+		rootCfg = "html.DivConfig{ExtraAttrs: html.Attrs{\"data-component\": s.ComponentID()}}"
 	}
 	if len(screen.Body) == 0 {
-		sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootAttrs, screen.TitleOrName()))
+		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootCfg, screen.TitleOrName()))
 	} else {
-		sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s,\n", rootAttrs))
+		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s,\n", rootCfg))
 		for i, block := range screen.Body {
 			var expr string
 			switch {
 			case ctxScreen && isEntityListBlock(block):
-				expr = blueprintEntityListResourceExpr(block, entityMap)
+				expr = blueprintEntityListResourceExpr(screen, block, entityMap, apiBase)
 			case ctxScreen && isEntityDetailBlock(block):
 				expr = blueprintDetailExpr(block)
 			case ctxScreen && isEntityCreateBlock(block):
@@ -4344,6 +4373,8 @@ func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Bluepr
 	sb.WriteString("package main\n\n")
 	needs := blueprintScreensImportNeeds(screens, entityMap, apiBase)
 	needs.resource = true // every CRUD file emits a resource.Config assignment
+	// Island endpoints are mounted with an http.HandlerFunc closure.
+	needs.nethttp = len(entityListPlacements(bp, entity)) > 0
 	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
 	for _, s := range screens {
 		sb.WriteString(blueprintScreenBody(s, entityMap, apiBase))
@@ -4417,7 +4448,10 @@ func blueprintResourceIndex(bp Blueprint) (entityMap map[string]framework.Entity
 // blueprintResourceRegistryOne emits one `appResources["E"] = resource.Config{…}`
 // block. The assignment stays in the entity's own generated screen file so
 // generate --add can add resources without rewriting the shared resource.go.
-// Returns "" when the entity is unknown.
+// Returns "" when the entity is unknown. When the entity is rendered by any
+// entity_list screen, it also sets IslandPath and mounts a TableHandler route
+// so the list sorts/paginates as an island (Hard rule 1) — the wiring
+// examples/meridian/app.go does for its customers list.
 func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool) string {
 	decl, ok := entityMap[e]
 	if !ok {
@@ -4477,7 +4511,85 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 		sb.WriteString(rel)
 	}
 	sb.WriteString("\t}\n")
+	// Island endpoints: one per screen showing this entity as a list, each
+	// serving that screen's OWN refined config behind that screen's OWN
+	// policy. The closure defers evaluation to request time so it does not
+	// depend on appResources being fully populated at mount time.
+	seen := map[string]bool{}
+	for _, p := range entityListPlacements(bp, e) {
+		path := blueprintIslandPath(apiBase, p.screen, e)
+		if seen[path] {
+			continue // same screen, same entity: one endpoint serves it
+		}
+		seen[path] = true
+		cfg := blueprintEntityListConfigExpr(p.screen, p.block, entityMap, apiBase)
+		sb.WriteString(fmt.Sprintf("\tfwApp.Router().HandleFunc(\"GET\", %q, func(w http.ResponseWriter, r *http.Request) {\n", path))
+		sb.WriteString(fmt.Sprintf("\t\t%s.TableHandler()(w, r)\n", cfg))
+		sb.WriteString("\t})\n")
+	}
 	return sb.String()
+}
+
+// entityHasListScreen reports whether any screen renders the entity as an
+// entity_list at any nesting depth (a top-level list page or a list embedded
+// in a section/dashboard). Those are the lists the island table handler must
+// serve, so the resource Config gets an IslandPath + a mounted TableHandler.
+// Detail-only and data-source-only entities return false (no list to island).
+func entityHasListScreen(bp Blueprint, entity string) bool {
+	return len(entityListPlacements(bp, entity)) > 0
+}
+
+// listPlacement is one entity_list block on one screen: the unit an island
+// endpoint is scoped to.
+//
+// The endpoint cannot be per-entity. A list block carries its own columns,
+// search, facets and page size, and two screens can show the same entity
+// refined differently — so one shared /api/tables/<entity> would answer the
+// wrong rows for at least one of them, and would answer them under whichever
+// screen's gate happened to be weaker. Path and policy both come from the
+// placement.
+type listPlacement struct {
+	screen BlueprintScreen
+	block  BlueprintBlock
+}
+
+// entityListPlacements returns every entity_list block for entity, at any
+// nesting depth, across every screen.
+func entityListPlacements(bp Blueprint, entity string) []listPlacement {
+	var out []listPlacement
+	for _, s := range bp.Screens {
+		var walk func(blocks []BlueprintBlock)
+		walk = func(blocks []BlueprintBlock) {
+			for _, b := range blocks {
+				if isEntityListBlock(b) && strings.Trim(b.Entity, "/") == entity {
+					out = append(out, listPlacement{screen: s, block: b})
+				}
+				walk(b.Children)
+			}
+		}
+		walk(s.Body)
+	}
+	return out
+}
+
+// blueprintIslandPath is the endpoint serving one screen's table for entity.
+func blueprintIslandPath(apiBase string, screen BlueprintScreen, entity string) string {
+	return apiBase + "/tables/" + toSnakeCase(screen.Name) + "/" + entity
+}
+
+// blueprintIslandPolicyExpr returns the policy gating the screen this
+// placement sits on — the SAME expression blueprintScreenMountStmt emits.
+// The island is a second route onto the screen's rows, so it has to repeat
+// the screen's gate.
+//
+// An ungated screen gets an explicit public policy rather than none: with no
+// policy TableHandler falls back to requiring sign-in, which would 401 an
+// anonymous visitor's first sort click on a public list.
+func blueprintIslandPolicyExpr(screen BlueprintScreen) string {
+	if screen.Access.Auth {
+		return fmt.Sprintf("authPolicy(%q, %q)", "/login", screen.Access.Role)
+	}
+	return "resource.PublicIsland()"
 }
 
 // blueprintEntityHasSystemColumn reports whether a framework-managed column
@@ -4812,7 +4924,19 @@ func blueprintDetailExpr(block BlueprintBlock) string {
 
 // blueprintEntityListResourceExpr emits the server-side list render call for a
 // top-level entity_list block: appResources["x"].WithColumns(...).List(ctx).
-func blueprintEntityListResourceExpr(block BlueprintBlock, entityMap map[string]framework.EntityDeclaration) string {
+func blueprintEntityListResourceExpr(screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+	return blueprintEntityListConfigExpr(screen, block, entityMap, apiBase) + ".List(ctx)"
+}
+
+// blueprintEntityListConfigExpr emits the refined resource.Config for one
+// entity_list block — the chain WITHOUT a terminal .List(ctx), so the island
+// mount can render the exact same config the page renders.
+//
+// The refinement has to be shared rather than re-derived: columns, search,
+// facets and page size live here, and an island endpoint mounted on the bare
+// registry entry would answer unfiltered, differently-columned rows to a
+// sort click on a filtered page.
+func blueprintEntityListConfigExpr(screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	entity := strings.Trim(block.Entity, "/")
 	expr := fmt.Sprintf("appResources[%q]", entity)
 	if len(block.Fields) > 0 {
@@ -4840,7 +4964,13 @@ func blueprintEntityListResourceExpr(block BlueprintBlock, entityMap map[string]
 	if block.EmptyText != "" {
 		expr += fmt.Sprintf(".WithEmpty(%q)", block.EmptyText)
 	}
-	expr += ".List(ctx)"
+	// Island mode: sort/paginate swap just the table (Hard rule 1). The
+	// endpoint carries the screen's own policy, because it serves the same
+	// rows over a route the screen's gate never sees.
+	expr += fmt.Sprintf(".WithIsland(%q)", blueprintIslandPath(apiBase, screen, entity))
+	if p := blueprintIslandPolicyExpr(screen); p != "" {
+		expr += ".WithIslandPolicy(" + p + ")"
+	}
 	return expr
 }
 
@@ -4904,6 +5034,9 @@ type screenImportNeeds struct {
 	node        bool
 	ui          bool
 	resource    bool
+	// nethttp: the file mounts an island endpoint, whose closure takes
+	// (http.ResponseWriter, *http.Request).
+	nethttp bool
 	// uihost: any screen without a blueprint description emits the
 	// zero-value ScreenSEO opt-out, whose SEO type lives in uihost.
 	uihost bool
@@ -4945,6 +5078,11 @@ func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 // whole project). It is the per-file analogue of blueprintScreenImports.
 func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) screenImportNeeds {
 	var needs screenImportNeeds
+	// Every screen root is an html.Div now, so the package is always
+	// needed when there is a screen to render at all.
+	if len(screens) > 0 {
+		needs.html = true
+	}
 	for _, screen := range screens {
 		// Empty-body screens emit html.Heading directly (see
 		// renderBlueprintStubs / the screen Render() empty path).
@@ -5391,7 +5529,7 @@ func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock,
 	}
 	if isEntityListBlock(block) {
 		// Server-rendered via the resource engine (ui.DataTable).
-		return blueprintEntityListResourceExpr(block, entityMap)
+		return blueprintEntityListResourceExpr(screen, block, entityMap, apiBase)
 	}
 	if expr, ok := renderBlueprintCatalogBlock(screen, block, path, entityMap, apiBase); ok {
 		return expr
@@ -5651,123 +5789,6 @@ func blueprintAPIBase(apiPrefix string) string {
 	return "/" + p
 }
 
-func renderBlueprintEntityListNodeExpression(screen BlueprintScreen, block BlueprintBlock, path []int) string {
-	entity := strings.Trim(block.Entity, "/")
-	limit := block.Limit
-	if limit == 0 {
-		limit = 20
-	}
-	emptyText := block.EmptyText
-	if emptyText == "" {
-		emptyText = "No records."
-	}
-	actionName := blueprintEntityListActionName(screen, block, path)
-	props := map[string]any{
-		"class":             "gofastr-entity-list",
-		"data-entity-list":  entity,
-		"data-action-mount": actionName, // auto-fetch rows on hydration
-	}
-	var children []string
-	title := block.Text
-	if title == "" {
-		title = entity
-	}
-	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-		Kind: "heading",
-		Props: map[string]any{
-			"level": int64(2),
-			"text":  title,
-		},
-	}))
-	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-		Kind: "button",
-		Props: map[string]any{
-			"type":                     "button",
-			"text":                     "Refresh",
-			"data-action":              actionName,
-			"data-entity-list-refresh": entity,
-			"data-param-entity":        entity,
-			"data-param-limit":         int64(limit),
-			"data-param-empty-text":    emptyText,
-			"aria-label":               "Refresh " + entity,
-		},
-	}))
-	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-		Kind: "div",
-		Props: map[string]any{
-			"data-entity-list-body": true,
-			"text":                  emptyText,
-		},
-	}))
-	literal, err := renderGoLiteral(props)
-	if err != nil {
-		literal = "nil"
-	}
-	return "uinode.Node{Kind: \"section\", Props: " + literal + ", Children: []uinode.Node{" + strings.Join(children, ", ") + "}}"
-}
-
-func blueprintEntityListActionName(screen BlueprintScreen, block BlueprintBlock, path []int) string {
-	parts := []string{"entity_list"}
-	if screen.Name != "" {
-		parts = append(parts, toCamelJSON(screen.Name))
-	}
-	if block.Entity != "" {
-		parts = append(parts, toCamelJSON(block.Entity))
-	}
-	if len(path) > 0 {
-		pathParts := make([]string, len(path))
-		for i, part := range path {
-			pathParts[i] = fmt.Sprint(part)
-		}
-		parts = append(parts, strings.Join(pathParts, "_"))
-	}
-	return strings.NewReplacer("-", "_", " ", "_", "/", "_").Replace(strings.Join(parts, "_"))
-}
-
-func blueprintEntityListClientJS(block BlueprintBlock, apiBase string) string {
-	entity := strings.Trim(block.Entity, "/")
-	limit := block.Limit
-	if limit == 0 {
-		limit = 20
-	}
-	emptyText := block.EmptyText
-	if emptyText == "" {
-		emptyText = "No records."
-	}
-	fieldsRaw, _ := json.Marshal(block.Fields)
-	return fmt.Sprintf(`(async () => {
-  const apiBase = %q;
-  const entity = %q;
-  const fields = %s;
-  const root = document.querySelector('[data-entity-list="' + entity + '"]');
-  const body = root && root.querySelector('[data-entity-list-body]');
-  if (!body) return;
-  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  // The JSON API serializes column names in camelCase; the blueprint fields
-  // are snake_case. Look up the snake name first, then its camelCase form.
-  const cell = (row, field) => {
-    if (row[field] !== undefined) return row[field];
-    const camel = field.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
-    return row[camel];
-  };
-  const table = (rowsHTML) => '<table><thead><tr>' + fields.map((field) => '<th>' + esc(field) + '</th>').join('') + '</tr></thead><tbody>' + rowsHTML + '</tbody></table>';
-  body.innerHTML = table('<tr><td colspan="' + fields.length + '">Loading...</td></tr>');
-  try {
-    const res = await fetch(apiBase + '/' + entity + '?limit=' + %d, { headers: { 'Accept': 'application/json' } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const payload = await res.json();
-    const rows = Array.isArray(payload.data) ? payload.data : [];
-    if (!rows.length) {
-      body.innerHTML = table('<tr><td colspan="' + fields.length + '">%s</td></tr>');
-      return;
-    }
-    body.innerHTML = table(rows.map((row) => '<tr>' + fields.map((field) => '<td>' + esc(cell(row, field)) + '</td>').join('') + '</tr>').join(''));
-  } catch (err) {
-    body.innerHTML = table('<tr><td colspan="' + fields.length + '">Failed to load ' + esc(entity) + '</td></tr>');
-  }
-})();`, apiBase, entity, string(fieldsRaw), limit, htmlEscapeJSString(emptyText))
-}
-
 func htmlEscapeJSString(value string) string {
 	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", `'`, "&#39;")
 	return replacer.Replace(value)
@@ -5924,126 +5945,6 @@ func blueprintEntityFormClientJS(block BlueprintBlock, apiBase string) string {
 
 func blueprintEntityFormActionName(screen BlueprintScreen, block BlueprintBlock, path []int) string {
 	parts := []string{"entity_form"}
-	if screen.Name != "" {
-		parts = append(parts, toCamelJSON(screen.Name))
-	}
-	if block.Entity != "" {
-		parts = append(parts, toCamelJSON(block.Entity))
-	}
-	return strings.NewReplacer("-", "_", " ", "_", "/", "_").Replace(strings.Join(parts, "_"))
-}
-
-// renderBlueprintEntityDetailNode generates the uinode.Node for a detail view
-// of a single entity record. The fields render server-side as placeholders;
-// the mount handler (blueprintEntityDetailClientJS) reads the record id from
-// the URL, fetches it, and fills the values.
-func renderBlueprintEntityDetailNode(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration) string {
-	entity := strings.Trim(block.Entity, "/")
-	decl, ok := entityMap[entity]
-	if !ok {
-		return fmt.Sprintf("uinode.Node{Kind: \"div\", Props: map[string]any{\"text\": %q}}", "entity_detail: unknown entity "+entity)
-	}
-	actionName := blueprintEntityDetailActionName(screen, block, path)
-	title := block.Text
-	if title == "" {
-		title = toDisplayName(entity) + " Details"
-	}
-	props := map[string]any{
-		"class":              "gofastr-entity-detail",
-		"data-entity-detail": entity,
-		"data-action-mount":  actionName, // fetch + fill on hydration
-	}
-	var children []string
-	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-		Kind:  "heading",
-		Props: map[string]any{"level": int64(2), "text": title},
-	}))
-	filterFields := block.Fields
-	for _, field := range decl.Fields {
-		if field.Name == "deleted_at" {
-			continue
-		}
-		if field.Hidden {
-			continue
-		}
-		if len(filterFields) > 0 {
-			found := false
-			for _, f := range filterFields {
-				if f == field.Name {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		label := toDisplayName(field.Name)
-		children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-			Kind: "div",
-			Props: map[string]any{
-				"class":            "detail-field",
-				"data-field":       field.Name,
-				"data-field-label": label,
-			},
-			Children: []BlueprintBlock{
-				{
-					Kind: "span",
-					Props: map[string]any{
-						"class": "detail-label",
-						"text":  label,
-					},
-				},
-				{
-					Kind: "span",
-					Props: map[string]any{
-						"class":            "detail-value",
-						"data-field-value": field.Name,
-						"text":             "—",
-					},
-				},
-			},
-		}))
-	}
-	literal, err := renderGoLiteral(props)
-	if err != nil {
-		literal = "nil"
-	}
-	return "uinode.Node{Kind: \"section\", Props: " + literal + ", Children: []uinode.Node{" + strings.Join(children, ", ") + "}}"
-}
-
-// blueprintEntityDetailClientJS fetches one record (id taken from the last
-// path segment of the URL) and fills the [data-field-value] spans.
-func blueprintEntityDetailClientJS(block BlueprintBlock, apiBase string) string {
-	entity := strings.Trim(block.Entity, "/")
-	return fmt.Sprintf(`(async () => {
-  const apiBase = %q;
-  const entity = %q;
-  const root = document.querySelector('[data-entity-detail="' + entity + '"]');
-  if (!root) return;
-  const id = location.pathname.split('/').filter(Boolean).pop();
-  if (!id) return;
-  try {
-    const res = await fetch(apiBase + '/' + entity + '/' + encodeURIComponent(id), { headers: { 'Accept': 'application/json' } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const payload = await res.json();
-    const row = payload && payload.data;
-    if (!row) return;
-    // API keys are camelCase; field markers are snake_case — try both.
-    const cell = (key) => {
-      if (row[key] !== undefined) return row[key];
-      return row[key.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase())];
-    };
-    for (const span of root.querySelectorAll('[data-field-value]')) {
-      const val = cell(span.getAttribute('data-field-value'));
-      span.textContent = (val === null || val === undefined || val === '') ? '—' : String(val);
-    }
-  } catch (_) {}
-})();`, apiBase, entity)
-}
-
-func blueprintEntityDetailActionName(screen BlueprintScreen, block BlueprintBlock, path []int) string {
-	parts := []string{"entity_detail"}
 	if screen.Name != "" {
 		parts = append(parts, toCamelJSON(screen.Name))
 	}

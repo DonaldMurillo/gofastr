@@ -15,18 +15,27 @@ import (
 )
 
 func runMigrate(args []string) {
+	if hasHelpFlag(args) {
+		printMigrateUsage()
+		return
+	}
+	// The subcommand is optional (see printHelp: "migrate (m) [up|down|…]"),
+	// so a bare `gofastr migrate` must default to "up" without slicing past
+	// the end of an empty arg vector (which panicked with slice bounds [1:0]).
 	subcmd := "up"
+	rest := args
 	if len(args) > 0 {
 		subcmd = args[0]
+		rest = args[1:]
 	}
 
 	switch subcmd {
 	case "up":
-		runMigrateUp(args[1:])
+		runMigrateUp(rest)
 	case "down":
-		runMigrateDown(args[1:])
+		runMigrateDown(rest)
 	case "status":
-		runMigrateStatus(args[1:])
+		runMigrateStatus(rest)
 	case "diff":
 		// Removed: `migrate diff` *applied* a blueprint onto a live DB,
 		// reconciling the running database to the blueprint — i.e. treating
@@ -37,9 +46,9 @@ func runMigrate(args []string) {
 		info("It applied a blueprint directly onto a live DB. Use `gofastr migrate generate <name>` to emit a reviewable migration, then `gofastr migrate up`. See `gofastr docs migrations`.")
 		osExit(1)
 	case "generate":
-		runMigrateGenerate(args[1:])
+		runMigrateGenerate(rest)
 	case "force":
-		runMigrateForce(args[1:])
+		runMigrateForce(rest)
 	default:
 		fail("Unknown migrate subcommand: %q", subcmd)
 		info("Available: up, down, status, generate, force")

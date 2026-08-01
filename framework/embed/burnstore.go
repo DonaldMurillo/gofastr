@@ -52,6 +52,16 @@ type BurnStore interface {
 type MemoryBurnStore struct {
 	mu   sync.Mutex
 	rows map[string]memoryBurn
+
+	// Opportunistic self-pruning. The embed host schedules no background
+	// sweeper, so without this the rows map grew by one entry per nonce
+	// exchange for the life of the process. Burn sweeps expired rows once the
+	// live set crosses pruneThreshold AND at least pruneInterval has elapsed
+	// since the last sweep, so a workload of all-live nonces does not scan the
+	// map on every write. lastPrune is guarded by mu.
+	pruneThreshold int
+	pruneInterval  time.Duration
+	lastPrune      time.Time
 }
 
 type memoryBurn struct {
@@ -59,9 +69,45 @@ type memoryBurn struct {
 	expires time.Time
 }
 
-// NewMemoryBurnStore returns an in-process burn store.
-func NewMemoryBurnStore() *MemoryBurnStore {
-	return &MemoryBurnStore{rows: make(map[string]memoryBurn)}
+// Defaults for opportunistic pruning. The threshold is a high-water mark: the
+// map may grow past it between sweeps, but a sustained exchange rate cannot
+// grow it without bound because every crossing re-runs the sweep.
+const (
+	defaultBurnPruneThreshold = 256
+	defaultBurnPruneInterval  = time.Minute
+)
+
+// MemoryBurnStoreOption configures a MemoryBurnStore at construction.
+type MemoryBurnStoreOption func(*MemoryBurnStore)
+
+// WithBurnPrunePolicy overrides the opportunistic-prune high-water mark and
+// minimum interval between sweeps. A threshold <= 0 keeps the default; an
+// interval <= 0 disables the interval gate (sweep on every qualifying write).
+func WithBurnPrunePolicy(threshold int, interval time.Duration) MemoryBurnStoreOption {
+	return func(s *MemoryBurnStore) {
+		if threshold > 0 {
+			s.pruneThreshold = threshold
+		}
+		if interval > 0 {
+			s.pruneInterval = interval
+		} else {
+			s.pruneInterval = 0 // no gate
+		}
+	}
+}
+
+// NewMemoryBurnStore returns an in-process burn store that opportunistically
+// prunes expired rows on writes past a high-water mark.
+func NewMemoryBurnStore(opts ...MemoryBurnStoreOption) *MemoryBurnStore {
+	s := &MemoryBurnStore{
+		rows:           make(map[string]memoryBurn),
+		pruneThreshold: defaultBurnPruneThreshold,
+		pruneInterval:  defaultBurnPruneInterval,
+	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Burn implements BurnStore.
@@ -80,6 +126,11 @@ func (s *MemoryBurnStore) Burn(_ context.Context, nonceID, grant string, expires
 	// write it would leave the nonce unburnt and spendable by the next caller,
 	// which is worse than what this guard prevents.
 	s.rows[nonceID] = memoryBurn{grant: grant, expires: expires}
+	// Opportunistic self-pruning: the embed host runs no background sweeper, so
+	// this is what keeps the rows map bounded over the process lifetime. The
+	// sweep fires only past the high-water mark and at most once per interval,
+	// so a workload of all-live nonces does not scan on every write.
+	s.maybePruneLocked()
 	// But hand back a usable grant only if the deadline has not already passed.
 	//
 	// Verification happens before the burn and is not atomic with it, so a
@@ -94,15 +145,36 @@ func (s *MemoryBurnStore) Burn(_ context.Context, nonceID, grant string, expires
 	return grant, false, nil
 }
 
-// Prune implements BurnStore.
-func (s *MemoryBurnStore) Prune(_ context.Context, now time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// maybePruneLocked runs a sweep when the high-water mark is crossed and the
+// interval gate has elapsed. Caller holds s.mu.
+func (s *MemoryBurnStore) maybePruneLocked() {
+	if len(s.rows) < s.pruneThreshold {
+		return
+	}
+	if s.pruneInterval > 0 && !s.lastPrune.IsZero() && time.Since(s.lastPrune) < s.pruneInterval {
+		return
+	}
+	s.pruneLocked(time.Now())
+	s.lastPrune = time.Now()
+}
+
+// pruneLocked deletes every row whose retention deadline has passed. Caller
+// holds s.mu. Shared by Prune (external) and maybePruneLocked (opportunistic).
+func (s *MemoryBurnStore) pruneLocked(now time.Time) {
 	for id, row := range s.rows {
 		if !now.Before(row.expires) {
 			delete(s.rows, id)
 		}
 	}
+}
+
+// Prune implements BurnStore. It remains the explicit, clock-injected sweep an
+// external scheduler (or Host.Prune) can drive; Burn ALSO self-prunes
+// opportunistically so the store stays bounded even without one.
+func (s *MemoryBurnStore) Prune(_ context.Context, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneLocked(now)
 	return nil
 }
 

@@ -35,10 +35,11 @@ import (
 func newResolveManager(t *testing.T, store UserStore) (*OAuth2Plugin, *AuthManager) {
 	t.Helper()
 	mgr := New(AuthConfig{
-		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     store,
+		JWTSecret:           "test-secret", // prod-mode Init fails closed without one
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           store,
+		AllowInMemoryStores: true, // unit tests run on the memory session store
 	})
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		StateSecret: "test-secret",

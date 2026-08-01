@@ -7,8 +7,10 @@ specific knobs rather than rebuild the chain.
 ## The default stack
 
 `framework.NewApp` installs this middleware chain on `app.Router` unless
-you pass `WithoutDefaultMiddleware()` (or call `app.Use(...)` before
-registering entities, which also disables it):
+you pass `WithoutDefaultMiddleware()`. (`app.Use(...)` appends your
+middleware to the chain — it does not replace or disable the defaults;
+use `WithoutDefaultMiddleware()` when you want to build the chain
+yourself.)
 
 ```go
 middleware.Recovery()
@@ -59,7 +61,8 @@ a custom `ContentSecurityPolicy` should keep both directives.
 
 ### Static exports
 
-`gofastr export` writes the policy into every page as an in-document
+A static export (the app binary's `--export <dir>` flag) writes the
+policy into every page as an in-document
 `<meta http-equiv="Content-Security-Policy">` and emits a `_headers`
 file for hosts that read one (Netlify, Cloudflare Pages). Response
 headers are a server's job, and a static export has no server — without
@@ -113,11 +116,9 @@ strict defaults exactly.
 
 ```go
 middleware.CORS(middleware.CORSConfig{
-    AllowedOrigins:   []string{"https://app.example.com"},
-    AllowedMethods:   []string{http.MethodGet, http.MethodPost},
-    AllowedHeaders:   []string{"Authorization", "Content-Type"},
-    AllowCredentials: true,
-    MaxAge:           600,
+    AllowedOrigins: []string{"https://app.example.com"},
+    AllowedMethods: []string{http.MethodGet, http.MethodPost},
+    AllowedHeaders: []string{"Authorization", "Content-Type"},
 })
 ```
 
@@ -232,7 +233,7 @@ in the gateway / docs pipeline.
 - `RateLimit(RateLimitConfig)` — token-bucket per key.
 - `Timeout(d)` — per-request deadline; cancels context on expiry.
 - `NewMetrics()` + `MetricsMiddleware` + `MetricsHandler` — RED metrics.
-- `Tracing(TracingConfig)` — OpenTelemetry span around each request.
+- `Tracing()` — OpenTelemetry span around each request.
 
 Each has a `*_test.go` you can read for the exact behaviour.
 

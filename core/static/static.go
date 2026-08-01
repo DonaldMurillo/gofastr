@@ -4,12 +4,14 @@
 package static
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -42,6 +44,13 @@ type Config struct {
 	// instead of returning 404 for directory paths that lack an index file.
 	// Do not set this field — it is currently ignored.
 	DirListing bool
+
+	// digests memoises content digests for THIS handler's FS so the ETag
+	// is not recomputed on every request. Handler allocates one per call;
+	// see digestKey for why it must not be shared across filesystems.
+	// Copying a Config shares the same cache, which is correct — the FS
+	// travels with it.
+	digests *sync.Map
 }
 
 // defaults fills in zero-value fields with sensible defaults.
@@ -60,6 +69,7 @@ func (c Config) defaults() Config {
 // given Config.
 func Handler(config Config) http.Handler {
 	config = config.defaults()
+	config.digests = &sync.Map{}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve GET and HEAD.
@@ -126,13 +136,29 @@ func Handler(config Config) http.Handler {
 func serveFile(w http.ResponseWriter, r *http.Request, config Config, name string) bool {
 	f, err := config.FS.Open(name)
 	if err != nil {
-		return false
+		// A genuinely missing file is a 404 (let the handler fall
+		// through). Any other open error — permission denied, I/O
+		// fault, unreadable backing store — is a server fault and must
+		// surface as 500, not be masked as "not found".
+		//
+		// fs.ErrInvalid is on the 404 side of that line: fs.ValidPath
+		// rejects any name that is not valid UTF-8, so os.DirFS and
+		// embed.FS answer ErrInvalid for a URL like /%ff. That is a
+		// malformed request, not a server fault — treating it as one let
+		// any client drive a 5xx with a two-character URL, and skipped
+		// the SPA fallback on the way.
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+			return false
+		}
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return true
 	}
 	defer f.Close()
 
 	stat, err := f.Stat()
 	if err != nil {
-		return false
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return true
 	}
 
 	// If it's a directory, try to serve the index file.
@@ -141,15 +167,17 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return serveFile(w, r, config, indexPath)
 	}
 
-	// Read file content for ETag generation.
-	// Limit to 32 MB — files served statically should not be huge.
-	data, err := io.ReadAll(io.LimitReader(f, 32<<20))
+	// ETag from a cached content digest. On a cache miss the file is
+	// streamed through SHA-256 (never held in RAM); previously the whole
+	// file was read and re-hashed on every request, and capped at 32MB —
+	// which silently truncated larger files to a 200 with a
+	// Content-Length/ETag that matched the truncated body.
+	etag, consumed, err := fileETag(config.digests, f, stat, name)
 	if err != nil {
-		return false
+		// A read fault that is not "not found" is a 500, not a 404.
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return true
 	}
-
-	// Generate ETag from content.
-	etag := generateETag(data)
 
 	// Get modification time.
 	modTime := stat.ModTime()
@@ -170,10 +198,43 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	contentType := DetectFromName(name)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 
-	// Write the file content.
-	w.Write(data)
+	// HEAD: headers only, no body.
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return true
+	}
+
+	// fileETag consumed the file on a cache miss; rewind before serving
+	// the body. We stream directly to the ResponseWriter so arbitrarily
+	// large files are never buffered in memory.
+	//
+	// fs.FS promises no seeking, so a conforming filesystem may hand back
+	// a read-only handle. Reopen in that case: skipping the rewind would
+	// copy from an exhausted reader and answer 200 with an EMPTY body
+	// under the full Content-Length — a corrupt response.
+	if rs, ok := f.(io.Seeker); ok {
+		if _, err := rs.Seek(0, io.SeekStart); err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return true
+		}
+	} else if consumed {
+		reopened, err := config.FS.Open(name)
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return true
+		}
+		defer reopened.Close()
+		f = reopened
+	}
+	if _, err := io.Copy(w, f); err != nil {
+		// Headers (and possibly part of the body) are already on the
+		// wire — the status can no longer change. A mid-stream write
+		// fault surfaces to the client as a truncated transfer, which
+		// is the only honest signal left.
+		return true
+	}
 	return true
 }
 

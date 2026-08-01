@@ -52,7 +52,7 @@ sessions and two viewers.
 3. `handleSSE` resolves the identity from `r.Context()` and calls
    `Manager.ServeSSEWithPresence`, which joins the connection onto the
    topic for the lifetime of the SSE stream.
-4. On join/leave the manager fires `OnPresenceChange(topic)`. The host
+4. On join/leave the manager fires `SetOnPresenceChange`'s callback. The host
    wires that callback to re-render the roster island and push it to
    every session on the topic via the existing `PushUpdate` lane — no
    new transport.
@@ -79,10 +79,10 @@ name **any** topic within the bounds — including one it should not see. Since
 a roster can contain emails (the display name), an ungated private topic
 (`org:42:admins`) is a roster-disclosure vector to anyone who can guess it.
 
-Set `Manager.AuthorizeTopic` to gate joins:
+Call `Manager.SetAuthorizeTopic` to gate joins:
 
 ```go
-mgr.AuthorizeTopic = func(ctx context.Context, topic string) bool {
+mgr.SetAuthorizeTopic(func(ctx context.Context, topic string) bool {
     // Public topics: always allow.
     if strings.HasPrefix(topic, "public:") {
         return true
@@ -91,7 +91,7 @@ mgr.AuthorizeTopic = func(ctx context.Context, topic string) bool {
     // topic's ACL. ctx is the SSE request context — read the trusted user
     // with island.PresenceIdentityFromContext(ctx) or handler.GetUser(ctx).
     return userMayViewTopic(ctx, topic)
-}
+})
 ```
 
 The hook runs once per requested topic at SSE-connect time, **before** any
@@ -125,7 +125,7 @@ members := mgr.PresenceRoster("doc:42") // []PresenceMember
 sessions := mgr.PresenceSessions("doc:42") // []sessionID
 
 // Live roster push: fire on join/leave. The host wires this.
-mgr.OnPresenceChange = func(topic string) {
+mgr.SetOnPresenceChange(func(topic string) {
     html := renderRoster(mgr.PresenceRoster(topic))
     for _, sid := range mgr.PresenceSessions(topic) {
         mgr.PushUpdate(island.IslandUpdate{
@@ -133,7 +133,7 @@ mgr.OnPresenceChange = func(topic string) {
             HTML:     string(html),
         }, sid)
     }
-}
+})
 ```
 
 `PresenceJoin`/`PresenceHandle.Leave` are called automatically by
@@ -165,7 +165,7 @@ html.Div(html.DivConfig{
 }, renderRoster(mgr.PresenceRoster(topic)))
 ```
 
-2. Wire `OnPresenceChange` (once, at startup) to push the re-rendered
+2. Wire `SetOnPresenceChange` (once, at startup) to push the re-rendered
    roster to every session on the topic — see the API example above.
 
 3. Link the page with the topic: `<a href="/my-page?presence=my-topic">`.
@@ -213,7 +213,7 @@ presence); there is no separate presence wiring to do.
   explicit goodbye needed. A **graceful stop** (`SetFanout`'s returned
   `stop`, called by app `Shutdown`) publishes an empty roster first, so a
   rolling restart converges promptly.
-- A roster change from a remote merge fires the same `OnPresenceChange` →
+- A roster change from a remote merge fires the same `SetOnPresenceChange` callback →
   `PushUpdate` path as a local join, so viewers on every replica see the
   update live (island push already crosses replicas).
 

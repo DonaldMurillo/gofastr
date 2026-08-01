@@ -234,7 +234,7 @@ bin/
 		fmt.Println("    entities/entities.go — Sample entity (posts) served at /posts")
 	}
 	fmt.Println("    .env                 — Environment configuration")
-	fmt.Println("    gofastr.yml          — Project configuration")
+	fmt.Println("    gofastr.isolation.yml — Process-isolation configuration")
 	fmt.Println("    .gitignore           — Git ignore rules")
 	fmt.Println()
 	fmt.Printf("  %s (read by AI coding tools so they reach for framework primitives instead of reinventing):\n", bold("AI-agent onboarding"))
@@ -482,8 +482,8 @@ isolation:
   services:
   env:
 `
-	if err := os.WriteFile(filepath.Join(name, "gofastr.yml"), []byte(content), 0o644); err != nil {
-		fail("Failed to write gofastr.yml: %v", err)
+	if err := os.WriteFile(filepath.Join(name, "gofastr.isolation.yml"), []byte(content), 0o644); err != nil {
+		fail("Failed to write gofastr.isolation.yml: %v", err)
 		osExit(1)
 	}
 }

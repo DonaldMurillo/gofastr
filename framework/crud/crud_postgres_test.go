@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -446,5 +447,46 @@ func TestPG_SearchFields(t *testing.T) {
 	got = listIDs(t, ch, "/pgsrch_books?q=python&sort=id")
 	if len(got) != 0 {
 		t.Errorf("q=python → %v, want empty", got)
+	}
+}
+
+// TestAutoTimestampRoundTripsMicrosecPG proves the microsecond AutoTimestamp
+// survives a write→read round-trip on a real Postgres TIMESTAMPTZ column to
+// the microsecond — Postgres's storage precision, which is why the format
+// is .999999 and not nanosecond (finer would truncate lossy). Skips when
+// Postgres is unreachable (pgtest.DB).
+func TestAutoTimestampRoundTripsMicrosecPG(t *testing.T) {
+	db := pgtest.DB(t)
+	if _, err := db.Exec(`CREATE TABLE ts_pg (id TEXT PRIMARY KEY, created_at TIMESTAMPTZ)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	v := generateFieldValue(schema.AutoTimestamp).(string)
+	written, err := time.Parse(time.RFC3339Nano, v)
+	if err != nil {
+		t.Fatalf("generated %q is not RFC3339Nano: %v", v, err)
+	}
+	if _, err := db.Exec("INSERT INTO ts_pg (id, created_at) VALUES ($1, $2)", "r1", v); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	var readBack time.Time
+	if err := db.QueryRow("SELECT created_at FROM ts_pg WHERE id = $1", "r1").Scan(&readBack); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+
+	// Lossless to the microsecond: PG stores µs, so the written value must
+	// re-emerge unchanged once both are truncated to PG's precision.
+	want := written.UTC().Truncate(time.Microsecond)
+	got := readBack.UTC().Truncate(time.Microsecond)
+	if !want.Equal(got) {
+		t.Errorf("PG TIMESTAMPTZ did not round-trip created_at to the microsecond: wrote %v (%q) read %v", written, v, readBack)
+	}
+
+	// Sub-second component must survive when the written value carried one
+	// (whole-second writes are exact-second by construction and uninteresting).
+	if !written.UTC().Truncate(time.Second).Equal(written.UTC()) {
+		if got.UTC().Truncate(time.Second).Equal(got.UTC()) {
+			t.Errorf("PG round-trip dropped sub-second precision: wrote %v read %v", written, readBack)
+		}
 	}
 }

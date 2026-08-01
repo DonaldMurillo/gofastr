@@ -20,29 +20,11 @@
 // static tree, so a data-fui-open click in a static export opens the
 // overlay — it does NOT need the server and must not be told it does.
 //
-// The origin guards (_sameOrigin / _originOK) are duplicated from rpc.js.
-// They live on the namespace there; nav's loadPage calls
-// window.__gofastr._originOK at event time, and the static composition omits
-// rpc, so rpc-stub must provide them. widgets-boot-static's chrome fetch
-// (via src/widgets.js) also calls _originOK. _csrf is omitted: nothing in
-// the static composition dispatches a fetch that would need a CSRF token.
+// The same-origin guards live in kernel because nav and split modules need
+// them before any demand module arrives. The stub owns only the static notice.
 
-  // rpc-stub namespace members (the origin guards nav depends on).
-  Object.assign(window.__gofastr, {
-    _sameOrigin(u) {
-      try { return new URL(String(u ?? ''), location.href).origin === location.origin; }
-      catch (_) { return false; }
-    },
-    _originOK(u) {
-      if (this._sameOrigin(u)) return true;
-      console.warn('[gofastr] refused cross-origin fetch:', u);
-      return false;
-    },
-  });
-
-  // Install ONCE at script load. Idempotent via document.__fuiStaticDispatch
-  // (separate flag from rpc's __fuiGlobalDispatch — the two fragments are
-  // never composed together, but a distinct flag keeps the guard honest).
+  // Install ONCE at script load. The separate static flag also tells shared
+  // boot code not to install the live bridge or prefetch src/rpc.js.
   if (!document.__fuiStaticDispatch) {
     document.__fuiStaticDispatch = true;
     document.addEventListener('click', (e) => {

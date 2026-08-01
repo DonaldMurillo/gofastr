@@ -94,10 +94,12 @@ func newDiskEngine(path string) (*Engine, error) {
 	}
 	btree := NewBTree(pager)
 	eng := NewEngine(pager, btree)
-	// Load schema from existing database
+	// Load schema from existing database. A read error here means the
+	// schema page is present but damaged — propagate it so the open fails
+	// loudly instead of returning an engine that reads as empty.
 	if err := eng.LoadSchema(); err != nil {
-		// Empty database — that's fine
-		_ = err
+		df.Close()
+		return nil, fmt.Errorf("sqlite: load schema: %w", err)
 	}
 	return eng, nil
 }
@@ -205,7 +207,26 @@ type sharedConnector struct {
 	engine *Engine
 	once   sync.Once
 	shared *sharedEngine
+	mu     sync.Mutex
 	closed bool
+}
+
+// Close releases the engine this connector owns, closing the underlying
+// file. database/sql calls it from DB.Close when the Connector implements
+// io.Closer.
+//
+// Without it the engine — and the *os.File its pager holds — outlived every
+// DB.Close for the life of the process, so a program or test runner that
+// opens and closes databases in a loop ran out of descriptors while every
+// *sql.DB it held looked properly closed.
+func (c *sharedConnector) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	return c.engine.Close()
 }
 
 func (c *sharedConnector) getShared() *sharedEngine {
@@ -236,14 +257,47 @@ func CloseDB(db *sql.DB) {
 
 type sqliteDriver struct{}
 
-func (d *sqliteDriver) Open(name string) (driver.Conn, error) {
-	eng, err := newMemEngine()
+// OpenConnector builds ONE engine per sql.Open and shares it across every
+// connection in that pool — the same arrangement Open/OpenFile give you
+// directly. database/sql calls this once per sql.Open (driver.DriverContext)
+// and then Connect per physical connection.
+//
+// Sharing has to happen at the connector, not per Open(name) call: an engine
+// per connection means independent pagers and page caches over one file with
+// no locking between them, so two pooled connections writing concurrently
+// overwrite each other's pages and silently drop committed rows. Keying on the
+// connector (rather than globally on the path) also keeps two separate
+// sql.Open(":memory:") calls as two independent databases.
+func (d *sqliteDriver) OpenConnector(name string) (driver.Connector, error) {
+	eng, err := engineForDSN(name)
 	if err != nil {
 		return nil, err
 	}
-	return &conn{
-		shared: newSharedEngine(eng),
-	}, nil
+	return &sharedConnector{engine: eng}, nil
+}
+
+// Open is the legacy driver.Driver entry point. database/sql prefers
+// OpenConnector above; this remains for direct driver.Driver callers, and
+// gives each call its own engine because there is no pool identity to share.
+func (d *sqliteDriver) Open(name string) (driver.Conn, error) {
+	eng, err := engineForDSN(name)
+	if err != nil {
+		return nil, err
+	}
+	return &conn{shared: newSharedEngine(eng)}, nil
+}
+
+// engineForDSN honors the DSN with the same semantics as the package's
+// Open/OpenFile helpers: ":memory:" or empty stays in-memory; any other value
+// is a file path on disk. (Open previously ignored name entirely, so
+// sql.Open("sqlite", "file:foo.db") backed every connection with a fresh
+// in-memory engine and discarded all writes.)
+func engineForDSN(name string) (*Engine, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || name == ":memory:" {
+		return newMemEngine()
+	}
+	return newDiskEngine(name)
 }
 
 // ============================================================================

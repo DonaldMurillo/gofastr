@@ -14,10 +14,11 @@ func newProdTestManager(t *testing.T) (*AuthManager, *memoryUserStore) {
 	t.Helper()
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
-		JWTSecret:  "test-secret",
-		JWTExpiry:  time.Hour,
-		SessionTTL: 24 * time.Hour,
-		UserStore:  userStore,
+		JWTSecret:           "test-secret",
+		JWTExpiry:           time.Hour,
+		SessionTTL:          24 * time.Hour,
+		UserStore:           userStore,
+		AllowInMemoryStores: true, // unit tests run on the memory session store
 	})
 	mgr.Use(NewCorePlugin())
 	if err := mgr.Init(nil); err != nil {

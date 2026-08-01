@@ -107,6 +107,16 @@
   // On SPA navigation, tear down listeners for computed elements that left the
   // DOM BEFORE the new page's scanner re-wires the fresh markers.
   window.addEventListener('gofastr:navigate', teardownDetached);
+  // A non-navigate swap (island/poll/signal innerHTML) that removes a
+  // computed node never fires gofastr:navigate, so the handler above
+  // alone leaks the recompute closure. A MutationObserver catches the
+  // detach: teardownDetached is idempotent (it only reclaims nodes no
+  // longer isConnected), so running it on any childList change is safe
+  // and cheap — the wired set is tiny.
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(() => { teardownDetached(); })
+      .observe(document, { childList: true, subtree: true });
+  }
 
   if (window.__gofastr) {
     window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {};

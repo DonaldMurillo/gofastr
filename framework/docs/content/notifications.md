@@ -73,9 +73,12 @@ tmpl.Set("password.reset", "email", notify.Template{
 ```
 
 `Template.Extra` is passed through to the channel as `Rendered.Extra`
-— the bundled `EmailChannel` honours `Extra["from"]` (override sender)
-and `Extra["headers"]` (custom headers) so per-notification overrides
-don't need a custom Channel.
+— the bundled `EmailChannel` honours `Extra["headers"]` (custom headers,
+with reserved keys like To/From/Cc/Bcc/Reply-To rejected) so
+per-notification overrides don't need a custom Channel. A templated
+`Extra["from"]` is **rejected** with an error: a per-notification sender
+override is a spoofing vector, so the channel's configured from-address
+is the only legitimate source.
 
 For larger apps with translations, render templates yourself via the
 `core/i18n` package and pass the result via `Data["_rendered_email"]`

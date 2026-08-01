@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -295,6 +296,42 @@ func TestBootToleratesAMissingNav(t *testing.T) {
 	}
 }
 
+// TestRPCIsDemandLoaded pins the size carve: live compositions keep the
+// delegation bridge, while the network implementation ships only as src/rpc.js.
+// Static exports retain rpc-stub and must skip the shared marker scanner so an
+// inert RPC control never requests a server-only module.
+func TestRPCIsDemandLoaded(t *testing.T) {
+	for name, order := range map[string][]string{
+		"full":   fullFragmentOrder,
+		"embed":  embedFragmentOrder,
+		"static": staticFragmentOrder,
+	} {
+		if slices.Contains(order, "rpc") {
+			t.Errorf("%s composition still embeds rpc instead of demand-loading it", name)
+		}
+	}
+	if _, ok := Module("rpc"); !ok {
+		t.Fatal("src/rpc.js is not embedded as a demand module")
+	}
+
+	boot, err := fs.ReadFile(fragFS, "frag/boot.js")
+	if err != nil {
+		t.Fatalf("read boot fragment: %v", err)
+	}
+	body := string(boot)
+	if !strings.Contains(body, `{ name: 'rpc', selector: '[data-fui-rpc],[data-kiln-tool]' }`) {
+		t.Error("boot marker scanner does not eagerly prefetch rpc for RPC and kiln controls")
+	}
+	if !strings.Contains(body, "document.__fuiStaticDispatch") {
+		t.Error("shared RPC bridge does not preserve rpc-stub as the static-only dispatcher")
+	}
+
+	rpc, _ := Module("rpc")
+	if strings.Contains(rpc, "document.addEventListener(") {
+		t.Error("rpc demand module installs a document listener; core must own the single delegation site")
+	}
+}
+
 // TestCompositionsShareByteIdenticalFragments is the anti-drift guard for the
 // composer as a whole. Every bundle is assembled from the SAME files by the
 // same function, so a fix applied to one composition cannot fail to reach
@@ -332,10 +369,9 @@ func TestCompositionsShareByteIdenticalFragments(t *testing.T) {
 		}
 	}
 
-	// rpc and rpc-stub are mutually exclusive, as are widgets-boot and
-	// widgets-boot-static. Composing both halves of either pair would install
-	// two definitions of the same behaviour in one scope.
-	exclusive := [][2]string{{"rpc", "rpc-stub"}, {"widgets-boot", "widgets-boot-static"}}
+	// Live and static widget boots are mutually exclusive. rpc-stub is no
+	// longer paired with a core rpc fragment; live bundles demand-load rpc.
+	exclusive := [][2]string{{"widgets-boot", "widgets-boot-static"}}
 	for name, order := range compositions {
 		has := map[string]bool{}
 		for _, f := range order {
@@ -414,5 +450,74 @@ func TestKernelAppendsVersionWithTheRightSeparator(t *testing.T) {
 	if !strings.Contains(body, `indexOf('?')`) {
 		t.Error("kernel.js does not choose its query separator; a stylePath carrying a " +
 			"query would get a second '?'")
+	}
+}
+
+// A click on an element carrying BOTH a signal-mutation attribute and
+// data-fui-rpc must do the signal mutation only. One delegator used to own
+// both branches and returned after the signal, so RPC was never consulted.
+// Splitting them across signals.js and boot.js made two listeners fire on
+// the same click; the bridge has to reproduce the original precedence.
+func TestSignalMutationTakesPrecedenceOverRPC(t *testing.T) {
+	boot, err := fs.ReadFile(fragFS, "frag/boot.js")
+	if err != nil {
+		t.Fatalf("read boot fragment: %v", err)
+	}
+	body := string(boot)
+	idx := strings.Index(body, "document.__fuiGlobalDispatch = true")
+	if idx < 0 {
+		t.Fatal("could not locate the live RPC bridge in boot.js")
+	}
+	// Scan the click listener that follows the guard flag.
+	end := strings.Index(body[idx:], "addEventListener('submit'")
+	if end < 0 {
+		end = len(body) - idx
+	}
+	click := body[idx : idx+end]
+	if !strings.Contains(click, "data-fui-signal-set") {
+		t.Error("the RPC bridge does not skip signal-mutation elements — a node with both attributes would fire the signal AND dispatch an RPC")
+	}
+}
+
+// Every site that prevents the default action and THEN awaits the rpc
+// module has to recover when the module never arrives, or it eats the
+// user's click in silence. The document bridge in boot.js does this, and
+// deliberately skips anything inside [data-fui-widget] — so the
+// widget-scoped listeners in src/widgets.js cannot be covered by it and
+// must handle their own failure. They shipped with a bare `catch (_) {}`,
+// which is exactly the swallow the bridge was written to prevent.
+func TestWidgetRPCListenersRecoverFromMissingModule(t *testing.T) {
+	src, ok := Module("widgets")
+	if !ok {
+		t.Fatal("widgets module not embedded")
+	}
+	// Each await of the rpc module must be followed by a catch that calls
+	// one of the recovery helpers rather than discarding the error.
+	const await = "await NS.loadModule('rpc')"
+	if n := strings.Count(src, await); n == 0 {
+		t.Fatalf("no %q in the widgets module — did the delegation change?", await)
+	}
+	for i, seg := range strings.Split(src, await)[1:] {
+		// Scan to the end of the enclosing try/catch.
+		end := strings.Index(seg, "}")
+		window := seg
+		if end >= 0 {
+			window = seg[:min(len(seg), end+220)]
+		}
+		if !strings.Contains(window, "_rpcUnavailable") && !strings.Contains(window, "_rpcFormFallback") {
+			t.Errorf("rpc await #%d in src/widgets.js swallows a module-load failure — "+
+				"call NS._rpcUnavailable()/NS._rpcFormFallback() so the action is not lost silently:\n%s",
+				i+1, window)
+		}
+	}
+	// The helpers must actually be exported from core for the module to reach.
+	boot, err := fs.ReadFile(fragFS, "frag/boot.js")
+	if err != nil {
+		t.Fatalf("read boot fragment: %v", err)
+	}
+	for _, sym := range []string{"__gofastr._rpcUnavailable", "__gofastr._rpcFormFallback"} {
+		if !strings.Contains(string(boot), sym) {
+			t.Errorf("boot.js does not expose %s — the widgets module cannot recover without it", sym)
+		}
 	}
 }

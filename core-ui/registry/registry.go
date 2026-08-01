@@ -108,6 +108,26 @@ func (e *Entry) VersionFor(theme style.Theme) string {
 	return e.versionCache[h]
 }
 
+// EvictTheme drops the cached CSS + version for hash from this entry. A no-op
+// for a hash that was never cached. Cache misses rebuild on the next CSSFor, so
+// eviction is always correctness-safe; it bounds memory when a theme variant
+// goes away (see framework/uihost.UIHost.ReleaseThemeVariant).
+func (e *Entry) EvictTheme(hash string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.cssCache, hash)
+	delete(e.versionCache, hash)
+}
+
+// HasCachedTheme reports whether this entry currently holds a cached stylesheet
+// for hash. Exposed for tests and for a host observing cache pressure.
+func (e *Entry) HasCachedTheme(hash string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	_, ok := e.cssCache[hash]
+	return ok
+}
+
 // Option configures an Entry at registration time.
 type Option func(*Entry)
 
@@ -179,6 +199,23 @@ func All() []*Entry {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// EvictTheme drops the cached CSS + version for hash from EVERY registered
+// entry. A theme variant is process-wide — it can warm any component's cache via
+// the per-request catalog — so its release must sweep all entries, not one. Lock
+// order is the package mutex THEN the entry mutex (the only nested acquisition
+// site), so this cannot deadlock against CSSFor/VersionFor (entry-only) or
+// RegisterStyle/Lookup/All (package-only).
+func EvictTheme(hash string) {
+	if hash == "" {
+		return
+	}
+	mu.Lock()
+	for _, e := range entries {
+		e.EvictTheme(hash)
+	}
+	mu.Unlock()
 }
 
 // reset is for tests only.

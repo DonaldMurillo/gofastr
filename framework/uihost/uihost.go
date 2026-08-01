@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -96,6 +97,7 @@ type UIHost struct {
 	staticFS        fs.FS                                // embedded filesystem for static files
 	llmMDPublic     bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
 	headHTML        string                               // raw HTML to inject into <head> (escape hatch)
+	lang            string                               // WithLang document language for host-built shells; EffectiveLang resolves it
 	headTags        []string                             // typed head tags built from convenience options
 	faviconURL      string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
 	appIcons        map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
@@ -112,6 +114,17 @@ type UIHost struct {
 	siteDescription bool                                 // set by WithDescription; read by the strict site-surface check
 	embedHost       *fembed.Host                         // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
 	embedThemes     embedThemeState                      // per-surface cap on distinct customer theme variants
+
+	// Hot-path caches. The route table and the default-theme component catalog
+	// are static after wire time, so they are marshaled once and reused on every
+	// page render instead of rebuilt per request. The *MarshalCount atomics let
+	// tests (and a host observing itself) confirm the per-request marshal is gone.
+	routeScriptOnce     sync.Once
+	routeScript         string
+	routeMarshalCount   atomic.Int64
+	catalogCacheOnce    sync.Once
+	catalogCache        string
+	catalogMarshalCount atomic.Int64
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -314,6 +327,14 @@ func WithHeadHTML(html string) Option {
 	return func(ds *UIHost) {
 		ds.headHTML = html
 	}
+}
+
+// WithLang sets the document language (BCP-47 tag, e.g. "en", "fr", "pt-BR")
+// for the host-emitted document shells — the 404, PWA offline, and embed
+// shells that the host builds directly rather than through app.RenderPage. It
+// overrides the app's own Lang ([app.App.WithLang]); both default to "en".
+func WithLang(lang string) Option {
+	return func(ds *UIHost) { ds.lang = lang }
 }
 
 // WithNotFoundScreen overrides the default bare 404 fallback. When a
@@ -787,9 +808,19 @@ func pathToActionID(path string) string {
 	return name
 }
 
-// buildRouteScript auto-builds the __gofastr_routes script from registered screens.
-// CSS chunk names are auto-derived from the screen path.
+// buildRouteScript returns the __gofastr_routes script body, computed ONCE and
+// cached. The route table is static after wire time (screens register at
+// App.Mount, before any page render), so rebuilding + re-marshaling it on every
+// request was pure waste. CSS chunk names are auto-derived from the screen path.
 func (ds *UIHost) buildRouteScript() string {
+	ds.routeScriptOnce.Do(func() {
+		ds.routeScript = ds.buildRouteScriptUncached()
+	})
+	return ds.routeScript
+}
+
+// buildRouteScriptUncached is the per-call marshal; buildRouteScript caches it.
+func (ds *UIHost) buildRouteScriptUncached() string {
 	routes := ds.App.Routes()
 	if len(routes) == 0 {
 		return ""
@@ -812,6 +843,7 @@ func (ds *UIHost) buildRouteScript() string {
 			}
 		}
 	}
+	ds.routeMarshalCount.Add(1)
 	rgJSON, _ := json.Marshal(infos)
 	// JS body only — no <script> wrapper. The body is served as an
 	// external file via /__gofastr/routes.js (CSP-safe under
@@ -856,6 +888,15 @@ func (ds *UIHost) GetActionJS() string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// HasActions reports whether any component has compiled action JS. Use this
+// instead of GetActionJS() != "" — the latter builds the entire concatenated
+// bundle just to test for any entries, which is pure waste on every page render.
+func (ds *UIHost) HasActions() bool {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	return len(ds.actionJS) > 0
 }
 
 // CreateSession mints a new stateless session token. Nothing is stored
@@ -1076,7 +1117,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// when the user clicks. The widget chrome lives just inside
 	// </body>; the runtime's _mountByName checks for an existing
 	// root before fetching cfg.chromePath.
-	page = injectWidgetSSR(page, r.URL)
+	page = injectWidgetSSR(page, r)
 
 	ds.writeAgentLinkHeaders(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1091,9 +1132,10 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 // (no payload for surfaces the user may never trigger) while
 // preserving the SSR contract for surfaces that are visible on
 // arrival (deep-linked modals, persistent panels, sidebars).
-func injectWidgetSSR(page string, u *url.URL) string {
+func injectWidgetSSR(page string, r *http.Request) string {
 	b := borrowBuilder()
 	defer returnBuilder(b)
+	u := r.URL
 	q := u.Query()
 	// Per-page filter — widgets scoped via .Pages / .PagesPrefix /
 	// .PagesMatch only appear on paths they declared. Empty Routes
@@ -1115,7 +1157,12 @@ func injectWidgetSSR(page string, u *url.URL) string {
 		if !open {
 			continue
 		}
-		b.WriteString(widget.RenderChrome(d))
+		// Render with the REQUEST context so context-aware slots (role-aware
+		// nav drawer, tenant-scoped chrome) see the signed-in user on FIRST
+		// paint. The lazy /chrome endpoint already threaded r.Context(); the
+		// SSR inline path must match, or the same slot renders anonymous here
+		// and personalized only after the user reopens it.
+		b.WriteString(widget.RenderChromeCtx(r.Context(), d))
 	}
 	if b.Len() == 0 {
 		return page
@@ -1483,7 +1530,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// <body>
 	bodyClose.WriteString(`<script src="/__gofastr/runtime.js"></script>`)
 	bodyClose.WriteByte('\n')
-	if ds.GetActionJS() != "" {
+	if ds.HasActions() {
 		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
 		bodyClose.WriteByte('\n')
 	}
@@ -1583,8 +1630,8 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 		// this the customCSS / runtime / color-scheme bootstrap silently
 		// don't attach and the page renders as bare browser-default styles.
 		shell := fmt.Sprintf(
-			`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404 — %s</title></head><body>%s</body></html>`,
-			stdhtml.EscapeString(appName), string(body))
+			`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404 — %s</title></head><body>%s</body></html>`,
+			stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), string(body))
 		page := ds.injectChrome(shell, path, "", "")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, page)
@@ -1597,10 +1644,10 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 		appName = ds.App.Name
 	}
 	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Not found — %s</title></head>`+
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Not found — %s</title></head>`+
 			`<body><main role="main"><h1>404 — Page not found</h1><p>No route matched <code>%s</code>.</p>`+
 			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(appName), stdhtml.EscapeString(path))
+		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), stdhtml.EscapeString(path))
 }
 
 // handlePartialPage returns just the screen content for client-side navigation.
@@ -2530,8 +2577,8 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 		appName = ds.App.Name
 	}
 	shell := fmt.Sprintf(
-		`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>405 — %s</title></head><body>%s</body></html>`,
-		stdhtml.EscapeString(appName), string(body))
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>405 — %s</title></head><body>%s</body></html>`,
+		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), string(body))
 	page := ds.injectChrome(shell, path, "", "")
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	fmt.Fprint(w, page)
@@ -2831,7 +2878,15 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 //	const el = document.getElementById('gofastr-catalog');
 //	if (el) window.__gofastr_catalog = JSON.parse(el.textContent);
 func catalogJSONScript(ds *UIHost) string {
-	return catalogJSONScriptFor(ds, ds.activeTheme(), "")
+	// The default-theme catalog is static after wire time (registry entries +
+	// the active theme are fixed before serving), so marshal it once and reuse
+	// on every page render instead of rebuilding the map + json.Marshal per
+	// request. Themed variants (catalogJSONScriptFor with a variantKey) are NOT
+	// cached here — they vary per variant and stay on the embed path.
+	ds.catalogCacheOnce.Do(func() {
+		ds.catalogCache = catalogJSONScriptFor(ds, ds.activeTheme(), "")
+	})
+	return ds.catalogCache
 }
 
 // catalogJSONScriptFor builds the catalog against a specific theme.
@@ -2859,6 +2914,7 @@ func catalogJSONScriptFor(ds *UIHost, theme style.Theme, variantKey string) stri
 			"loadMode":  loadModeString(e.Load),
 		}
 	}
+	ds.catalogMarshalCount.Add(1)
 	buf, err := json.Marshal(cat)
 	if err != nil {
 		return ""
@@ -3246,6 +3302,20 @@ func (ds *UIHost) activeTheme() style.Theme {
 		return *ds.App.Theme
 	}
 	return style.DefaultTheme()
+}
+
+// EffectiveLang returns the document language for host-built shells (404, PWA
+// offline, embed). WithLang ([WithLang]) overrides the app's own Lang
+// ([app.App.WithLang]); both default to "en" so an unconfigured host keeps the
+// pre-config English attribute.
+func (ds *UIHost) EffectiveLang() string {
+	if ds.lang != "" {
+		return ds.lang
+	}
+	if ds.App != nil && ds.App.Lang != "" {
+		return ds.App.Lang
+	}
+	return "en"
 }
 
 func loadModeString(m registry.LoadMode) string {

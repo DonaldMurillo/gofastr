@@ -24,9 +24,9 @@ func TestAuthorizeTopic_NilHookAllowsAll(t *testing.T) {
 // to be joined.
 func TestAuthorizeTopic_FiltersTopics(t *testing.T) {
 	m := NewManager()
-	m.AuthorizeTopic = func(_ context.Context, topic string) bool {
+	m.SetAuthorizeTopic(func(_ context.Context, topic string) bool {
 		return topic == "room:public"
-	}
+	})
 	got := m.filterAuthorizedTopics(context.Background(), []string{"room:public", "room:secret"})
 	if len(got) != 1 || got[0] != "room:public" {
 		t.Fatalf("hook must drop unauthorized topics, got %v", got)
@@ -38,9 +38,9 @@ func TestAuthorizeTopic_FiltersTopics(t *testing.T) {
 // works normally. Proves the gate happens before roster registration.
 func TestAuthorizeTopic_UnauthorizedTopicHasNoRoster(t *testing.T) {
 	m := NewManager()
-	m.AuthorizeTopic = func(_ context.Context, topic string) bool {
+	m.SetAuthorizeTopic(func(_ context.Context, topic string) bool {
 		return topic == "room:public"
-	}
+	})
 	topics := m.filterAuthorizedTopics(context.Background(), []string{"room:public", "room:secret"})
 	h := m.PresenceJoin("sess-1", PresenceIdentity{UserID: "u1", DisplayName: "alice@x.com"}, topics)
 	defer h.Leave()
@@ -62,7 +62,7 @@ func TestAuthorizeTopic_UnauthorizedTopicHasNoRoster(t *testing.T) {
 // which is a safe no-op — Leave on it must not panic.
 func TestAuthorizeTopic_AllRejectedIsSafe(t *testing.T) {
 	m := NewManager()
-	m.AuthorizeTopic = func(_ context.Context, _ string) bool { return false }
+	m.SetAuthorizeTopic(func(_ context.Context, _ string) bool { return false })
 	topics := m.filterAuthorizedTopics(context.Background(), []string{"a", "b"})
 	if len(topics) != 0 {
 		t.Fatalf("all-reject must yield no topics, got %v", topics)
@@ -78,9 +78,9 @@ func TestAuthorizeTopic_AllRejectedIsSafe(t *testing.T) {
 // or dropped the filter would fail here.
 func TestServeSSEWithPresence_AuthorizeTopicGate(t *testing.T) {
 	m := NewManager()
-	m.AuthorizeTopic = func(_ context.Context, topic string) bool {
+	m.SetAuthorizeTopic(func(_ context.Context, topic string) bool {
 		return topic == "room:public"
-	}
+	})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		topics := ParsePresenceTopics(r.URL.Query().Get("presence"))
 		m.ServeSSEWithPresence(w, r, PresenceIdentity{UserID: "u1", DisplayName: "alice@x.com"}, topics)
@@ -130,7 +130,7 @@ func TestServeSSEWithPresence_AuthorizeTopicGate(t *testing.T) {
 // window where the hook ran after Subscribe but before the Unsubscribe defer.
 func TestServeSSEWithPresence_PanickingHookLeaksNoSubscription(t *testing.T) {
 	m := NewManager()
-	m.AuthorizeTopic = func(_ context.Context, _ string) bool { panic("boom") }
+	m.SetAuthorizeTopic(func(_ context.Context, _ string) bool { panic("boom") })
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		topics := ParsePresenceTopics(r.URL.Query().Get("presence"))
 		m.ServeSSEWithPresence(w, r, PresenceIdentity{UserID: "u1"}, topics)
