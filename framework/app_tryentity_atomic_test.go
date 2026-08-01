@@ -258,3 +258,56 @@ func TestEntityAllowsUnclaimedMethodOnClaimedPath(t *testing.T) {
 		t.Fatalf("POST /posts/{id} is not claimed by the CRUD mount, got: %v", err)
 	}
 }
+
+// The endpoint pre-flight compared raw pattern strings while the CRUD
+// pre-flight normalized wildcard shape. ServeMux conflicts on SHAPE, so an
+// endpoint at {slug} aliased the generated {id} (or an existing screen's
+// wildcard) and slipped through validation — then panicked in the commit
+// phase with the registry entry and CRUD routes already published.
+func TestEndpointWildcardAliasIsRejected(t *testing.T) {
+	t.Run("aliases the entity's own CRUD wildcard", func(t *testing.T) {
+		app := atomicTestApp(t)
+
+		err := app.TryEntity("widgets", EntityConfig{
+			Fields: []schema.Field{{Name: "title", Type: schema.String}},
+			Endpoints: []entity.Endpoint{{
+				Method:  "GET",
+				Path:    "{slug}",
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			}},
+		})
+		if err == nil {
+			t.Fatal("an endpoint at {slug} aliases the generated {id} and must be rejected")
+		}
+		if _, gerr := app.Registry.Get("widgets"); gerr == nil {
+			t.Error("rejected entity must not remain in the registry")
+		}
+		if rerr := app.TryEntity("widgets", EntityConfig{
+			Fields: []schema.Field{{Name: "title", Type: schema.String}},
+		}); rerr != nil {
+			t.Fatalf("corrected retry must succeed, got: %v", rerr)
+		}
+	})
+
+	t.Run("aliases an existing screen route", func(t *testing.T) {
+		app := atomicTestApp(t)
+		no := false
+		app.Router().HandleFunc("GET", "/widgets/{slug}", func(w http.ResponseWriter, r *http.Request) {})
+
+		err := app.TryEntity("widgets", EntityConfig{
+			Exposure: &ExposureConfig{CRUD: &no},
+			Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+			Endpoints: []entity.Endpoint{{
+				Method:  "GET",
+				Path:    "{id}",
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			}},
+		})
+		if err == nil {
+			t.Fatal("an endpoint at {id} aliases the registered {slug} and must be rejected")
+		}
+		if _, gerr := app.Registry.Get("widgets"); gerr == nil {
+			t.Error("rejected entity must not remain in the registry")
+		}
+	})
+}

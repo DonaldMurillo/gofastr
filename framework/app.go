@@ -1901,15 +1901,21 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// Values name what owns the route, so the error can tell a user
 		// who collided with an unrelated page from one who shadowed their
 		// own generated CRUD route — different fixes.
+		// Keys are normalized the same way entityRouteCollision normalizes
+		// them: ServeMux conflicts on a pattern's SHAPE, so an endpoint at
+		// {slug} aliases the generated {id}. Comparing raw strings let that
+		// pair through validation and into the commit phase, where the
+		// panic arrived with the registry entry and CRUD routes already
+		// published and no way to un-publish them.
 		taken := map[string]string{}
 		for _, rt := range a.router.Routes() {
-			taken[strings.ToUpper(rt.Method)+" "+rt.Pattern] = "an existing route"
+			taken[normalizeRoutePattern(strings.ToUpper(rt.Method)+" "+rt.Pattern)] = "an existing route"
 		}
 		// The CRUD routes are not on the router yet — this runs before
 		// the commit phase — so ask crud for the set it will mount.
 		if crudMount != "" {
 			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
-				taken[pattern] = "this entity's own generated CRUD route"
+				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
 			}
 		}
 		for _, endpoint := range endpoints {
@@ -1918,7 +1924,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 				continue // shape errors are reported below
 			}
 			path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
-			key := method + " " + path
+			key := normalizeRoutePattern(method + " " + path)
 			if owner, clash := taken[key]; clash {
 				return fmt.Errorf("endpoint %q would register %s, but that route is %s — rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key, owner)
 			}
