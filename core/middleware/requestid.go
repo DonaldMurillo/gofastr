@@ -2,9 +2,8 @@ package middleware
 
 import (
 	"context"
-	"crypto/rand"
-	"fmt"
 	"net/http"
+	"uuid"
 )
 
 // requestIDKey is the context key for the request ID.
@@ -71,23 +70,11 @@ func RequestID() Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id := r.Header.Get(HeaderRequestID)
 			if !validRequestID(id) {
-				id = newUUIDv4()
+				id = uuid.NewV4().String()
 			}
 			ctx := context.WithValue(r.Context(), requestIDKey{}, id)
 			w.Header().Set(HeaderRequestID, id)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-}
-
-// newUUIDv4 generates a random UUID v4 string using crypto/rand.
-func newUUIDv4() string {
-	var buf [16]byte
-	_, _ = rand.Read(buf[:])
-	// Set version 4
-	buf[6] = (buf[6] & 0x0f) | 0x40
-	// Set variant RFC 4122
-	buf[8] = (buf[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16])
 }
