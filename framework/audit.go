@@ -360,8 +360,8 @@ func clientIP(r *http.Request) string {
 	if addr == "" {
 		return ""
 	}
-	if i := strings.LastIndex(addr, ":"); i >= 0 {
-		return addr[:i]
+	if host, _, ok := strings.CutLast(addr, ":"); ok {
+		return host
 	}
 	return addr
 }

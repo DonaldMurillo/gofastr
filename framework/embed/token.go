@@ -147,11 +147,10 @@ func verify(prefix string, key []byte, token string) ([]byte, error) {
 		return nil, ErrMalformed
 	}
 	rest := token[len(prefix):]
-	dot := strings.LastIndexByte(rest, '.')
-	if dot <= 0 || dot == len(rest)-1 {
+	encoded, sigPart, ok := strings.CutLast(rest, ".")
+	if !ok || encoded == "" || sigPart == "" {
 		return nil, ErrMalformed
 	}
-	encoded, sigPart := rest[:dot], rest[dot+1:]
 	sig, err := b64.DecodeString(sigPart)
 	if err != nil {
 		return nil, ErrMalformed
