@@ -4080,14 +4080,17 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 		renderMethod = "RenderCtx(ctx context.Context) render.HTML"
 	}
 	sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
-	rootAttrs := "nil"
+	// Screen root goes through core-ui/html, the design system's 1:1 tag
+	// primitive, rather than raw render.Tag — CLAUDE.md's rule for markup
+	// that maps directly to an element. Output is byte-identical.
+	rootCfg := "html.DivConfig{}"
 	if hasActions {
-		rootAttrs = fmt.Sprintf("map[string]string{\"data-component\": s.ComponentID()}")
+		rootCfg = "html.DivConfig{ExtraAttrs: html.Attrs{\"data-component\": s.ComponentID()}}"
 	}
 	if len(screen.Body) == 0 {
-		sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootAttrs, screen.TitleOrName()))
+		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootCfg, screen.TitleOrName()))
 	} else {
-		sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s,\n", rootAttrs))
+		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s,\n", rootCfg))
 		for i, block := range screen.Body {
 			var expr string
 			switch {
@@ -5075,6 +5078,11 @@ func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 // whole project). It is the per-file analogue of blueprintScreenImports.
 func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) screenImportNeeds {
 	var needs screenImportNeeds
+	// Every screen root is an html.Div now, so the package is always
+	// needed when there is a screen to render at all.
+	if len(screens) > 0 {
+		needs.html = true
+	}
 	for _, screen := range screens {
 		// Empty-body screens emit html.Heading directly (see
 		// renderBlueprintStubs / the screen Render() empty path).

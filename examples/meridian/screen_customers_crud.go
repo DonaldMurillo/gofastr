@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
@@ -17,7 +18,7 @@ func (s *CustomersScreen) ScreenDescription() string  { return "" }
 func (s *CustomersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *CustomersScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		// customersList (app.go) is shared with the /api/tables/customers island
 		// endpoint: the table renders in island mode, so sort + pagination RPC
 		// and swap just the table.
@@ -36,7 +37,7 @@ func (s *CustomerDetailScreen) ScreenDescription() string     { return "" }
 func (s *CustomerDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *CustomerDetailScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		appResources["customers"].Detail(ctx, s.id),
 	)
 }
@@ -48,7 +49,7 @@ func (s *CustomersNewScreen) ScreenDescription() string  { return "" }
 func (s *CustomersNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *CustomersNewScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		appResources["customers"].Form(ctx, ""),
 	)
 }
@@ -64,7 +65,7 @@ func (s *CustomersEditScreen) ScreenDescription() string     { return "" }
 func (s *CustomersEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *CustomersEditScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		appResources["customers"].Form(ctx, s.id),
 	)
 }

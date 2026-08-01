@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -18,7 +19,7 @@ func (s *DashboardScreen) ScreenDescription() string  { return "Your revenue at 
 func (s *DashboardScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Overview", Subtitle: "Revenue at a glance", Eyebrow: ""}),
 		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: statValue(ctx, "subscriptions", "sum", "mrr", "status=active", "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: statValue(ctx, "customers", "count", "", "status=active", "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: statValue(ctx, "invoices", "count", "", "status=past_due", "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: statValue(ctx, "plans", "count", "", "", "")})),
 		ui.Card(ui.CardConfig{Heading: "Customers by status", HeadingLevel: 2}, ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, "customers", "status"), ShowLabels: true})),
@@ -33,7 +34,7 @@ func (s *InvoicesScreen) ScreenDescription() string  { return "" }
 func (s *InvoicesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *InvoicesScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		appResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "issued_on", "due_on").WithSearch("number").WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "open", "paid", "past_due", "void"}}, ResFilter{Key: "customer_id", Label: "Customer", Type: "relation"}).WithLimit(25).WithCreate().WithHeading("Invoices").WithEmpty("No invoices yet.").List(ctx),
 	)
 }
@@ -49,7 +50,7 @@ func (s *InvoiceDetailScreen) ScreenDescription() string     { return "" }
 func (s *InvoiceDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *InvoiceDetailScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		appResources["invoices"].WithTransitions(Transition{Label: "Mark paid", Status: "paid", Variant: "primary", Stamp: "paid_on"}, Transition{Label: "Void", Status: "void", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
 	)
 }
@@ -61,7 +62,7 @@ func (s *InvoicesNewScreen) ScreenDescription() string  { return "" }
 func (s *InvoicesNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *InvoicesNewScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		appResources["invoices"].Form(ctx, ""),
 	)
 }
@@ -77,7 +78,7 @@ func (s *InvoicesEditScreen) ScreenDescription() string     { return "" }
 func (s *InvoicesEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *InvoicesEditScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Tag("div", nil,
+	return html.Div(html.DivConfig{},
 		appResources["invoices"].Form(ctx, s.id),
 	)
 }
