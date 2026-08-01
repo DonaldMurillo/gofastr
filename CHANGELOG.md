@@ -112,17 +112,10 @@ atomicity and the static ETag cache. Those are fixed here as well.
 
 ### Fixed
 
-- **Streams are no longer cut off by the request timeout.** The 30s
-  middleware deadline stayed on the request context after a handler
-  started streaming, and the server's fixed 60s read/write timeouts cut
-  the connection even with `DisableRequestTimeout` set. A response that
-  flushes now sheds both, so SSE subscribers stay connected;
-  `DisableRequestTimeout` also drops the server read/write timeouts,
-  which is what makes uploads longer than a minute work.
-- **A late timeout no longer corrupts a completed response.** A deadline
-  firing just as a handler finished appended `Gateway Timeout` to an
-  already-sent 200 body. The timer now only signals; every write happens
-  on the request goroutine.
+- **`DisableRequestTimeout` also drops the server read/write timeouts.**
+  Setting it removed the middleware deadline but left the server's fixed
+  60s limits in place, so a request that legitimately runs longer — an
+  upload over a minute — was still cut off.
 - **`TryEntity` rejects a declaration without publishing part of it.**
   Entity validation, the CRUD/MCP contract, route collisions (including
   custom endpoint paths), and MCP tool names are all checked before the
