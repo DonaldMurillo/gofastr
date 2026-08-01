@@ -204,9 +204,9 @@ func RedactDSN(dsn string) string {
 	if at < 0 {
 		return dsn
 	}
-	colon := strings.LastIndex(dsn[:at], ":")
-	if colon < 0 {
+	user, _, ok := strings.CutLast(dsn[:at], ":")
+	if !ok {
 		return dsn
 	}
-	return dsn[:colon+1] + "****" + dsn[at:]
+	return user + ":****" + dsn[at:]
 }
