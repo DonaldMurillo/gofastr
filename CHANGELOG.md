@@ -7,6 +7,60 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+Go 1.27 adoption. The toolchain directive is `go1.27rc2` until the
+stable release lands (expected mid-August); everything below is built
+and tested against the rc.
+
+### Added
+
+- Goroutine-leak reporting, backed by Go 1.27's `goroutineleak` profile
+  (the runtime proves a goroutine can never unblock): `/.debug/stats`
+  gains a `goroutineLeaks` count, `/.debug/goroutineleak` serves the
+  report with stacks (auth-gated like `/.debug/stats`), and
+  `WithMCPIntrospection()` gains an `app_goroutine_leaks` tool returning
+  `{count, stacks, truncated}`. A regression test pins a full app
+  start/serve/stop cycle at zero new leaks.
+- `App.Shutdown` errors now name the phase that failed: `draining http
+  server`, `stopping batteries`, or `running stop hooks`. A bare
+  `context deadline exceeded` gave nothing to debug with.
+
+### Changed
+
+- Toolchain: `go 1.27rc2` in go.mod. `encoding/json` is now backed by
+  the stdlib's json/v2 implementation — Unmarshal is measurably faster
+  with no code change; error message text differs, so tests asserting
+  on JSON error strings may need updating downstream.
+- Request header values are capped at 500 per request (Go 1.27's
+  `http.DefaultMaxHeaderValueCount`). The framework leaves the field at
+  its zero value on purpose and a posture test now fails if anything
+  overrides it.
+- Request IDs (`core/middleware`) and entity-key defaults
+  (`framework/crud`) mint UUIDs through the new stdlib `uuid` package
+  instead of hand-rolled RFC 4122 byte-twiddling. The 32-char hex ID
+  generators in outbox, webhook, and queue keep their format — those
+  are persisted identifiers, not UUIDs.
+- 565 files modernized by the Go 1.27 `go fix` analyzers
+  (`min`/`CutPrefix`/`SplitSeq` and friends); `strings.CutLast`
+  replaces `LastIndex` slicing at six sites.
+- Sleep-and-poll tests in `core/stream` and `battery/queue` run inside
+  `testing/synctest` bubbles: `core/stream` drops from 35.7s to 13.3s
+  (the 10s websocket write-timeout test now finishes instantly) and
+  `battery/queue` from 8.5s to 7.0s — its converted tests all report
+  0.00s; the remainder is sqlite-backed tests that cannot enter a
+  bubble. Timing tests that stay real-time: anything touching
+  `database/sql`, Redis, or a socket.
+
+### Fixed
+
+- Intermittent `Shutdown: context deadline exceeded` in the framework
+  test suite (~2 in 5 full-package runs under load). Go 1.27's
+  Body.Close drains and pools connections it used to kill, so a queued
+  Transport dial could complete unused; the server holds that
+  connection in StateNew, and `Server.Shutdown` spares StateNew
+  connections for five seconds (go#22682) — exactly the tests' shutdown
+  deadline. Test helpers now flush the shared client's idle pool before
+  shutting down.
+
 ## [0.55.0] - 2026-07-31
 
 Five independent analyses of the whole framework — three in-repo passes
