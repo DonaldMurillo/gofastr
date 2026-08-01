@@ -202,3 +202,85 @@ screens:
 		t.Errorf("an ungated screen's island must declare itself public:\n%s", crud)
 	}
 }
+
+// Island endpoints derive from toSnakeCase(screen name) + entity. Two
+// screens that normalize to the same slug — or one screen listing an
+// entity twice — collapse to a single endpoint, and the generator emitted
+// ONE mount while silently dropping the other placement's refined config
+// and its access policy. Both cases must be rejected at generate time.
+func TestBlueprintRejectsCollidingIslandPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "screen names collide after normalization",
+			yaml: `app:
+  name: Island
+  module: example.com/island
+entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
+screens:
+  - name: API
+    route: /a
+    body:
+      - kind: entity_list
+        entity: posts
+        fields: [title]
+  - name: Api
+    route: /b
+    body:
+      - kind: entity_list
+        entity: posts
+        fields: [title]
+`,
+			want: "both derive the island endpoint",
+		},
+		{
+			name: "one screen lists the entity twice",
+			yaml: `app:
+  name: Island
+  module: example.com/island
+entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
+      - name: status
+        type: enum
+        values: [open, done]
+screens:
+  - name: dashboard
+    route: /dash
+    body:
+      - kind: entity_list
+        entity: posts
+        fields: [title]
+        limit: 5
+      - kind: entity_list
+        entity: posts
+        fields: [title, status]
+        limit: 20
+`,
+			want: "more than once",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "gofastr.yml")
+			writeTestFile(t, path, tc.yaml)
+
+			_, err := loadBlueprint(path)
+			if err == nil {
+				t.Fatal("a blueprint whose island endpoints collide must be rejected")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error should explain the collision (%q), got: %v", tc.want, err)
+			}
+		})
+	}
+}

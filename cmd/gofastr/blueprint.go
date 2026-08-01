@@ -1744,6 +1744,36 @@ func decodeNamedStubs(node *coreyaml.Node, label string) ([]BlueprintNamedStub, 
 	return out, nil
 }
 
+// validateIslandPathsAreDistinct refuses a blueprint whose list screens
+// would derive a shared island endpoint. See the call site for why a
+// collision cannot be resolved silently.
+func validateIslandPathsAreDistinct(bp Blueprint) error {
+	type owner struct {
+		screen string
+		blocks int
+	}
+	seen := map[string]*owner{}
+	for _, decl := range bp.Entities {
+		entity := decl.Name
+		for _, p := range entityListPlacements(bp, entity) {
+			path := blueprintIslandPath(blueprintAPIBase(bp.App.APIPrefix), p.screen, entity)
+			prev, ok := seen[path]
+			if !ok {
+				seen[path] = &owner{screen: p.screen.Name, blocks: 1}
+				continue
+			}
+			if prev.screen == p.screen.Name {
+				prev.blocks++
+				return fmt.Errorf("blueprint: screen %q lists entity %q more than once, and both lists would share the island endpoint %s — sorting or paging either table would rewrite both from the first list's columns. Split them onto separate screens, or render one of them as a different block kind",
+					p.screen.Name, entity, path)
+			}
+			return fmt.Errorf("blueprint: screens %q and %q both derive the island endpoint %s for entity %q — only one mount would be emitted, silently discarding the other screen's columns, filters and access policy. Rename one screen so the two differ by more than case or punctuation",
+				prev.screen, p.screen.Name, path, entity)
+		}
+	}
+	return nil
+}
+
 func validateBlueprint(bp Blueprint) error {
 	// Production auth without a signing key: the generated app's auth
 	// battery fails closed at boot (battery/auth Init refuses an empty
@@ -1762,6 +1792,19 @@ func validateBlueprint(bp Blueprint) error {
 		if entityDeclarationScope(decl).MultiTenant {
 			return fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy — subdomain, JWT claim, user's org — is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name)
 		}
+	}
+	// Island endpoints are keyed by toSnakeCase(screen name) + entity, so
+	// two screens whose names normalize to the same slug would derive the
+	// same endpoint. The generator would then emit ONE mount and silently
+	// discard the other screen's refined config and its policy — the second
+	// screen ends up pointing at a table it does not own, gated by a rule it
+	// never declared. Reject it here rather than generate that.
+	//
+	// The same collapse happens when one screen lists the same entity twice:
+	// both blocks derive one endpoint and one signal, so sorting either table
+	// rewrites both from the first block's columns.
+	if err := validateIslandPathsAreDistinct(bp); err != nil {
+		return err
 	}
 	if bp.App.PWA.Enabled {
 		switch bp.App.PWA.Display {
