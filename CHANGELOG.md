@@ -60,8 +60,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `Exposure.CRUD: false`. The router honoured the opt-out and the spec did
   not, so the spec documented a management API the server answered 404 for —
   worst exactly where the opt-out was deliberate — and generated SDKs shipped
-  methods that could not work. The entity's schema component stays for
-  hand-written `Endpoints`; an unset `CRUD` still means enabled. (#169)
+  methods that could not work. Only the generated surface goes: the entity's
+  schema component stays, and so do hand-written `Endpoints` (the router
+  mounts those whether or not auto-CRUD is on). An unset `CRUD` still means
+  enabled. (#169)
 - Boot `AutoMigrate` no longer applies `RENAME COLUMN` (additive-only); a stale
   `Renames` hint can no longer rename the wrong in-use column at startup.
 - `Scheduler.runTick` no longer blocks the run loop on in-flight jobs, so

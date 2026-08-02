@@ -137,6 +137,31 @@ func TestMatchPrefixMatchesOwnPage(t *testing.T) {
 	}
 }
 
+// The other half of the slash mismatch: a trailing slash on the PATH
+// against a slashless href. Servers that canonicalise the other way
+// (redirecting /docs to /docs/) put the runtime in exactly this state.
+func TestMatchPrefixTrailingSlashPath(t *testing.T) {
+	srv := navPrefixServer(t)
+	ctx := navPrefixBrowser(t)
+
+	var docs, old string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/docs/"),
+		chromedp.WaitVisible(`#docs`, chromedp.ByID),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`document.getElementById('docs').getAttribute('aria-current')`, &docs),
+		chromedp.Evaluate(`document.getElementById('docsold').getAttribute('aria-current')`, &old),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if docs != "page" {
+		t.Errorf(`href="/docs" must be active on /docs/, got aria-current=%q`, docs)
+	}
+	if old == "page" {
+		t.Errorf(`href="/docs-old" must not match /docs/`)
+	}
+}
+
 // Client-side navigation runs the same matcher, so a descendant reached
 // without a page load has to land in the same state as a cold load.
 func TestMatchPrefixAfterClientNav(t *testing.T) {

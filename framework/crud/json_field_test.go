@@ -361,3 +361,25 @@ func TestLiteralHandlerDecodesJSONField(t *testing.T) {
 		t.Errorf("literal-built handler did not decode the JSON column: %#v", row["features"])
 	}
 }
+
+// ?stream=true frames rows one at a time through scanRowsOne rather than
+// the pooled list scanner, so it decodes JSON columns on its own branch.
+func TestStreamListDecodesJSONField(t *testing.T) {
+	ch := jsonFieldHandler(t)
+	if rec := createPolicy(t, ch, `{"name":"pro","features":{"seats":5}}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/policies?stream=true", nil), "u1")
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("streaming list = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"features":"{`) {
+		t.Errorf("streaming list returned the JSON column as a string: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"features":{"seats":5}`) {
+		t.Errorf("streaming list did not decode the JSON column: %s", rec.Body.String())
+	}
+}

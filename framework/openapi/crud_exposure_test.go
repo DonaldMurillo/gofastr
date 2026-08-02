@@ -85,3 +85,49 @@ func TestCRUDDisabledEntityKeepsSchema(t *testing.T) {
 		t.Errorf("schema component dropped with the paths; emitted %v", mapKeys(schemas))
 	}
 }
+
+// Custom Endpoints are mounted by the router whether or not auto-CRUD is
+// on (App.registerEntityEndpoints sits outside the crudEnabled branch),
+// so the spec must advertise them either way. A CRUD-disabled entity is
+// the case most likely to carry them: opting out of generated CRUD is how
+// an app says "reach this through the endpoints I declared". Dropping
+// them re-creates the very spec/server mismatch this file exists to close,
+// pointing the other way — a live route the spec never mentions.
+func TestCRUDDisabledEntityKeepsEndpoints(t *testing.T) {
+	off := entity.Define("secrets", entity.EntityConfig{
+		Table:    "secrets",
+		Fields:   []schema.Field{{Name: "value", Type: schema.String}},
+		Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
+		Endpoints: []entity.Endpoint{{
+			Method:      "POST",
+			Path:        "reveal",
+			Description: "Reveal one secret",
+		}},
+	}.WithTimestamps(false))
+
+	doc := EntityOpenAPI(reg(off), "Test", "1.0.0").Build()
+	paths, ok := asMap(doc["paths"])
+	if !ok {
+		t.Fatalf("spec has no paths object")
+	}
+	if _, ok := paths["/secrets/reveal"]; !ok {
+		t.Errorf("custom endpoint on a CRUD-disabled entity is missing from the spec; emitted %v", mapKeys(paths))
+	}
+	// The generated CRUD surface still stays out.
+	if _, ok := paths["/secrets"]; ok {
+		t.Errorf("CRUD-disabled entity still advertised its generated list path")
+	}
+
+	// The endpoint's tag has to be declared, or it renders under an
+	// undefined group.
+	tags, _ := doc["tags"].([]map[string]any)
+	found := false
+	for _, tm := range tags {
+		if tm["name"] == "secrets" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("entity tag missing while an operation still carries it: %v", tags)
+	}
+}
