@@ -905,6 +905,13 @@ keeps the explicit flag as the only path. Entities with `crud: false`
 MCP tools dispatch through the CRUD routes, so no routes means no
 tools, in dev or out.
 
+`/openapi.json` follows the same rule — an entity with `crud: false`
+contributes no paths, because the server answers 404 for every one of
+them and an SDK generated from the spec would ship methods that cannot
+work. Its schema component stays, so hand-written `Endpoints` that speak
+the entity's shape still have something to reference. An unset `crud`
+means "auto" and is exposed, matching the router.
+
 ## Custom Endpoints
 
 Custom endpoint handlers are Go behavior and should be registered from Go code:

@@ -156,6 +156,20 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddSchema(schemaName, entitySchema)
 
+		// The router mounts auto-CRUD only when Exposure.CRUD is unset
+		// ("auto" ⇒ on) or explicitly true, so an entity that opted out
+		// answers 404 on every generated path. Advertising them anyway
+		// documents an API the server does not have, and an SDK built
+		// from the spec ships methods that cannot work — worst exactly
+		// where the opt-out was deliberate (sensitive rows, or invariants
+		// owned by a server-side workflow). The schema component above
+		// stays: hand-written Endpoints on the same entity speak its
+		// shape and reference it. The tag does not — with no operations
+		// under it, it would render as an empty group.
+		if ent.Config.Exposure.CRUD != nil && !*ent.Config.Exposure.CRUD {
+			continue
+		}
+
 		// Tag for grouping
 		s.AddTag(tagName, entityName+" operations")
 
