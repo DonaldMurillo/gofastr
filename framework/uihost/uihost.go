@@ -1347,12 +1347,40 @@ func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
 			schema = s.ScreenSchema()
 		}
 	}
+	// An article screen emits Article JSON-LD + og:type=article so a browser
+	// offers Reader Mode with a populated title, byline, and date. Triggered
+	// by the AsArticle registration option (screen.Article) OR the
+	// ScreenArticle interface. Headline/description are derived from the
+	// screen's own title/description when not supplied, so a plain screen
+	// becomes an article with no article-specific data. Only gaps are filled
+	// — explicit ScreenSchema / ScreenSEO values win.
+	og := bundle.OG
+	article := screen.Article
+	var meta app.ArticleMeta
+	if !article {
+		if sa, ok := src.(app.ScreenArticle); ok {
+			article = true
+			meta = sa.ScreenArticle()
+		}
+	}
+	if article {
+		if meta.Headline == "" {
+			if t, ok := src.(app.ScreenTitler); ok {
+				meta.Headline = t.ScreenTitle()
+			}
+		}
+		if meta.Description == "" {
+			meta.Description = desc
+		}
+		schema = ensureArticleSchema(schema, meta)
+		og = mergeArticleOG(og, meta)
+	}
 	return SEO{
 		Description: desc,
 		Canonical:   canonical,
 		Hreflangs:   hreflangs,
 		Robots:      robots,
-		OG:          bundle.OG,
+		OG:          og,
 		Twitter:     bundle.Twitter,
 		Schema:      schema,
 	}
