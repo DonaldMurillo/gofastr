@@ -272,7 +272,19 @@ as destructive changes (refused unless `AllowDestructive` is set) — they
 often need a data-specific `USING` conversion on Postgres or a table rebuild
 on SQLite, so review and hand-tighten the generated SQL. Renames: declare
 `EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
-`RENAME COLUMN` instead of a data-losing drop+add. The snapshot is offline
+`RENAME COLUMN` instead of a data-losing drop+add.
+
+Type-change detection catches the type *class* (e.g. TEXT→INTEGER) but NOT
+size/precision changes — `VARCHAR(50)→VARCHAR(100)` and `DECIMAL(10,2)→(19,4)`
+are normalized away, so express those as a hand-written migration. Columns
+declared with `RawType` (Postgres domains, arrays, custom types) are skipped:
+the live DB reports the underlying type, which never matches the raw type, so
+they would otherwise false-positive every diff. And an existing Postgres table
+whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY`
+(no sequence) is not auto-upgraded to `SERIAL` — bring it up with a one-time
+`ALTER`/rebuild if you adopt `auto_generate: increment` on Postgres.
+
+The snapshot is offline
 state — pick `--driver` to match your production engine so the emitted types are
 right.
 

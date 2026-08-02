@@ -162,16 +162,20 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 	if !held {
 		return false
 	}
-	s.RunOnce(ctx, now)
 	// Hold the lease until the tick's jobs finish so a peer replica can't
 	// also fire this tick — but in a background goroutine, NOT inline: the
 	// run loop must stay selectable on s.stop / ctx.Done() so a job that
 	// ignores its context cannot pin the loop and defeat StopContext's
-	// deadline-bounded join (which itself waits on inflight).
-	go func() {
-		s.inflight.Wait()
-		release()
+	// deadline-bounded join (which itself waits on inflight). Registered
+	// BEFORE RunOnce so a panic inside it (e.g. a panicking gate) still
+	// schedules the release instead of leaking the lease + pinned conn.
+	defer func() {
+		go func() {
+			s.inflight.Wait()
+			release()
+		}()
 	}()
+	s.RunOnce(ctx, now)
 	return true
 }
 

@@ -491,7 +491,11 @@ func additiveChanges(ent *entity.Entity, all map[string]*entity.Entity, dialect 
 // additiveChanges to keep boot convergence additive-only — a rename is
 // non-destructive (it preserves data) but is NOT an additive change.
 func isRenameChange(sql string) bool {
-	return strings.Contains(strings.ToUpper(sql), "RENAME COLUMN")
+	// Space-delimited so a string literal like DEFAULT 'rename column'
+	// (quote-bordered, not space-bordered) cannot masquerade as a rename and
+	// get an ADD COLUMN discarded at boot. SafeIdent allows no spaces in
+	// identifiers, so a real rename always emits " RENAME COLUMN ".
+	return strings.Contains(strings.ToUpper(sql), " RENAME COLUMN ")
 }
 
 // indexDDL builds the CREATE INDEX statement for one declared Index. Name

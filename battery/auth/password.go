@@ -207,9 +207,18 @@ type argon2PHC struct {
 	salt, key    []byte
 }
 
-// parseArgon2PHC parses "$argon2id$v=19$m=M,t=T,p=P$<b64 salt>$<b64 key>".
-// Returns ok=false for anything that is not that exact shape — a verify path
-// must never panic or error on a malformed stored hash.
+// Sane upper bounds on parameters accepted from a STORED hash. A malicious or
+// corrupted hash could otherwise direct argon2.IDKey to allocate gigabytes
+// (memory is KiB) or spin for unbounded CPU (time) on every verify — a per-login
+// DoS. Legitimate hashes from this hasher (defaults 64 MiB / t=3 / p=2) sit far
+// below these; anything larger is not a plausible password hash.
+const (
+	maxArgon2MemoryKiB uint32 = 1 << 20 // 1 GiB
+	maxArgon2Time      uint32 = 100
+	maxArgon2Threads   uint8  = 16
+	maxArgon2KeyLen    uint32 = 128
+)
+
 func parseArgon2PHC(hash string) (argon2PHC, bool) {
 	// strings.Split yields ["", "argon2id", "v=19", "m=M,t=T,p=P", salt, key].
 	parts := strings.Split(hash, "$")
@@ -249,6 +258,11 @@ func parseArgon2PHC(hash string) (argon2PHC, bool) {
 		return argon2PHC{}, false
 	}
 	if p.memory == 0 || p.time == 0 || p.threads == 0 || len(salt) == 0 || len(key) == 0 {
+		return argon2PHC{}, false
+	}
+	// Reject resource-exhaustion parameters BEFORE IDKey would honour them —
+	// a hostile stored hash must not allocate gigabytes or spin on verify.
+	if p.memory > maxArgon2MemoryKiB || p.time > maxArgon2Time || p.threads > maxArgon2Threads || uint32(len(key)) > maxArgon2KeyLen {
 		return argon2PHC{}, false
 	}
 	p.salt, p.key = salt, key

@@ -22,6 +22,13 @@ import (
 // field-name logic by wrapping it in a throwaway Blueprint and calling
 // lintUnscopedPII. One yardstick for both declaration styles.
 //
+// Limitation: only a literal `[]schema.Field{...}` is inspectable. When Fields
+// is supplied by a helper call (e.g. `Fields: auth.UserEntityFields()`), the
+// field list is not statically resolvable, so the lint sees no fields and emits
+// no finding — review such entities by hand (the helper may carry PII-shaped
+// columns like email). This mirrors the blueprint lint, which only sees fields
+// declared in gofastr.yml.
+//
 // Like the pack reader this is best-effort over the AST: a config bound to a
 // variable before the call (`cfg := EntityConfig{...}; app.Entity(n, cfg)`)
 // has no composite literal to read and is silently skipped — the generator

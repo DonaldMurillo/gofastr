@@ -132,3 +132,30 @@ func TestRunTick_DoesNotBlockOnInflightJobs(t *testing.T) {
 	}
 	close(release)
 }
+
+// TestRunTick_ReleasesLeaseOnRunOncePanic: a panic inside RunOnce (here, a
+// panicking gate) must still schedule the lease release — the release is
+// deferred, not run only after RunOnce returns. Without the defer the lease
+// and its pinned connection would leak past the panic.
+func TestRunTick_ReleasesLeaseOnRunOncePanic(t *testing.T) {
+	lease := newStubLease(true)
+	s := NewScheduler()
+	s.WithLeaderElection(lease)
+	s.SetGate(func(string) bool { panic("gate boom") })
+	if err := s.Register(CronJob{
+		Name: "j", Spec: "* * * * *",
+		Run: func(context.Context) error { return nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() { _ = recover() }() // runTick propagates the gate panic
+		s.runTick(context.Background(), time.Now())
+	}()
+	select {
+	case <-lease.released:
+		// good: lease released despite the panic
+	case <-time.After(time.Second):
+		t.Fatal("lease was not released after runTick panicked — release must be deferred")
+	}
+}

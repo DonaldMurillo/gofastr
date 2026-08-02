@@ -183,8 +183,9 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 	// old column is live and the new name is declared; it is non-destructive
 	// (preserves row data). The renamed pair is then skipped by the ADD and
 	// DROP loops below so it does not also surface as drop+add.
-	renameTargets := map[string]bool{} // new column names consumed by a rename
-	renameSources := map[string]bool{} // old column names consumed by a rename
+	renameTargets := map[string]bool{}    // new column names consumed by a rename
+	renameSources := map[string]bool{}    // old column names consumed by a rename
+	renameOldByNew := map[string]string{} // new (lower) → old (lower), so the type-change loop can compare a renamed column's declared type against its live (old-name) type
 	for oldName, newName := range ent.Config.Renames {
 		oldLow := strings.ToLower(oldName)
 		newLow := strings.ToLower(newName)
@@ -209,6 +210,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		})
 		renameTargets[newLow] = true
 		renameSources[oldLow] = true
+		renameOldByNew[newLow] = oldLow
 	}
 
 	// ADD COLUMN for declared-but-missing fields.
@@ -254,9 +256,18 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 	// default — surfaced for review, never silently applied. Types are
 	// normalized per dialect (see canonicalType) so PG information_schema
 	// names ("character varying", "timestamp with time zone") don't
-	// false-positive against the SQLType forms ("VARCHAR(n)", "TIMESTAMPTZ").
 	for _, f := range ent.GetFields() {
-		liveType, ok := liveLower[strings.ToLower(f.Name)]
+		if f.RawType != "" {
+			continue // operator-supplied raw type (domains, arrays, custom types) — not reliably diffable against the live DB type, which reports the underlying type
+		}
+		nameLow := strings.ToLower(f.Name)
+		liveType, ok := liveLower[nameLow]
+		if !ok {
+			// A rename target's live type lives under the OLD column name.
+			if old, renamed := renameOldByNew[nameLow]; renamed {
+				liveType, ok = liveLower[old]
+			}
+		}
 		if !ok {
 			continue // absent from live → handled by ADD COLUMN above
 		}

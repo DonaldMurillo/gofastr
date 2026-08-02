@@ -125,3 +125,83 @@ func TestAdditiveChanges_ExcludesRename(t *testing.T) {
 		}
 	}
 }
+
+// TestAdditiveChanges_NotFooledByRenameInDefault: an ADD COLUMN whose DEFAULT
+// string literal contains the words "rename column" must NOT be mistaken for a
+// RENAME and discarded at boot. isRenameChange matches the space-delimited
+// operation token, not a quote-bordered literal.
+func TestAdditiveChanges_NotFooledByRenameInDefault(t *testing.T) {
+	ent := rawEnt("widgets", "widgets", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "note", Type: schema.String, Default: "rename column"},
+	}, nil, "id")
+	adds, err := additiveChanges(ent, nil, DialectSQLite, map[string]string{"id": "TEXT"})
+	if err != nil {
+		t.Fatalf("additiveChanges: %v", err)
+	}
+	var sawNote bool
+	for _, c := range adds {
+		if strings.Contains(c.SQL, "note") {
+			sawNote = true
+		}
+	}
+	if !sawNote {
+		t.Errorf("ADD COLUMN note (DEFAULT 'rename column') was wrongly excluded as a rename: %+v", adds)
+	}
+}
+
+// TestDiffEntityFromLive_RenameAndTypeChange: when a column is BOTH renamed
+// AND retyped, the diff must emit the rename AND the type change. Previously
+// the type-change loop looked up the new name (absent from live) and silently
+// dropped the type change, leaving the column's type out of sync after the rename.
+func TestDiffEntityFromLive_RenameAndTypeChange(t *testing.T) {
+	ent := rawEnt("widgets", "widgets", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "label", Type: schema.Int}, // renamed from "name" AND retyped (live TEXT)
+	}, nil, "id")
+	ent.Config.Renames = map[string]string{"name": "label"}
+	changes, err := diffEntityFromLive(ent, nil, DialectSQLite, map[string]string{
+		"id": "TEXT", "name": "TEXT",
+	})
+	if err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	var sawRename, sawType bool
+	for _, c := range changes {
+		if strings.Contains(strings.ToUpper(c.SQL), "RENAME COLUMN") {
+			sawRename = true
+		}
+		if strings.Contains(strings.ToLower(c.Summary), "change column label") {
+			sawType = true
+		}
+	}
+	if !sawRename {
+		t.Error("expected a RENAME COLUMN name→label")
+	}
+	if !sawType {
+		t.Errorf("expected a type change TEXT→INTEGER for the renamed+retyped column; the type change was lost: %+v", changes)
+	}
+}
+
+// TestDiffEntityFromLive_RawTypeNotFlagged: a column declared with RawType
+// (a Postgres domain, custom type, or array) must NOT false-positive as a type
+// change every diff — the live DB reports the underlying type, which never
+// matches the operator-supplied raw type. RawType is an explicit escape hatch;
+// the diff can't verify it, so it skips the comparison.
+func TestDiffEntityFromLive_RawTypeNotFlagged(t *testing.T) {
+	ent := rawEnt("widgets", "widgets", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "addr", RawType: "email_address"}, // a PG domain over text
+	}, nil, "id")
+	changes, err := diffEntityFromLive(ent, nil, DialectPostgres, map[string]string{
+		"id": "text", "addr": "text", // PG reports the underlying type, not the domain
+	})
+	if err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	for _, c := range changes {
+		if strings.Contains(strings.ToLower(c.Summary), "change column addr") {
+			t.Errorf("RawType column false-positive as a type change (would fire every diff): %s", c.Summary)
+		}
+	}
+}
