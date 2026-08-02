@@ -66,19 +66,58 @@ func TestTimeRoundTripsThroughTextColumn(t *testing.T) {
 	}
 }
 
-func TestWithTimeFormatRespectsExplicitSettings(t *testing.T) {
+func TestWithCompatDefaultsRespectsExplicitSettings(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{":memory:", ":memory:?_time_format=sqlite"},
-		{"./blog.db", "./blog.db?_time_format=sqlite"},
-		{":memory:?cache=shared", ":memory:?cache=shared&_time_format=sqlite"},
-		{"file:/tmp/x.db?_journal=WAL", "file:/tmp/x.db?_journal=WAL&_time_format=sqlite"},
+		{":memory:", ":memory:?_time_format=sqlite&_pragma=busy_timeout(5000)"},
+		{"./blog.db", "./blog.db?_time_format=sqlite&_pragma=busy_timeout(5000)"},
+		{":memory:?cache=shared", ":memory:?cache=shared&_time_format=sqlite&_pragma=busy_timeout(5000)"},
+		{"file:/tmp/x.db?_journal=WAL", "file:/tmp/x.db?_journal=WAL&_time_format=sqlite&_pragma=busy_timeout(5000)"},
 		// Explicit caller settings win.
-		{"x.db?_time_format=datetime", "x.db?_time_format=datetime"},
-		{"x.db?_time_integer_format=unix", "x.db?_time_integer_format=unix"},
+		{"x.db?_time_format=datetime", "x.db?_time_format=datetime&_pragma=busy_timeout(5000)"},
+		{"x.db?_time_integer_format=unix", "x.db?_time_integer_format=unix&_pragma=busy_timeout(5000)"},
 	}
 	for _, c := range cases {
-		if got := withTimeFormat(c.in); got != c.want {
-			t.Errorf("withTimeFormat(%q) = %q, want %q", c.in, got, c.want)
+		if got := withCompatDefaults(c.in); got != c.want {
+			t.Errorf("withCompatDefaults(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestBusyTimeoutDefaultsToMattnValue guards a concurrency regression from
+// the driver swap. mattn/go-sqlite3 defaulted busy_timeout to 5000ms; modernc
+// defaults to 0, so a second writer fails instantly with SQLITE_BUSY instead
+// of waiting. Apps written against mattn assume the wait.
+func TestBusyTimeoutDefaultsToMattnValue(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var got int
+	if err := db.QueryRow("PRAGMA busy_timeout").Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != 5000 {
+		t.Fatalf("busy_timeout = %d, want 5000 (mattn's default; 0 fails instantly under contention)", got)
+	}
+}
+
+func TestBusyTimeoutRespectsExplicitSetting(t *testing.T) {
+	for _, dsn := range []string{
+		":memory:?_pragma=busy_timeout(250)",
+		":memory:?_busy_timeout=250",
+	} {
+		db, err := sql.Open("sqlite3", dsn)
+		if err != nil {
+			t.Fatalf("%s: %v", dsn, err)
+		}
+		var got int
+		if err := db.QueryRow("PRAGMA busy_timeout").Scan(&got); err != nil {
+			t.Fatalf("%s: %v", dsn, err)
+		}
+		db.Close()
+		if got != 250 {
+			t.Errorf("%s: busy_timeout = %d, want the caller's 250", dsn, got)
 		}
 	}
 }

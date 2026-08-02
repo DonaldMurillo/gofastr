@@ -34,7 +34,10 @@ column renames), cron leader election, argon2id hashing, and Reader Mode.
   stays — drop the import.
   Timestamps bind with `_time_format=sqlite`, which is byte-identical to
   what mattn wrote, so existing database files read back unchanged and no
-  migration is needed.
+  migration is needed. `busy_timeout` defaults to mattn's 5000ms rather
+  than modernc's 0, so a second writer waits instead of failing
+  immediately with `SQLITE_BUSY`. Set either explicitly in your DSN to
+  override.
 - **BREAKING: `sql.Open("sqlite", …)` no longer reaches the in-repo
   engine.** `github.com/DonaldMurillo/gofastr/sqlite` registers itself as
   `gofastr-sqlite`; the `sqlite` name belongs to modernc.

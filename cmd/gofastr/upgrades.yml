@@ -585,10 +585,13 @@ releases:
         detect: "sql\\.Open\\(\"sqlite\""
       - change: Boolean columns serialize as true/false in CRUD JSON
         breaking: true
-        guidance: "On mattn a BOOLEAN column came back as 0/1; it is now true/false. Clients testing row.field === 1 must compare against true. Apps that ran on the in-repo pure engine already saw true/false and need no change."
+        guidance: "On mattn a BOOLEAN column came back as 0/1; it is now true/false. Clients testing row.field === 1 must compare against true. Apps that ran on the in-repo pure engine already saw true/false and need no change. Every entity below declares a boolean field whose JSON shape changes."
+        detect: "schema\\.Bool"
       - change: New storage keys must be portable to Windows
         breaking: true
         guidance: "LocalStorage.Save rejects key components containing ':', ending in a space or dot, or naming a reserved device (CON, NUL, LPT1, ...) so a store written on Unix can be served from Windows. Get, Exists and Delete still accept those keys, so objects written by earlier releases stay readable and removable. Rename them at your convenience; path-traversal rules are unchanged."
+        detect: "NewLocalStorage|WithFileStorage"
       - change: Repeated markdown headings get distinct ids
         breaking: true
         guidance: "A second '## Setup' renders id=\"setup-2\" instead of a duplicate id=\"setup\". Anchor links pointing at the later of two identically-named headings change target."
+        detect: "markdown\\.(Render|RenderHTML)\\("

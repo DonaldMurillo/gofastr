@@ -5,9 +5,9 @@
 // GoFastr do not need a transitive replace directive for mattn/go-sqlite3.
 // They can therefore build on Windows with CGO_ENABLED=0.
 //
-// The driver is wrapped so that every connection binds time.Time in the
-// layout GoFastr reads back. See timeformat.go — getting this wrong is a
-// silent auth outage, not a cosmetic difference.
+// The driver is wrapped to restore the two mattn/go-sqlite3 defaults the
+// framework was written against: the time bind layout and busy_timeout. See
+// compat.go — both are silent when wrong, and one is an auth outage.
 package stdlib
 
 import (
@@ -32,7 +32,7 @@ func init() {
 	}
 	inner := db.Driver()
 	_ = db.Close()
-	sql.Register("sqlite3", timeFormatDriver{inner: inner})
+	sql.Register("sqlite3", compatDriver{inner: inner})
 }
 
 // SQLiteDriver preserves the small public wrapper surface used by fault
