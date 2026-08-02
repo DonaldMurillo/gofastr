@@ -1,9 +1,13 @@
-// Package stdlib registers the repository's pure-Go SQLite implementation
-// under the conventional database/sql driver name used by generated apps.
+// Package stdlib registers modernc.org/sqlite — a pure-Go SQLite — under the
+// conventional "sqlite3" database/sql driver name used by generated apps.
 //
 // Keeping this adapter in the GoFastr module means applications that import
 // GoFastr do not need a transitive replace directive for mattn/go-sqlite3.
 // They can therefore build on Windows with CGO_ENABLED=0.
+//
+// The driver is wrapped so that every connection binds time.Time in the
+// layout GoFastr reads back. See timeformat.go — getting this wrong is a
+// silent auth outage, not a cosmetic difference.
 package stdlib
 
 import (
@@ -26,11 +30,15 @@ func init() {
 	if err != nil {
 		panic("sqlite/stdlib: modernc sqlite driver is unavailable: " + err.Error())
 	}
-	driver := db.Driver()
+	inner := db.Driver()
 	_ = db.Close()
-	sql.Register("sqlite3", driver)
+	sql.Register("sqlite3", timeFormatDriver{inner: inner})
 }
 
 // SQLiteDriver preserves the small public wrapper surface used by fault
 // injection tests and downstream code that constructs the traditional driver.
+//
+// Note this is modernc's raw driver: a caller registering it directly gets
+// modernc's default time bind format, not the canonical layout this package
+// installs on the "sqlite3" name.
 type SQLiteDriver = modernsqlite.Driver

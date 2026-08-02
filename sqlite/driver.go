@@ -259,10 +259,6 @@ func CloseDB(db *sql.DB) {
 
 type sqliteDriver struct{}
 
-// SQLiteDriver is the exported driver type retained for compatibility with
-// code that wraps github.com/DonaldMurillo/gofastr/sqlite/stdlib.SQLiteDriver.
-type SQLiteDriver = sqliteDriver
-
 // OpenConnector builds ONE engine per sql.Open and shares it across every
 // connection in that pool — the same arrangement Open/OpenFile give you
 // directly. database/sql calls this once per sql.Open (driver.DriverContext)
