@@ -39,6 +39,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   rows on repeated upsert.
 - Removed three stale `data-fui-*` doc rows (`inline-edit`, `password-toggle`,
   `repeater`) that documented attributes nothing emits or reads.
+- `gofastr audit lint`'s `isRenameChange` no longer mistakes an
+  `ADD COLUMN ... DEFAULT 'rename column'` for a rename (it matched the
+  operation token space-delimited now), which had silently dropped a legit
+  ADD COLUMN at boot.
+- A rename combined with a type change now emits both (the type-change loop
+  resolves a renamed column's live type under its old name); previously the
+  type change was silently lost.
+- A column declared with `RawType` (Postgres domains, arrays, custom types)
+  no longer false-positives as a type change on every diff.
+- A panic inside a cron `RunOnce` (e.g. a panicking gate) now still releases
+  the leader-lease instead of leaking it (the release is deferred).
+
+### Security
+
+- `Argon2Hasher.Verify` rejects resource-exhaustion parameters parsed from a
+  stored hash (memory up to ~4 TiB, unbounded time) before invoking
+  `argon2.IDKey` — a malicious or corrupted password-hash row could otherwise
+  allocate gigabytes or peg a CPU on every verify (per-login DoS). Legitimate
+  hashes sit far below the caps.
 
 ## [0.55.0] - 2026-07-31
 
