@@ -140,8 +140,11 @@ func TestLocalStoragePathTraversalBlocked(t *testing.T) {
 		t.Errorf("Save(%q) should have been rejected, but succeeded", absKey)
 	}
 
+	// Windows device / ADS names are a portability rule on the WRITE path.
+	// Reads deliberately stay permissive so objects stored by earlier
+	// releases remain reachable — see TestExistingKeysStayReadableAndDeletable.
 	for _, key := range []string{"CON.txt", "nested/NUL", "file.txt:secret"} {
-		if _, err := ls.fullPath(key); err == nil {
+		if err := ls.Save(ctx, key, bytes.NewReader([]byte("bad"))); err == nil {
 			t.Errorf("Save(%q) should reject Windows device/ADS names", key)
 		}
 	}

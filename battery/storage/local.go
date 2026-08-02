@@ -51,7 +51,14 @@ func NewLocalStorage(baseDir string, opts ...LocalOption) *LocalStorage {
 	return ls
 }
 
-// validateKey ensures the key does not escape the base directory.
+// validateKey ensures the key does not escape the base directory. This is the
+// security check and runs on EVERY operation.
+//
+// Windows-portability rules deliberately live in validateWritableKey instead:
+// keys containing ':' or a reserved device name are legal on Unix, so stores
+// written by earlier releases contain them. Rejecting them on read would make
+// existing objects unreachable AND unremovable, leaving no migration path.
+// New writes are still held to the portable rules.
 func (ls *LocalStorage) validateKey(key string) error {
 	if key == "" {
 		return fmt.Errorf("storage: empty key")
@@ -59,9 +66,6 @@ func (ls *LocalStorage) validateKey(key string) error {
 	// Check for path traversal sequences
 	if strings.Contains(key, "..") {
 		return fmt.Errorf("storage: key %q contains path traversal sequence", key)
-	}
-	if err := validateWindowsCompatibleKey(key); err != nil {
-		return err
 	}
 	// Reject absolute paths and volume-qualified paths on every platform.
 	// filepath.IsAbs handles Unix roots and Windows roots such as /tmp and
@@ -76,6 +80,15 @@ func (ls *LocalStorage) validateKey(key string) error {
 		return fmt.Errorf("storage: key %q escapes base directory", key)
 	}
 	return nil
+}
+
+// validateWritableKey is validateKey plus the portability rules applied to
+// NEW objects, so a store written on Unix can be served from Windows.
+func (ls *LocalStorage) validateWritableKey(key string) error {
+	if err := ls.validateKey(key); err != nil {
+		return err
+	}
+	return validateWindowsCompatibleKey(key)
 }
 
 func validateWindowsCompatibleKey(key string) error {
@@ -115,6 +128,12 @@ func (ls *LocalStorage) fullPath(key string) (string, error) {
 // created as needed.
 func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	// New objects must stay portable; existing ones are only held to the
+	// security rules. See validateKey.
+	if err := ls.validateWritableKey(key); err != nil {
 		return err
 	}
 
