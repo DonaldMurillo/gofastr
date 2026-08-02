@@ -121,9 +121,18 @@ sensibly reflect (sub-second internal dashboards).
 - Push only. The result of a user action arrives in the RPC response, never
   on the event stream.
 - Streams outlive the request timeout. A response that flushes (every SSE
-  subscription does) sheds the middleware deadline and the server-level
-  read/write deadlines at its first flush, so `RequestTimeout` never cuts
-  a live subscriber; buffered responses keep the hard cap.
+  subscription does) flips the timeout writer into streaming mode so its 504
+  can no longer fire; the stream loop then ignores the request context's
+  `DeadlineExceeded` (middleware.Timeout firing on a still-connected
+  subscriber — the original bug) while still unwinding promptly on a real
+  `context.Canceled` (client disconnect). A heartbeat (default 15s,
+  `island.WithSSEHeartbeat`) writes keepalive comments so proxies and load
+  balancers don't idle-kill a live stream, and a bounded stream lifetime
+  (default 5m, `island.WithSSEStreamBound`) reclaims a stream stranded by a
+  peer the server can't observe as gone — even when its heartbeat writes
+  keep succeeding into the kernel buffer. The connection's read/write
+  deadlines are NOT cleared (the reverted 217e8d06 did, which broke
+  net/http's close-notify and stranded streams instead). See issue #159.
 - Concurrent streams are capped (default 16 per session, 4096 per replica;
   configurable via `island.WithStreamCaps`). The policy is reject-not-evict:
   an over-cap connect gets a `429 Too Many Requests` with `Retry-After`, and
