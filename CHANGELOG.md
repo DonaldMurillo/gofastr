@@ -50,6 +50,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   no longer false-positives as a type change on every diff.
 - A panic inside a cron `RunOnce` (e.g. a panicking gate) now still releases
   the leader-lease instead of leaking it (the release is deferred).
+- The Meridian canary's Customers list-island now states its policy
+  explicitly (`WithIslandPolicy(authPolicy("/login", ""))`), matching the
+  contract `gofastr generate` emits on every island, instead of leaning on
+  `TableHandler`'s nil-policy sign-in fallback — which silently stops gating
+  the rows the moment the screen gains a role. (#160)
 
 ### Security
 

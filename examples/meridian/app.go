@@ -210,7 +210,7 @@ func customersList() ResourceConfig {
 		WithCreate().
 		WithHeading("Customers").
 		WithEmpty("No customers yet — add your first to get started.").
-		WithIsland("/api/tables/customers").
+		WithIsland("/api/tables/customers").WithIslandPolicy(authPolicy("/login", "")).
 		WithActions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Quick add", Variant: ui.ButtonSecondary}), "customer-quick-add"))
 }
 
