@@ -2,43 +2,27 @@ package framework_test
 
 import (
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/browserpath"
 )
 
 // browserExecutable returns the exact executable that chromedp must launch.
 // Detection and launch must share this path: chromedp's Windows fallback
 // searches Chrome/Chromium but not a discovered Edge installation.
+// Resolution lives in internal/browserpath so every OS is covered by one
+// list — a PATH-only lookup skipped these suites on macOS, where Chrome
+// installs to /Applications and is not on $PATH.
 func browserExecutable(t *testing.T) string {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	for _, name := range []string{"chrome", "chromium", "chromium-browser", "google-chrome", "msedge"} {
-		if path, err := exec.LookPath(name); err == nil {
-			return path
-		}
+	path, ok := browserpath.Find()
+	if !ok {
+		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
 	}
-	if runtime.GOOS == "windows" {
-		for _, root := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LOCALAPPDATA")} {
-			for _, rel := range []string{
-				`Google\Chrome\Application\chrome.exe`,
-				`Microsoft\Edge\Application\msedge.exe`,
-				`Chromium\Application\chrome.exe`,
-			} {
-				if root != "" {
-					path := filepath.Join(root, rel)
-					if _, err := os.Stat(path); err == nil {
-						return path
-					}
-				}
-			}
-		}
-	}
-	t.Skip("browser E2E requires Chrome, Chromium, or Edge")
-	return ""
+	return path
 }
 
 func requireBrowser(t *testing.T) {
