@@ -28,6 +28,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - New doc→owner parity gate catches `data-fui-*` attributes documented with no
   emitter/reader; `TagInput`'s `data-fui-tag-input-id` now has a runtime owner
   (focus returns to the field on chip remove).
+- Browser Reader Mode: `app.AsArticle()` (a screen registration option) and
+  the optional `ScreenArticle` interface mark a page's content as an article
+  so Safari Reader / Firefox Reader View offer their built-in reader view.
+  The framework wraps the content in `<article>`, emits `Article` JSON-LD,
+  and sets `og:type=article`; the headline and description are derived from
+  the screen's `ScreenTitle` / `ScreenDescription`, so a normal screen
+  becomes reader-ready with no article-specific data. Implement
+  `ScreenArticle` to add a byline, date, or cover image.
 
 ### Fixed
 

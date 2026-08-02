@@ -750,6 +750,7 @@ var paletteCatalog = []paletteRoute{
 	{"Live presence — viewer roster demo", "/examples/presence?presence=presence-demo"},
 	{"Kiln — agent build mode (experimental)", "/kiln"},
 	{"Philosophy — the convictions essay", "/philosophy"},
+	{"Reader-ready pages — browser Reader Mode", "/reader"},
 	{"Components — gallery index", "/components/"},
 	{"SEO — per-page meta, canonical, JSON-LD", "/seo"},
 	{"Forms wizard — multi-step round-trip", "/forms/wizard"},
@@ -852,6 +853,12 @@ func registerScreens(site *app.App) {
 	site.Register("/examples/live-dashboard", &LiveDashboardScreen{}, nil)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
+	// /reader — a reader-ready article, the seamless way. This is a normal
+	// screen; app.AsArticle() on its registration is the whole reader-mode
+	// switch (wraps content in <article>, emits Article JSON-LD +
+	// og:type=article, derives the headline from ScreenTitle). Load it in
+	// Safari or Firefox and the browser's Reader icon lights up.
+	site.Register("/reader", &ArticleScreen{}, nil, app.AsArticle())
 	// SEO demo pages (per-concern interfaces + the ScreenSEO bundle).
 	site.Register("/seo", &SEOScreen{}, nil)
 	site.Register("/seo-bundle", &SEOBundleScreen{}, nil)
