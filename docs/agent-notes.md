@@ -1,5 +1,14 @@
 # Agent Notes
 
+## 2026-08-01 - Browser Reader Mode (`app.AsArticle()` + `ScreenArticle`)
+- Scope: `core-ui/app`, `framework/uihost` — browser reader-mode readiness
+- Trigger: User wanted pages marked up so Safari Reader / Firefox Reader View detect them and render them well (the browser's built-in feature, NOT a layout "reader mode" CSS shape — an earlier attempt built the wrong thing and was reverted). Then refined: it had to be SEAMLESS — "turn any normal screen into an article", not write a metadata method + duplicate the title.
+- Approach: Two ways in, one seam. `app.AsArticle()` is a `ScreenOption` (`func(*Screen)`) that sets `Screen.Article`; the framework then wraps content in `<article>` (app: both SSR+SSG flow through `RenderPageResult`, no-layout/SSG through `renderComponentAs`) and synthesizes Article JSON-LD + `og:type=article` (uihost `resolveScreenSEOFor`), DERIVING headline/description from the screen's own `ScreenTitle`/`ScreenDescription` — zero article-specific data. The optional `ScreenArticle()` interface enriches with author/date/image and also marks the screen an article. `wrapArticle`/synthesis trigger on flag OR interface; only gaps are filled so explicit `ScreenSchema`/`ScreenSEO` win.
+- Evidence: `go test ./core-ui/app/ -run 'TestScreenArticle|TestAsArticle'` and `./framework/uihost/ -run 'TestScreenArticle|TestAsArticle'` green (wrap, synthesis, schema de-dup, OG preservation, title-derivation). Live `/reader` (a plain screen + `app.AsArticle()`) emits `<article>` + Article JSON-LD with headline/description derived from the screen title + og:type=article; non-article pages stay og:type=website with no `<article>`.
+- Gotcha: value (non-pointer) struct screen components 404 — the host only serves pointer-to-struct screens (`newInstance` assumes pointers). Always register `&Screen{}`.
+- Next time: The dominant reader-mode signal is the `<article>` element + real paragraph density — no config fakes article content, so `Render()` must be actual prose. `RenderRaw` (SSG/internal) has a pre-existing double-`<main>` when combined with a layout; SSG ships via `host.RenderStaticPage`→`RenderPageResult` (clean), so it doesn't surface.
+- Status: active
+
 ## 2026-07-20 - Framework maturity review
 - Scope: architecture, release readiness, documentation
 - Trigger: Assess where GoFastr stands after v0.38.0.

@@ -244,7 +244,7 @@ Each entry under `fields:` accepts:
 | `max` / `min` | number | Length (strings) or value (numbers) bounds. |
 | `values` | list | Allowed values for `type: enum`. |
 | `pattern` | string | Regex the value must match (validated on write). |
-| `auto_generate` | string | Auto-populate strategy, e.g. `uuid` on an id column — the generated field never appears in write forms. |
+| `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4 — the default `id`), `increment` (database-assigned integer — `SERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
 | `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned — `visibleFields` shapes the projection). |
 | `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form — see "Masked fields" below. |

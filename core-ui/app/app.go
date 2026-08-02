@@ -314,6 +314,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 			if renderErr != nil {
 				return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 			}
+			content = wrapArticle(screen, comp, content)
 		} else {
 			content = renderComponentInScreen(ctx, screen, comp)
 		}
@@ -505,7 +506,7 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 		}
 		body = html
 	} else {
-		body = renderComponentAs(ctx, effType, screen.Title, comp)
+		body = renderComponentAs(ctx, screen, effType, comp)
 	}
 
 	out := RenderResult{HTML: body, Component: comp}
@@ -528,18 +529,19 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 // component (used for RenderAlt + no-layout fallback) without copying
 // the Screen struct (which embeds a sync.Mutex).
 func renderComponentInScreen(ctx context.Context, screen *Screen, comp component.Component) render.HTML {
-	return renderComponentAs(ctx, screen.Type, screen.Title, comp)
+	return renderComponentAs(ctx, screen, screen.Type, comp)
 }
 
 // renderComponentAs renders comp wrapped in the ARIA scaffolding for an
 // explicit screen type, which an intercepted render supplies instead of
 // the screen's registered one.
-func renderComponentAs(ctx context.Context, t ScreenType, title string, comp component.Component) render.HTML {
+func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, comp component.Component) render.HTML {
 	var content render.HTML
 	if cc, ok := comp.(component.ContextComponent); ok {
 		content = cc.RenderCtx(ctx)
 	} else {
 		content = comp.Render()
 	}
-	return wrapByScreenType(t, title, content)
+	content = wrapArticle(screen, comp, content)
+	return wrapByScreenType(effType, screen.Title, content)
 }

@@ -81,6 +81,62 @@ func (s *PostScreen) ScreenSEO() uihost.SEO {
 rendered as `<script type="application/ld+json">` with `</`
 neutralized so content can't break out of the script block.
 
+## Browser Reader Mode
+
+Safari Reader, Firefox Reader View, and Edge Immersive Reader each show a
+reader button only when they're confident a page *is* an article. That
+confidence comes from three signals the page emits: a semantic `<article>`
+element wrapping the content (the dominant signal — Safari Reader and
+Firefox's Readability engine scan the DOM for it), an `Article` JSON-LD
+block (which Safari Reader reads to populate its title/byline/date), and
+`og:type=article`.
+
+### Turn any screen into an article: `app.AsArticle()`
+
+The seamless path. Add one option to a screen's registration and the
+framework emits all three signals, deriving the headline and description
+from the screen's own `ScreenTitle` / `ScreenDescription` — no
+article-specific data anywhere:
+
+```go
+// Any normal screen + one option = reader-ready.
+site.Register("/posts/:slug", &PostScreen{}, layout, app.AsArticle())
+
+// PostScreen is an ordinary screen — title + prose, nothing more.
+type PostScreen struct{ post Post }
+func (s *PostScreen) ScreenTitle() string { return s.post.Title }
+func (s *PostScreen) Render() render.HTML { /* the post body */ }
+```
+
+The framework wraps the rendered content in `<article>` (inside the
+layout's `<main>`), synthesizes an `Article` JSON-LD item whose headline
+and description come from the screen's title/description, and sets
+`og:type=article`. `Render()` should return a single `<h1>` matching the
+title, then the prose; keep nav and chrome in the layout (outside the
+`<article>`) so the browser extracts exactly the prose.
+
+### Richer reader views: the `ScreenArticle` interface
+
+`AsArticle()` carries no byline or date. To give the browser structured
+metadata — so every reader view shows a consistent byline, date, and cover
+image whatever the prose — implement `ScreenArticle` on the component. Its
+fields fill what the screen's title can't, and it also marks the screen as
+an article (the option isn't needed when the interface is implemented):
+
+```go
+func (s *PostScreen) ScreenArticle() app.ArticleMeta {
+    return app.ArticleMeta{
+        Author:        s.post.Author,           // → JSON-LD author (Person)
+        DatePublished: s.post.PublishedAt.Format(time.RFC3339),
+        Image:         s.post.CoverURL,
+    }
+}
+```
+
+In both forms only gaps are filled — an explicit `ScreenSchema` Article or
+`ScreenSEO` OG value wins over the derived/synthesized one, so richer
+declarations aren't duplicated.
+
 ## Per-screen `llm.md` inherits the same metadata
 
 When `uihost.WithPublicLLMMD` is on, each screen's `/llm.md` document

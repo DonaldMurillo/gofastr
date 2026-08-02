@@ -134,6 +134,14 @@ type Screen struct {
 
 	// NoLLMMD disables auto-generated /path/llm.md for this screen.
 	NoLLMMD bool
+	// Article marks the screen's content as an article so browsers offer
+	// their built-in Reader Mode (Safari Reader, Firefox Reader View) and
+	// render it well. Set with the AsArticle registration option; the
+	// framework wraps the content in <article> and synthesizes Article
+	// JSON-LD + og:type=article, deriving the headline and description
+	// from the screen's own title and description. For richer reader-view
+	// metadata (byline, date, cover image) also implement ScreenArticle.
+	Article bool
 
 	// Intercept, when set, makes this screen present as an overlay for
 	// a soft navigation that started on the declared origin route. Nil

@@ -465,10 +465,13 @@ func addMissingColumns(ctx context.Context, exec execQueryer, ent *entity.Entity
 	return nil
 }
 
-// additiveChanges returns the non-destructive subset of the schema diff for
-// one entity against a NON-EMPTY live column set — i.e. only the ALTER TABLE
-// ADD COLUMN statements. Callers guarantee live is non-empty (an empty set
-// would make diffEntityFromLive emit CREATE TABLE instead).
+// additiveChanges returns the ADDITIVE subset of the schema diff for one
+// entity against a NON-EMPTY live column set — only CREATE TABLE and ALTER
+// TABLE ADD COLUMN. Destructive changes (DROP COLUMN, ALTER TYPE) are
+// excluded, AND non-destructive-but-non-additive RENAMEs are excluded too: a
+// rename belongs in a reviewable `migrate generate` file, never silent boot
+// convergence (a stale Renames hint could otherwise rename the wrong in-use
+// column at boot). Callers guarantee live is non-empty.
 func additiveChanges(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
 	changes, err := diffEntityFromLive(ent, all, dialect, live)
 	if err != nil {
@@ -476,11 +479,23 @@ func additiveChanges(ent *entity.Entity, all map[string]*entity.Entity, dialect 
 	}
 	adds := changes[:0]
 	for _, c := range changes {
-		if !c.Destructive {
-			adds = append(adds, c)
+		if c.Destructive || isRenameChange(c.SQL) {
+			continue
 		}
+		adds = append(adds, c)
 	}
 	return adds, nil
+}
+
+// isRenameChange reports whether a change's SQL is a RENAME COLUMN. Used by
+// additiveChanges to keep boot convergence additive-only — a rename is
+// non-destructive (it preserves data) but is NOT an additive change.
+func isRenameChange(sql string) bool {
+	// Space-delimited so a string literal like DEFAULT 'rename column'
+	// (quote-bordered, not space-bordered) cannot masquerade as a rename and
+	// get an ADD COLUMN discarded at boot. SafeIdent allows no spaces in
+	// identifiers, so a real rename always emits " RENAME COLUMN ".
+	return strings.Contains(strings.ToUpper(sql), " RENAME COLUMN ")
 }
 
 // indexDDL builds the CREATE INDEX statement for one declared Index. Name
@@ -812,6 +827,15 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	case schema.Text:
 		return "TEXT"
 	case schema.Int:
+		// On Postgres an auto-incrementing integer needs a real sequence:
+		// SERIAL is INTEGER + NOT NULL + a backing sequence + DEFAULT
+		// nextval(). A plain "INTEGER PRIMARY KEY" has no sequence on
+		// Postgres and never auto-increments. SQLite keeps INTEGER — its
+		// "INTEGER PRIMARY KEY" aliases the rowid and auto-increments when
+		// the column is omitted from INSERT.
+		if dialect == DialectPostgres && f.AutoGenerate == schema.AutoIncrement {
+			return "SERIAL"
+		}
 		return "INTEGER"
 	case schema.Float:
 		if dialect == DialectPostgres {
