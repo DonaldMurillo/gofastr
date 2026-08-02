@@ -122,6 +122,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		var cols []string
 		var vals []any
 		for _, f := range ch.Entity.GetFields() {
+			if f.AutoGenerate == schema.AutoIncrement {
+				// Omit: the DB assigns it (see doCreate). Including the 0
+				// placeholder would collide every upsert on id=0 and clobber.
+				continue
+			}
 			if f.AutoGenerate != schema.AutoNone {
 				cols = append(cols, f.Name)
 				vals = append(vals, body[f.Name])

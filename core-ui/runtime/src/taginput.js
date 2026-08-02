@@ -3,7 +3,9 @@
 // On the text input:
 //   - Enter or comma → commit current value as a tag
 //   - Backspace on empty → remove the last tag
-// On a chip × button: remove that tag
+// On a chip × button: remove that tag and return focus to the field
+// (located via data-fui-tag-input-id) so keyboard / screen-reader users
+// stay in the input instead of dropping to <body>.
 //
 // Each tag becomes a <input type=hidden name=<Name> value=<tag>>
 // before the text input, so the form-submit shape is the standard
@@ -19,7 +21,14 @@
     return input.getAttribute('data-fui-tag-input');
   }
 
-  function makeChip(value, formName) {
+  // fieldId returns the text input's data-fui-tag-input-id — the stable
+  // field id mirrored onto each chip's remove button so removal can
+  // return focus to the field by id, independent of DOM position.
+  function fieldId(input) {
+    return input.getAttribute('data-fui-tag-input-id') || '';
+  }
+
+  function makeChip(value, formName, inputId) {
     const chip = document.createElement('span');
     chip.className = 'ui-tag-input__chip';
 
@@ -32,6 +41,7 @@
     rm.className = 'ui-tag-input__chip-remove';
     rm.setAttribute('aria-label', 'Remove ' + value);
     rm.textContent = '×';
+    if (inputId) rm.setAttribute('data-fui-tag-input-id', inputId);
     chip.appendChild(rm);
 
     const hidden = document.createElement('input');
@@ -50,6 +60,7 @@
     const z = zone(input);
     if (!z) return false;
     const formName = name(input);
+    const fid = fieldId(input);
     // De-dupe: skip if a chip already holds this value.
     const existing = z.querySelectorAll('.ui-tag-input__chip .ui-tag-input__hidden');
     for (const h of existing) {
@@ -58,7 +69,7 @@
         return false;
       }
     }
-    const chip = makeChip(v, formName);
+    const chip = makeChip(v, formName, fid);
     z.insertBefore(chip, input);
     input.value = '';
     return true;
@@ -109,12 +120,20 @@
     commit(t);
   }, true);
 
-  // Chip remove buttons.
+  // Chip remove buttons. Removing a chip via its × button returns
+  // focus to the field identified by data-fui-tag-input-id (mirrored
+  // onto the button in makeChip) so keyboard / screen-reader users
+  // stay in the input instead of dropping to <body>.
   document.addEventListener('click', function (ev) {
     const btn = ev.target && ev.target.closest && ev.target.closest('.ui-tag-input__chip-remove');
     if (!btn) return;
+    const fid = btn.getAttribute('data-fui-tag-input-id');
     const chip = btn.closest('.ui-tag-input__chip');
     if (chip) chip.remove();
+    if (fid) {
+      const field = document.getElementById(fid);
+      if (field) field.focus();
+    }
   });
 
   // For initial SSR-rendered tags: convert the hidden inputs into
@@ -126,8 +145,9 @@
     scope.querySelectorAll('[data-fui-tag-input-zone]').forEach(function (z) {
       const hiddens = z.querySelectorAll(':scope > input.ui-tag-input__hidden');
       const textInput = z.querySelector('input[data-fui-tag-input]');
+      const fid = textInput ? fieldId(textInput) : '';
       hiddens.forEach(function (h) {
-        const chip = makeChip(h.value, h.name);
+        const chip = makeChip(h.value, h.name, fid);
         z.insertBefore(chip, textInput);
         h.remove();
       });

@@ -12,14 +12,22 @@ import (
 // ground truth (the code symbol, the real filename, or the absence of a
 // phantom) so the lie cannot silently reappear.
 
-// auth.md described a `framework/auth` package with argon2id primitives.
-// No such package exists and hashing is bcrypt; the doc must not resurrect
-// the fabrication.
-func TestAuthDocDoesNotClaimFrameworkAuthPackage(t *testing.T) {
+// auth.md once fabricated a `framework/auth` package with argon2id
+// primitives. framework/auth still does not exist (hashing lives in
+// battery/auth/password.go), but argon2id is now a REAL opt-in hasher, so
+// the doc may mention it ONLY when the code actually ships Argon2Hasher.
+// Pin both: no phantom package, and any argon2 claim must be backed by the
+// symbol — a fabricated claim with no symbol fails.
+func TestAuthDocHashingClaimsMatchCode(t *testing.T) {
 	doc := readDoc(t, "auth.md")
-	if strings.Contains(doc, "framework/auth`") || strings.Contains(doc, "argon2") {
-		t.Error("auth.md references a nonexistent framework/auth package or argon2id; " +
-			"hashing lives in battery/auth/password.go and uses bcrypt")
+	if strings.Contains(doc, "framework/auth`") {
+		t.Error("auth.md references a nonexistent framework/auth package; hashing lives in battery/auth/password.go")
+	}
+	if strings.Contains(doc, "argon2") {
+		pw := readRepo(t, "battery/auth/password.go")
+		if !strings.Contains(pw, "Argon2Hasher") {
+			t.Error("auth.md mentions argon2 but battery/auth/password.go has no Argon2Hasher — the claim is fabricated")
+		}
 	}
 	if _, err := os.Stat(filepath.Join("..", "auth")); err == nil {
 		t.Error("a framework/auth package now exists — update this gate and the auth.md prose together")
