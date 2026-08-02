@@ -39,6 +39,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- `ui.SiteHeaderLink.MatchPrefix` activates on canonical hrefs with no
+  trailing slash: `/docs` now lights up on `/docs` and `/docs/getting-started`
+  (and still not on `/docs-old`, since matching is on segment boundaries).
+  The runtime previously prefix-matched only hrefs ending in `/`, which made
+  the attribute inert for apps that register `/docs` rather than `/docs/`.
+  Applies to the initial render and to client-side navigation, desktop and
+  mobile. (#171)
 - A `schema.JSON` field is writable through the generated CRUD routes. The
   handler bound the decoded Go value straight to the driver, so every create
   or update that populated one failed with a 500 (`unsupported type
