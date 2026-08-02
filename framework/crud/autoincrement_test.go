@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,5 +51,37 @@ func TestCreate_AutoIncrementPK_AssignedByDB(t *testing.T) {
 	}
 	if !strings.Contains(second, `"id":2`) {
 		t.Errorf("second create: expected DB-assigned id 2 (distinct, incremented), got %s", second)
+	}
+}
+
+// TestUpsert_AutoIncrementPK_InsertsNotClobbers: UpsertOne must omit an
+// AutoIncrement PK from the INSERT just like doCreate. The old path stamped
+// id=0 and included it, so every upsert after the first collided on id=0 and
+// UPDATEd the single row (silent data loss). Two upserts must leave two rows.
+func TestUpsert_AutoIncrementPK_InsertsNotClobbers(t *testing.T) {
+	dbc := setupDB(t, `CREATE TABLE counters2 (id INTEGER PRIMARY KEY, label TEXT)`)
+	ent := entity.Define("counters2", entity.EntityConfig{
+		Name: "counters2", Table: "counters2",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.Int, AutoGenerate: schema.AutoIncrement, ReadOnly: true},
+			{Name: "label", Type: schema.String, Required: true},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(dbc)
+	ch := NewCrudHandler(ent, dbc)
+
+	upsert := func(label string) {
+		if _, err := ch.UpsertOne(context.Background(), map[string]any{"label": label}); err != nil {
+			t.Fatalf("upsert %q: %v", label, err)
+		}
+	}
+	upsert("a")
+	upsert("b")
+	var n int
+	if err := dbc.QueryRow("SELECT COUNT(*) FROM counters2").Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("upsert left %d rows, want 2 (two distinct DB-assigned ids, not one id=0 clobber)", n)
 	}
 }

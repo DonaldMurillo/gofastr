@@ -99,3 +99,29 @@ func TestDiffEntityFromLive_RenameColumn(t *testing.T) {
 		t.Fatalf("expected a RENAME COLUMN name→label, got: %+v", changes)
 	}
 }
+
+// TestAdditiveChanges_ExcludesRename pins boot's additive-only contract: the
+// boot convergence path (addMissingColumns/additiveChanges) must NOT apply a
+// RENAME even though a rename is non-destructive. A rename leaking through
+// boot would silently mutate a live column whenever a Renames hint is set —
+// and a stale hint could rename the wrong in-use column. Renames belong in a
+// reviewable `migrate generate` file, not silent boot convergence.
+func TestAdditiveChanges_ExcludesRename(t *testing.T) {
+	ent := rawEnt("widgets", "widgets", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "label", Type: schema.String},
+	}, nil, "id")
+	ent.Config.Renames = map[string]string{"oldcol": "label"}
+	adds, err := additiveChanges(ent, nil, DialectSQLite, map[string]string{
+		"id":     "TEXT",
+		"oldcol": "TEXT",
+	})
+	if err != nil {
+		t.Fatalf("additiveChanges: %v", err)
+	}
+	for _, c := range adds {
+		if strings.Contains(strings.ToUpper(c.SQL), "RENAME COLUMN") {
+			t.Errorf("boot additive path must be additive-only — it included a rename: %s", c.SQL)
+		}
+	}
+}

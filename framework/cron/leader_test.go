@@ -11,14 +11,24 @@ import (
 // scheduler's leader-gated tick path without a database.
 type stubLease struct {
 	held     bool
-	released bool
+	released chan struct{}
+}
+
+func newStubLease(held bool) *stubLease {
+	return &stubLease{held: held, released: make(chan struct{})}
 }
 
 func (l *stubLease) Acquire(ctx context.Context) (bool, func(), error) {
 	if !l.held {
 		return false, nil, nil
 	}
-	return true, func() { l.released = true }, nil
+	return true, func() {
+		select {
+		case <-l.released:
+		default:
+			close(l.released)
+		}
+	}, nil
 }
 
 // TestRunTick_SkipsWhenNotLeader: when leader election is configured and this
@@ -27,7 +37,7 @@ func (l *stubLease) Acquire(ctx context.Context) (bool, func(), error) {
 func TestRunTick_SkipsWhenNotLeader(t *testing.T) {
 	var fired atomic.Int32
 	s := NewScheduler()
-	s.WithLeaderElection(&stubLease{held: false})
+	s.WithLeaderElection(newStubLease(false))
 	if err := s.Register(CronJob{
 		Name: "j", Spec: "* * * * *",
 		Run: func(context.Context) error { fired.Add(1); return nil },
@@ -46,7 +56,7 @@ func TestRunTick_SkipsWhenNotLeader(t *testing.T) {
 // matching jobs and then releases the lease.
 func TestRunTick_FiresWhenLeader(t *testing.T) {
 	var fired atomic.Int32
-	lease := &stubLease{held: true}
+	lease := newStubLease(true)
 	s := NewScheduler()
 	s.WithLeaderElection(lease)
 	if err := s.Register(CronJob{
@@ -58,11 +68,12 @@ func TestRunTick_FiresWhenLeader(t *testing.T) {
 	if !s.runTick(context.Background(), time.Now()) {
 		t.Error("leader runTick reported it did not fire")
 	}
+	// Jobs run in goroutines; the lease is released in a background goroutine
+	// once they finish. Wait for both before asserting.
+	s.inflight.Wait()
+	<-lease.released
 	if fired.Load() != 1 {
 		t.Errorf("leader fired %d jobs, want 1", fired.Load())
-	}
-	if !lease.released {
-		t.Error("lease was not released after firing")
 	}
 }
 
@@ -80,7 +91,44 @@ func TestRunTick_NoLeaderFiresAlways(t *testing.T) {
 	if !s.runTick(context.Background(), time.Now()) {
 		t.Error("no-leader runTick should fire")
 	}
+	s.inflight.Wait() // job runs in a goroutine; wait before asserting
 	if fired.Load() != 1 {
 		t.Errorf("fired %d jobs, want 1", fired.Load())
 	}
+}
+
+// TestRunTick_DoesNotBlockOnInflightJobs pins the run-loop liveness contract:
+// runTick must return promptly even while matching jobs are still running. The
+// run loop selects on s.stop / ctx.Done() between ticks, and StopContext's
+// deadline-bounded join is only reachable if the loop is NOT parked inside
+// runTick. A blocking inflight.Wait() here would make a context-ignoring job
+// hang StopContext forever (the documented SIGTERM scenario).
+func TestRunTick_DoesNotBlockOnInflightJobs(t *testing.T) {
+	s := NewScheduler()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	if err := s.Register(CronJob{
+		Name: "slow", Spec: "* * * * *",
+		Run: func(context.Context) error {
+			close(started)
+			<-release
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{}, 1)
+	go func() {
+		s.runTick(context.Background(), time.Now())
+		close(done)
+	}()
+	<-started // the job is now running and blocked on release
+	select {
+	case <-done:
+		// good: runTick returned even though the job is still running
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("runTick blocked on inflight.Wait() while a job is still running — run loop is not selectable, StopContext would hang")
+	}
+	close(release)
 }
