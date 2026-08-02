@@ -7,6 +7,39 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- AutoIncrement integer primary keys render `SERIAL` on Postgres (was plain
+  `INTEGER`, which has no sequence); the column is omitted from INSERT so the
+  Postgres sequence / SQLite `INTEGER PRIMARY KEY` rowid alias assigns it.
+  `auto_generate: increment` now works on both dialects.
+- The schema diff detects column type changes and surfaces them as destructive
+  changes (refused by default), with dialect-aware normalization so Postgres
+  `information_schema` names don't false-positive. Previously silently ignored.
+- `EntityConfig.Renames` (`old`→`new`) emits a non-destructive `RENAME COLUMN`
+  instead of a data-losing drop+add. Go-declared opt-in (blueprint YAML to come).
+- `Scheduler.WithLeaderElection` + a `LeaderElection` interface make cron safe
+  across replicas (per-tick mutual exclusion); ships a `PostgresAdvisoryLease`
+  backed by `pg_try_advisory_lock`.
+- `argon2id` password hashing via `Argon2Hasher`; `CheckPassword` auto-detects
+  the algorithm so a user table migrates gradually. Bcrypt stays the default.
+- `gofastr audit lint` flags the `unscoped-pii` rule in Go-declared
+  `app.Entity(...)` too, not just in `gofastr.yml` blueprints.
+- New doc→owner parity gate catches `data-fui-*` attributes documented with no
+  emitter/reader; `TagInput`'s `data-fui-tag-input-id` now has a runtime owner
+  (focus returns to the field on chip remove).
+
+### Fixed
+
+- Boot `AutoMigrate` no longer applies `RENAME COLUMN` (additive-only); a stale
+  `Renames` hint can no longer rename the wrong in-use column at startup.
+- `Scheduler.runTick` no longer blocks the run loop on in-flight jobs, so
+  `StopContext`'s bounded shutdown works again for jobs that ignore their context.
+- `UpsertOne` no longer injects `id=0` for an AutoIncrement PK, which clobbered
+  rows on repeated upsert.
+- Removed three stale `data-fui-*` doc rows (`inline-edit`, `password-toggle`,
+  `repeater`) that documented attributes nothing emits or reads.
+
 ## [0.55.0] - 2026-07-31
 
 Five independent analyses of the whole framework — three in-repo passes
