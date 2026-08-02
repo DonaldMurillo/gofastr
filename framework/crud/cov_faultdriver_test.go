@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	sqlite3 "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // cov_faultdriver wraps mattn/go-sqlite3 with a SQL-substring-targeted fault

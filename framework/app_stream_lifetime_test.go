@@ -3,7 +3,7 @@ package framework
 import (
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // DisableRequestTimeout documents itself as the opt-out for SSE and long

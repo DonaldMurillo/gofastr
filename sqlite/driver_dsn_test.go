@@ -14,7 +14,7 @@ import (
 func TestRegisteredDriverHonorsFileDSN(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dsn.db")
 
-	db1, err := sql.Open("sqlite", path)
+	db1, err := sql.Open("gofastr-sqlite", path)
 	if err != nil {
 		t.Fatalf("open db1: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestRegisteredDriverHonorsFileDSN(t *testing.T) {
 		t.Fatalf("file DSN was not created on disk (driver used memory): %v", err)
 	}
 
-	db2, err := sql.Open("sqlite", path)
+	db2, err := sql.Open("gofastr-sqlite", path)
 	if err != nil {
 		t.Fatalf("open db2: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestRegisteredDriverHonorsFileDSN(t *testing.T) {
 // TestRegisteredDriverMemoryDSNStillMemory ensures the ":memory:" DSN keeps
 // its in-memory semantics after Open learns to read the DSN.
 func TestRegisteredDriverMemoryDSNStillMemory(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
+	db, err := sql.Open("gofastr-sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

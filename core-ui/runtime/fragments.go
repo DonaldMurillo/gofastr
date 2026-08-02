@@ -237,6 +237,7 @@ var moduleAttrs = map[string][]string{
 	"disclosure": {
 		"data-fui-disclosure",
 		"data-fui-disclosure-trap",
+		"data-fui-disclosure-persist",
 	},
 	"dragdismiss": {
 		"data-fui-drag-dismiss",

@@ -57,3 +57,17 @@ func TestScrollspyActiveCSS(t *testing.T) {
 		}
 	}
 }
+
+func TestScrollspyStickyModifierCSS(t *testing.T) {
+	css := Style.Entry().CSSFor(style.Theme{})
+	for _, want := range []string{
+		`.scrollspy.scrollspy--sticky`,
+		`position: sticky`,
+		`top: calc(var(--nav-h, 60px) + var(--spacing-lg, 16px))`,
+		`align-self: start`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("registered Style missing sticky wrapper contract %q:\n%s", want, css)
+		}
+	}
+}

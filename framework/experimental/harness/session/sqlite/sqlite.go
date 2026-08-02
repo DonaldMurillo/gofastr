@@ -1,7 +1,7 @@
 // Package sqlite is the SQLite-backed implementation of session.Store.
 //
-// Uses the existing framework dependency `mattn/go-sqlite3`. Per the
-// architecture doc, at-rest encryption is on the v0.2 roadmap; v0.1
+// Uses GoFastr's pure-Go SQLite adapter. Per the architecture doc,
+// at-rest encryption is on the v0.2 roadmap; v0.1
 // stores plaintext and relies on the redaction middleware on the
 // write path to keep secrets out of the file.
 package sqlite
@@ -23,7 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/session"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // Store is the SQLite-backed session.Store.

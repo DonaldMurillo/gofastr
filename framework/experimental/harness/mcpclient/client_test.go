@@ -10,36 +10,11 @@ import (
 	"time"
 )
 
-// writeStubServer creates a tiny shell-script MCP server that
-// answers initialize + tools/list + tools/call for one tool.
+// writeStubServer creates a tiny MCP server fixture that answers initialize
+// + tools/list + tools/call for one tool. The platform-specific implementation
+// uses a shell script on Unix and a compiled helper on Windows.
 func writeStubServer(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "stub-mcp.sh")
-	script := `#!/bin/sh
-while IFS= read -r line; do
-  case "$line" in
-    *'"method":"initialize"'*)
-      id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2024-11-05","capabilities":{}}}\n' "$id"
-      ;;
-    *'"method":"notifications/initialized"'*)
-      ;;
-    *'"method":"tools/list"'*)
-      id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"echo","description":"echoes","inputSchema":{"type":"object"}}]}}\n' "$id"
-      ;;
-    *'"method":"tools/call"'*)
-      id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"hello from stub"}]}}\n' "$id"
-      ;;
-  esac
-done
-`
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writeMCPStub(t, false)
 }
 
 func TestSpawnAndListTools(t *testing.T) {
@@ -115,7 +90,7 @@ func TestSourceWraps(t *testing.T) {
 	}
 }
 
-// writeEnvDumpingStub writes a shell-script MCP server that dumps its
+// writeEnvDumpingStub writes an MCP server fixture that dumps its
 // received environment to its first argument ($1, via `env`) before
 // answering the initialize handshake, so Spawn returns only after the
 // dump is on disk. The dump path is threaded through ARGV, not env, so
@@ -123,26 +98,7 @@ func TestSourceWraps(t *testing.T) {
 // script needs only PATH (to resolve env/sed/printf), which the default
 // allowlist provides.
 func writeEnvDumpingStub(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "env-dump-mcp.sh")
-	script := `#!/bin/sh
-env > "$1"
-while IFS= read -r line; do
-  case "$line" in
-    *'"method":"initialize"'*)
-      id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2024-11-05","capabilities":{}}}\n' "$id"
-      ;;
-    *'"method":"notifications/initialized"'*)
-      ;;
-  esac
-done
-`
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writeMCPStub(t, true)
 }
 
 // readDump reads the env dump the child wrote, failing if it is missing.

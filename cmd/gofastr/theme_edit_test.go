@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -913,11 +914,21 @@ func TestWriteBackReplacesAtomically(t *testing.T) {
 	if err := srv.writeBack(); err != nil {
 		t.Fatalf("writeBack: %v", err)
 	}
+	got, err := os.ReadFile(srv.outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) == "package old\n" {
+		t.Fatal("writeBack left the old destination contents in place")
+	}
 	after, err := os.Stat(srv.outPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if os.SameFile(before, after) {
+	// Windows' replacement rename may preserve the destination file identity
+	// while still replacing it atomically. The content assertion below is the
+	// portable contract; Unix additionally exposes a distinct inode.
+	if runtime.GOOS != "windows" && os.SameFile(before, after) {
 		t.Fatal("writeBack truncated the destination in place instead of atomically replacing it")
 	}
 }
@@ -1012,10 +1023,12 @@ func TestThemeEditCSPExemptionIsLocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(page), "// check-csp:ignore-file\n") {
+	pageText := strings.ReplaceAll(string(page), "\r\n", "\n")
+	serverText := strings.ReplaceAll(string(server), "\r\n", "\n")
+	if !strings.HasPrefix(pageText, "// check-csp:ignore-file\n") {
 		t.Error("theme_edit_page.go lacks the exemption for its inline script and style")
 	}
-	if strings.HasPrefix(string(server), "// check-csp:ignore-file\n") {
+	if strings.HasPrefix(serverText, "// check-csp:ignore-file\n") {
 		t.Error("theme_edit.go carries a CSP exemption despite emitting no inline script or style")
 	}
 }

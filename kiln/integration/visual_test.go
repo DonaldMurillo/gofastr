@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	"github.com/chromedp/chromedp"
-	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"

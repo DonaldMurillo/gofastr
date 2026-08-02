@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // LocalOption configures a LocalStorage instance.
@@ -58,10 +60,43 @@ func (ls *LocalStorage) validateKey(key string) error {
 	if strings.Contains(key, "..") {
 		return fmt.Errorf("storage: key %q contains path traversal sequence", key)
 	}
+	if err := validateWindowsCompatibleKey(key); err != nil {
+		return err
+	}
+	// Reject absolute paths and volume-qualified paths on every platform.
+	// filepath.IsAbs handles Unix roots and Windows roots such as /tmp and
+	// C:\\tmp; VolumeName also catches Windows drive and UNC prefixes.
+	if filepath.IsAbs(key) || filepath.VolumeName(key) != "" ||
+		strings.HasPrefix(key, "/") || strings.HasPrefix(key, "\\") {
+		return fmt.Errorf("storage: key %q escapes base directory", key)
+	}
 	// Clean and verify the resolved path stays within baseDir
 	cleaned := filepath.Clean(key)
-	if strings.HasPrefix(cleaned, "..") || strings.HasPrefix(cleaned, "/") {
+	if strings.HasPrefix(cleaned, "..") {
 		return fmt.Errorf("storage: key %q escapes base directory", key)
+	}
+	return nil
+}
+
+func validateWindowsCompatibleKey(key string) error {
+	for _, part := range strings.FieldsFunc(key, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if strings.ContainsRune(part, ':') {
+			return fmt.Errorf("storage: key %q contains a Windows alternate-data-stream separator", key)
+		}
+		trimmed := strings.TrimRight(part, " .")
+		if trimmed == "" || trimmed != part {
+			return fmt.Errorf("storage: key %q contains a Windows-invalid path component", key)
+		}
+		base := strings.ToUpper(trimmed)
+		if dot := strings.IndexByte(base, '.'); dot >= 0 {
+			base = base[:dot]
+		}
+		switch base {
+		case "CON", "PRN", "AUX", "NUL",
+			"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+			"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+			return fmt.Errorf("storage: key %q contains reserved Windows device name %q", key, part)
+		}
 	}
 	return nil
 }
@@ -92,6 +127,9 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 	dir := filepath.Dir(dstPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("storage: create directory %q: %w", dir, err)
+	}
+	if err := fileperm.RestrictDirectoryTree(dir, ls.BaseDir); err != nil {
+		return fmt.Errorf("storage: restrict directory %q: %w", dir, err)
 	}
 
 	// Choose temp directory: same directory as destination for safe rename
@@ -137,6 +175,9 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 	// Atomic rename
 	if err := os.Rename(tmpPath, dstPath); err != nil {
 		return fmt.Errorf("storage: rename temp to final: %w", err)
+	}
+	if err := fileperm.Restrict(dstPath, false); err != nil {
+		return fmt.Errorf("storage: restrict file %q: %w", dstPath, err)
 	}
 
 	success = true

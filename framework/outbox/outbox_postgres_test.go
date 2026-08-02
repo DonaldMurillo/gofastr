@@ -19,7 +19,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // pgOutbox provisions a schema-scoped live-Postgres database (skipping

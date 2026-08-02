@@ -15,6 +15,7 @@ import (
 )
 
 func TestFileSinkParentDirDefaultModeIs0o700(t *testing.T) {
+	requirePOSIXFileModes(t)
 	dir := filepath.Join(t.TempDir(), "logs")
 	path := filepath.Join(dir, "app.log")
 

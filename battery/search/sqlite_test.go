@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // SQLite FTS5 integration tests for SQLiteFTS. These tests open an in-memory

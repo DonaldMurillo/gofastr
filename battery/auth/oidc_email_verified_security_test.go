@@ -151,6 +151,7 @@ func TestOIDCSec_EmailVerified_CustomClaim(t *testing.T) {
 		ClientSecret: f.clientSecret,
 		RedirectURL:  "https://app.example.com/cb",
 		ProviderName: "custom",
+		HTTPClient:   newOIDCTestHTTPClient(t),
 		Claims: OIDCClaimsMapping{
 			EmailVerifiedClaim: "verified_email_custom",
 		},

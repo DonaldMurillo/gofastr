@@ -27,6 +27,7 @@ func TestPWAStaticChromeE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots Chrome")
 	}
+	execPath := browserExecutable(t)
 
 	a := coreapp.NewApp("Static App")
 	a.Register("/", &homeScreen{}, nil)
@@ -46,6 +47,7 @@ func TestPWAStaticChromeE2E(t *testing.T) {
 	go srv.Serve(ln)
 
 	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(execPath),
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),

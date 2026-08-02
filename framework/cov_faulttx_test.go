@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	sqlite3 "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // A minimal commit-faulting sqlite wrapper, used to exercise App.InTx's

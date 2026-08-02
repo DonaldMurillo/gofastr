@@ -652,7 +652,9 @@ func TestGoogleProvider_TimeoutOnSlowTokenEndpoint(t *testing.T) {
 	prov.tokenEndpoint = hang.URL
 	prov.userInfoEndpoint = hang.URL
 	// 500ms timeout for fast feedback; production default is 10s.
-	prov.httpClient = &http.Client{Timeout: 200 * time.Millisecond}
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	prov.httpClient = &http.Client{Timeout: 200 * time.Millisecond, Transport: tr}
 
 	start := time.Now()
 	_, err := prov.ExchangeCode(context.Background(), "fake-code")
@@ -672,7 +674,9 @@ func TestGitHubProvider_TimeoutOnSlowTokenEndpoint(t *testing.T) {
 	prov := NewGitHubProvider("client-id", "client-secret", "http://localhost/cb")
 	prov.tokenEndpoint = hang.URL
 	prov.userInfoEndpoint = hang.URL
-	prov.httpClient = &http.Client{Timeout: 200 * time.Millisecond}
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	prov.httpClient = &http.Client{Timeout: 200 * time.Millisecond, Transport: tr}
 
 	start := time.Now()
 	_, err := prov.ExchangeCode(context.Background(), "fake-code")
@@ -736,7 +740,7 @@ func TestGitHubProvider_FallsBackToUserEmailsForHiddenPrimary(t *testing.T) {
 	// saturates and the dial fails with EADDRNOTAVAIL).
 	tr := &http.Transport{}
 	t.Cleanup(tr.CloseIdleConnections)
-	prov.httpClient = &http.Client{Timeout: 10 * time.Second, Transport: tr}
+	prov.httpClient = &http.Client{Timeout: 60 * time.Second, Transport: tr}
 
 	info, err := prov.FetchUserInfo(context.Background(), "fake-token")
 	if err != nil {

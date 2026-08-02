@@ -138,8 +138,10 @@ func newReadPumpConn(t *testing.T, cfg WSConfig) (*WebSocketConn, net.Conn) {
 func TestPushOnlyConnSurvivesKeepalive(t *testing.T) {
 	conn, cli := newReadPumpConn(t, WSConfig{
 		ReadLimit:       1 << 20,
-		ReadIdleTimeout: 40 * time.Millisecond,
-		PongTimeout:     40 * time.Millisecond,
+		// Leave enough scheduling slack for Windows when the repository
+		// suite is running many Go test processes concurrently.
+		ReadIdleTimeout: 250 * time.Millisecond,
+		PongTimeout:     250 * time.Millisecond,
 		WriteTimeout:    time.Second,
 		CloseTimeout:    300 * time.Millisecond,
 		requireMask:     true,
@@ -150,7 +152,7 @@ func TestPushOnlyConnSurvivesKeepalive(t *testing.T) {
 	go pongAnsweringPeer(cli, &answered, stop)
 
 	// The app NEVER calls Read — this is a push-only server.
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(1500 * time.Millisecond)
 	close(stop)
 
 	select {

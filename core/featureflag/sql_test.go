@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func openSQLStore(t *testing.T) (*sql.DB, *SQLStore) {

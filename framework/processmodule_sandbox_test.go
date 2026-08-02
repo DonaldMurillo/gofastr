@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -195,9 +196,13 @@ func TestSandboxRunner_StartAppliesBackendWrap(t *testing.T) {
 	// Build a real (tiny) artifact so prepareChildForSpawn's SHA check
 	// passes and we reach the Wrap step.
 	dir := t.TempDir()
-	path := dir + "/child"
-	if err := exec.Command("cp", testBinaryPath(t), path).Run(); err != nil {
-		t.Fatalf("cp test binary: %v", err)
+	path := filepath.Join(dir, testExecutablePath("child"))
+	data, err := os.ReadFile(testBinaryPath(t))
+	if err != nil {
+		t.Fatalf("read test binary: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o700); err != nil {
+		t.Fatalf("write test binary: %v", err)
 	}
 	sha, err := sha256OfFile(path)
 	if err != nil {

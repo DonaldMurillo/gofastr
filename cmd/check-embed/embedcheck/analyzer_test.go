@@ -231,7 +231,10 @@ func mutateFixture(t *testing.T, relPath string, reps ...replacement) []byte {
 	if err != nil {
 		t.Fatalf("read %s: %v", relPath, err)
 	}
-	cur := string(orig)
+	// Git may check fixtures out with CRLF on Windows, while the mutation
+	// patterns intentionally use source-style LF line endings. Normalize only
+	// the working copy used for the mutation; restore writes the original bytes.
+	cur := strings.ReplaceAll(string(orig), "\r\n", "\n")
 	for _, r := range reps {
 		if !strings.Contains(cur, r.from) {
 			t.Fatalf("mutation did not apply: from-pattern not found in %s\n%q", relPath, r.from)

@@ -19,6 +19,7 @@ package harness
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -410,10 +411,5 @@ func readOrCreateSalt(path string) ([]byte, error) {
 }
 
 func readRandom(b []byte) (int, error) {
-	f, err := os.Open("/dev/urandom")
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	return f.Read(b)
+	return rand.Read(b)
 }

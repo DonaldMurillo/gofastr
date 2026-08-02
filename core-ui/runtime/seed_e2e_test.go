@@ -63,7 +63,11 @@ func newSeedBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(allocCancel)
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	t.Cleanup(browserCancel)
-	ctx, cancel := context.WithTimeout(browserCtx, 30*time.Second)
+	// Windows runners can spend longer connecting to a freshly started
+	// browser when the package has already exercised several E2E fixtures.
+	// Keep the operation deadline aligned with the allocator's generous
+	// websocket startup budget instead of failing during browser startup.
+	ctx, cancel := context.WithTimeout(browserCtx, 90*time.Second)
 	t.Cleanup(cancel)
 	return ctx
 }

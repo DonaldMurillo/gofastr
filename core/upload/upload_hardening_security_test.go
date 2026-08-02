@@ -102,6 +102,7 @@ func TestLocalStorage_GetMissingScrubsPath(t *testing.T) {
 // are not created world-readable. Multi-tenant hosts often share the
 // same node; 0644 exposes user uploads to unrelated local users.
 func TestLocalStorage_SaveRestrictsFilePermissions(t *testing.T) {
+	requirePOSIXFileModes(t)
 	t.Parallel()
 	dir := t.TempDir()
 	s := upload.NewLocalStorage(dir)
@@ -121,6 +122,7 @@ func TestLocalStorage_SaveRestrictsFilePermissions(t *testing.T) {
 // TestLocalStorage_SaveRestrictsDirectoryPermissions verifies upload
 // subdirectories are not created world-readable/executable.
 func TestLocalStorage_SaveRestrictsDirectoryPermissions(t *testing.T) {
+	requirePOSIXFileModes(t)
 	t.Parallel()
 	dir := t.TempDir()
 	s := upload.NewLocalStorage(dir)

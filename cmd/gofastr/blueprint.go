@@ -3934,7 +3934,7 @@ func isHexRGB(s string) bool {
 func blueprintDriverImport(driver string) string {
 	switch strings.ToLower(strings.TrimSpace(driver)) {
 	case "", "sqlite", "sqlite3":
-		return "github.com/mattn/go-sqlite3"
+		return "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	case "postgres", "postgresql":
 		return "github.com/lib/pq"
 	default:

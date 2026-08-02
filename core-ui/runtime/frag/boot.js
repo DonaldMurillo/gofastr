@@ -287,6 +287,7 @@
         .catch(() => {});
     });
   }
+
   // Hover/focus prefetch: any element with data-fui-prefetch="<name>"
   // kicks off the module fetch as soon as the user hovers or
   // keyboard-focuses it. By the time they click, the module is
@@ -398,7 +399,10 @@
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
     { name: 'sortablelist',    selector: '[data-fui-sortable]' },
     { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
-    { name: 'lightbox',        selector: '[data-fui-comp="ui-lightbox"][data-fui-lightbox]' },
+    { name: 'lightbox',        selector: '[data-fui-comp="ui-lightbox"][data-fui-lightbox]', interactions: [
+      { event: 'click', selector: '[data-fui-lightbox-prev],[data-fui-lightbox-next]' },
+      { event: 'keydown', scope: '[data-fui-widget]:not([hidden]) [data-fui-comp="ui-lightbox"][data-fui-lightbox]', keys: ['ArrowLeft', 'ArrowRight'] },
+    ] },
     { name: 'carousel',        selector: '[data-fui-carousel]' },
     { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
     { name: 'sidebar', selector: '[data-fui-sidebar-collapse]' },
@@ -428,6 +432,70 @@
     // parse/clamp/jitter/pause/back-off/teardown; core only loads it.
     { name: 'poll',         selector: '[data-fui-poll]' },
 ];
+
+  // Demand-loaded modules may declare interactions that must survive their
+  // own cold-cache fetch. This bridge is deliberately metadata-driven: core
+  // owns event retention/replay, while feature modules own selectors and
+  // behavior. No optional component's selectors or policy are hard-coded in
+  // the always-loaded runtime.
+  const _interactionReplay = new WeakSet();
+  const _warnModuleUnavailable = (name) => {
+    console.warn('[gofastr] ' + name + ' module unavailable — retrying may help');
+  };
+  const _interactionNode = (e, spec) => {
+    if (spec.event === 'keydown') {
+      if (!spec.keys || !spec.keys.includes(e.key) ||
+          !document.querySelector(spec.scope || '')) return null;
+      return e.target && e.target.dispatchEvent ? e.target : document.body;
+    }
+    return e.target && e.target.closest && e.target.closest(spec.selector);
+  };
+  const _replayInteraction = (e, node) => {
+    const init = { bubbles: true, cancelable: true, composed: true };
+    if (e.type === 'click') {
+      init.view = window;
+      init.detail = e.detail;
+      init.button = e.button;
+      init.buttons = e.buttons;
+      init.clientX = e.clientX;
+      init.clientY = e.clientY;
+    } else if (e.type === 'keydown') {
+      init.key = e.key;
+      init.code = e.code;
+      init.location = e.location;
+      init.repeat = e.repeat;
+      init.ctrlKey = e.ctrlKey;
+      init.altKey = e.altKey;
+      init.shiftKey = e.shiftKey;
+      init.metaKey = e.metaKey;
+    }
+    let replay;
+    try {
+      replay = new e.constructor(e.type, init);
+    } catch (_) {
+      replay = new Event(e.type, init);
+    }
+    node.dispatchEvent(replay);
+  };
+  for (const marker of _moduleMarkers) {
+    for (const spec of marker.interactions || []) {
+      document.addEventListener(spec.event, async (e) => {
+        const node = _interactionNode(e, spec);
+        if (!node || _interactionReplay.has(node) ||
+            window.__gofastr.loadedModules?.[marker.name]) return;
+        e.preventDefault();
+        try {
+          await loadModule(marker.name);
+          _interactionReplay.add(node);
+          try { _replayInteraction(e, node); }
+          finally { _interactionReplay.delete(node); }
+        } catch (_) {
+          _warnModuleUnavailable(marker.name);
+        }
+      });
+    }
+  }
+
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
     const idleQueue = [];

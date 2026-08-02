@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	uiruntime "github.com/DonaldMurillo/gofastr/core-ui/runtime"
@@ -244,7 +244,9 @@ func renderLogList(items []string) string {
 
 func newE2EChrome(t *testing.T) context.Context {
 	t.Helper()
+	execPath := browserExecutable(t)
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(execPath),
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),

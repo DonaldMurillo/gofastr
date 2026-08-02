@@ -142,7 +142,7 @@ func TestInitGeneratedMainUsesIsolationHelpers(t *testing.T) {
 // consistent SQLite driver: the name passed to isolation.Database, the
 // blank-imported driver package, and the migration dialect all agree. Both
 // the friendly "sqlite" spelling and the wire "sqlite3" spelling must yield
-// identical, self-consistent mattn/go-sqlite3 wiring.
+// identical, self-consistent pure-Go SQLite wiring.
 func TestInitSQLiteDriverAgreesEndToEnd(t *testing.T) {
 	for _, dbDriver := range []string{"sqlite", "sqlite3"} {
 		t.Run(dbDriver, func(t *testing.T) {
@@ -159,7 +159,7 @@ func TestInitSQLiteDriverAgreesEndToEnd(t *testing.T) {
 			src := string(got)
 			for _, want := range []string{
 				`runtimeIsolation.Database("sqlite3",`,
-				`_ "github.com/mattn/go-sqlite3"`,
+				`_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"`,
 				`migrate.WithDialect(migrate.DialectSQLite)`,
 			} {
 				if !strings.Contains(src, want) {

@@ -9,7 +9,7 @@ import (
 // #118 — INSERT must reject a column/value count mismatch instead of
 // silently defaulting the shortfall or dropping the excess.
 func TestInsertArityMismatchErrors(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
+	db, err := sql.Open("gofastr-sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestInsertArityMismatchErrors(t *testing.T) {
 // while a plain INSERT still errors. OR IGNORE does NOT suppress a
 // non-constraint (arity) error.
 func TestOrIgnoreSuppressesNotNullOnly(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
+	db, err := sql.Open("gofastr-sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

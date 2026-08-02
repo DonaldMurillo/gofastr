@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // WithPublicOpenAPI opens the raw spec — the docs landing page that

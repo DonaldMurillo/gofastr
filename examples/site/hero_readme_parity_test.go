@@ -16,6 +16,10 @@ func TestHeroTabsMatchReadmeQuickstart(t *testing.T) {
 		t.Fatal(err)
 	}
 	readme := string(raw)
+	// Git may check this file out with CRLF on Windows, while the embedded Go
+	// strings intentionally use LF. Compare program content, not checkout
+	// newline style.
+	readme = strings.ReplaceAll(readme, "\r\n", "\n")
 	for _, tc := range []struct {
 		heading, src string
 	}{

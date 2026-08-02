@@ -193,7 +193,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		sb.WriteString(strings.Join(visFields, ", "))
 
 		row := ch.DB.QueryRowContext(ctx, sb.String(), vals...)
-		res, err := scanRow(row, visFields, ch.convertKey)
+		res, err := ch.scanRow(row, visFields, ch.convertKey)
 		if errors.Is(err, sql.ErrNoRows) && len(setParts) == 0 {
 			// DO NOTHING fired against an existing row (nothing to update),
 			// so RETURNING produced zero rows. The contract is "return the
@@ -214,7 +214,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			ch.ApplySoftDeleteFilter(selQB, req)
 			selSQL, selArgs := selQB.Build()
 			sel := ch.DB.QueryRowContext(ctx, selSQL, selArgs...)
-			res, err = scanRow(sel, visFields, ch.convertKey)
+			res, err = ch.scanRow(sel, visFields, ch.convertKey)
 		}
 		if err != nil {
 			return fmt.Errorf("upsert: %w", err)

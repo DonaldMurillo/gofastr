@@ -79,7 +79,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func main() {
@@ -126,7 +126,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // A screen is plain Go: Render returns server-rendered HTML.
@@ -388,7 +388,7 @@ GoFastr is pre-1.0 and explicitly not stable:
 - The `core/` primitives are usable and tested in isolation.
 - The `framework/` entity layer handles SQLite + Postgres CRUD apps today.
 - `core-ui/` changes fastest — APIs may break between commits.
-- The CLI binary blank-imports only `github.com/mattn/go-sqlite3`. To run migrations against Postgres, build a custom binary that imports your driver of choice.
+- The CLI binary includes GoFastr's pure-Go SQLite driver. To run migrations against Postgres, build a custom binary that imports your driver of choice.
 
 ## Why this exists
 

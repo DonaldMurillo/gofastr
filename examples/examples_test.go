@@ -13,7 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/framework"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // TestStaticSiteSmoke verifies the static site serves HTML pages and CSS.

@@ -102,7 +102,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	sqlStr, args := ib.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-	result, err := scanRow(row, visFields, ch.convertKey)
+	result, err := ch.scanRow(row, visFields, ch.convertKey)
 	if err != nil {
 		return nil, fmt.Errorf("insert: %w", err)
 	}
@@ -210,7 +210,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	sqlStr, args := ub.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-	result, err := scanRow(row, visFields, ch.convertKey)
+	result, err := ch.scanRow(row, visFields, ch.convertKey)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errNotFound
@@ -318,7 +318,7 @@ func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id s
 	ch.ApplySoftDeleteFilter(qb, r)
 	sqlStr, args := qb.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-	result, err := scanRow(row, cols, ch.convertKey)
+	result, err := ch.scanRow(row, cols, ch.convertKey)
 	if err != nil {
 		return nil, err
 	}

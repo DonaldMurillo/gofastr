@@ -15,6 +15,38 @@ func TestHeadingsEmitIDs(t *testing.T) {
 	}
 }
 
+func TestRepeatedHeadingIDsAreUniqueWithinDocument(t *testing.T) {
+	src := "# Setup\n\n# Setup\n\n> ## Setup\n\n# Other\n\n# Setup\n"
+	want := "<h1 id=\"setup\">Setup</h1>\n" +
+		"<h1 id=\"setup-2\">Setup</h1>\n" +
+		"<blockquote>\n<h2 id=\"setup-3\">Setup</h2>\n</blockquote>\n" +
+		"<h1 id=\"other\">Other</h1>\n" +
+		"<h1 id=\"setup-4\">Setup</h1>\n"
+
+	if got := string(RenderHTML(src)); got != want {
+		t.Errorf("repeated heading IDs mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestHeadingIDCountsResetForEachDocument(t *testing.T) {
+	if got := string(RenderHTML("# Setup\n\n# Setup\n")); strings.Count(got, `id="setup"`) != 1 || !strings.Contains(got, `id="setup-2"`) {
+		t.Fatalf("first document did not get expected IDs: %s", got)
+	}
+	if got := string(RenderHTML("# Setup\n")); !strings.Contains(got, `<h1 id="setup">Setup</h1>`) || strings.Contains(got, `id="setup-2"`) {
+		t.Fatalf("heading IDs leaked across documents: %s", got)
+	}
+}
+
+func TestHeadingIDsAvoidCrossSlugCollisions(t *testing.T) {
+	src := "# Setup-2\n\n# Setup\n\n# Setup\n"
+	want := "<h1 id=\"setup-2\">Setup-2</h1>\n" +
+		"<h1 id=\"setup\">Setup</h1>\n" +
+		"<h1 id=\"setup-3\">Setup</h1>\n"
+	if got := string(RenderHTML(src)); got != want {
+		t.Fatalf("heading IDs collided across slug bases:\n got: %q\nwant: %q", got, want)
+	}
+}
+
 func TestParagraphAndInline(t *testing.T) {
 	got := string(RenderHTML("This is **bold** and *italic* and `code`.\n"))
 	want := "<p>This is <strong>bold</strong> and <em>italic</em> and <code>code</code>.</p>\n"

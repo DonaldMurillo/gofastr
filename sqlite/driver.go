@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 // ============================================================================
@@ -256,6 +258,10 @@ func CloseDB(db *sql.DB) {
 // ============================================================================
 
 type sqliteDriver struct{}
+
+// SQLiteDriver is the exported driver type retained for compatibility with
+// code that wraps github.com/DonaldMurillo/gofastr/sqlite/stdlib.SQLiteDriver.
+type SQLiteDriver = sqliteDriver
 
 // OpenConnector builds ONE engine per sql.Open and shares it across every
 // connection in that pool — the same arrangement Open/OpenFile give you
@@ -809,5 +815,7 @@ func stmtString(s Statement) string {
 
 // Ensure driver registration
 func init() {
-	sql.Register("sqlite", &sqliteDriver{})
+	// Keep the in-house engine available for its direct compatibility tests
+	// without competing with modernc.org/sqlite's public "sqlite" name.
+	sql.Register("gofastr-sqlite", &sqliteDriver{})
 }

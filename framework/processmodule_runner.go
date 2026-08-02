@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -154,7 +155,11 @@ type TrustedProcessRunner struct {
 // framework/experimental/harness/mcpclient.defaultEnvAllowlist so the two spawners share
 // the same baseline.
 func DefaultChildEnvAllowlist() []string {
-	return append([]string(nil), defaultChildEnvAllowlist...)
+	allow := append([]string(nil), defaultChildEnvAllowlist...)
+	if runtime.GOOS == "windows" {
+		allow = append(allow, "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE")
+	}
+	return allow
 }
 
 // Start implements [Runner.Start]. It is the trusted-tier spawn: verify
@@ -467,11 +472,23 @@ func buildChildEnv(allowlist, extras, inherit []string) []string {
 			continue
 		}
 		seen[name] = true
-		if v, ok := os.LookupEnv(name); ok {
+		if v, ok := lookupChildEnv(name); ok {
 			env = append(env, name+"="+v)
 		}
 	}
 	return env
+}
+
+func lookupChildEnv(name string) (string, bool) {
+	if v, ok := os.LookupEnv(name); ok {
+		return v, true
+	}
+	// Windows conventionally exposes USERPROFILE rather than HOME. Keep the
+	// documented HOME allowlist stable for cross-platform child processes.
+	if runtime.GOOS == "windows" && name == "HOME" {
+		return os.LookupEnv("USERPROFILE")
+	}
+	return "", false
 }
 
 // defaultChildEnvAllowlist is the same minimal set mcpclient uses, kept in

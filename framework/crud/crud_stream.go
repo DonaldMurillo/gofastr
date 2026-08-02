@@ -118,8 +118,9 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	}
 
 	first := true
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), ch.Entity, cols)
 	for rows.Next() {
-		row, err := scanRowsOne(rows, cols, ch.convertKey)
+		row, err := scanRowsOne(rows, cols, ch.convertKey, boolCols)
 		if err != nil {
 			// Mid-stream errors can't change status; we close the array
 			// and let the client parse what we sent.
@@ -153,7 +154,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 // the framework uses.
 func scanRowsOne(rows interface {
 	Scan(...any) error
-}, cols []string, keyFunc func(string) string) (map[string]any, error) {
+}, cols []string, keyFunc func(string) string, boolColumns ...[]bool) (map[string]any, error) {
 	vals := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
 	for i := range vals {
@@ -163,8 +164,13 @@ func scanRowsOne(rows interface {
 		return nil, err
 	}
 	row := make(map[string]any, len(cols))
+	boolCols := []bool(nil)
+	if len(boolColumns) > 0 {
+		boolCols = boolColumns[0]
+	}
 	for i, c := range cols {
-		row[keyFunc(c)] = convertValue(vals[i])
+		isBool := i < len(boolCols) && boolCols[i]
+		row[keyFunc(c)] = convertDatabaseValue(vals[i], isBool)
 	}
 	return row, nil
 }

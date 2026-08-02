@@ -44,11 +44,16 @@ const maxBlockquoteDepth = 32
 // renderBody runs the block parser and returns the HTML plus the first H1
 // text seen (used as the document title).
 func renderBody(input string) (render.HTML, string) {
-	return renderBodyDepth(input, 0)
+	return renderBodyDepth(input, 0, make(map[string]int), make(map[string]bool))
 }
 
-func renderBodyDepth(input string, depth int) (render.HTML, string) {
-	p := &parser{lines: splitLines(input), depth: depth}
+func renderBodyDepth(input string, depth int, headingIDs map[string]int, headingUsed map[string]bool) (render.HTML, string) {
+	p := &parser{
+		lines:       splitLines(input),
+		depth:       depth,
+		headingIDs:  headingIDs,
+		headingUsed: headingUsed,
+	}
 	var sb strings.Builder
 	var firstH1 string
 	for !p.eof() {
@@ -69,7 +74,7 @@ func renderBodyDepth(input string, depth int) (render.HTML, string) {
 			if level == 1 && firstH1 == "" {
 				firstH1 = text
 			}
-			sb.WriteString(headingHTML(level, text))
+			sb.WriteString(headingHTML(level, text, p.headingID(text)))
 			p.advance()
 		case p.atTable():
 			renderTable(p, &sb)

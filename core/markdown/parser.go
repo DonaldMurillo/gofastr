@@ -13,6 +13,12 @@ type parser struct {
 	// O(n)-per-level re-parse in renderBlockquote so deeply nested
 	// blockquotes can't drive O(n^2) CPU work.
 	depth int
+	// headingIDs tracks generated heading IDs for the current document. It is
+	// shared with recursive blockquote parsers so IDs stay unique document-wide.
+	headingIDs map[string]int
+	// headingUsed records every emitted ID, including IDs that are natural
+	// slugs for a different heading (e.g. "setup-2").
+	headingUsed map[string]bool
 }
 
 func (p *parser) eof() bool    { return p.pos >= len(p.lines) }
@@ -127,9 +133,26 @@ func parseHeading(line string) (level int, text string) {
 	return level, strings.TrimSpace(strings.TrimLeft(line, "# "))
 }
 
-func headingHTML(level int, text string) string {
+func (p *parser) headingID(text string) string {
+	base := slugify(text)
+	n := p.headingIDs[base]
+	for {
+		candidate := base
+		if n > 0 {
+			candidate = fmt.Sprintf("%s-%d", base, n+1)
+		}
+		n++
+		if p.headingUsed[candidate] {
+			continue
+		}
+		p.headingIDs[base] = n
+		p.headingUsed[candidate] = true
+		return candidate
+	}
+}
+
+func headingHTML(level int, text, id string) string {
 	tag := fmt.Sprintf("h%d", level)
-	id := slugify(text)
 	return fmt.Sprintf("<%s id=%q>%s</%s>\n", tag, id, renderInline(text), tag)
 }
 
@@ -212,7 +235,7 @@ func renderBlockquote(p *parser, sb *strings.Builder) {
 		sb.WriteString(renderInline(joined))
 		sb.WriteString("</p>\n")
 	} else {
-		sub, _ := renderBodyDepth(joined, p.depth+1)
+		sub, _ := renderBodyDepth(joined, p.depth+1, p.headingIDs, p.headingUsed)
 		sb.WriteString(string(sub))
 	}
 	sb.WriteString("</blockquote>\n")

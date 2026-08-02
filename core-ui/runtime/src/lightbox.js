@@ -403,8 +403,11 @@
   let pinchScannerHook = null;
   _installPinchZoom();
 
-  scan(document);
-  window.addEventListener('gofastr:navigate', function () { scan(document); });
   window.__gofastr = window.__gofastr || {};
   window.__gofastr.lightbox = { rescan: scan };
+  window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {};
+  window.__gofastr._moduleScanners.lightbox = scan;
+  (window.__gofastr.loadedModules ||= {}).lightbox = true;
+  scan(document);
+  window.addEventListener('gofastr:navigate', function () { scan(document); });
 })();

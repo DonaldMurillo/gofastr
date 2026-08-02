@@ -71,4 +71,16 @@ func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
 	if lbCall != "lbB:img2.jpg" {
 		t.Errorf("lightbox cross-talk: clicking B's Next produced openWidget(%q), want \"lbB:img2.jpg\" — the click resolved to the wrong lightbox (single module-scoped state + first-match findViewer picked lightbox A, leaving B's nav dead)", lbCall)
 	}
+
+	var insertedWatched bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.body.insertAdjacentHTML('beforeend', '<div id="lbC" data-fui-widget="lbC" hidden><div data-fui-comp="ui-lightbox" data-fui-lightbox="lbC"></div></div>')`, nil),
+		chromedp.Poll(`document.getElementById('lbC').dataset.fuiLightboxWatched === '1'`, &insertedWatched,
+			chromedp.WithPollingTimeout(5*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
+	); err != nil {
+		t.Fatalf("chromedp dynamic lightbox scan: %v", err)
+	}
+	if !insertedWatched {
+		t.Fatalf("dynamically inserted lightbox was not rescanned")
+	}
 }

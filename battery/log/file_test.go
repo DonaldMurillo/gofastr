@@ -119,6 +119,7 @@ func TestDefaultFileSinkUsesXDG(t *testing.T) {
 // often contain request paths + panic stacks; they should not be
 // world-readable on a multi-user box.
 func TestFileSinkDefaultModeIs0o600(t *testing.T) {
+	requirePOSIXFileModes(t)
 	path := filepath.Join(t.TempDir(), "perm.log")
 	s, err := FileSink(path, FileOpts{})
 	if err != nil {

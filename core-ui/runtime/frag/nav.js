@@ -418,10 +418,10 @@
       mergeSeedFromDOM(main);
       if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(main);
     }
-    // Close any open dismissible disclosure (e.g. mobile nav hamburger)
-    // so it doesn't float over the destination page. Opt-in via
-    // <details data-fui-disclosure>.
-    for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
+    // Close ordinary disclosures so they do not float over the destination
+    // page. Persistent shell controls opt out explicitly; focus trapping is
+    // an independent accessibility modifier and must not change dismissal.
+    for (const d of document.querySelectorAll('details[data-fui-disclosure][open]:not([data-fui-disclosure-persist])')) {
       d.removeAttribute('open');
     }
     // Move focus into the new <main> so keyboard users land on the
@@ -482,8 +482,9 @@
     mergeSeedFromDOM(target);
     if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(target);
 
-    // Close disclosures inside the group
-    for (const d of groupEl.querySelectorAll('details[data-fui-disclosure][open]')) {
+    // Close ordinary disclosures inside the group; explicit persistent
+    // controls are part of the shell and retain their state.
+    for (const d of groupEl.querySelectorAll('details[data-fui-disclosure][open]:not([data-fui-disclosure-persist])')) {
       d.removeAttribute('open');
     }
   };
@@ -560,7 +561,7 @@
     // hamburger). Without this, the menu floats over stale content
     // for the entire SPA fetch duration — the user perceives the
     // click as "didn't take".
-    anchor.closest('details[data-fui-disclosure]')?.removeAttribute('open');
+    anchor.closest('details[data-fui-disclosure]:not([data-fui-disclosure-persist])')?.removeAttribute('open');
     // Preserve the #fragment: resolvePath strips it (path-only is what
     // route matching + cache keys want), but the URL bar and the
     // post-nav scroll target need it. loadPage reads location.hash, so

@@ -68,7 +68,7 @@ func (s *SlowQueryLogger) Hits() uint64 { return s.hits.Load() }
 func (s *SlowQueryLogger) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	t := time.Now()
 	rows, err := s.inner.QueryContext(ctx, query, args...)
-	s.observe(ctx, "query", query, args, time.Since(t), err)
+	s.observe(ctx, "query", query, args, elapsedSince(t), err)
 	return rows, err
 }
 
@@ -76,7 +76,7 @@ func (s *SlowQueryLogger) QueryContext(ctx context.Context, query string, args .
 func (s *SlowQueryLogger) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	t := time.Now()
 	row := s.inner.QueryRowContext(ctx, query, args...)
-	s.observe(ctx, "query_row", query, args, time.Since(t), nil)
+	s.observe(ctx, "query_row", query, args, elapsedSince(t), nil)
 	return row
 }
 
@@ -84,8 +84,19 @@ func (s *SlowQueryLogger) QueryRowContext(ctx context.Context, query string, arg
 func (s *SlowQueryLogger) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	t := time.Now()
 	res, err := s.inner.ExecContext(ctx, query, args...)
-	s.observe(ctx, "exec", query, args, time.Since(t), err)
+	s.observe(ctx, "exec", query, args, elapsedSince(t), err)
 	return res, err
+}
+
+// elapsedSince clamps the platform timer's zero-duration result to one
+// nanosecond. Very fast calls can occupy the same clock tick on Windows;
+// reporting them as exactly zero makes a positive 1ns threshold flaky.
+func elapsedSince(start time.Time) time.Duration {
+	d := time.Since(start)
+	if d <= 0 {
+		return time.Nanosecond
+	}
+	return d
 }
 
 // BeginTx forwards transaction starts to the inner DB if it supports them.

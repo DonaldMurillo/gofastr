@@ -569,7 +569,7 @@ func tailForDetail(s string) string {
 // setup planted (canary env name, secret paths, targets). It deliberately
 // does NOT copy os.Environ() — baseline hygiene is the P2 enforcement.
 func buildProbeChildEnv(setup probeSetup) []string {
-	allow := append([]string(nil), defaultChildEnvAllowlist...)
+	allow := DefaultChildEnvAllowlist()
 	env := make([]string, 0, len(allow)+len(setup.Env)+2)
 	env = append(env,
 		probeEnvName+"="+setup.ProbeIDEnv,

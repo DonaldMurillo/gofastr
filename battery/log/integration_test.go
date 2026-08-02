@@ -2,6 +2,7 @@ package log_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -54,6 +55,7 @@ func TestPluginInstallsAccessMiddleware(t *testing.T) {
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}
+	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
 
 	app.Router().Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
@@ -373,6 +375,11 @@ func TestPluginDefaultsToFileSinkWhenEmpty(t *testing.T) {
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := app.Shutdown(context.Background()); err != nil {
+			t.Errorf("Shutdown: %v", err)
+		}
+	})
 	// Just verify the resolved path exists and is writable by emitting one log.
 	// We do this via the plugin's logger.
 	p, _ := app.Plugins.Get("log")

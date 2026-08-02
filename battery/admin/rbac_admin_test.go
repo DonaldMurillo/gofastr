@@ -15,7 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // rbacTestEnv wires a SQLite DB + RolePolicy + GrantStore + AuthManager

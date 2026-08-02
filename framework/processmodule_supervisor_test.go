@@ -62,7 +62,7 @@ func buildChildArtifact(t *testing.T) (string, string) {
 	// Copy to a scratch file so the test binary's path is stable across
 	// re-invocations (os.Executable may point at a go-build temp path).
 	dir := t.TempDir()
-	dst := filepath.Join(dir, "child")
+	dst := filepath.Join(dir, testExecutablePath("child"))
 	in, err := os.Open(exe)
 	if err != nil {
 		t.Fatalf("open exe: %v", err)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -178,6 +179,9 @@ func TestFreezeEmitsSecretEnvRefs(t *testing.T) {
 	info, err := os.Stat(filepath.Join(dir, "world.json"))
 	if err != nil {
 		t.Fatalf("stat world.json: %v", err)
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not portable on Windows")
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
 		t.Errorf("SECURITY: [disclosure] world.json is mode %#o — the IR must be owner-only", perm)

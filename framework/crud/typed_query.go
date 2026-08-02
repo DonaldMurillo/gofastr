@@ -121,7 +121,7 @@ func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Re
 	}
 	defer rows.Close()
 	cols := q.handler.visibleFields()
-	raw, err := scanRows(rows, cols, q.handler.convertKey)
+	raw, err := scanRowsForEntity(rows, cols, q.handler.convertKey, q.handler.Entity)
 	if err != nil {
 		return nil, nil, err
 	}

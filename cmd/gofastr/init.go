@@ -373,7 +373,7 @@ func getEnv(key, fallback string) string {
 }
 `, modulePath, name)
 	} else {
-		driverImport := `_ "github.com/mattn/go-sqlite3"`
+		driverImport := `_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"`
 		migrateDialect := "migrate.DialectSQLite"
 		sqlDriver := "sqlite3"
 		if dbDriver == "postgres" {

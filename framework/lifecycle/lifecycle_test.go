@@ -2,10 +2,8 @@ package lifecycle_test
 
 import (
 	"context"
-	"os"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -112,6 +110,7 @@ type mockHealthChecker struct {
 func (m *mockHealthChecker) IsHealthy() bool { return m.healthy }
 
 func TestRunWithSignalsTermsOnSIGTERM(t *testing.T) {
+	requireSIGTERMForTest(t)
 	lc := lifecycle.New()
 	var drained atomic.Bool
 	lc.RegisterDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
@@ -126,9 +125,7 @@ func TestRunWithSignalsTermsOnSIGTERM(t *testing.T) {
 
 	// Give the goroutine time to install the signal handler.
 	time.Sleep(20 * time.Millisecond)
-	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
-		t.Fatalf("kill: %v", err)
-	}
+	sendSIGTERMForTest(t)
 
 	select {
 	case err := <-done:

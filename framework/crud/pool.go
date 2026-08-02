@@ -3,6 +3,8 @@ package crud
 import (
 	"database/sql"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // maxPooledMapEntries caps the size of pooled maps and slices. Entries
@@ -103,12 +105,21 @@ func returnPtrSlice(s *[]any) {
 // scanRowsPooled scans rows using pooled maps to reduce allocations.
 // The caller must call returnRowSlice on the result after encoding.
 func scanRowsPooled(rows *sql.Rows, cols []string, keyFunc func(string) string) (*[]map[string]any, error) {
-	return scanRowsPooledWithKeys(rows, cols, convertedKeys(cols, keyFunc))
+	return scanRowsPooledForEntity(rows, cols, keyFunc, nil)
 }
 
 func scanRowsPooledWithKeys(rows *sql.Rows, cols, keys []string) (*[]map[string]any, error) {
+	return scanRowsPooledWithKeysForEntity(rows, cols, keys, nil)
+}
+
+func scanRowsPooledForEntity(rows *sql.Rows, cols []string, keyFunc func(string) string, ent *entity.Entity) (*[]map[string]any, error) {
+	return scanRowsPooledWithKeysForEntity(rows, cols, convertedKeys(cols, keyFunc), ent)
+}
+
+func scanRowsPooledWithKeysForEntity(rows *sql.Rows, cols, keys []string, ent *entity.Entity) (*[]map[string]any, error) {
 	results := borrowRowSlice()
 	ncol := len(cols)
+	boolCols := databaseBoolColumnsForEntity(rows, ncol, ent, cols)
 	for rows.Next() {
 		ptrs := borrowPtrSlice(ncol)
 		valuesPtr := borrowAnySlice(ncol)
@@ -130,7 +141,7 @@ func scanRowsPooledWithKeys(rows *sql.Rows, cols, keys []string) (*[]map[string]
 		rowPtr := rowMapPool.Get().(*map[string]any)
 		row := *rowPtr
 		for i := range ncol {
-			row[keys[i]] = convertValue(values[i])
+			row[keys[i]] = convertDatabaseValue(values[i], boolCols[i])
 		}
 		*results = append(*results, row)
 		returnPtrSlice(ptrs)

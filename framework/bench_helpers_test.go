@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // openBenchDB mirrors openTestDB but for *testing.B. SQLite is in-memory with

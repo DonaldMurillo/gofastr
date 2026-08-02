@@ -3,7 +3,6 @@ package framework
 import (
 	"context"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -52,6 +51,7 @@ func TestRegisterDrainerFiresOnShutdown(t *testing.T) {
 
 // RunWithSignals invokes Shutdown when SIGTERM arrives.
 func TestRunWithSignalsHandlesSIGTERM(t *testing.T) {
+	requireSIGTERMForTest(t)
 	app := NewApp(WithoutDefaultMiddleware())
 	var ran atomic.Int32
 	app.OnStop(func() error { ran.Add(1); return nil })
@@ -61,9 +61,7 @@ func TestRunWithSignalsHandlesSIGTERM(t *testing.T) {
 
 	// Give the signal handler a moment to install.
 	time.Sleep(20 * time.Millisecond)
-	if err := syscall.Kill(syscall.Getpid(), syscall.SIGTERM); err != nil {
-		t.Fatalf("Kill: %v", err)
-	}
+	sendSIGTERMForTest(t)
 
 	select {
 	case err := <-done:

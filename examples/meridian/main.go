@@ -20,7 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/sdkdocs"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	"github.com/DonaldMurillo/gofastr/examples/meridian/entities"
 )

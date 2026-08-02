@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -27,8 +28,10 @@ func TestDevCSRFKeyFromFile_GeneratesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
-		t.Errorf("key file perm = %o, want 600", mode)
+	if runtime.GOOS != "windows" {
+		if mode := info.Mode().Perm(); mode != 0o600 {
+			t.Errorf("key file perm = %o, want 600", mode)
+		}
 	}
 
 	second, err := DevCSRFKeyFromFile(path)
