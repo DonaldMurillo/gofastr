@@ -137,7 +137,7 @@ func newReadPumpConn(t *testing.T, cfg WSConfig) (*WebSocketConn, net.Conn) {
 // PongTimeout (80ms at these settings).
 func TestPushOnlyConnSurvivesKeepalive(t *testing.T) {
 	conn, cli := newReadPumpConn(t, WSConfig{
-		ReadLimit:       1 << 20,
+		ReadLimit: 1 << 20,
 		// Leave enough scheduling slack for Windows when the repository
 		// suite is running many Go test processes concurrently.
 		ReadIdleTimeout: 250 * time.Millisecond,

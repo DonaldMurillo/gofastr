@@ -54,7 +54,7 @@ func TestSPANavigationPreservesSidebarDisclosure(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	ctx := newSeedBrowserCtx(t)
-  var sidebarOpen, ordinaryOpen, drawerOpen string
+	var sidebarOpen, ordinaryOpen, drawerOpen string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#sidebar-link`, chromedp.ByID),
