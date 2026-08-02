@@ -1370,12 +1370,25 @@ func convertDatabaseValue(v any, boolean bool) any {
 	case float64:
 		return val != 0
 	case []byte:
-		return strings.EqualFold(strings.TrimSpace(string(val)), "true") || string(val) == "1"
+		return textIsTrue(string(val))
 	case string:
-		return strings.EqualFold(strings.TrimSpace(val), "true") || strings.TrimSpace(val) == "1"
+		return textIsTrue(val)
 	default:
 		return convertValue(v)
 	}
+}
+
+// textIsTrue decodes a textual boolean. Drivers disagree on whether a TEXT
+// column arrives as string or []byte, so both routes share this to keep the
+// same bytes from decoding two different ways.
+//
+// Note the deliberate asymmetry with the numeric branches above, which treat
+// any non-zero as true: text accepts only "true" and "1", so "2" is false.
+// Numeric 2 comes from a real driver widening a bool; textual "2" does not,
+// and guessing at it would invent a value the column never held.
+func textIsTrue(s string) bool {
+	s = strings.TrimSpace(s)
+	return strings.EqualFold(s, "true") || s == "1"
 }
 
 // writeJSONError writes a structured JSON error response.
