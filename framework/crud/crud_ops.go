@@ -49,6 +49,13 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	var cols []string
 	var vals []any
 	for _, f := range ch.Entity.GetFields() {
+		if f.AutoGenerate == schema.AutoIncrement {
+			// Omit: the database assigns the value — the Postgres SERIAL
+			// sequence or the SQLite "INTEGER PRIMARY KEY" rowid alias.
+			// Sending the 0 placeholder would collide on every insert
+			// after the first. RETURNING (below) reads the assigned id back.
+			continue
+		}
 		if f.AutoGenerate != schema.AutoNone {
 			cols = append(cols, f.Name)
 			vals = append(vals, body[f.Name])

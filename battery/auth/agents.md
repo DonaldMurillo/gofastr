@@ -24,7 +24,7 @@ app.Router().Use(auth.SessionMiddleware(mgr))
 
 | Need | Use this |
 |---|---|
-| Hash a password | `auth.HashPassword(pw) (string, error)` (bcrypt) |
+| Hash a password | `auth.HashPassword(pw) (string, error)` (bcrypt by default; set `auth.DefaultHasher = auth.Argon2Hasher{}` before Init for argon2id) |
 | Verify a password | `auth.CheckPassword(pw, hash) bool` |
 | Add `<input>` for CSRF token in a form | `render.HTML(auth.CSRFInputFromCtx(ctx))` |
 | Send `X-CSRF-Token` from JS fetch | Read cookie `auth_csrf` / `__Host-auth_csrf`, send as header |

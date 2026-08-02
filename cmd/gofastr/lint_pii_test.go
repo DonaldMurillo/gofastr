@@ -296,3 +296,64 @@ func TestAuditLintBlueprintOwnerFieldOk(t *testing.T) {
 	}
 	mustNotHaveRule(t, got, "unscoped-pii")
 }
+
+// --- gofastr audit lint: Go-declared entities are linted too, not just
+// the blueprint. A Go `app.Entity("x", framework.EntityConfig{...})` with
+// an unscoped PII-shaped field exposed via auto-CRUD must surface the
+// SAME rule "unscoped-pii" as the blueprint path — it's the same defect.
+
+// goPiiTripGo is a hand-written Go entity declaration: "members" with an
+// email field, auto-CRUD on by default (no Exposure.CRUD), no scoping.
+const goPiiTripGo = `package entities
+
+func registerMembers() {
+	app.Entity("members", framework.EntityConfig{
+		Fields: []schema.Field{{Name: "email", Type: schema.String}},
+	})
+}
+`
+
+// goPiiScopedGo is the same entity WITH a Scope OwnerField — the remedy
+// the rule prescribes — so it must NOT be flagged.
+const goPiiScopedGo = `package entities
+
+func registerMembers() {
+	app.Entity("members", framework.EntityConfig{
+		Fields: []schema.Field{{Name: "email", Type: schema.String}},
+		Scope:  &framework.ScopeConfig{OwnerField: "user_id"},
+	})
+}
+`
+
+func TestAuditLintFlagsGoSourcePII(t *testing.T) {
+	// Positive: unscoped PII-shaped field exposed via auto-CRUD → flagged.
+	dir := t.TempDir()
+	writeValidateFile(t, filepath.Join(dir, "entities.go"), goPiiTripGo)
+	got, err := auditLint(dir)
+	if err != nil {
+		t.Fatalf("auditLint: %v", err)
+	}
+	mustHaveRule(t, got, "unscoped-pii")
+	for _, f := range got {
+		if f.Rule == "unscoped-pii" {
+			if f.File != "entities.go" {
+				t.Fatalf("finding should name the Go file: %+v", f)
+			}
+			if f.Line <= 0 {
+				t.Fatalf("finding should carry the declaration line: %+v", f)
+			}
+			if !strings.Contains(f.Message, "members") {
+				t.Fatalf("finding should name the entity: %+v", f)
+			}
+		}
+	}
+
+	// Negative: same entity WITH owner_field scoping → NOT flagged.
+	scoped := t.TempDir()
+	writeValidateFile(t, filepath.Join(scoped, "entities.go"), goPiiScopedGo)
+	gotScoped, err := auditLint(scoped)
+	if err != nil {
+		t.Fatalf("auditLint: %v", err)
+	}
+	mustNotHaveRule(t, gotScoped, "unscoped-pii")
+}

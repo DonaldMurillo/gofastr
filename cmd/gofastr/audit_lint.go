@@ -108,6 +108,9 @@ func lintFile(rel string, body []byte) []LintFinding {
 	out = append(out, ruleFormWithoutCSRF(rel, body)...)
 	out = append(out, ruleRenderHTMLConcat(rel, body)...)
 	out = append(out, ruleSQLConcatUserInput(rel, body)...)
+	// Go-declared entities are linted with the same unscoped-PII rule as
+	// the blueprint path (CLAUDE.md hard rule #6) — it's the same defect.
+	out = append(out, lintGoSourcePII(rel, body)...)
 	return out
 }
 

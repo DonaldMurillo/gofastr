@@ -487,3 +487,123 @@ func TestFragmentModulesValid(t *testing.T) {
 			"add the module file.", len(stale), strings.Join(stale, "\n  "))
 	}
 }
+
+// TestDocumentedAttrsHaveAnOwner is the doc→owner direction the existing
+// parity gates deliberately skip (TestRuntimeAttrsAreDocumented asserts only
+// runtime→doc, and only for attributes the runtime references). A data-fui-*
+// attribute documented in ARCHITECTURE.md must be backed by SOMETHING real:
+// either the runtime JS reads it, or Go source emits it as an HTML attribute.
+// An attribute that is documented but neither read nor emitted is stale doc —
+// the InlineEdit marker (documented for years, no component, no runtime
+// handler) fell through exactly this hole.
+//
+// The reverse direction is intentionally not a strict bijection: many
+// documented attributes are read via camelCase dataset, matched by CSS, or
+// emitted by Go SSR, so a literal doc↔JS equality would false-positive. This
+// test only fails on the narrow "documented, owned by nobody" case.
+func TestDocumentedAttrsHaveAnOwner(t *testing.T) {
+	// Explicitly-deferred attributes: documented as a planned surface but with
+	// no owner yet. Every entry needs a one-line reason; an entry with no real
+	// plan is drift, not a deferral, and must not hide here.
+	deferredAttrs := map[string]string{
+		// Plugin-supplied (wysiwyg editor): emitted via framework/pluginhost
+		// MountConfig.Attributes by application/plugin code, not by framework
+		// source, so the goEmittedAttrs scan cannot see it. The framework
+		// emits the core data-fui-plugin* markers; this namespaced extra is
+		// the documented extension point (ARCHITECTURE.md "Plugins may add
+		// namespaced data-fui-plugin-* extras").
+		"data-fui-plugin-for": "plugin-supplied via MountConfig.Attributes",
+	}
+
+	doc := documentedAttrs(t)
+	haveRuntime := map[string]struct{}{}
+	for _, a := range runtimeJSAttrs(t) {
+		haveRuntime[a] = struct{}{}
+	}
+	haveGo := map[string]struct{}{}
+	for _, a := range goEmittedAttrs(t) {
+		haveGo[a] = struct{}{}
+	}
+
+	var drift []string
+	for a := range doc {
+		if _, ok := haveRuntime[a]; ok {
+			continue
+		}
+		if _, ok := haveGo[a]; ok {
+			continue
+		}
+		if _, ok := deferredAttrs[a]; ok {
+			continue
+		}
+		drift = append(drift, a)
+	}
+	sort.Strings(drift)
+	if len(drift) > 0 {
+		t.Errorf("doc/code drift: %d data-fui-* attribute(s) are documented in "+
+			"ARCHITECTURE.md but neither read by the runtime JS nor emitted by any "+
+			"Go component — remove the stale doc row or implement the surface:\n  %s",
+			len(drift), strings.Join(drift, "\n  "))
+	}
+}
+
+// goEmittedAttrs scans the Go source that emits data-fui-* HTML attributes —
+// core-ui/{interactive,html,widget,app,patterns/**} and framework/ui — for
+// literal "data-fui-*" string constants, in non-comment, non-test source. It
+// generalizes goInteractiveAttrs (which covers core-ui/interactive alone) so
+// the doc→owner gate can see attributes emitted outside the interactive
+// package, e.g. framework/ui.TagInput's data-fui-tag-input-id.
+func goEmittedAttrs(t *testing.T) []string {
+	t.Helper()
+	roots := []string{
+		filepath.Join("..", "interactive"),
+		filepath.Join("..", "html"),
+		filepath.Join("..", "widget"),
+		filepath.Join("..", "app"),
+		filepath.Join("..", "patterns"),
+		filepath.Join("..", "..", "framework", "ui"),
+		// pluginhost emits the data-fui-plugin* mount markers via string
+		// concat (mount.go); it owns its own parity gate too, but the
+		// doc→owner gate must still see them as emitted.
+		filepath.Join("..", "..", "framework", "pluginhost"),
+	}
+	set := map[string]struct{}{}
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			raw, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return rerr
+			}
+			stripped := stripGoLineComments(string(raw))
+			// attrPattern over stripped whole source catches valueless boolean
+			// attributes (data-fui-menu-panel) and concat-built markers
+			// (data-fui-plugin-docid) that the quote-requiring form misses.
+			for _, m := range attrPattern.FindAllString(stripped, -1) {
+				name := strings.TrimRight(m, "-")
+				if name == "data-fui" {
+					continue
+				}
+				set[name] = struct{}{}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", root, err)
+		}
+	}
+	out := make([]string, 0, len(set))
+	for a := range set {
+		out = append(out, a)
+	}
+	sort.Strings(out)
+	return out
+}
