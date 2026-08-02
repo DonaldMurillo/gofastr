@@ -526,3 +526,41 @@ func TestPG_AutoIncrementSerial(t *testing.T) {
 		t.Errorf("second create: expected sequence-assigned id 2, got %s", second)
 	}
 }
+
+// JSONB is where the write path's bug actually bites hardest: the column
+// type rejects anything that is not a JSON document, and the driver
+// returns the value as []byte rather than a string. Proves the round trip
+// on real Postgres, not just on SQLite's TEXT.
+func TestPG_JSONBFieldRoundTrips(t *testing.T) {
+	ch, _ := pgCrudSetup(t, entity.EntityConfig{
+		Name: "pgj_policies", Table: "pgj_policies",
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+			{Name: "features", Type: schema.JSON},
+		},
+	}.WithTimestamps(false),
+		`CREATE TABLE pgj_policies (id TEXT PRIMARY KEY, name TEXT, features JSONB)`)
+
+	req := withTestUser(httptest.NewRequest(http.MethodPost, "/pgj_policies",
+		strings.NewReader(`{"name":"pro","features":{"seats":5,"beta":true}}`)), "u1")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ch.Create()(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create with a JSON object = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var env struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	obj, ok := env.Data["features"].(map[string]any)
+	if !ok {
+		t.Fatalf("features came back as %T (%v), want a JSON object", env.Data["features"], env.Data["features"])
+	}
+	if obj["beta"] != true || obj["seats"] != float64(5) {
+		t.Errorf("JSONB round trip changed the value: %v", obj)
+	}
+}

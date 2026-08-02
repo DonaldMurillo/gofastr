@@ -885,6 +885,33 @@ This applies to create (`201`), get (`200`), PUT (`200`), and PATCH (`200`).
 Lists keep `{"data":[...]}` plus pagination metadata. Error and DELETE
 responses are unchanged.
 
+### `json` fields round-trip
+
+A `type: json` field (`schema.JSON` in Go) carries a whole JSON document.
+Send it as a value, not as a string:
+
+```
+POST /api/policies
+{"name":"pro","features":{"seats":5,"beta":true}}
+
+→ 201 {"data":{"id":"…","name":"pro","features":{"seats":5,"beta":true}}}
+```
+
+The column stores JSON text (`JSONB` on PostgreSQL, `TEXT` on SQLite) and
+reads back parsed, so what a client sends is what it reads back — on
+create, update, get, list, cursor pages, `?stream=true`, and rows pulled
+in through `?include=`.
+
+Three rules worth knowing:
+
+- **A string is JSON text, stored verbatim.** `{"features":"{\"seats\":5}"}`
+  writes the same document as the object form. That is what an admin
+  textarea submits.
+- **Absent and `null` are the same thing** — both leave the column NULL and
+  read back as `null`. `{}` is distinct: it stores and returns `{}`.
+- **Text that is not JSON reads back unchanged**, so a legacy `TEXT` column
+  promoted to `json` keeps serving its existing rows.
+
 ## MCP Tools
 
 When an entity sets `"mcp": true`, GoFastr registers CRUD tools:

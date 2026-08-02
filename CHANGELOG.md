@@ -39,6 +39,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- A `schema.JSON` field is writable through the generated CRUD routes. The
+  handler bound the decoded Go value straight to the driver, so every create
+  or update that populated one failed with a 500 (`unsupported type
+  map[string]interface {}, a map`) — leaving the field unreachable through any
+  supported interface. Values are now marshalled on write and parsed on read,
+  so a JSON document round-trips as a document on create, update, get, list,
+  cursor pages, `?stream=true`, and `?include=` rows. A string still means
+  JSON text and is stored verbatim; text that is not JSON reads back
+  unchanged. Note the read change is visible to existing clients: a JSON
+  column that used to arrive as a string now arrives parsed. (#170)
 - `/openapi.json` no longer advertises CRUD paths for entities with
   `Exposure.CRUD: false`. The router honoured the opt-out and the spec did
   not, so the spec documented a management API the server answered 404 for —
