@@ -48,6 +48,10 @@ func TestHarness(t testing.TB, app *App) *TestApp {
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("TestHarness: InitPlugins: %v", err)
 	}
+	// Every harness request records which route it reached, so a suite
+	// already using TestHarness gets semantic coverage without changing a
+	// line. Opt out with GOFASTR_NO_SEMANTIC_COVERAGE.
+	RecordSemanticCoverage(t, app)
 	return &TestApp{
 		App:    app,
 		router: app.router,
