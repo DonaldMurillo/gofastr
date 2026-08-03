@@ -228,6 +228,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 						return
 					}
 					token = tok
+					//gofastr:allow(GOFASTR1404) the double-submit pattern requires a JS-readable cookie: the client reads this value to set the matching header, and an attacker on another origin can do neither. Secure and SameSite are set below.
 					http.SetCookie(w, &http.Cookie{
 						Name:     cookieName,
 						Value:    tok,

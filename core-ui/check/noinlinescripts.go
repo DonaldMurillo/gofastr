@@ -78,6 +78,24 @@ var (
 // the top). Use only when the file inherently references <script>
 // in non-emitting contexts — the linter itself, regex patterns, or
 // CLI scaffolding.
+// ScanInlineScriptsIn reports inline <script> bodies in an already-parsed
+// file. It exists for callers that have read and parsed the source
+// already — the contracts pass caches both — so the check does not repeat
+// a directory walk, a file read, and an AST parse that just happened.
+//
+// raw is needed only for the `//check-csp:ignore-file` directive, which is
+// a comment scan rather than an AST property. Returns nil when the file
+// opts out, so a caller cannot accidentally treat "exempt" as "clean but
+// checked".
+func ScanInlineScriptsIn(fset *token.FileSet, file *ast.File, filename string, raw []byte) *Result {
+	if fset == nil || file == nil || hasCSPIgnoreDirective(raw) {
+		return nil
+	}
+	result := &Result{}
+	scanInlineScripts(fset, file, filename, result)
+	return result
+}
+
 func LintNoInlineScripts(dir string) (*Result, error) {
 	result := &Result{}
 	entries, err := os.ReadDir(dir)
