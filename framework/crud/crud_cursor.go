@@ -133,7 +133,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	}
 	defer rows.Close()
 
-	results, err := scanRowsForEntity(rows, cols, ch.convertKey, ch.Entity)
+	results, err := ch.scanMany(rows, cols)
 	if err != nil {
 		log.Printf("crud: cursor scan failed: %v", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal server error")

@@ -1324,9 +1324,15 @@
       if (!active && link.hasAttribute('data-fui-match-prefix')) {
         const hrefPath = href.split('?')[0].split('#')[0];
         const pathOnly = (path || '').split('?')[0].split('#')[0];
+        // Match on SEGMENT boundaries, and accept the canonical
+        // no-trailing-slash href (/docs) as well as the trailing-slash
+        // form (/docs/) — apps register /docs, so requiring the slash
+        // left the ordinary case permanently dark. /docs-old shares a
+        // text prefix with /docs but not a segment, so it stays out.
         // "/" is never used as a prefix — otherwise every nav link
         // would match every page.
-        if (hrefPath !== '/' && hrefPath.endsWith('/') && pathOnly.startsWith(hrefPath)) {
+        const hrefBase = hrefPath.endsWith('/') ? hrefPath.slice(0, -1) : hrefPath;
+        if (hrefBase !== '' && (pathOnly === hrefBase || pathOnly.startsWith(hrefBase + '/'))) {
           active = true;
         }
       }

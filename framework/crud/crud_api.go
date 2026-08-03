@@ -139,7 +139,7 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 
 	sqlStr, args := qb.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-	result, err := ch.scanRow(row, cols, ch.convertKey)
+	result, err := ch.scanOne(row, cols)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errNotFound
@@ -230,7 +230,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 		return nil, err
 	}
 	defer rows.Close()
-	results, err := scanRowsForEntity(rows, cols, ch.convertKey, ch.Entity)
+	results, err := ch.scanMany(rows, cols)
 	if err != nil {
 		return nil, err
 	}

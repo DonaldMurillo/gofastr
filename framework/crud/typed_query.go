@@ -121,7 +121,7 @@ func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Re
 	}
 	defer rows.Close()
 	cols := q.handler.visibleFields()
-	raw, err := scanRowsForEntity(rows, cols, q.handler.convertKey, q.handler.Entity)
+	raw, err := q.handler.scanMany(rows, cols)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -307,7 +307,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 		if k == q.handler.PrimaryKey {
 			continue
 		}
-		ub.Set(k, v)
+		ub.Set(k, q.handler.bindJSONValue(k, v))
 	}
 	// Restamp updated_at on the bulk update, mirroring the single-row
 	// doUpdate path. Skip it when the caller already supplied updated_at

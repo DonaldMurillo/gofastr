@@ -156,6 +156,32 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddSchema(schemaName, entitySchema)
 
+		// The router mounts auto-CRUD only when Exposure.CRUD is unset
+		// ("auto" ⇒ on) or explicitly true, so an entity that opted out
+		// answers 404 on every generated path. Advertising them anyway
+		// documents an API the server does not have, and an SDK built
+		// from the spec ships methods that cannot work — worst exactly
+		// where the opt-out was deliberate (sensitive rows, or invariants
+		// owned by a server-side workflow).
+		//
+		// Only the GENERATED surface goes. The schema component above
+		// stays, and so do hand-written Endpoints: App mounts those
+		// outside its crudEnabled branch, so the server serves them
+		// either way, and an entity that opted out of auto-CRUD is the
+		// one most likely to carry them — opting out is how an app says
+		// "reach this through the endpoints I declared". The tag is
+		// emitted only when something will carry it; an entity with
+		// neither CRUD nor endpoints would otherwise render as an empty
+		// group.
+		crudExposed := ent.Config.Exposure.CRUD == nil || *ent.Config.Exposure.CRUD
+		if !crudExposed {
+			if hasCustomEndpoints(ent) {
+				s.AddTag(tagName, entityName+" operations")
+			}
+			addCustomEndpoints(s, ent, schemaName, tagName)
+			continue
+		}
+
 		// Tag for grouping
 		s.AddTag(tagName, entityName+" operations")
 
@@ -489,26 +515,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
 
-		for _, endpoint := range ent.Config.Endpoints {
-			if endpoint.Method == "" || endpoint.Path == "" {
-				continue
-			}
-			customOp := openapi.NewOperation()
-			customOp.Summary = endpoint.Description
-			if customOp.Summary == "" {
-				customOp.Summary = endpoint.Method + " " + endpoint.Path
-			}
-			customOp.OperationID = DefaultEndpointToolName(schemaName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
-			customOp.Tags = []string{tagName}
-			// A typed InputSchema becomes the JSON request body — but only for
-			// methods that carry one (GET/HEAD never do). Unset schemas fall
-			// back to today's shapeless {type:object} response and no body.
-			if len(endpoint.InputSchema) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
-				customOp.SetRequestBody("application/json", EndpointInputSchema(endpoint), true)
-			}
-			customOp.AddResponse(200, "OK", EndpointOutputSchema(endpoint))
-			s.AddPath(endpoint.Method, EntityEndpointPath(ent, endpoint.Path), *customOp)
-		}
+		addCustomEndpoints(s, ent, schemaName, tagName)
 	}
 
 	// When at least one entity is auth-gated, advertise how callers
@@ -661,4 +668,42 @@ func wireKeyOf(f schema.Field) string {
 		return f.WireName
 	}
 	return casing.ToCamel(f.Name)
+}
+
+// hasCustomEndpoints reports whether the entity declares at least one
+// well-formed Endpoint — one that addCustomEndpoints will actually emit.
+func hasCustomEndpoints(ent *entity.Entity) bool {
+	for _, endpoint := range ent.Config.Endpoints {
+		if endpoint.Method != "" && endpoint.Path != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// addCustomEndpoints emits an entity's hand-written Endpoints. Split out
+// of the main loop because it runs on both sides of the auto-CRUD
+// opt-out: the router mounts these endpoints regardless of
+// Exposure.CRUD, so the spec advertises them regardless too.
+func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName string) {
+	for _, endpoint := range ent.Config.Endpoints {
+		if endpoint.Method == "" || endpoint.Path == "" {
+			continue
+		}
+		customOp := openapi.NewOperation()
+		customOp.Summary = endpoint.Description
+		if customOp.Summary == "" {
+			customOp.Summary = endpoint.Method + " " + endpoint.Path
+		}
+		customOp.OperationID = DefaultEndpointToolName(schemaName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
+		customOp.Tags = []string{tagName}
+		// A typed InputSchema becomes the JSON request body — but only for
+		// methods that carry one (GET/HEAD never do). Unset schemas fall
+		// back to today's shapeless {type:object} response and no body.
+		if len(endpoint.InputSchema) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
+			customOp.SetRequestBody("application/json", EndpointInputSchema(endpoint), true)
+		}
+		customOp.AddResponse(200, "OK", EndpointOutputSchema(endpoint))
+		s.AddPath(endpoint.Method, EntityEndpointPath(ent, endpoint.Path), *customOp)
+	}
 }

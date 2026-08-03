@@ -437,6 +437,12 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 			}
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
+		// An included row's schema.JSON columns get the same treatment as
+		// the parent's, keyed by raw DB column because the eager loaders
+		// case-convert only at the end of the walk. Without this a JSON
+		// field is an object on GET /children and a string one relation
+		// hop away.
+		decodeEntityJSONColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
 
 	// Recurse into each node that has children.
@@ -507,6 +513,7 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 			}
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
+		decodeEntityJSONColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
 	// Further recursion for grandchildren.
 	for _, node := range children {

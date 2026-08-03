@@ -1023,6 +1023,15 @@ func cellText(v any) string {
 			return ""
 		}
 		return t.Format(time.RFC3339)
+	case map[string]any, []any:
+		// A schema.JSON column comes back decoded. This string feeds the
+		// list cell AND the edit form's textarea, which posts it back on
+		// save — Go's map syntax would be shown to the operator and then
+		// submitted as the new value.
+		if raw, err := json.Marshal(t); err == nil {
+			return string(raw)
+		}
+		return fmt.Sprint(t)
 	default:
 		return fmt.Sprint(t)
 	}

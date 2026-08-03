@@ -92,11 +92,17 @@ func TestVersionedOpenAPI(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	v1 := app.Group("/api/v1", routegroup.WithOpenAPITag("v1"))
 	v2 := app.Group("/api/v2", routegroup.WithOpenAPITag("v2"))
+	// Exposure is left at its default: CRUD unset means "auto", which is
+	// what an ordinary app declares and what makes the spec emit paths.
+	// (Setting CRUD:false here as a way to avoid needing a DB would make
+	// the test assert the opposite of the contract — the spec deliberately
+	// omits paths for entities that opted out. No DB is needed either way:
+	// EntityOpenAPI reads the registry, not the database.)
 	app.GroupEntity(v1, "posts", entity.EntityConfig{Table: "posts",
-		Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 	})
 	app.GroupEntity(v2, "posts", entity.EntityConfig{Table: "posts",
-		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "summary", Type: schema.Text}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
+		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "summary", Type: schema.Text}},
 	})
 
 	spec := frameworkopenapi.EntityOpenAPI(app.Registry, "Test", "1.0.0")

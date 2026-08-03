@@ -91,6 +91,15 @@ type CrudHandler struct {
 	visibleJSONKeys    []string
 	visibleFieldSig    uint64
 
+	// jsonColumns holds the DB column names declared schema.JSON;
+	// jsonWireKeys holds the same fields by wire key. The write path
+	// needs the column form (it binds by column), the read path the wire
+	// form (scanned rows are already key-converted). Both cover hidden
+	// fields too — a server-writes create can set one. Rebuilt by
+	// refreshFieldCache.
+	jsonColumns  map[string]struct{}
+	jsonWireKeys map[string]struct{}
+
 	// wireKeyOf maps DB column name → JSON wire key (WireName if set, else
 	// case-converted Name). columnOfWire is the reverse. Both cover ALL fields
 	// (not just visible ones) so input deserialization can resolve WireNames
@@ -269,12 +278,16 @@ func (ch *CrudHandler) refreshFieldCache() {
 		ch.visibleFieldSig = 0
 		ch.wireKeyOf = nil
 		ch.columnOfWire = nil
+		ch.jsonColumns = map[string]struct{}{}
+		ch.jsonWireKeys = map[string]struct{}{}
 		return
 	}
 	fields := ch.Entity.GetFields()
 	names := make([]string, 0, len(fields))
 	ch.wireKeyOf = make(map[string]string, len(fields))
 	ch.columnOfWire = make(map[string]string, len(fields))
+	ch.jsonColumns = map[string]struct{}{}
+	ch.jsonWireKeys = map[string]struct{}{}
 	for _, f := range fields {
 		// Build the wire-key maps for ALL fields (visible or not) so input
 		// deserialization can resolve a WireName on a write-only field.
@@ -290,6 +303,10 @@ func (ch *CrudHandler) refreshFieldCache() {
 		// caller constructing a CrudHandler without going through Validate.
 		if _, exists := ch.columnOfWire[wk]; !exists {
 			ch.columnOfWire[wk] = f.Name
+		}
+		if f.Type == schema.JSON {
+			ch.jsonColumns[f.Name] = struct{}{}
+			ch.jsonWireKeys[wk] = struct{}{}
 		}
 		if !f.Hidden {
 			names = append(names, f.Name)
@@ -357,6 +374,11 @@ func (ch *CrudHandler) fieldCacheSignature() uint64 {
 		} else {
 			h ^= 2
 		}
+		h *= prime64
+		// The type is part of the signature because the JSON encode/decode
+		// caches key on it: a field that becomes (or stops being)
+		// schema.JSON must invalidate them.
+		h ^= uint64(f.Type)
 		h *= prime64
 	}
 	return h
@@ -674,6 +696,9 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
+		// This path scans through the keyed/pooled scanners rather than
+		// ch.scanMany, so it decodes its own JSON columns.
+		ch.decodeJSONRows(results)
 
 		if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), results, includes); err != nil {
 			writeIncludeError(w, "list", err)
@@ -842,7 +867,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		sqlStr, args := qb.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-		result, err := ch.scanRow(row, cols, ch.convertKey)
+		result, err := ch.scanOne(row, cols)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				writeJSONError(w, http.StatusNotFound, "not found")
@@ -1264,10 +1289,6 @@ func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, ent *entity.
 // scanRow scans a single row into a map, applying keyFunc to column names.
 func scanRow(row *sql.Row, cols []string, keyFunc func(string) string) (map[string]any, error) {
 	return scanRowWithBoolColumns(row, cols, keyFunc, nil)
-}
-
-func (ch *CrudHandler) scanRow(row *sql.Row, cols []string, keyFunc func(string) string) (map[string]any, error) {
-	return scanRowWithBoolColumns(row, cols, keyFunc, ch.boolColumns(cols))
 }
 
 func scanRowWithBoolColumns(row *sql.Row, cols []string, keyFunc func(string) string, boolCols []bool) (map[string]any, error) {

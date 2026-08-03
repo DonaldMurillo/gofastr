@@ -93,3 +93,31 @@ func TestEagerLoadNormalizesBooleanSchemaForModernc(t *testing.T) {
 		t.Fatalf("active = %#v (%T), want true bool", children[0]["active"], children[0]["active"])
 	}
 }
+
+// TestScanOneNormalizesBooleanForModernc covers the single-row read path.
+// Get, Create, Update and Upsert all return through scanOne, which also
+// carries schema.JSON decoding — so the two normalizations have to coexist
+// on that one seam. Without this, rerouting the path would silently serve
+// booleans as 0/1 again while the list-path tests stayed green.
+func TestScanOneNormalizesBooleanForModernc(t *testing.T) {
+	db := openBooleanReadDB(t)
+	if _, err := db.Exec(`CREATE TABLE flags (id TEXT, active INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO flags (id, active) VALUES ('f1', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	ent := entity.Define("flags", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "active", Type: schema.Bool}},
+	}.WithTimestamps(false))
+	ch := NewCrudHandler(ent, db)
+
+	row := db.QueryRow(`SELECT id, active FROM flags WHERE id = 'f1'`)
+	got, err := ch.scanOne(row, []string{"id", "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := got["active"].(bool); !ok || !v {
+		t.Fatalf("active = %#v (%T), want true bool", got["active"], got["active"])
+	}
+}
