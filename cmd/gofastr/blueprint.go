@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -3293,7 +3294,12 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 		b.WriteString("\tdbURL := e2ePostgresDSN(t)\n")
 		b.WriteString("\tsrv.Env = append(os.Environ(), \"PORT=\"+addr, \"DATABASE_URL=\"+dbURL, \"DB_DRIVER=postgres\")\n")
 	} else {
-		b.WriteString("\tsrv.Env = append(os.Environ(), \"PORT=\"+addr, \"DATABASE_URL=file:\"+filepath.Join(dir, \"e2e.db\"))\n")
+		// GOFASTR_SEMANTIC_COVERAGE makes the server record which routes,
+		// entities, hooks, and events this run actually exercised. Without
+		// it the e2e suite drives a subprocess that never touches the test
+		// harness, so `gofastr verify` reports every route it covers as
+		// unreached.
+		b.WriteString("\tsrv.Env = append(os.Environ(), \"PORT=\"+addr, \"GOFASTR_SEMANTIC_COVERAGE=1\", \"DATABASE_URL=file:\"+filepath.Join(dir, \"e2e.db\"))\n")
 	}
 	b.WriteString("\tsrv.Stdout, srv.Stderr = io.Discard, io.Discard\n")
 	b.WriteString("\tif err := srv.Start(); err != nil { t.Fatalf(\"start: %v\", err) }\n")
@@ -6207,9 +6213,10 @@ func renderBlueprintApp(bp Blueprint) string {
 	if hasMarketing {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/render\"\n")
 	}
-	if len(bp.App.Theme) > 0 {
-		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/style\"\n")
-	}
+	// Always imported: app.go now declares fontFaceCSS by CALLING
+	// style.FontFaceCSS rather than carrying a baked CSS string, so the
+	// import is needed whether or not a theme is declared.
+	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/style\"\n")
 	if needWidget {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/widget\"\n")
 	}
@@ -6361,7 +6368,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	// fonts (self-hosted from <static>/fonts/<slug>.woff2). It is the single
 	// font-loading source, shared verbatim by the UI host and the admin battery
 	// so every surface loads identical fonts. Empty when no fonts are declared.
-	sb.WriteString(fmt.Sprintf("// fontFaceCSS holds the @font-face rules for the app's fonts, shared by\n// the UI host and the admin battery so every surface loads identical fonts.\nconst fontFaceCSS = %q\n\n", blueprintFontFaceCSS(bp.App.Theme)))
+	sb.WriteString(blueprintFontFaceDecl(bp.App.Theme))
 	if len(bp.Nav) > 0 {
 		sb.WriteString("// sidebarConfig returns the navigation sidebar configuration.\n")
 		sb.WriteString("func sidebarConfig() ui.SidebarConfig {\n")
@@ -6728,8 +6735,14 @@ func blueprintFontStacks(theme map[string]string) (bodyStack, headingStack strin
 
 // blueprintFontSlug turns a font family name into the self-hosted file slug,
 // e.g. "Bricolage Grotesque" -> "bricolage-grotesque".
+// It delegates to style.FontSlug so the slug in the emitted `src: url(…)`
+// and the slug in the woff2 path the developer is told to write to are
+// produced by ONE function. They were two implementations that agreed on
+// space-separated names and diverged on anything with punctuation — a
+// family like "Libre Baskerville, Display" would have been served from a
+// path nothing wrote to, with no error anywhere.
 func blueprintFontSlug(family string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(family), " ", "-"))
+	return style.FontSlug(family)
 }
 
 // blueprintConfiguredFontFamilies returns the theme's declared font families in
@@ -7051,18 +7064,41 @@ func blueprintMissingFontSlugs(bp Blueprint, files []generatedFile) []string {
 // the admin battery, so every surface (marketing, app, back-office) loads the
 // exact same fonts with no external CDN dependency. Drop the matching woff2 into
 // <static_dir>/fonts/. Returns "" when the theme declares no fonts.
+// The rule itself is emitted by core-ui/style, not spelled out here: a
+// generator that writes its own `@font-face` string owns a second
+// styling surface, which is the drift CLAUDE.md hard rule 7 is about.
+// `gofastr verify` flags this exact shape (GOFASTR1801), and
+// style.FontFaceCSS is the upstream primitive that finding asked for.
 func blueprintFontFaceCSS(theme map[string]string) string {
 	body, heading := blueprintConfiguredFonts(theme)
-	var b strings.Builder
-	seen := map[string]bool{}
-	for _, f := range []string{heading, body} {
-		if f == "" || seen[f] {
-			continue
-		}
-		seen[f] = true
-		fmt.Fprintf(&b, "@font-face { font-family: '%s'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/%s.woff2') format('woff2'); }\n", f, blueprintFontSlug(f))
+	// Heading first, then body — the declaration order callers rely on.
+	return style.FontFaceCSS("", style.WebFont{Family: heading}, style.WebFont{Family: body})
+}
+
+// blueprintFontFaceDecl emits the generated app's fontFaceCSS declaration.
+//
+// It emits a CALL to style.FontFaceCSS rather than a baked CSS string.
+// Emitting the string would move the violation rather than fix it: the
+// generator would stop shipping CSS only by writing the CSS into every
+// app it generates, where `gofastr verify` would correctly flag it and
+// the developer could do nothing about it. Composing the design system
+// is the shape hard rule 7 asks for, and the generated file already
+// imports core-ui/style for its theme.
+func blueprintFontFaceDecl(theme map[string]string) string {
+	// Emitted even when no fonts are declared: main.go references
+	// fontFaceCSS unconditionally, so omitting the declaration does not
+	// produce a smaller app, it produces one that does not compile. With
+	// no fonts the call returns "".
+	families := blueprintConfiguredFontFamilies(theme)
+	var fonts strings.Builder
+	for _, f := range families {
+		fmt.Fprintf(&fonts, ", style.WebFont{Family: %q}", f)
 	}
-	return b.String()
+	return fmt.Sprintf(
+		"// fontFaceCSS holds the @font-face rules for the app's fonts, shared by\n"+
+			"// the UI host and the admin battery so every surface loads identical fonts.\n"+
+			"// Drop the matching woff2 files into <static>/fonts/.\n"+
+			"var fontFaceCSS = style.FontFaceCSS(\"\"%s)\n\n", fonts.String())
 }
 
 func blueprintThemeColorPath(key string) (string, bool) {

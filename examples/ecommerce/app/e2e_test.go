@@ -31,7 +31,7 @@ func TestE2E(t *testing.T) {
 	addr := e2eFreeAddr(t)
 	srv := exec.Command(bin)
 	srv.Dir = dir
-	srv.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(dir, "e2e.db"))
+	srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1", "DATABASE_URL=file:"+filepath.Join(dir, "e2e.db"))
 	srv.Stdout, srv.Stderr = io.Discard, io.Discard
 	if err := srv.Start(); err != nil {
 		t.Fatalf("start: %v", err)

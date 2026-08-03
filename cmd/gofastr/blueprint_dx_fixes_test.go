@@ -39,10 +39,24 @@ func TestFontsShippedMatchCSS(t *testing.T) {
 			t.Fatalf("expected font file %s to be shipped; got files: %v", want, keysOf(files))
 		}
 	}
-	css := files["app.go"]
+	// The generated app composes the design system rather than carrying a
+	// baked CSS string, so the source names the FAMILIES and
+	// style.FontFaceCSS derives the URLs from them at runtime.
+	appGo := files["app.go"]
+	for _, family := range []string{`Family: "Test Sans"`, `Family: "Demo Serif"`} {
+		if !strings.Contains(appGo, family) {
+			t.Fatalf("generated fontFaceCSS should declare %s:\n%s", family, appGo)
+		}
+	}
+	if strings.Contains(appGo, "@font-face {") {
+		t.Fatalf("the generator baked CSS into the app instead of composing style.FontFaceCSS:\n%s", appGo)
+	}
+	// The URLs those families resolve to must still be the shipped files —
+	// same slug function on both sides, so they cannot drift.
+	css := blueprintFontFaceCSS(bp.App.Theme)
 	for _, ref := range []string{"/fonts/test-sans.woff2", "/fonts/demo-serif.woff2"} {
 		if !strings.Contains(css, ref) {
-			t.Fatalf("fontFaceCSS should reference %s:\n%s", ref, css)
+			t.Fatalf("rendered fontFaceCSS should reference %s:\n%s", ref, css)
 		}
 	}
 	// Every referenced woff2 must be shipped (the whole point of the fix).
@@ -292,4 +306,30 @@ func keysOf(m map[string]string) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// The generated e2e suite drives a subprocess over real HTTP, so it never
+// touches framework.TestHarness. Without GOFASTR_SEMANTIC_COVERAGE on the
+// server's env, every route that suite covers reports as unreached by
+// `gofastr verify` — a thorough e2e suite scoring zero.
+func TestGeneratedE2ESetsSemanticCoverageEnv(t *testing.T) {
+	stubFontFetcher(t, func(family string) ([]byte, error) { return []byte("x"), nil })
+	bp := Blueprint{
+		App: BlueprintApp{Name: "Cov", Module: "example.com/cov"},
+		Screens: []BlueprintScreen{{
+			Name: "home", Route: "/", Body: []BlueprintBlock{{Kind: "hero", Props: map[string]any{"title": "Hi"}}},
+		}},
+	}
+	e2e := filesByName(mustRenderBlueprintFiles(t, bp))["e2e_test.go"]
+	if e2e == "" {
+		t.Fatal("no e2e_test.go emitted")
+	}
+	if !strings.Contains(e2e, `"GOFASTR_SEMANTIC_COVERAGE=1"`) {
+		t.Fatalf("generated e2e test does not enable semantic coverage on the server:\n%s", e2e)
+	}
+	// It must sit on the SAME env the server subprocess gets, not on the
+	// test process — the recording happens server-side.
+	if !strings.Contains(e2e, `srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1"`) {
+		t.Fatalf("the variable is not on the server subprocess env:\n%s", e2e)
+	}
 }

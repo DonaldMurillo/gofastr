@@ -129,6 +129,7 @@ func registerEntities(app *framework.App) {
 			entity.BelongsTo("supplier", "suppliers", "supplier_id"),
 		},
 	})
+	//gofastr:allow(GOFASTR1901) a back-office customer list is staff-wide by design — every signed-in user here IS staff, so there is no per-user row to scope to. An app where customers own their own record sets Scope.OwnerField instead.
 	app.Entity("customers", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true, Max: f64(120)},
@@ -206,6 +207,7 @@ func loginSubmit(w http.ResponseWriter, r *http.Request) {
 	if email == "" {
 		email = "admin@example.com"
 	}
+	//gofastr:allow(GOFASTR1404) demo signs in over plain http://localhost, where a Secure cookie is dropped by the browser and nobody could log in. A real deployment serves over TLS and sets it — see gofastr docs security.
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: email, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
