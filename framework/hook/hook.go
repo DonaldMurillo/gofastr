@@ -38,6 +38,9 @@ type HookFunc func(ctx context.Context, data any) error
 type HookRegistry struct {
 	mu    sync.RWMutex
 	hooks map[HookType][]HookFunc
+	// label is the entity this registry belongs to, set by the framework
+	// so a hook firing can be attributed in coverage. See SetLabel.
+	label string
 }
 
 // NewHookRegistry creates an empty HookRegistry.
@@ -64,7 +67,16 @@ func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, dat
 	// hook, and holding the lock across arbitrary user code would deadlock.
 	hr.mu.RLock()
 	fns := append([]HookFunc(nil), hr.hooks[hookType]...)
+	label := hr.label
 	hr.mu.RUnlock()
+	if len(fns) == 0 {
+		// Nothing registered. Reporting a firing here would credit every
+		// entity with full hook coverage the moment it served one request.
+		return nil
+	}
+	if fn := observer.Load(); fn != nil {
+		(*fn)(Firing{Entity: label, Type: hookType})
+	}
 	for _, fn := range fns {
 		if err := runHookSafely(ctx, fn, data); err != nil {
 			return err

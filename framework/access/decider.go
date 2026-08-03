@@ -87,11 +87,11 @@ func CanResource(ctx context.Context, capability Permission, resource Ref) bool 
 	if d, ok := ctx.Value(deciderKey{}).(Decider); ok && d != nil {
 		switch d(ctx, GetRoles(ctx), capability, resource) {
 		case DecisionAllow:
-			return true
+			return observe(ctx, capability, true, "can-resource")
 		case DecisionDeny:
-			return false
+			return observe(ctx, capability, false, "can-resource")
 		case DecisionAbstain:
-			// fall through to the role policy
+			// fall through to the role policy, which observes for itself
 		}
 	}
 	return Can(ctx, capability)

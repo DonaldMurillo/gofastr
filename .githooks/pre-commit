@@ -154,6 +154,26 @@ else
   pass "Coverage floors hold"
 fi
 
+# ---- 7. Contracts on the uncommitted change ----
+# --changed, not the whole tree: a pre-commit hook that prints findings
+# from code you did not touch is a hook people bypass. The analysis still
+# runs whole-tree, so a duplicate route introduced here is still caught —
+# only the reporting narrows to what is uncommitted.
+#
+# "Uncommitted", not "staged": --changed diffs the working tree against
+# HEAD, so a file with only unstaged edits is included too. That is the
+# better trap — a finding in the half you left unstaged is one you are
+# about to walk away from, and this is the last moment it is in your
+# face.
+#
+# --strict because the repository carries a baseline
+# (.gofastr-contracts-baseline.json): existing debt is absorbed, so the
+# only things that can fail here are findings this change adds.
+echo ""
+echo "  → Contracts on the uncommitted change..."
+go run ./cmd/gofastr verify --no-vet --strict --changed
+pass "No new contract findings"
+
 echo ""
 pass "All pre-commit checks passed"
 echo ""

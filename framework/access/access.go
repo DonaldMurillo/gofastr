@@ -384,9 +384,9 @@ func (rp *RolePolicy) Can(ctx context.Context, permission Permission) bool {
 func Can(ctx context.Context, permission Permission) bool {
 	policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
 	if policy == nil {
-		return false
+		return observe(ctx, permission, false, "can")
 	}
-	return policy.Can(ctx, permission)
+	return observe(ctx, permission, policy.Can(ctx, permission), "can")
 }
 
 // GetPermissions extracts the user's permissions from context by looking up
@@ -427,7 +427,8 @@ func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
-			if policy == nil || !policy.Can(ctx, permission) {
+			granted := policy != nil && policy.Can(ctx, permission)
+			if !observe(ctx, permission, granted, "require-permission") {
 				herr := handler.Errorf(http.StatusForbidden, "access denied: missing permission %s", permission)
 				handler.WriteError(w, herr)
 				return

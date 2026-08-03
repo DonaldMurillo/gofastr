@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "generated": "2026-08-03T07:56:18Z",
+  "note": "recorded by gofastr verify --baseline-write",
+  "counts": {
+    "GOFASTR1003": {
+      "examples/backoffice/main.go": 1,
+      "examples/blog/main.go": 1,
+      "examples/ecommerce/app/screen_categories_crud.go": 1,
+      "examples/ecommerce/app/screen_orders_crud.go": 1,
+      "examples/ecommerce/app/screen_products_crud.go": 2,
+      "examples/ecommerce/app/screen_reviews_crud.go": 1,
+      "examples/site/main.go": 16,
+      "framework/uihost/uihost.go": 1,
+      "kiln/chat/server.go": 2
+    },
+    "GOFASTR1502": {
+      "battery/auth/entity_store.go": 1,
+      "examples/backoffice/main.go": 1,
+      "framework/experimental/harness/session/sqlite/sqlite.go": 1,
+      "framework/migrate/bulk.go": 1
+    },
+    "GOFASTR1702": {
+      "examples/api-tour/main.go": 3,
+      "examples/blog/main.go": 2,
+      "examples/spa/main.go": 2
+    },
+    "GOFASTR1902": {
+      "cmd/kiln/agent_http.go": 2,
+      "examples/backoffice/main.go": 1,
+      "examples/ecommerce/app/app.go": 2,
+      "examples/meridian/main.go": 1,
+      "examples/site/main.go": 18,
+      "framework/uihost/uihost.go": 2,
+      "kiln/chat/server.go": 2
+    }
+  }
+}

@@ -1,0 +1,137 @@
+# GoFastr's own contract configuration.
+#
+# The framework is held to its own rules — `gofastr verify` runs against
+# this repository the same way it runs against an app built with it. Every
+# entry below is a relaxation, and every relaxation states why. Nothing
+# here turns a rule off because it was inconvenient; each one names a
+# surface where the rule's premise genuinely does not hold.
+#
+# Run `gofastr verify` to see the current state, `gofastr verify --list`
+# for the catalog, and `gofastr verify --explain <rule>` for any one rule.
+
+contracts:
+  exempt:
+    # Test fixtures exist to be wrong. embedcheck's testdata tree holds
+    # deliberately broken apps that the embed analyzer is tested against;
+    # linting them reports the fixtures' intended defects as defects.
+    - cmd/check-embed/embedcheck/testdata/**
+
+  rules:
+    GOFASTR1801: # rendering/bespoke-css
+      exempt:
+        # The agent harness is a standalone developer tool with its own
+        # web sidecar, not a GoFastr application — it does not mount the
+        # design system, so it cannot compose it. It is also experimental
+        # and never ships in a user's binary.
+        - cmd/gofastr/harness_http.go
+        - framework/experimental/harness/**
+        # The theme editor renders a live preview of the design system.
+        # Styling it *from* the design system would make the preview
+        # reflect the editor's own state rather than the theme under edit.
+        - cmd/gofastr/theme_edit.go
+        # The OpenAPI explorer is a standalone document viewer served
+        # outside the app shell, with no host layout to inherit from.
+        - core/openapi/handler.go
+        # This package documents the rules, so its source quotes them.
+        - framework/contracts/**
+        # The embed demo's `customerPage` is a THIRD-PARTY host page — the
+        # whole point of the example is a GoFastr surface rendering inside
+        # someone else's site. That page is not a GoFastr app and has no
+        # design system to compose; the rules stop at the frame boundary.
+        - examples/embed-demo/main.go
+
+    GOFASTR1802: # rendering/hard-navigation
+      exempt:
+        - framework/contracts/**
+
+    GOFASTR1804: # rendering/inline-style
+      exempt:
+        # Same class: the catalog's bad example for this rule is, by
+        # construction, an inline style attribute.
+        - framework/contracts/**
+
+    GOFASTR1803: # rendering/bespoke-event-source
+      exempt:
+        - framework/contracts/**
+        # Same exception class CLAUDE.md already carves out for dev
+        # tooling (framework/dev livereload, kiln's build-mode reload):
+        # the harness sidecar is a developer tool with its own stream and
+        # no app surface to share a bus with.
+        - cmd/gofastr/harness_http.go
+        - framework/experimental/harness/**
+
+    # The rule catalog quotes a deliberately-wrong example for each rule,
+    # in a Go string literal. There is no way to write "here is what SQL
+    # injection looks like" that a SQL-injection detector will not find,
+    # and that is as it should be — so the exemption is scoped to the one
+    # package whose job is to document the rules.
+    GOFASTR1401: # security/sql-string-concat
+      exempt:
+        - framework/contracts/**
+    GOFASTR1403: # security/html-concat
+      exempt:
+        - framework/contracts/**
+
+    # The semantic-coverage rules read .gofastr/semantic-coverage.json,
+    # which records WHICH TESTS RAN — and that differs by environment.
+    # This repository's CI excludes several chromedp packages from the
+    # blocking job and runs Postgres suites that are skipped locally when
+    # Docker is down, so the same commit produces different findings on a
+    # laptop and on a runner.
+    #
+    # Gating a shared CI on a recorded baseline of those findings is
+    # therefore flaky by construction: a baseline recorded in one lane
+    # fails in the other. Verified, not assumed — halving the manifest's
+    # recorded routes turns `verify --strict` from exit 0 into exit 1.
+    #
+    # So they report at info (visible in every run, never gating) rather
+    # than being switched off. GOFASTR1104 (line-coverage floor) and
+    # GOFASTR1105 (disabled test) are NOT downgraded: neither reads the
+    # manifest, and both are stable across environments.
+    GOFASTR1101: info # testing/route-not-exercised
+    GOFASTR1102: info # testing/permission-not-exercised
+    GOFASTR1103: info # testing/entity-crud-not-exercised
+    GOFASTR1106: info # testing/no-coverage-manifest
+    GOFASTR1107: info # testing/hook-not-fired
+    GOFASTR1108: info # testing/event-subscriber-not-exercised
+    GOFASTR1109: info # testing/role-not-exercised
+
+    GOFASTR2003: # ai/raw-sql-over-repository
+      exempt:
+        # Example seed data is written as raw INSERTs on purpose: it runs
+        # before the app is serving, and showing the repository API for a
+        # one-shot fixture load would teach the wrong shape.
+        - examples/**
+
+  coverage:
+    # Route, permission, and entity coverage read
+    # .gofastr/semantic-coverage.json, which `go test ./...` writes.
+    routes: true
+    permissions: true
+    entities: true
+    # No line-coverage floor here: this repo enforces per-package floors
+    # through scripts/coverage-floors.sh in CI, which is finer-grained
+    # than one repository-wide number.
+
+  architecture:
+    # The layering from framework/ARCHITECTURE.md, made enforceable.
+    # Layers are ordered top-first: a package may import its own layer and
+    # anything below it, never above.
+    layers:
+      - name: cmd
+        packages: ["cmd/**", "kiln/**"]
+      - name: examples
+        packages: ["examples/**", "benchmarks/**"]
+      - name: battery
+        packages: ["battery/**"]
+      - name: framework
+        packages: ["framework/**"]
+      - name: core
+        packages: ["core/**", "core-ui/**"]
+    forbid:
+      - from: "core/**"
+        to: "framework/**"
+        reason: "core must not depend on the framework. Define the interface core needs in core, and have the framework implement it — the pattern entity.Registry and db.Executor already follow."
+      - from: "core/**"
+        to: "battery/**"
+        reason: "core sits below batteries; the dependency can only point downward."

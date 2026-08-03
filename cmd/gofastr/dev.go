@@ -106,6 +106,11 @@ func runDev(args []string) {
 		}
 	}()
 
+	// Contract findings arrive with each reload, scoped to what changed.
+	// Constructed once so it can suppress an unchanged report rather than
+	// reprinting the same lines on every save.
+	contractWatch := newDevContractWatch(dir)
+
 	// Main loop: wait for reload or shutdown
 	for {
 		select {
@@ -123,6 +128,11 @@ func runDev(args []string) {
 			killServer(&mu, &server)
 			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y) {
 				success("Reloaded!")
+				// After the reload, never before it: analysis takes about
+				// a second, and a second added to every save is the
+				// difference between a loop people use and one they turn
+				// off. Runs behind the restart and prints when ready.
+				contractWatch.Run()
 			} else {
 				fail("Build failed — fixing and saving will retry")
 			}

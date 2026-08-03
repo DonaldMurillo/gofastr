@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	//gofastr:allow(GOFASTR1301) known upward edge, kept deliberately for now. Allow needs both halves of the scope check: ScopeMatch (whose algebra lives in framework/access, reachable downward) and HasScope, which reads the caller's token out of the request context and is genuinely battery/auth's. Splitting them means inverting HasScope through an interface defined in pluginhost — a real change to a security chokepoint, not a rename. Tracked rather than hidden: this is the only violation in the tree.
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 )
 

@@ -50,7 +50,8 @@ func appTheme() style.Theme {
 
 // fontFaceCSS holds the @font-face rules for the app's fonts, shared by
 // the UI host and the admin battery so every surface loads identical fonts.
-const fontFaceCSS = ""
+// Drop the matching woff2 files into <static>/fonts/.
+var fontFaceCSS = style.FontFaceCSS("")
 
 // sidebarConfig returns the navigation sidebar configuration.
 func sidebarConfig() ui.SidebarConfig {

@@ -174,23 +174,32 @@ loop:
 		}
 	}
 
-	// Let the persistence goroutine flush.
-	time.Sleep(150 * time.Millisecond)
-
-	events, err := h.Sessions.EventsSince(context.Background(), sess, 0, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) == 0 {
-		t.Fatal("no events persisted")
-	}
-	var sawText bool
-	for _, env := range events {
-		if env.Kind == "TextDelta" {
-			sawText = true
+	// The persistence goroutine flushes asynchronously. Wait for the
+	// event the assertion needs rather than for a fixed interval: 150ms
+	// was always enough on a developer machine and intermittently not
+	// enough on a loaded CI runner — the same fixed-sleep-vs-async race
+	// the WS reader's pacing deadline had. Polling for "any event" would
+	// keep a narrower version of the race: a partial flush lands
+	// TurnStarted before the TextDelta.
+	flushDeadline := time.After(5 * time.Second)
+	for {
+		events, err := h.Sessions.EventsSince(context.Background(), sess, 0, 0)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !sawText {
-		t.Error("TextDelta missing from persisted log")
+		sawText := false
+		for _, env := range events {
+			if env.Kind == "TextDelta" {
+				sawText = true
+			}
+		}
+		if sawText {
+			break
+		}
+		select {
+		case <-flushDeadline:
+			t.Fatalf("TextDelta not persisted within 5s (%d events flushed)", len(events))
+		case <-time.After(25 * time.Millisecond):
+		}
 	}
 }

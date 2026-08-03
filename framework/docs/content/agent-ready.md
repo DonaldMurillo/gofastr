@@ -192,7 +192,14 @@ JSON-RPC + GET Server-Sent Events), replacing the manual
 `app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
 `app_readiness`, `app_routines`, `framework_docs_list`, `framework_docs_get`,
 `framework_docs_search` — are reachable at the canonical endpoint the
-agent card advertises. Calling `WithMCP` **and** manually mounting `/mcp`
+agent card advertises, alongside the contract catalog
+(`contracts_list`, `contracts_explain`, `contracts_capabilities`), which
+describes what the framework requires of the app's own code. Under
+`gofastr dev` the catalog gains a working half — `contracts_verify` runs
+the analyzers over the app's source and returns structured findings, and
+`contracts_fix` applies one rule's autofixes — neither of which is
+registered outside the dev loop, since both touch local source files.
+Calling `WithMCP` **and** manually mounting `/mcp`
 panics with a route conflict — pick one. Blueprint-generated apps ship with
 both options wired.
 

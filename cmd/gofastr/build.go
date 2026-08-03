@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/check-embed/embedcheck"
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
 func runBuild(args []string) {
@@ -104,6 +106,20 @@ func runBuild(args []string) {
 		success("no embeddable surface registers a server action")
 	}
 
+	// Step 4b: the contract analyzers. Only findings at the fail-on
+	// severity (error by default) stop the build — warnings print and let
+	// it through, because a build that fails on "this route has no test"
+	// is a build people learn to bypass. `gofastr verify` is where the
+	// full picture lives; this is the floor.
+	if !opts.noContracts {
+		info("Verifying contracts...")
+		if !buildContractsGate(".") {
+			fail("Contract verification failed — run `gofastr verify` for the full report, or skip once with --no-contracts")
+			osExit(1)
+		}
+		success("contracts verified")
+	}
+
 	// Step 5: go build
 	info("Compiling %s...", opts.pkg)
 	buildCmd := exec.Command("go", "build", "-o", opts.output, opts.pkg)
@@ -117,6 +133,46 @@ func runBuild(args []string) {
 	elapsed := time.Since(start)
 	success("Build completed in %s", elapsed.Round(time.Millisecond))
 	fmt.Printf("  Binary: %s\n", bold(opts.output))
+}
+
+// buildContractsGate runs the contract analyzers for `gofastr build` and
+// reports whether the build may proceed. It prints the same report
+// `gofastr verify` does, so a developer who has only ever run `build`
+// still learns the rule and the fix rather than a bare rejection.
+func buildContractsGate(root string) bool {
+	cfg, err := contracts.LoadConfig(root, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contracts: %v\n", err)
+		return false
+	}
+	pass, err := contracts.NewPass(root, cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contracts: %v\n", err)
+		return false
+	}
+	report, err := contracts.Run(pass, contracts.RunOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contracts: %v\n", err)
+		return false
+	}
+	// `gofastr verify --baseline-write` is how an existing app adopts
+	// contracts: accept what is there, fail on what is added. The build
+	// gate has to honour the same file, or recording a baseline fixes
+	// `verify` and leaves `build` permanently red — and the only exit a
+	// user finds from that is --no-contracts, which turns everything off.
+	baseline, baselineErr := contracts.ReadBaseline(filepath.Join(root, contracts.BaselineFileName))
+	if baselineErr != nil {
+		fmt.Fprintf(os.Stderr, "contracts: %v\n", baselineErr)
+		return false
+	}
+	if baseline != nil {
+		report.ApplyBaseline(baseline)
+	}
+	if report.Passed() && report.Counts.Warnings == 0 {
+		return true
+	}
+	fmt.Print(contracts.FormatText(report, contracts.TextOptions{Color: stdoutIsTTY}))
+	return report.Passed()
 }
 
 // buildEmbedGate runs the embed-surface server-action check for `gofastr build`

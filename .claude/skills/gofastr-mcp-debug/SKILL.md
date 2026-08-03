@@ -14,7 +14,11 @@ running GoFastr app via MCP. For deep recipes, jump to:
   tools: `app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
   `app_config`, `app_readiness`, `app_routines`, plus `framework_docs_list` /
   `framework_docs_get` / `framework_docs_search` for the embedded
-  framework docs.
+  framework docs, and `contracts_list` / `contracts_explain` /
+  `contracts_capabilities` for the rules `gofastr verify` enforces. Under
+  `gofastr dev` only, `contracts_verify` runs those rules against the
+  app's source and `contracts_fix` applies one rule's autofixes — both
+  touch local files, so a deployed app does not register them.
 
 ## When to use which
 
@@ -29,6 +33,10 @@ running GoFastr app via MCP. For deep recipes, jump to:
 | "Did my routine body change propagate?"     | `app_routines` (app-introspect) — ledger_state=drifted flags it |
 | "Turn module X off / back on"               | `app_module_disable`, `app_module_enable` (mutating)     |
 | "How does framework feature X work?"        | `framework_docs_search` → `framework_docs_get`           |
+| "Why did `gofastr verify` flag this?"       | `contracts_explain` — the rule's why, fix, and example   |
+| "What does the framework require of me?"    | `contracts_capabilities` → `contracts_list`              |
+| "What's wrong with this app's code?"        | `contracts_verify` (dev loop) — then `contracts_explain` per rule |
+| "Fix the GOFASTR#### findings for me"       | `contracts_fix` (dev loop, WRITES) — one rule at a time  |
 | "Are the logs even working?"                | `log_metrics` — non-zero counters = lost entries          |
 | "Crank up DEBUG for 30 seconds, then back"  | `log_set_level DEBUG` (save `.previous_level`) → reproduce → `log_set_level <previous_level>` |
 

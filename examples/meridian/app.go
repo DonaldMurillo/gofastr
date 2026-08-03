@@ -237,7 +237,11 @@ func quickAddCustomerModal() widget.Definition {
 
 // fontFaceCSS holds the @font-face rules for the app's fonts, shared by
 // the UI host and the admin battery so every surface loads identical fonts.
-const fontFaceCSS = "@font-face { font-family: 'Bricolage Grotesque'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/bricolage-grotesque.woff2') format('woff2'); }\n@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/hanken-grotesk.woff2') format('woff2'); }\n"
+// Drop the matching woff2 files into <static>/fonts/.
+var fontFaceCSS = style.FontFaceCSS("",
+	style.WebFont{Family: "Bricolage Grotesque"},
+	style.WebFont{Family: "Hanken Grotesk"},
+)
 
 // sidebarConfig returns the navigation sidebar configuration.
 func sidebarConfig() ui.SidebarConfig {

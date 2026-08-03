@@ -22,6 +22,8 @@ skill applies. Docs are part of the change, not a follow-up.
 | `framework/docs/content/security.md` | Default middleware stack + security headers. | New default middleware, header change, new policy primitive. |
 | `framework/docs/content/widgets.md` | `core-ui/widget` builder API. | New widget, new preset, new theme hook. |
 | `framework/docs/content/reactivity.md` | The reactivity ladder (client signals → RPC → poll → SSE push) + the stateless-interactive-layer contract. | Any change to signals, polling, the SSE bus, session tokens, `WithSecret`, or which rung a surface should use. |
+| `framework/docs/content/contracts.md` | `gofastr verify` — the rule catalog, capabilities, config/suppression, baselines, semantic coverage, and the machine-readable output. | A rule is added/renamed/retired, a capability changes, a `verify` flag or exit code changes, the JSON/SARIF shape changes, or a contract MCP tool is added. |
+| `examples/site/docs_catalog.go` | The public docs site's curated catalog. Every embedded topic must appear here or `/docs/<slug>` 404s. | **Any** new file in `framework/docs/content/` — there is a test for this, and it is the one people forget. |
 | `examples/*/README.md` | Per-example walkthrough. | When the example's behaviour or wiring changes. |
 
 There is no `docs/api-reference/` — the public API is documented via
@@ -63,6 +65,31 @@ was needed.
 **You changed the query DSL grammar or operator set:**
 - `framework/docs/content/query-dsl.md`
 - `framework/dsl/dsl.go` parser table — same PR
+
+**You added a contract rule, or changed `gofastr verify`:**
+- `framework/contracts/catalog.go` — the rule is data; ID, Why, Fix, and a
+  bad/good example pair are all required, and a malformed entry panics at
+  init rather than shipping half-documented
+- `framework/docs/content/contracts.md` — the capability table and any
+  behaviour a reader would be surprised by
+- An analyzer claiming a rule that is not in the catalog panics at init.
+  The reverse — a catalog rule no analyzer emits — is caught by
+  `TestEveryCatalogRuleHasAnAnalyzer` in the analyzers package (it has to
+  live there: the catalog deliberately does not import its analyzers, so
+  the same test in `framework/contracts` could only ever skip)
+- The catalog is checked against itself: no rule may fire on its own good
+  example, and a rule's bad example must produce it. An example that needs
+  more context than one file can express goes in
+  `examplesNeedingMoreContext` WITH the reason
+- `README.md` and `CHANGELOG.md` quote the rule count.
+  `TestAdvertisedRuleCountMatchesTheCatalog` fails the build until they
+  match — adding a rule is a three-file change, not one
+
+**You added ANY file to `framework/docs/content/`:**
+- `examples/site/docs_catalog.go` — add the slug to an intent group, or
+  the site's A–Z index links a page that 404s. `TestEveryEmbeddedDocIsInCatalog`
+  catches it, but only in the slow `examples/site` suite, so it is easy to
+  miss locally
 
 **You changed migration directives or the migrate CLI:**
 - `framework/docs/content/migrations.md`

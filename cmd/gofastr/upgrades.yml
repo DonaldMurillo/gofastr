@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.58.0
+through: v0.59.0
 
 releases:
   - version: v0.3.0
@@ -608,3 +608,10 @@ releases:
       - change: A Go map or slice Default on a schema.JSON field now emits valid DDL
         breaking: false
         guidance: "No action needed. SQLDefault used to render such a default with fmt.Sprintf(\"%v\"), emitting DEFAULT 'map[a:1]' — which Postgres rejects on a JSONB column, so AutoMigrate failed at boot while SQLite stored the literal text and looked fine. It now marshals to JSON before quoting. A declaration that could not boot on Postgres will boot; nothing that worked stops working. If you worked around this with a string Default containing JSON, that keeps working unchanged."
+  - version: v0.59.0
+    title: Contracts and semantic analysis (gofastr verify)
+    notes:
+      - change: gofastr verify, the build gate, and the dev-loop contracts watcher
+        breaking: false
+        guidance: "Additive. `gofastr verify` reports on the tree and `gofastr build` gates on error findings — an existing app with findings adopts via `gofastr verify --strict --baseline-write` (accepts current debt, fails on new) or relaxes named rules in gofastr.contracts.yml; every opt-out is reported. `--no-contracts` skips the build gate once. Nothing changes at runtime: the semantic-coverage recorder is off unless GOFASTR_SEMANTIC_COVERAGE=1 or the TestHarness enables it."
+        detect: "gofastr build|NewApp"

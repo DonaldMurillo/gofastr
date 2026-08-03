@@ -133,20 +133,28 @@ fails silently, and the browser uses the fallback font instead.
 Self-host the font instead:
 
 1. Put the font files under your static dir:
-   `static/fonts/Inter-Variable.woff2` (serve it with
+   `static/fonts/inter.woff2` (serve it with
    `uihost.WithStaticDir("static")`).
-2. Add the `@font-face` rule through site CSS —
-   `uihost.WithCustomCSS` / `ReadCustomCSSFile("static/app.css")`:
+2. Generate the `@font-face` rule with `style.FontFaceCSS` and pass it
+   through `uihost.WithCustomCSS`:
 
-   ```css
-   @font-face {
-     font-family: "Inter";
-     font-style: normal;
-     font-weight: 100 900;
-     font-display: swap;
-     src: url("/fonts/Inter-Variable.woff2") format("woff2");
-   }
+   ```go
+   css := style.FontFaceCSS("", style.WebFont{Family: "Inter"})
+   // → @font-face { font-family: 'Inter'; font-style: normal;
+   //     font-weight: 400 700; font-display: swap;
+   //     src: url('/fonts/inter.woff2') format('woff2'); }
    ```
+
+   The file name is derived from the family by `style.FontSlug`
+   (`"Inter"` → `inter`, `"IBM Plex Mono"` → `ibm-plex-mono`), so the
+   URL in the rule and the file you drop on disk cannot disagree. Set
+   `File` to override it, and `Weight` / `Style` / `Display` to override
+   the defaults above. Pass a first argument to serve fonts from
+   somewhere other than `/fonts`.
+
+   Writing the `@font-face` string by hand works too, but it is a second
+   styling surface: `gofastr verify` reports it as `GOFASTR1801`, for
+   the same reason it reports any other app-authored CSS.
 
 3. Name the family in the theme tokens:
 
