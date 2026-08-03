@@ -37,6 +37,15 @@ was launched.
 | `framework_docs_list`   | Every framework doc topic embedded in the binary (name, title, summary).              |
 | `framework_docs_get`    | Full markdown of one topic by name (e.g. `entity-declarations`).                      |
 | `framework_docs_search` | Substring search across all topics (min 3 chars, `limit` caps hits).                  |
+| `contracts_list`        | Every rule `gofastr verify` enforces: ID, slug, capability, default severity, one-line summary. Optional `capability` filter. |
+| `contracts_explain`     | One rule in full — what it detects, why it matters, how to fix it, a bad/good example pair, and the exact suppression syntax. Takes an ID (`GOFASTR1002`) or a slug (`routing/colon-path-parameter`). |
+| `contracts_capabilities`| The rule capabilities with counts and severity breakdown; use to pick the argument for `gofastr verify <capability>`. |
+| `contracts_verify`      | **Dev loop only.** Runs the analyzers over the app's source tree and returns the findings — rule, file, line, severity, message, whether it is autofixable. Same analysis as `gofastr verify`. Optional `capability` filter. |
+| `contracts_fix`         | **Dev loop only. Writes to disk.** Applies one rule's autofixes and reports the files changed. Takes an ID or slug; scoped to a single rule so the edits stay reviewable. Rules without an autofix are refused. |
+
+`contracts_verify` and `contracts_fix` are absent — not merely refused —
+outside `gofastr dev`: they read and write local source, so a deployed
+app never registers them.
 
 The `framework_docs_*` tools answer "how does the framework work?"
 questions against the exact framework version the binary was built

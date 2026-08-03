@@ -178,6 +178,10 @@ results, the harness contract) are exempt — the exemption list lives in
 
 - [The gofastr CLI](cli.md) — one binary; maps each `gofastr` command to
   the doc that covers it.
+- [Contracts](contracts.md) — `gofastr verify`: the rules that say whether
+  an app is still an idiomatic GoFastr app, not merely a compiling one.
+  Routing, permissions, security, architecture, rendering, semantic
+  coverage. Strict by default, relaxed only in writing.
 - [Static-site export](static-export.md) — `app.ExportStatic`: render
   every route in-process to a directory of query-free HTML + assets for
   any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;

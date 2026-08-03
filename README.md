@@ -296,6 +296,7 @@ uploads, sparse updates. Hooks run inside the write's transaction
 - **Security scopes live in the declaration, fail-closed.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (403), `multi_tenant` scopes by tenant — and `gofastr validate` flags PII-shaped fields (email, phone, address, …) exposed without any of them. The MCP tools respect the same scopes as the REST routes.
 - **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main`. Registration is ordinary Go in the generated files; no reflection discovers your entities, and no platform sits between your binary and your server.
 - **Batteries are separate packages.** Auth, cache, email, queue, search, storage sit behind narrow interfaces — swap any one without forking.
+- **The framework checks whether you're still using it well.** `gofastr verify` runs 49 contract rules over your code — routing, permissions, security, architecture, rendering, accessibility — and reports what drifted, each finding carrying the reason, the fix, and a worked example. It also measures *semantic* coverage: not "did this line run" but "did a request ever reach this route through the real router, did this permission ever get evaluated, did this lifecycle hook ever fire". Strict by default; relax a rule in `gofastr.contracts.yml` or waive one line with `//gofastr:allow(RULE) reason`, both visible in review. An existing codebase adopts it with `--baseline-write`, which accepts today's debt and fails on anything added. See [`contracts.md`](framework/docs/content/contracts.md).
 - **A blueprint scaffolds the whole app when you want a head start.** A single `gofastr.yml` generates both halves — SQL + REST + OpenAPI + MCP *and* the screens — in one pass, consistent from the start. Then it's plain Go you own and edit, and the running app never needs the blueprint again. See [`examples/meridian`](examples/meridian/) for the whole pipeline — a SaaS console + marketing site — live and tested.
 
 ## The repo in 60 seconds
@@ -306,7 +307,7 @@ uploads, sparse updates. Hooks run inside the write's transaction
 | `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting its focused runtime subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
 | `core-ui/` | Server-driven UI runtime — `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
 | `battery/` | Opt-in infrastructure — admin, auth, cache, email, semantic, log, notify, print, queue, search, setup, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
-| `cmd/gofastr` | The CLI — `init`, `generate`, `pack` (lossy app→blueprint snapshot), `migrate`, `build`, `dev`, `docs`, and more. | you're scaffolding or generating code. |
+| `cmd/gofastr` | The CLI — `init`, `generate`, `pack` (lossy app→blueprint snapshot), `migrate`, `build`, `dev`, `verify`, `docs`, and more. | you're scaffolding, generating, or checking code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
 | `examples/` | Runnable reference apps — the `meridian` blueprint flagship (a SaaS billing console + marketing site), the `ecommerce` blueprint pipeline, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
 
@@ -355,7 +356,8 @@ Every doc below is embedded into the `gofastr` binary — `gofastr docs` browses
 them offline, and the `framework_docs_*` MCP tools expose them to agents
 connected to a running app.
 
-- [The gofastr CLI](framework/docs/content/cli.md) — every subcommand mapped to its doc: init, dev, migrate, generate, audit, upgrade
+- [The gofastr CLI](framework/docs/content/cli.md) — every subcommand mapped to its doc: init, dev, migrate, generate, verify, audit, upgrade
+- [Contracts](framework/docs/content/contracts.md) — **`gofastr verify`**: the 49 rules that say whether an app is still an idiomatic GoFastr app, semantic coverage beyond line coverage, and how an existing codebase adopts the gate with a baseline
 - [Blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md) — **generate a whole app from one file**: blueprint → generated UI + API → auth + owner scoping + RBAC → customize in plain Go → deploy
 - [Kiln (experimental)](framework/docs/content/kiln.md) — agent-driven build mode
 - [UI capability map](framework/docs/content/ui-capability-map.md) — **start from the job**: architecture, state ownership, delivery/scaling semantics, runnable proof, and explicit non-goals

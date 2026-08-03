@@ -7,6 +7,213 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **`gofastr verify` — contracts and semantic analysis.** A single
+  pipeline that answers "is this still an idiomatic GoFastr application",
+  where `go build` answers "does it compile" and `go vet` answers "is
+  anything obviously wrong". It discovers the route table, entity
+  declarations, permission strings, and rendering surface, then reports
+  where they no longer hold — with the reason and the fix attached to
+  every finding. See `gofastr docs contracts`.
+
+  49 rules across twelve capabilities: `routing`, `permissions`,
+  `security`, `data`, `entities`, `architecture`, `rendering`,
+  `accessibility`, `performance`, `testing`, `ai`, `meta`. Each is also a
+  filter — `gofastr verify routing security` runs two of them.
+
+  Rules are data, not error strings: every one carries a stable ID
+  (`GOFASTR1002`), the consequence, the remedy, and a bad/good example
+  pair, validated at init. `gofastr verify --list` prints the catalog;
+  `--explain <rule>` prints one in full, and a mistyped ID gets
+  closest-match suggestions rather than silence.
+
+  Two of the routing rules catch failures that are otherwise silent.
+  `GOFASTR1002` finds Express-style `:id` in a ServeMux pattern — it
+  registers cleanly and 404s every real request. `GOFASTR1005` finds a
+  lowercase method — it registers cleanly and 405s every real request.
+  Neither produces a boot error or a log line today.
+
+- **`GOFASTR1903` — auth configured but never mounted.** `auth.New(...)`
+  builds a manager; without `auth.SessionMiddleware`, `auth.RequireAuth`,
+  or `auth.BFF` in the chain, no request ever carries a user, so every
+  signed-in caller gets 401 identically to a real intruder. The app looks
+  configured and the login form works. This is not hypothetical — it
+  shipped from the blueprint generator, which enabled the battery and
+  never mounted the middleware. In a module with several binaries each is
+  checked separately, by import reachability: one app's mount says
+  nothing about another app's manager, which its binary never links.
+
+- **Strict by default, relaxed only in writing.** Every rule is enforced
+  at its declared severity; there is no opt-in. The two ways to say no
+  both leave a trace: `//gofastr:allow(RULE) reason` waives one instance
+  (a directive with no reason, an unknown rule, or one that stops matching
+  anything is itself a finding), and `gofastr.contracts.yml` — or a
+  `contracts:` block in `gofastr.yml` — relaxes a rule, a capability, or a
+  path. Every relaxation is printed in the report footer, so a run that
+  passes because half of it was switched off says so.
+
+- **Semantic coverage** (`framework/semcov`). Line coverage says a
+  statement ran; it cannot say a request ever reached a route through the
+  real router, middleware chain, and auth check. `framework.TestHarness`
+  now records six dimensions a suite genuinely exercised into
+  `.gofastr/semantic-coverage.json` — routes (by registered pattern, not
+  request path), permissions, roles held, entity CRUD operations,
+  lifecycle hook firings, and published event types — and the `testing`
+  rules diff that against the discovered surface. Automatic for suites already using the harness;
+  `framework.RecordSemanticCoverage(t, app)` for anything else;
+  `GOFASTR_NO_SEMANTIC_COVERAGE` opts out. A missing manifest reports at
+  info level and does not fail — a manifest that exists but misses a
+  route does.
+
+  Two distinctions carry the weight. A permission **denial** counts as
+  coverage: a test asserting a rejection proves the boundary at least as
+  well as one asserting a grant, and the failure worth catching is a
+  check never reached at all. A hook firing is recorded only when
+  something is *registered* for that lifecycle point — `ExecuteHooks`
+  runs on every CRUD operation regardless, so crediting the call would
+  hand every entity full hook coverage on its first request.
+
+  `GOFASTR_SEMANTIC_COVERAGE=1` turns recording on for a *serving*
+  process, so an integration test that builds the binary and drives it
+  over real HTTP still counts — that shape never touches the test harness,
+  and every route it exercised was previously invisible. The e2e test
+  `gofastr generate` emits sets it.
+
+  Roles (`GOFASTR1109`) invert the usual worry: a role granting too little
+  surfaces as a broken feature someone reports, while one granting too
+  much surfaces as nothing at all until it is used.
+
+  Hooks (`GOFASTR1107`) and event subscribers (`GOFASTR1108`) are the two
+  surfaces with no callers to follow: nothing invokes them by name, so a
+  rename on the emitting side leaves the subscriber compiling, the suite
+  green, and the notification never sent.
+
+- **`access.SetObserver`, `hook.SetObserver`, `event.SetObserver`** —
+  evaluation, firing, and emission callbacks, the same inversion
+  `router.SetServeHook` uses. Test tooling installs them;
+  `framework/access`, `framework/hook`, and `framework/event` stay
+  dependency-free leaves and production pays one atomic load per check.
+
+- **Baselines — the adoption ratchet.** `gofastr verify --baseline-write`
+  records every current finding into `.gofastr-contracts-baseline.json`;
+  subsequent runs pass on that debt and fail on anything added. Without
+  it, strict-by-default and an existing codebase pull against each other:
+  hundreds of findings at once, and the realistic response is to turn the
+  tool off or downgrade every rule to warn.
+
+  Counts are keyed by (rule, file) rather than by line, so a reformat does
+  not invalidate the baseline — moving a finding within a file keeps it
+  accepted, adding one more does not. When findings are fixed the report
+  says which entries are now over-accepting, because that slack is exactly
+  where a new finding could hide; re-recording is what makes it a ratchet
+  rather than a mute button.
+
+  Only *gating* findings are recorded — anything below the run's fail-on
+  severity is skipped, because an entry for a finding that cannot fail the
+  run would absorb it on every later run and silence a signal the project
+  deliberately kept visible.
+
+  This repository now carries one (65 findings) and its CI gate runs
+  `--strict`, so warnings gate too. Before, the gate could only fail on
+  errors and a change adding fifty unguarded mutations would have passed.
+
+  Its config downgrades the semantic-coverage rules to `info`. Those
+  record *which tests ran*, which differs by environment — CI excludes
+  some chromedp packages and runs Postgres suites a laptop skips — so
+  gating a shared CI on a recorded baseline of them is flaky by
+  construction. Verified rather than assumed: halving the manifest's
+  recorded routes turned `verify --strict` from exit 0 into exit 1 before
+  the downgrade, and leaves it at 0 after.
+
+- **`--changed` — verify only what this change touched.** `gofastr verify
+  --changed` reports findings in uncommitted files (including untracked
+  ones); `--changed=main` reports everything since the branch forked, from
+  the fork point rather than the tip. The pre-commit, dev-loop, and
+  PR-review question is the same narrower one, and a whole-tree report
+  answers a different question.
+
+  The analysis still runs over the whole tree — the route table, entity
+  list, and coverage manifest are only meaningful whole — so a duplicate
+  route introduced by editing one file is still found. Only reporting
+  narrows, and the run states how many findings it withheld.
+
+  The repository's `.githooks/pre-commit` uses it, so a commit that adds a
+  contract finding fails locally before CI sees it — with a report scoped
+  to the files that commit touches.
+
+- **`gofastr dev` reports contract findings after each reload**, scoped to
+  what changed — the practical approximation of the RFC's inline-diagnostics
+  goal. It runs *behind* the restart, never before it: a second added to
+  every save is the difference between a loop people use and one they turn
+  off. The output is one line per finding with the rule ID, capped and
+  deduplicated, so the reasoning stays in `verify --explain` rather than
+  burying the loop. Fixing the last finding prints `contracts: clean` once.
+
+- **Machine-readable output.** `--json` emits every diagnostic with its
+  whole rule attached, so an agent handed one finding can act on it
+  without a second call. `--sarif <file>` writes SARIF 2.1.0 for GitHub
+  code scanning and IDE inline diagnostics, declaring the analysed root in
+  `originalUriBaseIds`: artifact URIs are relative to that root, which is
+  not necessarily the repository root, and without the declaration a
+  consumer assumes repo-root and maps every annotation onto a path that
+  does not exist — silently. `--fix` applies the
+  mechanical fixes and re-verifies. Fixes are gofmt-ed after application,
+  so an edit only has to be syntactically correct rather than reproduce
+  the surrounding indentation — which is what makes inserting fields into
+  a multi-line composite literal safe. A file's original line endings
+  survive: gofmt emits LF, so CRLF is restored afterwards — without that,
+  a one-line fix in a Windows working tree rewrote every line in the file. `GOFASTR1005` (uppercase the
+  method), `GOFASTR1404` (add the missing cookie attributes), and
+  `GOFASTR0002` (delete a stale suppression) ship fixes. Every edit
+  records the text it expects to replace and is refused if the file
+  changed since analysis or the result would no longer parse; an aborted
+  pass names the files it already rewrote. `--fix` also says when
+  nothing could be fixed, and why. The report admits its blind spots:
+  `unparsed` counts files the parser rejected, so "no findings there"
+  never reads as "clean".
+
+- **Deliberate non-goals**, documented in `gofastr docs contracts` so they
+  do not read as oversights: middleware-execution coverage (it would need
+  a permanent per-request wrapper for a rule that cannot realistically
+  fire, since `app.Use` middleware runs on every request by definition)
+  and rules over `framework/experimental/apiversions` (pinning an
+  experimental API's shape is the opposite of what experimental is for).
+
+- **MCP contract tools.** `WithMCPIntrospection()` now also serves
+  `contracts_list`, `contracts_explain`, and `contracts_capabilities`, so
+  an agent connected to a live app can read what the framework expects
+  before writing code rather than after a build rejects it.
+
+- **MCP contract tools, dev loop.** Under `gofastr dev`, `contracts_verify`
+  runs the analyzers over the app's source and returns structured
+  findings, and `contracts_fix` applies one rule's autofixes and reports
+  the files it changed — so an agent can verify, explain, and fix without
+  shelling out. Both touch local source files, so neither is registered
+  outside the dev loop: a production `/mcp` does not gate them, it does
+  not have them.
+
+- **A `go vet` stage in every mode**, with its outcome in every report
+  (`vet.ran` / `vet.passed` / `vet.skipped`). A failing vet fails the
+  run: an empty diagnostic list on a tree that will not compile means
+  "could not look", not "nothing found".
+
+- **`check.ScanInlineScriptsIn`** (`core-ui/check`) — a per-file entry
+  point for the inline-script linter, so callers that already hold a
+  parsed AST (the contracts pass, on every dev-loop save) can lint
+  without re-reading and re-parsing the tree.
+
+- **Custom rules.** `contracts.RegisterRules` and `contracts.Register`
+  accept project-defined rules and analyzers alongside the built-in
+  catalog, and they ride the whole pipeline: config severity and `off`,
+  exemptions, `//gofastr:allow` with a mandatory reason, the baseline
+  ratchet, text/JSON/SARIF output, and the MCP catalog tools. Custom IDs
+  use their own uppercase prefix (`ACME101`); the `GOFASTR` namespace and
+  its per-capability number blocks stay reserved for the built-in
+  catalog, so a suppression written today cannot collide with a future
+  release. A worked example — a project gate command with its own rule —
+  is in `gofastr docs contracts` under "Your own rules".
+
 ## [0.56.0] - 2026-08-02
 
 Windows support, and the SQLite driver swap it required. `mattn/go-sqlite3`

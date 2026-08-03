@@ -56,9 +56,12 @@ FLOORS="
 ./core/schema/ 97.0
 ./framework/ 95.5 nomatch:/processmodule
 ./framework/ 84.0 match:/processmodule
+./framework/contracts/ 72.0
+./framework/contracts/analyzers/ 70.5
 ./framework/crud/ 96.9
 ./framework/entity/ 86.5
 ./framework/migrate/ 73.5
+./framework/semcov/ 87.0
 ./framework/tenant/ 85.5
 "
 

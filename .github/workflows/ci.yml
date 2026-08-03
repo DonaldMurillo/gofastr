@@ -143,6 +143,33 @@ jobs:
         # value). Floor table + exclusions live in the script.
         run: bash scripts/coverage-floors.sh
 
+      - name: Contracts (gofastr verify)
+        # The framework held to its own contract. Runs AFTER the test step
+        # so the semantic-coverage manifest those tests write is on disk —
+        # without it the testing rules report "no manifest" and check
+        # nothing, which would look like a pass.
+        #
+        # --no-vet because the Vet step above already ran it over the whole
+        # module; repeating it here would double the slowest part of this
+        # job for no new signal.
+        #
+        # --strict makes WARNINGS fail too, which is only tractable because
+        # of the baseline: .gofastr-contracts-baseline.json records the debt
+        # that existed when the gate went in, so this run fails on findings
+        # ADDED after that point and not on the ones already there.
+        #
+        # Without it the gate could only fail on errors, and a change adding
+        # fifty unguarded mutations would pass — which is the same as having
+        # no gate for two thirds of the catalog.
+        #
+        # Pay the debt down and re-record with `gofastr verify --strict
+        # --baseline-write`; the run tells you when an entry is
+        # over-accepting. Relaxations live in gofastr.contracts.yml, in the
+        # repository, in review — not in this file as CI-only flags nobody
+        # reads.
+        run: |
+          go run ./cmd/gofastr verify --no-vet --strict
+
   security:
     name: "vulncheck · secrets · mod-verify (blocking)"
     runs-on: ubuntu-latest
