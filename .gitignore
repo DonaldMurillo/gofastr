@@ -33,6 +33,7 @@ gen/
 # blueprint into before compiling it. Removed by the test itself; ignored so
 # a killed run never offers it up for commit.
 examples/meridian/blueprintgen/
+examples/ecommerce/blueprintgen/
 
 # Local Ollama model cache (bind-mount target of docker-compose.yml).
 # Pulled models are ~hundreds of MB; never commit.

@@ -7,6 +7,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+
+- The `examples/ecommerce` flagship test no longer regenerates the committed
+  example into the working tree. It ran the generator with `--force` in the
+  repo directory, so a suite run rewrote tracked `app/` files — dirtying the
+  tree before a commit, and silently reverting if anyone ran
+  `git checkout -- examples/`. It now emits into a gitignored scratch package
+  inside the module, the same arrangement `examples/meridian` already used.
+  The assertion the overwrite was standing in for is now explicit:
+  `TestCommittedAppMatchesGeneratorOutput` diffs generator output against the
+  committed `app/` and names the stale file, so drift is a failing test rather
+  than a dirty tree nobody reads. (#176)
+
 ## [0.58.0] - 2026-08-03
 
 ### Fixed
