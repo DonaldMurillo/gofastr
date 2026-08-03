@@ -39,6 +39,31 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- `ui.SiteHeaderLink.MatchPrefix` activates on canonical hrefs with no
+  trailing slash: `/docs` now lights up on `/docs` and `/docs/getting-started`
+  (and still not on `/docs-old`, since matching is on segment boundaries).
+  The runtime previously prefix-matched only hrefs ending in `/`, which made
+  the attribute inert for apps that register `/docs` rather than `/docs/`.
+  Applies to the initial render and to client-side navigation, desktop and
+  mobile. (#171)
+- A `schema.JSON` field is writable through the generated CRUD routes. The
+  handler bound the decoded Go value straight to the driver, so every create
+  or update that populated one failed with a 500 (`unsupported type
+  map[string]interface {}, a map`) — leaving the field unreachable through any
+  supported interface. Values are now marshalled on write and parsed on read,
+  so a JSON document round-trips as a document on create, update, get, list,
+  cursor pages, `?stream=true`, and `?include=` rows. A string still means
+  JSON text and is stored verbatim; text that is not JSON reads back
+  unchanged. Note the read change is visible to existing clients: a JSON
+  column that used to arrive as a string now arrives parsed. (#170)
+- `/openapi.json` no longer advertises CRUD paths for entities with
+  `Exposure.CRUD: false`. The router honoured the opt-out and the spec did
+  not, so the spec documented a management API the server answered 404 for —
+  worst exactly where the opt-out was deliberate — and generated SDKs shipped
+  methods that could not work. Only the generated surface goes: the entity's
+  schema component stays, and so do hand-written `Endpoints` (the router
+  mounts those whether or not auto-CRUD is on). An unset `CRUD` still means
+  enabled. (#169)
 - Boot `AutoMigrate` no longer applies `RENAME COLUMN` (additive-only); a stale
   `Renames` hint can no longer rename the wrong in-use column at startup.
 - `Scheduler.runTick` no longer blocks the run loop on in-flight jobs, so

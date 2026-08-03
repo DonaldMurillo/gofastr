@@ -26,8 +26,10 @@ type SiteHeaderLink struct {
 	Label string
 	// Href is the navigation target.
 	Href string
-	// MatchPrefix, when true, lights the link active on any URL that
-	// shares the Href as a prefix (e.g. /docs/foo matches /docs/).
+	// MatchPrefix, when true, lights the link active on Href itself and
+	// on any URL that continues it at a segment boundary — /docs matches
+	// /docs and /docs/getting-started, but not /docs-old. The trailing
+	// slash is optional: /docs and /docs/ behave identically.
 	// Wires the data-fui-match-prefix runtime attribute.
 	MatchPrefix bool
 	// External, when true, opens in a new tab. Only honored in the

@@ -147,7 +147,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				}
 			}
 			cols = append(cols, f.Name)
-			vals = append(vals, val)
+			vals = append(vals, ch.bindJSONValue(f.Name, val))
 		}
 		if ch.Entity.Config.Scope.MultiTenant {
 			if tid := tenant.GetTenantID(ctx); tid != "" {
@@ -198,7 +198,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		sb.WriteString(strings.Join(visFields, ", "))
 
 		row := ch.DB.QueryRowContext(ctx, sb.String(), vals...)
-		res, err := scanRow(row, visFields, ch.convertKey)
+		res, err := ch.scanOne(row, visFields)
 		if errors.Is(err, sql.ErrNoRows) && len(setParts) == 0 {
 			// DO NOTHING fired against an existing row (nothing to update),
 			// so RETURNING produced zero rows. The contract is "return the
@@ -219,7 +219,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			ch.ApplySoftDeleteFilter(selQB, req)
 			selSQL, selArgs := selQB.Build()
 			sel := ch.DB.QueryRowContext(ctx, selSQL, selArgs...)
-			res, err = scanRow(sel, visFields, ch.convertKey)
+			res, err = ch.scanOne(sel, visFields)
 		}
 		if err != nil {
 			return fmt.Errorf("upsert: %w", err)

@@ -84,7 +84,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			}
 		}
 		cols = append(cols, f.Name)
-		vals = append(vals, val)
+		vals = append(vals, ch.bindJSONValue(f.Name, val))
 	}
 
 	if ch.Entity.Config.Scope.MultiTenant {
@@ -109,7 +109,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	sqlStr, args := ib.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-	result, err := scanRow(row, visFields, ch.convertKey)
+	result, err := ch.scanOne(row, visFields)
 	if err != nil {
 		return nil, fmt.Errorf("insert: %w", err)
 	}
@@ -184,7 +184,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		if !ok {
 			continue
 		}
-		ub.Set(f.Name, val)
+		ub.Set(f.Name, ch.bindJSONValue(f.Name, val))
 		anySet = true
 	}
 	if !anySet {
@@ -217,7 +217,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	sqlStr, args := ub.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-	result, err := scanRow(row, visFields, ch.convertKey)
+	result, err := ch.scanOne(row, visFields)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errNotFound
@@ -325,7 +325,7 @@ func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id s
 	ch.ApplySoftDeleteFilter(qb, r)
 	sqlStr, args := qb.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-	result, err := scanRow(row, cols, ch.convertKey)
+	result, err := ch.scanOne(row, cols)
 	if err != nil {
 		return nil, err
 	}
