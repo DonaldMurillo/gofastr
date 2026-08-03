@@ -15,6 +15,10 @@ import (
 // guidance fails here (the "five tools" drift already happened once).
 func TestIntrospectionGuidanceNamesEveryTool(t *testing.T) {
 	app := NewApp(WithMCPIntrospection(), WithMCPControl())
+	// Dev-only tools need documenting too — they are the ones an agent
+	// meets first, in the dev loop. Without this flag they register
+	// nowhere in this test and would be silently exempt from the gate.
+	app.mcpIntrospectionDevImplied = true
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}

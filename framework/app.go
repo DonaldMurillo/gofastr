@@ -453,16 +453,21 @@ func WithRouter(r *router.Router) AppOption {
 	}
 }
 
-// Router returns the App's *router.Router for advanced use (plugin authors,
-// batteries that need to register routes with custom matching, sub-router
-// construction). Application code should prefer the App-level helpers:
+// Router returns the App's *router.Router, which is where custom routes are
+// registered:
 //
-//   - App.Use(mw)        — register middleware  (instead of Router().Use)
-//   - App.Get/Post/...   — register routes      (instead of Router().Handle)
-//   - App.Group(prefix)  — sub-routes           (instead of Router().Group)
+//	a.Router().Handle("POST", "/orders/{id}/confirm", confirmOrder)
+//	a.Router().Get("/healthz", healthz)
 //
-// Both forms are functionally equivalent — App.Use forwards to Router().Use —
-// but the App-level surface is the canonical one in docs and examples.
+// Patterns are net/http ServeMux syntax — `{id}`, not `:id`. An
+// Express-style `:id` segment matches literally and 404s every real
+// request; `gofastr verify` catches it (GOFASTR1002).
+//
+// Two App-level helpers sit above it and are preferred where they apply:
+//
+//   - App.Use(mw)        — middleware, forwards to Router().Use
+//   - App.Group(prefix)  — a sub-router carrying a prefix, middleware,
+//     access rules, and an OpenAPI tag. Anything guarded belongs here.
 //
 // Exposed as a method (rather than a field) so plugins and batteries can
 // swap or wrap the router during Init without callers depending on direct
@@ -2127,6 +2132,25 @@ func (a *App) InitPlugins() error {
 			}
 			a.Logger().Warn("dev MCP introspection tools partially skipped", "error", err)
 		}
+		// The contract catalog rides along with introspection: both answer
+		// "what shape is this app expected to have", and an agent that can
+		// see the routes should also be able to see the rules those routes
+		// are held to.
+		if err := a.registerContractTools(); err != nil {
+			if !a.mcpIntrospectionDevImplied {
+				return err
+			}
+			a.Logger().Warn("dev MCP contract tools partially skipped", "error", err)
+		}
+		// contracts_verify / contracts_fix read (and fix WRITES) the source
+		// tree, so they ride the dev-implied flag rather than introspection
+		// itself: an explicit WithMCPIntrospection() in production must not
+		// hand an MCP client a file-writing tool. See mcp_contracts_dev.go.
+		if a.mcpIntrospectionDevImplied {
+			if err := a.registerContractDevTools(); err != nil {
+				a.Logger().Warn("dev MCP contract source tools partially skipped", "error", err)
+			}
+		}
 	}
 	// Mutating control tools, separately opted in (trusted /mcp only).
 	if a.mcpControl {
@@ -2173,7 +2197,11 @@ func (a *App) HookRegistry(entityName string) *hook.HookRegistry {
 		a.hooks = make(map[string]*hook.HookRegistry)
 	}
 	if _, ok := a.hooks[entityName]; !ok {
-		a.hooks[entityName] = hook.NewHookRegistry()
+		reg := hook.NewHookRegistry()
+		// Label it so a hook firing can be attributed to this entity in
+		// the semantic-coverage manifest.
+		reg.SetLabel(entityName)
+		a.hooks[entityName] = reg
 	}
 	return a.hooks[entityName]
 }
@@ -2482,6 +2510,11 @@ func (a *App) warnUnresolvableRelations() {
 
 // Start starts the HTTP server on the given address.
 func (a *App) Start(addr string) error {
+	// Opt-in via GOFASTR_SEMANTIC_COVERAGE=1, so an integration test that
+	// drives the real binary over HTTP still records what it exercised.
+	// No-op in every other process.
+	a.enableSemanticCoverageFromEnv()
+
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		return fmt.Errorf("resolve isolation: %w", err)

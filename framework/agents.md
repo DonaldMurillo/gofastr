@@ -104,6 +104,20 @@ Adds `framework_docs_list`, `framework_docs_get`,
 endpoint so a connected agent can answer "what routes exist" / "is the app
 ready" / "did my routine body change land" without leaving the session.
 
+It also adds the contract catalog — `contracts_list`,
+`contracts_explain`, `contracts_capabilities` — so an agent can read what
+the framework *requires* of app code (with the reasoning, the fix, and a
+worked example per rule) before writing any, rather than after
+`gofastr verify` rejects it.
+
+In the dev loop (`gofastr dev`) two more join them: `contracts_verify`
+runs the analyzers over the app's own source tree and returns the
+findings as structured diagnostics, and `contracts_fix` applies one
+rule's autofixes and reports which files changed. Both read — and
+`contracts_fix` writes — local source, so they are registered **only**
+when dev implies the MCP surface. A production `/mcp` does not gate
+them; it does not have them.
+
 `framework.WithMCPControl()` is the mutating counterpart: adds
 `app_module_enable` / `app_module_disable` for runtime state control
 on trusted /mcp endpoints.
