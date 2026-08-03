@@ -7,6 +7,38 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-08-03
+
+### Breaking
+
+- **BREAKING: a malformed field `Default` now fails registration.** The change
+  surfaces an existing bug rather than creating one — the declaration was
+  already broken, it just failed per-request instead of at boot — but an app
+  that starts today can stop starting, so treat it as breaking. `App.Entity`
+  panics as it already does for other declaration errors (relation without
+  `To`, duplicate fields, wire-key collisions); `TryEntity` returns the error.
+  Fix the declaration the message names.
+
+### Fixed
+
+- **Field `Default` values are validated at registration** (`framework/entity`).
+  A `Default` is the value `crud.doCreate` substitutes for a field the request
+  body omitted, and it reached the driver through the same column as a
+  client-sent value but through none of the same checks — `ValidateAll` ran
+  over the body and the `Default` was applied afterwards. A caller who *sent*
+  the bad value got a 400 naming the field; a caller who *omitted* it got a
+  500 with nothing actionable in it. `Entity.Validate` now runs
+  `schema.Validate` over every `Default`, so a malformed one fails the
+  declaration at boot with the field named. The clearest case was
+  `{Type: schema.JSON, Default: "draft"}`: 500 against Postgres `JSONB`, and
+  stored unchanged in SQLite's `TEXT` — the same declaration broken on one
+  dialect and silently fine on the other. Auto-generated fields are exempt
+  (their `Default` is never an insert value; it survives only as the column's
+  DDL `DEFAULT`). Two Go spellings a JSON body cannot produce are normalized
+  before validating rather than refused: a `schema.Decimal` default written as
+  a Go number (what `gofastr generate` emits for `default: 0`) and a
+  `Timestamp`/`Date` default written as a `time.Time`. (#174)
+
 ## [0.56.0] - 2026-08-02
 
 Windows support, and the SQLite driver swap it required. `mattn/go-sqlite3`
@@ -565,6 +597,8 @@ failed first.
   the pages that existed but were unreachable. New pages: `email.md`,
   `storage.md`, and `core-packages.md` (a map of the exported `core/*`
   packages that had no page).
+
+## [0.53.0] - 2026-07-30
 
 The eleven pre-existing bugs the v0.52.0 review pass found in shipped code
 but deliberately left out of that release, plus a security audit of the
