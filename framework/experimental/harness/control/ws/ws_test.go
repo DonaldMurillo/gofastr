@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -187,6 +188,14 @@ func readUntilTextDelta(t *testing.T, conn net.Conn) string {
 			}
 		}
 		if err != nil {
+			// The 500ms deadline above paces the loop; it is not the
+			// budget. Breaking on it made the 3s deadline dead code and
+			// failed the test at 0.50s with an empty read whenever a busy
+			// runner took longer than half a second to produce the event.
+			var nerr net.Error
+			if errors.As(err, &nerr) && nerr.Timeout() {
+				continue
+			}
 			break
 		}
 	}
