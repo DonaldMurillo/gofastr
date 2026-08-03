@@ -10,7 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // TestRoutinesFS_PlainFileIsUpWhenDialectUnset: a single `foo.sql` maps to a

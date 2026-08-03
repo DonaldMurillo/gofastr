@@ -683,13 +683,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			pooledEncode bool
 		)
 		if len(includes) == 0 && ch.Hooks == nil {
-			pooledRows, err = scanRowsPooledWithKeys(rows, cols, keys)
+			pooledRows, err = scanRowsPooledWithKeysForEntity(rows, cols, keys, ch.Entity)
 			if err == nil {
 				results = *pooledRows
 				pooledEncode = true
 			}
 		} else {
-			results, err = scanRowsWithKeys(rows, cols, keys)
+			results, err = scanRowsWithKeysForEntity(rows, cols, keys, ch.Entity)
 		}
 		if err != nil {
 			log.Printf("crud: list scan failed: %v", err)
@@ -1247,10 +1247,19 @@ func listLimitCap(entityMax int) int {
 // scanRows scans all rows into a slice of maps, applying keyFunc to column names.
 // scanRowsPooled is the pool-backed version in pool.go.
 func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {
-	return scanRowsWithKeys(rows, cols, convertedKeys(cols, keyFunc))
+	return scanRowsForEntity(rows, cols, keyFunc, nil)
 }
 
 func scanRowsWithKeys(rows *sql.Rows, cols, keys []string) ([]map[string]any, error) {
+	return scanRowsWithKeysForEntity(rows, cols, keys, nil)
+}
+
+func scanRowsForEntity(rows *sql.Rows, cols []string, keyFunc func(string) string, ent *entity.Entity) ([]map[string]any, error) {
+	return scanRowsWithKeysForEntity(rows, cols, convertedKeys(cols, keyFunc), ent)
+}
+
+func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, ent *entity.Entity) ([]map[string]any, error) {
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), ent, cols)
 	var results []map[string]any
 	for rows.Next() {
 		values := make([]any, len(cols))
@@ -1263,7 +1272,7 @@ func scanRowsWithKeys(rows *sql.Rows, cols, keys []string) ([]map[string]any, er
 		}
 		row := make(map[string]any, len(cols))
 		for i := range cols {
-			row[keys[i]] = convertValue(values[i])
+			row[keys[i]] = convertDatabaseValue(values[i], boolCols[i])
 		}
 		results = append(results, row)
 	}
@@ -1279,6 +1288,10 @@ func scanRowsWithKeys(rows *sql.Rows, cols, keys []string) ([]map[string]any, er
 
 // scanRow scans a single row into a map, applying keyFunc to column names.
 func scanRow(row *sql.Row, cols []string, keyFunc func(string) string) (map[string]any, error) {
+	return scanRowWithBoolColumns(row, cols, keyFunc, nil)
+}
+
+func scanRowWithBoolColumns(row *sql.Row, cols []string, keyFunc func(string) string, boolCols []bool) (map[string]any, error) {
 	values := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
 	for i := range values {
@@ -1289,9 +1302,25 @@ func scanRow(row *sql.Row, cols []string, keyFunc func(string) string) (map[stri
 	}
 	result := make(map[string]any, len(cols))
 	for i, col := range cols {
-		result[keyFunc(col)] = convertValue(values[i])
+		isBool := i < len(boolCols) && boolCols[i]
+		result[keyFunc(col)] = convertDatabaseValue(values[i], isBool)
 	}
 	return result, nil
+}
+
+func (ch *CrudHandler) boolColumns(cols []string) []bool {
+	out := make([]bool, len(cols))
+	if ch == nil || ch.Entity == nil {
+		return out
+	}
+	types := make(map[string]schema.FieldType, len(ch.Entity.GetFields()))
+	for _, field := range ch.Entity.GetFields() {
+		types[field.Name] = field.Type
+	}
+	for i, col := range cols {
+		out[i] = types[col] == schema.Bool
+	}
+	return out
 }
 
 // convertValue normalizes database driver values into JSON-friendly types.
@@ -1302,6 +1331,85 @@ func convertValue(v any) any {
 	default:
 		return val
 	}
+}
+
+// databaseBoolColumns records which result columns have a boolean database
+// type. database/sql exposes SQLite booleans as int64(0|1) with modernc.org/
+// sqlite, while other drivers return bool. Keep the row shape driver-neutral
+// without turning ordinary integer columns containing 0 or 1 into booleans.
+func databaseBoolColumns(rows *sql.Rows, n int) []bool {
+	out := make([]bool, n)
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return out
+	}
+	for i := 0; i < len(types) && i < n; i++ {
+		name := strings.ToUpper(types[i].DatabaseTypeName())
+		out[i] = strings.Contains(name, "BOOL")
+	}
+	return out
+}
+
+func databaseBoolColumnsForEntity(rows *sql.Rows, n int, ent *entity.Entity, cols []string) []bool {
+	out := databaseBoolColumns(rows, n)
+	for i, isBool := range entityBoolColumns(ent, cols) {
+		if i < len(out) && isBool {
+			out[i] = true
+		}
+	}
+	return out
+}
+
+func entityBoolColumns(ent *entity.Entity, cols []string) []bool {
+	out := make([]bool, len(cols))
+	if ent == nil {
+		return out
+	}
+	types := make(map[string]schema.FieldType, len(ent.GetFields()))
+	for _, field := range ent.GetFields() {
+		types[field.Name] = field.Type
+	}
+	for i, col := range cols {
+		out[i] = types[col] == schema.Bool
+	}
+	return out
+}
+
+func convertDatabaseValue(v any, boolean bool) any {
+	if !boolean {
+		return convertValue(v)
+	}
+	switch val := v.(type) {
+	case bool:
+		return val
+	case int64:
+		return val != 0
+	case int32:
+		return val != 0
+	case int:
+		return val != 0
+	case float64:
+		return val != 0
+	case []byte:
+		return textIsTrue(string(val))
+	case string:
+		return textIsTrue(val)
+	default:
+		return convertValue(v)
+	}
+}
+
+// textIsTrue decodes a textual boolean. Drivers disagree on whether a TEXT
+// column arrives as string or []byte, so both routes share this to keep the
+// same bytes from decoding two different ways.
+//
+// Note the deliberate asymmetry with the numeric branches above, which treat
+// any non-zero as true: text accepts only "true" and "1", so "2" is false.
+// Numeric 2 comes from a real driver widening a bool; textual "2" does not,
+// and guessing at it would invent a value the column never held.
+func textIsTrue(s string) bool {
+	s = strings.TrimSpace(s)
+	return strings.EqualFold(s, "true") || s == "1"
 }
 
 // writeJSONError writes a structured JSON error response.

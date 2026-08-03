@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // openDBQueue returns a fresh in-memory SQLite + DBQueue pair. Cleanup is

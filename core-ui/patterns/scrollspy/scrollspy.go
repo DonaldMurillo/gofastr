@@ -74,6 +74,13 @@ func Wrap(cfg Config, child render.HTML) render.HTML {
 }
 
 const baseCSS = `
+/* Opt-in sticky wrapper contract for composed in-page rails. */
+.scrollspy.scrollspy--sticky {
+  position: sticky;
+  top: calc(var(--nav-h, 60px) + var(--spacing-lg, 16px));
+  align-self: start;
+}
+
 /* Style hook for the active anchor — the runtime sets both
    aria-current="true" and .is-active so apps can target either. */
 .scrollspy a.is-active,

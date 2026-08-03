@@ -46,7 +46,7 @@ func Grade(ctx context.Context, workspace, resultDir string, maintenance bool) P
 
 	buildCtx, cancelBuild := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancelBuild()
-	binary := filepath.Join(resultDir, "candidate-app")
+	binary := filepath.Join(resultDir, executableName("candidate-app"))
 	buildOut, buildErr := commandOutput(buildCtx, workspace, "go", "build", "-o", binary, ".")
 	result.BuildOK = buildErr == nil
 

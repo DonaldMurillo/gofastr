@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 // ============================================================================
@@ -809,5 +811,7 @@ func stmtString(s Statement) string {
 
 // Ensure driver registration
 func init() {
-	sql.Register("sqlite", &sqliteDriver{})
+	// Keep the in-house engine available for its direct compatibility tests
+	// without competing with modernc.org/sqlite's public "sqlite" name.
+	sql.Register("gofastr-sqlite", &sqliteDriver{})
 }

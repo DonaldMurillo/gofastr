@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // setupSQLite builds an in-memory SQLite DB with the auth users table.

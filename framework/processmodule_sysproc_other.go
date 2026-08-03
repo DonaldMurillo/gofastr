@@ -3,6 +3,7 @@
 package framework
 
 import (
+	"errors"
 	"os/exec"
 	"syscall"
 )
@@ -35,5 +36,5 @@ func processPgid(_ int) int { return 0 }
 // Job Object to clean up grandchildren. The function exists so the
 // supervisor's teardown code is cross-platform without #ifdef at every site.
 func signalProcessGroup(_ int, _ syscall.Signal) error {
-	return nil
+	return errors.New("process groups are not supported on Windows")
 }

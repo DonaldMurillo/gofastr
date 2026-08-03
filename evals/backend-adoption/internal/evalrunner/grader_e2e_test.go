@@ -40,7 +40,10 @@ func main() {
 			t.Fatal(err)
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Windows may be compiling other repository packages concurrently. Keep
+	// enough room for the candidate build/test subprocesses to start without
+	// turning a scheduler delay into a process-tree cleanup failure.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	result := Grade(ctx, workspace, resultDir, false)
 	if !result.BuildOK || !result.TestOK {

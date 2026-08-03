@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {

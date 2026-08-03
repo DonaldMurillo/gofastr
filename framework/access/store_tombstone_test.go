@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // openAccessDB opens an in-memory SQLite DB serialised to a single

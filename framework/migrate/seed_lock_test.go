@@ -14,7 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // seededEntityBuilder builds an entity whose Seed fn runs fn. Mirrors the

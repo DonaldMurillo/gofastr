@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // LocalStorage implements Storage using the local filesystem.
@@ -73,6 +75,9 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating directories: %w", err)
 	}
+	if err := fileperm.RestrictDirectoryTree(dir, s.baseDir); err != nil {
+		return fmt.Errorf("restricting directories: %w", err)
+	}
 
 	// Mode 0o600 keeps uploaded files readable only by the process
 	// owner. The default umask leaves os.Create at 0o644, which on a
@@ -97,6 +102,10 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	if err := closeErr(); err != nil {
 		_ = os.Remove(fullPath)
 		return fmt.Errorf("closing file: %w", err)
+	}
+	if err := fileperm.Restrict(fullPath, false); err != nil {
+		_ = os.Remove(fullPath)
+		return fmt.Errorf("restricting file: %w", err)
 	}
 
 	return nil

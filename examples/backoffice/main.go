@@ -31,7 +31,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 const sessionCookie = "bo_session"

@@ -44,7 +44,7 @@ func TestSidebarNestedItemsUseDisclosure(t *testing.T) {
 	})
 	out := string(c.Render())
 	for _, want := range []string{
-		`<details class="ui-sidebar__group" data-fui-disclosure open>`,
+		`<details class="ui-sidebar__group" data-fui-disclosure data-fui-disclosure-persist open>`,
 		`>Settings</span></summary>`,
 		`href="/settings/profile"`,
 		`aria-current="page"`,

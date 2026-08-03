@@ -7,7 +7,69 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-08-02
+
+Windows support, and the SQLite driver swap it required. `mattn/go-sqlite3`
+needs cgo, which is why `CGO_ENABLED=0` builds did not work; the replacement
+is pure Go. `GOOS=windows`, `GOOS=linux` and `GOOS=darwin` all build with
+`CGO_ENABLED=0`.
+
+Swapping the driver moved several behaviours that only surfaced under the new
+one. Sessions were the worst: modernc binds `time.Time` in Go's `String()`
+format, which no parser in the repo accepts, so every stored session read back
+as the zero time and looked expired. The browser E2E suites had stopped running
+on macOS at the same time and reported `PASS` while skipping, which is why it
+went unnoticed — both are fixed here.
+
+This release also carries the migration work (`SERIAL`, type-change detection,
+column renames), cron leader election, argon2id hashing, and Reader Mode.
+
+### Breaking
+
+- **BREAKING: the `sqlite3` driver is `modernc.org/sqlite`.**
+  `github.com/DonaldMurillo/gofastr/sqlite/stdlib` registers it, and
+  generated apps import it. `mattn/go-sqlite3` is out of `go.mod`. A host
+  that still imports `mattn/go-sqlite3` keeps cgo and wins the `sqlite3`
+  name, because whichever package registers it first is the one that
+  stays — drop the import.
+  Timestamps bind with `_time_format=sqlite`, which is byte-identical to
+  what mattn wrote, so existing database files read back unchanged and no
+  migration is needed. `busy_timeout` defaults to mattn's 5000ms rather
+  than modernc's 0, so a second writer waits instead of failing
+  immediately with `SQLITE_BUSY`. Set either explicitly in your DSN to
+  override.
+- **BREAKING: `sql.Open("sqlite", …)` no longer reaches the in-repo
+  engine.** `github.com/DonaldMurillo/gofastr/sqlite` registers itself as
+  `gofastr-sqlite`; the `sqlite` name belongs to modernc.
+- **BREAKING: boolean columns serialize as `true`/`false` in CRUD JSON.**
+  On mattn they came back as `0`/`1`. A client testing `row.active === 1`
+  has to change to `row.active === true`. Apps that ran on the in-repo
+  engine already saw `true`/`false` and are unaffected.
+- **BREAKING: new storage keys must be portable to Windows.**
+  `LocalStorage.Save` rejects keys whose path components contain `:`, end
+  in a space or dot, or name a reserved device (`CON`, `NUL`, `LPT1`, …),
+  so a store written on Unix can be served from Windows. `Get`, `Exists`
+  and `Delete` still accept them, so objects written by earlier releases
+  stay readable and removable. Path-traversal rules are unchanged and
+  still apply to every operation.
+- **BREAKING: repeated markdown headings get distinct ids.** A second
+  `## Setup` renders as `id="setup-2"` instead of a duplicate
+  `id="setup"`. Anchor links to the later heading change.
+
 ### Added
+
+- Windows file ACLs for storage, logs, uploads and kiln freeze snapshots,
+  restricting each to the owning account. Unix keeps the `0o600`/`0o700`
+  modes it already used.
+- `data-fui-disclosure-persist` on a `<details data-fui-disclosure>` keeps
+  it open across in-shell SPA navigation. Shell controls such as a sidebar
+  want this; an ordinary dropdown does not, and still closes.
+- Lightbox prev/next clicks and arrow keys that land while `lightbox.js`
+  is still downloading are replayed once it arrives, instead of being
+  dropped.
+- `internal/browserpath` resolves Chrome, Chromium or Edge for the
+  chromedp suites on all three platforms, including macOS `.app` bundles.
+  `GOFASTR_BROWSER_PATH` overrides it.
 
 - AutoIncrement integer primary keys render `SERIAL` on Postgres (was plain
   `INTEGER`, which has no sequence); the column is omitted from INSERT so the

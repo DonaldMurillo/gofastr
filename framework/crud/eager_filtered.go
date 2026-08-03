@@ -79,13 +79,13 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 		if err != nil {
 			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
 		}
-		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Filters, ids, result, softDeleteFilter, hidden, budget)
+		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Target, node.Filters, ids, result, softDeleteFilter, hidden, budget)
 	case entity.RelManyToOne:
 		safeFK, err := query.SafeIdent(rel.ForeignKey)
 		if err != nil {
 			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
 		}
-		return loadBelongsToFiltered(ctx, db, safeParentTable, safeParentPK, safeEntity, safeFK, rel, node.Filters, ids, result, softDeleteFilter, hidden, budget)
+		return loadBelongsToFiltered(ctx, db, safeParentTable, safeParentPK, safeEntity, safeFK, rel, node.Target, node.Filters, ids, result, softDeleteFilter, hidden, budget)
 	case entity.RelManyToMany:
 		mtmSoftDelete := softDeleteFilter
 		if mtmSoftDelete != "" {
@@ -93,7 +93,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 			// `deleted_at` would be ambiguous — qualify it with the target.
 			mtmSoftDelete = " AND " + query.QuoteIdent(safeEntity) + ".deleted_at IS NULL"
 		}
-		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Filters, ids, result, mtmSoftDelete, hidden, budget)
+		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Target, node.Filters, ids, result, mtmSoftDelete, hidden, budget)
 	}
 	return nil
 }
@@ -116,7 +116,7 @@ func hiddenColumns(target *entity.Entity) map[string]bool {
 	return set
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool, budget *includeBudget) error {
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, target *entity.Entity, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool, budget *includeBudget) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -139,6 +139,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	if err != nil {
 		return err
 	}
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), target, cols)
 	for rows.Next() {
 		if err := budget.spend(1); err != nil {
 			return err
@@ -160,7 +161,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 			if hidden[c] {
 				continue
 			}
-			row[c] = vals[i]
+			row[c] = convertDatabaseValue(vals[i], boolCols[i])
 		}
 		parentID := fmt.Sprintf("%v", fkVal)
 		if existing, ok := result[parentID]; ok {
@@ -179,7 +180,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, safeParentPK, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool, budget *includeBudget) error {
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, safeParentPK, safeEntity, safeFK string, rel entity.Relation, target *entity.Entity, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool, budget *includeBudget) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -251,6 +252,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 	if err != nil {
 		return err
 	}
+	boolCols := databaseBoolColumnsForEntity(tgtRows, len(cols), target, cols)
 	targetByID := map[string]map[string]any{}
 	for tgtRows.Next() {
 		if err := budget.spend(1); err != nil {
@@ -273,7 +275,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 			if hidden[c] {
 				continue
 			}
-			row[c] = vals[i]
+			row[c] = convertDatabaseValue(vals[i], boolCols[i])
 		}
 		targetByID[fmt.Sprintf("%v", idVal)] = row
 	}
@@ -291,7 +293,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool, budget *includeBudget) error {
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, target *entity.Entity, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool, budget *includeBudget) error {
 	safeThrough, err := query.SafeIdent(rel.Through)
 	if err != nil {
 		return fmt.Errorf("eager filtered: invalid through table %q: %w", rel.Through, err)
@@ -335,6 +337,7 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 	if err != nil {
 		return err
 	}
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), target, cols)
 	for rows.Next() {
 		if err := budget.spend(1); err != nil {
 			return err
@@ -353,7 +356,7 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 			if c == "__parent_id" {
 				parentID = fmt.Sprintf("%v", vals[i])
 			} else if !hidden[c] {
-				row[c] = vals[i]
+				row[c] = convertDatabaseValue(vals[i], boolCols[i])
 			}
 		}
 		if entry, ok := result[parentID]; ok {

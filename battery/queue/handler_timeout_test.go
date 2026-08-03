@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // WithDBHandlerTimeout must cancel a handler's context at the deadline so a

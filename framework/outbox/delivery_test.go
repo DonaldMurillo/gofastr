@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // noopHandler is a consumer handler that always succeeds.

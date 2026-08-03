@@ -17,7 +17,7 @@ import (
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	"github.com/DonaldMurillo/gofastr/examples/ecommerce/app/entities"
 )

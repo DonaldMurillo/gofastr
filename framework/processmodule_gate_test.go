@@ -62,7 +62,7 @@ func buildDemoBinary(t testing.TB) (string, string) {
 			demoBinErr = fmt.Errorf("mkdtemp: %w", err)
 			return
 		}
-		bin := filepath.Join(dir, "demo")
+		bin := filepath.Join(dir, testExecutablePath("demo"))
 		cmd := exec.Command("go", "build", "-o", bin, "./examples/processmodule-demo")
 		cmd.Dir = repoRoot
 		if out, err := cmd.CombinedOutput(); err != nil {

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -691,6 +692,22 @@ func TestRuntimeDisclosureFocusTrapWiring(t *testing.T) {
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("disclosure module missing focus-trap wiring %q", want)
+		}
+	}
+}
+
+func TestRuntimeDemandInteractionBridgeIsGeneric(t *testing.T) {
+	boot, err := os.ReadFile("frag/boot.js")
+	if err != nil {
+		t.Fatalf("read boot fragment: %v", err)
+	}
+	body := string(boot)
+	if strings.Contains(body, "__fuiLightboxDispatch") || strings.Contains(body, "_lightboxReplay") {
+		t.Fatal("boot fragment contains a lightbox-specific interaction bridge")
+	}
+	for _, want := range []string{"interactions", "loadModule(name)", "data-fui-lightbox-prev", "data-fui-lightbox-next"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("generic interaction bridge missing %q", want)
 		}
 	}
 }

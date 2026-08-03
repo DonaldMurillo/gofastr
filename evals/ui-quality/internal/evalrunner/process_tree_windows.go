@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"time"
 	"unsafe"
@@ -26,7 +27,7 @@ func configureCommandCancellation(cmd *exec.Cmd) {
 			return os.ErrProcessDone
 		}
 		pid := strconv.Itoa(cmd.Process.Pid)
-		if err := exec.Command("taskkill.exe", "/PID", pid, "/T", "/F").Run(); err == nil {
+		if err := exec.Command(taskkillExecutable(), "/PID", pid, "/T", "/F").Run(); err == nil {
 			return nil
 		}
 		err := cmd.Process.Kill()
@@ -35,6 +36,13 @@ func configureCommandCancellation(cmd *exec.Cmd) {
 		}
 		return err
 	}
+}
+
+func taskkillExecutable() string {
+	if root := os.Getenv("SystemRoot"); root != "" {
+		return filepath.Join(root, "System32", "taskkill.exe")
+	}
+	return "taskkill.exe"
 }
 
 // attachCommandProcessTree assigns a newly started agent to a Windows job with

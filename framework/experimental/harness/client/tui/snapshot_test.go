@@ -165,7 +165,16 @@ func writeSnapshot(t *testing.T, name, frame string) {
 	if err != nil {
 		t.Fatalf("read snapshot: %v", err)
 	}
-	if string(existing) != body {
+	// Git checkouts may use LF or CRLF, while the VT emulator deliberately
+	// joins rendered rows with CRLF. Compare logical lines so the snapshot
+	// stays portable across Windows and Unix checkouts.
+	normalizeNewlines := func(s string) string {
+		// Normalize CRLF, then remove at most one file-terminating newline.
+		// Additional separators represent real blank terminal rows and must
+		// remain part of the geometry being snapshot-tested.
+		return strings.TrimSuffix(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	}
+	if normalizeNewlines(string(existing)) != normalizeNewlines(body) {
 		// Write the new candidate alongside so it's easy to diff.
 		_ = os.WriteFile(path+".new", []byte(body), 0o644)
 		t.Errorf("snapshot drift: %s — wrote %s.new for inspection. "+
@@ -220,6 +229,9 @@ func TestSnapshot_Welcome(t *testing.T) {
 // what the user would actually see in a terminal.
 func TestSnapshot_FullSession(t *testing.T) {
 	tui := newSnapshotTUI()
+	oldNowFn := nowFn
+	nowFn = func() int64 { return 1_700_000_000_000_000_000 }
+	t.Cleanup(func() { nowFn = oldNowFn })
 
 	// --- Turn 1: user asks; model thinks; calls Bash; reports. ---
 	tui.input = []rune("explain the changes on this worktree")

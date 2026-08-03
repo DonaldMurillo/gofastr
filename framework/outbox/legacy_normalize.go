@@ -68,6 +68,24 @@ func (o *Outbox) probeBindLayout(ctx context.Context) string {
 	return time.RFC3339Nano
 }
 
+// timeText reads a time column as its stored text. The idempotency skip in
+// legacyTimeSets compares stored text against canonical text, so the column
+// must not arrive pre-parsed: modernc.org/sqlite hands back a time.Time for
+// a DATETIME column, which fails the string type assertion and makes every
+// row look like it needs rewriting on every relay start. Casting keeps the
+// comparison driver-neutral. Only reached on SQLite (normalizeLegacyTimestamps
+// returns early on Postgres), so this never touches a real TIMESTAMPTZ.
+func timeText(col string) string {
+	return fmt.Sprintf("CAST(%s AS TEXT) AS %s", col, col)
+}
+
+// parentTimeSelect reads the four parent time columns as stored text.
+func (o *Outbox) parentTimeSelect() string {
+	return fmt.Sprintf(`SELECT id, %s, %s, %s, %s FROM %s`,
+		timeText("created_at"), timeText("dispatched_at"),
+		timeText("next_attempt_at"), timeText("claimed_until"), o.qt())
+}
+
 // normalizeParentTimes canonicalizes the four time columns of event_outbox,
 // keyed by id.
 func (o *Outbox) normalizeParentTimes(ctx context.Context, layout string) error {
@@ -78,9 +96,7 @@ func (o *Outbox) normalizeParentTimes(ctx context.Context, layout string) error 
 	// outbox is typically opened with SetMaxOpenConns(1) (SQLite serialises
 	// writers on a single in-memory page), and an UPDATE issued while the
 	// SELECT's rows cursor still holds the one connection deadlocks.
-	rows, err := o.db.QueryContext(ctx, fmt.Sprintf(
-		`SELECT id, created_at, dispatched_at, next_attempt_at, claimed_until FROM %s`,
-		o.qt()))
+	rows, err := o.db.QueryContext(ctx, o.parentTimeSelect())
 	if err != nil {
 		return err
 	}
@@ -135,8 +151,9 @@ func (o *Outbox) normalizeDeliveryTimes(ctx context.Context, layout string) erro
 		return nil
 	}
 	rows, err := o.db.QueryContext(ctx, fmt.Sprintf(
-		`SELECT row_id, consumer, created_at, next_attempt_at, claimed_until, dispatched_at FROM %s`,
-		o.qd()))
+		`SELECT row_id, consumer, %s, %s, %s, %s FROM %s`,
+		timeText("created_at"), timeText("next_attempt_at"),
+		timeText("claimed_until"), timeText("dispatched_at"), o.qd()))
 	if err != nil {
 		return err
 	}

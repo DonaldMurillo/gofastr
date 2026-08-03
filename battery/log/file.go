@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // FileOpts configures a file sink.
@@ -66,9 +68,16 @@ func FileSink(path string, opts FileOpts) (Sink, error) {
 	if err := os.Chmod(parent, 0o700); err != nil {
 		return nil, fmt.Errorf("log: chmod %s: %w", parent, err)
 	}
+	if err := fileperm.Restrict(parent, true); err != nil {
+		return nil, fmt.Errorf("log: restrict directory %s: %w", parent, err)
+	}
 	s := &fileSink{path: path, opts: opts}
 	if err := s.open(); err != nil {
 		return nil, err
+	}
+	if err := fileperm.Restrict(path, false); err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("log: restrict file %s: %w", path, err)
 	}
 	return s, nil
 }

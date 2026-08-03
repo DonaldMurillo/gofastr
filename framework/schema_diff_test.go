@@ -157,8 +157,8 @@ func TestSchemaDiff_AddRequiredColNoDefault(t *testing.T) {
 func TestSchemaDiff_DropColumn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
 		if dialect == DialectSQLite {
-			// SQLite supports DROP COLUMN only from 3.35+. The mattn/go-sqlite3
-			// build typically includes it; if not, skip rather than fail.
+			// SQLite supports DROP COLUMN only from 3.35+. The bundled
+			// modernc build includes it; if not, skip rather than fail.
 			var ver string
 			if err := db.QueryRow("SELECT sqlite_version()").Scan(&ver); err != nil {
 				t.Fatalf("version: %v", err)

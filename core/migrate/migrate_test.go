@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // --- helpers ---

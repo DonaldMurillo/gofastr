@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	sqlite3 "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// cov_faultdriver wraps mattn/go-sqlite3 with a SQL-substring-targeted fault
+// cov_faultdriver wraps the pure-Go sqlite3 driver with a SQL-substring-targeted fault
 // injector so tests can deterministically exercise the DB-error-propagation
 // branches (Query / rows.Err / Exec / Commit failures) that a healthy
 // in-memory database never triggers. Faults are matched on the query text so a

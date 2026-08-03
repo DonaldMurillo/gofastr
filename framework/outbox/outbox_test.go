@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // openOutbox returns a fresh in-memory SQLite + Outbox pair. Cleanup is

@@ -3,6 +3,7 @@ package framework
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -95,6 +96,25 @@ func TestDefaultChildEnvAllowlist_isCopy(t *testing.T) {
 	}
 }
 
+func TestDefaultChildEnvAllowlistIncludesWindowsProcessBasics(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows child environment")
+	}
+	allow := DefaultChildEnvAllowlist()
+	for _, want := range []string{"SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE"} {
+		found := false
+		for _, name := range allow {
+			if name == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Windows default child env missing %s: %v", want, allow)
+		}
+	}
+}
+
 // ---- TrustedProcessRunner.allowlist override ----
 
 func TestTrustedRunner_allowlistDefaultAndOverride(t *testing.T) {
@@ -156,6 +176,15 @@ func TestSpawnedChild_killNilProcessIsNoOp(t *testing.T) {
 	c := &spawnedChild{cmd: &exec.Cmd{}} // Process nil
 	if err := c.Kill(); err != nil {
 		t.Errorf("Kill on nil Process = %v, want nil", err)
+	}
+}
+
+func TestWindowsProcessGroupSignalFallsBackToProcessKill(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows process-group fallback")
+	}
+	if err := signalProcessGroup(12345, 9); err == nil {
+		t.Fatal("Windows process-group signal must report unsupported so caller can kill the process directly")
 	}
 }
 

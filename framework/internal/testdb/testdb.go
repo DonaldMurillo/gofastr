@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -95,6 +95,10 @@ func Open(t *testing.T, dialect migrate.Dialect) *sql.DB {
 		if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 			t.Fatalf("pragma fk: %v", err)
 		}
+		// modernc.org/sqlite gives each :memory: connection its own database.
+		// A single connection matches the old test-driver behavior and keeps
+		// schema/data visible across sequential CRUD operations.
+		db.SetMaxOpenConns(1)
 		t.Cleanup(func() { db.Close() })
 		return db
 	case migrate.DialectPostgres:

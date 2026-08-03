@@ -118,8 +118,8 @@ func TestRenderBlueprintNodeOnlyScreenBuilds(t *testing.T) {
 
 func TestBlueprintDriverImport(t *testing.T) {
 	cases := map[string]string{
-		"": "github.com/mattn/go-sqlite3", "sqlite": "github.com/mattn/go-sqlite3",
-		"sqlite3": "github.com/mattn/go-sqlite3", "postgres": "github.com/lib/pq",
+		"": "github.com/DonaldMurillo/gofastr/sqlite/stdlib", "sqlite": "github.com/DonaldMurillo/gofastr/sqlite/stdlib",
+		"sqlite3": "github.com/DonaldMurillo/gofastr/sqlite/stdlib", "postgres": "github.com/lib/pq",
 		"postgresql": "github.com/lib/pq", "mysql": "",
 	}
 	for in, want := range cases {
@@ -208,7 +208,7 @@ func TestRenderBlueprintFilesRichShape(t *testing.T) {
 func TestRenderBlueprintMainSqliteDefault(t *testing.T) {
 	bp := Blueprint{App: BlueprintApp{Name: "S", Module: "ex.com/s"}, Entities: []framework.EntityDeclaration{{Name: "x", Fields: []framework.FieldDeclaration{{Name: "n", Type: "string"}}}}}
 	out := renderBlueprintMain(bp)
-	if !strings.Contains(out, "go-sqlite3") {
+	if !strings.Contains(out, "github.com/DonaldMurillo/gofastr/sqlite/stdlib") {
 		t.Fatalf("default sqlite driver expected:\n%s", out)
 	}
 }

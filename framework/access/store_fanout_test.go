@@ -8,7 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // TestGrantStore_FanoutPropagatesGrantAndRevoke: two stores share one DB

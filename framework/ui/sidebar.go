@@ -283,9 +283,9 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 	}
 	b.WriteString(`<li class="` + cls + `">`)
 	if hasChildren {
-		// Group with a disclosure for child items; <details> reuses
-		// the framework's data-fui-disclosure machinery (Esc-close,
-		// SPA-nav close, aria-expanded mirror) without extra wiring.
+		// Group with a persistent disclosure for child items; <details>
+		// reuses the framework's data-fui-disclosure machinery while
+		// retaining the user's expanded section across in-shell navigation.
 		// Open the disclosure when the group itself is active OR any
 		// descendant matches CurrentPath, so navigating to a nested
 		// route lands on a section that's already expanded.
@@ -293,7 +293,7 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		if active || hasActiveDescendant(it, currentPath) {
 			openAttr = " open"
 		}
-		b.WriteString(`<details class="ui-sidebar__group" data-fui-disclosure` + openAttr + `>`)
+		b.WriteString(`<details class="ui-sidebar__group" data-fui-disclosure data-fui-disclosure-persist` + openAttr + `>`)
 		b.WriteString(`<summary class="ui-sidebar__link">`)
 		if it.Icon != "" {
 			b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)

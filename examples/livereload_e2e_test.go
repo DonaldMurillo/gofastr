@@ -15,12 +15,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
+
+func TestLivereloadBinaryPathIsExecutableOnThisOS(t *testing.T) {
+	path := livereloadBinaryPath(filepath.Join(t.TempDir(), "example"))
+	if runtime.GOOS == "windows" && filepath.Ext(path) != ".exe" {
+		t.Fatalf("Windows example binary must have .exe suffix: %q", path)
+	}
+	if runtime.GOOS != "windows" && filepath.Ext(path) == ".exe" {
+		t.Fatalf("Unix example binary should not require .exe suffix: %q", path)
+	}
+}
 
 type exampleSurface struct {
 	name string // directory under examples/
@@ -61,7 +71,7 @@ func TestExamplesAreHMRReady(t *testing.T) {
 
 func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), s.name)
+	bin := livereloadBinaryPath(filepath.Join(t.TempDir(), s.name))
 	build := exec.Command("go", "build", "-o", bin, s.pkg)
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
@@ -106,13 +116,12 @@ func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 	var out syncBuffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureTestProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start %s: %v", s.name, err)
 	}
-	pid := cmd.Process.Pid
 	t.Cleanup(func() {
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = killTestProcessTree(cmd)
 		_ = cmd.Wait()
 	})
 

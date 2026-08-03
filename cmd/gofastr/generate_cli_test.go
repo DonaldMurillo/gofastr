@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -414,7 +414,7 @@ func configureClient(c *client.Client) {}
 		t.Fatalf("--force overwrote custom.go")
 	}
 
-	bin := filepath.Join(dir, "myapp-cli")
+	bin := testExecutablePath(filepath.Join(dir, "myapp-cli"))
 	cmd := exec.Command("go", "build", "-o", bin, "./cmd/myapp")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -435,7 +435,7 @@ func configureClient(c *client.Client) {}
 func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 	dir := cliTempModule(t)
 	runGenerateCLI([]string{"--binary=myapp"})
-	bin := filepath.Join(dir, "myapp")
+	bin := testExecutablePath(filepath.Join(dir, "myapp"))
 	build := exec.Command("go", "build", "-o", bin, "./cmd/myapp")
 	build.Dir = dir
 	if out, err := build.CombinedOutput(); err != nil {

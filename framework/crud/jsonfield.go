@@ -105,8 +105,13 @@ func (ch *CrudHandler) decodeJSONRows(rows []map[string]any) {
 // uses. They wrap the package-level scanners so schema.JSON columns are
 // parsed in exactly one place — a read that scanned directly would return
 // the column as an opaque string and break the round trip.
+//
+// They pass the handler's entity down for the same reason: a driver that
+// reports a boolean column as int64 (modernc.org/sqlite does) would
+// otherwise serialize it as 0/1. Both normalizations belong on this seam,
+// so no read path can pick up one and miss the other.
 func (ch *CrudHandler) scanOne(row *sql.Row, cols []string) (map[string]any, error) {
-	result, err := scanRow(row, cols, ch.convertKey)
+	result, err := scanRowWithBoolColumns(row, cols, ch.convertKey, ch.boolColumns(cols))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +120,11 @@ func (ch *CrudHandler) scanOne(row *sql.Row, cols []string) (map[string]any, err
 }
 
 func (ch *CrudHandler) scanMany(rows *sql.Rows, cols []string) ([]map[string]any, error) {
-	results, err := scanRows(rows, cols, ch.convertKey)
+	var ent *entity.Entity
+	if ch != nil {
+		ent = ch.Entity
+	}
+	results, err := scanRowsForEntity(rows, cols, ch.convertKey, ent)
 	if err != nil {
 		return nil, err
 	}

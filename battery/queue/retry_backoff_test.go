@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // openDBQueueOpts is like openDBQueue but lets a test supply extra options

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -52,6 +53,9 @@ func TestLocalStorageSaveGetDeleteRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(got, content) {
 		t.Fatalf("content mismatch: got %q, want %q", got, content)
+	}
+	if err := rc.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 
 	// Delete
@@ -135,6 +139,15 @@ func TestLocalStoragePathTraversalBlocked(t *testing.T) {
 	if err == nil {
 		t.Errorf("Save(%q) should have been rejected, but succeeded", absKey)
 	}
+
+	// Windows device / ADS names are a portability rule on the WRITE path.
+	// Reads deliberately stay permissive so objects stored by earlier
+	// releases remain reachable — see TestExistingKeysStayReadableAndDeletable.
+	for _, key := range []string{"CON.txt", "nested/NUL", "file.txt:secret"} {
+		if err := ls.Save(ctx, key, bytes.NewReader([]byte("bad"))); err == nil {
+			t.Errorf("Save(%q) should reject Windows device/ADS names", key)
+		}
+	}
 }
 
 func TestLocalStorageAtomicWrite(t *testing.T) {
@@ -206,6 +219,9 @@ func TestLocalStorageDeleteNotFound(t *testing.T) {
 }
 
 func TestLocalStorageCustomPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not portable on Windows")
+	}
 	dir := t.TempDir()
 	ls := NewLocalStorage(dir, WithPermissions(0600))
 

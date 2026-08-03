@@ -17,7 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // These tests exercise every facade wrapper function in reexports_*.go

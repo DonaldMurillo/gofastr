@@ -323,11 +323,23 @@ func newTestProvider(t *testing.T, f *fakeIdP) *OIDCProvider {
 		ClientSecret: f.clientSecret,
 		RedirectURL:  "https://app.example.com/cb",
 		ProviderName: "testoidc",
+		HTTPClient:   newOIDCTestHTTPClient(t),
 	})
 	if err != nil {
 		t.Fatalf("NewOIDCProvider: %v", err)
 	}
 	return p
+}
+
+// newOIDCTestHTTPClient avoids sharing the package-global production client
+// across the many in-process IdPs in the full suite. The shared transport can
+// retain a large number of loopback connections when packages run in parallel,
+// which is especially easy to exhaust on Windows.
+func newOIDCTestHTTPClient(t *testing.T) *http.Client {
+	t.Helper()
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	return &http.Client{Timeout: 10 * time.Second, Transport: tr}
 }
 
 func ctxBg() context.Context { return context.Background() }
@@ -410,6 +422,7 @@ func TestOIDC_ClaimsMappingOverride(t *testing.T) {
 	p, err := NewOIDCProvider(OIDCConfig{
 		Issuer: f.issuer, ClientID: f.clientID, ClientSecret: f.clientSecret,
 		RedirectURL: "https://app.example.com/cb", ProviderName: "kc",
+		HTTPClient: newOIDCTestHTTPClient(t),
 		Claims: OIDCClaimsMapping{
 			EmailClaim:  "upn",
 			NameClaim:   "displayname",

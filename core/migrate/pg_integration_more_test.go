@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	migrate "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"

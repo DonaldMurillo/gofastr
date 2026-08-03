@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // waitForParent polls List until the parent row with id reaches want, or

@@ -17,6 +17,7 @@ import (
 // handling by default and drain (server, batteries, OnStop hooks) before
 // the process exits — deploy.md promises exactly this.
 func TestSIGTERMDrainsApp(t *testing.T) {
+	requireSIGTERMForTest(t)
 	// Keep the test binary alive if Start does NOT handle the signal:
 	// any Notify channel suppresses Go's default terminate action.
 	guard := make(chan os.Signal, 1)
@@ -40,9 +41,7 @@ func TestSIGTERMDrainsApp(t *testing.T) {
 		t.Fatal("server never became ready")
 	}
 
-	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
-		t.Fatalf("send SIGTERM: %v", err)
-	}
+	sendSIGTERMForTest(t)
 
 	select {
 	case <-stopped:

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func openSQLStore(t *testing.T) (*sql.DB, *SQLStore) {
@@ -150,7 +150,13 @@ func TestManager_DrivenBySQLStore_EndToEnd(t *testing.T) {
 		AllowPrivateNetworks: true,
 	})
 	mgr.Start()
-	defer mgr.Stop(context.Background())
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := mgr.Stop(stopCtx); err != nil {
+			t.Errorf("manager stop: %v", err)
+		}
+	}()
 
 	ctx := context.Background()
 	if _, err := mgr.Subscribe(ctx, Subscriber{URL: srv.URL, Secret: "x"}); err != nil {
@@ -160,7 +166,9 @@ func TestManager_DrivenBySQLStore_EndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(time.Second)
+	// Leave scheduler slack for Windows when the repository suite is running
+	// many package processes concurrently; PollInterval is not a delivery SLA.
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if atomic.LoadInt32(&calls) > 0 {
 			break

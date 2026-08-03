@@ -168,5 +168,9 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 	return scrollspy.Wrap(scrollspy.Config{
 		ObserveSelector: cfg.ObserveSelector,
 		TargetSelector:  target,
+		// Keep the generated wrapper as the sticky layout item too. This
+		// preserves the plain AnchoredRail contract when the rail is
+		// composed inside a grid or stack.
+		Class: "scrollspy--sticky",
 	}, marked)
 }

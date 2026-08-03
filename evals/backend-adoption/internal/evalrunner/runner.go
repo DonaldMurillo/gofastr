@@ -264,7 +264,7 @@ files as needed, but do not replace GoFastr with another web framework.
 		}
 		if output, err := commandOutput(ctx, workspace, "go", "mod", "edit",
 			"-require=github.com/gin-gonic/gin@"+ginVersion,
-			"-require=github.com/mattn/go-sqlite3@v1.14.44",
+			"-require=github.com/DonaldMurillo/gofastr/sqlite/stdlib@v1.14.44",
 			"-require=golang.org/x/crypto@v0.52.0"); err != nil {
 			return fmt.Errorf("add Gin requirement: %w\n%s", err, output)
 		}
@@ -282,7 +282,7 @@ hashing. Do not replace Gin with another web framework.
 			return fmt.Errorf("go mod init: %w\n%s", err, output)
 		}
 		if output, err := commandOutput(ctx, workspace, "go", "mod", "edit",
-			"-require=github.com/mattn/go-sqlite3@v1.14.44",
+			"-require=github.com/DonaldMurillo/gofastr/sqlite/stdlib@v1.14.44",
 			"-require=golang.org/x/crypto@v0.52.0"); err != nil {
 			return fmt.Errorf("add focused requirements: %w\n%s", err, output)
 		}
@@ -565,13 +565,6 @@ func displayModel(model string) string {
 		return "Codex CLI default"
 	}
 	return model
-}
-
-func executableName(name string) string {
-	if filepath.Separator == '\\' {
-		return name + ".exe"
-	}
-	return name
 }
 
 func contains(values []string, target string) bool {

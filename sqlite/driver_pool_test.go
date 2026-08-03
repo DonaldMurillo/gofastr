@@ -21,7 +21,7 @@ import (
 func TestConcurrentWritersLoseNoRows(t *testing.T) {
 	const writers, perWriter = 2, 25
 	path := filepath.Join(t.TempDir(), "w.db")
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("gofastr-sqlite", path)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestConcurrentWritersLoseNoRows(t *testing.T) {
 // Every connection in one *sql.DB pool must address the SAME database.
 func TestFileDSNSharesEngineAcrossConns(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pool.db")
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("gofastr-sqlite", path)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -103,12 +103,12 @@ func TestFileDSNSharesEngineAcrossConns(t *testing.T) {
 // Two independent in-memory DBs must stay independent: ":memory:" is not
 // a shared name, so sharing an engine by DSN must not merge them.
 func TestMemoryDSNsStayIndependent(t *testing.T) {
-	db1, err := sql.Open("sqlite", ":memory:")
+	db1, err := sql.Open("gofastr-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db1: %v", err)
 	}
 	defer db1.Close()
-	db2, err := sql.Open("sqlite", ":memory:")
+	db2, err := sql.Open("gofastr-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db2: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestCloseReleasesTheEngineFile(t *testing.T) {
 	// Hold every closed handle so nothing can be attributed to GC.
 	var kept []*sql.DB
 	for i := 0; i < 50; i++ {
-		db, err := sql.Open("sqlite", path)
+		db, err := sql.Open("gofastr-sqlite", path)
 		if err != nil {
 			t.Fatalf("open %d: %v", i, err)
 		}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // auditApp builds a single-entity app with the audit helper enabled.
@@ -39,7 +40,14 @@ func auditApp(t *testing.T, db *sql.DB, actor string) *App {
 // a slice of maps so tests can index by column without scan boilerplate.
 func readAuditRows(t *testing.T, db *sql.DB) []map[string]any {
 	t.Helper()
-	rows, err := db.Query(`SELECT entity, op, record_id, actor_id, diff FROM audit_log ORDER BY created_at, id`)
+	order := "created_at, id"
+	if migrate.DetectDialect(db) == migrate.DialectSQLite {
+		// modernc.org/sqlite can represent time.Time values in more than one
+		// textual form depending on precision. SQLite's rowid is the stable
+		// insertion sequence the tests mean to assert here.
+		order = "rowid"
+	}
+	rows, err := db.Query("SELECT entity, op, record_id, actor_id, diff FROM audit_log ORDER BY " + order)
 	if err != nil {
 		t.Fatalf("query audit_log: %v", err)
 	}

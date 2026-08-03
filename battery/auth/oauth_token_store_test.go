@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // compile-time interface check.
@@ -146,6 +146,9 @@ func TestRefresh_ExpiredTokenRefreshed(t *testing.T) {
 
 	prov := NewGoogleProvider("cid", "csec", "http://localhost/cb")
 	prov.tokenEndpoint = srv.URL
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	prov.httpClient = &http.Client{Timeout: 60 * time.Second, Transport: tr}
 
 	store := newSQLOAuthTokenStore(t)
 	ctx := context.Background()

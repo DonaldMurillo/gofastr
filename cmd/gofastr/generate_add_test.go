@@ -173,6 +173,9 @@ func TestOverwriteErrorNamesAddPath(t *testing.T) {
 		generateFromBlueprint(generateOptions{from: bp})
 	})
 	os.Stdout = old
+	if err := f.Close(); err != nil {
+		t.Fatalf("close captured stdout: %v", err)
+	}
 	if code != 1 {
 		t.Fatalf("want exit 1 on conflict, got %d", code)
 	}

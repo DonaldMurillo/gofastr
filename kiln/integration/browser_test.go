@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
-	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DonaldMurillo/gofastr/framework"
 	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"

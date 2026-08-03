@@ -99,7 +99,9 @@ func (t *textComp) Render() render.HTML {
 
 func newE2EChromeForUIHost(t *testing.T) context.Context {
 	t.Helper()
+	execPath := browserExecutable(t)
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(execPath),
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),

@@ -102,8 +102,21 @@ func TestChunkLinearTime(t *testing.T) {
 	}
 
 	const base = 200_000
-	t1 := timeChunk(base)
-	t2 := timeChunk(base * 4)
+	// A single timing sample is especially noisy on Windows, where the
+	// scheduler and antivirus can interrupt one sample independently. Take
+	// the best of a few runs so this remains a guard against the old
+	// O(N^2) implementation rather than a scheduler benchmark.
+	minDuration := func(fn func() time.Duration) time.Duration {
+		best := time.Duration(1<<63 - 1)
+		for range 3 {
+			if d := fn(); d < best {
+				best = d
+			}
+		}
+		return best
+	}
+	t1 := minDuration(func() time.Duration { return timeChunk(base) })
+	t2 := minDuration(func() time.Duration { return timeChunk(base * 4) })
 	// Linear: 4x input → ~4x time. Quadratic would be ~16x. Allow a
 	// generous 8x slack for noise/GC; the old O(N^2) code is ~16x.
 	if t2 > t1*8 && t2 > 50*time.Millisecond {

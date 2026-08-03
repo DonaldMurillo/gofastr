@@ -11,6 +11,7 @@ import (
 )
 
 func TestLocalStorage_DefaultFilesAreNotWorldReadable(t *testing.T) {
+	requirePOSIXPermissions(t)
 	t.Parallel()
 	dir := t.TempDir()
 	ls := storage.NewLocalStorage(dir)
@@ -30,6 +31,7 @@ func TestLocalStorage_DefaultFilesAreNotWorldReadable(t *testing.T) {
 }
 
 func TestLocalStorage_DefaultDirectoriesAreNotWorldTraversable(t *testing.T) {
+	requirePOSIXPermissions(t)
 	t.Parallel()
 	dir := t.TempDir()
 	ls := storage.NewLocalStorage(dir)

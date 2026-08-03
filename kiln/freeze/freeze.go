@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
@@ -63,5 +64,9 @@ func writeWorldSnapshot(w *world.World, dir string) error {
 	// 0600: world.json is the complete IR, which includes whatever the
 	// session configured. gofastr.yml gets env references instead of
 	// values, but the snapshot is the raw world — owner-only.
-	return os.WriteFile(filepath.Join(dir, "world.json"), append(buf, '\n'), 0o600)
+	path := filepath.Join(dir, "world.json")
+	if err := os.WriteFile(path, append(buf, '\n'), 0o600); err != nil {
+		return err
+	}
+	return fileperm.Restrict(path, false)
 }
