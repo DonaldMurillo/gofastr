@@ -11,6 +11,10 @@ type buildOptions struct {
 	noGenerate   bool
 	noA11y       bool
 	noEmbedCheck bool
+	// noContracts skips the contract analyzers. The gate only fails on
+	// error-severity findings, so this exists for a build that must ship
+	// while a rule is being addressed — not as a routine flag.
+	noContracts bool
 	// allowUnverifiedEmbeds downgrades check-embed's unresolved notes from
 	// fatal back to advisory, without disabling the check the way
 	// --no-embed-check does. It exists for the surface that genuinely cannot
@@ -30,6 +34,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 			opts.noA11y = true
 		case arg == "--no-embed-check":
 			opts.noEmbedCheck = true
+		case arg == "--no-contracts":
+			opts.noContracts = true
 		case arg == "--allow-unverified-embeds":
 			opts.allowUnverifiedEmbeds = true
 		case arg == "--pkg":

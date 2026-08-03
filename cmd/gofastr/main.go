@@ -141,6 +141,11 @@ func printHelp() {
   agents [init|sync|skill]  Generate/refresh AGENTS.md and per-battery detail files
   docs (doc) [topic]    Browse framework docs (auto-versioned with this binary)
                         --list  list every topic; --grep <term> search across docs
+  verify [capability]   Check the app against the GoFastr contract: routing, permissions,
+                        security, data, entities, architecture, rendering, accessibility,
+                        performance, testing, ai. Strict by default; relax in
+                        gofastr.contracts.yml or waive a line with //gofastr:allow(RULE).
+                        --list catalog · --explain <rule> · --json · --sarif <file> · --fix
   audit <sub>           Inspect the project for security- and accessibility-relevant patterns
                         deps  list packages that perform init-time global registrations
                         lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
@@ -173,6 +178,9 @@ func printHelp() {
   gofastr harness creds list
   gofastr agents init
   gofastr agents sync
+  gofastr verify
+  gofastr verify security --json
+  gofastr verify --explain GOFASTR1002
 `, bold("GoFastr"), version, bold("Usage"), bold("Commands"), bold("Flags"), bold("Examples"))
 }
 
@@ -187,6 +195,7 @@ func main() {
 // the command).
 var ownsHelp = map[string]bool{
 	"audit":    true,
+	"verify":   true,
 	"upgrade":  true,
 	"docs":     true,
 	"doc":      true,
@@ -283,6 +292,8 @@ func dispatch(args []string) {
 		runAgents(cmdArgs)
 	case "audit":
 		runAudit(cmdArgs)
+	case "verify":
+		runVerify(cmdArgs)
 	case "upgrade":
 		runUpgrade(cmdArgs)
 	case "version":
@@ -290,7 +301,7 @@ func dispatch(args []string) {
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "migrate", "test", "semantic", "harness", "docs", "agents", "audit", "upgrade", "theme", "version"}
+		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "migrate", "test", "semantic", "harness", "docs", "agents", "audit", "verify", "upgrade", "theme", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))
