@@ -240,7 +240,7 @@ Each entry under `fields:` accepts:
 | `type` | string | One of the field types above (`string`, `text`, `int`, `float`, `decimal`, `bool`, `enum`, `date`, `timestamp`, `uuid`, `json`, `image`, `file`, `relation`). |
 | `required` | bool | NOT NULL + presence validation. |
 | `unique` | bool | Unique constraint on the column. |
-| `default` | scalar | Default value. |
+| `default` | scalar | Value written when the field is omitted on create. Checked against the field's own rules when the entity is registered — see "Defaults are validated at registration" below. |
 | `max` / `min` | number | Length (strings) or value (numbers) bounds. |
 | `values` | list | Allowed values for `type: enum`. |
 | `pattern` | string | Regex the value must match (validated on write). |
@@ -249,6 +249,40 @@ Each entry under `fields:` accepts:
 | `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned — `visibleFields` shapes the projection). |
 | `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form — see "Masked fields" below. |
 | `to` | string | For `type: relation`, the target entity. |
+
+### Defaults are validated at registration
+
+A `default` is the value the create path writes when the request body omits
+the field. It goes into the same column a client-sent value would, so it is
+checked against the same field rules — `values`, `pattern`, `min`/`max`,
+`required`, and the type itself — when the entity is registered.
+
+A default that fails those rules fails the declaration. `app.Entity` panics
+and `app.TryEntity` returns the error, both naming the field:
+
+```go
+{Name: "flags", Type: schema.JSON, Default: "draft"}
+// entity "things": field "flags" has an invalid Default "draft": must be valid JSON
+```
+
+Before this check the mismatch was per-request and per-dialect. A create that
+omitted `flags` returned 500 against a Postgres `JSONB` column (`invalid input
+syntax for type json`) and stored `draft` unchanged in SQLite's `TEXT` column,
+while a caller who *sent* `"draft"` got a 400 naming the field. The same holds
+for an `enum` default outside `values` and a `required` string defaulted to
+`""`.
+
+Two spellings are accepted that a request body could not use, because a Go
+declaration is not JSON:
+
+- `decimal` written as a number. `{Type: schema.Decimal, Default: 0}` is
+  equivalent to `Default: "0"`; both render `DEFAULT 0` in DDL and bind as a
+  number on insert.
+- `timestamp` and `date` written as a `time.Time`.
+
+A default on an `auto_generate` field is not validated, because the create path
+never writes it — the generated value takes that slot. It still becomes the
+column's DDL `DEFAULT`.
 
 ### Masked fields
 

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -631,9 +633,77 @@ func (e *Entity) Validate() error {
 		if f.Type == schema.Relation && f.To == "" {
 			return fmt.Errorf("entity %q: relation field %q must specify To", e.Config.Name, f.Name)
 		}
+
+		// A Default is the value crud.doCreate substitutes for a field the
+		// request body omitted. It reaches the driver through the same column
+		// as a client-sent value but, before this check, through none of the
+		// same checks: ValidateAll ran over the body and the Default was
+		// applied afterwards. A malformed one therefore surfaced as a
+		// per-request 500 with nothing actionable in it — or, on a dialect
+		// whose column type is looser, as silently wrong data (a non-JSON
+		// Default on a schema.JSON field 500s against Postgres JSONB and
+		// stores fine in SQLite's TEXT).
+		//
+		// The value is static, so it is checked once here rather than on
+		// every request, and a bad one is a bug in the app's own declaration
+		// rather than in a request — so it fails the declaration, naming the
+		// field, instead of reporting an app-authored bug as a caller's 400.
+		//
+		// Auto-generated fields are skipped, exactly as schema.ValidateAll
+		// skips them: doCreate overwrites their body slot with the generated
+		// value, so their Default is never an insert value. It survives only
+		// as the column's DDL DEFAULT (migrate.ColumnDefaultClause), where an
+		// explicit Default deliberately outranks gen_random_uuid().
+		if f.Default != nil && f.AutoGenerate == schema.AutoNone {
+			if err := schema.Validate(f, defaultAsWireValue(f)); err != nil {
+				return fmt.Errorf("entity %q: field %q has an invalid Default %#v: %v", e.Config.Name, f.Name, f.Default, err)
+			}
+		}
 	}
 
 	return nil
+}
+
+// defaultAsWireValue renders a field's Default in the form schema.Validate
+// expects, which is the form a client sends. The two differ because a Default
+// is authored in Go, not JSON, and for a few types the natural Go literal is
+// not the wire literal. Normalizing here keeps the registration check from
+// refusing declarations the write path accepts — a false refusal fires at
+// boot, for every caller at once, which is worse than the bug it guards.
+//
+// The patterns this permits, both of which reach the driver intact today:
+//
+//   - Decimal spelled as a Go number. Decimal travels as a string on the wire
+//     so it keeps exact precision, but `{Type: schema.Decimal, Default: 0}` is
+//     what examples/ecommerce writes and what `gofastr generate` emits for a
+//     blueprint `decimal` field with `default: 0`. It renders `DEFAULT 0` in
+//     DDL and binds as a number on insert; both dialects accept it.
+//   - Timestamp/Date spelled as a time.Time. time.Time's String() is not
+//     RFC 3339, so schema.Validate's generic fmt.Stringer path would reject a
+//     value the driver takes verbatim.
+func defaultAsWireValue(f schema.Field) any {
+	switch f.Type {
+	case schema.Decimal:
+		switch v := f.Default.(type) {
+		case int:
+			return strconv.Itoa(v)
+		case int64:
+			return strconv.FormatInt(v, 10)
+		case float32:
+			return strconv.FormatFloat(float64(v), 'f', -1, 32)
+		case float64:
+			return strconv.FormatFloat(v, 'f', -1, 64)
+		}
+	case schema.Timestamp:
+		if t, ok := f.Default.(time.Time); ok {
+			return t.Format(time.RFC3339)
+		}
+	case schema.Date:
+		if t, ok := f.Default.(time.Time); ok {
+			return t.Format(time.DateOnly)
+		}
+	}
+	return f.Default
 }
 
 // toSnake converts CamelCase or kebab-case to snake_case.
