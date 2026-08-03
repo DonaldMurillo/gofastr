@@ -77,7 +77,7 @@ generated guidance.
 | multi-replica deploy (sessions, live updates across replicas) | `framework.WithSecret` (or `GOFASTR_SECRET` env) + `framework.WithFanout` — fanout without a secret fails at boot by design; `gofastr docs scaling` |
 | structured request log, panic recovery, log MCP debug tools | `battery/log` |
 | browser refresh on `gofastr dev` rebuild | auto-wired if your `main.go` uses `framework.NewApp` + `uihost.New` — no host code; for custom bootstraps call `dev.RegisterLiveReload(router)` manually |
-| agent debugging under `gofastr dev` | auto-wired by `framework.NewApp`: /mcp mount + introspection (`app_routes`, `framework_docs_search`, …) + control (`app_module_enable/disable`) + battery/log debug tools — opt out with `GOFASTR_DEV_MCP=0`; production needs explicit `WithMCP`/`WithMCPIntrospection`/`WithMCPControl` |
+| agent debugging under `gofastr dev` | auto-wired by `framework.NewApp`: /mcp mount + introspection (`app_routes`, `framework_docs_search`, `contracts_list`/`contracts_explain`, …) + under dev the working pair `contracts_verify`/`contracts_fix` + control (`app_module_enable/disable`) + battery/log debug tools — opt out with `GOFASTR_DEV_MCP=0`; production needs explicit `WithMCP`/`WithMCPIntrospection`/`WithMCPControl` |
 | load `.env` files | auto-wired by `framework.NewApp` — do nothing |
 | per-test isolated Postgres DB | `framework/testkit.NewIsolatedDB(t, adminDSN, migrate)` |
 | favicon, app icon, PWA icons | `uihost.WithAppIcon(pngBytes)` — one source image becomes 32/180/192/512 PNGs, `/favicon.ico`, head links, and the PWA manifest icons; generate placeholder art in code with `framework/image.NewGradient` (no committed binaries) |
