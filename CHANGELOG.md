@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-08-03
+
 ### Added
 
 - **`gofastr verify` — contracts and semantic analysis.** A single
