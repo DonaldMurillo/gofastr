@@ -51,6 +51,11 @@ func (p *PostgresAdvisoryLease) Acquire(ctx context.Context) (bool, func(), erro
 		// Unlock on the SAME session-scoped connection, then return it. Use a
 		// background context so shutdown-time release is not cancelled by the
 		// scheduler's parent context being torn down.
+		//
+		// best-effort: a session-scoped advisory lock is released by Postgres
+		// when the session ends, and the very next statement closes it. A
+		// failure here means the connection is already gone, which has the
+		// same outcome — there is nothing to report and nothing to retry.
 		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", p.key)
 		_ = conn.Close()
 	}, nil
