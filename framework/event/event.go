@@ -194,7 +194,9 @@ func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 		event.Timestamp = time.Now()
 	}
 	eb.invokeTap(ctx, event)
-	for _, h := range eb.Snapshot(event.Type) {
+	handlers := eb.Snapshot(event.Type)
+	observeEmission(event.Type, len(handlers))
+	for _, h := range handlers {
 		if h == nil {
 			continue
 		}
@@ -216,7 +218,9 @@ func (eb *EventBus) EmitStrict(ctx context.Context, event Event) error {
 		event.Timestamp = time.Now()
 	}
 	eb.invokeTap(ctx, event)
-	for _, h := range eb.Snapshot(event.Type) {
+	handlers := eb.Snapshot(event.Type)
+	observeEmission(event.Type, len(handlers))
+	for _, h := range handlers {
 		if h == nil {
 			continue
 		}

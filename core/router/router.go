@@ -73,6 +73,21 @@ type Router struct {
 	// gated independently. Read under r.mu. Nil = no gate. Stored on
 	// root so a single Set call configures the whole tree.
 	routeGate func(pattern string) bool
+
+	// serveHook, when set on the ROOT router, is called for every request
+	// that matches a route, with the route's method and registered
+	// pattern — not the request path, so "/users/42" reports as
+	// "/users/{id}". Framework test tooling uses it to record which
+	// routes a test run actually exercised (framework/semcov).
+	//
+	// It fires AFTER the route gate and BEFORE the middleware chain, so a
+	// gated route is not recorded as reached and a route rejected later
+	// by auth still is — reaching a route and being refused by it is
+	// exactly the thing worth proving a test did.
+	//
+	// Read under r.mu on the request path. Nil = no-op, which is the
+	// production case: nothing installs one outside tests.
+	serveHook func(method, pattern string)
 }
 
 // RegisteredRoute is the (method, pattern) pair returned by
@@ -158,6 +173,20 @@ func (r *Router) SetRegisterHook(fn func(method, pattern string)) {
 func (r *Router) SetRouteGate(fn func(pattern string) bool) {
 	r.root.mu.Lock()
 	r.root.routeGate = fn
+	r.root.mu.Unlock()
+}
+
+// SetServeHook installs a callback fired for every request that matches a
+// route, with the route's method and its registered pattern (e.g. "GET",
+// "/users/{id}") rather than the concrete request path. It runs after the
+// route gate and before the middleware chain.
+//
+// Test tooling uses it to record semantic coverage — which routes a suite
+// genuinely reached through the real router. Pass nil to clear. Must be
+// called on the root router; setting on a child forwards to root.
+func (r *Router) SetServeHook(fn func(method, pattern string)) {
+	r.root.mu.Lock()
+	r.root.serveHook = fn
 	r.root.mu.Unlock()
 }
 
@@ -368,6 +397,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// a data race with SetRouteGate.
 	c.router.root.mu.RLock()
 	gate := c.router.root.routeGate
+	served := c.router.root.serveHook
 	c.router.root.mu.RUnlock()
 	if gate != nil {
 		key := c.method + " " + c.pattern
@@ -375,6 +405,12 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			http.NotFound(w, req)
 			return
 		}
+	}
+	// Recorded after the gate — a gated route was not reached — and
+	// before the chain, so a request the middleware later rejects still
+	// counts as having exercised this route.
+	if served != nil {
+		served(c.method, c.pattern)
 	}
 	curVer := c.router.root.chainVersion.Load()
 	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
