@@ -100,6 +100,18 @@ column renames), cron leader election, argon2id hashing, and Reader Mode.
   `ScreenArticle` to add a byline, date, or cover image.
 
 ### Fixed
+- SSE streams no longer die at the request timeout (issue #159). A live
+  subscriber was cut at `middleware.Timeout`'s 30s deadline, and the naive
+  fix (clearing the connection's read/write deadlines, reverted in #158)
+  stranded streams instead — exhausting the browser's per-origin connection
+  pool. The stream loop now ignores the request context's
+  `DeadlineExceeded` (the timeout firing on a still-connected client) while
+  unwinding on a real `context.Canceled` (client disconnect); a heartbeat
+  (`island.WithSSEHeartbeat`, default 15s) keeps live streams writing, and a
+  bounded stream lifetime (`island.WithSSEStreamBound`, default 5m) reclaims a
+  stranded stream even when its heartbeat writes keep succeeding into the
+  kernel buffer. Read/write deadlines are no longer cleared, so net/http's
+  close-notify (and thus prompt disconnect detection) stays intact.
 
 - `ui.SiteHeaderLink.MatchPrefix` activates on canonical hrefs with no
   trailing slash: `/docs` now lights up on `/docs` and `/docs/getting-started`

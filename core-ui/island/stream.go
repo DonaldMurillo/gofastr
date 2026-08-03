@@ -1,8 +1,10 @@
 package island
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/stream"
 )
@@ -90,13 +92,59 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 
-	// Respect client context cancellation — the sole exit signal; this
-	// connection's channel is private, so no sibling can tear it down.
-	ctx := r.Context()
+	// A long-lived SSE stream must satisfy three constraints at once (issue #159):
+	//
+	//  1. It must outlive middleware.Timeout's request deadline — a context
+	//     derived via context.WithTimeout(r.Context(), d) sits on the request
+	//     and would otherwise cut a live stream at d (the original bug).
+	//  2. It must keep writing on an idle connection so proxies and load
+	//     balancers don't idle-kill a live stream (the heartbeat).
+	//  3. It must be reclaimed if the peer vanishes in a way the server cannot
+	//     promptly observe — a stranded stream whose heartbeat writes keep
+	//     succeeding into the kernel buffer would otherwise hold a socket
+	//     forever, exhausting the browser's per-origin connection pool (the
+	//     #158 regression).
+	//
+	// This is NOT done by clearing the connection's read/write deadlines (the
+	// reverted 217e8d06 did, which stranded streams by defeating net/http's
+	// close-notify). Instead:
+	//
+	//   - the request-context deadline is distinguished from a real disconnect:
+	//     DeadlineExceeded is middleware.Timeout firing on a still-connected
+	//     client (ignored — let the bound decide lifetime); context.Canceled is
+	//     a genuine peer disconnect (unwind immediately);
+	//   - a heartbeat ticker writes a keepalive comment so a live stream is
+	//     never idle and a half-closed peer eventually surfaces as a write
+	//     error;
+	//   - a bounded-lifetime timer closes any stream after a fixed duration
+	//     regardless of write success — the safety net for a stranded stream.
+	//     The bound exceeds the heartbeat; EventSource reconnects seamlessly.
+	reqCtx := r.Context()
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	defer streamCancel()
+	go func() {
+		<-reqCtx.Done()
+		// DeadlineExceeded == the request timeout fired on a live client: the
+		// original bug. Leave the stream running; the bound owns its lifetime.
+		// context.Canceled == the peer actually went away: reclaim promptly.
+		if reqCtx.Err() == context.Canceled {
+			streamCancel()
+		}
+	}()
+
+	heartbeat := time.NewTicker(m.sseHeartbeat)
+	defer heartbeat.Stop()
+	bound := time.NewTimer(m.sseStreamBound)
+	defer bound.Stop()
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-streamCtx.Done():
+			return
+		case <-bound.C:
+			// Bounded lifetime: a stranded stream is reclaimed even when its
+			// heartbeat writes keep succeeding. EventSource reconnects on a
+			// live stream; a dead peer's socket is simply released.
 			return
 		case update := <-ch:
 			payload := ssePayload{
@@ -109,6 +157,13 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 				continue
 			}
 			if err := sse.WriteEvent("island", string(data)); err != nil {
+				return
+			}
+		case <-heartbeat.C:
+			// Keepalive comment: keeps intermediaries from idle-killing the
+			// connection and keeps the stream writing so a dead peer is heard
+			// from as a write error rather than silence.
+			if err := sse.WriteComment("ping"); err != nil {
 				return
 			}
 		}

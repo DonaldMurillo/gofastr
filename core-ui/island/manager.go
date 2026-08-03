@@ -53,6 +53,18 @@ const (
 	DefaultGlobalStreams     = 4096
 )
 
+// Default SSE stream-keepalive and lifetime bounds. The heartbeat writes a
+// comment frame on an idle stream so proxies and load balancers don't
+// idle-kill a live connection; the stream bound closes any one stream after
+// a fixed lifetime so a stream stranded by a peer the server can't observe as
+// gone is reclaimed even when its heartbeat writes keep succeeding into the
+// kernel buffer. The bound must exceed the heartbeat. Override per manager
+// with WithSSEHeartbeat / WithSSEStreamBound. See issue #159.
+const (
+	DefaultSSEHeartbeat   = 15 * time.Second
+	DefaultSSEStreamBound = 5 * time.Minute
+)
+
 // ErrSessionStreamLimit is returned when a session already holds its per-session
 // cap of concurrent SSE streams. The connect is refused, not evicted.
 var ErrSessionStreamLimit = errors.New("island: per-session SSE stream limit reached")
@@ -75,6 +87,35 @@ func WithStreamCaps(perSession, global int) ManagerOption {
 	}
 }
 
+// WithSSEHeartbeat sets the interval between SSE keepalive comment frames
+// (": ping") written on an idle stream (default DefaultSSEHeartbeat = 15s).
+// The keepalive keeps proxies and load balancers from idle-killing a live
+// connection, and is what keeps a live stream writing so a write error can
+// surface a half-closed peer. A non-positive value restores the default.
+func WithSSEHeartbeat(d time.Duration) ManagerOption {
+	return func(m *Manager) {
+		if d > 0 {
+			m.sseHeartbeat = d
+		}
+	}
+}
+
+// WithSSEStreamBound sets the maximum lifetime of a single SSE stream
+// (default DefaultSSEStreamBound = 5m). A stream is closed after this
+// duration even when its heartbeat writes keep succeeding into the kernel
+// buffer — the safety net that reclaims a stream stranded by a peer the
+// server cannot observe as gone (which otherwise exhausts the browser's
+// per-origin connection pool). EventSource reconnects seamlessly on a live
+// stream. The bound must exceed the heartbeat interval; a non-positive or
+// sub-heartbeat value restores the default. See issue #159.
+func WithSSEStreamBound(d time.Duration) ManagerOption {
+	return func(m *Manager) {
+		if d > 0 {
+			m.sseStreamBound = d
+		}
+	}
+}
+
 // Manager tracks active islands across all client sessions.
 type Manager struct {
 	mu      sync.RWMutex
@@ -87,6 +128,16 @@ type Manager struct {
 	// than a map walk on every connect.
 	caps       streamCaps
 	globalSubs int
+
+	// sseHeartbeat/sseStreamBound tune the SSE stream loop in
+	// ServeSSEWithPresence (see stream.go). sseHeartbeat is the period
+	// between keepalive comment frames on an idle stream; sseStreamBound
+	// is the maximum lifetime of one stream. Defaults from
+	// DefaultSSEHeartbeat / DefaultSSEStreamBound; override with
+	// WithSSEHeartbeat / WithSSEStreamBound. Read-only after
+	// NewManager. See issue #159.
+	sseHeartbeat   time.Duration
+	sseStreamBound time.Duration
 
 	// ── Presence ──
 	// presenceConns maps a unique connection id to its presence
@@ -211,6 +262,8 @@ func NewManager(opts ...ManagerOption) *Manager {
 			perSession: DefaultStreamsPerSession,
 			global:     DefaultGlobalStreams,
 		},
+		sseHeartbeat:   DefaultSSEHeartbeat,
+		sseStreamBound: DefaultSSEStreamBound,
 	}
 	for _, o := range opts {
 		o(m)
