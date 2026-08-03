@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -940,6 +941,26 @@ func SQLDefault(f schema.Field, dialect Dialect) string {
 		}
 		return "0"
 	default:
+		// A schema.JSON default is naturally authored as a Go map or slice —
+		// that is what crud.marshalJSONColumn writes on the insert path and
+		// what schema.validateJSON accepts, so the same value is correct in
+		// both those places and only wrong here. fmt.Sprintf("%v") renders
+		// Go's debug form, which put DEFAULT 'map[a:1]' on a JSONB column and
+		// failed AutoMigrate on Postgres while storing the literal text on
+		// SQLite, whose column is TEXT.
+		//
+		// Marshal, THEN quote. The escaping below is not incidental: the old
+		// unescaped fmt.Sprintf("'%v'", v) fallback let a kiln add_entity
+		// payload close the literal and commit an extra column. Marshalling
+		// instead of quoting would reopen exactly that.
+		if f.Type == schema.JSON {
+			if b, err := json.Marshal(v); err == nil {
+				return quoteSQLLiteral(string(b))
+			}
+			// An unmarshalable default is a broken declaration, not something
+			// to paper over with Go's debug rendering: fall through so the
+			// value is still escaped rather than spliced.
+		}
 		// Render, then escape. Never splice the rendering raw.
 		return quoteSQLLiteral(fmt.Sprintf("%v", v))
 	}

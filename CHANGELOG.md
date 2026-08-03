@@ -7,6 +7,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-08-03
+
+### Fixed
+
+- **A Go map or slice `Default` on a `schema.JSON` field emitted invalid DDL**
+  (`framework/migrate`). `SQLDefault` had no arm for the shapes such a default
+  naturally takes, so a map fell to the `fmt.Sprintf("%v")` fallback and
+  rendered `DEFAULT 'map[a:1]'` — which Postgres rejects on a `JSONB` column,
+  failing `AutoMigrate` at boot. SQLite's column is `TEXT`, so the same
+  declaration stored the literal text and looked fine: the identical dialect
+  split as #174. The value was already correct in the two other places it is
+  used — `schema.validateJSON` accepts maps and slices, and
+  `crud.marshalJSONColumn` marshals them on the insert path — so only the DDL
+  rendering was wrong. It now marshals to JSON *before* quoting, which keeps
+  the deliberate literal-escaping intact rather than replacing it. (#178)
+
 ## [0.57.0] - 2026-08-03
 
 ### Breaking
