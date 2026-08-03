@@ -213,6 +213,66 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   catalog, so a suppression written today cannot collide with a future
   release. A worked example — a project gate command with its own rule —
   is in `gofastr docs contracts` under "Your own rules".
+### Fixed
+
+- The `examples/ecommerce` flagship test no longer regenerates the committed
+  example into the working tree. It ran the generator with `--force` in the
+  repo directory, so a suite run rewrote tracked `app/` files — dirtying the
+  tree before a commit, and silently reverting if anyone ran
+  `git checkout -- examples/`. It now emits into a gitignored scratch package
+  inside the module, the same arrangement `examples/meridian` already used.
+  The assertion the overwrite was standing in for is now explicit:
+  `TestCommittedAppMatchesGeneratorOutput` diffs generator output against the
+  committed `app/` and names the stale file, so drift is a failing test rather
+  than a dirty tree nobody reads. (#176)
+
+## [0.58.0] - 2026-08-03
+
+### Fixed
+
+- **A Go map or slice `Default` on a `schema.JSON` field emitted invalid DDL**
+  (`framework/migrate`). `SQLDefault` had no arm for the shapes such a default
+  naturally takes, so a map fell to the `fmt.Sprintf("%v")` fallback and
+  rendered `DEFAULT 'map[a:1]'` — which Postgres rejects on a `JSONB` column,
+  failing `AutoMigrate` at boot. SQLite's column is `TEXT`, so the same
+  declaration stored the literal text and looked fine: the identical dialect
+  split as #174. The value was already correct in the two other places it is
+  used — `schema.validateJSON` accepts maps and slices, and
+  `crud.marshalJSONColumn` marshals them on the insert path — so only the DDL
+  rendering was wrong. It now marshals to JSON *before* quoting, which keeps
+  the deliberate literal-escaping intact rather than replacing it. (#178)
+
+## [0.57.0] - 2026-08-03
+
+### Breaking
+
+- **BREAKING: a malformed field `Default` now fails registration.** The change
+  surfaces an existing bug rather than creating one — the declaration was
+  already broken, it just failed per-request instead of at boot — but an app
+  that starts today can stop starting, so treat it as breaking. `App.Entity`
+  panics as it already does for other declaration errors (relation without
+  `To`, duplicate fields, wire-key collisions); `TryEntity` returns the error.
+  Fix the declaration the message names.
+
+### Fixed
+
+- **Field `Default` values are validated at registration** (`framework/entity`).
+  A `Default` is the value `crud.doCreate` substitutes for a field the request
+  body omitted, and it reached the driver through the same column as a
+  client-sent value but through none of the same checks — `ValidateAll` ran
+  over the body and the `Default` was applied afterwards. A caller who *sent*
+  the bad value got a 400 naming the field; a caller who *omitted* it got a
+  500 with nothing actionable in it. `Entity.Validate` now runs
+  `schema.Validate` over every `Default`, so a malformed one fails the
+  declaration at boot with the field named. The clearest case was
+  `{Type: schema.JSON, Default: "draft"}`: 500 against Postgres `JSONB`, and
+  stored unchanged in SQLite's `TEXT` — the same declaration broken on one
+  dialect and silently fine on the other. Auto-generated fields are exempt
+  (their `Default` is never an insert value; it survives only as the column's
+  DDL `DEFAULT`). Two Go spellings a JSON body cannot produce are normalized
+  before validating rather than refused: a `schema.Decimal` default written as
+  a Go number (what `gofastr generate` emits for `default: 0`) and a
+  `Timestamp`/`Date` default written as a `time.Time`. (#174)
 
 ## [0.56.0] - 2026-08-02
 
@@ -307,6 +367,18 @@ column renames), cron leader election, argon2id hashing, and Reader Mode.
   `ScreenArticle` to add a byline, date, or cover image.
 
 ### Fixed
+- SSE streams no longer die at the request timeout (issue #159). A live
+  subscriber was cut at `middleware.Timeout`'s 30s deadline, and the naive
+  fix (clearing the connection's read/write deadlines, reverted in #158)
+  stranded streams instead — exhausting the browser's per-origin connection
+  pool. The stream loop now ignores the request context's
+  `DeadlineExceeded` (the timeout firing on a still-connected client) while
+  unwinding on a real `context.Canceled` (client disconnect); a heartbeat
+  (`island.WithSSEHeartbeat`, default 15s) keeps live streams writing, and a
+  bounded stream lifetime (`island.WithSSEStreamBound`, default 5m) reclaims a
+  stranded stream even when its heartbeat writes keep succeeding into the
+  kernel buffer. Read/write deadlines are no longer cleared, so net/http's
+  close-notify (and thus prompt disconnect detection) stays intact.
 
 - `ui.SiteHeaderLink.MatchPrefix` activates on canonical hrefs with no
   trailing slash: `/docs` now lights up on `/docs` and `/docs/getting-started`
@@ -772,6 +844,8 @@ failed first.
   the pages that existed but were unreachable. New pages: `email.md`,
   `storage.md`, and `core-packages.md` (a map of the exported `core/*`
   packages that had no page).
+
+## [0.53.0] - 2026-07-30
 
 The eleven pre-existing bugs the v0.52.0 review pass found in shipped code
 but deliberately left out of that release, plus a security audit of the
