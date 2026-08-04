@@ -1015,6 +1015,67 @@
     requestAnimationFrame(() => requestAnimationFrame(doScroll));
   };
 
+  // --- History entry identity + scroll restoration ---
+  // Every history entry the runtime writes carries {__fui: <id>} so
+  // back/forward can restore the exact scroll position it left.
+  // scrollRestoration is manual: the browser's own restore fires before
+  // the swapped content exists and clamps to the wrong page's height.
+  try { history.scrollRestoration = 'manual'; } catch (_) {}
+  const SCROLL_KEY = 'gofastr:scroll';
+  // In-memory map id → [x,y], seeded from sessionStorage so a reload
+  // keeps its position despite manual restoration; persisted with a
+  // trailing throttle (in-memory writes are per scroll event, cheap).
+  const _scrollStore = (() => {
+    try { return JSON.parse(sessionStorage.getItem(SCROLL_KEY)) || {}; } catch (_) { return {}; }
+  })();
+  let _entrySeq = 0;
+  for (const k in _scrollStore) { const n = +k; if (n > _entrySeq) _entrySeq = n; }
+  let _entryId = (history.state && history.state.__fui) || 0;
+  if (!_entryId) {
+    _entryId = ++_entrySeq;
+    try { history.replaceState({ __fui: _entryId }, '', location.href); } catch (_) {}
+  } else if (_entryId > _entrySeq) { _entrySeq = _entryId; }
+  let _scrollTimer = 0;
+  const _persistScroll = () => {
+    const ids = Object.keys(_scrollStore);
+    // Cap the persisted map; the oldest ids are the least likely to be
+    // reachable via Back.
+    if (ids.length > 50) {
+      ids.sort((a, b) => a - b);
+      for (const id of ids.slice(0, ids.length - 50)) delete _scrollStore[id];
+    }
+    try { sessionStorage.setItem(SCROLL_KEY, JSON.stringify(_scrollStore)); } catch (_) {}
+  };
+  window.addEventListener('scroll', () => {
+    _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
+    if (_scrollTimer) return;
+    _scrollTimer = setTimeout(() => { _scrollTimer = 0; _persistScroll(); }, 150);
+  }, { passive: true });
+  // Reload restore: manual scrollRestoration leaves a reloaded page at
+  // the top; the stored position for this entry id puts it back. A URL
+  // fragment wins — the browser's native hash scroll is already right.
+  if (!location.hash && _scrollStore[_entryId]) {
+    const p0 = _scrollStore[_entryId];
+    requestAnimationFrame(() => window.scrollTo(p0[0], p0[1]));
+  }
+  // Scroll target for a popstate-initiated nav in flight; consumed by
+  // finishNav INSTEAD of scrollToHash so Back/Forward land where the
+  // user left, not at the top.
+  let _pendingScroll = null;
+
+  // Single choke point for every history write in the runtime (the click
+  // hijack, navigate(), RPC X-Gofastr-Push-State, widget/pane deep
+  // links, intercepts). Assigns the entry id for scroll restoration,
+  // moves the URL, and keeps currentPath in sync — modules that
+  // pushState'd around the router left currentPath stale, so the next
+  // popstate mis-diffed the URL change.
+  const _pushURL = (url, { replace = false } = {}) => {
+    const id = replace ? _entryId : ++_entrySeq;
+    try { history[replace ? 'replaceState' : 'pushState']({ __fui: id }, '', url); } catch (_) { return; }
+    _entryId = id;
+    currentPath = location.pathname + location.search;
+  };
+
   // Close ordinary disclosures inside scope so they do not float over the
   // destination content. Persistent shell controls opt out explicitly.
   const closeDisclosures = (scope) => {
@@ -1069,8 +1130,18 @@
   // cleanup to the region that actually changed.
   const finishNav = (path, prevPath, cached, root) => {
     updateActiveLink(path);
-    scrollToHash();
+    const ps = _pendingScroll;
+    _pendingScroll = null;
+    if (!ps) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
+    if (ps) {
+      // Restore AFTER the navigate listeners ran: overlay scroll-lock
+      // releases (panes, modals) fire on that event and would clamp the
+      // restored position. Double-write across frames mirrors
+      // scrollToHash's late-reflow settle pass.
+      window.scrollTo(ps[0], ps[1]);
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(ps[0], ps[1])));
+    }
   };
 
   /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav. */
@@ -1132,7 +1203,7 @@
         // resolvePath keeps the search string — the cache key and the
         // URL bar must carry a redirect-added query (e.g. ?next=/admin).
         if (fr.redirected && fr.url) dest = resolvePath(fr.url);
-        if (dest !== path) { try { history.replaceState(null, '', dest); } catch (_) {} currentPath = dest; }
+        if (dest !== path) { _pushURL(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
         document.title = t;
         announceRoute(t);
@@ -1189,7 +1260,7 @@
         // pushState was already called by the click handler with the
         // requested path; replace it with the redirect destination so
         // the URL bar matches what we're about to load.
-        try { history.replaceState(null, '', redirectTo); } catch (_) {}
+        _pushURL(redirectTo, { replace: true });
         currentPath = redirectTo;
         _pendingNav.delete(path);
         doc.removeHtmlAttr('aria-busy');
@@ -1235,7 +1306,8 @@
       // pushState'd by the click handler so revert it.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast('Could not load ' + path + ' — check your connection');
-      try { history.replaceState(null, '', prevPath || location.pathname); } catch (_) {}
+      _pendingScroll = null;
+      _pushURL(prevPath || location.pathname, { replace: true });
       currentPath = prevPath;
     } finally {
       _pendingNav.delete(path);
@@ -1387,17 +1459,66 @@
     // declared origin. The module owns the URL and the fetch in that
     // case; returning true means it took the navigation.
     if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
-    history.pushState(null, '', fullPath + navHash);
+    _pushURL(fullPath + navHash);
     loadPage(fullPath);
   });
 
+  // Stateful query params describe in-page state (open panes, widget
+  // deep links). A history move whose ONLY search diff is stateful must
+  // not refetch the screen — refetching discarded the client-mounted
+  // widget, which is why Forward across a deep link never worked. The
+  // set is built at popstate time from what the page actually declares:
+  // the widget catalog's deepLinkKey/deepLinkParams plus every
+  // [data-fui-pane-deeplink] attribute in the DOM. Everything else
+  // (search, filters, ?p=) is screen identity and refetches as before.
+  const _statefulParams = () => {
+    const set = new Set();
+    const cat = window.__gofastr._widgetCatalog || {};
+    for (const name in cat) {
+      const cfg = cat[name] && cat[name].cfg;
+      if (!cfg) continue;
+      if (cfg.deepLinkKey) set.add(cfg.deepLinkKey);
+      for (const p of cfg.deepLinkParams || []) set.add(p);
+    }
+    for (const el of document.querySelectorAll('[data-fui-pane-deeplink]')) {
+      const p = el.getAttribute('data-fui-pane-deeplink');
+      if (p) set.add(p);
+    }
+    return set;
+  };
+  const _onlyStatefulDiff = (a, b) => {
+    const ap = a.split('?'), bp = b.split('?');
+    if (ap[0] !== bp[0]) return false;
+    const as = new URLSearchParams(ap[1] || ''), bs = new URLSearchParams(bp[1] || '');
+    const keys = new Set([...as.keys(), ...bs.keys()]);
+    const stateful = _statefulParams();
+    for (const k of keys) {
+      if ((as.get(k) || '') === (bs.get(k) || '')) continue;
+      if (!stateful.has(k)) return false;
+    }
+    return true;
+  };
+
   // popstate: a URL change via back/forward triggers a screen-partial
-  // re-fetch (cache makes it instant). This covers both cross-page
-  // navigations AND in-page state changes pushed via X-Gofastr-Push-State.
+  // re-fetch (cache makes it instant) — unless the diff is purely
+  // stateful, in which case the deep-link sync below replays the state
+  // with zero fetches. Reads history.state, never the event's: the
+  // intercept module's synthetic PopStateEvent carries none.
   window.addEventListener('popstate', () => {
+    const st = history.state;
+    _entryId = (st && st.__fui) || 0;
+    if (!_entryId) {
+      _entryId = ++_entrySeq;
+      try { history.replaceState({ __fui: _entryId }, '', location.href); } catch (_) {}
+    }
     const path = location.pathname + location.search;
     if (path !== currentPath && currentPath !== '') {
-      loadPage(path);
+      if (_onlyStatefulDiff(currentPath, path)) {
+        currentPath = path;
+      } else {
+        _pendingScroll = _scrollStore[_entryId] || null;
+        loadPage(path);
+      }
     }
     // Widget deep links ride the same event: a query-only change means
     // a modal/drawer should open or close. Deferred a tick so it runs
@@ -1426,13 +1547,15 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as Lightbox AllowDownload etc.
       if (!this._originOK(path)) return;
-      if (replace || path === currentPath) {
-        history.replaceState(null, '', path);
-      } else {
-        history.pushState(null, '', path);
-      }
+      _pushURL(path, { replace: replace || path === currentPath });
       loadPage(path, { bypassCache: force });
     },
+
+    // The history-write choke point, exported for the modules that
+    // record in-page state in the URL (rpc push-state, widget + pane
+    // deep links, intercept). Writing history around it leaves
+    // currentPath stale and breaks scroll restoration.
+    _pushURL,
 
     /** Drop cached screens so the next visit re-fetches. Selectors:
         "/orders" drops that pathname AND every cached query variant;
@@ -1671,11 +1794,16 @@
 
   const hydrate = (componentId) => {
     if (hydrated.has(componentId)) return;
-    hydrated.add(componentId);
 
     const el = document.querySelector(`[data-widget="${componentId}"]`)
       ?? document.querySelector(`[data-component="${componentId}"]`);
     if (!el) return;
+    // Mark hydrated only once the element was actually found — marking
+    // before the lookup made a too-early call (root not yet in the DOM)
+    // permanently block that id's behavior script. Never cleared across
+    // navs: the behavior script URL is keyed by id, so process-lifetime
+    // dedup is correct for re-inserted same-id DOM.
+    hydrated.add(componentId);
 
     // data-behavior is the most privileged attribute the runtime reads:
     // it becomes a <script src>. Only the one shape the framework emits

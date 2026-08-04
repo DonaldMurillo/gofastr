@@ -54,11 +54,16 @@
 
   const hydrate = (componentId) => {
     if (hydrated.has(componentId)) return;
-    hydrated.add(componentId);
 
     const el = document.querySelector(`[data-widget="${componentId}"]`)
       ?? document.querySelector(`[data-component="${componentId}"]`);
     if (!el) return;
+    // Mark hydrated only once the element was actually found — marking
+    // before the lookup made a too-early call (root not yet in the DOM)
+    // permanently block that id's behavior script. Never cleared across
+    // navs: the behavior script URL is keyed by id, so process-lifetime
+    // dedup is correct for re-inserted same-id DOM.
+    hydrated.add(componentId);
 
     // data-behavior is the most privileged attribute the runtime reads:
     // it becomes a <script src>. Only the one shape the framework emits

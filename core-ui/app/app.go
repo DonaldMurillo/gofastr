@@ -456,6 +456,12 @@ func (a *App) RenderPartialFromResult(ctx context.Context, path, fromPath string
 	if !ok || target.Type != ScreenPage {
 		return res, nil
 	}
+	// Clients may send the origin with its query string (the intercept
+	// module reuses the same header with pathname+search); the chain is
+	// a property of the route, so resolve on the pathname alone.
+	if i := strings.IndexByte(fromPath, '?'); i >= 0 {
+		fromPath = fromPath[:i]
+	}
 	from, _, ok := a.Router.Resolve(fromPath)
 	if !ok {
 		return res, nil

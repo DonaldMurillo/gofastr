@@ -9,7 +9,7 @@
     for (const key of cfg.deepLinkParams || []) {
       if (key in params) url.searchParams.set(key, params[key]);
     }
-    if (url.href !== location.href) history.pushState(null, '', url.pathname + url.search + url.hash);
+    if (url.href !== location.href) G._pushURL(url.pathname + url.search + url.hash);
   };
 
   G._deepLinkStripUrl = function (cfg) {
@@ -27,7 +27,7 @@
     }
     if (!touched) return;
     const query = url.searchParams.toString();
-    history.pushState(null, '', url.pathname + (query ? '?' + query : '') + url.hash);
+    G._pushURL(url.pathname + (query ? '?' + query : '') + url.hash);
   };
 
   // Pure function exports on the namespace — no DOM to rescan; just

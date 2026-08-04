@@ -99,7 +99,9 @@
     const url = new URL(location.href);
     if (!mutate(url.searchParams)) return;
     const q = url.searchParams.toString();
-    history.pushState(null, '', url.pathname + (q ? '?' + q : '') + url.hash);
+    // Through the router's choke point so currentPath and the history
+    // entry id stay coherent (scroll restore, stateful-popstate diff).
+    NS._pushURL(url.pathname + (q ? '?' + q : '') + url.hash);
   }
 
   function pushPane(host, pane, trigger) {
