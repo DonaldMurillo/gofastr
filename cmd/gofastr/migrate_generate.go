@@ -1,10 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/migrate"
@@ -63,49 +61,33 @@ func runMigrateGenerate(args []string) {
 		reg.Register(framework.Define(decl.Name, cfg))
 	}
 
-	prev, err := framework.LoadSnapshot(opts.snapshotPath)
-	if err != nil {
-		fail("Failed to read snapshot %s: %v", opts.snapshotPath, err)
-		osExit(1)
-	}
-
-	up, down, next, err := framework.GenerateMigration(reg, prev, dialect)
+	// Both generation paths — this CLI and a host binary calling
+	// framework.GenerateMigrationFile with its own compiled registry — go
+	// through one implementation, so the file naming, directive layout and
+	// snapshot format cannot drift apart.
+	path, err := framework.GenerateMigrationFile(
+		framework.MigrationPlan{Registry: reg},
+		opts.name,
+		framework.MigrationFileOptions{
+			MigrationsDir: opts.migrationsDir,
+			SnapshotPath:  opts.snapshotPath,
+			Dialect:       dialect,
+			Group:         opts.group,
+		},
+	)
 	if err != nil {
 		fail("Generate failed: %v", err)
 		osExit(1)
 	}
-	if up == "" {
+	if path == "" {
 		success("Schema is up to date — nothing to generate.")
 		return
 	}
 
-	if err := os.MkdirAll(opts.migrationsDir, 0o755); err != nil {
-		fail("Could not create %s: %v", opts.migrationsDir, err)
-		osExit(1)
-	}
-	version := nextMigrationVersion(opts.migrationsDir)
-	slug := sanitizeMigrationName(opts.name)
-	filename := fmt.Sprintf("%04d_%s.sql", version, slug)
-	path := filepath.Join(opts.migrationsDir, filename)
-
-	content := framework.RenderMigrationFile(version, slug, up, down)
-	if opts.group != "" {
-		// Stamp the -- +migrate Group directive just before the Up section so
-		// the runner scopes this migration into the named group.
-		content = strings.Replace(content, "-- +migrate Up\n", "-- +migrate Group "+opts.group+"\n-- +migrate Up\n", 1)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		fail("Could not write %s: %v", path, err)
-		osExit(1)
-	}
-	if err := framework.SaveSnapshot(opts.snapshotPath, next); err != nil {
-		fail("Migration written but snapshot update failed: %v", err)
-		osExit(1)
-	}
-
 	success("Generated %s", path)
 	info("Review it, commit it, then run `gofastr migrate up`.")
-	if down == "" {
+	if body, err := os.ReadFile(path); err == nil &&
+		!strings.Contains(string(body), "-- +migrate Down") {
 		info("Note: this migration has no Down section (no safe inverse) — it is not reversible.")
 	}
 }
@@ -148,48 +130,4 @@ func parseMigrateGenOptions(args []string) migrateGenOptions {
 		opts.snapshotPath = filepath.Join(opts.migrationsDir, "schema.snapshot.json")
 	}
 	return opts
-}
-
-// nextMigrationVersion returns one past the highest NNNN_ prefix among the
-// existing .sql files, or 1 when the directory is empty.
-func nextMigrationVersion(dir string) uint64 {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return 1
-	}
-	var max uint64
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
-			continue
-		}
-		prefix := e.Name()
-		if i := strings.IndexByte(prefix, '_'); i > 0 {
-			prefix = prefix[:i]
-		}
-		if v, err := strconv.ParseUint(prefix, 10, 64); err == nil && v > max {
-			max = v
-		}
-	}
-	return max + 1
-}
-
-// sanitizeMigrationName lower-cases and replaces non-alphanumeric runs with a
-// single underscore so the name is filesystem- and directive-safe.
-func sanitizeMigrationName(name string) string {
-	var b strings.Builder
-	lastUnderscore := false
-	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-			lastUnderscore = false
-		} else if !lastUnderscore {
-			b.WriteByte('_')
-			lastUnderscore = true
-		}
-	}
-	out := strings.Trim(b.String(), "_")
-	if out == "" {
-		out = "migration"
-	}
-	return out
 }

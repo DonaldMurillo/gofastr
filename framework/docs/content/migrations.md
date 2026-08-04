@@ -241,13 +241,15 @@ ALTER TABLE "posts" DROP COLUMN "published";
 > [blueprints](blueprints.md)) — the pre-graduation bootstrap path. It does
 > **not** see anything registered in Go — neither `app.Entity(...)` entities
 > nor `App.View` / `App.Routine` / `App.Table`. For Go-defined schema, use
-> auto-migrate (`App.Start` applies it on boot); to emit a versioned migration
-> that includes Go-registered entities/views/routines/tables, run migration
-> generation from your own app's binary (it has the entities compiled in and
-> diffs them against the snapshot), or call the programmatic
-> `migrate.GeneratePlan(plan, snapshot, dialect)` from your own code (it returns
-> the Up/Down SQL and next snapshot; write them with
-> `migrate.RenderMigrationFile` / `SaveSnapshot`).
+> auto-migrate (`App.Start` applies it on boot), or emit versioned migrations
+> **from your own app's binary** via the supported
+> `migrate.GenerateMigrationFile` entrypoint (the binary has its entities
+> compiled in and diffs them against the committed snapshot — see
+> [Generating from a host binary](#generating-from-a-host-binary-owned-go-path)
+> below). For finer control, the lower-level
+> `migrate.GeneratePlan(plan, snapshot, dialect)` returns the Up/Down SQL and
+> next snapshot directly (write them with `migrate.RenderMigrationFile` /
+> `SaveSnapshot`).
 
 It then updates the snapshot. The typical loop:
 
@@ -272,7 +274,25 @@ as destructive changes (refused unless `AllowDestructive` is set) — they
 often need a data-specific `USING` conversion on Postgres or a table rebuild
 on SQLite, so review and hand-tighten the generated SQL. Renames: declare
 `EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
-`RENAME COLUMN` instead of a data-losing drop+add.
+`RENAME COLUMN` instead of a data-losing drop+add. A rename is otherwise
+indistinguishable from a drop plus an add, so it has to be declared.
+
+In a blueprint, the same declaration is an entity's `renames:` key:
+
+```yaml
+entities:
+  - name: posts
+    table: posts
+    renames:
+      headline: title      # old column: new column
+    fields:
+      - name: title
+        type: string
+```
+
+The new name must be a declared field and the old one must not be, since the
+diff would otherwise see both columns. Both sides are checked as column
+identifiers at validate time.
 
 Type-change detection catches the type *class* (e.g. TEXT→INTEGER) but NOT
 size/precision changes — `VARCHAR(50)→VARCHAR(100)` and `DECIMAL(10,2)→(19,4)`
@@ -291,6 +311,65 @@ right.
 Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`
 (default `migrations`), `--snapshot=<path>` (default
 `<migrations>/schema.snapshot.json`), `--driver=<name>`.
+
+## Generating from a host binary (owned-Go path)
+
+Once an app graduates from the blueprint, its schema lives in **owned Go** —
+`app.Entity(...)`, `App.Table`, `App.View`, `App.Routine` registrations the
+`gofastr migrate generate` CLI cannot see. `migrate.GenerateMigrationFile` is
+the supported entrypoint for that case: it diffs a full migration Plan (the
+registry + views + routines a host binary has compiled in) against the
+committed snapshot and writes the next numbered migration file, updating the
+snapshot — the same loop the blueprint CLI runs, byte-for-byte (same
+`NNNN_<slug>.sql` naming, same `-- +migrate` directives, same
+`schema.snapshot.json`), because both paths share `GeneratePlan` +
+`RenderMigrationFile` + `SaveSnapshot`.
+
+A host app binary has no built-in subcommand dispatcher (it is a flat
+`main()` that wires the app and calls `Start()`), so the supported surface is
+this one call plus a thin `main()` guard. Wire a `migrate generate` verb
+yourself — typically by inspecting `os.Args` before `app.Start()`:
+
+<!-- gofastr:compile
+import "fmt"
+import "log"
+import "os"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/migrate"
+func buildApp() *framework.App { return framework.NewApp() }
+-->
+```go
+func main() {
+    app := buildApp() // your *framework.App with entities/tables/views/routines registered
+
+    // `myapp migrate generate <name>` emits a versioned migration from the
+    // compiled registry, then exits — no server, no DB touched.
+    if len(os.Args) >= 4 && os.Args[1] == "migrate" && os.Args[2] == "generate" {
+        name := os.Args[3]
+        plan := app.MigrationPlan() // registry + views + routines, same as Start applies
+        path, err := migrate.GenerateMigrationFile(plan, name, migrate.MigrationFileOptions{
+            MigrationsDir: "migrations",
+            SnapshotPath:  "migrations/schema.snapshot.json",
+            Dialect:       migrate.DialectPostgres, // match your production engine
+        })
+        if err != nil { log.Fatal(err) }
+        if path == "" { fmt.Println("schema is up to date"); return }
+        fmt.Printf("generated %s\nreview, commit it + schema.snapshot.json, then: gofastr migrate up\n", path)
+        return
+    }
+
+    if err := app.Start(":8080"); err != nil { log.Fatal(err) }
+}
+```
+
+The `Plan` mirrors what `App.Start` builds for auto-migrate, so a generated
+migration and boot-time auto-migrate never disagree. An empty returned path
+means the schema already matches the snapshot (nothing written). Pass
+`MigrationFileOptions.Group` to stamp a `-- +migrate Group <name>` directive,
+matching the CLI's `--group`. Renames declared via `EntityConfig.Renames`
+flow through as a non-destructive `RENAME COLUMN` (not a drop+add), exactly as
+they do from the blueprint path. Generation is deterministic — the same Plan
+always produces byte-identical files, so diffs and checksums stay stable.
 
 ## Non-entity tables (raw tables)
 
