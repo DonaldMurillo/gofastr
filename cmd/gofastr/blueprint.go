@@ -908,8 +908,18 @@ func decodeEntityScope(node *coreyaml.Node, context string) (*fwentity.ScopeDecl
 	if err := rejectUnknownKeys(m, map[string]bool{"soft_delete": true, "multi_tenant": true, "tenant_field": true, "owner_field": true, "cross_owner_read": true}, context); err != nil {
 		return nil, err
 	}
+	// soft_delete and multi_tenant are protective: false means hard deletes and
+	// no tenant scoping. See protectiveBool.
+	softDelete, err := protectiveBool(m, "soft_delete", context)
+	if err != nil {
+		return nil, err
+	}
+	multiTenant, err := protectiveBool(m, "multi_tenant", context)
+	if err != nil {
+		return nil, err
+	}
 	return &fwentity.ScopeDeclaration{
-		SoftDelete: boolValue(m["soft_delete"]), MultiTenant: boolValue(m["multi_tenant"]),
+		SoftDelete: softDelete, MultiTenant: multiTenant,
 		TenantField: stringValue(m["tenant_field"]), OwnerField: stringValue(m["owner_field"]),
 		CrossOwnerRead: stringValue(m["cross_owner_read"]),
 	}, nil
@@ -1136,6 +1146,22 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("fields[%d]", i)); err != nil {
 			return nil, err
 		}
+		// read_only / hidden / no_query are protective: false exposes the field
+		// to clients, to every API response, and to the filter surface
+		// respectively. See protectiveBool.
+		fieldCtx := fmt.Sprintf("fields[%d]", i)
+		readOnly, err := protectiveBool(m, "read_only", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
+		hidden, err := protectiveBool(m, "hidden", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
+		noQuery, err := protectiveBool(m, "no_query", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
 		field := framework.FieldDeclaration{
 			Name:         stringValue(m["name"]),
 			Type:         stringValue(m["type"]),
@@ -1143,9 +1169,9 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 			Unique:       boolValue(m["unique"]),
 			Default:      scalarValue(m["default"]),
 			AutoGenerate: stringValue(m["auto_generate"]),
-			ReadOnly:     boolValue(m["read_only"]),
-			Hidden:       boolValue(m["hidden"]),
-			NoQuery:      boolValue(m["no_query"]),
+			ReadOnly:     readOnly,
+			Hidden:       hidden,
+			NoQuery:      noQuery,
 			Pattern:      stringValue(m["pattern"]),
 			Values:       stringListValue(m["values"]),
 			To:           stringValue(m["to"]),
@@ -1270,7 +1296,13 @@ func decodeBlueprintScreens(node *coreyaml.Node) ([]BlueprintScreen, error) {
 			if err := rejectUnknownKeys(accM, map[string]bool{"auth": true, "role": true}, fmt.Sprintf("screens[%d].access", i)); err != nil {
 				return nil, err
 			}
-			screen.Access = BlueprintAccess{Auth: boolValue(accM["auth"]), Role: stringValue(accM["role"])}
+			// access.auth is THE protective flag: false registers the screen with
+			// no policy, i.e. public. `auth: yes` used to land there silently.
+			auth, err := protectiveBool(accM, "auth", fmt.Sprintf("screens[%d].access", i))
+			if err != nil {
+				return nil, err
+			}
+			screen.Access = BlueprintAccess{Auth: auth, Role: stringValue(accM["role"])}
 			if screen.Access.Role != "" {
 				screen.Access.Auth = true
 			}
@@ -7457,9 +7489,44 @@ func boolValue(node *coreyaml.Node) bool {
 	return strings.EqualFold(fmt.Sprint(node.Value), "true")
 }
 
+// protectiveBool decodes a flag whose FALSE value is the PERMISSIVE state, so a
+// coerced-to-false read is fail-open. Missing is fine (that is the documented
+// default); present-but-unreadable is an error naming the key.
+//
+// boolValue, the lax decoder, maps anything that is not the bool true or the
+// string "true" to false. core/yaml is YAML 1.2, so `yes` / `on` / `y` / `1` are
+// STRINGS there — and they are how people, and agents transcribing a spec, most
+// often write "true" in YAML. `access: {auth: yes}` therefore decoded to
+// Auth=false and registered the screen with no policy at all: publicly
+// reachable, no warning, no error.
+//
+// strictBoolValue already existed for this and was wired to exactly one key
+// (app.auth.dev_mode). Its comment justified itself as "the one blueprint bool
+// whose default is true", and that framing is what let these through — the
+// polarity that matters is not what the default is, it is which direction the
+// coercion moves safety. Every key routed through here defaults to false, and
+// false is the unsafe side.
+//
+// Deliberately NOT applied to flags whose false value is the safe/inert one
+// (`exposure.public`, `exposure.mcp`, `exposure.crud`, `app.public_openapi`,
+// `*.enabled`, `llm_md`, `timestamps`, `many`, `create`): there, a coerced
+// false turns a feature OFF, which is the direction we would want anyway.
+func protectiveBool(m map[string]*coreyaml.Node, key, context string) (bool, error) {
+	node, ok := m[key]
+	if !ok || node == nil {
+		return false, nil
+	}
+	v, err := strictBoolValue(node)
+	if err != nil {
+		return false, fmt.Errorf("%s.%s %w — this flag gates access or exposure, so it is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
+	}
+	return v, nil
+}
+
 // strictBoolValue accepts only a genuine bool node (or the literal
 // strings "true"/"false") and errors on anything else — for keys where
-// lax coercion would silently invert a safe default.
+// lax coercion would silently invert a safe default. See protectiveBool
+// for the larger set of keys where the unsafe direction is FALSE.
 func strictBoolValue(node *coreyaml.Node) (bool, error) {
 	if node != nil && node.Kind == coreyaml.Scalar {
 		if v, ok := node.Value.(bool); ok {

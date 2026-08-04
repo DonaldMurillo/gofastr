@@ -31,7 +31,13 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 	for i, ent := range spec.Entities {
 		decl := spec.Decls[i]
 		writeJSEntity(&js, &dts, decl, ent)
-		resourceProps = append(resourceProps, fmt.Sprintf("    this.%s = new Resource(this, %q);", jsResourceProp(ent), ent.Table))
+		// this[%q], not this.%s — see the note on the field-key emission in
+		// writeJSEntity. `this.<name> = …` is a JS STATEMENT position, so an
+		// unquoted name there is the sharper of the two sites: a `;` in it ends
+		// the assignment and whatever follows runs in the constructor. Bracket
+		// access is identical for every legitimate name (`client.posts` still
+		// resolves) and admits no name that is not a string.
+		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q);", jsResourceProp(ent), ent.Table))
 	}
 
 	// Client class last in the .js so Resource is already defined; the d.ts
@@ -128,7 +134,23 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if f.NoQuery {
 			continue
 		}
-		fmt.Fprintf(js, "  %s: %q,\n", f.Wire, f.Snake)
+		// The KEY is quoted in the .js. f.Wire is toCamelJSON(field name), and
+		// toCamelCase only splits on "_ - space" — every other byte survives, so
+		// Wire is not an identifier by construction. `client.go` gets
+		// format.Source and the blueprint tree gets assertBlueprintGoParses;
+		// .js/.d.ts get no syntax gate at all (Go's stdlib has no JS parser and
+		// third-party deps are not an option here), so the emission site has to
+		// carry the property itself. A quoted key cannot leave its object
+		// literal, and `postsFields.title` still resolves.
+		//
+		// Not a privilege boundary: these names come from the developer's own
+		// entities/*.go via packReadEntities (astString, no identifier check),
+		// and anyone who can edit that file can already run code in the project.
+		// Quoting costs nothing and removes the position.
+		fmt.Fprintf(js, "  %q: %q,\n", f.Wire, f.Snake)
+		// The .d.ts stays an unquoted property name: it is a type declaration,
+		// never executed, so the worst case there is a tsc error in the
+		// consumer rather than code running.
 		fmt.Fprintf(dts, "  %s: %q;\n", f.Wire, f.Snake)
 	}
 	js.WriteString("});\n\n")

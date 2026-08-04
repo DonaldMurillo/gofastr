@@ -656,6 +656,10 @@ releases:
         breaking: false
         guidance: "A blueprint that previously generated is refused if a relation name is not a Go identifier or collides with a field name, if an app.theme value carries a CSS declaration-breaking sequence, or if a login_form/signup_form footer href uses a non-http(s) scheme. Each was a real emitter escape; fix the blueprint value the error names. Generation also parse-checks every .go file it emits, so a malformed emit fails the generate instead of shipping."
         detect: "relations:|app\\.theme|login_form|signup_form"
+      - change: Six blueprint booleans that gate access reject non-boolean values
+        breaking: true
+        guidance: "core/yaml is YAML 1.2, where yes/on/y/1 are STRINGS — so scope.multi_tenant, scope.soft_delete, a field's hidden/no_query/read_only, and a screen's access.auth read as false when written that way, silently dropping the protection. Those six now error. Write true or false; do not revert, because the old spelling was never applying the guard. Keys where false is inert (public, mcp, crud, enabled) are unchanged."
+        detect: "(auth|multi_tenant|soft_delete|hidden|no_query|read_only):\\s*(yes|on|y|1|Yes|No|off)\\s*$"
       - change: Every package now carries a stability tier
         breaking: false
         guidance: "Informational. docs/public-api.md says what Stable, Provisional, Experimental, Internal and Excluded promise. Nothing is Stable before v1.0.0 — the supported framework surface is Provisional, meaning documented and covered by the deprecation window in `gofastr docs stability`, not frozen. No import paths changed."

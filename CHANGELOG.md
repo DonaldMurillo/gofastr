@@ -111,6 +111,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - A typo in a screen's `layout:` silently rendered the screen inside the
   authenticated app shell instead of failing; anything that was not
   `marketing` mapped to the app layout.
+- **BREAKING (validation) — six blueprint booleans that gate access now
+  reject anything but `true`/`false`.** `core/yaml` implements YAML 1.2,
+  where `yes`, `on`, `y`, and `1` are strings rather than booleans, so
+  `access: {auth: yes}` read as **false** and registered the screen with
+  no policy at all — publicly reachable, with no error to say so.
+  `scope.multi_tenant: yes` dropped tenant scoping identically, and a
+  field's `hidden`, `no_query`, or `read_only` failed open the same way.
+  The six now error; keys where false is the inert direction (`public`,
+  `mcp`, `crud`, `enabled`) keep the lax reading. A blueprint using one of
+  the rejected spellings was already not getting the protection it asked
+  for, so fix the value rather than reverting: no in-tree blueprint,
+  example, or doc used one.
+- The generated JavaScript client emitted entity names into unquoted
+  object-key and statement positions (`this.<name> = new Resource(…)`),
+  and those names are not identifier-constrained on the way in. It now
+  emits `this[<name>]` with quoted keys. Consumer-visible behavior is
+  unchanged. `client.d.ts` keeps unquoted names deliberately — type
+  declarations are never executed.
 
 ### Fixed
 
