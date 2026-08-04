@@ -94,3 +94,53 @@ func TestRenamesTargetMustBeDeclared(t *testing.T) {
 		t.Errorf("error should name the undeclared target: %v", err)
 	}
 }
+
+// TestAuthFooterHrefRejectedAtValidate: ui.Link degrades an unsafe footer href
+// to a dead link at render time, which is safe but silent — the author gets a
+// broken link instead of an error. Every sibling problem in validateBlueprint
+// (theme values, relation names, screen layouts) fails the generate, so this
+// one does too. It shares urlsafe.Anchor with the renderer, so validate and
+// render cannot disagree about what is safe.
+func TestAuthFooterHrefRejectedAtValidate(t *testing.T) {
+	block := func(kind, key, href string) string {
+		return `  - name: login
+    route: /login
+    body:
+      - kind: ` + kind + `
+        props:
+          ` + key + `: "` + href + `"
+`
+	}
+	for _, c := range []struct {
+		name, kind, key, href string
+		wantErr               bool
+	}{
+		{"login javascript", "login_form", "register_href", "javascript:fetch('//x')", true},
+		{"signup javascript", "signup_form", "login_href", "javascript:alert(1)", true},
+		{"login data uri", "login_form", "register_href", "data:text/html,<script>", true},
+		{"relative ok", "login_form", "register_href", "/signup", false},
+		{"mailto ok", "login_form", "register_href", "mailto:help@example.com", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "gofastr.yml")
+			bp := "app:\n  name: testapp\nscreens:\n" + block(c.kind, c.key, c.href)
+			if err := os.WriteFile(path, []byte(bp), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := loadBlueprint(path)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("expected %q to be rejected", c.href)
+				}
+				if !strings.Contains(err.Error(), c.key) {
+					t.Errorf("error should name the offending prop %q: %v", c.key, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%q should be accepted: %v", c.href, err)
+			}
+		})
+	}
+}

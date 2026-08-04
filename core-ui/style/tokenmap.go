@@ -452,6 +452,29 @@ func validateColorValue(v string) error {
 	return nil
 }
 
+// ValidateColorValue is the exported form of the color-token grammar, for
+// callers that write a [Theme]'s color fields DIRECTLY instead of going through
+// [ApplyTokens]. Every setter path already runs it; a direct struct assignment
+// (`theme.Colors.Primary.Value = v`, `theme.DarkColors[k] = v`) runs nothing at
+// all, so any producer that assigns must call this itself.
+//
+// The blueprint generator in cmd/gofastr is exactly that producer: it emits
+// those assignments as generated Go from `app.theme` / `app.theme.dark` in
+// gofastr.yml, and the value lands verbatim in `--color-<token>` on the
+// app-wide stylesheet the UI host and the admin battery serve.
+//
+// Exported rather than reimplemented on purpose: "what breaks a CSS
+// declaration" (cssDeclBreakers) and "what is a color" (isValidColor) must
+// have exactly ONE definition, and it belongs here, beside the token types
+// that own the CSS output. A second copy in the generator is a second thing to
+// forget to harden — that duplication was already made and unwound once on
+// this branch.
+//
+// Free-form string tokens (Font, Shadow, Easing) have a looser grammar; they
+// are validated by validateFreeFormCSS and are not exported here because no
+// out-of-package producer assigns them directly yet.
+func ValidateColorValue(v string) error { return validateColorValue(v) }
+
 // findDeclBreaker returns the first declaration-breaking sequence found in v,
 // or "" if none. Used both to reject and to name the offender in the error.
 //
