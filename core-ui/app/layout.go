@@ -134,6 +134,12 @@ func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost b
 	if outermost {
 		contentRegion = html.Main(html.MainConfig{ExtraAttrs: slotAttrs}, content)
 	} else {
+		// tabindex="-1" mirrors html.Main: after a layer swap the runtime
+		// moves focus onto the fresh cell so keyboard users are not
+		// stranded on a detached node.
+		if slotAttrs != nil {
+			slotAttrs["tabindex"] = "-1"
+		}
 		contentRegion = html.Div(html.DivConfig{Class: "layout-content", ExtraAttrs: slotAttrs}, content)
 	}
 	bodyChildren = append(bodyChildren, contentRegion)

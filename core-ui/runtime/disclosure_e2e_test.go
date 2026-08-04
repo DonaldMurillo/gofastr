@@ -63,9 +63,9 @@ func TestDisclosureModuleKeepsA11yBehaviour(t *testing.T) {
 
 // The trap's `inert` is released by the details element's own `toggle`
 // event, and a DETACHED <details> never fires one. Both SPA swap paths
-// detach it: swapLayoutShell replaces the whole [data-fui-layout] subtree,
-// and swapMainContent writes main.innerHTML before its close-open-
-// disclosures sweep can see a drawer that lived inside <main>. Without a
+// detach it: swapShell replaces the whole shell subtree (replaceWith),
+// and swapAtSlot writes the cell's innerHTML before its close-open-
+// disclosures sweep can see a drawer that lived inside it. Without a
 // release the inert sticks to every remaining <body> child — out of the
 // focus order AND the accessibility tree — for the life of the tab.
 func TestTrapReleasesInertOnDetach(t *testing.T) {

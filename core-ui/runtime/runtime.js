@@ -121,7 +121,7 @@
   // -----------------------------------------------------------------------
   // Router: known routes from screen registration
   // -----------------------------------------------------------------------
-  const routes = new Map(); // path → { title, preload }
+  const routes = new Map(); // path → { title, preload, layouts, redirect }
   let currentPath = location.pathname + location.search;
 
   const registerRoutes = (routeList) => {
@@ -129,8 +129,10 @@
     for (const r of routeList) {
       routes.set(r.path ?? r.Path, {
         title: r.title ?? r.Title ?? '',
-        preload: r.preload ?? r.Preload ?? false,
-        layout: r.layout ?? r.Layout ?? '',
+        // Prefetch mode: '' (never) | 'hover' | 'visible' | 'eager'.
+        preload: r.preload ?? r.Preload ?? '',
+        // Layout chain as layer keys, outermost → innermost.
+        layouts: r.layouts ?? r.Layouts ?? [],
         redirect: r.redirect ?? r.Redirect ?? '',
       });
     }
@@ -816,13 +818,16 @@
 
 // nav.js — SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
 // Owns: <a> click hijack, history.pushState, popstate, screen cache,
-// cross-layout shell swap, screen-group sibling nav, updateActiveLink,
+// layout-chain-aware swaps (deepest shared layer), updateActiveLink,
 // document.title writes, the navigate() namespace member.
 
   // -----------------------------------------------------------------------
   // Screen cache — stores rendered screens for instant back-navigation.
+  // Each entry records the layout LAYER its html renders below ('' = a
+  // layout-less page's whole <main>), so replaying it swaps exactly the
+  // right content cell — never a class-name guess, never an unwrap pass.
   // -----------------------------------------------------------------------
-  const screenCache = new Map(); // path → { html, title }
+  const screenCache = new Map(); // path → { html, title, layer }
   // sseMeta reads the live stream-id carrier from a document (default:
   // the live one). The SSE module re-reads it on every reconnect, so
   // pointing it at a fresh session id is the whole recovery contract.
@@ -832,23 +837,92 @@
   // True LRU: Map preserves insertion order, so delete+set on every
   // write/read promotes the path to most-recently-used; oldest entry
   // is always keys().next() when we exceed the cap.
-  const cacheScreen = (path, html, title) => {
+  const cacheScreen = (path, html, title, layer) => {
     if (screenCache.has(path)) screenCache.delete(path);
     if (screenCache.size >= MAX_CACHE_SIZE) {
       const oldest = screenCache.keys().next().value;
       screenCache.delete(oldest);
     }
-    screenCache.set(path, { html, title });
+    screenCache.set(path, { html, title, layer: layer || '' });
+  };
+
+  // --- Layout chain primitives ---
+  // The server marks every layout layer with data-fui-layout-key (its
+  // identity) and the layer's content cell with data-fui-layout-slot (the
+  // swap target). The route manifest carries each route's chain in
+  // `layouts` (outermost → innermost). Document order of the key-marked
+  // elements IS the chain order — a wrapper precedes its descendants.
+  const domChainKeys = () => {
+    const out = [];
+    for (const el of document.querySelectorAll('[data-fui-layout-key]')) {
+      out.push(el.getAttribute('data-fui-layout-key'));
+    }
+    return out;
+  };
+  // Attribute-compare in a loop instead of an attribute selector: keys
+  // contain '/' and ':', and getAttribute needs no escaping.
+  const findSlot = (key) => {
+    if (!key) return null;
+    for (const el of document.querySelectorAll('[data-fui-layout-slot]')) {
+      if (el.getAttribute('data-fui-layout-slot') === key) return el;
+    }
+    return null;
+  };
+  const mainEl = () => document.querySelector('[role="main"]') ?? document.querySelector('main');
+  const mainSlotKey = () => {
+    const m = mainEl();
+    return (m && m.getAttribute('data-fui-layout-slot')) || '';
+  };
+  // routeEntry: manifest lookup with trailing-slash tolerance and dynamic
+  // patterns. Pattern awareness matters for chains — a concrete URL of a
+  // "/:param" route must resolve to that route's chain, not to "no
+  // layouts" (which read as cross-chain and forced a shell rebuild on
+  // every dynamic-route nav).
+  const routeEntry = (path) => {
+    const clean = path.split('?')[0].split('#')[0];
+    let r = routes.get(clean);
+    // A screen group registers its root as "/components/" but links may
+    // write "/components" — the server redirects between them, so the
+    // SPA router must accept both forms.
+    if (!r && clean !== '/' && !clean.endsWith('/')) r = routes.get(clean + '/');
+    if (!r && clean !== '/' && clean.endsWith('/')) r = routes.get(clean.slice(0, -1));
+    if (r) return r;
+    const parts = clean.split('/').filter(Boolean);
+    for (const [pattern, entry] of routes) {
+      if (!pattern.includes(':')) continue;
+      const pp = pattern.split('/').filter(Boolean);
+      // Catch-all patterns ("*") accept >= prefix length; others exact.
+      if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) continue;
+      // Each literal segment must align; dynamic segments (":name",
+      // incl. the catch-all ":name*") match anything. Typed constraints
+      // (":id:int" / ":id:uuid") are enforced server-side at resolve; a
+      // non-conforming value falls through to a normal request there.
+      if (pp.every((seg, i) => seg.startsWith(':') || seg === parts[i])) return entry;
+    }
+    return null;
+  };
+  const routeLayouts = (path) => {
+    const r = routeEntry(path);
+    return (r && r.layouts) || [];
+  };
+  // Count of outermost layers the live DOM shares with the target chain.
+  // An empty key never matches (unnamed layers have no stable identity).
+  const sharedDepth = (layouts) => {
+    const dom = domChainKeys();
+    let d = 0;
+    while (d < dom.length && d < layouts.length && layouts[d] && dom[d] === layouts[d]) d++;
+    return d;
   };
 
   // Cache the initial page so back-navigation to it works instantly.
   // Route through cacheScreen() so the LRU cap is enforced uniformly.
-  const initialMain = document.querySelector('[role="main"]') ?? document.querySelector('main');
+  const initialMain = mainEl();
   if (initialMain) {
     // Key with the search string too — every later entry (and
     // currentPath) is keyed pathname+search, and invalidate()
-    // matches against that form.
-    cacheScreen(location.pathname + location.search, initialMain.innerHTML, document.title);
+    // matches against that form. The layer is <main>'s own slot key:
+    // the boot html spans everything below layer 0.
+    cacheScreen(location.pathname + location.search, initialMain.innerHTML, document.title, mainSlotKey());
   }
 
 
@@ -872,39 +946,13 @@
     } catch (_) { return href; }
   };
 
-  const isKnownRoute = (href) => {
-    // Resolve relative URLs (e.g. "?p=2") against the current location
-    // so query-only links match their owning route.
-    const clean = resolvePath(href).split('?')[0].split('#')[0];
-    // Exact match.
-    if (routes.has(clean)) return true;
-    // Trailing-slash tolerance: a screen group registers its root
-    // as "/components/" but a nav link to "/components" (no slash)
-    // is semantically the same — the server redirects one to the
-    // other. Match both forms so the SPA router doesn't fall through
-    // to a hard reload just because the consumer wrote the link
-    // without the trailing slash. loadPage will surface the server's
-    // canonical form via X-Gofastr-Location if a redirect happens.
-    if (clean !== '/' && !clean.endsWith('/') && routes.has(clean + '/')) return true;
-    if (clean !== '/' && clean.endsWith('/') && routes.has(clean.slice(0, -1))) return true;
-    // Try dynamic route patterns (e.g., /products/:slug, /docs/:path*)
-    const parts = clean.split('/').filter(Boolean);
-    for (const [pattern] of routes) {
-      if (!pattern.includes(':')) continue;
-      const pp = pattern.split('/').filter(Boolean);
-      // Catch-all patterns ("*") accept >= prefix length; others exact.
-      if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) continue;
-      // Each literal segment must align; dynamic segments (":name",
-      // incl. the catch-all ":name*") match anything. Typed constraints
-      // (":id:int" / ":id:uuid") are enforced server-side at resolve; a
-      // non-conforming value falls through to a normal request there.
-      if (pp.every((seg, i) => seg.startsWith(':') || seg === parts[i])) return true;
-    }
-    return false;
-  };
+  // Resolve relative URLs (e.g. "?p=2") against the current location so
+  // query-only links match their owning route.
+  const isKnownRoute = (href) => !!routeEntry(resolvePath(href));
 
   // -----------------------------------------------------------------------
-  // Client-side navigation — fetch partial HTML, swap <main> content
+  // Client-side navigation — fetch partial HTML, swap at the deepest
+  // layer the current DOM shares with the target route's layout chain.
   // -----------------------------------------------------------------------
 
   // Reading promotes the entry to most-recently-used (LRU semantics).
@@ -967,45 +1015,70 @@
     requestAnimationFrame(() => requestAnimationFrame(doScroll));
   };
 
-  // --- Cross-layout navigation ---
-  // When the destination route's layout differs from the current page's, the
-  // chrome (header/sidebar/footer) itself changes — swapping only <main> would
-  // render the new screen in the wrong shell. We detect it via the route
-  // manifest `layout` + the [data-fui-layout] marker the shell carries, then
-  // fetch the FULL page and replace the whole shell. No hard reload (hard rule
-  // 4): the chrome's interactive bits are delegated, so they survive the swap.
-  const domLayout = () => {
-    const el = document.querySelector('[data-fui-layout]');
-    return el ? el.getAttribute('data-fui-layout') : '';
+  // Close ordinary disclosures inside scope so they do not float over the
+  // destination content. Persistent shell controls opt out explicitly.
+  const closeDisclosures = (scope) => {
+    for (const d of scope.querySelectorAll('details[data-fui-disclosure][open]:not([data-fui-disclosure-persist])')) {
+      d.removeAttribute('open');
+    }
   };
-  const layoutWillChange = (path) => {
-    const r = routes.get(path);
-    const to = (r && r.layout) || '';
-    return !!to && to !== domLayout();
+
+  // swapAtSlot replaces one layer's content cell. Scope rule: swapping
+  // the outermost cell (or a layout-less <main>) closes disclosures
+  // document-wide — the user left the page, the hamburger must not float
+  // over the new one. A deeper swap closes only within its own layer so
+  // outer shell state (an open sidebar section) survives sibling nav.
+  const swapAtSlot = (slot, html, outermost) => {
+    slot.innerHTML = html;
+    mergeSeedFromDOM(slot);
+    if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(slot);
+    closeDisclosures(outermost ? document : (slot.parentElement || slot));
+    // Move focus onto the fresh content so keyboard users are not
+    // stranded on a detached node. Cells carry tabindex="-1".
+    if (typeof slot.focus === 'function') {
+      try { slot.focus({ preventScroll: true }); } catch (_) { /* older Safari */ }
+    }
+    return slot;
   };
-  const swapLayoutShell = (newShellEl) => {
-    const cur = document.querySelector('[data-fui-layout]');
-    if (!cur || !newShellEl) return false;
-    const el = document.importNode(newShellEl, true);
+
+  // swapShell replaces the whole layout shell (cross-chain navigation: no
+  // shared root). newRoot is the destination page's outermost shell — or
+  // its bare <main> when the destination has no layouts, so leaving a
+  // chain for a plain page drops the old chrome instead of keeping it.
+  // Delegated chrome handlers survive the swap; no hard reload (hard
+  // rule 4).
+  const shellEl = (d) => (d || document).querySelector('[data-fui-layout-key], [data-fui-screen-group]');
+  const swapShell = (newRoot) => {
+    const cur = shellEl() || mainEl();
+    if (!cur || !newRoot) return null;
+    const el = document.importNode(newRoot, true);
     cur.replaceWith(el);
-    // Runtime-created body singletons live OUTSIDE [data-fui-layout],
-    // so the swap normally leaves them alone — but a layout that
-    // wrapped one (or a future whole-body swap) must not silently drop
-    // them. Re-append any created-but-detached singleton.
+    // Runtime-created body singletons live OUTSIDE the shell, so the
+    // swap normally leaves them alone — but a layout that wrapped one
+    // (or a future whole-body swap) must not silently drop them.
     doc.reattach();
     mergeSeedFromDOM(el);
     if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(el);
-    const main = el.querySelector('[role="main"]') || el.querySelector('main');
-    if (main && main.focus) { try { main.focus({ preventScroll: true }); } catch (_) {} }
-    return true;
+    const m = el.matches('main, [role="main"]') ? el : (el.querySelector('[role="main"]') || el.querySelector('main'));
+    if (m && m.focus) { try { m.focus({ preventScroll: true }); } catch (_) {} }
+    return el;
   };
 
-  /** Fetch page, swap <main>. Caches for instant back-nav. */
-  const loadPage = async (path, { bypassCache = false } = {}) => {
+  // Shared tail of every successful swap. root is the swapped element —
+  // exposed on the navigate event so teardown-aware modules can scope
+  // cleanup to the region that actually changed.
+  const finishNav = (path, prevPath, cached, root) => {
+    updateActiveLink(path);
+    scrollToHash();
+    window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
+  };
+
+  /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav. */
+  const loadPage = async (path, { bypassCache = false, forceFull = false } = {}) => {
     // Single gate for every branch below: the SPA navigator's target
     // comes from an href / a data-fui-* attribute / a server header,
     // and a cross-origin one must never be fetched with the page's
-    // credentials and swapped into <main>. A javascript: or data: URL
+    // credentials and swapped into the DOM. A javascript: or data: URL
     // resolves to a null origin, so this subsumes the scheme check too.
     if (!window.__gofastr._originOK(path)) return;
     // Dedup in-flight nav (10 clicks → 1 fetch), but only while path is
@@ -1022,52 +1095,45 @@
     doc.setHtmlAttr('aria-busy', 'true');
 
     try {
+      const layouts = routeLayouts(path);
       // bypassCache: post-mutation navigation (data-fui-rpc-navigate,
       // navigate({force:true})) must show fresh server state, never the
       // cached copy captured before the mutation.
-      const cached = bypassCache ? null : getCachedScreen(path);
-      // A shared [data-fui-screen-group] between the two paths proves both
-      // render inside the SAME outer shell, so nav is an in-shell content
-      // swap even when the manifest layout name differs (a group screen
-      // reports its INNER layout, which never matches the OUTERMOST
-      // [data-fui-layout] marker — #89). Computed once, gates every branch.
-      const grp = findCommonScreenGroup(prevPath || currentPath, path);
-      // Skip the cached content-swap when the layout changes (and no shared
-      // group) — the cache holds only the <main> fragment, not the new chrome;
-      // fall through to a full fetch + shell swap.
-      if (cached && (grp || !layoutWillChange(path))) {
-        // Title first so SR + browser-history see the new title
-        // before pushState fires (the click handler does pushState).
-        document.title = cached.title;
-        announceRoute(cached.title);
-        if (grp) {
-          swapScreenGroupContent(grp, cached.html);
-        } else {
-          swapMainContent(cached.html);
+      const cached = (bypassCache || forceFull) ? null : getCachedScreen(path);
+      // A cached entry is replayable iff the layer it renders below is
+      // live in the DOM right now ('' = both pages are layout-less).
+      if (cached) {
+        const slot = cached.layer
+          ? findSlot(cached.layer)
+          : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
+        if (slot) {
+          // Title first so SR + browser-history see the new title
+          // before pushState fires (the click handler does pushState).
+          document.title = cached.title;
+          announceRoute(cached.title);
+          const root = swapAtSlot(slot, cached.html, !cached.layer || cached.layer === domChainKeys()[0]);
+          finishNav(path, prevPath, true, root);
+          return;
         }
-        updateActiveLink(path);
-        scrollToHash();
-        window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: true } }));
-        return;
       }
 
-      // Cross-layout nav: fetch the FULL page (no navigate header → server
-      // returns the whole shell, not just <main>) and replace the layout
-      // shell. Delegated chrome handlers survive the swap — no hard reload.
-      // A shared screen group means the shell is shared → never swap it.
-      if (!grp && layoutWillChange(path)) {
+      // Cross-chain nav (no shared root): fetch the FULL page (no
+      // navigate header → the server returns the whole document) and
+      // replace the shell. forceFull is the deploy-skew recovery path —
+      // the server echoed a swap boundary this DOM doesn't have.
+      if (layouts.length > 0 && (forceFull || sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
       if (myEpoch !== _navEpoch) return;
         if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
         window.__gofastr._inval(fr);
-        const doc = new DOMParser().parseFromString(await fr.text(), 'text/html');
+        const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (myEpoch !== _navEpoch) return;
         let dest = path;
         // resolvePath keeps the search string — the cache key and the
         // URL bar must carry a redirect-added query (e.g. ?next=/admin).
         if (fr.redirected && fr.url) dest = resolvePath(fr.url);
         if (dest !== path) { try { history.replaceState(null, '', dest); } catch (_) {} currentPath = dest; }
-        const t = doc.querySelector('title')?.textContent || document.title;
+        const t = pdoc.querySelector('title')?.textContent || document.title;
         document.title = t;
         announceRoute(t);
         // The full fetch re-renders chrome under the CURRENT session —
@@ -1075,24 +1141,28 @@
         // head carries the new stream id. Copy it onto the live meta so
         // the SSE reconnect loop recovers here too, not only on the
         // partial branch's X-Gofastr-Session path.
-        const fm = sseMeta(doc), lm = sseMeta();
+        const fm = sseMeta(pdoc), lm = sseMeta();
         if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
-        const shell = doc.querySelector('[data-fui-layout]');
-        const nm = doc.querySelector('main');
-        if (shell && swapLayoutShell(shell)) {
-          cacheScreen(dest, nm ? nm.innerHTML : '', t);
-        } else {
-          swapMainContent(nm ? nm.innerHTML : '');
+        const nm = pdoc.querySelector('main');
+        const el = swapShell(shellEl(pdoc) || nm);
+        if (!el) {
+          // No live shell to replace (layout-less origin) — fall back to
+          // a whole-main swap; chain markers arrive with the content.
+          const m = mainEl();
+          if (m) swapAtSlot(m, nm ? nm.innerHTML : '', true);
         }
-        updateActiveLink(dest);
-        scrollToHash();
-        window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: dest, prevPath, cached: false } }));
+        cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-fui-layout-slot') || '') : '');
+        finishNav(dest, prevPath, false, el || mainEl());
         return;
       }
 
-      const resp = await fetch(path, {
-        headers: { 'X-Gofastr-Navigate': '1' },
-      });
+      // Partial fetch. X-Gofastr-From names the origin route so the
+      // server renders only the layers the two routes do NOT share and
+      // echoes the swap boundary in X-Gofastr-Swap.
+      const hdrs = { 'X-Gofastr-Navigate': '1' };
+      const fromPath = (prevPath || '').split('?')[0];
+      if (fromPath && routeEntry(fromPath)) hdrs['X-Gofastr-From'] = fromPath;
+      const resp = await fetch(path, { headers: hdrs });
       if (myEpoch !== _navEpoch) return;
       // Apply a session rollover BEFORE the ok-check: the server re-mints
       // (and names the fresh stream id) on 404 / policy-block partials
@@ -1134,29 +1204,30 @@
       // Compute title BEFORE swapping content so document.title is
       // already correct when AT or extensions observe the new state.
       let title, body, partial = resp.headers.get('X-Gofastr-Partial') === 'true';
+      let swapKey = (partial && resp.headers.get('X-Gofastr-Swap')) || '';
       if (partial) {
         title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
         body = html;
       } else {
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        const nm = doc.querySelector('main');
-        title = doc.querySelector('title')?.textContent || document.title;
+        const pdoc = new DOMParser().parseFromString(html, 'text/html');
+        const nm = pdoc.querySelector('main');
+        title = pdoc.querySelector('title')?.textContent || document.title;
         body = nm?.innerHTML ?? '';
+        swapKey = nm?.getAttribute('data-fui-layout-slot') || '';
+      }
+      // The swap boundary must be live in the DOM; a miss means the
+      // manifest and server disagree (deploy skew) — recover with a
+      // full-page load of the destination rather than a wrong-cell swap.
+      const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? mainEl() : null);
+      if (!slot) {
+        _pendingNav.delete(path);
+        return loadPage(path, { bypassCache: true, forceFull: true });
       }
       document.title = title;
       announceRoute(title);
-      // Screen group optimization: preserve layout shell for sibling nav
-      // (grp computed once at the top of loadPage).
-      if (grp) {
-        swapScreenGroupContent(grp, body);
-      } else {
-        swapMainContent(body);
-      }
-      cacheScreen(path, body, title);
-
-      updateActiveLink(path);
-      scrollToHash();
-      window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: false } }));
+      const root = swapAtSlot(slot, body, !swapKey || swapKey === domChainKeys()[0]);
+      cacheScreen(path, body, title, swapKey);
+      finishNav(path, prevPath, false, root);
     } catch (err) {
       if (myEpoch !== _navEpoch) return;
       // CLAUDE.md hard rule 4 — no location.href fallback. Surface a
@@ -1224,84 +1295,6 @@
       if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
       if (isReservedSignalKey(k)) continue;
       if (!store[k]) store[k] = { value: glob[k], listeners: [] };
-    }
-  };
-
-  const swapMainContent = (html) => {
-    const main = document.querySelector('[role="main"]') ?? document.querySelector('main');
-    if (main) {
-      main.innerHTML = html;
-      mergeSeedFromDOM(main);
-      if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(main);
-    }
-    // Close ordinary disclosures so they do not float over the destination
-    // page. Persistent shell controls opt out explicitly; focus trapping is
-    // an independent accessibility modifier and must not change dismissal.
-    for (const d of document.querySelectorAll('details[data-fui-disclosure][open]:not([data-fui-disclosure-persist])')) {
-      d.removeAttribute('open');
-    }
-    // Move focus into the new <main> so keyboard users land on the
-    // fresh content rather than being stranded on a now-detached node.
-    // Relies on the tabindex="-1" set by html.Main().
-    if (main && typeof main.focus === 'function') {
-      try { main.focus({ preventScroll: true }); } catch (_) { /* older Safari */ }
-    }
-  };
-
-  // --- Screen group awareness ---
-  // When navigating between siblings inside the same data-fui-screen-group,
-  // only swap the group's inner <main> content, preserving the layout shell.
-  const findCommonScreenGroup = (fromPath, toPath) => {
-    const groups = document.querySelectorAll('[data-fui-screen-group]');
-    // Pick the DEEPEST matching group — for nested screen groups the
-    // inner group's layout shell is what should survive sibling-nav,
-    // not the outer one. We compare by prefix length: longer prefix
-    // → more specific → wins.
-    // Match with a trailing slash appended so a slashless index path
-    // ("/studio") still counts as inside its group (prefix "/studio/") —
-    // otherwise the group index's first sibling nav misses the swap (#89).
-    let best = null, bestLen = -1;
-    for (const g of groups) {
-      const pre = g.getAttribute('data-fui-screen-group');
-      if (pre && (fromPath + '/').startsWith(pre) && (toPath + '/').startsWith(pre) && pre.length > bestLen) {
-        best = g;
-        bestLen = pre.length;
-      }
-    }
-    return best;
-  };
-
-  const swapScreenGroupContent = (groupEl, html) => {
-    // The content cell inside a ScreenGroup layout can be:
-    //   1. .layout-content (nested layout — sidebar + content)
-    //   2. <main> or [role="main"] (outermost layout)
-    // The nested case is the common one: the ScreenGroup wrapper holds
-    // a layout-body with sidebar + content. We must swap only the
-    // content cell, not the sidebar.
-    const target = groupEl.querySelector('.layout-content')
-      ?? groupEl.querySelector('[role="main"]')
-      ?? groupEl.querySelector('main');
-    if (!target) return;
-
-    // When the HTML comes from the SPA cache (seeded at boot from the
-    // outer <main>.innerHTML), it contains the FULL screen-group
-    // structure (sidebar + content). Extract just the inner content
-    // cell so we don't nest the layout inside itself.
-    let swapHTML = html;
-    const parsed = new DOMParser().parseFromString(html, 'text/html');
-    const innerLC = parsed.body && parsed.body.querySelector('.layout-content');
-    if (innerLC) {
-      swapHTML = innerLC.innerHTML;
-    }
-
-    target.innerHTML = swapHTML;
-    mergeSeedFromDOM(target);
-    if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(target);
-
-    // Close ordinary disclosures inside the group; explicit persistent
-    // controls are part of the shell and retain their state.
-    for (const d of groupEl.querySelectorAll('details[data-fui-disclosure][open]:not([data-fui-disclosure-persist])')) {
-      d.removeAttribute('open');
     }
   };
 

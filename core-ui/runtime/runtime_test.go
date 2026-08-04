@@ -68,8 +68,11 @@ func TestRuntimeJS(t *testing.T) {
 		"hydrate",
 		"collectParams",
 		"screenCache",             // screen caching for back-navigation
-		"swapMainContent",         // partial content swapping
+		"swapAtSlot",              // layer-cell content swapping
+		"data-fui-layout-key",     // layout-chain identity marker
+		"data-fui-layout-slot",    // layer swap-target marker
 		"X-Gofastr-Navigate",      // client-side navigation header
+		"X-Gofastr-Swap",          // subtree-partial swap boundary
 		"X-Gofastr-Partial",       // server partial response header
 		"loadComponentCSS",        // per-component CSS loader
 		"scanAndLoadCSS",          // marker scan post-swap/post-mount

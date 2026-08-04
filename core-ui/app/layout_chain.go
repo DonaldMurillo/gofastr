@@ -145,9 +145,10 @@ func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, c
 			if layer.Layout == nil && key != "" {
 				// Marker-only level: the group wrapper is both the layer
 				// element and its content cell, so sibling navigation can
-				// still target the level by key.
+				// still target the level by key (and focus it after a swap).
 				attrs["data-fui-layout-key"] = key
 				attrs["data-fui-layout-slot"] = key
+				attrs["tabindex"] = "-1"
 			}
 			out = html.Div(html.DivConfig{
 				Class:      "fui-screen-group",

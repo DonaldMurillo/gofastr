@@ -140,7 +140,11 @@ var fragmentAttrs = map[string][]string{
 	},
 	"nav": {
 		"data-fui-spa",
+		// data-fui-layout is emit-only since the chain rewrite (CSS/debug
+		// contract); nav's swap decisions read the -key/-slot pair.
 		"data-fui-layout",
+		"data-fui-layout-key",
+		"data-fui-layout-slot",
 		"data-fui-screen-group",
 		"data-fui-match-prefix",
 	},
