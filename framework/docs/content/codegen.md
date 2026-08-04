@@ -86,6 +86,25 @@ extension protocol.
 External extensions let projects add arbitrary code generation without linking
 that code into the `gofastr` CLI.
 
+A command extension is an arbitrary binary named by whichever
+`gofastr.codegen.yml` is in the project, so it runs with a deliberately narrow
+contract:
+
+- **The environment is an allowlist, not an inheritance.** The child gets what a
+  build-time tool needs to run — `PATH`, `HOME`, a temp dir, locale, and the Go
+  toolchain variables — and nothing else. It does not see `GOFASTR_SECRET`,
+  `DATABASE_URL`, or cloud credentials. Pass project-specific values under the
+  extension's `config:` key, which arrives on stdin with the rest of the
+  request; do not expect an ambient environment variable to reach it.
+- **Output is scrubbed of terminal control bytes.** An extension's stderr is
+  replayed to your terminal, so escape sequences are stripped from it (and from
+  diagnostic messages) before they are written. Newlines and tabs survive.
+- **Output is bounded and the wait is bounded.** stdout and stderr are capped,
+  and an extension that stops producing output cannot hang the generate
+  indefinitely.
+- **A `severity: error` diagnostic fails the run.** Returning one is how an
+  extension rejects the input it was given.
+
 The old built-in `gofastr generate ts` / `gofastr generate typescript` command
 has been removed. Projects that need TypeScript or frontend
 artifacts should configure a project extension and decide their own output

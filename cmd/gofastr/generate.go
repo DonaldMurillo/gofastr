@@ -6,9 +6,11 @@ import (
 	"go/ast"
 	"go/format"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -362,13 +364,21 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 		fail("Code generation setup failed: %v", err)
 		osExit(1)
 	}
-	genCtx, err := reg.Run(context.Background(), ".", cfg)
+	// A cancellable context so an operator can interrupt a wedged extension.
+	// exec.CommandContext only kills the child when its context is done, so
+	// with context.Background() there was nothing that could ever cancel one.
+	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	genCtx, err := reg.Run(runCtx, ".", cfg)
 	if err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
 			osExit(1)
 		}
 		fail("Code generation failed: %v", err)
+		osExit(1)
+	}
+	if reportCodegenDiagnostics(genCtx.Diagnostics) {
 		osExit(1)
 	}
 	files := genCtx.Files.All()
@@ -883,6 +893,66 @@ func removeRetiredBlueprintFiles(writeRoot string) error {
 	return nil
 }
 
+// reportCodegenDiagnostics prints what the extensions reported and returns true
+// when generation must not be treated as successful.
+//
+// codegen.Context.Diagnostics was collected by the runner (applyExtensionResponse)
+// and then read by nobody: an extension answering `{"diagnostics":[{"severity":
+// "error","message":"…"}]}` had its error discarded and `gofastr generate`
+// printed success. An extension is the one participant that cannot fail the run
+// any other way — a non-zero exit means "the process broke", while a diagnostic
+// is how the protocol says "the input is wrong". Dropping it turned a refusal
+// into a silent pass.
+//
+// Extension output reaches a terminal, so messages go through the same scrub the
+// child's stderr does — an extension does not get to drive the operator's
+// terminal through a JSON field either.
+func reportCodegenDiagnostics(diags []codegen.Diagnostic) bool {
+	failed := false
+	for _, d := range diags {
+		message := scrubTerminalOutput(d.Message)
+		switch strings.ToLower(strings.TrimSpace(d.Severity)) {
+		case "error":
+			fail("%s", message)
+			failed = true
+		case "warning", "warn":
+			warn("%s", message)
+		default:
+			info("%s", message)
+		}
+	}
+	if failed {
+		fail("Code generation failed: an extension reported an error diagnostic")
+	}
+	return failed
+}
+
+// scrubTerminalOutput strips the control bytes that let a subprocess drive the
+// operator's terminal rather than write to it. Mirrors codegen's stderr scrub
+// (codegen/extension_command.go scrubTerminalBytes) for the diagnostic path,
+// which arrives as JSON rather than as raw stderr bytes.
+func scrubTerminalOutput(s string) string {
+	clean := true
+	for _, r := range s {
+		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+			clean = false
+			break
+		}
+	}
+	if clean {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // formatGenerated gofmts generated Go so the emitted package is clean,
 // readable, and stable across regenerations. On a (bug-induced) parse
 // error it returns the raw output, so the failure surfaces in the
@@ -1237,6 +1307,16 @@ func renderIndexLiteral(idx framework.Index) string {
 	}
 	if idx.Unique {
 		parts = append(parts, "Unique: true")
+	}
+	// Expression replaces Columns for function/constant indices (see
+	// framework/entity Index). Dropping it silently downgraded the declaration:
+	// a `{Name: …, Expression: "LOWER(email)", Unique: true}` came back out as
+	// `{Name: …, Unique: true}` — an index with no key at all, so the UNIQUE
+	// constraint the developer declared simply did not exist in the generated
+	// app. Case-insensitive uniqueness is the usual reason to reach for one, so
+	// the failure mode was duplicate rows differing only by case.
+	if idx.Expression != "" {
+		parts = append(parts, fmt.Sprintf("Expression: %q", idx.Expression))
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
 }

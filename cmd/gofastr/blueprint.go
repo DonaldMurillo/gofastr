@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"hash/fnv"
 	"image"
 	"image/color"
@@ -20,6 +22,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -589,6 +592,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			"access": true, "public": true, "timestamps": true, "crud": true,
 			"mcp": true, "cursor_field": true, "cursor_fields": true,
 			"max_list_limit": true, "indices": true, "properties": true,
+			"renames": true,
 		}
 		if err := rejectUnknownKeys(m, allowed, context); err != nil {
 			return nil, nil, err
@@ -598,6 +602,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			Table:        stringValue(m["table"]),
 			SearchFields: stringListValue(m["search_fields"]),
 			Properties:   mapValue(m["properties"]),
+			Renames:      stringStringMapValue(m["renames"]),
 		}
 		if m["timestamps"] != nil {
 			v := boolValue(m["timestamps"])
@@ -903,8 +908,18 @@ func decodeEntityScope(node *coreyaml.Node, context string) (*fwentity.ScopeDecl
 	if err := rejectUnknownKeys(m, map[string]bool{"soft_delete": true, "multi_tenant": true, "tenant_field": true, "owner_field": true, "cross_owner_read": true}, context); err != nil {
 		return nil, err
 	}
+	// soft_delete and multi_tenant are protective: false means hard deletes and
+	// no tenant scoping. See protectiveBool.
+	softDelete, err := protectiveBool(m, "soft_delete", context)
+	if err != nil {
+		return nil, err
+	}
+	multiTenant, err := protectiveBool(m, "multi_tenant", context)
+	if err != nil {
+		return nil, err
+	}
 	return &fwentity.ScopeDeclaration{
-		SoftDelete: boolValue(m["soft_delete"]), MultiTenant: boolValue(m["multi_tenant"]),
+		SoftDelete: softDelete, MultiTenant: multiTenant,
 		TenantField: stringValue(m["tenant_field"]), OwnerField: stringValue(m["owner_field"]),
 		CrossOwnerRead: stringValue(m["cross_owner_read"]),
 	}, nil
@@ -1131,6 +1146,22 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("fields[%d]", i)); err != nil {
 			return nil, err
 		}
+		// read_only / hidden / no_query are protective: false exposes the field
+		// to clients, to every API response, and to the filter surface
+		// respectively. See protectiveBool.
+		fieldCtx := fmt.Sprintf("fields[%d]", i)
+		readOnly, err := protectiveBool(m, "read_only", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
+		hidden, err := protectiveBool(m, "hidden", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
+		noQuery, err := protectiveBool(m, "no_query", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
 		field := framework.FieldDeclaration{
 			Name:         stringValue(m["name"]),
 			Type:         stringValue(m["type"]),
@@ -1138,9 +1169,9 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 			Unique:       boolValue(m["unique"]),
 			Default:      scalarValue(m["default"]),
 			AutoGenerate: stringValue(m["auto_generate"]),
-			ReadOnly:     boolValue(m["read_only"]),
-			Hidden:       boolValue(m["hidden"]),
-			NoQuery:      boolValue(m["no_query"]),
+			ReadOnly:     readOnly,
+			Hidden:       hidden,
+			NoQuery:      noQuery,
 			Pattern:      stringValue(m["pattern"]),
 			Values:       stringListValue(m["values"]),
 			To:           stringValue(m["to"]),
@@ -1265,7 +1296,13 @@ func decodeBlueprintScreens(node *coreyaml.Node) ([]BlueprintScreen, error) {
 			if err := rejectUnknownKeys(accM, map[string]bool{"auth": true, "role": true}, fmt.Sprintf("screens[%d].access", i)); err != nil {
 				return nil, err
 			}
-			screen.Access = BlueprintAccess{Auth: boolValue(accM["auth"]), Role: stringValue(accM["role"])}
+			// access.auth is THE protective flag: false registers the screen with
+			// no policy, i.e. public. `auth: yes` used to land there silently.
+			auth, err := protectiveBool(accM, "auth", fmt.Sprintf("screens[%d].access", i))
+			if err != nil {
+				return nil, err
+			}
+			screen.Access = BlueprintAccess{Auth: auth, Role: stringValue(accM["role"])}
 			if screen.Access.Role != "" {
 				screen.Access.Auth = true
 			}
@@ -1820,20 +1857,37 @@ func validateBlueprint(bp Blueprint) error {
 			return fmt.Errorf("blueprint: app.pwa.scope %q must be a root-relative path (start with /)", s)
 		}
 	}
-	for key := range bp.App.Theme {
+	// Theme VALUES need the same boundary as theme keys. The emitter writes
+	// them as direct struct assignments (theme.Colors.<T>.Value = …,
+	// theme.DarkColors = map[string]string{…}), which bypass every
+	// core-ui/style setter — so ApplyTokens' grammar never runs on them, and
+	// the value reaches `--color-<token>: <value>;` on the stylesheet the UI
+	// host (/app.css) and the admin battery serve. A `;` or `}` there closes
+	// :root and appends rules of the author's choosing; `url(` is an outbound
+	// fetch on every page load. style.ValidateColorValue is that one grammar,
+	// called here rather than copied.
+	for key, value := range bp.App.Theme {
 		if _, ok := blueprintThemeColorPath(key); ok {
+			if err := style.ValidateColorValue(value); err != nil {
+				return fmt.Errorf("blueprint: app.theme %s %q: %w", key, value, err)
+			}
 			continue
 		}
 		// Font tokens are valid theme keys too — they drive the theme's
-		// font-family tokens and the webfont <link>s, not colors.
+		// font-family tokens and the webfont <link>s, not colors. Their value
+		// is reduced to an allow-listed family name by blueprintFontFamilyName
+		// before it reaches CSS, so the color grammar does not apply.
 		if key == "font_body" || key == "font_heading" || key == "font_display" {
 			continue
 		}
 		return fmt.Errorf("blueprint: app.theme has unsupported token %q", key)
 	}
-	for key := range bp.App.ThemeDark {
+	for key, value := range bp.App.ThemeDark {
 		if _, ok := blueprintThemeColorPath(key); !ok {
 			return fmt.Errorf("blueprint: app.theme.dark has unsupported color token %q", key)
+		}
+		if err := style.ValidateColorValue(value); err != nil {
+			return fmt.Errorf("blueprint: app.theme.dark %s %q: %w", key, value, err)
 		}
 	}
 	entityNames := map[string]bool{}
@@ -1899,7 +1953,56 @@ func validateBlueprint(bp Blueprint) error {
 				return fmt.Errorf("blueprint: entity %q field %q is a relation to unknown entity %q — declare an entity named %q under entities: (or fix the field's to: value)", decl.Name, field.Name, field.To, field.To)
 			}
 		}
+		// Both sides of a rename become column names in emitted
+		// ALTER TABLE … RENAME COLUMN DDL, so they get the same identifier
+		// guard as table: a blueprint is agent-transcribed text, not
+		// developer-authored SQL. A rename whose target is not a declared
+		// field would never fire, so catch that here rather than at migrate
+		// time.
+		declaredFields := map[string]bool{}
+		for _, field := range decl.Fields {
+			declaredFields[field.Name] = true
+		}
+		for old, next := range decl.Renames {
+			if _, err := query.SafeIdent(old); err != nil {
+				return fmt.Errorf("blueprint: entity %q rename key %q is not a safe column name: %w", decl.Name, old, err)
+			}
+			if _, err := query.SafeIdent(next); err != nil {
+				return fmt.Errorf("blueprint: entity %q rename target %q is not a safe column name: %w", decl.Name, next, err)
+			}
+			if old == next {
+				return fmt.Errorf("blueprint: entity %q renames %q to itself — drop the entry", decl.Name, old)
+			}
+			if !declaredFields[next] {
+				return fmt.Errorf("blueprint: entity %q renames %q to %q, but %q is not a declared field — a rename only fires when the new name is declared on the entity", decl.Name, old, next, next)
+			}
+			if declaredFields[old] {
+				return fmt.Errorf("blueprint: entity %q renames %q to %q while still declaring %q as a field — the diff would see both columns; remove the old field", decl.Name, old, next, old)
+			}
+		}
+		// A relation name is an identifier, not a label: the entity emitter
+		// puts toCamelCase(name) in struct-field position AND inside the
+		// backtick `json:"…"` tag (a raw literal, which has no escape
+		// mechanism at all), and the typed-column emitter puts it in
+		// const-identifier position. It was the last name in the IR with no
+		// identifier guard — every sibling above (entity, field, screen,
+		// endpoint handler, middleware, plugin, helper) already has one.
+		relNames := map[string]string{}
+		for _, field := range decl.Fields {
+			relNames[toCamelCase(field.Name)] = "field " + field.Name
+		}
 		for _, rel := range decl.Relations {
+			if rel.Name == "" {
+				return fmt.Errorf("blueprint: entity %q has a relation with no name — add `name: <name>`; it becomes a struct field and an include name in the generated Go", decl.Name)
+			}
+			camel := toCamelCase(rel.Name)
+			if !isGoIdentifier(camel) {
+				return fmt.Errorf("blueprint: entity %q relation %q does not produce a valid Go identifier — it is emitted as a struct field name and an include constant, so the generated code would not compile; use letters, digits and underscores (e.g. \"author\" or \"line_items\")", decl.Name, rel.Name)
+			}
+			if owner, dup := relNames[camel]; dup {
+				return fmt.Errorf("blueprint: entity %q relation %q collides with %s — both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel)
+			}
+			relNames[camel] = "relation " + rel.Name
 			if rel.Entity == "" {
 				return fmt.Errorf("blueprint: entity %q relation %q target entity is required — add `entity: <name>` referencing a declared entity", decl.Name, rel.Name)
 			}
@@ -1925,6 +2028,18 @@ func validateBlueprint(bp Blueprint) error {
 		routes[screen.Route] = true
 		if _, err := screenTypeConst(screen.Type); err != nil {
 			return err
+		}
+		// blueprintScreenLayoutExpr maps ANYTHING that is not "marketing" to
+		// appLayout, so a typo ("markting") silently renders a public marketing
+		// page inside the authenticated app shell — sidebar, account controls and
+		// all. Gating is `access`, not `layout`, so this is a wrong-chrome bug
+		// rather than a gate bypass; it is still a value the author believed they
+		// set and did not. Fail on it instead of guessing.
+		switch screen.Layout {
+		case "", "app", "marketing":
+			// recognized
+		default:
+			return fmt.Errorf("blueprint: screen %q layout %q is not a layout; use \"app\", \"marketing\", or omit it", screen.Name, screen.Layout)
 		}
 		for _, block := range screen.Body {
 			if err := validateBlueprintBlock(screen.Name, entitiesByName, block); err != nil {
@@ -2200,6 +2315,22 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if v, ok := block.Props["action"]; ok {
 			if _, isStr := v.(string); !isStr {
 				return fmt.Errorf("blueprint: screen %q %s action must be a string", screenName, kind)
+			}
+		}
+		// The footer href becomes an anchor on the login/signup screen. The
+		// emitter routes it through ui.Link, which degrades an unsafe scheme to
+		// a dead link — safe, but silent: the author asked for a link and got
+		// one that goes nowhere. Reject here instead, the way every sibling
+		// problem in this validator does. urlsafe.Anchor is the SAME predicate
+		// the renderer applies (http(s), relative, fragment, mailto, tel), so
+		// validate and render cannot disagree about what is safe.
+		for _, key := range []string{"register_href", "login_href"} {
+			href, _ := block.Props[key].(string)
+			if href == "" {
+				continue
+			}
+			if !urlsafe.OK(href, urlsafe.Anchor) {
+				return fmt.Errorf("blueprint: screen %q %s %s %q is not a safe link — use an http(s), root-relative, fragment, mailto or tel URL", screenName, kind, key, href)
 			}
 		}
 	case "bar_chart", "pie_chart", "line_chart":
@@ -2585,7 +2716,41 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 	// the files under <static>/icons/ with real branding.
 	files = append(files, blueprintPWAIconAssets(bp)...)
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+	if err := assertBlueprintGoParses(files); err != nil {
+		return nil, err
+	}
 	return files, nil
+}
+
+// assertBlueprintGoParses is the emitter-side backstop for the property that
+// validateBlueprint enforces field by field: no blueprint string escapes the Go
+// literal, identifier, or comment it is emitted into. Every such field has an
+// identifier or quoting guard at validate time — but relation names had none
+// until the 2026-08-04 pass, and the way that gap presented was Go that does
+// not parse. So check the whole emitted tree once, here, and refuse to hand
+// back a broken file: the next missing guard fails the generate with a
+// reportable message instead of silently writing attacker-shaped Go that the
+// developer then builds and runs.
+//
+// This is deliberately stricter than formatGenerated, which documents the
+// opposite policy (fall back to unformatted so a parse failure surfaces in the
+// compiler). The two differ because the inputs differ: formatGenerated also
+// serves `gofastr generate` over entity declarations the developer wrote in
+// Go, where a parse failure is a generator bug worth inspecting. A blueprint is
+// transcribed text — the documented workflow has an agent authoring it from
+// natural-language requirements (see blueprint_emitter_injection_test.go) — so
+// on that path unparseable output is a security signal and fails closed.
+func assertBlueprintGoParses(files []generatedFile) error {
+	for _, file := range files {
+		if !strings.HasSuffix(file.name, ".go") {
+			continue
+		}
+		fset := token.NewFileSet()
+		if _, err := parser.ParseFile(fset, file.name, file.content, parser.SkipObjectResolution); err != nil {
+			return fmt.Errorf("blueprint: generated %s does not parse (%w) — a blueprint value escaped the Go literal it was emitted into. Please report this with the blueprint that produced it", file.name, err)
+		}
+	}
+	return nil
 }
 
 // blueprintGitignore keeps the generated .env (and local overrides) out of
@@ -5714,7 +5879,18 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete, p
 		action, submitLabel, hidden, emailInput, pwInput)
 	footer := ""
 	if footerHref != "" {
-		footer = fmt.Sprintf(", Footer: render.Raw(%q)", `<a href="`+e(footerHref)+`">`+e(footerText)+`</a>`)
+		// ui.Link, NOT a hand-rolled <a> inside render.Raw. render.Raw is what
+		// took the href around core-ui/html's setURLAttr — the layer whose doc
+		// comment says it is "the lowest layer that renders a caller-supplied
+		// URL, so it is where the guard belongs". htmlEscapeJSString keeps the
+		// value inside the attribute but says nothing about the SCHEME, so
+		// `register_href: "javascript:…"` shipped a live javascript: anchor on
+		// the login and signup screens. ui.Link runs urlsafe.CleanAnchor and
+		// degrades an unsafe href to "#"; every sibling anchor sink in the
+		// generator already goes through that guard or ui.LinkButton's
+		// isUnsafeScheme. Emitting the component also satisfies Hard rule 7 —
+		// no hand-rolled structural markup.
+		footer = fmt.Sprintf(", Footer: ui.Link(ui.LinkConfig{Href: %q, Text: %q})", footerHref, footerText)
 	}
 	// Auth screens render with the request ctx (screenNeedsCtx), so the card
 	// surfaces a failed-login / duplicate-email message inline from ?error=.
@@ -5870,7 +6046,17 @@ func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path 
 			continue
 		}
 		label := toDisplayName(field.Name)
+		// fieldID needs a different treatment in each of its two uses: escaped
+		// (eID) where it is interpolated into the raw markup below, and RAW as
+		// ui.FormFieldConfig.For, which the renderer escapes itself — escaping
+		// that one here would double-escape it. field.Name is already
+		// constrained to a Go identifier by validateBlueprint, so eID is
+		// defense-in-depth; it matters because `id="` + fieldID sat three tokens
+		// from `e(field.Name)` in the same attribute list, one raw and one
+		// escaped, and that asymmetry stops being unreachable the moment the
+		// identifier rule is relaxed.
 		fieldID := "field-" + field.Name
+		eID := e(fieldID)
 		req := ""
 		if field.Required {
 			req = " required"
@@ -5882,15 +6068,15 @@ func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path 
 			for _, v := range field.Values {
 				opts += `<option value="` + e(v) + `">` + e(toDisplayName(v)) + `</option>`
 			}
-			input = `<select name="` + e(field.Name) + `" id="` + fieldID + `"` + req + `>` + opts + `</select>`
+			input = `<select name="` + e(field.Name) + `" id="` + eID + `"` + req + `>` + opts + `</select>`
 		case "relation":
-			input = `<select name="` + e(field.Name) + `" id="` + fieldID + `"` + req + ` data-rel-entity="` + e(field.To) + `"><option value="">— Select —</option></select>`
+			input = `<select name="` + e(field.Name) + `" id="` + eID + `"` + req + ` data-rel-entity="` + e(field.To) + `"><option value="">— Select —</option></select>`
 		case "text":
-			input = `<textarea name="` + e(field.Name) + `" id="` + fieldID + `"` + req + `></textarea>`
+			input = `<textarea name="` + e(field.Name) + `" id="` + eID + `"` + req + `></textarea>`
 		case "bool", "boolean":
-			input = `<input type="checkbox" name="` + e(field.Name) + `" id="` + fieldID + `">`
+			input = `<input type="checkbox" name="` + e(field.Name) + `" id="` + eID + `">`
 		default:
-			input = `<input type="` + blueprintFormInputType(field.Type) + `" name="` + e(field.Name) + `" id="` + fieldID + `"` + req + `>`
+			input = `<input type="` + blueprintFormInputType(field.Type) + `" name="` + e(field.Name) + `" id="` + eID + `"` + req + `>`
 		}
 		fields = append(fields, fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %q, For: %q, Required: %t, Input: render.Raw(%q)})", label, fieldID, field.Required, input))
 	}
@@ -6341,6 +6527,10 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\ttheme := style.DefaultTheme()\n")
 		for _, key := range sortedStringMapKeys(bp.App.Theme) {
 			if path, ok := blueprintThemeColorPath(key); ok {
+				if reason := blueprintUnsafeColorNote(key, bp.App.Theme[key]); reason != "" {
+					sb.WriteString(reason)
+					continue
+				}
 				sb.WriteString(fmt.Sprintf("\ttheme.Colors.%s.Value = %q\n", path, bp.App.Theme[key]))
 			}
 		}
@@ -6357,6 +6547,10 @@ func renderBlueprintApp(bp Blueprint) string {
 			// block so the header's ui.ThemeToggle recolors the whole app.
 			sb.WriteString("\ttheme.DarkColors = map[string]string{\n")
 			for _, key := range sortedStringMapKeys(bp.App.ThemeDark) {
+				if reason := blueprintUnsafeColorNote("dark."+key, bp.App.ThemeDark[key]); reason != "" {
+					sb.WriteString("\t" + reason)
+					continue
+				}
 				sb.WriteString(fmt.Sprintf("\t\t%q: %q,\n", key, bp.App.ThemeDark[key]))
 			}
 			sb.WriteString("\t}\n")
@@ -6702,6 +6896,46 @@ func blueprintFontFamilyName(v string) string {
 	return strings.TrimSpace(b.String())
 }
 
+// blueprintUnsafeColorNote is the emitter-side backstop for theme color values.
+// validateBlueprint is the loud gate (it fails generation and names the token),
+// but the emitter is reachable from `loadBlueprintPath(path, false)` and from a
+// hand-built Blueprint, and a theme value that reaches CSS unchecked is a
+// stylesheet-injection sink. When the value fails style.ValidateColorValue this
+// returns a generated comment to emit INSTEAD of the assignment, so the token
+// falls back to the DefaultTheme value.
+//
+// Dropping is deliberate: the value cannot be sanitized into a color, and a
+// comment in the generated source is visible to whoever reads app.go — unlike a
+// silent skip. The empty string means "safe, emit the assignment".
+func blueprintUnsafeColorNote(key, value string) string {
+	err := style.ValidateColorValue(value)
+	if err == nil {
+		return ""
+	}
+	// The rejected value never enters the comment — a value carrying "*/"
+	// would close it and the rest would become live Go.
+	return fmt.Sprintf("\t// theme %s dropped: %s (see validateBlueprint)\n", blueprintCommentSafe(key), blueprintCommentSafe(err.Error()))
+}
+
+// blueprintCommentSafe reduces s to bytes that cannot terminate or escape the
+// single-line Go comment it is interpolated into.
+func blueprintCommentSafe(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\r':
+			b.WriteByte(' ')
+		case r == '*' || r == '/' || r == '\\':
+			b.WriteByte('.')
+		case r < 0x20 || r == 0x7f:
+			// dropped
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // blueprintConfiguredFonts returns the heading + body family names declared in
 // the blueprint theme (font_heading / font_display alias, font_body).
 func blueprintConfiguredFonts(theme map[string]string) (body, heading string) {
@@ -6833,6 +7067,15 @@ func blueprintFontHTTPGet(u string) ([]byte, error) {
 
 // blueprintFirstWoff2URL pulls the first gstatic .woff2 URL out of a Google
 // Fonts css2 response, preferring the block tagged `/* latin */`.
+//
+// The returned URL is handed straight to blueprintFontHTTPGet, so the fetch
+// target is chosen by the RESPONSE BODY, not by us. The comment above has always
+// said "gstatic"; the code only checked for ".woff2" anywhere in the string, so
+// a hijacked or redirected css2 response could point the fetch at any host it
+// liked. The blueprint author cannot reach this (the `family` query param is
+// reduced to [A-Za-z0-9 _-] first), which is why it is a contract gap rather
+// than a blueprint-driven SSRF — closed by making the code enforce what the
+// comment claims.
 func blueprintFirstWoff2URL(css string) string {
 	extract := func(s string) string {
 		i := strings.Index(s, "url(")
@@ -6845,7 +7088,7 @@ func blueprintFirstWoff2URL(css string) string {
 			return ""
 		}
 		u := strings.Trim(strings.TrimSpace(s[:j]), "'\"")
-		if strings.Contains(u, ".woff2") {
+		if blueprintIsGstaticWoff2(u) {
 			return u
 		}
 		return ""
@@ -6866,6 +7109,28 @@ func blueprintFirstWoff2URL(css string) string {
 		}
 		rest = rest[i+len("url("):]
 	}
+}
+
+// blueprintIsGstaticWoff2 reports whether u is an https fonts.gstatic.com URL
+// whose path ends in .woff2 — the only thing generation is willing to fetch out
+// of a Google Fonts css2 response.
+//
+// Parsed, not prefix-matched: a `strings.HasPrefix(u, "https://fonts.gstatic.com")`
+// test also accepts https://fonts.gstatic.com.attacker.test/x.woff2. And the
+// ".woff2" test is on the PATH's suffix, not on the whole URL, so it cannot be
+// satisfied by a query string or fragment (…/evil?x=.woff2).
+//
+// If Google ever moves the font CDN, generation reports the family in `missing`
+// and warns — the app still builds, minus the self-hosted font.
+func blueprintIsGstaticWoff2(u string) bool {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return false
+	}
+	if parsed.Scheme != "https" || parsed.Host != "fonts.gstatic.com" {
+		return false
+	}
+	return strings.HasSuffix(parsed.Path, ".woff2")
 }
 
 // blueprintFontAssets fetches every configured font family and returns the
@@ -7224,9 +7489,44 @@ func boolValue(node *coreyaml.Node) bool {
 	return strings.EqualFold(fmt.Sprint(node.Value), "true")
 }
 
+// protectiveBool decodes a flag whose FALSE value is the PERMISSIVE state, so a
+// coerced-to-false read is fail-open. Missing is fine (that is the documented
+// default); present-but-unreadable is an error naming the key.
+//
+// boolValue, the lax decoder, maps anything that is not the bool true or the
+// string "true" to false. core/yaml is YAML 1.2, so `yes` / `on` / `y` / `1` are
+// STRINGS there — and they are how people, and agents transcribing a spec, most
+// often write "true" in YAML. `access: {auth: yes}` therefore decoded to
+// Auth=false and registered the screen with no policy at all: publicly
+// reachable, no warning, no error.
+//
+// strictBoolValue already existed for this and was wired to exactly one key
+// (app.auth.dev_mode). Its comment justified itself as "the one blueprint bool
+// whose default is true", and that framing is what let these through — the
+// polarity that matters is not what the default is, it is which direction the
+// coercion moves safety. Every key routed through here defaults to false, and
+// false is the unsafe side.
+//
+// Deliberately NOT applied to flags whose false value is the safe/inert one
+// (`exposure.public`, `exposure.mcp`, `exposure.crud`, `app.public_openapi`,
+// `*.enabled`, `llm_md`, `timestamps`, `many`, `create`): there, a coerced
+// false turns a feature OFF, which is the direction we would want anyway.
+func protectiveBool(m map[string]*coreyaml.Node, key, context string) (bool, error) {
+	node, ok := m[key]
+	if !ok || node == nil {
+		return false, nil
+	}
+	v, err := strictBoolValue(node)
+	if err != nil {
+		return false, fmt.Errorf("%s.%s %w — this flag gates access or exposure, so it is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
+	}
+	return v, nil
+}
+
 // strictBoolValue accepts only a genuine bool node (or the literal
 // strings "true"/"false") and errors on anything else — for keys where
-// lax coercion would silently invert a safe default.
+// lax coercion would silently invert a safe default. See protectiveBool
+// for the larger set of keys where the unsafe direction is FALSE.
 func strictBoolValue(node *coreyaml.Node) (bool, error) {
 	if node != nil && node.Kind == coreyaml.Scalar {
 		if v, ok := node.Value.(bool); ok {
@@ -7301,6 +7601,19 @@ func mapValue(node *coreyaml.Node) map[string]any {
 	out := make(map[string]any, len(node.Map))
 	for key, child := range node.Map {
 		out[key] = anyValue(child)
+	}
+	return out
+}
+
+// stringStringMapValue decodes a YAML map whose values are all scalars, e.g.
+// an entity's `renames:` (old column -> new column).
+func stringStringMapValue(node *coreyaml.Node) map[string]string {
+	if node == nil || node.Kind != coreyaml.Map {
+		return nil
+	}
+	out := make(map[string]string, len(node.Map))
+	for key, child := range node.Map {
+		out[key] = stringValue(child)
 	}
 	return out
 }

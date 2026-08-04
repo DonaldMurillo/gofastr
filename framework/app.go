@@ -1779,6 +1779,17 @@ func (a *App) View(v migrate.View) *App {
 	return a
 }
 
+// MigrationPlan returns the full migration Plan Start applies on boot — the
+// entity registry plus every routine and view registered via App.Routine /
+// App.RoutinesFS / App.View. It is the schema source for the host-binary
+// generation path: pass it to migrate.GenerateMigrationFile so a `myapp
+// migrate generate <name>` verb emits versioned migrations from the same
+// compiled schema boot auto-migrates, with no blueprint and no database
+// touched. See the "Generating from a host binary" section of migrations.md.
+func (a *App) MigrationPlan() migrate.Plan {
+	return migrate.Plan{Registry: a.Registry, Views: a.migrationViews, Routines: a.migrationRoutines}
+}
+
 // RegisterEntities registers each (name, config) pair via App.Entity in
 // alphabetical-by-name order. Sorting matters: Entity has order-sensitive
 // side effects — router registration, MCP tool list order, OpenAPI tag

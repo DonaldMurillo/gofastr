@@ -119,8 +119,13 @@ func TestSDKJSTypedSurface(t *testing.T) {
 
 	for _, want := range []string{
 		"export class Client", "export class ApiError",
-		"this.posts = new Resource(this, \"posts\")",
-		"this.docFiles = new Resource(this, \"doc_files\")",
+		// Bracket, not dot: `this.<name> = …` is a JS statement position, and the
+		// name comes from a developer entity declaration that no syntax gate
+		// checks (there is no JS parser in the Go stdlib). See
+		// TestClientJSQuotesEmittedNames. `client.posts` still resolves — only
+		// the emitted assignment form changed.
+		"this[\"posts\"] = new Resource(this, \"posts\")",
+		"this[\"docFiles\"] = new Resource(this, \"doc_files\")",
 		"export const postsFields",
 		"watch(onEvent, opts)",
 		"_batch",

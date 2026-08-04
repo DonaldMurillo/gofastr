@@ -67,6 +67,32 @@ func WithSetup(r SetupRunner) AppOption {
 	}
 }
 
+// SetSetup wires a first-run setup runner after the App exists, and is
+// otherwise identical to [WithSetup] — the runner is read at Start, never
+// during NewApp, so wiring it later changes nothing about boot.
+//
+// It exists because some steps need the app they run against:
+// setup.HealthStep takes the *App to call RunReadinessChecks, so the runner
+// cannot be built before NewApp returns, and WithSetup cannot receive it:
+//
+//	app := framework.NewApp(framework.WithDB(db))
+//	runner := setup.New(setup.Config{
+//	    Steps:    []setup.Step{adminStep, setup.HealthStep(app)},
+//	    Complete: complete,
+//	})
+//	app.SetSetup(runner)
+//
+// Registering routes before the runner is wired is also the supported order:
+// the setup surface intercepts until Complete reports done, then swaps to the
+// real router.
+func (a *App) SetSetup(r SetupRunner) *App {
+	if r == nil {
+		panic("framework: SetSetup(nil)")
+	}
+	a.setup = r
+	return a
+}
+
 // setupEnvMode is the resolved GOFASTR_SETUP value.
 type setupEnvMode int
 

@@ -25,6 +25,7 @@ type EntityDeclaration struct {
 	Timestamps   *bool                  `json:"timestamps,omitempty"`
 	Indices      []Index                `json:"indices,omitempty"`
 	Properties   map[string]any         `json:"properties,omitempty"`
+	Renames      map[string]string      `json:"renames,omitempty"`
 }
 
 // UnmarshalJSON accepts grouped declarations and the documented flat
@@ -298,6 +299,7 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		Timestamps:   d.Timestamps,
 		Indices:      d.Indices,
 		Properties:   d.Properties,
+		Renames:      d.Renames,
 	}
 	return cfg, nil
 }

@@ -588,7 +588,23 @@ func needsQuote(s string) bool {
 	if _, err := strconv.ParseFloat(s, 64); err == nil && strings.ContainsAny(s, ".eE") {
 		return true
 	}
-	if strings.ContainsAny(s[:1], "[]{}&*!|>'\"%@`#,?: -") {
+	// Indicators that are only special as the FIRST character of a scalar:
+	// block/flow openers, anchors (&), aliases (*), tags (!), block scalars
+	// (| >), quotes, directives (%), reserved (@ `), a leading comment (#),
+	// complex keys (?), and a leading ":" or "-".
+	if strings.ContainsAny(s[:1], "&*!|>'\"%@`#?: -") {
+		return true
+	}
+	// Flow indicators are special ANYWHERE, not just at the front, because
+	// writeFlowList emits scalars inside `[a, b]`. An interior comma there is
+	// an ITEM SEPARATOR: "open,closed" emitted bare re-parses as two items,
+	// which breaks the exact-inverse contract this file's banner claims for
+	// encodeBlueprintYAML/decodeBlueprint and lets a `values:` enum set gain a
+	// member the app never declared (unlike search_fields/fields/filters/
+	// columns, `values:` is not re-checked against the declaration on decode).
+	// Testing only s[:1] was the bug. Quoting these in block context too costs
+	// a pair of quotes and keeps ONE predicate for both contexts.
+	if strings.ContainsAny(s, ",[]{}") {
 		return true
 	}
 	if strings.Contains(s, ": ") || strings.Contains(s, " #") {
@@ -1203,6 +1219,12 @@ func packReadIndices(e ast.Expr) []framework.Index {
 			Name:    astString(iv["Name"]),
 			Columns: astStringSlice(iv["Columns"]),
 			Unique:  astBool(iv["Unique"]),
+			// Expression is the key for function/constant indices. Reading it
+			// back matters because `gofastr generate` re-emits what this
+			// returns: without it a declared unique expression index came out
+			// the far side with no key at all, silently dropping the
+			// constraint. See renderIndexLiteral.
+			Expression: astString(iv["Expression"]),
 		})
 	}
 	return out

@@ -102,7 +102,8 @@ type EntityConfig struct {
 	// otherwise indistinguishable from drop+add, so it requires this explicit
 	// declaration; auto-detection is unsafe. A rename only fires when the old
 	// column is present in the live schema and the new name is declared on the
-	// entity. Go-declared opt-in (blueprint YAML support is a follow-up).
+	// entity. Declare it in Go or under an entity's `renames:` key in a
+	// blueprint.
 	Renames map[string]string
 }
 

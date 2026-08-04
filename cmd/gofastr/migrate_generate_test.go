@@ -8,35 +8,6 @@ import (
 	"testing"
 )
 
-func TestNextMigrationVersion(t *testing.T) {
-	dir := t.TempDir()
-	if v := nextMigrationVersion(dir); v != 1 {
-		t.Fatalf("empty dir version = %d, want 1", v)
-	}
-	for _, name := range []string{"0001_a.sql", "0002_b.sql", "notes.txt", "0007_c.sql"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if v := nextMigrationVersion(dir); v != 8 {
-		t.Fatalf("version after 0007 = %d, want 8", v)
-	}
-}
-
-func TestSanitizeMigrationName(t *testing.T) {
-	cases := map[string]string{
-		"Add Views Column": "add_views_column",
-		"  add-email!!  ":  "add_email",
-		"____":             "migration",
-		"CamelCase":        "camelcase",
-	}
-	for in, want := range cases {
-		if got := sanitizeMigrationName(in); got != want {
-			t.Errorf("sanitizeMigrationName(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 // TestMigrateGenerate_EndToEnd exercises the full declarative workflow through
 // the installed binary: declare an entity, generate a create migration, change
 // the entity, generate an incremental migration, then `migrate up` and confirm

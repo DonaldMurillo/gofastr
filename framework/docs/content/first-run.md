@@ -8,21 +8,32 @@ headless path for IaC installs — two skins over one bootstrap API.
 
 ## Wiring
 
+<!-- gofastr:compile
+import "database/sql"
+var db *sql.DB
+var authManager *auth.AuthManager
+stmt: _ = runner
+-->
 ```go
 import (
     "github.com/DonaldMurillo/gofastr/battery/auth"
     "github.com/DonaldMurillo/gofastr/battery/setup"
+    "github.com/DonaldMurillo/gofastr/framework"
 )
+
+// Build the app first: setup.HealthStep needs the *App to run its
+// readiness checks, so the app must exist before the step is built.
+app := framework.NewApp(framework.WithDB(db))
 
 adminStep, complete := setup.AdminStep(authManager, db, "auth_users")
 runner := setup.New(setup.Config{
     Steps:    []setup.Step{adminStep, setup.HealthStep(app)},
     Complete: complete,
 })
-app := framework.NewApp(
-    framework.WithDB(db),
-    framework.WithSetup(runner),
-)
+
+// SetSetup wires the runner after construction. Use framework.WithSetup(runner)
+// instead when no step needs the app.
+app.SetSetup(runner)
 ```
 
 `Complete` decides everything: while it reports false, the app is in

@@ -214,6 +214,8 @@ entities:
     public: false   # default; see "Default CRUD authentication" below
     crud: true
     mcp: true
+    renames:        # old column: new column — see migrations.md
+      headline: title
     fields:
       - name: title
         type: string
@@ -229,6 +231,21 @@ entities:
         type: relation
         to: users
 ```
+
+### Booleans that gate access are not guessed
+
+Most boolean keys accept anything YAML calls false-ish. Six do not, because
+for them a mis-read value opens something up rather than closing it:
+`scope.multi_tenant`, `scope.soft_delete`, a field's `hidden`, `no_query`,
+`read_only`, and a screen's `access.auth`. These require a real `true` or
+`false` and error on anything else.
+
+The reason is YAML 1.2, which `core/yaml` implements: `yes`, `on`, `y`, and
+`1` are **strings**, not booleans. Written `auth: yes`, the value used to
+read as false and the screen was registered with no policy — publicly
+reachable, with no error to say so. `multi_tenant: yes` dropped tenant
+scoping the same way. Keys where false is the inert direction (`public`,
+`mcp`, `crud`, `enabled`) keep the lax reading.
 
 ### Field keys
 

@@ -23,6 +23,7 @@ type (
 	Routine                = migrate.Routine
 	View                   = migrate.View
 	MigrationPlan          = migrate.Plan
+	MigrationFileOptions   = migrate.MigrationFileOptions
 )
 
 const (
@@ -102,4 +103,9 @@ func LoadSnapshot(path string) (migrate.SchemaSnapshot, error) { return migrate.
 // SaveSnapshot wraps migrate.SaveSnapshot.
 func SaveSnapshot(path string, snap migrate.SchemaSnapshot) error {
 	return migrate.SaveSnapshot(path, snap)
+}
+
+// GenerateMigrationFile wraps migrate.GenerateMigrationFile.
+func GenerateMigrationFile(plan migrate.Plan, name string, opts migrate.MigrationFileOptions) (string, error) {
+	return migrate.GenerateMigrationFile(plan, name, opts)
 }

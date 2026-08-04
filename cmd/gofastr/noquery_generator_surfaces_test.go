@@ -54,10 +54,15 @@ func TestSDKJSFieldConstantsOmitNoQueryFields(t *testing.T) {
 	var js, dts strings.Builder
 	writeJSEntity(&js, &dts, decl, model)
 	got := js.String()
-	if strings.Contains(got, `number: "number"`) {
+	// Keys are QUOTED in the emitted .js — see TestClientJSQuotesEmittedNames in
+	// emitter_output_context_security_test.go. The property this test owns
+	// (NoQuery fields never reach the filter-key constant) is unchanged; only the
+	// matcher moved, because an unquoted key was a JS-injection position and
+	// .js/.d.ts have no syntax gate. `cardsFields.title` still resolves.
+	if strings.Contains(got, `"number": "number"`) {
 		t.Fatalf("JS query-field constant exposes NoQuery field:\n%s", got)
 	}
-	if !strings.Contains(got, `title: "title"`) {
+	if !strings.Contains(got, `"title": "title"`) {
 		t.Fatalf("JS query-field constant lost queryable field:\n%s", got)
 	}
 }

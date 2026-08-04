@@ -1,8 +1,11 @@
 # Cron / scheduled jobs
 
-`framework.Scheduler` is a minimal in-process cron runner for
-single-instance background work. For horizontally-scaled deployments,
-use the `battery/queue` DB-backed queue instead.
+`framework.Scheduler` is a minimal in-process cron runner for background
+work. By default every replica fires every tick — fine for a single
+instance. For multiple replicas, install a leader-election lease
+(`Scheduler.WithLeaderElection`, e.g. `NewPostgresAdvisoryLease`) so only
+one replica fires each tick; for durable, exactly-once work, use the
+`battery/queue` DB-backed queue instead.
 
 ## Cron vs Queue — which one?
 
@@ -12,7 +15,7 @@ They solve different problems and often pair up:
 |---|---|---|
 | Trigger | **Time** — "every 5 min", "0 3 * * *" | **Work** — a job enqueued by code |
 | State | In-memory; runs in this process only | DB-backed; survives restart |
-| Scale-out | Single instance (every replica fires — see "Behaviour" below) | Safe across replicas via DB locking |
+| Scale-out | Default: every replica fires. Opt into leader election (`WithLeaderElection`) so one replica fires per tick | Safe across replicas via DB locking |
 | Use for | Periodic maintenance, polling, digests | Retries, async side-effects, fan-out, dead-letter |
 
 Rule of thumb: **cron decides _when_, the queue decides _how_ reliably.**
@@ -28,9 +31,11 @@ sched.Register(framework.CronJob{
 })
 ```
 
-On multiple replicas, gate the cron body behind a DB lock (or run the
-scheduler on a single designated instance) so the tick fires once — then
-let the queue distribute the actual work. See "Behaviour & guarantees".
+On multiple replicas, either install leader election on the scheduler
+(`sched.WithLeaderElection(cron.NewPostgresAdvisoryLease(db, key))`) so
+only one replica fires the tick, or run the scheduler on a single
+designated instance — then let the queue distribute the actual work. See
+"Behaviour & guarantees" and [Leader election](#leader-election).
 
 ### Cron expressions on the queue Scheduler
 
@@ -111,11 +116,46 @@ Supported within each field:
   guarding against overlap (e.g. via a `sync.Mutex` or a DB lock).
 - **No persistence.** Pending firings are not durable. If the process
   restarts mid-minute, that minute's jobs are skipped.
-- **No distributed coordination.** Every replica runs every job. If
-  you run more than one process, either:
+- **Default: no distributed coordination.** Every replica runs every
+  job. For more than one process, either:
+  - Install leader election (`Scheduler.WithLeaderElection`) so only the
+    lease holder fires each tick (see [Leader election](#leader-election)
+    below), or
   - Run the scheduler on exactly one replica (typical for "primary
     worker" patterns), or
   - Use `battery/queue` with a DB lock instead.
+
+## Leader election
+
+`Scheduler.WithLeaderElection` installs a lease so only one replica fires
+each tick — making cron safe across replicas without a separate worker
+tier. The built-in `NewPostgresAdvisoryLease(db, key)` coordinates over a
+Postgres advisory lock (`pg_try_advisory_lock`): every replica pointing at
+the same Postgres and using the same `key` races for the lock; the holder
+fires, the others skip the tick.
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/cron"
+
+sched := framework.NewScheduler()
+sched.WithLeaderElection(cron.NewPostgresAdvisoryLease(db, 70_011)) // fixed key
+sched.Register(framework.CronJob{Name: "purge", Spec: "@daily", Run: …})
+sched.Start(ctx)
+```
+
+Pick a fixed `key` that does not collide with the framework's own
+advisory locks (the migration advisory lock). Pool sizing matters: each
+tick pins one connection for the lock's lifetime — held until the tick's
+jobs finish — so the pool should allow at least two open connections when
+the jobs themselves touch the database, otherwise the leader holds the
+only connection and the jobs deadlock on it.
+
+This is **per-tick mutual exclusion**: two replicas never fire the same
+tick. It is not exactly-once execution for a job that overruns the
+interval. For durable, exactly-once background work — retries,
+dead-letters, survival across restarts — use the DB-backed queue
+(`battery/queue`) instead. A custom lease (Redis, etcd, …) only needs to
+satisfy the `LeaderElection` interface.
 
 ## Stopping cleanly
 
@@ -173,8 +213,9 @@ contract.
 
 ## Common mistakes
 
-- **Running the scheduler on every replica.** Multiplies every job by
-  N. Pick a primary or use the queue.
+- **Running the scheduler on every replica without a lease.** Multiplies
+  every job by N. Install `WithLeaderElection`, pick a primary, or use
+  the queue.
 - **Long jobs without overlap guards.** A 2-minute job on a
   `* * * * *` spec runs twice in parallel after one minute.
 - **Logging silently swallowed errors.** Always set `OnError`.

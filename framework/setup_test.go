@@ -113,3 +113,32 @@ func (m *mockSetupRunner) Handler(_ func(), _, _ http.HandlerFunc) http.Handler 
 func (m *mockSetupRunner) SetupURL(_ string) string {
 	return m.setupURL
 }
+
+// TestSetSetupWiresRunnerAfterNewApp pins the post-construction setup path.
+// setup.HealthStep needs the *App to run readiness checks, so an app that
+// wants a health step cannot pass WithSetup to NewApp — the runner does not
+// exist yet. SetSetup is the supported way out; without it, the only spellings
+// are an unexported field (in-package only) or re-applying the option as a
+// function, which first-run.md used to document.
+func TestSetSetupWiresRunnerAfterNewApp(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	if app.setup != nil {
+		t.Fatal("fresh app should have no setup runner")
+	}
+	mock := &mockSetupRunner{incomplete: true}
+	if got := app.SetSetup(mock); got != app {
+		t.Error("SetSetup should return the app for chaining")
+	}
+	if app.setup != SetupRunner(mock) {
+		t.Error("SetSetup did not wire the runner")
+	}
+}
+
+func TestSetSetupNilPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("SetSetup(nil) should panic like WithSetup(nil)")
+		}
+	}()
+	NewApp(WithoutDefaultMiddleware()).SetSetup(nil)
+}
