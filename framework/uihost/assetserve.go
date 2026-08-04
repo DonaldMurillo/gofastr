@@ -25,14 +25,16 @@ func serveVersionedText(w http.ResponseWriter, r *http.Request, contentType, bod
 		h.Set("ETag", etag)
 	}
 
-	scope := "public"
 	if private {
-		scope = "private"
-	}
-	if hash != "" && r.URL.Query().Get("v") == hash {
-		h.Set("Cache-Control", scope+", max-age=31536000, immutable")
-	} else if private {
+		// Gated assets are NEVER immutable: a year-long browser cache
+		// entry outlives the credential that earned it, so a later user
+		// of the same profile (or the same user after sign-out) would be
+		// served the script without the gate ever running. private +
+		// no-cache keeps the gate on every request; the ETag makes each
+		// one a body-less 304.
 		h.Set("Cache-Control", "private, no-cache")
+	} else if hash != "" && r.URL.Query().Get("v") == hash {
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		h.Set("Cache-Control", "no-cache")
 	}

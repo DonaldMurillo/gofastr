@@ -52,7 +52,8 @@ const chainRoutes = `<script type="application/json" id="gofastr-routes">[` +
 	`{"path":"/docs/b","layouts":["l:site","g:/docs/:docs"]},` +
 	`{"path":"/account","layouts":["l:site"]},` +
 	`{"path":"/items/:id","layouts":["l:site"]},` +
-	`{"path":"/app","layouts":["l:app"]}` +
+	`{"path":"/app","layouts":["l:app"]},` +
+	`{"path":"/legal","layouts":[]}` +
 	`]</script>`
 
 // docsLayer renders the docs group layer (sidebar + slot) around content.
@@ -69,7 +70,8 @@ func sitePage(inner string) string {
 	return `<!doctype html><html><head><title>t</title>` + chainRoutes + `</head><body>` +
 		`<div data-fui-layout="site" data-fui-layout-key="l:site" class="layout-site">` +
 		`<header id="site-header"><a id="to-account" href="/account">Account</a>` +
-		`<a id="to-item" href="/items/42">Item</a><a id="to-app" href="/app">App</a></header>` +
+		`<a id="to-item" href="/items/42">Item</a><a id="to-app" href="/app">App</a>` +
+		`<a id="to-legal" href="/legal">Legal</a></header>` +
 		`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` + inner + `</main>` +
 		`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 }
@@ -159,6 +161,14 @@ func newChainSite(t *testing.T) *chainSite {
 		c.record(r)
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, appPage())
+	})
+	mux.HandleFunc("/legal", func(w http.ResponseWriter, r *http.Request) {
+		c.record(r)
+		// A layout-less page: bare <main>, no layer markers at all.
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html><head><title>legal</title>`+chainRoutes+`</head><body>`+
+			`<main role="main" tabindex="-1"><h1 id="legal-screen">Legal</h1></main>`+
+			`<script src="/__gofastr/runtime.js"></script></body></html>`)
 	})
 
 	c.srv = httptest.NewServer(mux)
@@ -318,6 +328,34 @@ func TestCachedRevisitReplaysAtLayer(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("cached revisit refetched /docs/a (%d requests, want 1)", count)
+	}
+}
+
+// Leaving a layout chain for a layout-less page must drop the old shell
+// — a partial swap into <main> would keep the site chrome around the
+// plain page's content.
+func TestChainToPlainPageDropsShell(t *testing.T) {
+	site := newChainSite(t)
+	ctx := newSeedBrowserCtx(t)
+
+	var headerCount, keyCount int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(site.srv.URL+"/docs/a"),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Click(`#to-legal`, chromedp.ByID),
+		chromedp.WaitVisible(`#legal-screen`, chromedp.ByID),
+		chromedp.Evaluate(`document.querySelectorAll('#site-header').length`, &headerCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-layout-key]').length`, &keyCount),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if headerCount != 0 || keyCount != 0 {
+		t.Errorf("old shell survived nav to a layout-less page (%d headers, %d layer keys)", headerCount, keyCount)
+	}
+	for _, rq := range site.requests() {
+		if rq.Path == "/legal" && rq.Partial {
+			t.Error("chain→plain nav used a partial fetch; must full-fetch and replace the shell")
+		}
 	}
 }
 

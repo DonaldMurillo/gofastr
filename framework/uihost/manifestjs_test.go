@@ -123,7 +123,48 @@ func TestWidgetJSGatedAndVersioned(t *testing.T) {
 		t.Fatalf("gated fetch with session: status %d", w2.Code)
 	}
 	cc := w2.Header().Get("Cache-Control")
-	if !strings.Contains(cc, "immutable") || !strings.Contains(cc, "private") {
-		t.Errorf("Cache-Control = %q, want private immutable", cc)
+	if strings.Contains(cc, "immutable") || !strings.Contains(cc, "private") || !strings.Contains(cc, "no-cache") {
+		t.Errorf("Cache-Control = %q, want private no-cache — an immutable gated asset outlives its credential in the browser cache, so the gate would run only on the first miss", cc)
+	}
+	if w2.Header().Get("ETag") == "" {
+		t.Error("gated asset needs an ETag so per-request revalidation is a body-less 304")
+	}
+}
+
+// A prefetch presented with a dead session gets 204 and no mint — the
+// client never caches it, so the real click performs the rollover. A
+// prefetch that were served instead would let the click paint from the
+// cached entry with the stale token still in place.
+func TestPrefetchWithDeadSessionGets204(t *testing.T) {
+	ds := actionsHost()
+
+	req := httptest.NewRequest("GET", "/act", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	req.Header.Set("X-Gofastr-From", "/plain")
+	req.Header.Set("X-Gofastr-Prefetch", "1")
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("prefetch with no session: status %d, want 204", w.Code)
+	}
+	if len(w.Result().Cookies()) != 0 {
+		t.Error("prefetch must not mint a session")
+	}
+	if w.Header().Get("X-Gofastr-Partial") != "" {
+		t.Error("204 must not claim to be a partial")
+	}
+
+	// With a live session the prefetch serves the partial normally.
+	sess := ds.CreateSession()
+	req2 := httptest.NewRequest("GET", "/act", nil)
+	req2.Header.Set("X-Gofastr-Navigate", "1")
+	req2.Header.Set("X-Gofastr-From", "/plain")
+	req2.Header.Set("X-Gofastr-Prefetch", "1")
+	req2.AddCookie(&http.Cookie{Name: sessionCookieSecureName, Value: sess.Token})
+	req2.AddCookie(&http.Cookie{Name: sessionCookieDevName, Value: sess.Token})
+	w2 := httptest.NewRecorder()
+	ds.ServeHTTP(w2, req2)
+	if w2.Code != 200 || w2.Header().Get("X-Gofastr-Partial") != "true" {
+		t.Fatalf("prefetch with live session: status %d partial=%q, want a normal partial", w2.Code, w2.Header().Get("X-Gofastr-Partial"))
 	}
 }

@@ -331,9 +331,11 @@
   // cleanup to the region that actually changed. Active-link
   // highlighting rides the gofastr:navigate event (src/activelink.js,
   // idle-loaded) — cosmetic post-nav work carved out of core.
-  const finishNav = (path, prevPath, cached, root) => {
-    const ps = _pendingScroll;
-    _pendingScroll = null;
+  // ps is the restore target BOUND TO THIS NAVIGATION — loadPage
+  // consumes the popstate's pending value at entry, so a superseded
+  // back/forward can never leak its position into a later click's
+  // finishNav.
+  const finishNav = (path, prevPath, cached, root, ps) => {
     if (!ps) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
@@ -350,7 +352,7 @@
       _pushURL syncs currentPath BEFORE loadPage runs on the click path,
       so capturing currentPath here would report the destination as its
       own origin (and X-Gofastr-From would stop naming the real one). */
-  const loadPage = async (path, { bypassCache = false, forceFull = false, from = null } = {}) => {
+  const loadPage = async (path, { bypassCache = false, forceFull = false, from = null, restore = null } = {}) => {
     // Single gate for every branch below: the SPA navigator's target
     // comes from an href / a data-fui-* attribute / a server header,
     // and a cross-origin one must never be fetched with the page's
@@ -365,6 +367,11 @@
     const myEpoch = ++_navEpoch;
     const prevPath = from || currentPath;
     currentPath = path;
+    // Consume the popstate's restore target NOW, into this navigation —
+    // left in module state, a superseded back/forward's position leaked
+    // into whichever navigation ran finishNav next.
+    let ps = restore;
+    if (!ps) { ps = _pendingScroll; _pendingScroll = null; }
     // Surface "I heard you" feedback to assistive tech and screen
     // readers while the fetch is in flight. The CSS hook can show a
     // progress strip via [aria-busy="true"] on documentElement.
@@ -388,7 +395,7 @@
           document.title = cached.title;
           announceRoute(cached.title);
           const root = swapAtSlot(slot, cached.html, !cached.layer || cached.layer === domChainKeys()[0]);
-          finishNav(path, prevPath, true, root);
+          finishNav(path, prevPath, true, root, ps);
           return;
         }
       }
@@ -406,7 +413,7 @@
             announceRoute(pf.title);
             const root = swapAtSlot(slot, pf.html, !pf.layer || pf.layer === domChainKeys()[0]);
             cacheScreen(path, pf.html, pf.title, pf.layer);
-            finishNav(path, prevPath, false, root);
+            finishNav(path, prevPath, false, root, ps);
             return;
           }
         }
@@ -414,9 +421,12 @@
 
       // Cross-chain nav (no shared root): fetch the FULL page (no
       // navigate header → the server returns the whole document) and
-      // replace the shell. forceFull is the deploy-skew recovery path —
-      // the server echoed a swap boundary this DOM doesn't have.
-      if (layouts.length > 0 && (forceFull || sharedDepth(layouts) === 0)) {
+      // replace the shell. Taken when EITHER side has a chain the other
+      // doesn't share — including a chained page leaving for a
+      // layout-less one, where a partial swap would keep the old chrome
+      // around the new content. forceFull is the deploy-skew recovery
+      // path — the server echoed a swap boundary this DOM doesn't have.
+      if ((layouts.length > 0 || domChainKeys().length > 0) && (forceFull || sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
       if (myEpoch !== _navEpoch) return;
         if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
@@ -447,7 +457,7 @@
           if (m) swapAtSlot(m, nm ? nm.innerHTML : '', true);
         }
         cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-fui-layout-slot') || '') : '');
-        finishNav(dest, prevPath, false, el || mainEl());
+        finishNav(dest, prevPath, false, el || mainEl(), ps);
         return;
       }
 
@@ -492,7 +502,7 @@
         // must not serve the redirect target from the screen cache —
         // and keep the ORIGINAL origin so the redirect leg's subtree
         // partial renders against where the user actually came from.
-        return loadPage(redirectTo, { bypassCache, from: prevPath });
+        return loadPage(redirectTo, { bypassCache, from: prevPath, restore: ps });
       }
 
       const html = await resp.text();
@@ -518,13 +528,13 @@
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? mainEl() : null);
       if (!slot) {
         _pendingNav.delete(path);
-        return loadPage(path, { bypassCache: true, forceFull: true, from: prevPath });
+        return loadPage(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
       }
       document.title = title;
       announceRoute(title);
       const root = swapAtSlot(slot, body, !swapKey || swapKey === domChainKeys()[0]);
       cacheScreen(path, body, title, swapKey);
-      finishNav(path, prevPath, false, root);
+      finishNav(path, prevPath, false, root, ps);
     } catch (err) {
       if (myEpoch !== _navEpoch) return;
       // CLAUDE.md hard rule 4 — no location.href fallback. Surface a
@@ -532,7 +542,6 @@
       // pushState'd by the click handler so revert it.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast('Could not load ' + path + ' — check your connection');
-      _pendingScroll = null;
       _pushURL(prevPath || location.pathname, { replace: true });
       currentPath = prevPath;
     } finally {
