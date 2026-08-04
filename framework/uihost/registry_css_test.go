@@ -66,7 +66,7 @@ func TestCSSLoadOrder_AppCSSWinsOverComponentCSS(t *testing.T) {
 	ds := newTestUIHostFor(st)
 	body := pageBody(t, ds, "/")
 
-	appCSSIdx := strings.Index(body, `href="/__gofastr/app.css"`)
+	appCSSIdx := strings.Index(body, `href="/__gofastr/app.css?v=`)
 	compIdx := strings.Index(body, "/__gofastr/comp/")
 	if compIdx == -1 {
 		// Single-component takes the per-component link path; multi

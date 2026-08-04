@@ -170,7 +170,7 @@ func TestUIHostInjectsRuntimeJS(t *testing.T) {
 	ds.ServeHTTP(w, req)
 
 	body := w.Body.String()
-	assertContains(t, body, `<script src="/__gofastr/runtime.js"></script>`)
+	assertContains(t, body, `<script src="/__gofastr/runtime.js?v=`)
 }
 
 func TestUIHostServesRuntimeJS(t *testing.T) {
@@ -471,7 +471,7 @@ func TestUIHostExtraScriptsInjectedBeforeBodyEnd(t *testing.T) {
 	}
 	// Order matters: extras must appear after the framework runtime so
 	// they don't race with bootstrap, and before </body>.
-	runtimeAt := strings.Index(page, `src="/__gofastr/runtime.js"`)
+	runtimeAt := strings.Index(page, `src="/__gofastr/runtime.js?v=`)
 	livereloadAt := strings.Index(page, `src="/__livereload.js"`)
 	bodyCloseAt := strings.LastIndex(page, "</body>")
 	if !(runtimeAt > 0 && runtimeAt < livereloadAt && livereloadAt < bodyCloseAt) {
@@ -551,7 +551,7 @@ func TestUIHostCustomCSS(t *testing.T) {
 	pageRec := httptest.NewRecorder()
 	ds.ServeHTTP(pageRec, pageReq)
 	page := pageRec.Body.String()
-	assertContains(t, page, `<link rel="stylesheet" href="/__gofastr/app.css">`)
+	assertContains(t, page, `<link rel="stylesheet" href="/__gofastr/app.css?v=`)
 	if strings.Contains(page, "body { background: red; }") {
 		t.Errorf("custom CSS should not be inlined; expected external <link>. got:\n%s", page)
 	}

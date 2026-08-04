@@ -125,6 +125,16 @@ type UIHost struct {
 	catalogCacheOnce    sync.Once
 	catalogCache        string
 	catalogMarshalCount atomic.Int64
+	// Default-theme app.css, composed + fingerprinted once at first render.
+	// Every page was re-concatenating the full sheet (theme tokens, layout
+	// base, every style.Contribute fragment) per request, and the response
+	// carried no validator at all. Theme VARIANTS stay uncached here —
+	// they're keyed and evicted through the variant registry.
+	appCSSOnce       sync.Once
+	appCSSBody       string
+	appCSSHash       string
+	appCSSContribN   int
+	appCSSFrozenWarn sync.Once
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -1521,9 +1531,19 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// app.css comes AFTER the component CSS so it wins cascade ties
 	// against framework defaults. Hosts that override e.g. a button's
 	// padding or a header's drawer position can do so by writing to
-	// the same selector — no specificity gymnastics needed.
+	// the same selector — no specificity gymnastics needed. Live pages
+	// carry ?v=<fingerprint> so the response is immutable per deploy;
+	// export mode (bundle=false: static site, PWA offline shell) stays
+	// query-free because the files land on disk under their bare paths
+	// and naive static hosts/mirrors resolve by path (the wget
+	// regression that already forced query-free module writes).
 	if ds.App != nil {
-		headClose.WriteString(`<link rel="stylesheet" href="/__gofastr/app.css">`)
+		href := "/__gofastr/app.css"
+		if bundle {
+			_, cssHash := ds.appCSSCached()
+			href += "?v=" + cssHash
+		}
+		headClose.WriteString(`<link rel="stylesheet" href="` + href + `">`)
 		headClose.WriteByte('\n')
 	}
 	if catalog := catalogJSONScript(ds); catalog != "" {
@@ -1548,7 +1568,11 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	}
 
 	// <body>
-	bodyClose.WriteString(`<script src="/__gofastr/runtime.js"></script>`)
+	runtimeSrc := "/__gofastr/runtime.js"
+	if bundle {
+		runtimeSrc += "?v=" + widget.RuntimeHash()
+	}
+	bodyClose.WriteString(`<script src="` + runtimeSrc + `"></script>`)
 	bodyClose.WriteByte('\n')
 	if ds.HasActions() {
 		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
@@ -1563,9 +1587,13 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// the same first paint — no FOUC. Reads localStorage("gofastr.
 	// colorScheme") + prefers-color-scheme media query, sets
 	// <html data-color-scheme="dark|light">.
+	colorSrc := "/__gofastr/color-scheme.js"
+	if bundle {
+		colorSrc += "?v=" + colorSchemeHash()
+	}
 	page = replaceChromeMarker(page,
 		"<head>",
-		`<head><script src="/__gofastr/color-scheme.js"></script>`, "color-scheme bootstrap")
+		`<head><script src="`+colorSrc+`"></script>`, "color-scheme bootstrap")
 	if headClose.Len() > 0 {
 		page = replaceChromeMarker(page, "</head>", headClose.String()+"</head>", "head chrome (SEO/CSS)")
 	}
@@ -1586,13 +1614,14 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 // request can neither inject CSS nor mint an unbounded set of cache entries.
 //
 // Requests naming a variant are content-addressed and therefore immutable: the
-// hash changes whenever the emitted CSS does. The unparameterised URL keeps its
-// historical `no-cache`, because that response tracks App.Theme plus
-// WithCustomCSS plus contributed fragments, none of which are in the URL.
+// hash changes whenever the emitted CSS does. The default-theme sheet is
+// composed and fingerprinted ONCE (appCSSCached) and served through the shared
+// versioned-text policy: the injected <link> carries ?v=<fingerprint>, so a
+// deploy's sheet is immutable and a bare/stale URL revalidates via ETag
+// instead of re-downloading the full body.
 func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-
 	if hash := r.URL.Query().Get("t"); hash != "" {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		if t, ok := ds.themeVariant(hash); ok {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			fmt.Fprint(w, ds.AppCSSFor(t))
@@ -1602,12 +1631,33 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 		// the URL says one thing and the bytes say another, so caching it under
 		// that key would poison the variant once it is registered.
 		w.Header().Set("Cache-Control", "no-cache")
-		fmt.Fprint(w, ds.AppCSS())
+		body, _ := ds.appCSSCached()
+		fmt.Fprint(w, body)
 		return
 	}
 
-	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprint(w, ds.AppCSS())
+	body, hash := ds.appCSSCached()
+	serveVersionedText(w, r, "text/css; charset=utf-8", body, hash, false)
+}
+
+// appCSSCached composes the default-theme app.css once and content-
+// addresses it with style.CSSFingerprint — the same digest family the
+// theme-variant registry keys on, so one addressing scheme covers every
+// app.css response. The sheet freezes at first render: a
+// style.Contribute that lands later can no longer ship, which was
+// already true in effect for theme variants and is now loudly logged.
+func (ds *UIHost) appCSSCached() (body, hash string) {
+	ds.appCSSOnce.Do(func() {
+		ds.appCSSContribN = style.ContributedCount()
+		ds.appCSSBody = ds.AppCSS()
+		ds.appCSSHash = style.CSSFingerprint(ds.appCSSBody)
+	})
+	if style.ContributedCount() != ds.appCSSContribN {
+		ds.appCSSFrozenWarn.Do(func() {
+			slog.Warn("uihost: style.Contribute called after the first page render — app.css is frozen per process; contribute at package init, before Mount")
+		})
+	}
+	return ds.appCSSBody, ds.appCSSHash
 }
 
 // NotFoundRenderer is an optional interface a custom 404 screen (see
@@ -1902,12 +1952,12 @@ func boundedPresenceParam(r *http.Request) string {
 // existing SSE lane. An app that wants an HTTP roster builds one behind its
 // own authz. See framework/docs/content/presence.md.
 
-// handleRuntimeJS serves the core-ui runtime JavaScript.
+// handleRuntimeJS serves the core-ui runtime JavaScript. The injected
+// <script> carries ?v=<widget.RuntimeHash()> so the response is
+// immutable per deploy; the modules were already served that way while
+// the core bundle re-downloaded on every visit.
 func (ds *UIHost) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
-	js := runtime.MustRuntimeJS()
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprint(w, js)
+	serveVersionedText(w, r, "application/javascript; charset=utf-8", runtime.MustRuntimeJS(), widget.RuntimeHash(), false)
 }
 
 // handleColorSchemeJS serves the color-scheme bootstrap script — a
@@ -1919,11 +1969,22 @@ func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "color-scheme bootstrap unavailable", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	// Long cache — content rarely changes, file-hash query string would
-	// be ideal but isn't critical for a 1KB script.
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	fmt.Fprint(w, js)
+	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, colorSchemeHash(), false)
+}
+
+// colorSchemeHash content-addresses the color-scheme bootstrap once.
+var (
+	colorSchemeHashOnce sync.Once
+	colorSchemeHashVal  string
+)
+
+func colorSchemeHash() string {
+	colorSchemeHashOnce.Do(func() {
+		if js, err := runtime.ColorSchemeJS(); err == nil {
+			colorSchemeHashVal = style.CSSFingerprint(js)
+		}
+	})
+	return colorSchemeHashVal
 }
 
 // maxMutatingBodyBytes bounds JSON bodies accepted by mutating

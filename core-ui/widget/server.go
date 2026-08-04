@@ -38,6 +38,12 @@ func runtimeHash() string {
 	return runtimeHashVal
 }
 
+// RuntimeHash exposes the core runtime's content hash so hosts can emit
+// the ?v= form of /__gofastr/runtime.js and serve it immutable. The
+// kiln/manual path (RuntimeTag) always versioned the URL; the uihost
+// path served it no-cache and re-downloaded on every visit.
+func RuntimeHash() string { return runtimeHash() }
+
 // Per-module content-addressed hashes for the split runtime modules.
 // Each module URL ships with ?v=<hash>; the response uses
 // `Cache-Control: public, max-age=31536000, immutable` so the browser
