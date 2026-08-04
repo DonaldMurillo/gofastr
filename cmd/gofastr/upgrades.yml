@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.59.0
+through: v0.60.0
 
 releases:
   - version: v0.3.0
@@ -615,3 +615,26 @@ releases:
         breaking: false
         guidance: "Additive. `gofastr verify` reports on the tree and `gofastr build` gates on error findings — an existing app with findings adopts via `gofastr verify --strict --baseline-write` (accepts current debt, fails on new) or relaxes named rules in gofastr.contracts.yml; every opt-out is reported. `--no-contracts` skips the build gate once. Nothing changes at runtime: the semantic-coverage recorder is off unless GOFASTR_SEMANTIC_COVERAGE=1 or the TestHarness enables it."
         detect: "gofastr build|NewApp"
+  - version: v0.60.0
+    title: Layout chains, chain-aware navigation, asset addressing
+    notes:
+      - change: RouteEntry.Layout is now Layouts (layer-key chain) plus Preload
+        breaking: true
+        guidance: "Code reading app.RouteEntry.Layout must switch to Layouts — an outermost-to-innermost slice of layer keys (l:<name> / g:<prefix>:<name>). The client manifest field is layouts; cssChunk is gone. Apps that only register screens and layouts compile unchanged."
+        detect: "\\.Layout\\b.*RouteEntry|RouteEntry\\{"
+      - change: Static export composes the same layout chain as live SSR
+        breaking: true
+        guidance: "Router.RenderRaw now applies the default layout and no longer double-wraps <main>, so exported HTML for grouped screens changes shape. Snapshot-style assertions over exported files need re-recording; live SSR output for ungrouped screens is unchanged apart from the new data-fui-layout-key/-slot markers."
+        detect: "RenderScreenRaw|RenderRaw|static\\.NewBuilder"
+      - change: Live pages externalize the catalog/module manifest and split actions per screen
+        breaking: true
+        guidance: "Anything scraping the inline #gofastr-catalog or #gofastr-runtime-modules blocks on live pages should read window.__gofastr_catalog / window.__gofastr_runtime_modules (set by /__gofastr/manifest.js). /__gofastr/widget/{id}.js now requires a session or embed grant, matching the actions.js concat it replaces."
+        detect: "gofastr-catalog|gofastr-runtime-modules|/__gofastr/actions\\.js"
+      - change: style.Contribute freezes at first render
+        breaking: true
+        guidance: "app.css is composed and content-addressed once per process. A style.Contribute after the first page render logs a warning and does not ship — move contributions to package init or before Mount."
+        detect: "style\\.Contribute\\("
+      - change: Runtime history writes go through __gofastr._pushURL
+        breaking: true
+        guidance: "Custom client JS that history.pushState()s around the router leaves currentPath stale and breaks scroll restoration plus the stateful-popstate diff. Call __gofastr._pushURL(url) instead; history.state now carries {__fui: <id>}."
+        detect: "history\\.pushState"

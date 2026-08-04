@@ -59,9 +59,17 @@ human-readable enough to set breakpoints in.
 
 After minification (typical end-user deploy):
 
-- `runtime.js`: ~38 KB raw / ~10 KB gz (was 92 KB raw / 28 KB gz)
-- All embedded modules combined: ~131 KB raw / ~44 KB gz (was 262 KB
-  / 88 KB gz)
+- `runtime.js`: ~12.3 KB gz at level 6, ~14.2 KB at level 1 — under
+  the 12.5 KB goal and the 14 KB initial-congestion-window line
+  `core-ui/runtime/budget_test.go` enforces
+- Every on-demand module: ≤ 3 KB gz each; a page only fetches the
+  modules whose markers it renders
+
+Post-navigation cosmetics live in on-demand modules too: `activelink`
+(aria-current highlighting, idle-loaded), `preload` (route prefetch,
+loaded only when a route declares `app.Preload`), and `actionloader`
+(per-screen compiled action scripts, loaded only when the app has
+compiled actions).
 
 Reverse proxies (nginx, CloudFront, etc.) typically apply
 `Content-Encoding: gzip` or `br` on top, so the bytes actually on the

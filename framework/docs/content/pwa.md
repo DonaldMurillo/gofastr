@@ -72,9 +72,13 @@ The generated worker is deliberately conservative:
   network is unavailable the precached offline screen renders instead.
 - **The cache holds exactly the precache set** — the goFastr runtime
   (`runtime.js`, split modules under their content-addressed
-  `?v=<hash>` URLs, `color-scheme.js`, `actions.js`, `app.css`), the
-  manifest, the offline page plus the per-component stylesheets it
-  links, declared icons, and your `Precache` entries. Nothing is ever
+  `?v=<hash>` URLs, `color-scheme.js`, `actions.js`, `app.css`,
+  `manifest.js`), the web app manifest, the offline page plus the
+  per-component stylesheets it links, declared icons, and your
+  `Precache` entries. The live worker lists the shell assets under both
+  their bare paths (the offline page references those) and the
+  `?v=<hash>` forms live pages request; a static export's worker lists
+  bare paths only, matching its query-free files. Nothing is ever
   added to Cache Storage at runtime, and precached responses are
   re-wrapped at install time so a static host's redirects can't poison
   the offline fallback.
@@ -86,7 +90,8 @@ The generated worker is deliberately conservative:
   against the previous deployment's runtime or CSS.
 - **Sensitive endpoints are never intercepted and can never be
   precached.** `/__gofastr/sse`, `/__gofastr/session`,
-  `/__gofastr/action`, `/__gofastr/widgets`,
+  `/__gofastr/action`, `/__gofastr/widgets`, `/__gofastr/widget/`
+  (per-screen action scripts are session-gated),
   `/api/*`, and `/auth/*` are on a deny list baked into the worker;
   `Precache` entries that point at them (or at another origin) are
   dropped. Apps that mount their API or auth elsewhere extend the list

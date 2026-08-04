@@ -908,12 +908,14 @@ The flow:
 
 3. **Browser back**:
    - `popstate` fires with the previous URL (`?p=2`).
-   - The runtime fetches the screen partial for the new URL via
+   - `p` is an identity param (not a widget/pane deep-link param), so
+     the runtime fetches the screen partial for the new URL via
      `X-Gofastr-Navigate: 1` (the same flow as cross-page nav) and
-     swaps `<main>`. The screen's `Load(ctx)` reads `?p=2` again, the
-     island is re-rendered server-side at page 2, partial response
-     comes back, runtime swaps. The cache makes typical back-stack
-     transitions feel instant.
+     swaps the shared layer's content cell. The screen's `Load(ctx)`
+     reads `?p=2` again, the island is re-rendered server-side at page
+     2, partial response comes back, runtime swaps. The cache makes
+     typical back-stack transitions feel instant, and the entry's
+     stored scroll position is restored after the swap.
    - This means popstate triggers a full screen-partial re-fetch, not
      a per-island patch. It's coarser than the click path but it's
      simpler and correct — and it's still way cheaper than a hard
