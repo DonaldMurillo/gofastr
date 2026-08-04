@@ -173,6 +173,10 @@ var pwaSensitivePaths = []string{
 	"/__gofastr/session",
 	"/__gofastr/action",
 	"/__gofastr/widgets",
+	// Per-id compiled action scripts are session-gated (the concat they
+	// replaced was too); a credentialed response must never enter the
+	// shared shell cache.
+	"/__gofastr/widget",
 	"/api",
 	"/auth",
 }
@@ -222,15 +226,31 @@ var pwaAssetURL = regexp.MustCompile(`(?:src|href)="(/[^"]+)"`)
 // exactly, so entries the client requests with a content-addressed
 // ?v=<hash> (split runtime modules, component CSS) are listed with
 // that exact query.
-func (ds *UIHost) pwaPrecachePaths(cfg PWAConfig, offlineHTML string) []string {
+func (ds *UIHost) pwaPrecachePaths(cfg PWAConfig, offlineHTML string, live bool) []string {
 	set := map[string]bool{
 		"/__gofastr/runtime.js":      true,
 		"/__gofastr/color-scheme.js": true,
 		"/manifest.webmanifest":      true,
 		pwaOfflinePath:               true,
 	}
+	if live {
+		// LIVE pages request the ?v=<hash> spellings plus manifest.js;
+		// the worker matches exactly, so those must be cached alongside
+		// the bare forms the offline shell references. A static export
+		// never emits them (its pages are query-free and self-contained
+		// by design), and listing them there would 404 the whole install
+		// against files the export doesn't write.
+		set["/__gofastr/runtime.js?v="+widget.RuntimeHash()] = true
+		set["/__gofastr/color-scheme.js?v="+colorSchemeHash()] = true
+		if _, mHash := ds.manifestJS(); mHash != "" {
+			set["/__gofastr/manifest.js?v="+mHash] = true
+		}
+	}
 	if ds.App != nil {
 		set["/__gofastr/app.css"] = true
+		if _, cssHash := ds.appCSSCached(); live && cssHash != "" {
+			set["/__gofastr/app.css?v="+cssHash] = true
+		}
 	}
 	if ds.HasActions() {
 		set["/__gofastr/actions.js"] = true
@@ -486,7 +506,7 @@ func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	precache := ds.pwaPrecachePaths(cfg, offlineHTML)
+	precache := ds.pwaPrecachePaths(cfg, offlineHTML, true)
 	version := ds.pwaVersion(manifest, precache, offlineHTML)
 	nameSlug := pwaSlug(cfg.Name)
 	prefix := "gofastr-pwa-" + nameSlug + "." + pwaNameHash(cfg.Name) + "."
@@ -607,7 +627,7 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 		}
 	}
 	var precache []string
-	add(&precache, ds.pwaPrecachePaths(cfg, offlineHTML)...)
+	add(&precache, ds.pwaPrecachePaths(cfg, offlineHTML, false)...)
 	add(&precache, export.Pages...)
 	add(&precache, export.Assets...)
 	// Component stylesheets are requested under content-addressed ?v=
