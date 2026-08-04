@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-08-04
+
 ### Added
 
 - **Versioned migrations from a host binary.**
@@ -85,6 +87,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - An extension's `severity: error` diagnostic was collected and read by
   nobody, so an extension could not reject its input. It now fails the
   run.
+- **Blueprint theme values are validated against the CSS grammar.**
+  `app.theme` and `app.theme.dark` values were emitted as direct struct
+  assignments, which bypass every setter, so a value carrying `;` or `}`
+  closed the `:root` block and appended rules to the stylesheet the UI
+  host and the admin battery serve as `text/css`. That is CSS injection
+  — `url()` exfiltration and attribute-selector reads — and becomes XSS
+  if any surface ever inlines that sheet in a `<style>` element.
+  `theming.md` already named this exact anti-pattern under "Common
+  mistakes". `style.ValidateColorValue` is now exported so the generator
+  calls the one existing grammar instead of carrying a copy.
+- **The generated auth footer link no longer accepts any scheme.** The
+  `login_form` / `signup_form` footer was a hand-rolled `<a href>` inside
+  `render.Raw`, which escaped the value into the attribute but never
+  checked the scheme, so `register_href: "javascript:…"` put a live
+  `javascript:` anchor on the login and signup screens. It emits
+  `ui.Link` now and is refused at validate time, sharing `urlsafe.Anchor`
+  with the renderer.
+- `gofastr pack` no longer invents list items. `needsQuote` tested for a
+  comma only as a scalar's first byte, so an interior comma was emitted
+  bare into a flow list — where it separates items — and an enum value
+  like `open,closed` round-tripped into two values.
+- A typo in a screen's `layout:` silently rendered the screen inside the
+  authenticated app shell instead of failing; anything that was not
+  `marketing` mapped to the app layout.
 
 ### Fixed
 
