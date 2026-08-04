@@ -171,6 +171,19 @@
     t._fuiTimer = setTimeout(() => t.classList.remove('is-visible'), 4000);
   };
 
+  // _settleScroll runs a scroll write now and once more after the swapped
+  // content's layout settles (fonts, late reflow shift the page height the
+  // instant after an innerHTML swap). The seq guard drops a superseded
+  // navigation's queued second pass: without it a rapid back-then-forward
+  // let the BACK nav's settle write (scroll to top) land AFTER the forward
+  // nav had already restored its position, clobbering it.
+  let _scrollSeq = 0;
+  const _settleScroll = (fn) => {
+    const seq = ++_scrollSeq;
+    fn();
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (seq === _scrollSeq) fn(); }));
+  };
+
   // scrollToHash scrolls to the element targeted by the current URL
   // fragment after a SPA swap; falls back to the top when there is no
   // fragment or no matching element. Reads location.hash (set by the
@@ -179,7 +192,7 @@
   // of always jumping to the top.
   const scrollToHash = () => {
     const id = (location.hash || '').replace(/^#/, '');
-    const doScroll = () => {
+    _settleScroll(() => {
       if (id) {
         const el = document.getElementById(id);
         if (el) {
@@ -188,13 +201,7 @@
         }
       }
       window.scrollTo(0, 0);
-    };
-    doScroll();
-    // Re-correct after the swapped content's layout settles — the page
-    // height can still be shifting (fonts, late reflow) the instant after
-    // the innerHTML swap, which would leave the target over/undershot; a
-    // second pass on the next painted frame lands it precisely.
-    requestAnimationFrame(() => requestAnimationFrame(doScroll));
+    });
   };
 
   // --- History entry identity + scroll restoration ---
@@ -320,10 +327,9 @@
     if (ps) {
       // Restore AFTER the navigate listeners ran: overlay scroll-lock
       // releases (panes, modals) fire on that event and would clamp the
-      // restored position. Double-write across frames mirrors
-      // scrollToHash's late-reflow settle pass.
-      window.scrollTo(ps[0], ps[1]);
-      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(ps[0], ps[1])));
+      // restored position. Same guarded settle pass as scrollToHash, so
+      // a newer navigation's write always wins.
+      _settleScroll(() => window.scrollTo(ps[0], ps[1]));
     }
   };
 

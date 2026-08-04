@@ -179,7 +179,6 @@ kernel	6	session
 kernel	6	sessionCookie
 kernel	6	text
 kernel	6	trimmed
-kernel	6	variant
 kernel	8	c
 kernel	8	el
 kernel	8	key
@@ -201,8 +200,10 @@ nav	2	_pendingNav
 nav	2	_pendingScroll
 nav	2	_persistScroll
 nav	2	_pushURL
+nav	2	_scrollSeq
 nav	2	_scrollStore
 nav	2	_scrollTimer
+nav	2	_settleScroll
 nav	2	_showNavToast
 nav	2	_statefulParams
 nav	2	announceRoute
@@ -237,7 +238,6 @@ nav	4	clean
 nav	4	cur
 nav	4	d
 nav	4	data
-nav	4	doScroll
 nav	4	dom
 nav	4	el
 nav	4	el
@@ -263,6 +263,7 @@ nav	4	ps
 nav	4	r
 nav	4	r
 nav	4	r
+nav	4	seq
 nav	4	set
 nav	4	st
 nav	4	stateful

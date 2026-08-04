@@ -560,26 +560,26 @@
         c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
         return c;
       });
-      const variant = cfg.variant || 'info';
-      const isAssertive = variant === 'warning' || variant === 'danger';
+      const isAssertive = cfg.variant === 'warning' || cfg.variant === 'danger';
       // mk: tiny element builder (tag, cssText, textContent) — inline
       // styles + textContent only (no innerHTML) so a malicious title
-      // can't inject script.
+      // can't inject script. Styling is the bare minimum that reads as
+      // a notice; the styled experience lives in the toasts module.
       const mk = (tag, css, txt) => {
         const n = document.createElement(tag);
         n.style.cssText = css;
         if (txt != null) n.textContent = txt;
         return n;
       };
-      const item = mk('div', 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;');
+      const item = mk('div', 'background:#1f2937;color:#fff;padding:12px 16px;border-radius:6px;font:.9rem system-ui;display:flex;gap:12px');
       item.setAttribute('role', isAssertive ? 'alert' : 'status');
       item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
-      const text = mk('div', 'flex:1;');
-      text.appendChild(mk('strong', 'display:block;', cfg.title));
+      const text = mk('div', 'flex:1');
+      text.appendChild(mk('strong', 'display:block', cfg.title));
       if (cfg.body) {
-        text.appendChild(mk('div', 'margin-top:0.25rem;opacity:0.9;', cfg.body));
+        text.appendChild(mk('div', '', cfg.body));
       }
-      const dismiss = mk('button', 'background:none;border:0;color:inherit;font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.25rem;', '×');
+      const dismiss = mk('button', 'background:none;border:0;color:inherit;cursor:pointer', '×');
       dismiss.type = 'button';
       dismiss.setAttribute('aria-label', 'Dismiss notification');
       dismiss.addEventListener('click', () => { item.remove(); });
@@ -989,6 +989,19 @@
     t._fuiTimer = setTimeout(() => t.classList.remove('is-visible'), 4000);
   };
 
+  // _settleScroll runs a scroll write now and once more after the swapped
+  // content's layout settles (fonts, late reflow shift the page height the
+  // instant after an innerHTML swap). The seq guard drops a superseded
+  // navigation's queued second pass: without it a rapid back-then-forward
+  // let the BACK nav's settle write (scroll to top) land AFTER the forward
+  // nav had already restored its position, clobbering it.
+  let _scrollSeq = 0;
+  const _settleScroll = (fn) => {
+    const seq = ++_scrollSeq;
+    fn();
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (seq === _scrollSeq) fn(); }));
+  };
+
   // scrollToHash scrolls to the element targeted by the current URL
   // fragment after a SPA swap; falls back to the top when there is no
   // fragment or no matching element. Reads location.hash (set by the
@@ -997,7 +1010,7 @@
   // of always jumping to the top.
   const scrollToHash = () => {
     const id = (location.hash || '').replace(/^#/, '');
-    const doScroll = () => {
+    _settleScroll(() => {
       if (id) {
         const el = document.getElementById(id);
         if (el) {
@@ -1006,13 +1019,7 @@
         }
       }
       window.scrollTo(0, 0);
-    };
-    doScroll();
-    // Re-correct after the swapped content's layout settles — the page
-    // height can still be shifting (fonts, late reflow) the instant after
-    // the innerHTML swap, which would leave the target over/undershot; a
-    // second pass on the next painted frame lands it precisely.
-    requestAnimationFrame(() => requestAnimationFrame(doScroll));
+    });
   };
 
   // --- History entry identity + scroll restoration ---
@@ -1138,10 +1145,9 @@
     if (ps) {
       // Restore AFTER the navigate listeners ran: overlay scroll-lock
       // releases (panes, modals) fire on that event and would clamp the
-      // restored position. Double-write across frames mirrors
-      // scrollToHash's late-reflow settle pass.
-      window.scrollTo(ps[0], ps[1]);
-      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(ps[0], ps[1])));
+      // restored position. Same guarded settle pass as scrollToHash, so
+      // a newer navigation's write always wins.
+      _settleScroll(() => window.scrollTo(ps[0], ps[1]));
     }
   };
 

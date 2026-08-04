@@ -121,6 +121,34 @@ func TestForwardRestoresScrollOffset(t *testing.T) {
 	}
 }
 
+// Rapid back-then-forward: the back navigation's delayed settle write
+// (scroll to top) must not land after — and clobber — the forward
+// navigation's restored position. Regression for the _scrollSeq guard.
+func TestRapidBackForwardKeepsForwardScroll(t *testing.T) {
+	srv := scrollSite(t)
+	ctx := newSeedBrowserCtx(t)
+
+	var y float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/tall-a"),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Click(`#to-other`, chromedp.ByID),
+		chromedp.WaitVisible(`#screen-b`, chromedp.ByID),
+		chromedp.Evaluate(`window.scrollTo(0, 800)`, nil),
+		chromedp.Sleep(250*time.Millisecond),
+		// No settling time between the two moves — the back nav's
+		// double-rAF settle pass is still queued when forward lands.
+		chromedp.Evaluate(`history.back(); setTimeout(() => history.forward(), 30)`, nil),
+		chromedp.Sleep(600*time.Millisecond),
+		chromedp.Evaluate(`window.scrollY`, &y),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if y < 600 || y > 1000 {
+		t.Errorf("scrollY after rapid back+forward = %v, want ≈800 — a superseded nav's settle write clobbered the restore", y)
+	}
+}
+
 func TestReloadRestoresScrollViaSessionStorage(t *testing.T) {
 	srv := scrollSite(t)
 	ctx := newSeedBrowserCtx(t)
