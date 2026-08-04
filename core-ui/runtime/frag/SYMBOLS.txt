@@ -270,6 +270,7 @@ nav	4	stateful
 nav	4	store
 nav	4	t
 nav	4	v
+nav	4	x0
 nav	6	G
 nav	6	cached
 nav	6	cfg

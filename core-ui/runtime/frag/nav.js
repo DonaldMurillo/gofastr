@@ -173,15 +173,23 @@
 
   // _settleScroll runs a scroll write now and once more after the swapped
   // content's layout settles (fonts, late reflow shift the page height the
-  // instant after an innerHTML swap). The seq guard drops a superseded
-  // navigation's queued second pass: without it a rapid back-then-forward
-  // let the BACK nav's settle write (scroll to top) land AFTER the forward
-  // nav had already restored its position, clobbering it.
+  // instant after an innerHTML swap). Two guards on the second pass:
+  //   - the seq drops a superseded navigation's queued write (a rapid
+  //     back-then-forward let the BACK nav's settle scroll-to-top land
+  //     AFTER the forward nav had restored its position);
+  //   - the position check skips the re-correct when ANYTHING scrolled
+  //     since the first write — rAF can be throttled far past the swap
+  //     (background tabs, loaded CI runners), and a late settle pass was
+  //     yanking a user who had already started scrolling back to where
+  //     the navigation landed.
   let _scrollSeq = 0;
   const _settleScroll = (fn) => {
     const seq = ++_scrollSeq;
     fn();
-    requestAnimationFrame(() => requestAnimationFrame(() => { if (seq === _scrollSeq) fn(); }));
+    const x0 = scrollX | 0, y0 = scrollY | 0;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (seq === _scrollSeq && (scrollX | 0) === x0 && (scrollY | 0) === y0) fn();
+    }));
   };
 
   // scrollToHash scrolls to the element targeted by the current URL
