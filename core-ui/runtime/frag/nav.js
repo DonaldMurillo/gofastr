@@ -309,9 +309,10 @@
 
   // Shared tail of every successful swap. root is the swapped element —
   // exposed on the navigate event so teardown-aware modules can scope
-  // cleanup to the region that actually changed.
+  // cleanup to the region that actually changed. Active-link
+  // highlighting rides the gofastr:navigate event (src/activelink.js,
+  // idle-loaded) — cosmetic post-nav work carved out of core.
   const finishNav = (path, prevPath, cached, root) => {
-    updateActiveLink(path);
     const ps = _pendingScroll;
     _pendingScroll = null;
     if (!ps) scrollToHash();
@@ -326,8 +327,12 @@
     }
   };
 
-  /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav. */
-  const loadPage = async (path, { bypassCache = false, forceFull = false } = {}) => {
+  /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav.
+      from names the origin route when the caller already moved the URL —
+      _pushURL syncs currentPath BEFORE loadPage runs on the click path,
+      so capturing currentPath here would report the destination as its
+      own origin (and X-Gofastr-From would stop naming the real one). */
+  const loadPage = async (path, { bypassCache = false, forceFull = false, from = null } = {}) => {
     // Single gate for every branch below: the SPA navigator's target
     // comes from an href / a data-fui-* attribute / a server header,
     // and a cross-origin one must never be fetched with the page's
@@ -340,7 +345,7 @@
     if (_pendingNav.has(path) && currentPath === path) return;
     _pendingNav.add(path);
     const myEpoch = ++_navEpoch;
-    const prevPath = currentPath;
+    const prevPath = from || currentPath;
     currentPath = path;
     // Surface "I heard you" feedback to assistive tech and screen
     // readers while the fetch is in flight. The CSS hook can show a
@@ -367,6 +372,25 @@
           const root = swapAtSlot(slot, cached.html, !cached.layer || cached.layer === domChainKeys()[0]);
           finishNav(path, prevPath, true, root);
           return;
+        }
+      }
+
+      // Prefetched entry (preload module): same shape as a fetched
+      // partial — swap it in when its layer is live, exactly like the
+      // screen cache but single-use and TTL-bounded. Post-mutation navs
+      // (bypassCache) skip it: it was fetched before the mutation.
+      if (!cached && !bypassCache && !forceFull && window.__gofastr._takePrefetched) {
+        const pf = window.__gofastr._takePrefetched(path);
+        if (pf) {
+          const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0) ? mainEl() : null);
+          if (slot) {
+            document.title = pf.title;
+            announceRoute(pf.title);
+            const root = swapAtSlot(slot, pf.html, !pf.layer || pf.layer === domChainKeys()[0]);
+            cacheScreen(path, pf.html, pf.title, pf.layer);
+            finishNav(path, prevPath, false, root);
+            return;
+          }
         }
       }
 
@@ -447,8 +471,10 @@
         _pendingNav.delete(path);
         doc.removeHtmlAttr('aria-busy');
         // Keep bypassCache across the redirect: a post-mutation nav
-        // must not serve the redirect target from the screen cache.
-        return loadPage(redirectTo, { bypassCache });
+        // must not serve the redirect target from the screen cache —
+        // and keep the ORIGINAL origin so the redirect leg's subtree
+        // partial renders against where the user actually came from.
+        return loadPage(redirectTo, { bypassCache, from: prevPath });
       }
 
       const html = await resp.text();
@@ -474,7 +500,7 @@
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? mainEl() : null);
       if (!slot) {
         _pendingNav.delete(path);
-        return loadPage(path, { bypassCache: true, forceFull: true });
+        return loadPage(path, { bypassCache: true, forceFull: true, from: prevPath });
       }
       document.title = title;
       announceRoute(title);
@@ -552,47 +578,6 @@
     }
   };
 
-  // Links with an exact-href match get aria-current=page. A link can
-  // opt in to prefix matching via data-fui-match-prefix — useful for
-  // primary nav entries like "Components" (href="/components/") that
-  // should light up on /components/accordion, /components/card, etc.
-  // Prefix matching is OFF by default so breadcrumbs and sidebars (where
-  // multiple links share a path prefix) keep their server-rendered
-  // single aria-current. Non-matching links get aria-current cleared.
-  // Links with NO href (server-rendered MatchPath items in a sidebar
-  // where the active determination is prefix-based) are left untouched
-  // — only the server has the prefix-match context for those.
-  const updateActiveLink = (path) => {
-    const navLinks = document.querySelectorAll('nav a');
-    for (const link of navLinks) {
-      const href = link.getAttribute('href');
-      if (!href) continue; // server-managed (MatchPath, dynamic), hands off
-      let active = href === path;
-      if (!active && link.hasAttribute('data-fui-match-prefix')) {
-        const hrefPath = href.split('?')[0].split('#')[0];
-        const pathOnly = (path || '').split('?')[0].split('#')[0];
-        // Match on SEGMENT boundaries, and accept the canonical
-        // no-trailing-slash href (/docs) as well as the trailing-slash
-        // form (/docs/) — apps register /docs, so requiring the slash
-        // left the ordinary case permanently dark. /docs-old shares a
-        // text prefix with /docs but not a segment, so it stays out.
-        // "/" is never used as a prefix — otherwise every nav link
-        // would match every page.
-        const hrefBase = hrefPath.endsWith('/') ? hrefPath.slice(0, -1) : hrefPath;
-        if (hrefBase !== '' && (pathOnly === hrefBase || pathOnly.startsWith(hrefBase + '/'))) {
-          active = true;
-        }
-      }
-      if (active) {
-        link.setAttribute('aria-current', 'page');
-        link.classList.add('active');
-      } else {
-        link.removeAttribute('aria-current');
-        link.classList.remove('active');
-      }
-    }
-  };
-
   // Link clicks: cross-page navigation (/a → /b) is intercepted and
   // handled client-side via partial fetch + cache. No hard refresh.
   // This is the Angular-router-style behavior described in
@@ -641,8 +626,12 @@
     // declared origin. The module owns the URL and the fetch in that
     // case; returning true means it took the navigation.
     if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
+    // Capture the origin BEFORE _pushURL syncs currentPath to the
+    // destination — loadPage's X-Gofastr-From must name where the user
+    // came from.
+    const origin = currentPath;
     _pushURL(fullPath + navHash);
-    loadPage(fullPath);
+    loadPage(fullPath, { from: origin });
   });
 
   // Stateful query params describe in-page state (open panes, widget
@@ -729,8 +718,9 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as Lightbox AllowDownload etc.
       if (!this._originOK(path)) return;
+      const origin = currentPath;
       _pushURL(path, { replace: replace || path === currentPath });
-      loadPage(path, { bypassCache: force });
+      loadPage(path, { bypassCache: force, from: origin });
     },
 
     // The history-write choke point, exported for the modules that
@@ -746,6 +736,9 @@
         touches the live DOM; pair with refresh()/navigate(force) when
         the current screen must re-render too. */
     invalidate(...sels) {
+      // Prefetched entries go stale by the same selectors; the preload
+      // module registers the hook only when loaded.
+      this._invalPreload?.(sels);
       for (const s of sels) {
         if (s === '*') { screenCache.clear(); return; }
         if (!s || s[0] !== '/') continue;

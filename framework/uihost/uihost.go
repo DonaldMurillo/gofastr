@@ -1679,16 +1679,21 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// leaves this SPA's islands and SSE 401ing until a hard reload.
 	// The fresh bare id travels in X-Gofastr-Session so the runtime
 	// rewires the SSE meta; the signed token rides Set-Cookie only.
-	if _, live := ds.verifySessionToken(readSessionCookie(r)); !live {
-		if sess := ds.CreateSession(); sess.Token != "" {
-			setSessionCookie(w, r, sess.Token)
-			w.Header().Set("X-Gofastr-Session", sess.ID)
-			// no-store the MOMENT we re-mint, before any Decision branch
-			// below can return: the redirect/block/not-found partials
-			// also carry this Set-Cookie + X-Gofastr-Session pair, and a
-			// shared cache replaying any of them would hand one visitor
-			// another's session. The success path re-asserts this header.
-			w.Header().Set("Cache-Control", "no-store")
+	// Prefetches are exempt: the client discards their session headers
+	// by contract, so minting here would waste a token on a speculative
+	// request the user may never look at.
+	if r.Header.Get("X-Gofastr-Prefetch") != "1" {
+		if _, live := ds.verifySessionToken(readSessionCookie(r)); !live {
+			if sess := ds.CreateSession(); sess.Token != "" {
+				setSessionCookie(w, r, sess.Token)
+				w.Header().Set("X-Gofastr-Session", sess.ID)
+				// no-store the MOMENT we re-mint, before any Decision branch
+				// below can return: the redirect/block/not-found partials
+				// also carry this Set-Cookie + X-Gofastr-Session pair, and a
+				// shared cache replaying any of them would hand one visitor
+				// another's session. The success path re-asserts this header.
+				w.Header().Set("Cache-Control", "no-store")
+			}
 		}
 	}
 	// Declarative redirect on the SPA path: hand the runtime the target

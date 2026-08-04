@@ -1,7 +1,7 @@
 // boot.js — kernel boot tail (always composed LAST, after every other fragment).
 // These declarations run AFTER nav/signals/widgets-boot have loaded because
-// _initialPass() is invoked synchronously here and calls updateActiveLink (nav)
-// and _injectSignalAria (signals). Function declarations (loadModule,
+// _initialPass() is invoked synchronously here, probes nav's loadPage, and
+// calls _injectSignalAria (signals). Function declarations (loadModule,
 // _scanForModules, _prefetch, _installEagerWidgetDelegators) are hoisted into
 // the shared IIFE scope so earlier fragments can reference them at event time.
 
@@ -664,11 +664,11 @@
     });
   };
   // Initial-pass hooks: these scan the CURRENT DOM, so they have
-  // to wait until the document is at least parsed. updateActiveLink
-  // marks server-rendered nav links; _bootstrapComponentCSS scans
-  // existing markers; _scanForModules dispatches demand-load
-  // modules (the disclosure module is one of them, and does its own
-  // aria-expanded sync for server-rendered <details>).
+  // to wait until the document is at least parsed.
+  // _bootstrapComponentCSS scans existing markers; _scanForModules
+  // dispatches demand-load modules (the disclosure module is one of
+  // them, and does its own aria-expanded sync for server-rendered
+  // <details>).
   // _runMountActions fires component actions marked data-action-mount once,
   // right after hydration. Component clientJS handlers (data-action) only run
   // on user events (click/input/change/submit); a server-rendered island that
@@ -691,19 +691,25 @@
   window.addEventListener('gofastr:navigate', () => _runMountActions(document));
 
   const _initialPass = () => {
-    // nav is optional in a composition — the `embed` bundle omits it, which is
-    // how SPA navigation is disabled inside frames. A bare call would throw a
-    // ReferenceError here and take the whole initial pass down with it, so the
-    // one nav symbol boot needs is probed rather than assumed. typeof on an
-    // undeclared identifier is the only safe probe; `updateActiveLink !==
-    // undefined` would itself throw.
-    if (typeof updateActiveLink === 'function') updateActiveLink(location.pathname);
     _bootstrapComponentCSS();
     _scanForModules(document);
     // Intercepting routes are rare, so their module is demand-loaded off
     // the manifest: no intercepting route, no bytes, no listeners.
     if (Array.isArray(window.__gofastr_routes) &&
         window.__gofastr_routes.some((r) => r.intercept)) loadModule('intercept');
+    // Same pattern for route preload: any route declaring a preload mode
+    // loads the prefetch machinery; a manifest without one costs nothing.
+    if (Array.isArray(window.__gofastr_routes) &&
+        window.__gofastr_routes.some((r) => r.preload)) loadModule('preload');
+    // Active-link highlighting is cosmetic post-nav work carved out of
+    // core (level-1 budget): the idle-loaded module applies aria-current
+    // on load and keeps it fresh across SPA navs. Skipped in the embed
+    // composition — nav is absent there, and typeof on an undeclared
+    // identifier is the one safe probe for a fragment symbol.
+    if (typeof loadPage === 'function') {
+      (window.requestIdleCallback || ((fn) => setTimeout(fn, 150)))(
+        () => { loadModule('activelink').catch(() => {}); });
+    }
     _injectSignalAria();
     _runMountActions(document);
   };
