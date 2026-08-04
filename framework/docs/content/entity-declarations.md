@@ -232,7 +232,7 @@ entities:
         to: users
 ```
 
-#### Booleans that gate access are not guessed
+### Booleans that gate access are not guessed
 
 Most boolean keys accept anything YAML calls false-ish. Six do not, because
 for them a mis-read value opens something up rather than closing it:
