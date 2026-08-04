@@ -7,6 +7,114 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Versioned migrations from a host binary.**
+  `migrate.GenerateMigrationFile(plan, name, opts)` diffs a migration
+  Plan against the committed snapshot and writes the next numbered
+  migration, updating the snapshot. `App.MigrationPlan()` returns the
+  Plan `Start` auto-migrates from — the entity registry plus every
+  registered routine and view — so an app whose schema lives in owned
+  Go (the blueprint deleted, as the architecture intends) can emit
+  reviewable migrations instead of choosing between boot-time
+  auto-migrate and hand-written SQL. `gofastr migrate generate` now
+  calls the same entrypoint, so the two paths cannot drift in file
+  naming, directive layout, or snapshot format. New doc section:
+  `gofastr docs migrations` → "Generating from a host binary".
+- **`App.SetSetup`** wires a first-run setup runner after construction.
+  `setup.HealthStep` needs the `*App` to call `RunReadinessChecks`, so
+  the runner cannot exist before `NewApp` returns and `WithSetup` could
+  not receive it; the documented workaround was to re-apply the option
+  as a function.
+- **Support tiers for every package.** `stability` classifies each
+  package Stable, Provisional, Experimental, Internal, or Excluded, and
+  `TestEveryPackageIsClassified` fails when a package has none — a new
+  top-level tree cannot ship unclassified. Nothing is Stable before
+  v1.0.0: the supported surface is Provisional, meaning documented and
+  covered by the deprecation window, not frozen. `docs/public-api.md`
+  says what each tier promises.
+- **Column renames in blueprints.** An entity's `renames:` key (old
+  column → new column) reaches `EntityConfig.Renames`, so the schema
+  diff emits `RENAME COLUMN` instead of a data-losing drop plus add.
+  Renames were Go-declaration-only, which left the blueprint — the only
+  input the standalone migration generator reads — unable to express the
+  difference. Both sides are checked as column identifiers, the new name
+  must be a declared field, and the old name must not be.
+- **Embedded doc examples are compiled.** `TestDocExamplesCompile`
+  builds Go snippets marked with a `gofastr:compile` directive against
+  the real framework, so an example cannot rot into something that does
+  not build. The existing denylist could not catch a scope or signature
+  error, which is how `first-run.md` came to use a variable one line
+  before declaring it.
+
+### Security
+
+- **A blueprint relation name is now checked as an identifier.** It was
+  the last name in the blueprint IR without that guard, while the entity
+  emitter puts it in struct-field position and inside a backtick
+  `json:"…"` tag — a raw literal with no escape mechanism — and the
+  typed-column emitter puts it in const-identifier position. Every
+  crafted value we tried produced Go that does not parse rather than Go
+  that runs, so this is a corrupt-output bug we are treating as a code
+  injection because the emitter is fed agent-transcribed text. A
+  relation whose name collides with a field's is refused too; it emitted
+  a duplicate struct field. As a backstop for the whole class, blueprint
+  generation now parses every `.go` file it emits and refuses to write
+  one that does not.
+- **The generated SDK's module path and header are validated.** A
+  newline in `--module` appended `replace` directives to the shipped
+  SDK's `go.mod`, which runs arbitrary code in every repo that builds
+  it. The header is sanitized at its one choke point, closing a comment
+  escape into `client.js` — served as `application/javascript`, so
+  same-origin script execution.
+- **Codegen command extensions get an allowlisted environment.** An
+  extension is a binary named by whichever `gofastr.codegen.yml` is in
+  the project, and it inherited the developer's whole environment
+  including `GOFASTR_SECRET` (enough to forge sessions for the deployed
+  app), `DATABASE_URL`, and cloud credentials. It now receives only what
+  a build tool needs to run; project values belong under the extension's
+  `config:` key, which already arrives on stdin.
+- **Extension output is scrubbed, bounded, and time-limited.** stderr is
+  replayed to the operator's terminal, so escape sequences are stripped
+  from it and from diagnostic messages (CWE-150; an OSC 52 sequence can
+  write the system clipboard, planting a command the developer later
+  pastes). stdout and stderr are capped at 16 MiB, and an extension
+  holding a pipe open can no longer hang the generate indefinitely —
+  cancellation was previously unreachable because the command was
+  started with a background context.
+- An extension's `severity: error` diagnostic was collected and read by
+  nobody, so an extension could not reject its input. It now fails the
+  run.
+
+### Fixed
+
+- A declared `Index.Expression` was dropped by the entity emitter, so an
+  expression index came out with no key at all — a `Unique` index on an
+  expression silently did not constrain anything.
+- `migrate.GenerateMigrationFile` validates a group name before writing
+  anything, and fails loudly rather than silently dropping the group if
+  the `-- +migrate Up` anchor it stamps against is absent. The CLI
+  validated `--group`; the library path did not.
+- The first-run guide's setup example did not compile — it passed `app`
+  to `setup.HealthStep` a line before declaring it.
+- The cron guide said the scheduler had no distributed coordination and
+  every replica fired every job, while `Scheduler.WithLeaderElection`
+  and `NewPostgresAdvisoryLease` shipped for exactly that.
+- The README's "No reflection" claim was false as written; reflection
+  runs in CRUD paths. It now states the accurate claim: no reflection
+  discovers your entities.
+- `SECURITY.md` named `0.59.x` as the supported release after v0.60.0
+  shipped.
+- `core-ui/ARCHITECTURE.md` said an island owns server-side state "in
+  memory or DB", contradicting the stateless interactive layer it
+  describes twenty lines earlier. State lives in the DB; any replica
+  serves any request.
+- `core-ui/ARCHITECTURE.md`'s package map still listed `theme.css` and
+  `styles.css` as served routes; `app.css` replaced both and the old
+  paths return 410.
+- `perf-results.md` presented v0.26.0 measurements as current; it now
+  says which release and date they describe.
+
 ## [0.60.0] - 2026-08-04
 
 ### Added
