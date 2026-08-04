@@ -635,11 +635,21 @@ func TestUIHostInjectsActions(t *testing.T) {
 	ds.ServeHTTP(w, req)
 
 	page := w.Body.String()
-	// The actions.js script reference is what we inject when there are
-	// any compiled handlers. The body itself lives at /__gofastr/actions.js.
-	assertContains(t, page, `<script src="/__gofastr/actions.js"></script>`)
+	// Live pages no longer ship the whole-app concat: this page has no
+	// element carrying btn-1, so neither the legacy actions.js reference
+	// nor the per-id script belongs on it. The registry is reachable via
+	// the manifest (actionloader fetches it when the id appears).
+	if strings.Contains(page, `src="/__gofastr/actions.js"`) {
+		t.Errorf("live page must not reference the whole-app actions.js:\n%s", page)
+	}
 	if strings.Contains(page, "btn-1") {
 		t.Errorf("compiled action body should not be inlined; found in page:\n%s", page)
+	}
+	req = httptest.NewRequest("GET", "/__gofastr/manifest.js", nil)
+	w = httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	if !strings.Contains(w.Body.String(), `"btn-1":"`) {
+		t.Error("manifest.js must carry the compiled action's hash")
 	}
 }
 
@@ -652,9 +662,11 @@ func TestUIHostMountAutoCompilesScreenActions(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	assertContains(t, w.Body.String(), `<script src="/__gofastr/actions.js"></script>`)
+	// The auto-compiled registry is announced via the manifest rather
+	// than a whole-app script tag on every page.
+	assertContains(t, w.Body.String(), `src="/__gofastr/manifest.js?v=`)
 
-	// Mint a session to satisfy the new auth gate on /__gofastr/actions.js.
+	// Mint a session to satisfy the auth gate on /__gofastr/actions.js.
 	sess := ds.CreateSession()
 	req = httptest.NewRequest("GET", "/__gofastr/actions.js", nil)
 	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})

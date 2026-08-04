@@ -180,7 +180,9 @@ var fragmentAttrs = map[string][]string{
 // kernel owns, and otherwise driven by rpc/signals); widgetfocus and
 // widgetlinks (triggered by internal JS markers, not data-fui-* at all);
 // preload (manifest-triggered like intercept — boot loads it when any
-// route declares a preload mode — and it reads route data, not markers).
+// route declares a preload mode — and it reads route data, not markers);
+// actionloader (triggered by the __gofastr_actions manifest global and
+// keyed on data-component/data-widget, which widgets owns).
 //
 // Ownership for an attribute referenced by several module files is resolved
 // to the module that implements the behavior — determined by the scanner

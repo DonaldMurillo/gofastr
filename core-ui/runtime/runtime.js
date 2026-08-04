@@ -1895,6 +1895,9 @@
   // back to an un-versioned URL (works in dev, may pollute caches in
   // prod — the manifest is the source of truth).
   const _moduleManifest = (() => {
+    // Live pages assign the global via /__gofastr/manifest.js (loaded
+    // before runtime.js); export mode keeps the inline JSON block.
+    if (window.__gofastr_runtime_modules) return window.__gofastr_runtime_modules;
     try {
       const el = document.getElementById('gofastr-runtime-modules');
       if (!el) return {};
@@ -2434,6 +2437,11 @@
     // loads the prefetch machinery; a manifest without one costs nothing.
     if (Array.isArray(window.__gofastr_routes) &&
         window.__gofastr_routes.some((r) => r.preload)) loadModule('preload');
+    // Compiled server actions: the manifest names each screen's action
+    // hash; the loader module fetches per-screen scripts on navigation.
+    // Pages without actions load nothing.
+    if (window.__gofastr_actions &&
+        Object.keys(window.__gofastr_actions).length) loadModule('actionloader');
     // Active-link highlighting is cosmetic post-nav work carved out of
     // core (level-1 budget): the idle-loaded module applies aria-current
     // on load and keeps it fresh across SPA navs. Skipped in the embed

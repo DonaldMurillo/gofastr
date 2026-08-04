@@ -89,6 +89,7 @@ type UIHost struct {
 	// (WithSecret / GOFASTR_SECRET).
 	sessionKey      []byte
 	actionJS        map[string]string                    // componentID → compiled JS
+	actionHash      map[string]string                    // componentID → content hash of the compiled JS (?v= addressing)
 	actionHandlers  map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
 	actionComps     map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
 	customCSS       string                               // extra CSS to inject (e.g. demo.css)
@@ -135,6 +136,11 @@ type UIHost struct {
 	appCSSHash       string
 	appCSSContribN   int
 	appCSSFrozenWarn sync.Once
+	// External data manifest (catalog + module hashes + action hashes),
+	// composed + fingerprinted once after Mount — see manifestjs.go.
+	manifestOnce sync.Once
+	manifestBody string
+	manifestHash string
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -743,6 +749,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 		Islands:        island.NewManager(),
 		sessionKey:     selfMintedSessionKey(),
 		actionJS:       make(map[string]string),
+		actionHash:     make(map[string]string),
 		actionHandlers: make(map[string]*component.ActionRegistry),
 		actionComps:    make(map[string]component.Component),
 	}
@@ -778,6 +785,7 @@ func (ds *UIHost) CompileActions(componentID string, comp component.Component) s
 		if actions != nil {
 			js := actionsToJS(componentID, actions)
 			ds.actionJS[componentID] = js
+			ds.actionHash[componentID] = hashStrings(js)
 			ds.actionHandlers[componentID] = actions
 			// Keep the component the registry came from. The embed boot walk
 			// asks "is a component that ships a server action reachable from
@@ -899,6 +907,30 @@ func (ds *UIHost) HasActions() bool {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
 	return len(ds.actionJS) > 0
+}
+
+// actionScriptTags returns one content-addressed <script> tag per
+// compiled action registry whose component id appears in the rendered
+// page (data-component/data-widget). Sorted for deterministic output.
+func (ds *UIHost) actionScriptTags(page string) []string {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	if len(ds.actionJS) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(ds.actionJS))
+	for id := range ds.actionJS {
+		if strings.Contains(page, `data-component="`+id+`"`) ||
+			strings.Contains(page, `data-widget="`+id+`"`) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	tags := make([]string, len(ids))
+	for i, id := range ids {
+		tags[i] = `<script src="/__gofastr/widget/` + id + `.js?v=` + ds.actionHash[id] + `"></script>`
+	}
+	return tags
 }
 
 // CreateSession mints a new stateless session token. Nothing is stored
@@ -1546,16 +1578,27 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		headClose.WriteString(`<link rel="stylesheet" href="` + href + `">`)
 		headClose.WriteByte('\n')
 	}
-	if catalog := catalogJSONScript(ds); catalog != "" {
-		headClose.WriteString(catalog)
-		headClose.WriteByte('\n')
-	}
-	// Runtime module manifest — name → ?v=<hash> for every split
-	// module under core-ui/runtime/src/. The client-side loader reads
-	// this on boot to cache-bust per-module URLs.
-	if manifest := runtimeModuleManifestScript(); manifest != "" {
-		headClose.WriteString(manifest)
-		headClose.WriteByte('\n')
+	if bundle {
+		// Live pages carry the component catalog + runtime-module manifest
+		// as ONE external content-addressed script (manifest.js, injected
+		// before runtime.js below) instead of re-inlining ~3 KB of JSON
+		// into every page head. The compute manifest is rare and stays
+		// inline either way.
+		if compute := widget.ComputeManifestScript(); compute != "" {
+			headClose.WriteString(compute)
+			headClose.WriteByte('\n')
+		}
+	} else {
+		// Export mode: static pages and the PWA offline shell must be
+		// self-contained files, so the inline blocks stay.
+		if catalog := catalogJSONScript(ds); catalog != "" {
+			headClose.WriteString(catalog)
+			headClose.WriteByte('\n')
+		}
+		if manifest := runtimeModuleManifestScript(); manifest != "" {
+			headClose.WriteString(manifest)
+			headClose.WriteByte('\n')
+		}
 	}
 	// Module preload hints — emit <link rel="preload" as="script"> per
 	// demand-load runtime module whose marker substring appears in
@@ -1570,11 +1613,29 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// <body>
 	runtimeSrc := "/__gofastr/runtime.js"
 	if bundle {
+		// manifest.js assigns the catalog/module/action globals and MUST
+		// precede runtime.js — classic scripts execute in order, so the
+		// kernel finds them set at boot.
+		_, mHash := ds.manifestJS()
+		bodyClose.WriteString(`<script src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
+		bodyClose.WriteByte('\n')
 		runtimeSrc += "?v=" + widget.RuntimeHash()
 	}
 	bodyClose.WriteString(`<script src="` + runtimeSrc + `"></script>`)
 	bodyClose.WriteByte('\n')
-	if ds.HasActions() {
+	if bundle {
+		// Per-screen action scripts: only the compiled registries whose
+		// component ids actually appear on THIS page, each content-
+		// addressed and served immutable. The whole-app actions.js concat
+		// re-shipped every screen's actions on every page uncached.
+		// Navigation to a screen whose actions aren't loaded yet is
+		// covered by the actionloader module reading __gofastr_actions.
+		for _, tag := range ds.actionScriptTags(page) {
+			bodyClose.WriteString(tag)
+			bodyClose.WriteByte('\n')
+		}
+	} else if ds.HasActions() {
+		// Export mode keeps the self-contained concat file.
 		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
 		bodyClose.WriteByte('\n')
 	}
@@ -2114,13 +2175,16 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 // nothing else calls __gofastr.register, so every data-action click is
 // preventDefault()ed and then dropped, and every data-action-mount node
 // stays empty.
+// Live pages stopped referencing this concat in favor of per-id scripts
+// (actionScriptTags + the actionloader module); the endpoint remains for
+// export parity and external callers, now with the shared validator
+// policy instead of no cache header at all.
 func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
 	if !ds.requireSessionOrEmbedGrant(w, r) {
 		return
 	}
 	js := ds.GetActionJS()
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	fmt.Fprint(w, js)
+	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, hashStrings(js), true)
 }
 
 // handleCreateSession mints a new session, sets the signed token cookie,
@@ -2254,24 +2318,29 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleWidgetJS serves compiled JavaScript for a specific widget.
-// This enables lazy hydration: widgets load their behavior JS only on first interaction.
+// handleWidgetJS serves compiled JavaScript for a specific widget —
+// the SSR path emits one tag per on-page component and the actionloader
+// module fetches the rest on navigation; lazy hydration keeps using it
+// too. Session-gated like the old whole-app concat was (this per-id
+// endpoint used to be LESS gated than the bundle it replaces), and
+// served private+immutable under its content hash.
 func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
+	if !ds.requireSessionOrEmbedGrant(w, r) {
+		return
+	}
 	widgetID := strings.TrimPrefix(r.URL.Path, "/__gofastr/widget/")
 	widgetID = strings.TrimSuffix(widgetID, ".js")
 
 	ds.mu.RLock()
 	js, ok := ds.actionJS[widgetID]
+	hash := ds.actionHash[widgetID]
 	ds.mu.RUnlock()
 
 	if !ok {
 		http.Error(w, "widget not found: "+widgetID, http.StatusNotFound)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprint(w, js)
+	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, hash, true)
 }
 
 // Mount registers the UI's HTTP handlers on the given router.
@@ -2301,6 +2370,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 	ds.mountEmbed(r)
 	r.Get("/__gofastr/color-scheme.js", http.HandlerFunc(ds.handleColorSchemeJS))
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
+	r.Get("/__gofastr/manifest.js", http.HandlerFunc(ds.handleManifestJS))
 	r.Get("/__gofastr/app.css", http.HandlerFunc(ds.handleAppCSS))
 	r.Get("/__gofastr/sse", http.HandlerFunc(ds.handleSSE))
 	// Session minting is POST-only: GET would let CSRF / form-action /
@@ -2999,9 +3069,22 @@ func catalogJSONScript(ds *UIHost) string {
 // whose StyleFn reads theme values directly showed it, so the page came back
 // half-rebranded in a way no DOM assertion can see.
 func catalogJSONScriptFor(ds *UIHost, theme style.Theme, variantKey string) string {
+	buf := catalogJSON(ds, theme, variantKey)
+	if buf == nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-catalog">` +
+		escapeJSONForScript(buf) +
+		`</script>`
+}
+
+// catalogJSON marshals the component catalog against a theme. Shared by
+// the inline script form (export mode, theme variants) and the external
+// manifest.js (live pages).
+func catalogJSON(ds *UIHost, theme style.Theme, variantKey string) []byte {
 	all := registry.All()
 	if len(all) == 0 {
-		return ""
+		return nil
 	}
 	suffix := ""
 	if variantKey != "" {
@@ -3018,11 +3101,9 @@ func catalogJSONScriptFor(ds *UIHost, theme style.Theme, variantKey string) stri
 	ds.catalogMarshalCount.Add(1)
 	buf, err := json.Marshal(cat)
 	if err != nil {
-		return ""
+		return nil
 	}
-	return `<script type="application/json" id="gofastr-catalog">` +
-		escapeJSONForScript(buf) +
-		`</script>`
+	return buf
 }
 
 // signalsJSONScript returns the inline JSON block seeding the client

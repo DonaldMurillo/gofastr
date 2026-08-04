@@ -189,22 +189,31 @@ func TestComponentCSS_BundleDedupesNames(t *testing.T) {
 	}
 }
 
-func TestComponentCSS_CatalogShipsInlineJSON(t *testing.T) {
+func TestComponentCSS_CatalogShipsViaManifestJS(t *testing.T) {
 	st := registerTestStyle(t, "cat")
 	ds := newTestUIHostFor(st)
+	// Live pages externalize the catalog into the hashed manifest.js so
+	// its bytes are fetched once per deploy instead of inlined per page.
 	body := pageBody(t, ds, "/")
-	if !strings.Contains(body, `<script type="application/json" id="gofastr-catalog">`) {
-		t.Error("page must embed an inline JSON catalog block")
+	if strings.Contains(body, `<script type="application/json" id="gofastr-catalog">`) {
+		t.Error("live page must not inline the catalog block anymore")
 	}
-	if !strings.Contains(body, `"`+st.Name()+`"`) {
-		t.Errorf("inline catalog must include %q: %s", st.Name(), truncate(body, 800))
+	if !strings.Contains(body, `/__gofastr/manifest.js?v=`) {
+		t.Error("live page must reference the external manifest.js")
 	}
-	if !strings.Contains(body, `"loadMode":"auto"`) {
-		t.Errorf("default loadMode should be auto: %s", truncate(body, 800))
+	req := httptest.NewRequest("GET", "/__gofastr/manifest.js", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	manifest := w.Body.String()
+	if !strings.Contains(manifest, `"`+st.Name()+`"`) {
+		t.Errorf("manifest catalog must include %q: %s", st.Name(), truncate(manifest, 800))
+	}
+	if !strings.Contains(manifest, `"loadMode":"auto"`) {
+		t.Errorf("default loadMode should be auto: %s", truncate(manifest, 800))
 	}
 	// Old endpoint is removed entirely — should 404, not be registered.
-	req := httptest.NewRequest("GET", "/__gofastr/catalog.js", nil)
-	w := httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/__gofastr/catalog.js", nil)
+	w = httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("catalog.js endpoint should be 404 (removed entirely), got %d", w.Code)
@@ -284,13 +293,12 @@ func TestComponentCSS_BundleEmitsBundleAttr(t *testing.T) {
 	}
 }
 
-func TestComponentCSS_PageEmbedsInlineCatalogJSON(t *testing.T) {
+func TestComponentCSS_PageReferencesManifestJS(t *testing.T) {
 	st := registerTestStyle(t, "pglink")
 	ds := newTestUIHostFor(st)
 	body := pageBody(t, ds, "/")
-	want := `<script type="application/json" id="gofastr-catalog">`
-	if !strings.Contains(body, want) {
-		t.Errorf("page must embed inline catalog JSON block %q:\n%s", want, truncate(body, 800))
+	if !strings.Contains(body, `src="/__gofastr/manifest.js?v=`) {
+		t.Errorf("page must reference the hashed manifest.js:\n%s", truncate(body, 800))
 	}
 	// The page must NOT reference the legacy external catalog.js
 	// (CSP-blocked + extra round-trip).

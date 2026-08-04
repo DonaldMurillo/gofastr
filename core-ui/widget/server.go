@@ -72,28 +72,42 @@ func RuntimeModuleHash(name string) string {
 	return moduleHashes[name]
 }
 
+// RuntimeModuleManifestJSON returns the raw JSON manifest mapping every
+// split runtime module to its content-addressed hash — nil when no
+// modules are embedded. Hosts that ship the manifest as an external
+// hashed script (framework/uihost's /__gofastr/manifest.js) embed this
+// instead of the inline block, saving the bytes on every page.
+func RuntimeModuleManifestJSON() []byte {
+	names := runtime.ModuleNames()
+	if len(names) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		out[n] = RuntimeModuleHash(n)
+	}
+	buf, err := json.Marshal(out)
+	if err != nil {
+		return nil
+	}
+	return buf
+}
+
 // RuntimeModuleManifestScript emits an inert JSON manifest mapping every
 // split runtime module to its content-addressed hash. Returns "" when no
 // modules are embedded.
 //
-// Both RuntimeTag (kiln + manual hosts) and framework/uihost embed this
-// script. Pages without the manifest fall through to un-versioned module
-// URLs and then collide with the immutable cache headers — see
-// TestRuntimeTagEmbedsModuleManifest for the regression that motivated this.
+// Both RuntimeTag (kiln + manual hosts) and framework/uihost's export
+// mode embed this script. Pages without the manifest fall through to
+// un-versioned module URLs and then collide with the immutable cache
+// headers — see TestRuntimeTagEmbedsModuleManifest for the regression
+// that motivated this.
 func RuntimeModuleManifestScript() string {
 	var script string
-	names := runtime.ModuleNames()
-	if len(names) > 0 {
-		out := make(map[string]string, len(names))
-		for _, n := range names {
-			out[n] = RuntimeModuleHash(n)
-		}
-		buf, err := json.Marshal(out)
-		if err == nil {
-			script = `<script type="application/json" id="gofastr-runtime-modules">` +
-				escapeJSONForScript(buf) +
-				`</script>`
-		}
+	if buf := RuntimeModuleManifestJSON(); buf != nil {
+		script = `<script type="application/json" id="gofastr-runtime-modules">` +
+			escapeJSONForScript(buf) +
+			`</script>`
 	}
 	return script + ComputeManifestScript()
 }
