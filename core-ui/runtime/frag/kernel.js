@@ -113,7 +113,7 @@
   // -----------------------------------------------------------------------
   // Router: known routes from screen registration
   // -----------------------------------------------------------------------
-  const routes = new Map(); // path → { title, preload }
+  const routes = new Map(); // path → { title, preload, layouts, redirect }
   let currentPath = location.pathname + location.search;
 
   const registerRoutes = (routeList) => {
@@ -121,8 +121,10 @@
     for (const r of routeList) {
       routes.set(r.path ?? r.Path, {
         title: r.title ?? r.Title ?? '',
-        preload: r.preload ?? r.Preload ?? false,
-        layout: r.layout ?? r.Layout ?? '',
+        // Prefetch mode: '' (never) | 'hover' | 'visible' | 'eager'.
+        preload: r.preload ?? r.Preload ?? '',
+        // Layout chain as layer keys, outermost → innermost.
+        layouts: r.layouts ?? r.Layouts ?? [],
         redirect: r.redirect ?? r.Redirect ?? '',
       });
     }
@@ -550,26 +552,26 @@
         c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
         return c;
       });
-      const variant = cfg.variant || 'info';
-      const isAssertive = variant === 'warning' || variant === 'danger';
+      const isAssertive = cfg.variant === 'warning' || cfg.variant === 'danger';
       // mk: tiny element builder (tag, cssText, textContent) — inline
       // styles + textContent only (no innerHTML) so a malicious title
-      // can't inject script.
+      // can't inject script. Styling is the bare minimum that reads as
+      // a notice; the styled experience lives in the toasts module.
       const mk = (tag, css, txt) => {
         const n = document.createElement(tag);
         n.style.cssText = css;
         if (txt != null) n.textContent = txt;
         return n;
       };
-      const item = mk('div', 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;');
+      const item = mk('div', 'background:#1f2937;color:#fff;padding:12px 16px;border-radius:6px;font:.9rem system-ui;display:flex;gap:12px');
       item.setAttribute('role', isAssertive ? 'alert' : 'status');
       item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
-      const text = mk('div', 'flex:1;');
-      text.appendChild(mk('strong', 'display:block;', cfg.title));
+      const text = mk('div', 'flex:1');
+      text.appendChild(mk('strong', 'display:block', cfg.title));
       if (cfg.body) {
-        text.appendChild(mk('div', 'margin-top:0.25rem;opacity:0.9;', cfg.body));
+        text.appendChild(mk('div', '', cfg.body));
       }
-      const dismiss = mk('button', 'background:none;border:0;color:inherit;font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.25rem;', '×');
+      const dismiss = mk('button', 'background:none;border:0;color:inherit;cursor:pointer', '×');
       dismiss.type = 'button';
       dismiss.setAttribute('aria-label', 'Dismiss notification');
       dismiss.addEventListener('click', () => { item.remove(); });

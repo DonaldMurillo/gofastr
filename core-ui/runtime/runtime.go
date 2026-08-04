@@ -13,7 +13,7 @@
 //
 // The HTTP server (core-ui/widget/server.go) consumes Module(name) +
 // ModuleNames() to wire `/__gofastr/runtime/<name>.js` routes; the
-// uihost emits `<link rel="modulepreload">` tags per page based on the
+// uihost emits `<link rel="preload" as="script">` tags per page based on the
 // components rendered on it.
 package runtime
 

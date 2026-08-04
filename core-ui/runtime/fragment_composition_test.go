@@ -281,18 +281,24 @@ func TestEmbedCompositionOmitsNav(t *testing.T) {
 	}
 }
 
-// TestBootToleratesAMissingNav pins the one cross-fragment call that made a
-// nav-less composition possible. boot's _initialPass calls updateActiveLink,
-// which lives in nav; without the typeof probe the embed bundle throws a
-// ReferenceError at boot and takes hydration, module loading and the CSS
-// scanner down with it — a failure that looks like "the embed renders nothing".
+// TestBootToleratesAMissingNav pins the one cross-fragment reference that
+// makes a nav-less composition possible. boot gates the activelink
+// idle-load on nav's presence by probing the loadPage symbol; without the
+// typeof probe the embed bundle throws a ReferenceError at boot and takes
+// hydration, module loading and the CSS scanner down with it — a failure
+// that looks like "the embed renders nothing".
 func TestBootToleratesAMissingNav(t *testing.T) {
 	src, err := fs.ReadFile(fragFS, "frag/boot.js")
 	if err != nil {
 		t.Fatalf("read boot fragment: %v", err)
 	}
-	if !strings.Contains(string(src), "typeof updateActiveLink === 'function'") {
-		t.Fatal("boot.js calls updateActiveLink without a typeof probe — the embed composition omits nav and would throw at boot")
+	if !strings.Contains(string(src), "typeof loadPage === 'function'") {
+		t.Fatal("boot.js references a nav symbol without a typeof probe — the embed composition omits nav and would throw at boot")
+	}
+	// The old cross-fragment call must stay gone: active-link highlighting
+	// was carved into src/activelink.js and boot must not call it bare.
+	if strings.Contains(string(src), "updateActiveLink") {
+		t.Fatal("boot.js references updateActiveLink — that symbol was carved out of core (src/activelink.js)")
 	}
 }
 

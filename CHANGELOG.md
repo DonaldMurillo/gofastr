@@ -7,6 +7,129 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-08-04
+
+### Added
+
+- **Layout chains.** A screen's layouts now resolve to an explicit
+  chain (outermost → innermost) derived from the default layout,
+  `ScreenGroup` nesting, and per-screen overrides. Every layer renders
+  with `data-fui-layout-key` (its identity) and `data-fui-layout-slot`
+  (its content cell), the route manifest carries the chain as the
+  `layouts` array, and navigation swaps at the deepest layer the
+  current page shares with the destination. Sibling pages keep their
+  section's sidebar DOM (scroll, open disclosures included); pages
+  sharing only the root keep the site chrome and re-render the rest;
+  disjoint chains replace the shell with a full fetch, still without a
+  hard reload. New doc: `gofastr docs layouts`.
+- **Subtree partials.** Partial navigations send `X-Gofastr-From`; the
+  server renders only the layout layers the two routes do not share
+  and names the swap boundary in `X-Gofastr-Swap`. Shared chrome is
+  never re-sent. Old runtimes (no `From` header) get the same bare
+  partial as before, so a deploy mid-session degrades instead of
+  breaking; a boundary the DOM doesn't have recovers with a full-page
+  load. `App.RenderPartialFromResult` is the Go entry point.
+- **Route prefetch.** `app.Preload(app.PreloadHover|PreloadVisible|
+  PreloadEager)` on a registration lets the client fetch the route's
+  partial before the click — on link hover/focus, when a link scrolls
+  into view, or at idle. Prefetched entries live in a 4-entry,
+  30-second cache the router checks before fetching; `invalidate()`
+  selectors evict them; requests carry `X-Gofastr-Prefetch: 1` and
+  skip session minting; routes that would open as overlays are never
+  prefetched. Ships as the `preload` demand module — apps that never
+  declare a mode load none of it.
+- **Scroll restoration.** History entries carry an id, positions are
+  captured per entry (and persisted to `sessionStorage`), and Back,
+  Forward, and reload land where the user left instead of at the top.
+- **State-aware history.** A Back/Forward whose only URL change is
+  in-page state — a widget deep-link or pane parameter — replays that
+  state with zero fetches instead of re-rendering the screen, which
+  used to discard the mounted widget (the v0.44.0 known issue; Forward
+  across a deep link now works). Search/filter/page params still
+  refetch. All runtime history writes go through the new
+  `__gofastr._pushURL` choke point.
+- **Versioned-asset policy.** Every text asset under `/__gofastr/*`
+  carries a strong ETag with 304 revalidation and is served
+  `immutable` exactly when its `?v=` matches the current content hash:
+  `app.css` (now composed and fingerprinted once per process instead
+  of re-concatenated per request), `runtime.js`, `color-scheme.js`,
+  `manifest.js`, and the per-screen action scripts.
+- `widget.RuntimeHash`, `widget.RuntimeModuleManifestJSON`, and
+  `style.ContributedCount` are exported for hosts that address these
+  assets themselves.
+
+### Changed
+
+- **BREAKING** — `app.RouteEntry.Layout` (a single, innermost layout
+  name) is now `Layouts` (the layer-key chain) plus a `Preload` mode;
+  the client route manifest's `layout` field is now `layouts` and the
+  dead `cssChunk` field is gone. Anything reading the old fields must
+  switch to the chain.
+- **BREAKING** — `data-fui-layout` is emitted on every layout layer
+  (was: outermost only) and is emit-only; the runtime's swap decisions
+  read `data-fui-layout-key`/`-slot`. `data-fui-screen-group` remains
+  emitted but no longer drives swap decisions.
+- **BREAKING** — static export (`Router.RenderRaw`) now composes the
+  same layout chain as live SSR, including the default layout, and no
+  longer double-wraps `<main>`. Exported HTML for grouped screens
+  changes shape accordingly.
+- **BREAKING** — a `SubGroup` inheriting its parent's layout renders
+  that layout once (the level keeps an addressable marker) instead of
+  emitting a duplicate nested shell.
+- **BREAKING** — live pages externalize the component catalog and
+  runtime-module manifest into one content-addressed
+  `/__gofastr/manifest.js` (loaded before `runtime.js`) instead of
+  inlining ~3 KB gz of JSON into every page head. Static export and
+  theme-variant pages keep the inline blocks. Code that scraped the
+  inline `#gofastr-catalog` / `#gofastr-runtime-modules` elements on
+  live pages should read `window.__gofastr_catalog` /
+  `window.__gofastr_runtime_modules`.
+- **BREAKING** — live pages stop referencing the whole-app
+  `/__gofastr/actions.js` concat. SSR emits one content-addressed
+  script per compiled action registry present on the page, and the
+  `actionloader` demand module fetches the rest on navigation.
+  `/__gofastr/widget/{id}.js` is now session-gated like the concat
+  (it was previously ungated) and served private+immutable. The
+  concat endpoint remains for static export and embeds.
+- **BREAKING** — `style.Contribute` fragments are frozen into
+  `app.css` at first render; a later contribution logs a warning and
+  does not ship. Contribute at package init or before `Mount`.
+- **BREAKING** — modules that write in-page state to the URL must use
+  `__gofastr._pushURL`; a raw `history.pushState` around the router
+  leaves `currentPath` stale and breaks scroll restore and the
+  stateful-popstate diff. `history.state` now carries `{__fui: <id>}`.
+- `app.ComposeLayouts` is internalized; layout composition goes
+  through the chain renderer.
+- Active-link highlighting (`aria-current`, `data-fui-match-prefix`)
+  moved from the core runtime to the idle-loaded `activelink` module —
+  SSR renders the initial state, so only the first client-side nav's
+  highlight can lag by a frame. Core `runtime.js` is 12,313 B gz@6 /
+  14,220 B gz@1 against the 12,800 / 14,336 budget lines.
+- The live service worker precaches the `?v=<hash>` spellings of the
+  shell assets alongside the bare paths; a static export's worker
+  stays bare-path-only to match its query-free files.
+
+### Fixed
+
+- Client-side navigation to a dynamic route (`/items/:id`) in a
+  different layout silently swapped the new screen into the old shell
+  — the manifest lookup was literal-path only and missed patterns.
+- Leaving a layout for a layout-less page kept the old chrome around
+  the new content.
+- SPA navigation dropped the `<article>` wrapper on article screens,
+  so Reader Mode support lasted only until the first client-side
+  visit.
+- Runtime-module preload hints were `rel="modulepreload"` for scripts
+  the loader injects as classic scripts — the preloaded response was
+  never reused, so every hinted module downloaded twice. Hints are now
+  `rel="preload" as="script"`.
+- A hydration request racing DOM insertion marked the component id
+  hydrated before checking the element existed, permanently blocking
+  that id's behavior script.
+- Group sibling navigation never moved focus into the swapped content;
+  every layer swap now focuses the destination cell (nested cells
+  carry `tabindex="-1"`).
+
 ## [0.59.0] - 2026-08-03
 
 ### Added

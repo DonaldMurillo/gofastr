@@ -8,6 +8,13 @@ block at `/__gofastr/app.css`. Change a token value and every
 component, battery screen, and widget that reads it updates —
 you never edit a component's CSS to re-skin an app.
 
+The sheet is composed once per process and content-addressed: pages
+link `/__gofastr/app.css?v=<fingerprint>` and the response is
+immutable for the life of the deploy. That means `style.Contribute`
+calls must land before the first page render (package init or before
+`Mount`) — a later contribution can't ship, and the host logs a
+warning when one arrives too late.
+
 ## The token catalog
 
 `style.Theme` is a struct made of typed token groups. Every field is

@@ -107,6 +107,7 @@ var docIntents = []docIntent{
 			{"ui-getting-started", "Getting started (UI)", "The path: scaffold → theme → screen → custom component."},
 			{"ui-composition-recipes", "Composition recipes", "Choose a page shape before composing framework-owned primitives."},
 			{"ui-wiring", "Wiring UI into an app", "framework.App + core-ui app + uihost, end to end in one annotated main.go."},
+			{"layouts", "Screens and layouts", "Layout chains: nesting with ScreenGroup, per-layer markers, deepest-shared-layer swaps, prefetch, scroll restore."},
 			{"ui-new-components", "New components", "The minimal-register + SSR-inline + hydrate contract."},
 			{"theming", "Theming", "The token catalog, dark mode, ui.Themed, and the --ui-* override vars."},
 			{"widgets", "Widget builder", "Build islands that hydrate against a registered handler."},

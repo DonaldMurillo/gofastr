@@ -234,68 +234,6 @@ func (g *ScreenGroup) RenderLayoutCtx(ctx context.Context, content render.HTML) 
 	}, wrapped)
 }
 
-// ComposeLayouts walks from the innermost group to the outermost,
-// wrapping content in each group's layout. Outer groups wrap inner
-// groups. The innermost content (the screen) is wrapped first by its
-// immediate group, then by each parent group going outward.
-func ComposeLayouts(innermost *ScreenGroup, content render.HTML) render.HTML {
-	return composeLayoutsWithOverride(innermost, nil, content, false)
-}
-
-// composeLayoutsWithOverride is the workhorse. When override is
-// non-nil and differs from the innermost group's own layout, the
-// innermost wrap uses the override instead of innermost.layout — but
-// the innermost group's data-fui-screen-group marker is still emitted
-// so sibling-screen navigation inside the group still preserves the
-// (overridden) layout shell. Parent groups in the chain compose
-// normally with their own layouts.
-// nestInner, when true, makes every group layer emit its content region
-// WITHOUT a <main> landmark — because an outer layout (the app default)
-// will be wrapped around the whole composition and provides the single
-// <main>. Without this, a grouped screen rendered inside the default
-// layout ends up with two <main id="main-content"> (invalid + a duplicate
-// landmark). When false (SSG / no outer default), behavior is unchanged:
-// each group layer wraps with its own <main>.
-func composeLayoutsWithOverride(innermost *ScreenGroup, override *Layout, content render.HTML, nestInner bool) render.HTML {
-	return composeLayoutsWithOverrideCtx(context.Background(), innermost, override, content, nestInner)
-}
-
-// composeLayoutsWithOverrideCtx is composeLayoutsWithOverride with the request
-// context threaded through every group layout's chrome, so context-aware
-// sidebars/headers/footers in a group chain render with the live context.
-func composeLayoutsWithOverrideCtx(ctx context.Context, innermost *ScreenGroup, override *Layout, content render.HTML, nestInner bool) render.HTML {
-	var chain []*ScreenGroup
-	for g := innermost; g != nil; g = g.parent {
-		chain = append(chain, g)
-	}
-	wrapLayout := func(l *Layout, c render.HTML) render.HTML {
-		if nestInner {
-			return l.WrapNestedCtx(ctx, c)
-		}
-		return l.WrapCtx(ctx, c)
-	}
-	out := content
-	for i, g := range chain {
-		if i == 0 && override != nil && override != g.layout {
-			wrapped := wrapLayout(override, out)
-			out = html.Div(html.DivConfig{
-				Class:      "fui-screen-group",
-				ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
-			}, wrapped)
-			continue
-		}
-		if nestInner && g.layout != nil {
-			out = html.Div(html.DivConfig{
-				Class:      "fui-screen-group",
-				ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
-			}, g.layout.WrapNestedCtx(ctx, out))
-			continue
-		}
-		out = g.RenderLayoutCtx(ctx, out)
-	}
-	return out
-}
-
 // Ensure StaticComponent satisfies component.Component.
 var _ component.Component = (*StaticComponent)(nil)
 

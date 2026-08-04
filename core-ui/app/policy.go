@@ -28,6 +28,13 @@ type RenderResult struct {
 	// registration instance cannot know for dynamic routes. Read-only;
 	// nil for Redirect/Block results.
 	Component component.Component
+	// SwapLayer is the layer key the partial HTML renders below when the
+	// render was a subtree partial (RenderPartialFromResult with a known
+	// origin whose layout chain shares an addressable prefix with the
+	// target's). The client swaps the content cell marked
+	// data-fui-layout-slot=SwapLayer. Empty for full pages and bare
+	// partials.
+	SwapLayer string
 }
 
 // DecisionKind classifies the outcome of evaluating a Policy.

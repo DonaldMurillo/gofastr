@@ -41,7 +41,11 @@ func TestPWAChromeE2E(t *testing.T) {
 
 	var current atomic.Pointer[UIHost]
 	current.Store(makeHost(""))
+	var partialHits atomic.Int64
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Gofastr-Navigate") == "1" {
+			partialHits.Add(1)
+		}
 		current.Load().ServeHTTP(w, r)
 	})
 
@@ -120,6 +124,35 @@ func TestPWAChromeE2E(t *testing.T) {
 	// shell, activates, and claims the page.
 	if err := poll(`!!(navigator.serviceWorker && navigator.serviceWorker.controller)`, 30*time.Second); err != nil {
 		t.Fatalf("service worker never took control: %v", err)
+	}
+
+	// ── Phase 1.5: SPA partial navigation flows THROUGH the worker ──
+	// Partials are per-user no-store responses. The controlled page's
+	// fetch is not mode:"navigate", so it lands in the worker's asset
+	// branch — which must pass it to the network every time, never
+	// answer it from Cache Storage. Two fetches, two server hits.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`fetch('/other', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-From': '/'}})
+			.then(r => { window.__p1 = r.headers.get('X-Gofastr-Partial'); })
+			.then(() => fetch('/other', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-From': '/'}}))
+			.then(r => { window.__p2 = r.headers.get('X-Gofastr-Partial'); }); true`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if err := poll(`!!window.__p2`, 10*time.Second); err != nil {
+		t.Fatalf("partial fetches under the worker never resolved: %v", err)
+	}
+	var p1, p2 string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__p1`, &p1),
+		chromedp.Evaluate(`window.__p2`, &p2),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if p1 != "true" || p2 != "true" {
+		t.Errorf("partial responses lost their X-Gofastr-Partial header under the worker (p1=%q p2=%q)", p1, p2)
+	}
+	if got := partialHits.Load(); got != 2 {
+		t.Errorf("SPA partials under the worker hit the server %d times, want 2 — a cached partial would replay per-user HTML", got)
 	}
 	cacheKeys := func() []string {
 		if err := chromedp.Run(ctx, chromedp.Evaluate(

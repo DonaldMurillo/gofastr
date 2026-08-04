@@ -140,9 +140,12 @@ var fragmentAttrs = map[string][]string{
 	},
 	"nav": {
 		"data-fui-spa",
+		// data-fui-layout is emit-only since the chain rewrite (CSS/debug
+		// contract); nav's swap decisions read the -key/-slot pair.
 		"data-fui-layout",
+		"data-fui-layout-key",
+		"data-fui-layout-slot",
 		"data-fui-screen-group",
-		"data-fui-match-prefix",
 	},
 	"widgets-boot": {
 		"data-fui-open",
@@ -175,7 +178,11 @@ var fragmentAttrs = map[string][]string{
 // fragment — see fragments note); formrepeater, passwordinput, and
 // searchinput (triggered by data-fui-comp="ui-<name>" CSS markers, which
 // kernel owns, and otherwise driven by rpc/signals); widgetfocus and
-// widgetlinks (triggered by internal JS markers, not data-fui-* at all).
+// widgetlinks (triggered by internal JS markers, not data-fui-* at all);
+// preload (manifest-triggered like intercept — boot loads it when any
+// route declares a preload mode — and it reads route data, not markers);
+// actionloader (triggered by the __gofastr_actions manifest global and
+// keyed on data-component/data-widget, which widgets owns).
 //
 // Ownership for an attribute referenced by several module files is resolved
 // to the module that implements the behavior — determined by the scanner
@@ -186,6 +193,11 @@ var fragmentAttrs = map[string][]string{
 // `widgethelpers`, which is a genuine independently-loadable module (it
 // self-registers a scanner and widgets.js demand-loads it), NOT by widgets.
 var moduleAttrs = map[string][]string{
+	"activelink": {
+		// Carved out of the nav fragment (level-1 budget): the idle-loaded
+		// module owns prefix-matched aria-current highlighting.
+		"data-fui-match-prefix",
+	},
 	"animate": {
 		"data-fui-animate-signal",
 		"data-fui-animate-class",

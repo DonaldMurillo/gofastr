@@ -79,6 +79,10 @@
     el.setAttribute('data-fui-intercept-as', as);
     el.innerHTML = html;
     if (NS.doc) NS.doc.lockScroll('intercept');
+    // Deliberately NOT NS._pushURL: currentPath must stay on the page
+    // UNDER the overlay, so the popstate fired by close()'s
+    // history.back() sees no path change and skips the refetch — the
+    // list under the overlay never unmounted.
     history.pushState(null, '', path + (hash || ''));
     // Focus the overlay's first focusable so keyboard users land inside
     // it, exactly as the drawer/sheet widgets do.
@@ -99,6 +103,11 @@
   // fire popstate — core's handler sees a path change and loads it. That
   // avoids exporting anything new from a bundle with no room.
   function fallbackNav(path, hash) {
+    // Deliberately NOT NS._pushURL: the choke point syncs currentPath,
+    // and the popstate handler below loads only when the URL DIFFERS
+    // from currentPath — a synced write would make the synthetic event
+    // a no-op. The raw push leaves currentPath stale on purpose; the
+    // handler stamps the entry's id itself when it finds none.
     history.pushState(null, '', path + (hash || ''));
     window.dispatchEvent(new PopStateEvent('popstate'));
   }

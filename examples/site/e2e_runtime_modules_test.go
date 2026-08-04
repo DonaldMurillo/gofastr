@@ -202,7 +202,9 @@ func TestE2E_RuntimeSplit_ManifestIsContentAddressed(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/fileupload"),
 		pageReady(),
-		chromedp.Evaluate(`document.getElementById('gofastr-runtime-modules')?.textContent || ''`, &manifest),
+		// Live pages carry the module manifest via /__gofastr/manifest.js
+		// (the window global); the inline block remains only in export mode.
+		chromedp.Evaluate(`JSON.stringify(window.__gofastr_runtime_modules || null) || document.getElementById('gofastr-runtime-modules')?.textContent || ''`, &manifest),
 		chromedp.Sleep(500*time.Millisecond),
 		// Pull the actual src= of any loaded fileupload script tag
 		chromedp.Evaluate(`(() => {

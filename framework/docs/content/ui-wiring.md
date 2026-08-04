@@ -112,6 +112,9 @@ sidebar-rail app shell; `WithContainer` gives a centered column;
 `app.NewContextComponent` for auth-aware chrome that needs the
 request context). A layout is passed per `Register` call, and
 `SetDefaultLayout` covers screens registered with a nil layout.
+Layouts nest through `app.NewScreenGroup` — a section keeps its own
+sidebar inside the app shell, and navigation swaps only the layers
+that change. See [layouts](layouts.md) for the chain model.
 
 **`routerMounter`** is the one piece of glue you write yourself.
 `framework/ui` helpers that need to register widget routes

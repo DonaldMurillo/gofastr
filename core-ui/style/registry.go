@@ -60,6 +60,16 @@ func Contribute(fn func(*StyleSheet)) struct{} {
 	return struct{}{}
 }
 
+// ContributedCount reports how many fragments have been Contribute'd so
+// far. Hosts that memoize their composed stylesheet compare it against
+// the count captured at composition time to detect (and warn about) a
+// contribution that arrived too late to ship.
+func ContributedCount() int {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	return len(registry)
+}
+
 // Apply runs every [Contribute]'d fn against ss, in registration order.
 // The framework's uihost calls this against a fresh sheet each time it
 // assembles app.css; custom hosts call it once inside createStyleSheet.

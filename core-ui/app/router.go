@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -306,6 +307,12 @@ func ParamName(seg string) string { return segParamName(seg) }
 // request context. INTENDED FOR INTERNAL/SSG USE ONLY — callers in
 // HTTP-serving code should use App.RenderPageResult, which evaluates
 // the Policy chain before invoking Load and Render.
+//
+// Composition is the same resolved layout chain RenderPageResult uses —
+// including the router's default layout — so statically rendered output
+// is structurally identical to the SSR output for the same route. (It
+// previously skipped the default layout and double-wrapped <main>,
+// making SSG output diverge from what the server served.)
 func (r *Router) RenderRaw(path string) (render.HTML, error) {
 	screen, params, ok := r.Resolve(path)
 	if !ok {
@@ -321,24 +328,17 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 		}
 	}
 
-	content := renderComponentInScreen(context.Background(), screen, comp)
-
-	// Group-registered screens compose ALL parent group layouts so
-	// nested screen groups produce nested layout shells, each wrapped
-	// in its data-fui-screen-group marker. This is what makes
-	// sibling-screen nav DOM-stable at the innermost matching group.
-	// When screen.Layout was explicitly set via group.Screen(s, custom),
-	// it replaces the innermost group's layout in the chain — the
-	// marker is still emitted so sibling-nav keeps working.
-	if screen.group != nil {
-		return composeLayoutsWithOverride(screen.group, screen.Layout, content, false), nil
+	ctx := context.Background()
+	if screen.Type == ScreenPage {
+		if chain := r.layoutChainFor(screen); len(chain) > 0 {
+			content, renderErr := component.SafeRenderCtx(ctx, comp)
+			if renderErr != nil {
+				return "", fmt.Errorf("app: component render error for %q: %w", path, renderErr)
+			}
+			return renderLayoutChain(ctx, chain, wrapArticle(screen, comp, content)), nil
+		}
 	}
-
-	layout := screen.Layout
-	if layout == nil {
-		layout = r.defaultLayout
-	}
-	return layout.Wrap(content), nil
+	return renderComponentInScreen(ctx, screen, comp), nil
 }
 
 // Paths returns all registered paths (exact + dynamic patterns).

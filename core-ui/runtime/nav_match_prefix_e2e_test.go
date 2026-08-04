@@ -39,6 +39,12 @@ func navPrefixServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
+	// Highlighting lives in the idle-loaded activelink module now.
+	mux.HandleFunc("/__gofastr/runtime/activelink.js", func(w http.ResponseWriter, _ *http.Request) {
+		src, _ := Module("activelink")
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, src)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		if r.Header.Get("X-Gofastr-Navigate") == "1" {

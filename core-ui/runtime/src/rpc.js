@@ -186,8 +186,14 @@
         node.getAttribute('data-fui-push-state');
       if (pushState) {
         try {
-          history.pushState(null, '', pushState);
-          NS._setCurrentPath(location.pathname + location.search);
+          // Through the router's choke point (entry id + currentPath).
+          // nav is absent from the embed composition, so fall back to a
+          // raw write there — an embed has no router state to keep.
+          if (NS._pushURL) NS._pushURL(pushState);
+          else {
+            history.pushState(null, '', pushState);
+            NS._setCurrentPath(location.pathname + location.search);
+          }
         } catch (_) {}
       }
 

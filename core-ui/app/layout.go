@@ -87,6 +87,26 @@ func (l *Layout) WrapNestedCtx(ctx context.Context, content render.HTML) render.
 }
 
 func (l *Layout) wrap(ctx context.Context, content render.HTML, outermost bool) render.HTML {
+	return l.wrapLayer(ctx, content, outermost, l.selfKey())
+}
+
+// selfKey is the layer key a layout carries when it is wrapped directly
+// (Wrap/WrapCtx/WrapNested*) rather than through a resolved chain — the
+// plain-layer form of LayoutLayer.Key.
+func (l *Layout) selfKey() string {
+	if l == nil || l.Name == "" {
+		return ""
+	}
+	return "l:" + l.Name
+}
+
+// wrapLayer renders one level of a layout chain. outermost decides <main>
+// ownership (the page has exactly one <main id="main-content">, owned by
+// layer 0). key is the layer identity emitted as data-fui-layout-key on
+// the wrapper and data-fui-layout-slot on the content cell — the markers
+// the runtime walks to find the deepest layer shared with a navigation
+// target and to address the swap target without structural heuristics.
+func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost bool, key string) render.HTML {
 	if l == nil {
 		return content
 	}
@@ -103,12 +123,24 @@ func (l *Layout) wrap(ctx context.Context, content render.HTML, outermost bool) 
 	}
 
 	// Content region. Only the outermost layout owns the <main> landmark;
-	// nested layouts emit a plain region so there's just one <main>.
+	// nested layouts emit a plain region so there's just one <main>. Either
+	// way the cell carries data-fui-layout-slot so the runtime swaps a
+	// layer's content by key instead of guessing at structure.
+	var slotAttrs html.Attrs
+	if key != "" {
+		slotAttrs = html.Attrs{"data-fui-layout-slot": key}
+	}
 	var contentRegion render.HTML
 	if outermost {
-		contentRegion = html.Main(html.MainConfig{}, content)
+		contentRegion = html.Main(html.MainConfig{ExtraAttrs: slotAttrs}, content)
 	} else {
-		contentRegion = html.Div(html.DivConfig{Class: "layout-content"}, content)
+		// tabindex="-1" mirrors html.Main: after a layer swap the runtime
+		// moves focus onto the fresh cell so keyboard users are not
+		// stranded on a detached node.
+		if slotAttrs != nil {
+			slotAttrs["tabindex"] = "-1"
+		}
+		contentRegion = html.Div(html.DivConfig{Class: "layout-content", ExtraAttrs: slotAttrs}, content)
 	}
 	bodyChildren = append(bodyChildren, contentRegion)
 
@@ -146,12 +178,20 @@ func (l *Layout) wrap(ctx context.Context, content render.HTML, outermost bool) 
 	if l.Sidebar != nil {
 		cls += " layout--has-sidebar"
 	}
-	var attrs html.Attrs
-	if outermost && l.Name != "" {
-		// Mark the outermost shell with its layout name so the runtime can
-		// detect cross-layout navigation (where the chrome itself changes) and
-		// swap the whole shell rather than just the content region.
-		attrs = html.Attrs{"data-fui-layout": l.Name}
+	// Every layer is marked: data-fui-layout names the shell (CSS/debug
+	// contract), data-fui-layout-key is the identity the runtime compares
+	// to find the deepest layer shared with a navigation target. Nested
+	// layers used to be unmarked, which forced the runtime onto class-name
+	// heuristics and a screen-group precedence hack.
+	attrs := html.Attrs{}
+	if l.Name != "" {
+		attrs["data-fui-layout"] = l.Name
+	}
+	if key != "" {
+		attrs["data-fui-layout-key"] = key
+	}
+	if len(attrs) == 0 {
+		attrs = nil
 	}
 	return html.Div(html.DivConfig{Class: cls, ExtraAttrs: attrs}, wrapperChildren...)
 }
