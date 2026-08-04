@@ -53,7 +53,7 @@ An island is a **server-rendered, server-driven component** with its own
 RPC endpoints and (optionally) signal bindings. It owns:
 
 1. Its rendered HTML (SSR).
-2. Its server-side state (in memory or DB).
+2. Its server-side state (in the DB — the interactive layer is stateless, so never in process RAM; any replica serves any request).
 3. Its update logic (handlers that re-render and respond).
 
 Pagination is an island. A sortable table is an island. A "favorite" toggle
@@ -1275,7 +1275,8 @@ core-ui/
 
 framework/
   uihost/      — wires core-ui app onto framework.App router; serves
-                 runtime.js, theme.css, styles.css; handles SSE; client-side
+                 runtime.js, app.css (the legacy theme.css / styles.css
+                 paths return 410 Gone); handles SSE; client-side
                  navigation partial-fetch endpoint
   static/      — SSG builder (renders every screen at build time)
   ui/          — opinionated semantic components on top of core-ui

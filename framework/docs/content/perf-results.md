@@ -1,9 +1,14 @@
-# Performance results — 2026-07-18 (v0.26.0)
+# Performance results — historical snapshot, 2026-07-18 (v0.26.0)
 
-Current measured results for the framework's hot paths. Each section
-names the benchmark that produced the numbers, so a future change can
-re-run exactly the same witness. Methodology + full catalog of what each
-benchmark defends: see [`benchmarks.md`](benchmarks.md).
+> **Historical snapshot, kept intact.** These numbers were captured at
+> **v0.26.0** on **2026-07-18** and are preserved here as a reference
+> point. The framework has shipped many releases since; current numbers
+> will differ — re-run the named benchmark before quoting any figure.
+> Treat the data below as a point-in-time witness, not the present state.
+
+Each section names the benchmark that produced the numbers, so a future
+change can re-run exactly the same witness. Methodology + full catalog of
+what each benchmark defends: see [`benchmarks.md`](benchmarks.md).
 
 Environment: darwin/arm64, Apple M4 Pro, Go (project default), SQLite
 in-memory, and Postgres 16 via testcontainers when noted.

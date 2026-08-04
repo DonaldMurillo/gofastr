@@ -26,9 +26,9 @@ Honest expectations:
 
 ## Supported versions
 
-GoFastr is pre-1.0. Only the **latest minor release** (currently `0.59.x`)
-receives security fixes. Older `0.x` lines are not patched — upgrade to the
-latest release to stay supported.
+GoFastr is pre-1.0. Only the **latest minor release** (currently `0.60.x`)
+receives security fixes. Older `0.x` lines are not patched — upgrade to
+the latest release to stay supported.
 
 ## Audit trail
 
