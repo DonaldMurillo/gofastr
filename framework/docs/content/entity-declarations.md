@@ -214,6 +214,8 @@ entities:
     public: false   # default; see "Default CRUD authentication" below
     crud: true
     mcp: true
+    renames:        # old column: new column — see migrations.md
+      headline: title
     fields:
       - name: title
         type: string
