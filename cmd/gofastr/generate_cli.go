@@ -391,6 +391,19 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 	if binary == "" {
 		return cliSpec{}, fmt.Errorf("--binary must not be empty")
 	}
+	// Binary lands in `binaryName = %q` (quoted, safe) but ALSO in the `//`
+	// header comment of the generated main.go, where a newline would put the
+	// remainder at statement position. Today that is only reachable from argv,
+	// so it is the operator injecting code into their own project rather than a
+	// privilege boundary — not a vulnerability. The guard is here because the
+	// sibling generator IS config-readable: `generate sdk` takes its name from a
+	// discovered gofastr.codegen.yml, and if `generate cli` ever grows the same
+	// convenience this stops being operator-only without anyone noticing.
+	for _, r := range binary {
+		if r < 0x20 || r == 0x7f {
+			return cliSpec{}, fmt.Errorf("--binary %q contains a control character — it becomes a file name and a Go identifier's value", binary)
+		}
+	}
 
 	spec := cliSpec{
 		Binary:       binary,

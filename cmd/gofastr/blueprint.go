@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"hash/fnv"
 	"image"
 	"image/color"
@@ -589,6 +591,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			"access": true, "public": true, "timestamps": true, "crud": true,
 			"mcp": true, "cursor_field": true, "cursor_fields": true,
 			"max_list_limit": true, "indices": true, "properties": true,
+			"renames": true,
 		}
 		if err := rejectUnknownKeys(m, allowed, context); err != nil {
 			return nil, nil, err
@@ -598,6 +601,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			Table:        stringValue(m["table"]),
 			SearchFields: stringListValue(m["search_fields"]),
 			Properties:   mapValue(m["properties"]),
+			Renames:      stringStringMapValue(m["renames"]),
 		}
 		if m["timestamps"] != nil {
 			v := boolValue(m["timestamps"])
@@ -1899,7 +1903,56 @@ func validateBlueprint(bp Blueprint) error {
 				return fmt.Errorf("blueprint: entity %q field %q is a relation to unknown entity %q — declare an entity named %q under entities: (or fix the field's to: value)", decl.Name, field.Name, field.To, field.To)
 			}
 		}
+		// Both sides of a rename become column names in emitted
+		// ALTER TABLE … RENAME COLUMN DDL, so they get the same identifier
+		// guard as table: a blueprint is agent-transcribed text, not
+		// developer-authored SQL. A rename whose target is not a declared
+		// field would never fire, so catch that here rather than at migrate
+		// time.
+		declaredFields := map[string]bool{}
+		for _, field := range decl.Fields {
+			declaredFields[field.Name] = true
+		}
+		for old, next := range decl.Renames {
+			if _, err := query.SafeIdent(old); err != nil {
+				return fmt.Errorf("blueprint: entity %q rename key %q is not a safe column name: %w", decl.Name, old, err)
+			}
+			if _, err := query.SafeIdent(next); err != nil {
+				return fmt.Errorf("blueprint: entity %q rename target %q is not a safe column name: %w", decl.Name, next, err)
+			}
+			if old == next {
+				return fmt.Errorf("blueprint: entity %q renames %q to itself — drop the entry", decl.Name, old)
+			}
+			if !declaredFields[next] {
+				return fmt.Errorf("blueprint: entity %q renames %q to %q, but %q is not a declared field — a rename only fires when the new name is declared on the entity", decl.Name, old, next, next)
+			}
+			if declaredFields[old] {
+				return fmt.Errorf("blueprint: entity %q renames %q to %q while still declaring %q as a field — the diff would see both columns; remove the old field", decl.Name, old, next, old)
+			}
+		}
+		// A relation name is an identifier, not a label: the entity emitter
+		// puts toCamelCase(name) in struct-field position AND inside the
+		// backtick `json:"…"` tag (a raw literal, which has no escape
+		// mechanism at all), and the typed-column emitter puts it in
+		// const-identifier position. It was the last name in the IR with no
+		// identifier guard — every sibling above (entity, field, screen,
+		// endpoint handler, middleware, plugin, helper) already has one.
+		relNames := map[string]string{}
+		for _, field := range decl.Fields {
+			relNames[toCamelCase(field.Name)] = "field " + field.Name
+		}
 		for _, rel := range decl.Relations {
+			if rel.Name == "" {
+				return fmt.Errorf("blueprint: entity %q has a relation with no name — add `name: <name>`; it becomes a struct field and an include name in the generated Go", decl.Name)
+			}
+			camel := toCamelCase(rel.Name)
+			if !isGoIdentifier(camel) {
+				return fmt.Errorf("blueprint: entity %q relation %q does not produce a valid Go identifier — it is emitted as a struct field name and an include constant, so the generated code would not compile; use letters, digits and underscores (e.g. \"author\" or \"line_items\")", decl.Name, rel.Name)
+			}
+			if owner, dup := relNames[camel]; dup {
+				return fmt.Errorf("blueprint: entity %q relation %q collides with %s — both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel)
+			}
+			relNames[camel] = "relation " + rel.Name
 			if rel.Entity == "" {
 				return fmt.Errorf("blueprint: entity %q relation %q target entity is required — add `entity: <name>` referencing a declared entity", decl.Name, rel.Name)
 			}
@@ -2585,7 +2638,41 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 	// the files under <static>/icons/ with real branding.
 	files = append(files, blueprintPWAIconAssets(bp)...)
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+	if err := assertBlueprintGoParses(files); err != nil {
+		return nil, err
+	}
 	return files, nil
+}
+
+// assertBlueprintGoParses is the emitter-side backstop for the property that
+// validateBlueprint enforces field by field: no blueprint string escapes the Go
+// literal, identifier, or comment it is emitted into. Every such field has an
+// identifier or quoting guard at validate time — but relation names had none
+// until the 2026-08-04 pass, and the way that gap presented was Go that does
+// not parse. So check the whole emitted tree once, here, and refuse to hand
+// back a broken file: the next missing guard fails the generate with a
+// reportable message instead of silently writing attacker-shaped Go that the
+// developer then builds and runs.
+//
+// This is deliberately stricter than formatGenerated, which documents the
+// opposite policy (fall back to unformatted so a parse failure surfaces in the
+// compiler). The two differ because the inputs differ: formatGenerated also
+// serves `gofastr generate` over entity declarations the developer wrote in
+// Go, where a parse failure is a generator bug worth inspecting. A blueprint is
+// transcribed text — the documented workflow has an agent authoring it from
+// natural-language requirements (see blueprint_emitter_injection_test.go) — so
+// on that path unparseable output is a security signal and fails closed.
+func assertBlueprintGoParses(files []generatedFile) error {
+	for _, file := range files {
+		if !strings.HasSuffix(file.name, ".go") {
+			continue
+		}
+		fset := token.NewFileSet()
+		if _, err := parser.ParseFile(fset, file.name, file.content, parser.SkipObjectResolution); err != nil {
+			return fmt.Errorf("blueprint: generated %s does not parse (%w) — a blueprint value escaped the Go literal it was emitted into. Please report this with the blueprint that produced it", file.name, err)
+		}
+	}
+	return nil
 }
 
 // blueprintGitignore keeps the generated .env (and local overrides) out of
@@ -7301,6 +7388,19 @@ func mapValue(node *coreyaml.Node) map[string]any {
 	out := make(map[string]any, len(node.Map))
 	for key, child := range node.Map {
 		out[key] = anyValue(child)
+	}
+	return out
+}
+
+// stringStringMapValue decodes a YAML map whose values are all scalars, e.g.
+// an entity's `renames:` (old column -> new column).
+func stringStringMapValue(node *coreyaml.Node) map[string]string {
+	if node == nil || node.Kind != coreyaml.Map {
+		return nil
+	}
+	out := make(map[string]string, len(node.Map))
+	for key, child := range node.Map {
+		out[key] = stringValue(child)
 	}
 	return out
 }

@@ -1203,6 +1203,12 @@ func packReadIndices(e ast.Expr) []framework.Index {
 			Name:    astString(iv["Name"]),
 			Columns: astStringSlice(iv["Columns"]),
 			Unique:  astBool(iv["Unique"]),
+			// Expression is the key for function/constant indices. Reading it
+			// back matters because `gofastr generate` re-emits what this
+			// returns: without it a declared unique expression index came out
+			// the far side with no key at all, silently dropping the
+			// constraint. See renderIndexLiteral.
+			Expression: astString(iv["Expression"]),
 		})
 	}
 	return out
