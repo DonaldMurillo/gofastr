@@ -149,6 +149,12 @@ type Screen struct {
 	// intercept.go.
 	Intercept *Intercept
 
+	// Preload declares how the client may prefetch this route before it is
+	// navigated to: "" (never, the default), PreloadHover, PreloadVisible,
+	// or PreloadEager. Set with the Preload registration option; carried to
+	// the client in the route manifest.
+	Preload string
+
 	// group is the innermost ScreenGroup this screen belongs to, when
 	// registered via group.Screen. Nil for screens registered directly
 	// on the router. When set, the renderer composes all parent group

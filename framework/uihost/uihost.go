@@ -276,9 +276,14 @@ type routeInfoJSON struct {
 	Path        string `json:"path"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
-	Preload     bool   `json:"preload"`
-	CSSChunk    string `json:"cssChunk,omitempty"`
-	Layout      string `json:"layout,omitempty"`
+	// Preload is the route's prefetch mode ("hover"/"visible"/"eager");
+	// absent means never. Any non-empty value in the manifest loads the
+	// prefetch runtime module.
+	Preload string `json:"preload,omitempty"`
+	// Layouts is the route's layout chain as layer keys, outermost →
+	// innermost (app.LayoutLayer.Key). The runtime compares it against the
+	// DOM's data-fui-layout-key spine to swap at the deepest shared layer.
+	Layouts []string `json:"layouts,omitempty"`
 	// Redirect is the target path (or pattern) for a redirect entry.
 	// Empty for screens. The client-side router rewrites a navigation to
 	// this entry's path to Redirect without a server round-trip.
@@ -831,9 +836,8 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 			Path:        r.Path,
 			Title:       r.Title,
 			Description: r.Description,
-			Preload:     i == 0, // preload first route
-			CSSChunk:    pathToChunkName(r.Path),
-			Layout:      r.Layout,
+			Preload:     r.Preload,
+			Layouts:     r.Layouts,
 			Redirect:    r.RedirectTo,
 		}
 		if r.Intercept != nil {
@@ -862,18 +866,6 @@ func (ds *UIHost) hasInterceptingRoute() bool {
 		}
 	}
 	return false
-}
-
-// pathToChunkName derives a CSS chunk filename from a route path.
-// "/" → "home.css", "/about" → "about.css", "/products/:slug" → "products-slug.css"
-func pathToChunkName(path string) string {
-	path = strings.TrimPrefix(path, "/")
-	if path == "" {
-		return "home.css"
-	}
-	// Replace / and : with - for valid filenames
-	name := strings.NewReplacer("/", "-", ":", "").Replace(path)
-	return name + ".css"
 }
 
 // GetActionJS returns all compiled action JS concatenated.

@@ -133,11 +133,19 @@ type RouteEntry struct {
 	Path        string
 	Title       string
 	Description string
-	// Layout is the name of the layout the route renders in (e.g. "app",
-	// "marketing"). The runtime uses it to detect cross-layout navigation —
-	// where the chrome itself changes — and swap the whole shell instead of
-	// just the content. Empty when the route has no layout.
-	Layout string
+	// Layouts is the route's resolved layout chain as layer keys, outermost
+	// → innermost ("l:<name>" for plain layers, "g:<prefix>" for screen-group
+	// layers — see LayoutLayer.Key). The runtime compares it positionally
+	// against the DOM's data-fui-layout-key spine to find the deepest layer
+	// shared with a navigation target, swapping only below it. Empty when
+	// the route has no layout. An unnamed layer contributes "" to keep depth
+	// indexes aligned; the runtime treats "" as never-matching.
+	Layouts []string
+	// Preload declares how the client may prefetch this route's content
+	// before it is navigated to: "" (never, the default), "hover" (when a
+	// link to it is hovered/focused), "visible" (when a link scrolls into
+	// view), or "eager" (at idle after page load). Set with app.Preload.
+	Preload string
 	// RedirectTo is non-empty when this entry is a redirect (Redirect /
 	// RedirectPattern) rather than a screen. Redirect entries render no
 	// page, so consumers that enumerate pages (static export, sitemap,
@@ -168,19 +176,20 @@ func (a *App) Routes() []RouteEntry {
 		if !ok {
 			continue
 		}
-		layout := screen.Layout
-		if layout == nil {
-			layout = a.Router.GetDefaultLayout()
-		}
-		layoutName := ""
-		if layout != nil {
-			layoutName = layout.Name
+		chain := a.Router.layoutChainFor(screen)
+		var layouts []string
+		if len(chain) > 0 {
+			layouts = make([]string, len(chain))
+			for i, layer := range chain {
+				layouts[i] = layer.Key()
+			}
 		}
 		entries = append(entries, RouteEntry{
 			Path:        screen.Path,
 			Title:       screen.Title,
 			Description: screen.Description,
-			Layout:      layoutName,
+			Layouts:     layouts,
+			Preload:     screen.Preload,
 			Intercept:   screen.Intercept,
 		})
 	}
@@ -296,47 +305,25 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		}
 	}
 
-	layout := screen.Layout
-	if layout == nil {
-		layout = a.Router.defaultLayout
-	}
-
-	// Render the component directly for ScreenPage when a layout is present —
-	// the layout provides the <main> wrapper. For other screen types (drawer,
-	// sheet, dialog), always use screen.Render() which adds proper ARIA wrapping
-	// and skip the layout entirely since they are overlays.
+	// Render the component directly for ScreenPage when the resolved layout
+	// chain is non-empty — layer 0 provides the <main> wrapper. For other
+	// screen types (drawer, sheet, dialog), always use screen.Render() which
+	// adds proper ARIA wrapping and skip layouts entirely since they are
+	// overlays.
 	var content render.HTML
 	var wrapped render.HTML
 	if screen.Type == ScreenPage {
-		if layout != nil {
+		chain := a.Router.layoutChainFor(screen)
+		if len(chain) > 0 {
 			var renderErr error
 			content, renderErr = component.SafeRenderCtx(ctx, comp)
 			if renderErr != nil {
 				return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 			}
 			content = wrapArticle(screen, comp, content)
+			wrapped = renderLayoutChain(ctx, chain, content)
 		} else {
 			content = renderComponentInScreen(ctx, screen, comp)
-		}
-		// Compose layouts: group chain (innermost → outermost) + the app
-		// default layout as the outermost shell. This matches the
-		// RenderRaw (SSG) composition path so a screen group's sidebar
-		// + content sits INSIDE the default layout's nav + footer. A
-		// screen group whose layout is also the default skips the
-		// duplicate wrap.
-		if screen.group != nil {
-			// When the app default layout wraps the whole composition, it
-			// owns the single <main>; the group layers must nest WITHOUT
-			// their own <main> (else duplicate <main id="main-content">).
-			def := a.Router.defaultLayout
-			applyDefault := def != nil && !groupChainContainsLayout(screen.group, def) && !groupChainIsStandalone(screen.group)
-			wrapped = composeLayoutsWithOverrideCtx(ctx, screen.group, screen.Layout, content, applyDefault)
-			if applyDefault {
-				wrapped = def.WrapCtx(ctx, wrapped)
-			}
-		} else if layout != nil {
-			wrapped = layout.WrapCtx(ctx, content)
-		} else {
 			wrapped = content
 		}
 	} else {
@@ -443,6 +430,53 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 	return a.renderPartial(ctx, path, nil)
 }
 
+// RenderPartialFromResult renders the screen at path as a subtree partial
+// for a client navigating from fromPath. Both routes' layout chains are
+// resolved; the outermost layers they share are assumed live in the
+// client's DOM, so the response contains the target's content wrapped
+// only in the layers BELOW the deepest shared one. SwapLayer names that
+// shared layer; the client swaps the content cell marked
+// data-fui-layout-slot=SwapLayer.
+//
+// Layers are compared by *Layout pointer identity plus group prefix — the
+// same identities that produced the layer keys in the route manifest, so
+// the server and client always agree on the boundary. When fromPath is
+// unknown, or the chains share no addressable layer, the result is
+// identical to RenderPartialResult (bare content, empty SwapLayer) and
+// the client falls back to a full-page fetch.
+func (a *App) RenderPartialFromResult(ctx context.Context, path, fromPath string) (RenderResult, error) {
+	res, err := a.renderPartial(ctx, path, nil)
+	if err != nil {
+		return res, err
+	}
+	if res.Kind != DecisionAllow && res.Kind != DecisionRenderAlt {
+		return res, nil
+	}
+	target, _, ok := a.Router.Resolve(path)
+	if !ok || target.Type != ScreenPage {
+		return res, nil
+	}
+	from, _, ok := a.Router.Resolve(fromPath)
+	if !ok {
+		return res, nil
+	}
+	tChain := a.Router.layoutChainFor(target)
+	fChain := a.Router.layoutChainFor(from)
+	shared := 0
+	for shared < len(tChain) && shared < len(fChain) &&
+		tChain[shared].Layout == fChain[shared].Layout &&
+		tChain[shared].GroupPrefix == fChain[shared].GroupPrefix &&
+		tChain[shared].Key() != "" {
+		shared++
+	}
+	if shared == 0 {
+		return res, nil
+	}
+	res.HTML = renderLayoutChainFrom(ctx, tChain, shared, res.HTML)
+	res.SwapLayer = tChain[shared-1].Key()
+	return res, nil
+}
+
 // RenderOverlayResult renders the screen at path as an intercepted
 // overlay — the same component, the same Load, wrapped in `as` instead
 // of the screen's own type.
@@ -504,7 +538,11 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 		if renderErr != nil {
 			return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 		}
-		body = html
+		// Same article wrapping as the full-page path — without it, SPA
+		// navigation silently dropped the <article> element Reader Mode
+		// keys on, so an article page lost reader support after the first
+		// client-side visit.
+		body = wrapArticle(screen, comp, html)
 	} else {
 		body = renderComponentAs(ctx, screen, effType, comp)
 	}

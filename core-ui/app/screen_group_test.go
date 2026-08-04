@@ -249,25 +249,37 @@ func TestScreenGroupRenderLayoutNil(t *testing.T) {
 	}
 }
 
-func TestComposeLayouts(t *testing.T) {
+func TestNestedGroupChainEmitsLayerKeys(t *testing.T) {
 	outerLayout := app.NewLayout("outer").WithHeader(&stubComp{html: "<h1>Outer</h1>"})
 	innerLayout := app.NewLayout("inner").WithHeader(&stubComp{html: "<h2>Inner</h2>"})
 
 	outer := app.NewScreenGroup("/app", outerLayout)
 	inner := outer.SubGroup("settings", innerLayout)
+	inner.Screen(app.NewScreen("profile", &stubComp{html: "<p>Content</p>"}), nil)
 
-	content := render.HTML("<p>Content</p>")
-	result := app.ComposeLayouts(inner, content)
+	r := app.NewRouter()
+	r.ScreenGroup(outer)
 
-	str := string(result)
-	if !contains(str, "Outer") {
-		t.Error("ComposeLayouts should include outer layout content")
+	out, err := r.RenderRaw("/app/settings/profile")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !contains(str, "Inner") {
-		t.Error("ComposeLayouts should include inner layout content")
+	s := string(out)
+
+	for _, want := range []string{
+		"Outer", "Inner", "<p>Content</p>",
+		`data-fui-layout-key="g:/app/:outer"`,
+		`data-fui-layout-key="g:/app/settings/:inner"`,
+		`data-fui-layout-slot="g:/app/:outer"`,
+		`data-fui-layout-slot="g:/app/settings/:inner"`,
+	} {
+		if !contains(s, want) {
+			t.Errorf("missing %q in: %s", want, s)
+		}
 	}
-	if !contains(str, "<p>Content</p>") {
-		t.Error("ComposeLayouts should include original content")
+	// Outer key must appear before inner key (outer wraps inner).
+	if indexOf(s, `data-fui-layout-key="g:/app/:outer"`) >= indexOf(s, `data-fui-layout-key="g:/app/settings/:inner"`) {
+		t.Errorf("outer layer must wrap inner layer: %s", s)
 	}
 }
 
