@@ -1537,7 +1537,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		headClose.WriteString(manifest)
 		headClose.WriteByte('\n')
 	}
-	// Module preload hints — emit <link rel="modulepreload"> per
+	// Module preload hints — emit <link rel="preload" as="script"> per
 	// demand-load runtime module whose marker substring appears in
 	// the rendered page. Lets the browser parallel-fetch modules with
 	// initial render instead of stalling on hover/click. Content-
@@ -1726,6 +1726,15 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	var err error
 	if overlay != nil {
 		res, err = ds.App.RenderOverlayResult(ctx, path, overlay.As)
+	} else if from := r.Header.Get("X-Gofastr-From"); from != "" {
+		// Subtree partial: the client names the route it is navigating
+		// FROM; the server renders only the layout layers the two routes
+		// do NOT share and echoes the swap boundary via X-Gofastr-Swap.
+		// Same trust posture as the intercept use of this header — it is
+		// re-resolved against the route table, and a forged value can
+		// only change how much shared chrome gets re-rendered, never
+		// policy, params, Load, or content.
+		res, err = ds.App.RenderPartialFromResult(ctx, path, from)
 	} else {
 		res, err = ds.App.RenderPartialResult(ctx, path)
 	}
@@ -1785,6 +1794,12 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Gofastr-Partial", "true")
+	if res.SwapLayer != "" {
+		// Names the layout layer the body renders BELOW; the client swaps
+		// the matching data-fui-layout-slot cell. Absent when the body is
+		// bare screen content (whole-main swap / full-fetch fallback).
+		w.Header().Set("X-Gofastr-Swap", res.SwapLayer)
+	}
 	if overlay != nil {
 		// The client mounts overlay chrome only when the SERVER says so.
 		w.Header().Set("X-Gofastr-Overlay", overlay.As.String())
@@ -3005,11 +3020,17 @@ func runtimeModuleManifestScript() string {
 	return widget.RuntimeModuleManifestScript()
 }
 
-// runtimeModulePreloadLinks emits <link rel="modulepreload"> tags for
-// every demand-load runtime module whose marker substring appears in
+// runtimeModulePreloadLinks emits <link rel="preload" as="script"> tags
+// for every demand-load runtime module whose marker substring appears in
 // pageHTML (post-render scan via runtime.NeededModules). The href
 // carries the content-addressed ?v=<hash> URL so preload hits the same
 // immutable cache entry as the eventual fetch.
+//
+// rel="preload" as="script", NOT rel="modulepreload": the loader injects
+// classic scripts (boot.js loadModule, s.async=false for ordering), and
+// a modulepreload'd response is fetched with module destination/
+// credentials semantics the classic request does not match — the browser
+// would not reuse it, so every hinted module was fetched twice.
 func runtimeModulePreloadLinks(pageHTML string) string {
 	mods := runtime.NeededModules(pageHTML)
 	if len(mods) == 0 {
@@ -3025,7 +3046,7 @@ func runtimeModulePreloadLinks(pageHTML string) string {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(`<link rel="modulepreload" href="` + href + `">`)
+		b.WriteString(`<link rel="preload" as="script" href="` + href + `">`)
 	}
 	return b.String()
 }

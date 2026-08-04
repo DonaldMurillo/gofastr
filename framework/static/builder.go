@@ -492,7 +492,7 @@ var baseAttrURL = regexp.MustCompile(`([\s])(src|href|data-fui-push-state)="/([^
 // rewriteBaseURLs prefixes every root-absolute asset and navigation URL in
 // the page with b.BasePath. No-op when BasePath is empty (apex deploy /
 // live server). Covers /__gofastr/… assets (runtime.js, modules, CSS,
-// modulepreload links) and internal nav links (/about → /<base>/about) in a
+// module preload links) and internal nav links (/about → /<base>/about) in a
 // single pass. External (https://), protocol-relative (//host), fragment
 // (#…), and relative URLs are untouched.
 func (b *Builder) rewriteBaseURLs(page string) string {

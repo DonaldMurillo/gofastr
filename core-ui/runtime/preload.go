@@ -8,7 +8,7 @@ import (
 // demandLoadMarker is one entry in the server-side mirror of the
 // runtime.js demand-load scanner table. The framework scans the
 // rendered page HTML for the literal marker substring and emits
-// <link rel="modulepreload"> for the named module when matched, so
+// <link rel="preload" as="script"> for the named module when matched, so
 // the browser parallel-fetches modules during the initial render.
 type demandLoadMarker struct {
 	Marker string
@@ -72,7 +72,7 @@ var demandLoadMarkers = []demandLoadMarker{
 
 // NeededModules returns the deduplicated, sorted list of demand-load
 // runtime modules whose marker substring appears in pageHTML. Used
-// by the framework's UI host to emit <link rel="modulepreload"> tags
+// by the framework's UI host to emit <link rel="preload" as="script"> tags
 // in <head> per page, kicking off module fetches in parallel with the
 // initial paint.
 //
