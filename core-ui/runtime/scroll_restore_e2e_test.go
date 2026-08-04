@@ -98,6 +98,11 @@ func TestForwardRestoresScrollOffset(t *testing.T) {
 	srv := scrollSite(t)
 	ctx := newSeedBrowserCtx(t)
 
+	// Trace the observable internals at every step: CI Chrome fails this
+	// flow in ways local Chrome doesn't, and the failure message must say
+	// which link broke (entry ids, stored positions, popstate firing).
+	snap := `JSON.stringify({st: history.state, ss: sessionStorage.getItem('gofastr:scroll'), y: scrollY, path: location.pathname})`
+	var onB, afterBack, afterForward string
 	var y float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/tall-a"),
@@ -106,18 +111,22 @@ func TestForwardRestoresScrollOffset(t *testing.T) {
 		chromedp.WaitVisible(`#screen-b`, chromedp.ByID),
 		chromedp.Evaluate(`window.scrollTo(0, 800)`, nil),
 		chromedp.Sleep(250*time.Millisecond),
+		chromedp.Evaluate(snap, &onB),
 		chromedp.Evaluate(`history.back()`, nil),
 		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
 		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(snap, &afterBack),
 		chromedp.Evaluate(`history.forward()`, nil),
 		chromedp.WaitVisible(`#screen-b`, chromedp.ByID),
 		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(snap, &afterForward),
 		chromedp.Evaluate(`window.scrollY`, &y),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if y < 600 || y > 1000 {
-		t.Errorf("forward scrollY = %v, want ≈800 — Forward restore is the previously-untested half", y)
+		t.Errorf("forward scrollY = %v, want ≈800 — Forward restore is the previously-untested half\n  on B:          %s\n  after back:    %s\n  after forward: %s",
+			y, onB, afterBack, afterForward)
 	}
 }
 
@@ -128,6 +137,8 @@ func TestRapidBackForwardKeepsForwardScroll(t *testing.T) {
 	srv := scrollSite(t)
 	ctx := newSeedBrowserCtx(t)
 
+	snap := `JSON.stringify({st: history.state, ss: sessionStorage.getItem('gofastr:scroll'), y: scrollY, path: location.pathname})`
+	var after string
 	var y float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/tall-a"),
@@ -140,12 +151,13 @@ func TestRapidBackForwardKeepsForwardScroll(t *testing.T) {
 		// double-rAF settle pass is still queued when forward lands.
 		chromedp.Evaluate(`history.back(); setTimeout(() => history.forward(), 30)`, nil),
 		chromedp.Sleep(600*time.Millisecond),
+		chromedp.Evaluate(snap, &after),
 		chromedp.Evaluate(`window.scrollY`, &y),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if y < 600 || y > 1000 {
-		t.Errorf("scrollY after rapid back+forward = %v, want ≈800 — a superseded nav's settle write clobbered the restore", y)
+		t.Errorf("scrollY after rapid back+forward = %v, want ≈800 — a superseded nav's settle write clobbered the restore\n  final: %s", y, after)
 	}
 }
 

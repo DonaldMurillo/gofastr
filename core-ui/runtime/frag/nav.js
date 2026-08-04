@@ -259,6 +259,10 @@
   // pushState'd around the router left currentPath stale, so the next
   // popstate mis-diffed the URL change.
   const _pushURL = (url, { replace = false } = {}) => {
+    // Capture the outgoing entry's position synchronously — the scroll
+    // listener is event-driven and can lag the traversal on slow
+    // renderers; this is the last moment the old id is current.
+    if (!replace) _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
     const id = replace ? _entryId : ++_entrySeq;
     try { history[replace ? 'replaceState' : 'pushState']({ __fui: id }, '', url); } catch (_) { return; }
     _entryId = id;
@@ -682,6 +686,11 @@
   // with zero fetches. Reads history.state, never the event's: the
   // intercept module's synthetic PopStateEvent carries none.
   window.addEventListener('popstate', () => {
+    // With manual scrollRestoration the viewport still holds the LEAVING
+    // page's position when popstate fires — record it under the old id
+    // before switching, so the entry we just left can always restore
+    // even if its event-driven capture lagged.
+    _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
     const st = history.state;
     _entryId = (st && st.__fui) || 0;
     if (!_entryId) {
