@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -71,4 +72,31 @@ func TestMetrics_RegisterCollectorReplaces(t *testing.T) {
 	if !strings.Contains(body, "x_new") {
 		t.Fatalf("new collector missing:\n%s", body)
 	}
+}
+
+// A collector registered while a scrape is in flight must not race the
+// handler's map access — the scrape iterates a snapshot taken under the
+// lock, never the live map.
+func TestMetrics_ConcurrentRegisterAndScrape(t *testing.T) {
+	m := NewMetrics()
+	h := MetricsHandler(m)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			m.RegisterCollector(fmt.Sprintf("churn%d", i%8), func(w io.Writer) { w.Write([]byte("churn 1\n")) })
+		}
+	}()
+	for i := 0; i < 500; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	}
+	close(stop)
+	<-done
 }

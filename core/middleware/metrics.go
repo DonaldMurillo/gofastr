@@ -208,17 +208,23 @@ func MetricsHandler(m *Metrics) http.Handler {
 			fmt.Fprintf(&sb, "http_request_duration_ms_count{route=%q} %d\n", r, h.count)
 			h.mu.Unlock()
 		}
-		// Snapshot collector names under the lock (cheap key copy), then run
-		// them OUTSIDE m.mu — a collector may do I/O (DB count, queue stats)
+		// Snapshot collectors — names AND funcs — under the lock, then run
+		// them OUTSIDE m.mu: a collector may do I/O (DB count, queue stats)
 		// and must never block request recording or hold the metrics lock.
-		names := make([]string, 0, len(m.collectors))
-		for name := range m.collectors {
-			names = append(names, name)
+		// Reading the live map after Unlock would race a concurrent
+		// RegisterCollector (a runtime fatal, not a recoverable panic).
+		type namedCollector struct {
+			name string
+			fn   CollectorFunc
+		}
+		snapshot := make([]namedCollector, 0, len(m.collectors))
+		for name, fn := range m.collectors {
+			snapshot = append(snapshot, namedCollector{name, fn})
 		}
 		m.mu.Unlock()
-		sort.Strings(names)
-		for _, name := range names {
-			m.collectors[name](&sb)
+		sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].name < snapshot[j].name })
+		for _, c := range snapshot {
+			c.fn(&sb)
 		}
 
 		w.Write([]byte(sb.String()))
