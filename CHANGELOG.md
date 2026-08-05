@@ -41,6 +41,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   seeded nothing on boot; all are wired with `@entity.field=value`
   references, and the flagship's e2e now asserts seeded reviews and that
   every category has products.
+- **SSE streams no longer die at the request timeout.** The Timeout
+  middleware returned to net/http at the deadline even when the response
+  was already streaming, finalizing the response under the live handler —
+  so every SSE connection older than the 30s default died with a recovered
+  heartbeat panic and a silent client reconnect, violating the documented
+  "streams outlive the request timeout" contract. Once a handler flushes
+  or hijacks, the deadline now stops terminating the response (the request
+  context still expires, so handlers that honor it still unwind); hung
+  non-streaming handlers keep their 504 at the deadline.
 - **The harness ws control channel could lose an entire turn's events.** The
   event pump subscribed to the bus in its own goroutine after the read loop
   was already accepting commands, so a turn dispatched before the

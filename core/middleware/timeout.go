@@ -168,6 +168,18 @@ func (tw *timeoutWriter) expire() bool {
 // The handler runs in a goroutine; a buffered response writer prevents
 // concurrent writes to the underlying http.Header map between the handler
 // goroutine and the timeout path.
+//
+// Streaming contract: once the handler flushes or hijacks — flipping the
+// wrapped writer into streaming mode — the deadline stops terminating the
+// response. The middleware then waits for the handler to return instead of
+// handing the finalized response back to net/http underneath it (which
+// would make the handler's next write panic — the bug that killed every
+// SSE stream older than the timeout). The request context still expires
+// with DeadlineExceeded at the deadline, so a streaming handler chooses
+// its own lifetime: honor the deadline and unwind, or (like the SSE bus,
+// issue #159) ignore it and bound the stream itself. Handlers that never
+// start streaming keep the hard guarantee: a hung handler gets its 504 at
+// the deadline.
 func Timeout(d time.Duration) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -199,9 +211,26 @@ func Timeout(d time.Duration) Middleware {
 				}
 				tw.finish()
 			case <-ctx.Done():
-				if tw.expire() {
-					http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
+				if !tw.expire() {
+					// The response is already streaming (or hijacked): the
+					// handler owns the connection lifetime and the deadline
+					// no longer applies. Returning here would hand the
+					// response back to net/http, which finalizes it and
+					// nils its internal buffered writer — the still-
+					// streaming handler's next write (e.g. the SSE
+					// heartbeat) would then panic inside net/http. Block
+					// until the handler returns instead. The request
+					// context stays expired (DeadlineExceeded), so
+					// streaming handlers that honor the deadline still
+					// unwind on their own; the SSE bus deliberately
+					// ignores it and bounds its own lifetime (issue #159).
+					<-done
+					if childPanic != nil {
+						panic(childPanic)
+					}
+					return
 				}
+				http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
 				// Parent took the timeout branch; the handler goroutine
 				// is still running and may yet panic. Watch for that
 				// late panic and surface it through slog.Default so it
