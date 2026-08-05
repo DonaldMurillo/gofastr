@@ -1335,7 +1335,20 @@ func runBrowserUIE2E(t *testing.T, baseURL, wantEntityTitle string) {
 	defer allocCancel()
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
-	ctx, cancel := context.WithTimeout(browserCtx, 20*time.Second)
+
+	// chromedp starts Chrome lazily on the first Run, so a single timeout
+	// would have to cover BOTH the cold start and the page work — and it
+	// caps WSURLReadTimeout above, making that 90s ineffective. This test
+	// cold-starts Chrome right after generating and building a whole app,
+	// which is when the runner is slowest, so the two budgets are separate:
+	// a generous one to get the browser up, then the work budget.
+	startCtx, startCancel := context.WithTimeout(browserCtx, 90*time.Second)
+	defer startCancel()
+	if err := chromedp.Run(startCtx); err != nil {
+		t.Fatalf("browser UI e2e failed: chrome did not start within 90s: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
 	defer cancel()
 
 	var hasRuntime, hasActions, hasIsland, hasWidget bool
