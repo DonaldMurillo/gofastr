@@ -217,8 +217,22 @@ func (c *Conn) run(parentCtx context.Context) {
 	}
 	defer c.mux.Detach(c.session, c.clientID)
 
+	// Subscribe to the bus BEFORE entering the read loop. The 101
+	// response already went out in ServeHTTP, so a command frame may
+	// be buffered and ready the moment readFrame runs; if that
+	// command were dispatched before the subscription registered, the
+	// turn's events would broadcast to zero subscribers and be lost —
+	// Bus.broadcast delivers only to current subscribers and the live
+	// path has no replay. Subscribing synchronously here makes
+	// subscribe-before-dispatch a guarantee instead of a scheduling
+	// accident (the old `go subscribePump` lost the whole turn
+	// whenever a loaded runner delayed the pump goroutine).
+	var events <-chan control.EventEnvelope
+	if eng := c.mux.EngineFor(c.session); eng != nil {
+		events = eng.Bus.Subscribe(ctx)
+	}
 	// Engine→client pump.
-	go c.subscribePump(ctx)
+	go c.eventPump(ctx, events)
 
 	// Client→engine read loop.
 	for {
@@ -270,12 +284,13 @@ func (c *Conn) handleText(ctx context.Context, payload []byte) {
 	}
 }
 
-func (c *Conn) subscribePump(ctx context.Context) {
-	eng := c.mux.EngineFor(c.session)
-	if eng == nil {
+// eventPump forwards bus events to the client. The subscription is
+// created synchronously by run() before the read loop starts — see
+// the ordering comment there; do not move the Subscribe call in here.
+func (c *Conn) eventPump(ctx context.Context, ch <-chan control.EventEnvelope) {
+	if ch == nil {
 		return
 	}
-	ch := eng.Bus.Subscribe(ctx)
 	for {
 		select {
 		case <-ctx.Done():
