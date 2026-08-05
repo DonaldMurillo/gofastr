@@ -368,6 +368,43 @@ func TestSessionTokenPortableAcrossHosts(t *testing.T) {
 	}
 }
 
+// TestSessionTokenRotationAcceptsPreviousKey pins graceful GOFASTR_SECRET
+// rotation at the host level: a host rotated to a new current key still
+// verifies tokens signed by the previous key (drain window), while a host
+// that only knows the new key rejects them. New tokens are signed with the
+// current key and verify against current-only — the rotation completes.
+func TestSessionTokenRotationAcceptsPreviousKey(t *testing.T) {
+	oldKey := []byte("0123456789abcdef0123456789abcdef")
+	newKey := []byte("fedcba9876543210fedcba9876543210")
+
+	// Host A still on the old key mints a token before rotation.
+	a := newTestUIHost()
+	a.SetSessionKey(oldKey)
+	preRotation := a.CreateSession()
+
+	// Host B rotated forward: new current, old key listed as previous.
+	b := newTestUIHost()
+	b.SetSessionKeys(newKey, oldKey)
+	if id, ok := b.verifySessionToken(preRotation.Token); !ok || id != preRotation.ID {
+		t.Fatalf("rotated host rejected a token signed by the previous key (= %q, %v)", id, ok)
+	}
+
+	// Host C knows only the new key — the previous key is gone — so the
+	// pre-rotation token must be rejected once the drain window closes.
+	c := newTestUIHost()
+	c.SetSessionKey(newKey)
+	if _, ok := c.verifySessionToken(preRotation.Token); ok {
+		t.Fatal("host with only the new key accepted a token signed by the previous key")
+	}
+
+	// New tokens minted post-rotation sign with the current key and must
+	// verify against current-only (the operator can drop the old key).
+	fresh := b.CreateSession()
+	if id, ok := c.verifySessionToken(fresh.Token); !ok || id != fresh.ID {
+		t.Fatalf("post-rotation token signed with the new key did not verify against current-only (= %q, %v)", id, ok)
+	}
+}
+
 // TestUIHostSessionIDsUniqueAtScale asserts crypto/rand-derived session
 // IDs don't collide even when thousands are minted back-to-back. The
 // prior `sess-<UnixNano()>` form could repeat under load.

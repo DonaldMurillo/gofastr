@@ -108,3 +108,70 @@ func TestVerifyRequiresKey(t *testing.T) {
 		t.Fatal("Verify with nil key succeeded")
 	}
 }
+
+// TestVerifyAnyAcceptsPreviousKey pins graceful rotation: a token
+// signed by the OLD key still verifies once that key is listed in the
+// previous-keys set alongside the new current key. Without this, every
+// GOFASTR_SECRET rotation logs every user out at once.
+func TestVerifyAnyAcceptsPreviousKey(t *testing.T) {
+	tok, id, err := Mint(otherKey, now)
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	got, ok := VerifyAny(key, [][]byte{otherKey}, tok, now, maxAge)
+	if !ok || got != id {
+		t.Fatalf("VerifyAny = %q, %v; want %q, true (token signed by previous key should verify during rotation)", got, ok, id)
+	}
+}
+
+// TestVerifyAnyRejectsWhenPreviousMissing ensures a token signed by a
+// key that is neither current nor listed as previous is rejected —
+// rotation is a drain window, not a permanent backdoor.
+func TestVerifyAnyRejectsWhenPreviousMissing(t *testing.T) {
+	tok, _, _ := Mint(otherKey, now)
+	if _, ok := VerifyAny(key, nil, tok, now, maxAge); ok {
+		t.Fatal("VerifyAny accepted a token whose key is neither current nor listed as previous")
+	}
+}
+
+// TestVerifyAnySignsWithCurrent ensures the rotation completes: a
+// freshly-minted token (signed by the current key) verifies against the
+// current key ALONE — it must not depend on a previous key being
+// present, otherwise the operator could never drop the old key.
+func TestVerifyAnySignsWithCurrent(t *testing.T) {
+	tok, id, err := Mint(key, now)
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	// A freshly-minted token verifies against the current key ALONE —
+	// it must not depend on a previous key being present, otherwise the
+	// operator could never drop the old key.
+	got, ok := VerifyAny(key, nil, tok, now, maxAge)
+	if !ok || got != id {
+		t.Fatalf("freshly-minted token did not verify against current key alone: %q, %v", got, ok)
+	}
+	// And it must NOT verify once its signing key has been fully retired
+	// — neither the new current nor any listed previous — so the drain
+	// window actually closes.
+	third := []byte("cccccccccccccccccccccccccccccccc")
+	if _, ok := VerifyAny(otherKey, [][]byte{third}, tok, now, maxAge); ok {
+		t.Fatal("current-signed token verified after its key was fully retired from current+previous")
+	}
+}
+
+// TestVerifyAnyMultiplePreviousKeys covers the loop boundary: two prior
+// keys (a long rollout) must each still verify.
+func TestVerifyAnyMultiplePreviousKeys(t *testing.T) {
+	keyA := []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	keyB := []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	for _, old := range [][]byte{keyA, keyB} {
+		tok, id, err := Mint(old, now)
+		if err != nil {
+			t.Fatalf("Mint: %v", err)
+		}
+		got, ok := VerifyAny(key, [][]byte{keyA, keyB}, tok, now, maxAge)
+		if !ok || got != id {
+			t.Fatalf("token signed by a previous key in the multi-key set was rejected: %q, %v", got, ok)
+		}
+	}
+}

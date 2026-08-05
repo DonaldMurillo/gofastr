@@ -4,6 +4,7 @@ import (
 	"crypto/hkdf"
 	"crypto/sha256"
 	"errors"
+	"strings"
 )
 
 // minSecretLen is the floor for the app secret. 32 characters of a
@@ -50,6 +51,29 @@ func validateSecret(secret string) string {
 	return secret
 }
 
+// WithSecretRotation sets the current app secret and zero or more
+// previous secrets accepted (verify-only) for graceful rotation,
+// mirroring the CSRF AdditionalKeys idiom. New session tokens are
+// signed with the current secret; tokens signed by any previous secret
+// still verify for a drain window (one session TTL), so rotating
+// GOFASTR_SECRET no longer logs every user out at once. Each previous
+// secret must independently meet the 32-char floor.
+//
+// Equivalent env form: GOFASTR_SECRET (current) plus
+// GOFASTR_SECRET_PREVIOUS (comma-separated previous secrets). WithSecret
+// is the no-rotation shorthand and stays unchanged.
+func WithSecretRotation(current string, previous ...string) AppOption {
+	validated := validateSecret(current)
+	prev := make([][]byte, 0, len(previous))
+	for _, p := range previous {
+		prev = append(prev, []byte(validateSecret(p)))
+	}
+	return func(a *App) {
+		a.secret = []byte(validated)
+		a.previousSecrets = prev
+	}
+}
+
 // deriveKey derives a 32-byte subsystem key from the app secret via
 // HKDF-SHA256 with a per-purpose info string. Purposes are constants —
 // a bad parameter is a programming error, hence panic.
@@ -61,20 +85,54 @@ func deriveKey(secret []byte, purpose string) []byte {
 	return key
 }
 
-// sessionKeyForMount resolves the session-signing key handed to a
-// mounted UI host. A nil, nil return means "no key to hand over" — the
-// host self-mints a per-boot key, which is only sound on a single
-// replica. With a fanout attached (the multi-replica signal) and no
-// secret configured, it errors so boot fails closed instead of half of
-// all session checks 401ing in production.
+// sessionKeyForMount resolves the single session-signing key handed to a
+// mounted UI host (the no-rotation path). A nil, nil return means "no key
+// to hand over" — the host self-mints a per-boot key, which is only sound
+// on a single replica. With a fanout attached (the multi-replica signal)
+// and no secret configured, it errors so boot fails closed instead of half
+// of all session checks 401ing in production. For graceful rotation use
+// sessionKeysForMount, which also returns verify-only previous keys.
 func sessionKeyForMount(secret []byte, fanoutAttached bool) ([]byte, error) {
+	current, _, err := sessionKeysForMount(secret, nil, fanoutAttached)
+	return current, err
+}
+
+// sessionKeysForMount resolves the current session-signing key and the
+// verify-only previous keys handed to a mounted UI host for graceful
+// GOFASTR_SECRET rotation (mirroring the CSRF AdditionalKeys idiom).
+// current is derived from the active secret and signs new tokens; each
+// previous key is derived from a retired secret and only verifies, so a
+// rotation drains over a session TTL instead of logging everyone out at
+// once. The nil/nil/error semantics for single-replica and fanout cases
+// match sessionKeyForMount. Previous keys without a current secret are
+// meaningless and are not returned.
+func sessionKeysForMount(secret []byte, previous [][]byte, fanoutAttached bool) ([]byte, [][]byte, error) {
 	if len(secret) > 0 {
-		return deriveKey(secret, uihostSessionPurpose), nil
+		current := deriveKey(secret, uihostSessionPurpose)
+		var prevKeys [][]byte
+		for _, p := range previous {
+			prevKeys = append(prevKeys, deriveKey(p, uihostSessionPurpose))
+		}
+		return current, prevKeys, nil
 	}
 	if fanoutAttached {
-		return nil, errors.New("framework: WithFanout requires an app secret — session tokens minted on one replica must verify on every other. Set WithSecret or GOFASTR_SECRET to the same random value (≥32 chars) on every replica")
+		return nil, nil, errors.New("framework: WithFanout requires an app secret — session tokens minted on one replica must verify on every other. Set WithSecret or GOFASTR_SECRET to the same random value (≥32 chars) on every replica")
 	}
-	return nil, nil
+	return nil, nil, nil
+}
+
+// splitSecretList splits a comma-separated secret list (e.g.
+// GOFASTR_SECRET_PREVIOUS) into trimmed, non-empty entries. Each entry is
+// validated against the length floor by the caller, not here.
+func splitSecretList(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // embedKeysForMount resolves the nonce and grant signing keys handed to a

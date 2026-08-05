@@ -22,6 +22,13 @@ type AuthConfig struct {
 	// with an error when it is empty, because an empty HMAC key yields
 	// forgeable JWTs. In DevMode a random per-process secret is minted.
 	JWTSecret string
+	// JWTPreviousSecrets are verify-only signing keys retained for a drain
+	// window after a JWTSecret rotation, mirroring the CSRF AdditionalKeys
+	// idiom. Tokens signed by any key here still validate; the operator drops
+	// them once old tokens have expired (one token TTL). New tokens are always
+	// signed with JWTSecret. Production mode still requires a non-empty
+	// JWTSecret — a previous-only configuration is rejected at Init.
+	JWTPreviousSecrets []string
 
 	// JWTExpiry is the duration for which JWT tokens are valid.
 	// Defaults to 1 hour if zero.
@@ -491,11 +498,10 @@ func (m *AuthManager) Init(app *framework.App) error {
 			expiry = time.Hour
 		}
 		m.jwtAuth = NewJWTAuth(m.config.JWTSecret, expiry)
+		// Verify-only previous secrets for graceful JWTSecret rotation
+		// (sign with current; verify accepts current OR any previous).
+		m.jwtAuth.PreviousSecrets = m.config.JWTPreviousSecrets
 	}
-
-	// The auth battery owns its tables: create them if absent so hosts never
-	// hand-roll the auth_users / auth_sessions DDL. Stores that don't manage a
-	// schema (custom backends) simply don't implement the optional interface.
 	ctx := context.Background()
 	for _, st := range []any{m.userStore, m.sessionStore} {
 		if se, ok := st.(interface {

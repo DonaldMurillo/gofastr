@@ -54,10 +54,39 @@ func Mint(key []byte, now time.Time) (token, id string, err error) {
 	return token, id, nil
 }
 
-// Verify authenticates token and returns its session id. maxAge bounds
-// how old a token may be; tokens minted more than clockSkew in the
-// future are rejected. Constant-time on the MAC comparison.
+// Verify authenticates token signed under key and returns its session
+// id. maxAge bounds how old a token may be; tokens minted more than
+// clockSkew in the future are rejected. Constant-time on the MAC
+// comparison. For graceful key rotation use VerifyAny, which accepts a
+// set of verify-only previous keys alongside the current one.
 func Verify(key []byte, token string, now time.Time, maxAge time.Duration) (id string, ok bool) {
+	return VerifyAny(key, nil, token, now, maxAge)
+}
+
+// VerifyAny authenticates token against the current signing key OR any
+// of the previous keys (graceful rotation, mirroring the CSRF
+// AdditionalKeys idiom). New tokens are always signed with the current
+// key (see Mint, which the uihost calls with its primary key); the
+// previous keys are verify-only, accepted only for the drain window so
+// a GOFASTR_SECRET rotation does not log every user out at once. Each
+// candidate MAC is compared with hmac.Equal (constant-time); the count
+// and order of keys is not secret, so first-match-return is sound.
+func VerifyAny(current []byte, previous [][]byte, token string, now time.Time, maxAge time.Duration) (id string, ok bool) {
+	if id, ok := verifyOne(current, token, now, maxAge); ok {
+		return id, true
+	}
+	for _, k := range previous {
+		if id, ok := verifyOne(k, token, now, maxAge); ok {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// verifyOne is the single-key authentication path shared by Verify and
+// VerifyAny. It performs the constant-time MAC check and the
+// freshness/window bounds.
+func verifyOne(key []byte, token string, now time.Time, maxAge time.Duration) (id string, ok bool) {
 	if len(key) < minKeyLen || len(token) > maxTokenLen {
 		return "", false
 	}
