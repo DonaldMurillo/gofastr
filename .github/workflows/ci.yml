@@ -15,7 +15,8 @@ permissions:
 #      deterministic results on the runners. This is the merge gate.
 #
 #   2. `browser-e2e` (BLOCKING since 2026-06-10) — the slow chromedp
-#      suites, run serialized and isolated:
+#      suites, one matrix shard per suite so each runs isolated on its
+#      own runner (they contend for Chrome/sockets when sharing one):
 #        - examples/site, including the axe gate in its own isolated
 #          invocation (it flakes when sharing a go-test run with the
 #          other chromedp tests — CLAUDE.md).
@@ -43,10 +44,13 @@ permissions:
 on:
   push:
     branches: [main]
-    # Tag pushes get their own run so the release workflow has blocking
-    # check runs on the exact tag SHA to gate on — v0.61.0 published off a
-    # red commit because tags never triggered CI.
-    tags: ['v*']
+    # No v* tag trigger: a release tag points at a merge commit on main,
+    # and check runs attach to the commit SHA, so the main-push run
+    # already carries the blocking checks the release gate (release.yml)
+    # polls for. A tag trigger re-ran the identical pipeline on the same
+    # SHA — v0.62.0 ran twice, concurrently. Fail-closed is preserved: a
+    # tag on a commit with no CI run finds zero check runs and the
+    # release gate times out red.
   pull_request:
   # The `security` job needs a time trigger, not just a code trigger: an
   # advisory can land against a dependency nobody touched. GO-2026-5158
@@ -83,7 +87,32 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          # setup-go's built-in cache keys on go.sum alone: the entry is
+          # saved once per dependency bump, then restored read-only by every
+          # later run — test results for code that changed since are never
+          # persisted, so the test step re-executed every package on every
+          # run (observed: the v0.62.0 tag run re-ran 7.5 min of tests on a
+          # SHA whose main-push twin was concurrently running the identical
+          # suite). The explicit per-SHA cache below replaces it.
+          cache: false
+
+      - name: Go module + build/test cache (per-SHA)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          # Keyed on the commit so every run SAVES a fresh snapshot (cache
+          # entries are immutable — an existing key is never updated), and
+          # restore-keys hands the next run the newest prior snapshot. That
+          # is what lets Go's content-addressed test cache skip every
+          # package whose sources + transitive deps are unchanged since the
+          # last run — the affected-tests mechanism the Test step's comment
+          # relies on. GOCACHE self-trims stale entries; GitHub's 10 GB
+          # per-repo LRU evicts old SHAs.
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-
 
       - name: Install Chrome (stable chromedp suites run here too)
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
@@ -120,11 +149,11 @@ jobs:
       - name: Test (deterministic packages)
         # -timeout=20m, -p 2 to keep httptest/chromedp sockets off the
         # ephemeral-port ceiling. Intentionally NO -count=1: Go's
-        # content-addressed test cache (persisted across runs by
-        # setup-go's GOCACHE) then skips re-executing any package whose
-        # sources + transitive deps + test inputs are byte-identical to a
-        # prior PASS — the free, correct-by-construction analog of Nx's
-        # affected/cache. Do NOT re-add -count=1 here to "force fresh
+        # content-addressed test cache (persisted across runs by the
+        # per-SHA cache step above) then skips re-executing any package
+        # whose sources + transitive deps + test inputs are byte-identical
+        # to a prior PASS — the free, correct-by-construction analog of
+        # Nx's affected/cache. Do NOT re-add -count=1 here to "force fresh
         # runs"; the flaky chromedp suites keep it in browser-e2e, which
         # is where forcing a fresh run per push actually matters.
         # Excluded here and run in browser-e2e instead:
@@ -217,14 +246,65 @@ jobs:
         run: make mod-verify
 
   browser-e2e:
-    name: "browser e2e (blocking)"
+    # One matrix shard per chromedp suite. These suites were serialized in
+    # a single job because they contend for Chrome/sockets when they share
+    # a runner (CLAUDE.md documents the flake classes); separate runners
+    # don't contend, so the matrix keeps every suite exactly as isolated
+    # while running them concurrently — wall clock drops from the ~28m
+    # serial sum to the slowest shard (site-axe, ~13m). fail-fast is off
+    # so one red suite still lets the rest report, matching the old
+    # per-step `if: !cancelled()` behavior. Each shard is its own check
+    # run; release.yml's gate counts checks whose name contains
+    # "(blocking)", so the suffix must stay in `name`.
+    name: "browser e2e · ${{ matrix.suite }} (blocking)"
     runs-on: ubuntu-latest
-    # Per-step go-test timeouts sum to 105m (15+15+15+25+10+10+10+5); the
-    # job budget must exceed that so the !cancelled() always-report steps
-    # can run.
-    timeout-minutes: 110
+    # Budget = the largest per-suite go-test timeout (meridian, 25m) plus
+    # setup; the timeouts on each `run` are unchanged from the serialized
+    # steps they replace.
+    timeout-minutes: 35
     env:
       CGO_ENABLED: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: site
+            run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
+          - suite: site-axe
+            # 15m, not 10 — the gate scans every page under BOTH color
+            # schemes (≈3.5min locally; CI runners are slower). Its own
+            # shard: CLAUDE.md documents the axe suite flaking when it
+            # shares a go-test run with the other chromedp tests.
+            run: go test -count=1 -timeout=15m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+          - suite: kiln-integration
+            run: go test -count=1 -timeout=15m ./kiln/integration/
+          - suite: gofastr-cli
+            # Every cmd/gofastr test that drives a real Chrome — the
+            # blueprint app E2E plus the two dev livereload browser tests.
+            # Kept out of the deterministic step so the websocket connect
+            # isn't starved by parallel package load.
+            run: go test -count=1 -timeout=10m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' ./cmd/gofastr/
+          - suite: core-ui-runtime
+            # The runtime hydration suite launches a real Chrome per test
+            # binary; under the deterministic job's -p 2 package
+            # parallelism the chromedp websocket connect starves and times
+            # out ("websocket url timeout reached" — CLAUDE.md documents
+            # this package as flaky under parallel load, run isolated).
+            run: go test -count=1 -timeout=10m ./core-ui/runtime/
+          - suite: core-ui-widget
+            # Same class as core-ui/runtime — documented flaky when
+            # sharing a go-test run with other chromedp suites.
+            run: go test -count=1 -timeout=5m ./core-ui/widget/
+          - suite: meridian
+            # The 16-surface rendered canary (desktop/mobile × light/dark
+            # × marketing/auth/app/admin) captures in software on the
+            # two-core runner: bounded 30s attempts × up to 6 retries per
+            # surface need a budget well past the local ~2m runtime.
+            run: go test -count=1 -timeout=25m ./examples/meridian/
+          - suite: ui-quality-evals
+            # Its capture tests drive a real headless Chrome; kept out of
+            # the deterministic -p 2 run for the same contention reason.
+            run: go test -count=1 -timeout=10m ./evals/ui-quality/...
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -232,7 +312,24 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          # See the test job: setup-go's go.sum-keyed cache goes stale
+          # between dependency bumps. This job restores the test job's
+          # per-SHA cache instead.
+          cache: false
+
+      - name: Go module + build cache (restore only)
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          # Restore-only: every suite here runs -count=1, so the cache buys
+          # compile time, not test skips — and saving this job's
+          # near-duplicate GOCACHE would crowd the repo's 10 GB cache LRU
+          # for no extra hits.
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
@@ -242,57 +339,5 @@ jobs:
       - name: Install the gofastr binary
         run: go install ./cmd/gofastr
 
-      # Each suite gets its own serialized `go test` invocation:
-      # CLAUDE.md documents that the axe suite flakes when sharing a
-      # go-test run with the other chromedp tests, and the suites
-      # contend for Chrome/network resources when parallel.
-
-      - name: examples/site e2e (without axe)
-        run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
-
-      - name: examples/site axe (isolated)
-        # 15m, not 10 — the gate scans every page under BOTH color
-        # schemes (≈3.5min locally; CI runners are slower).
-        if: ${{ !cancelled() }}
-        run: go test -count=1 -timeout=15m -run 'TestAxe_AllPagesAreClean' ./examples/site/
-
-      - name: kiln/integration
-        if: ${{ !cancelled() }}
-        run: go test -count=1 -timeout=15m ./kiln/integration/
-
-      - name: cmd/gofastr browser e2e (blueprint + dev livereload)
-        if: ${{ !cancelled() }}
-        # Serialized, isolated run of every cmd/gofastr test that drives a
-        # real Chrome — the blueprint app E2E plus the two dev livereload
-        # browser tests. Kept out of the deterministic step so the
-        # websocket connect isn't starved by parallel package load.
-        run: go test -count=1 -timeout=10m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' ./cmd/gofastr/
-
-      - name: core-ui/runtime e2e (isolated)
-        if: ${{ !cancelled() }}
-        # The runtime hydration suite launches a real Chrome per test
-        # binary; under the deterministic job's -p 2 package parallelism
-        # the chromedp websocket connect starves and times out
-        # ("websocket url timeout reached" — CLAUDE.md documents this
-        # package as flaky under parallel load, run isolated).
-        run: go test -count=1 -timeout=10m ./core-ui/runtime/
-
-      - name: core-ui/widget e2e (isolated)
-        if: ${{ !cancelled() }}
-        # Same class as core-ui/runtime — documented flaky when sharing
-        # a go-test run with other chromedp suites.
-        run: go test -count=1 -timeout=5m ./core-ui/widget/
-
-      - name: examples/meridian visual canary (isolated)
-        if: ${{ !cancelled() }}
-        # The 16-surface rendered canary (desktop/mobile × light/dark ×
-        # marketing/auth/app/admin) captures in software on the two-core
-        # runner: bounded 30s attempts × up to 6 retries per surface need a
-        # budget well past the local ~2m runtime.
-        run: go test -count=1 -timeout=25m ./examples/meridian/
-
-      - name: evals/ui-quality evalrunner (isolated)
-        if: ${{ !cancelled() }}
-        # Its capture tests drive a real headless Chrome; kept out of the
-        # deterministic -p 2 run for the same contention reason.
-        run: go test -count=1 -timeout=10m ./evals/ui-quality/...
+      - name: Run suite
+        run: ${{ matrix.run }}

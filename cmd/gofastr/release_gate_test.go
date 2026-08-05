@@ -17,14 +17,21 @@ func workflowSource(t *testing.T, name string) string {
 }
 
 // v0.61.0 was published from a commit whose blocking CI check had FAILED:
-// ci.yml never ran on tag pushes and release.yml's only gate was a changelog
-// section existing. These two tests pin the closed hole. First: pushing a
-// v* tag must start the CI workflow, so the tag SHA gets its own blocking
-// check runs for the release gate to consult.
-func TestCIRunsOnReleaseTags(t *testing.T) {
+// release.yml's only gate was a changelog section existing. These two tests
+// pin the closed hole. First: the release gate consults check runs on the
+// tag's commit SHA, and those come from the main-push CI run (a release tag
+// points at a merge commit on main), so ci.yml must run on main pushes —
+// and must NOT also trigger on v* tags, which re-ran the identical pipeline
+// on the same SHA (v0.62.0 ran twice, concurrently). A tag on a commit with
+// no CI run finds zero check runs and the gate times out red, so dropping
+// the tag trigger keeps the gate fail-closed.
+func TestMainPushCICoversReleaseTags(t *testing.T) {
 	ci := workflowSource(t, "ci.yml")
-	if !strings.Contains(ci, "tags: ['v*']") {
-		t.Fatal("ci.yml does not trigger on v* tag pushes — a tag SHA gets no check runs of its own and the release gate has nothing to consult")
+	if !strings.Contains(ci, "branches: [main]") {
+		t.Fatal("ci.yml does not run on main pushes — the merge commit a release tag points at gets no check runs and the release gate has nothing to consult")
+	}
+	if strings.Contains(ci, "tags:") {
+		t.Fatal("ci.yml triggers on tag pushes — that duplicates the main-push run on the same SHA; the release gate already consults those checks")
 	}
 }
 

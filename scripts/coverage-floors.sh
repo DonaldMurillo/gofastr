@@ -3,8 +3,12 @@
 # can't drift silently. This script is the single source of truth for
 # the floors.
 #
-# Methodology: own-package coverage (`go test -coverprofile ./<pkg>/`,
-# `-count=1`), the cheapest reproducible measurement. A floor may gate a
+# Methodology: own-package coverage (`go test -coverprofile ./<pkg>/`),
+# the cheapest reproducible measurement. No -count=1: coverage runs are
+# served from Go's content-addressed test cache when a package's sources
+# and deps are unchanged — same inputs, same percentage — so repeat runs
+# (locally and in CI, which persists GOCACHE per-SHA) skip re-execution. A
+# floor may gate a
 # whole package OR a file-filtered *bucket* within one — see below. The
 # audited packages sit below a literal 100% by design: defensive
 # fail-closed guards that are unreachable today are kept (not rewritten to
@@ -76,7 +80,7 @@ profile_for() {
   key=$(echo "$pkg" | tr -c 'A-Za-z0-9' '_')
   local prof="$profdir/$key.out"
   if [ ! -f "$prof" ]; then
-    if ! go test -coverprofile="$prof" -count=1 "$pkg" >"$profdir/$key.log" 2>&1; then
+    if ! go test -coverprofile="$prof" "$pkg" >"$profdir/$key.log" 2>&1; then
       cat "$profdir/$key.log"
       return 1
     fi
@@ -113,7 +117,7 @@ while read -r pkg floor filter; do
 
   if [ -z "$filter" ]; then
     # Whole-package fast path.
-    if ! out=$(go test -cover -count=1 "$pkg" 2>&1); then
+    if ! out=$(go test -cover "$pkg" 2>&1); then
       echo "$out"; echo "FAIL  $label — tests failed (no coverage measurement)"; fail=1; continue
     fi
     cov=$(echo "$out" | grep -Eo 'coverage: [0-9.]+%' | tail -1 | grep -Eo '[0-9.]+')
