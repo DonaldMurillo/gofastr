@@ -25,14 +25,36 @@ import (
 //
 // Dropping duplicates and prepending makes the override platform-
 // independent and immune to a user's prior export.
-func buildDevChildEnv(parent []string) []string {
-	out := make([]string, 0, len(parent)+1)
+//
+// It also injects PORT=<addr> so the generated scaffold's getEnv("PORT", …)
+// binds the address `gofastr dev --addr` resolved — the scaffold never
+// parses argv, so without this the child silently binds the committed .env
+// default while the parent banner reports the requested address.
+func buildDevChildEnv(parent []string, addr string) []string {
+	out := make([]string, 0, len(parent)+2)
 	out = append(out, "GOFASTR_DEV=1")
 	for _, kv := range parent {
 		if strings.HasPrefix(kv, "GOFASTR_DEV=") {
 			continue
 		}
+		// A stale PORT in the parent shell (or an inherited .env export)
+		// would shadow the --addr this run resolved; drop it so the
+		// injected PORT below is the single value the child sees.
+		if addr != "" && strings.HasPrefix(kv, "PORT=") {
+			continue
+		}
 		out = append(out, kv)
+	}
+	// Inject the resolved listen address as PORT. The generated scaffold
+	// binds getEnv("PORT", "localhost:8080") and never parses argv, so the
+	// --addr flag alone reaches nothing — this is what makes the child
+	// actually listen on the requested address. The framework's dotenv
+	// auto-load never clobbers an existing process var, so this also wins
+	// over the committed .env default. Dedup + a single PORT entry keeps
+	// the override platform-independent (Linux getenv first-wins, macOS
+	// last-wins).
+	if addr != "" {
+		out = append(out, "PORT="+addr)
 	}
 	return out
 }
@@ -276,7 +298,7 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	// host doesn't need any code change to get browser reload — and
 	// production deployments don't accidentally serve it because
 	// GOFASTR_ENV=production is checked as a kill switch.
-	childEnv := buildDevChildEnv(runtimeIsolation.Env(os.Environ()))
+	childEnv := buildDevChildEnv(runtimeIsolation.Env(os.Environ()), addr)
 	runCmd := exec.Command(tmpBin, "--addr", addr)
 	// Run the server in the project dir — the same cwd it gets when run by
 	// hand — so relative paths (sqlite db_url, static dir) resolve against

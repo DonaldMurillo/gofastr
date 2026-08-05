@@ -288,7 +288,7 @@ func TestBuildDevChildEnvOverridesParentDisable(t *testing.T) {
 		"GOFASTR_DEV=0", // user tries to disable
 		"HOME=/tmp",
 	}
-	out := buildDevChildEnv(parent)
+	out := buildDevChildEnv(parent, "localhost:8080")
 
 	// First occurrence of GOFASTR_DEV must be "1" (Linux first-wins).
 	first := ""
@@ -332,6 +332,54 @@ func devEnvMap(env []string) map[string]string {
 		}
 	}
 	return out
+}
+
+// buildDevChildEnv must inject PORT=<addr> so the generated scaffold's
+// getEnv("PORT", …) binds the address `gofastr dev --addr` resolved —
+// instead of silently falling back to the committed .env default (the
+// scaffold never parses argv, so --addr alone reaches nothing). A PORT
+// already exported in the parent shell must be overridden; dedup to a
+// single entry so the override is platform-independent (Linux getenv is
+// first-wins, macOS last-wins).
+func TestBuildDevChildEnvInjectsResolvedPort(t *testing.T) {
+	parent := []string{
+		"PATH=/usr/bin",
+		"PORT=localhost:8080", // stale shell export / inherited .env
+		"HOME=/tmp",
+	}
+	out := buildDevChildEnv(parent, "localhost:9000")
+
+	got := devEnvMap(out)
+	if got["PORT"] != "localhost:9000" {
+		t.Fatalf("PORT = %q, want localhost:9000 (resolved --addr must win over parent/.env):\n%v", got["PORT"], out)
+	}
+	count := 0
+	for _, kv := range out {
+		if strings.HasPrefix(kv, "PORT=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one PORT entry, got %d:\n%v", count, out)
+	}
+	// The GOFASTR_DEV concern must survive alongside the new PORT concern.
+	if got["GOFASTR_DEV"] != "1" {
+		t.Fatalf("GOFASTR_DEV=1 lost when PORT added: %#v", got)
+	}
+	if got["PATH"] != "/usr/bin" || got["HOME"] != "/tmp" {
+		t.Fatalf("non-target env clobbered: %#v", got)
+	}
+}
+
+// With no resolved addr, buildDevChildEnv must leave PORT alone — it must
+// not fabricate PORT= and clobber an operator's own export.
+func TestBuildDevChildEnvNoAddrLeavesPortUntouched(t *testing.T) {
+	parent := []string{"PORT=localhost:8080", "HOME=/tmp"}
+	out := buildDevChildEnv(parent, "")
+	got := devEnvMap(out)
+	if got["PORT"] != "localhost:8080" {
+		t.Fatalf("empty addr must not rewrite PORT; got %q", got["PORT"])
+	}
 }
 
 // ─── scanModTimes + changed ──────────────────────────────────────────
