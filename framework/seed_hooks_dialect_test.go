@@ -42,3 +42,43 @@ func TestSeedHooksAbortWhenDialectUnknown(t *testing.T) {
 type errTimeout struct{}
 
 func (errTimeout) Error() string { return "i/o timeout" }
+
+// A Postgres pool pinned to one connection cannot hold the seed advisory
+// lock without deadlocking the hooks' own queries, so the hooks run
+// unlocked with a loud warning rather than hanging the boot.
+func TestSeedHooksWarnOnSingleConnPostgres(t *testing.T) {
+	db, m, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	for range 4 {
+		m.ExpectQuery("SELECT version").WillReturnRows(m.NewRows([]string{"v"}).AddRow("PostgreSQL 16.2"))
+	}
+
+	app := NewApp(WithoutDefaultMiddleware(), WithDB(db))
+	ran := false
+	app.WithSeed(func(context.Context) error { ran = true; return nil })
+
+	if err := app.runSeedHooksSerialized(); err != nil {
+		t.Fatalf("single-conn Postgres seed path errored: %v", err)
+	}
+	if !ran {
+		t.Error("seed hook did not run on the unlocked single-connection path")
+	}
+}
+
+// No database at all: the hooks still run (single process, nothing to
+// serialize against).
+func TestSeedHooksRunWithoutDB(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	ran := false
+	app.WithSeed(func(context.Context) error { ran = true; return nil })
+	if err := app.runSeedHooksSerialized(); err != nil {
+		t.Fatalf("no-DB seed path errored: %v", err)
+	}
+	if !ran {
+		t.Error("seed hook did not run without a database")
+	}
+}

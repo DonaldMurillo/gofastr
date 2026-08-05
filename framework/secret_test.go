@@ -265,3 +265,35 @@ func TestExplicitSecretOptionIgnoresEnvPrevious(t *testing.T) {
 		t.Fatalf("env-only config lost its previous secret: got %d, want 1", len(app.previousSecrets))
 	}
 }
+
+// Every retired secret must be run through the SAME HKDF derivation as the
+// current one — handing a raw secret to a verifier as a key would both break
+// verification and use un-derived key material.
+func TestEmbedPreviousKeysForMount(t *testing.T) {
+	a := []byte("previous-secret-a-aaaaaaaaaaaaaaaaaaaa")
+	b := []byte("previous-secret-b-bbbbbbbbbbbbbbbbbbbb")
+
+	nonceKeys, grantKeys := embedPreviousKeysForMount([][]byte{a, nil, b})
+	if len(nonceKeys) != 2 || len(grantKeys) != 2 {
+		t.Fatalf("got %d nonce / %d grant keys, want 2 each (empty entries skipped)", len(nonceKeys), len(grantKeys))
+	}
+	for i, want := range [][]byte{a, b} {
+		if !bytes.Equal(nonceKeys[i], deriveKey(want, embedNoncePurpose)) {
+			t.Errorf("nonce key %d is not the HKDF derivation of its secret", i)
+		}
+		if !bytes.Equal(grantKeys[i], deriveKey(want, embedGrantPurpose)) {
+			t.Errorf("grant key %d is not the HKDF derivation of its secret", i)
+		}
+		if bytes.Equal(nonceKeys[i], want) || bytes.Equal(grantKeys[i], want) {
+			t.Errorf("key %d is the RAW secret, not a derived key", i)
+		}
+	}
+	// Nonce and grant keys are separated by purpose.
+	if bytes.Equal(nonceKeys[0], grantKeys[0]) {
+		t.Error("nonce and grant keys derived identically — purpose separation lost")
+	}
+
+	if n, g := embedPreviousKeysForMount(nil); n != nil || g != nil {
+		t.Error("no previous secrets should derive no keys")
+	}
+}

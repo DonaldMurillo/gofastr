@@ -294,6 +294,19 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 	if err != nil {
 		return report, fmt.Errorf("framework: erase probe audit: %w", err)
 	}
+	// Column probes run BEFORE BeginTx: a single-connection pool (SQLite in
+	// tests, MaxOpenConns(1) in production) would deadlock reading schema
+	// while the transaction holds the only connection.
+	for _, s := range ents {
+		if err := requireColumn(ctx, a.DB, s.table, s.owner, dialect); err != nil {
+			return report, fmt.Errorf("framework: erase entity %q: %w", s.name, err)
+		}
+	}
+	for _, e := range liveErasers {
+		if err := requireColumn(ctx, a.DB, e.Table, e.Column, dialect); err != nil {
+			return report, fmt.Errorf("framework: erase %q: %w", e.Name, err)
+		}
+	}
 
 	tx, err := a.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -368,6 +381,9 @@ func (a *App) eraseDryRun(ctx context.Context, dialect migrate.Dialect, userID s
 	report := EraseReport{DryRun: true}
 
 	for _, s := range ents {
+		if err := requireColumn(ctx, a.DB, s.table, s.owner, dialect); err != nil {
+			return report, fmt.Errorf("framework: erase entity %q: %w", s.name, err)
+		}
 		n, err := eraseCount(ctx, a.DB, s.table, s.owner, userID)
 		if err != nil {
 			return report, fmt.Errorf("framework: erase entity %q: %w", s.name, err)
@@ -383,6 +399,9 @@ func (a *App) eraseDryRun(ctx context.Context, dialect migrate.Dialect, userID s
 		}
 		if !exists {
 			continue
+		}
+		if err := requireColumn(ctx, a.DB, e.Table, e.Column, dialect); err != nil {
+			return report, fmt.Errorf("framework: erase %q: %w", e.Name, err)
 		}
 		mode := "delete"
 		if e.Mode == datexport.EraseAnonymize {
@@ -486,4 +505,27 @@ func eraseCount(ctx context.Context, db *sql.DB, table, col, userID string) (int
 	err := db.QueryRowContext(ctx,
 		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s = $1", qt, qc), userID).Scan(&n)
 	return n, err
+}
+
+// requireColumn fails when table has no column named col. SQLite reads a
+// double-quoted unknown identifier as a STRING LITERAL, so
+// `DELETE FROM "t" WHERE "owner_id" = $1` against a table with no owner_id
+// deletes nothing and reports success — an erasure that silently erases
+// nothing is the one outcome a right-to-be-forgotten primitive must never
+// produce. Postgres rejects the unknown column itself; this makes both
+// engines behave the same way.
+func requireColumn(ctx context.Context, db *sql.DB, table, col string, dialect migrate.Dialect) error {
+	live, err := migrate.ReadLiveColumns(ctx, db, table, dialect)
+	if err != nil {
+		return fmt.Errorf("read columns of %q: %w", table, err)
+	}
+	if len(live) == 0 {
+		return nil // table absent or unreadable — the caller's existence probe owns that case
+	}
+	for name := range live {
+		if strings.EqualFold(name, col) {
+			return nil
+		}
+	}
+	return fmt.Errorf("table %q has no column %q — erasure would silently match nothing", table, col)
 }
