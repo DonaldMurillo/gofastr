@@ -60,7 +60,10 @@ func (e *DestructiveChangeError) Error() string {
 // missing entirely from the DB are reported as CREATE TABLE statements
 // (delegates to the same builder AutoMigrate uses).
 func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]SchemaChange, error) {
-	dialect := DetectDialect(db)
+	dialect, err := detectDialectFailClosed(db)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	all := UnionEntities(registry)
 
 	// Walk entities in topo order so referenced tables get diffed first.

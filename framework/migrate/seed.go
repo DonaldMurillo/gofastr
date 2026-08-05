@@ -138,8 +138,6 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	if db == nil {
 		return nil
 	}
-	dialect := DetectDialect(db)
-
 	// Route through the version union, NOT Registry.All(). All() returns one
 	// representative per name, so a Seed declared only on a non-representative
 	// version is invisible — hasSeed stays false and the seed silently never
@@ -157,6 +155,15 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	}
 	if !hasSeed {
 		return nil
+	}
+	// Detect the dialect lazily — only once we know a Seed will run. The
+	// dialect gates the cross-replica seed advisory lock, so a transiently-
+	// unreachable database must fail closed here rather than be guessed (the
+	// v0.62 migration invariant). Seedless registries — the common case —
+	// skip the probe entirely.
+	dialect, err := detectDialectFailClosed(db)
+	if err != nil {
+		return fmt.Errorf("migrate: %w", err)
 	}
 
 	// Serialize the seed phase across replicas behind a Postgres advisory

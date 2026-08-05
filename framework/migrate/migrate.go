@@ -29,19 +29,48 @@ const (
 )
 
 // DetectDialect returns the dialect of an open *sql.DB. It probes for
-// PostgreSQL via SELECT version() (cheap, no side effects) and falls back to
-// SQLite when that fails. The probe runs once per AutoMigrate call.
+// PostgreSQL via SELECT version() (cheap, no side effects) and resolves to
+// SQLite when the engine answers but is not PostgreSQL.
 //
-// The probe is RETRIED before it concludes SQLite. Its answer decides
-// whether the cross-replica advisory lock is taken at all
-// (core/migrate/lock.go skips the lock for any non-Postgres dialect),
-// so a single transient failure — a statement timeout, "too many
-// connections", a pooler in statement mode, a connection reset — used
-// to silently downgrade an N-replica Postgres boot to unlocked
-// concurrent DDL emitted in SQLite syntax: exactly the race the lock
-// exists to prevent, reached by making one probe fail.
+// Boot-critical migration paths (AutoMigrate, MigrateEntity, DiffSchema,
+// RunSeeds) do NOT call this — they call detectDialectFailClosed, which
+// returns an error when the probe cannot reach the database, so a
+// transiently-unreachable Postgres fails the boot loudly instead of being
+// misclassified as SQLite (which would skip the cross-replica advisory lock
+// and every PG-only routine). DetectDialect is retained as a BEST-EFFORT
+// helper for callers that only use the dialect to pick DDL types
+// (audit/auth-store schema, export, introspection): on repeated transient
+// probe failure it logs and falls back to SQLite rather than erroring, since
+// its signature cannot carry an error. New migration-decision call sites
+// should use detectDialectFailClosed instead.
 func DetectDialect(db *sql.DB) Dialect {
+	d, err := detectDialectFailClosed(db)
+	if err != nil {
+		slog.Default().Warn("migrate: dialect probe failed; assuming SQLite for best-effort caller",
+			"err", err)
+		return DialectSQLite
+	}
+	return d
+}
+
+// detectDialectFailClosed is DetectDialect with a fail-closed posture. The
+// version() probe is retried with backoff; an engine that lacks version()
+// answers immediately and deterministically (SQLite's "no such function") and
+// resolves to SQLite without retry. Only TRANSIENT failures — statement
+// timeouts, "too many connections", a pooler in statement mode, a connection
+// reset, a transiently-unreachable or bad DSN — are retried, and if every
+// retry fails the function returns an error naming the cause and pointing at
+// the database connection.
+//
+// This is the invariant set in v0.62: uncertainty during a migration decision
+// is a startup error, never a guess. A wrong guess here partitions
+// dialect-scoped routines against the wrong engine and skips the
+// cross-replica advisory lock in core/migrate/lock.go, so a routine-only
+// PostgreSQL app whose probe transiently failed would otherwise boot without
+// its routines.
+func detectDialectFailClosed(db *sql.DB) (Dialect, error) {
 	const attempts = 3
+	var lastErr error
 	for i := 0; i < attempts; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		var v string
@@ -49,23 +78,64 @@ func DetectDialect(db *sql.DB) Dialect {
 		cancel()
 		if err == nil {
 			if strings.Contains(strings.ToLower(v), "postgresql") {
-				return DialectPostgres
+				return DialectPostgres, nil
 			}
-			return DialectSQLite
+			return DialectSQLite, nil
 		}
-		// A engine that genuinely lacks version() answers immediately
-		// and deterministically; only retry what looks transient.
+		lastErr = err
+		// An engine that genuinely lacks version() answers immediately and
+		// deterministically; only retry what looks transient.
 		if !isTransientProbeErr(err) {
-			return DialectSQLite
+			return DialectSQLite, nil
 		}
 		if i < attempts-1 {
 			time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
 		}
 	}
-	slog.Default().Warn("migrate: dialect probe failed repeatedly; assuming SQLite. " +
-		"If this is Postgres, the cross-replica advisory lock will NOT be taken " +
-		"and concurrent replicas may race the same DDL.")
-	return DialectSQLite
+	return "", fmt.Errorf("dialect probe failed after %d attempts: %w "+
+		"(check the database connection / DATABASE_URL)", attempts, lastErr)
+}
+
+// isConnectionErr reports whether err looks like a database reachability or
+// open failure rather than a SQL-level error (bad syntax, constraint
+// violation, missing table). Used at the migration boundary to add an
+// actionable hint, since the migrator receives an already-open *sql.DB and
+// cannot itself resolve the configured DSN (e.g. DATABASE_URL) — that
+// resolution lives in the host/app layer.
+func isConnectionErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, frag := range []string{
+		"unable to open database file", // SQLite SQLITE_CANTOPEN (bad / unwritable path)
+		"connection refused",
+		"connection reset",
+		"no such host",
+		"dial tcp",
+		"i/o timeout",
+		"broken pipe",
+		"admin shutdown",
+		"server closed the connection",
+	} {
+		if strings.Contains(msg, frag) {
+			return true
+		}
+	}
+	return false
+}
+
+// wrapConnErr adds an actionable reachability hint when err is a
+// connection-class failure. The hint is intentionally generic ("check the
+// database connection / DATABASE_URL") because framework/migrate does not
+// know the DSN source; the host layer that opens *sql.DB from DATABASE_URL is
+// where a precise message belongs. Non-connection errors pass through
+// unchanged.
+func wrapConnErr(err error) error {
+	if err == nil || !isConnectionErr(err) {
+		return err
+	}
+	return fmt.Errorf("%w (cannot reach the database — check the database connection / DATABASE_URL)", err)
 }
 
 // isTransientProbeErr reports whether a failed `SELECT version()` looks
@@ -157,7 +227,10 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 			return err
 		}
 	}
-	dialect := DetectDialect(db)
+	dialect, err := detectDialectFailClosed(db)
+	if err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
 	// Partition routines into "applies on this dialect" vs "skipped". The
 	// skip set is logged in ONE line per boot so a misconfigured dialect tag
 	// (e.g. a Postgres stored proc left in the plan against a SQLite dev DB)
@@ -194,11 +267,11 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		var err error
 		liveByTable, err = ReadLiveColumnsBulk(ctx, db, tableNames, dialect)
 		if err != nil {
-			return err
+			return fmt.Errorf("migrate: read live schema: %w", wrapConnErr(err))
 		}
 	}
 
-	return coremig.WithAdvisoryLock(ctx, db, dialect, func(conn *sql.Conn) error {
+	if err := coremig.WithAdvisoryLock(ctx, db, dialect, func(conn *sql.Conn) error {
 		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("migrate: begin tx: %w", err)
@@ -334,7 +407,10 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 			return fmt.Errorf("migrate: commit: %w", err)
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("migrate: %w", wrapConnErr(err))
+	}
+	return nil
 }
 
 // partitionRoutinesByDialect splits routines into (appliesHere, skippedHere)
@@ -362,7 +438,11 @@ func partitionRoutinesByDialect(routines []Routine, running Dialect) (applies, s
 // keys or column convergence should call AutoMigrate. The dialect is
 // auto-detected from db.
 func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
-	return migrateEntity(context.Background(), db, ent, nil, DetectDialect(db), nil)
+	dialect, err := detectDialectFailClosed(db)
+	if err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	return migrateEntity(context.Background(), db, ent, nil, dialect, nil)
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
