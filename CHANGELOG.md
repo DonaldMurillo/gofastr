@@ -7,6 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Release tags no longer re-run CI.** A release tag points at a merge
+  commit on main, so the release gate now consults the blocking check runs
+  that commit's main-push CI run already produced; the tag-triggered
+  duplicate of the identical pipeline is gone. A tag on a commit with no CI
+  run still fails the gate. CI itself got faster: the Go build/test cache
+  persists per commit, so packages whose sources and dependencies are
+  unchanged skip re-execution, and each browser e2e suite runs on its own
+  runner — the browser-e2e wall clock drops from the ~28-minute serial sum
+  to the slowest suite (~13 minutes).
+
 ## [0.62.0] - 2026-08-05
 
 ### Changed
