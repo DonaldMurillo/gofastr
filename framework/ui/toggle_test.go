@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestCheckboxRequiresName(t *testing.T) {
@@ -85,4 +87,42 @@ func TestToggleCustomIDOverridesName(t *testing.T) {
 func TestToggleRequiredAttribute(t *testing.T) {
 	h := Checkbox(ToggleConfig{Name: "n", Label: "x", Required: true})
 	mustContain(t, h, "required")
+}
+
+// Same defect class as ui.Select (#188): .ui-toggle-group is display: grid,
+// so a marker joined as a SIBLING of the <legend> gets its own grid row.
+func TestRadioGroupMarkerInsideLegend(t *testing.T) {
+	h := string(RadioGroup(RadioGroupConfig{
+		Name: "plan", Legend: "Plan", Required: true,
+		Options: []RadioGroupOption{{Value: "a", Label: "A"}},
+	}))
+	marker := strings.Index(h, "ui-form-field__required")
+	if marker == -1 {
+		t.Fatalf("Required: true rendered no marker:\n%s", h)
+	}
+	if marker > strings.Index(h, "</legend>") {
+		t.Fatalf("required marker is a sibling of the <legend>, so the grid gives it its own row:\n%s", h)
+	}
+}
+
+func TestCheckboxGroupMarkerInsideLegend(t *testing.T) {
+	h := string(CheckboxGroup(CheckboxGroupConfig{
+		Name: "tags", Legend: "Tags", Required: true,
+		Options: []CheckboxGroupOption{{Value: "a", Label: "A"}},
+	}))
+	marker := strings.Index(h, "ui-form-field__required")
+	if marker == -1 {
+		t.Fatalf("Required: true rendered no marker:\n%s", h)
+	}
+	if marker > strings.Index(h, "</legend>") {
+		t.Fatalf("required marker is a sibling of the <legend>, so the grid gives it its own row:\n%s", h)
+	}
+}
+
+// The marker's styling lives in formFieldCSS scoped to ui-form-field; the
+// toggle groups emit the class, so their stylesheet must style it too.
+func TestToggleCSSStylesTheMarker(t *testing.T) {
+	if !strings.Contains(toggleCSS(style.Theme{}), ".ui-form-field__required") {
+		t.Fatal("toggleCSS has no rule for .ui-form-field__required — group markers are unstyled unless ui-form-field happens to be on the page")
+	}
 }

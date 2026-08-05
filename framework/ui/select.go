@@ -106,17 +106,20 @@ func Select(cfg SelectConfig) render.HTML {
 		selAttrs[k] = v
 	}
 
-	labelHTML := render.Tag("label", map[string]string{
-		"for":   id,
-		"class": "ui-select__label",
-	}, render.Text(cfg.Label))
+	// The marker lives INSIDE the <label>: the component root is a grid,
+	// so a sibling span would become its own row under the label text.
+	labelChildren := []render.HTML{render.Text(cfg.Label)}
 	if cfg.Required {
-		labelHTML = render.Join(labelHTML,
+		labelChildren = append(labelChildren,
 			html.Span(html.TextConfig{
 				Class:      "ui-form-field__required",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
+	labelHTML := render.Tag("label", map[string]string{
+		"for":   id,
+		"class": "ui-select__label",
+	}, labelChildren...)
 
 	children := []render.HTML{
 		labelHTML,
@@ -150,6 +153,10 @@ func selectCSS(_ style.Theme) string {
   font-weight: 500;
   font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
+}
+[data-fui-comp="ui-select"] .ui-form-field__required {
+  color: var(--color-danger, #DC2626);
+  margin-inline-start: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-select"] .ui-select__input {
   font: inherit;

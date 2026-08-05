@@ -83,6 +83,26 @@ func LayoutBaseCSS() string {
 /* The markdown content block keeps its own measure on long-form pages. */
 .layout--contained main > div > [data-fui-comp="ui-markdown"] { max-width: 72ch; }
 
+/* Sidebar shell banner: the contained layout styles its header above, but a
+   WithSidebar + WithHeader shell needs its own chrome — ui.SiteHeader is
+   block-size: 100%, which resolves against a parent with no height, so
+   without this rule the banner collapses to text height over the bare page
+   background. --ui-layout-header-height follows the --ui-layout-* override
+   convention (see --ui-layout-container-width). */
+.layout--has-sidebar > header {
+  display: flex;
+  align-items: stretch;
+  block-size: var(--ui-layout-header-height, 56px);
+  background-color: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, #e4e4e7);
+}
+/* .layout-body is min-height: 100vh, so a banner above it makes every page
+   scroll by exactly the header height with nothing in the overflow; the
+   body under a sidebar-shell banner subtracts it. */
+.layout--has-sidebar > header + .layout-body {
+  min-height: calc(100vh - var(--ui-layout-header-height, 56px));
+}
+
 /* Sidebar shell: a padded content area beside the nav. */
 .layout--has-sidebar main, .layout--has-sidebar .layout-content {
   display: flex;

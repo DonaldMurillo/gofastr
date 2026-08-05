@@ -223,15 +223,17 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	legend := render.Tag("legend", map[string]string{"class": "ui-toggle-group__legend"},
-		render.Text(cfg.Legend))
+	// The marker lives INSIDE the <legend>: the fieldset is a grid, so a
+	// sibling span would become its own row under the legend text.
+	legendChildren := []render.HTML{render.Text(cfg.Legend)}
 	if cfg.Required {
-		legend = render.Join(legend,
+		legendChildren = append(legendChildren,
 			html.Span(html.TextConfig{
 				Class:      "ui-form-field__required",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
+	legend := render.Tag("legend", map[string]string{"class": "ui-toggle-group__legend"}, legendChildren...)
 
 	children := []render.HTML{legend}
 	for i, opt := range cfg.Options {
@@ -325,15 +327,17 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	legend := render.Tag("legend", map[string]string{"class": "ui-toggle-group__legend"},
-		render.Text(cfg.Legend))
+	// The marker lives INSIDE the <legend>: the fieldset is a grid, so a
+	// sibling span would become its own row under the legend text.
+	legendChildren := []render.HTML{render.Text(cfg.Legend)}
 	if cfg.Required {
-		legend = render.Join(legend,
+		legendChildren = append(legendChildren,
 			html.Span(html.TextConfig{
 				Class:      "ui-form-field__required",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
+	legend := render.Tag("legend", map[string]string{"class": "ui-toggle-group__legend"}, legendChildren...)
 
 	children := []render.HTML{legend}
 	for i, opt := range cfg.Options {

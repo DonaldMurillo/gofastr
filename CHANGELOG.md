@@ -9,6 +9,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Required markers sit on the label line.** `ui.Select`, `ui.RadioGroup`,
+  and `ui.CheckboxGroup` joined the `*` as a sibling of their
+  `<label>`/`<legend>` inside a grid container, so it rendered as its own row
+  under the label text — unlike `ui.FormField`, which keeps it inline. The
+  marker now renders inside the label/legend, and the select and toggle
+  stylesheets carry its red color and spacing themselves instead of relying
+  on `ui-form-field`'s scoped rule happening to be on the page. (#188)
+- **The sidebar shell's header has banner chrome.** A `WithSidebar` +
+  `WithHeader` layout rendered its banner with no height, background, or
+  bottom border: `ui.SiteHeader` is `block-size: 100%`, which resolves
+  against a parent `LayoutBaseCSS` never sized. The shell header now takes
+  its height from the `--ui-layout-header-height` token (default 56px), and
+  the `.layout-body` underneath subtracts that height so pages stop
+  scrolling by exactly the header's size. (#187)
+
 - **Flat blueprint booleans that gate access are strict.** The entity-level
   `soft_delete:` and `multi_tenant:` keys and `app.auth.enabled` now demand a
   real `true`/`false`, exactly like their grouped `scope.*` twins. A YAML-1.1
