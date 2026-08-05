@@ -20,7 +20,7 @@ func (s *LoginScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 	return html.Div(html.DivConfig{},
-		ui.AuthCard(ui.AuthCardConfig{Title: "Sign in to Meridian", Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>")})), Footer: render.Raw("<a href=\"/signup\">Create an account</a>")}),
+		ui.AuthCard(ui.AuthCardConfig{Title: "Sign in to Meridian", Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>")})), Footer: ui.Link(ui.LinkConfig{Href: "/signup", Text: "Create an account"})}),
 	)
 }
 
