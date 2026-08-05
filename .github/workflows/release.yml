@@ -47,6 +47,42 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
+      # A release must not ship a red commit. v0.61.0 published while its
+      # blocking build·vet·test check had FAILED, because nothing here ever
+      # consulted CI. Waits for every "(blocking)" check run on the exact
+      # tag SHA (ci.yml now runs on v* tags) and refuses to publish unless
+      # all of them — at least the three known jobs — completed green.
+      - name: Require green blocking CI on the tag commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse "${TAG}^{commit}")
+          echo "gating release of $TAG on blocking check runs at $sha"
+          deadline=$((SECONDS + 3600))
+          while :; do
+            runs=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --paginate \
+              --jq '[.check_runs[] | select(.name | test("\\(blocking\\)"))]')
+            total=$(jq 'length' <<<"$runs")
+            green=$(jq '[.[] | select(.status=="completed" and .conclusion=="success")] | length' <<<"$runs")
+            red=$(jq -r '[.[] | select(.status=="completed" and .conclusion!=null and .conclusion!="success")] | map(.name) | join(", ")' <<<"$runs")
+            if [ -n "$red" ]; then
+              echo "::error::blocking checks failed on $sha: $red — a release must not ship a red commit. Fix, retag (or re-run CI), then re-run via workflow_dispatch."
+              exit 1
+            fi
+            if [ "$total" -ge 3 ] && [ "$green" -eq "$total" ]; then
+              echo "all $total blocking checks green on $sha"
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::timed out waiting for blocking checks on $sha ($green/$total green). Re-run via workflow_dispatch once CI finishes."
+              exit 1
+            fi
+            echo "waiting: $green/$total blocking checks green"
+            sleep 30
+          done
+
       - name: Create release if missing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

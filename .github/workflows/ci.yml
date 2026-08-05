@@ -43,6 +43,10 @@ permissions:
 on:
   push:
     branches: [main]
+    # Tag pushes get their own run so the release workflow has blocking
+    # check runs on the exact tag SHA to gate on — v0.61.0 published off a
+    # red commit because tags never triggered CI.
+    tags: ['v*']
   pull_request:
   # The `security` job needs a time trigger, not just a code trigger: an
   # advisory can land against a dependency nobody touched. GO-2026-5158
