@@ -336,8 +336,10 @@ You can also scope them — set one inside a `ui.Themed` section, or on
 a specific wrapper class, to change a single instance. Each
 component's source lists its knobs next to the CSS that reads them
 (for example `ui.Container`: `--ui-container-default/narrow/wide`;
-`ui.DocLayout`: `--ui-doc-layout-rail/gap/max-width`) — grep
-`framework/ui` for `--ui-` to see the full list.
+`ui.DocLayout`: `--ui-doc-layout-rail/gap/max-width`; the layout
+shells: `--ui-layout-container-width/gutter/header-height`, read by
+`app.LayoutBaseCSS`) — grep `framework/ui` and `core-ui/app` for
+`--ui-` to see the full list.
 
 ## Why you can't just override component CSS
 
