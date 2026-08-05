@@ -268,7 +268,7 @@ app.Entity("posts", framework.EntityConfig{
 | SSE stream       | `GET /posts/_events` — entity.created/updated/deleted, scoped per tenant        |
 | Filtering        | `?status=published&views_gte=10&sort=-created_at&page=2`                        |
 | Eager loading    | `?include=author.profile,comments` — flat or nested, validated against the registry |
-| Cursor paging    | `?cursor=&limit=50` — keyset by `EntityConfig.CursorField` (defaults to PK)     |
+| Cursor paging    | `?cursor=&limit=50` — keyset by `EntityConfig.Pagination.CursorField` (defaults to PK); composite `Pagination.CursorFields` takes precedence     |
 | Multipart upload | `multipart/form-data` on `Image`/`File` fields → streamed through `WithFileStorage` |
 | Validation       | Required, unique, enum, min/max, regex pattern, multi-tenant scope              |
 | Migrations       | Versioned runner — advisory-lock serialization, checksum-drift + dirty-state guards, `NoTransaction` escape hatch, a down section when a safe inverse exists; declarative incremental generation; real-Postgres tested |

@@ -7,6 +7,65 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Flat blueprint booleans that gate access are strict.** The entity-level
+  `soft_delete:` and `multi_tenant:` keys and `app.auth.enabled` now demand a
+  real `true`/`false`, exactly like their grouped `scope.*` twins. A YAML-1.1
+  truthy such as `multi_tenant: yes` decoded to *false*, silently dropping
+  tenant scoping — and `enabled: yes` left the whole app public with no
+  login. `gofastr validate` and `generate` both reject the spelling with an
+  error naming the key.
+- **Detail screens must put `{id}` in their route.** The blueprint validator
+  rejects an `entity_detail` (or edit-mode `entity_form`) screen whose route
+  declares no parameter: such screens rendered an empty record and every
+  list-view "View" link pointed at a route that matched nothing. Six bundled
+  example blueprints had exactly this bug; their detail routes now live under
+  the entity's list path (`/products/{id}`, `/posts/{id}`, …) and the
+  regenerated ecommerce flagship serves them with an e2e guard that follows a
+  real View link.
+- **Directory-mode blueprints keep their seeds.** `gofastr generate
+  --from=<dir>` merged every section except `seed:` — multi-file blueprints
+  silently lost all seed data.
+- **Generated apps no longer mount a dead delete-confirmation widget.**
+  Soft-delete entities emitted a `ui.ConfirmAction` nothing referenced, aimed
+  at a nonexistent RPC path; the resource engine's own delete flow is the one
+  that works, and now it's the only one emitted.
+- **`gofastr init --db=` validates its value.** An unknown driver (say
+  `--db=mysql`) used to silently scaffold a SQLite project that only looked
+  configured; it now errors listing the accepted values — `sqlite`,
+  `postgres`, aliases `sqlite3`/`postgresql`.
+- **Example seeds no longer skip rows silently.** The ecommerce reviews
+  (missing required product reference), lms courses (missing instructor),
+  and project-manager tasks/comments (whole board→column chains absent)
+  seeded nothing on boot; all are wired with `@entity.field=value`
+  references, and the flagship's e2e now asserts seeded reviews and that
+  every category has products.
+- **The harness ws control channel could lose an entire turn's events.** The
+  event pump subscribed to the bus in its own goroutine after the read loop
+  was already accepting commands, so a turn dispatched before the
+  subscription registered broadcast to nobody — the intermittent
+  `TestWSHandshakeAndCommand` CI failure. Subscription now happens before the
+  read loop starts.
+- **Meridian's auth footers match the generator again** (#185): the
+  hand-owned login/signup screens now render the URL-checked `ui.Link`
+  footer the generator emits, verified byte-identical and screenshotted in
+  both themes.
+- **`gofastr pack` reads the v0.61 auth footer.** The reverse reader only
+  understood the old raw-anchor footer, so packing a current app dropped
+  `register_href`/`login_href` from auth screens and broke the round-trip.
+- **The website taught an entity shape that no longer compiles.** The Get
+  Started and framework-hub pages showed the pre-v0.54 flat `EntityConfig`
+  fields (`CRUD:`, `Public:`, `OwnerField:` at top level) and a scaffold
+  layout `gofastr init` never writes; the samples are fixed and every Go
+  code block on both pages is now extracted and compile-gated in CI.
+- **Docs corrected against code**: init/blueprint scaffold layouts in four
+  docs, install pins unified on `@latest`, the CLI doc now covers `gofastr
+  build`'s contracts gate and the real `--db` values, the README's
+  cursor-paging field path (`Pagination.CursorField`), the overview's
+  embed-vs-semantic-search mixup, and the embedded-docs count floor is exact
+  so a deleted doc fails the build.
+
 ## [0.61.0] - 2026-08-04
 
 ### Added

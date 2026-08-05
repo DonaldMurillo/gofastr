@@ -28,7 +28,7 @@ by writing hooks (Go or JS) that run *inside* PocketBase's lifecycle.
 **The difference in kind:** PocketBase is a host you configure.
 GoFastr is Go source you own — written by hand against the framework,
 or scaffolded by the optional blueprint as a flat `package main`
-(`main.go`, `app.go`, `screens.go`, `entities/`) — that you commit,
+(`main.go`, `app.go`, `screens_register.go` + `screen_*.go`, `entities/`) — that you commit,
 diff in code review, debug with a debugger, and refactor like any
 other package. There's no runtime
 schema store and no canonical file you have to keep living inside: you

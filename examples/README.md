@@ -17,6 +17,7 @@ Self-contained Go programs — `go run ./examples/<name>`:
 | `semantic-demo` | Semantic search with `battery/semantic`. |
 | `embed-demo` | Embeddable surfaces: an app and a customer's site on two origins. |
 | `processmodule-demo` | A process-isolated third-party module speaking the `moduleproto` protocol over stdio — the canonical [process-module](../framework/docs/content/process-modules.md) example and the child the go/no-go gate suite drives end to end. |
+| `site` | The framework's live component gallery and reference docs site — every UI component rendered one per page, plus the hosted examples. Run with `go run ./examples/site` (or `./scripts/dev-watch.sh` for livereload). |
 
 ## Blueprint examples (declarative)
 

@@ -25,7 +25,7 @@ gofastr build
 gofastr build --pkg ./cmd/server
 ```
 
-> **Go version.** `go.mod` declares `go 1.26`. The framework core only needs
+> **Go version.** `go.mod` declares `go 1.26.5`. The framework core only needs
 > Go 1.24 (generic type aliases); the 1.26 floor comes from the optional
 > `battery/print/chromepdf` PDF dependency (`chromedp/cdproto`). If you don't
 > use that battery, an older Go works in practice — but the declared floor is

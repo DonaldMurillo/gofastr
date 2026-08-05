@@ -17,7 +17,7 @@ myapp/
 │   └── entities.go     # app.Entity(...) registrations (sample: posts)
 ├── migrations/         # versioned SQL (reversible)
 ├── static/             # assets served as-is
-├── gofastr.yml         # the scaffold input — OPTIONAL, deletable once the code is yours
+├── gofastr.isolation.yml  # process-isolation config (local DB per worktree)
 ├── go.mod
 └── AGENTS.md, CLAUDE.md, DESIGN.md, agents/   # agent onboarding
 ```
@@ -36,7 +36,8 @@ description — written in Go (`entities/entities.go`, the `gofastr init`
 default) or declared in a [`gofastr.yml` blueprint](blueprints.md). When you
 generate from a blueprint (`gofastr generate --from=gofastr.yml`), it scaffolds
 owned Go straight into this root layout — a flat `package main` (`main.go`,
-`app.go`, `screens.go`, …) plus the `entities/` package — that you read, edit,
+`app.go`, `screens_register.go` plus one `screen_<name>.go` per screen, …) plus
+the `entities/` package — that you read, edit,
 and commit. The blueprint is optional and one-time, not a source of truth:
 `generate` is one-shot (it refuses to overwrite an existing project unless you
 pass `--force`), so once the code is yours you own and edit it directly, and
@@ -61,7 +62,7 @@ layer:
 myapp/
 ├── main.go
 ├── entities/            # declarations stay here
-├── app.go, screens.go   # generated screens + wiring stay here (package main)
+├── app.go, screens_register.go, screen_*.go  # generated screens + wiring (package main)
 ├── internal/
 │   ├── billing/         # billing hooks, webhooks, invoice logic
 │   ├── projects/        # project-specific endpoints + rules
@@ -103,7 +104,7 @@ A domain package under `internal/` can mix framework entities and hand-written
   mechanical when you actually need it.
 - **Treating the scaffold as untouchable.** There's no `gen/` quarantine dir and
   no `DO NOT EDIT` header — the generated `entities/` package and root
-  `app.go`/`screens.go`/… are owned `package main` Go. Edit them directly.
+  `app.go`/`screens_register.go`/`screen_*.go`/… are owned `package main` Go.
   `gofastr generate` is one-shot: it scaffolds once and refuses to overwrite an
   existing project (pass `--force` to regenerate the whole set).
 - **Layer-based packages (`services/`, `repositories/`).** In Go this scatters
