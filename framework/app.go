@@ -108,6 +108,23 @@ type AppConfig struct {
 	// deadlines if you still need bounded request lifetime.
 	DisableRequestTimeout bool
 
+	// HTTPServerTimeouts overrides the four connection deadlines on the
+	// underlying http.Server: ReadHeaderTimeout, ReadTimeout,
+	// WriteTimeout, IdleTimeout. Every field is a *time.Duration so an
+	// unset field (nil) keeps its framework default while an explicit
+	// pointer to 0 disables that one timeout (net/http semantics: 0
+	// means no timeout). A plain time.Duration could not tell those two
+	// apart. Defaults: read-header 10s, read 60s, write 60s, idle 120s.
+	// See [HTTPServerTimeoutsConfig] and [WithHTTPServerTimeouts].
+	//
+	// WriteTimeout bounds the whole response, including an SSE stream:
+	// when it lapses the browser's EventSource reconnects seamlessly, so
+	// the single /__gofastr/sse bus keeps working at any value. To hold
+	// one stream open for longer (fewer reconnects on a presence/collab
+	// surface), raise WriteTimeout or set it to 0. See the deployment
+	// guide's "HTTP server timeouts" section.
+	HTTPServerTimeouts HTTPServerTimeoutsConfig
+
 	// SecurityHeaders configures the defensive HTTP response headers
 	// (Content-Security-Policy, Referrer-Policy, X-Frame-Options,
 	// Permissions-Policy, CORP, COOP, HSTS) emitted by the SecurityHeaders
@@ -138,6 +155,47 @@ type AppConfig struct {
 // SIGTERM and SIGKILL by default; finishing well inside that budget
 // leaves room for the pre-stop hook and container runtime overhead.
 const defaultShutdownTimeout = 15 * time.Second
+
+// HTTPServerTimeoutsConfig overrides the connection deadlines of the
+// framework's embedded http.Server. Each field mirrors the equally named
+// field on [net/http.Server]. Fields are *time.Duration (not time.Duration)
+// so an unset field — nil — keeps the framework default, while an explicit
+// pointer to 0 disables just that deadline (matching net/http, where a zero
+// time.Duration means "no timeout"). Build the pointers with the Go 1.26
+// new(expr) builtin:
+//
+//	app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
+//	    WriteTimeout: new(2 * time.Minute), // raise for slow handlers
+//	    ReadTimeout:  new(0),               // disable (e.g. huge uploads)
+//	}))
+//
+// ReadHeaderTimeout bounds reading the request headers (slowloris defence)
+// and is always kept non-zero by the defaults; prefer leaving it set.
+type HTTPServerTimeoutsConfig struct {
+	// ReadHeaderTimeout is http.Server.ReadHeaderTimeout.
+	ReadHeaderTimeout *time.Duration
+	// ReadTimeout is http.Server.ReadTimeout.
+	ReadTimeout *time.Duration
+	// WriteTimeout is http.Server.WriteTimeout. It bounds the whole
+	// response write, including a streaming/SSE response: when it lapses
+	// the client's EventSource reconnects, so SSE keeps working at any
+	// value. Set to 0 to disable it for long-lived single streams.
+	WriteTimeout *time.Duration
+	// IdleTimeout is http.Server.IdleTimeout.
+	IdleTimeout *time.Duration
+}
+
+// Defaults applied to the http.Server when AppConfig.HTTPServerTimeouts leaves
+// a field unset. ReadHeaderTimeout is kept small as a slowloris guard;
+// Read/WriteTimeout bound ordinary request/response cycles; IdleTimeout lets a
+// keep-alive connection sit between requests. See AppConfig.DisableRequestTimeout
+// for the coarse opt-out that zeroes Read/Write (keeping these as the fallback).
+const (
+	defaultServerReadHeaderTimeout = 10 * time.Second
+	defaultServerReadTimeout       = 60 * time.Second
+	defaultServerWriteTimeout      = 60 * time.Second
+	defaultServerIdleTimeout       = 120 * time.Second
+)
 
 // App is the top-level application container.
 // It wires together the entity registry, router, MCP server, and database.
@@ -223,6 +281,13 @@ type App struct {
 	// with a fanout attached (multi-replica) Mount fails closed instead,
 	// because sessions minted on one replica must verify on every other.
 	secret []byte
+	// previousSecrets are retired app secrets accepted (verify-only) for
+	// graceful GOFASTR_SECRET rotation, mirroring the CSRF AdditionalKeys
+	// idiom. Their session-signing keys are handed to a mounted host
+	// alongside the current key (SetSessionKeys); tokens signed by a
+	// previous secret still verify for a drain window (one session TTL).
+	// Set via WithSecretRotation or GOFASTR_SECRET_PREVIOUS.
+	previousSecrets [][]byte
 
 	// noAutoMigrate suppresses the boot-time entity auto-migration
 	// (WithoutAutoMigrate) for deployments that require every schema
@@ -426,6 +491,26 @@ func WithPublicOpenAPI() AppOption {
 func WithSecurityHeaders(cfg middleware.SecurityHeadersConfig) AppOption {
 	return func(a *App) {
 		a.Config.SecurityHeaders = cfg
+	}
+}
+
+// WithHTTPServerTimeouts overrides the connection deadlines of the embedded
+// http.Server. Equivalent to setting AppConfig.HTTPServerTimeouts. Every
+// field is a *time.Duration: nil keeps the framework default
+// (read-header 10s, read 60s, write 60s, idle 120s); an explicit pointer
+// to 0 disables that one timeout (net/http semantics). Set a single field
+// to override just that deadline without touching the others.
+//
+// This removes the need to re-derive the http.Server (which the framework
+// owns) just to change one timeout — the same shape as WithSecurityHeaders
+// for the header chain.
+//
+//	app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
+//	    WriteTimeout: new(2 * time.Minute),
+//	}))
+func WithHTTPServerTimeouts(cfg HTTPServerTimeoutsConfig) AppOption {
+	return func(a *App) {
+		a.Config.HTTPServerTimeouts = cfg
 	}
 }
 
@@ -987,20 +1072,40 @@ func (a *App) Mount(m Mountable) *App {
 			})
 		}
 	}
-	// Hand the mounted host its session-signing key (same duck-typed
-	// seam as SetFanout). Sessions are stateless HMAC tokens: with a
-	// shared secret every replica verifies every replica's tokens; with
-	// no secret and no fanout the host self-mints a per-boot key (the
-	// single-replica zero-config path); no secret WITH a fanout is a
-	// broken deployment — half of session checks would 401 — so it
-	// fails at boot, not in production traffic.
-	if sk, ok := m.(interface{ SetSessionKey([]byte) }); ok {
-		key, err := sessionKeyForMount(a.secret, a.fanout != nil)
+	// Hand the mounted host its session-signing key(s). Sessions are
+	// stateless HMAC tokens: with a shared secret every replica verifies
+	// every replica's tokens; with no secret and no fanout the host
+	// self-mints a per-boot key (the single-replica zero-config path); no
+	// secret WITH a fanout is a broken deployment — half of session checks
+	// would 401 — so it fails at boot, not in production traffic. A
+	// GOFASTR_SECRET rotation drains gracefully: previous keys are handed
+	// over as verify-only alongside the current one (mirroring the CSRF
+	// AdditionalKeys idiom), so rotation does not log every user out at
+	// once. Hosts implementing SetSessionKeys get both; older hosts fall
+	// back to SetSessionKey with the current key only.
+	// Resolve the session keys only when the host actually carries a
+	// session-signing seam (preserves the original contract: a host with
+	// no session key — e.g. a fanout-only host — is never asked about
+	// secrets, so the fanout-without-secret boot panic only fires for
+	// hosts that actually hold sessions).
+	switch s := m.(type) {
+	case interface {
+		SetSessionKeys(current []byte, previous ...[]byte)
+	}:
+		currentKey, previousKeys, err := sessionKeysForMount(a.secret, a.previousSecrets, a.fanout != nil)
 		if err != nil {
 			panic(err.Error())
 		}
-		if key != nil {
-			sk.SetSessionKey(key)
+		if currentKey != nil {
+			s.SetSessionKeys(currentKey, previousKeys...)
+		}
+	case interface{ SetSessionKey([]byte) }:
+		currentKey, _, err := sessionKeysForMount(a.secret, a.previousSecrets, a.fanout != nil)
+		if err != nil {
+			panic(err.Error())
+		}
+		if currentKey != nil {
+			s.SetSessionKey(currentKey)
 		}
 	}
 	// Same seam for embeddable surfaces, with a stricter rule: an embed host
@@ -1306,6 +1411,18 @@ func NewApp(opts ...AppOption) *App {
 	if a.secret == nil {
 		if env := os.Getenv("GOFASTR_SECRET"); env != "" {
 			a.secret = []byte(validateSecret(env))
+		}
+	}
+	// GOFASTR_SECRET_PREVIOUS is the zero-code path to verify-only
+	// previous secrets for graceful rotation (comma-separated; each
+	// ≥32 chars), mirroring GOFASTR_SECRET. An explicit
+	// WithSecretRotation option wins over the env. Each entry is
+	// validated against the same length floor as the current secret.
+	if len(a.previousSecrets) == 0 {
+		if env := os.Getenv("GOFASTR_SECRET_PREVIOUS"); env != "" {
+			for _, p := range splitSecretList(env) {
+				a.previousSecrets = append(a.previousSecrets, []byte(validateSecret(p)))
+			}
 		}
 	}
 	// Resolve the process role once: WithRole wins, then GOFASTR_ROLE,
@@ -2826,21 +2943,44 @@ func (a *App) Start(addr string) error {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           serveHandler,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: defaultServerReadHeaderTimeout,
+		ReadTimeout:       defaultServerReadTimeout,
+		WriteTimeout:      defaultServerWriteTimeout,
+		IdleTimeout:       defaultServerIdleTimeout,
+	}
+	// Apply host overrides (AppConfig.HTTPServerTimeouts / WithHTTPServerTimeouts).
+	// Each field is *time.Duration: nil keeps the default above; an explicit
+	// pointer — including one to 0 — wins. net/http treats a zero duration as
+	// "no timeout", so a pointer to 0 disables that one deadline rather than
+	// falling back to the default, which a plain time.Duration field could not
+	// express.
+	to := a.Config.HTTPServerTimeouts
+	if to.ReadHeaderTimeout != nil {
+		srv.ReadHeaderTimeout = *to.ReadHeaderTimeout
+	}
+	if to.ReadTimeout != nil {
+		srv.ReadTimeout = *to.ReadTimeout
+	}
+	if to.WriteTimeout != nil {
+		srv.WriteTimeout = *to.WriteTimeout
+	}
+	if to.IdleTimeout != nil {
+		srv.IdleTimeout = *to.IdleTimeout
 	}
 	if a.Config.DisableRequestTimeout {
-		// The documented opt-out for SSE and long uploads has to hold at
-		// the server layer too: a fixed read/write timeout here would
-		// sever exactly the requests the opt-out exists for. Header and
-		// idle timeouts stay — they bound the connection, not the
-		// request body or the stream. (With the timeout middleware
-		// active, streaming responses shed these deadlines per-request
-		// instead; see core/middleware.Timeout.)
-		srv.ReadTimeout = 0
-		srv.WriteTimeout = 0
+		// The documented opt-out for SSE and long uploads drops the Timeout
+		// middleware from the chain and zeroes the server-level read/write
+		// deadlines to match (header and idle stay — they bound the
+		// connection, not the request body or the stream). It zeroes only the
+		// fields the host left unset: an explicit HTTPServerTimeouts value is
+		// authoritative, so the fine-grained knob can keep a custom deadline
+		// while still dropping the middleware.
+		if to.ReadTimeout == nil {
+			srv.ReadTimeout = 0
+		}
+		if to.WriteTimeout == nil {
+			srv.WriteTimeout = 0
+		}
 	}
 	a.server = srv
 	a.serverMu.Unlock()
@@ -2951,14 +3091,25 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		if e.Version != "" {
 			label = e.GetName() + " (" + e.Version + ")"
 		}
-		fmt.Fprintf(w, "  %s %-12s http://%s%s\n", arrow(), label, boundAddr, mountPath)
+		// An anonymous curl of a non-Public entity answers 401; advertising
+		// the URL without saying so reads as "the framework is broken" to a
+		// first-run user.
+		gate := "  (requires auth)"
+		if e.Config.Exposure != nil && e.Config.Exposure.Public {
+			gate = ""
+		}
+		fmt.Fprintf(w, "  %s %-12s http://%s%s%s\n", arrow(), label, boundAddr, mountPath, gate)
 	}
 
 	if hasAPI {
-		fmt.Fprintf(w, "  %s OpenAPI:     http://%s/openapi.json\n", arrow(), boundAddr)
-		fmt.Fprintf(w, "  %s API docs:    http://%s/api/docs/\n", arrow(), boundAddr)
+		apiGate := "  (requires auth — WithPublicOpenAPI() to expose)"
+		if a.Config.PublicOpenAPI {
+			apiGate = ""
+		}
+		fmt.Fprintf(w, "  %s OpenAPI:     http://%s/openapi.json%s\n", arrow(), boundAddr, apiGate)
+		fmt.Fprintf(w, "  %s API docs:    http://%s/api/docs/%s\n", arrow(), boundAddr, apiGate)
 		if hasLLMMD {
-			fmt.Fprintf(w, "  %s LLM Docs:    http://%s/api/llm.md\n", arrow(), boundAddr)
+			fmt.Fprintf(w, "  %s LLM Docs:    http://%s/api/llm.md%s\n", arrow(), boundAddr, apiGate)
 		}
 	}
 	_, _ = fmt.Fprintln(w)

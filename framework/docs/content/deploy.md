@@ -25,11 +25,14 @@ gofastr build
 gofastr build --pkg ./cmd/server
 ```
 
-> **Go version.** `go.mod` declares `go 1.26.5`. The framework core only needs
-> Go 1.24 (generic type aliases); the 1.26 floor comes from the optional
-> `battery/print/chromepdf` PDF dependency (`chromedp/cdproto`). If you don't
-> use that battery, an older Go works in practice — but the declared floor is
-> what the toolchain enforces.
+> **Go version.** `go.mod` declares `go 1.26.5`. The floor comes from
+> `chromedp/chromedp` (v0.15.1 declares `go 1.26`), which the root module
+> imports directly for browser-driven tooling — `framework/testkit/axetest`,
+> the `gofastr` CLI accessibility audit, and the eval harness — not from the
+> optional print/PDF battery. `battery/print/chromepdf` is a nested module
+> (same import path) that isolates the print feature's own chromedp usage, but
+> the floor stays 1.26 while `chromedp` is a build dependency: Go 1.21+ refuses
+> to build a module whose `go` directive is below a dependency's.
 
 > **SQLite vs Postgres.** The bundled `gofastr` CLI uses SQLite. For a
 > Postgres deployment, import a Postgres driver in your app and pass a
@@ -89,6 +92,26 @@ secrets as env vars from your platform's secret store:
   (ECS task definition `secrets:`, or fetch-on-boot).
 - **Vault:** the Vault Agent injector or `vault kv get` in an init step.
 
+### Rotating secrets without a mass logout
+
+Both the uihost session key (`GOFASTR_SECRET`) and the auth JWT key
+(`AuthConfig.JWTSecret`) rotate gracefully: new tokens are signed with the
+new secret, and verification accepts the new **or** the previous secret for
+one token lifetime, after which you drop the old one.
+
+- **`GOFASTR_SECRET`** — set `GOFASTR_SECRET` to the new value and
+  `GOFASTR_SECRET_PREVIOUS` to the old (comma-separated to roll through
+  several; each ≥32 chars). In code: `framework.WithSecretRotation(newSecret,
+  oldSecret)`. Deploy to every replica, wait one session TTL, then unset
+  `GOFASTR_SECRET_PREVIOUS` and redeploy.
+- **`AuthConfig.JWTSecret`** — set `JWTSecret` to the new value and move the
+  old into `JWTPreviousSecrets`. Wait one `JWTExpiry` (default 1h), then
+  remove it and redeploy.
+
+Omitting the previous key — the pre-rotation behavior — still invalidates
+every outstanding token at once. Use the previous-key form only during an
+active rotation. See [security](security.md) for the underlying key rules.
+
 The one secret every auth-enabled app must set is **`AuthConfig.JWTSecret`**
 (typically from env). With `DevMode=false` and no `JWTSecret`, the auth
 battery **fails closed**: `Init` returns an error and the app refuses to
@@ -129,6 +152,68 @@ If your process owns signal handling itself, set
 `App.RunWithSignals`) from your own handler — `Shutdown` is idempotent,
 so double-wiring is harmless.
 
+## HTTP server timeouts
+
+`App.Start` builds the embedded `http.Server` with four connection deadlines:
+
+| Field | Default | Bounds |
+|-------|---------|--------|
+| `ReadHeaderTimeout` | 10s | Time to receive the request headers (slowloris defence). Keep this set. |
+| `ReadTimeout` | 60s | Whole request read — headers + body. Caps upload time. |
+| `WriteTimeout` | 60s | Whole response write, from first header byte to the last. Caps every response. |
+| `IdleTimeout` | 120s | How long a keep-alive connection may sit idle between requests. |
+
+These used to be hardcoded; a handler that needed to run longer than 60s was
+out of luck regardless of its own `ctx` deadline. Override any of them through
+`framework.WithHTTPServerTimeouts` (or the `AppConfig.HTTPServerTimeouts`
+field). Each field is a `*time.Duration`: leave it `nil` to keep the default,
+or point at a value — including `0`, which **disables** that one deadline
+(matching `net/http`, where a zero duration means "no timeout"). Build the
+pointers with the Go 1.26 `new(expr)` builtin:
+
+```go
+app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
+    WriteTimeout: new(2 * time.Minute), // slow report handler
+    ReadTimeout:  new(0),               // disable — accept arbitrarily large uploads
+}))
+```
+
+`AppConfig.DisableRequestTimeout` is the coarser, older knob: it removes the
+per-request `Timeout` middleware from the chain **and** zeroes the server
+`ReadTimeout`/`WriteTimeout`. An explicit `HTTPServerTimeouts` value wins over
+that zeroing, so you can drop the middleware yet keep a custom deadline — set
+the field you want to keep and leave `DisableRequestTimeout` for the rest.
+
+### Long-running requests
+
+A request that legitimately outlives the default `WriteTimeout` — a slow
+report, a large export, an AI completion — needs the deadline raised or
+removed for that path:
+
+```go
+// Raise the server write deadline app-wide for a report-heavy service.
+app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
+    WriteTimeout: new(2 * time.Minute),
+}))
+```
+
+Prefer the smallest raise that covers your slowest real request over disabling
+the deadline entirely. `WriteTimeout` is a whole-response backstop: without
+it, a handler that hangs holds its connection (and a goroutine) forever.
+
+### SSE and streaming
+
+`WriteTimeout` bounds the whole response, and a Server-Sent Events stream is a
+single response — so the stream is cut when the deadline lapses. That does not
+break the framework's `/__gofastr/sse` bus: the browser's `EventSource`
+reconnects automatically and seamlessly, so live updates keep flowing at any
+`WriteTimeout`. The default 60s simply means an idle-enough stream reconnects
+at most once a minute. For a presence/collaboration surface where you want
+fewer reconnects on a single long-lived stream, raise `WriteTimeout` or set it
+to `0`. The per-request middleware deadline is a separate concern — a handler
+that flushes (as every SSE subscription does) already sheds it at first flush;
+see [Reactivity](reactivity.md).
+
 ## Running more than one replica
 
 Everything on this page assumes one replica. Sessions, rate limits,
@@ -156,6 +241,7 @@ what-breaks/what-fixes-it list.
 - [ ] Readiness/liveness probes wired.
 - [ ] `/metrics` scraped from inside the network only.
 - [ ] TLS terminated at ingress.
+- [ ] Server timeouts fit your slowest real request — raise `WriteTimeout` via `WithHTTPServerTimeouts` for report/export/AI endpoints instead of letting the 60s default cut them.
 
 ## Common mistakes
 
@@ -178,3 +264,9 @@ what-breaks/what-fixes-it list.
   in production — the dev fallback rotates per process, which would
   silently invalidate sessions on every deploy. Set the secret
   explicitly from env.
+- **A slow handler dies at exactly 60s.** The server's `WriteTimeout` is a
+  60s default; a report, export, or AI-completion handler that runs longer is
+  cut mid-response no matter what `ctx` deadline it sets. Raise
+  `WriteTimeout` (or `ReadTimeout` for uploads) via `WithHTTPServerTimeouts`
+  to fit your slowest real request — see "HTTP server timeouts" above. SSE is
+  not affected the same way: `EventSource` reconnects when a stream is cut.
