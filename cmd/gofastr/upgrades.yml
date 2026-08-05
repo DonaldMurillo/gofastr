@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.62.0
+through: v0.63.0
 
 releases:
   - version: v0.3.0
@@ -671,3 +671,18 @@ releases:
         breaking: false
         guidance: "Behavioral: `gofastr init` scaffolds now exit on a migrator.Up error instead of logging 'Migration warning' and starting, and blueprint seed hooks return the first failing row's error (WithSeed errors abort Start). A deploy that previously came up over an unapplied schema, or with seed rows silently dropped, now fails the rollout with the entity named. Regenerate to pick both up, and fix the migration or seed data rather than restoring warn-and-boot."
         detect: "Migration warning|seed %s: skipping row"
+
+  - version: v0.63.0
+    title: Fail-closed dialect detection, poll termination, rotation, erasure
+    notes:
+      - change: AutoMigrate errors when the database dialect cannot be determined
+        breaking: false
+        guidance: "Behavioral: when the PostgreSQL probe fails repeatedly (unreachable DB, bad DSN, pooler resets), AutoMigrate/MigrateEntity/DiffSchema/RunSeeds now return an error instead of assuming SQLite — the assumption skipped the cross-replica advisory lock and every Postgres-only routine. Fix the connection or DATABASE_URL; there is no code change. DetectDialect keeps its signature for callers that only pick DDL types."
+      - change: Generated seed hooks abort on a failed idempotency count
+        breaking: false
+        guidance: "A blueprint app's seed hook treated a CountAll error as 'not seeded' and inserted again, so a transient read failure could duplicate seed rows. Regenerate the app to pick up the fail-closed hook."
+        detect: "CountAll\\(ctx, framework\\.ListOptions\\{\\}\\); err == nil && n > 0"
+      - change: battery/print/chromepdf is a nested module
+        breaking: false
+        guidance: "The import path is unchanged, but the package now lives in its own Go module. Apps that import it add the module explicitly: go get github.com/DonaldMurillo/gofastr/battery/print/chromepdf@latest. Apps that do not import chromepdf need nothing."
+        detect: "battery/print/chromepdf"
