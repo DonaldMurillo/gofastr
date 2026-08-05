@@ -694,8 +694,11 @@ and `main.go` applies it via `App.WithSeed` after auto-migration. Seeding is
 before the rows that reference it) and **idempotent** (an entity whose table
 already has rows is skipped). Rows go through the CRUD `CreateOne` path, so
 validation, id generation, and timestamps apply; `decimal` values are coerced
-to the decimal-string form the validator expects. A row that fails validation
-is logged and skipped rather than aborting startup.
+to the decimal-string form the validator expects. Seeding is **fail-fast**: a
+row that fails validation (or an entity with no registered handler) aborts
+startup with the entity named in the error. The idempotency check would
+otherwise mark a partially-seeded entity as done, so a silently dropped row
+would never retry — the app would report ready with bootstrap data missing.
 
 When any entity declares `owner_field` (per-user scoping) **and** an admin
 account is bootstrapped (`app.admin.seed_email` / `seed_password`), the seed

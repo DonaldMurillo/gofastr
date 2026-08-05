@@ -3914,9 +3914,10 @@ func renderBlueprintMain(bp Blueprint) string {
 		// the time this hook runs the admin already exists and the owner-
 		// scoped rows below can resolve it as their owner. Registering the
 		// data seed before RegisterGenerated would run it before the admin
-		// exists, leaving owner-scoped rows silently unseeded. Rows are
-		// idempotent (skip entities that already have rows) and a row that
-		// fails validation is logged and skipped rather than aborting startup.
+		// exists, leaving owner-scoped rows silently unseeded. Seeding is
+		// idempotent (skip entities that already have rows) and fail-fast: a
+		// row that fails aborts startup, because the CountAll gate would
+		// mark the entity seeded and the dropped row would never retry.
 		sb.WriteString("\tfwApp.WithSeed(func(ctx context.Context) error {\n")
 		if ownerSeed {
 			sb.WriteString("\t\t// Resolve the bootstrap admin (created by the earlier-registered\n")
@@ -3929,12 +3930,12 @@ func renderBlueprintMain(bp Blueprint) string {
 		}
 		sb.WriteString("\t\tfor _, s := range seedData() {\n")
 		sb.WriteString("\t\t\tch, err := fwApp.CrudHandler(s.Entity)\n")
-		sb.WriteString("\t\t\tif err != nil {\n\t\t\t\tcontinue\n\t\t\t}\n")
+		sb.WriteString("\t\t\tif err != nil {\n\t\t\t\treturn fmt.Errorf(\"seed %s: no handler: %w\", s.Entity, err)\n\t\t\t}\n")
 		sb.WriteString("\t\t\tif n, err := ch.CountAll(ctx, framework.ListOptions{}); err == nil && n > 0 {\n\t\t\t\tcontinue\n\t\t\t}\n")
 		sb.WriteString("\t\t\tfor _, row := range s.Rows {\n")
 		sb.WriteString("\t\t\t\tresolveSeedRefs(ctx, fwApp, row)\n")
 		sb.WriteString("\t\t\t\tif _, err := ch.CreateOne(ctx, row); err != nil {\n")
-		sb.WriteString("\t\t\t\t\tlog.Printf(\"seed %s: skipping row: %v\", s.Entity, err)\n")
+		sb.WriteString("\t\t\t\t\treturn fmt.Errorf(\"seed %s: %w\", s.Entity, err)\n")
 		sb.WriteString("\t\t\t\t}\n")
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t}\n")

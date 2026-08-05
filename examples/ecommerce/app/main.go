@@ -73,7 +73,7 @@ func main() {
 		for _, s := range seedData() {
 			ch, err := fwApp.CrudHandler(s.Entity)
 			if err != nil {
-				continue
+				return fmt.Errorf("seed %s: no handler: %w", s.Entity, err)
 			}
 			if n, err := ch.CountAll(ctx, framework.ListOptions{}); err == nil && n > 0 {
 				continue
@@ -81,7 +81,7 @@ func main() {
 			for _, row := range s.Rows {
 				resolveSeedRefs(ctx, fwApp, row)
 				if _, err := ch.CreateOne(ctx, row); err != nil {
-					log.Printf("seed %s: skipping row: %v", s.Entity, err)
+					return fmt.Errorf("seed %s: %w", s.Entity, err)
 				}
 			}
 		}
