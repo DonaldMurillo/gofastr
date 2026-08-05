@@ -152,13 +152,33 @@ func wrapConnErr(err error) error {
 // no such function". SQLite reports the latter as a parse-time "no such
 // function" and is not worth retrying.
 func isTransientProbeErr(err error) bool {
-	msg := strings.ToLower(err.Error())
+	msg := stripQuoted(strings.ToLower(err.Error()))
 	for _, deterministic := range []string{"no such function", "unknown function", "syntax error"} {
 		if strings.Contains(msg, deterministic) {
 			return false
 		}
 	}
 	return true
+}
+
+// stripQuoted removes double-quoted spans from an error message. Postgres
+// quotes identifiers it reports back — a role named "syntax error" turns an
+// authentication failure into text that reads like SQLite's parse error, and
+// treating that as deterministic would resolve a Postgres outage to a
+// confident SQLite answer.
+func stripQuoted(msg string) string {
+	var b strings.Builder
+	inQuote := false
+	for _, r := range msg {
+		if r == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if !inQuote {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // execQueryer is the subset of *sql.DB / *sql.Tx the migrator needs: Exec for

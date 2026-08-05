@@ -126,3 +126,27 @@ func TestDetectDialectStrict_TransientFailureErrors(t *testing.T) {
 		t.Fatalf("got %q, want postgres", d)
 	}
 }
+
+// A Postgres error that merely QUOTES one of the deterministic phrases —
+// e.g. authentication failure for a role literally named "syntax error" —
+// must not be read as "this engine has no version(), so it is SQLite".
+// Misreading it resolves a Postgres outage into a confident SQLite answer.
+func TestProbeClassifier_QuotedPhraseIsNotDeterministic(t *testing.T) {
+	for _, msg := range []string{
+		`pq: password authentication failed for user "syntax error"`,
+		`pq: role "no such function" does not exist`,
+	} {
+		if !isTransientProbeErr(errors.New(msg)) {
+			t.Errorf("classified as deterministic-SQLite: %q", msg)
+		}
+	}
+	// The genuine SQLite parse error still short-circuits (no retries).
+	for _, msg := range []string{
+		"no such function: version",
+		"near \"version\": syntax error",
+	} {
+		if isTransientProbeErr(errors.New(msg)) {
+			t.Errorf("genuine SQLite parse error treated as transient: %q", msg)
+		}
+	}
+}

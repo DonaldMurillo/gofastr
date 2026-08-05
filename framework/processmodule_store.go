@@ -159,7 +159,14 @@ func NewSQLProcessModuleStore(db *sql.DB) (*SQLProcessModuleStore, error) {
 	if db == nil {
 		return nil, errors.New("processmodule: NewSQLProcessModuleStore(nil db)")
 	}
-	return &SQLProcessModuleStore{db: db, dialect: migrate.DetectDialect(db)}, nil
+	// Schema decisions (column types, INSERT OR IGNORE vs ON CONFLICT) hang
+	// off this answer and it is cached for the store's lifetime, so a
+	// transient probe failure must not resolve to a guessed SQLite.
+	dialect, err := migrate.DetectDialectStrict(db)
+	if err != nil {
+		return nil, fmt.Errorf("processmodule: NewSQLProcessModuleStore: %w", err)
+	}
+	return &SQLProcessModuleStore{db: db, dialect: dialect}, nil
 }
 
 // Dialect reports the detected dialect (debug / introspection).
