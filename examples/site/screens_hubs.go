@@ -352,7 +352,7 @@ func frameworkHub() *TeachHubScreen {
 				CodeFile: "main.go",
 				CodeLang: "go",
 				Code: `app.Entity("posts", framework.EntityConfig{
-    Public: true,
+    Exposure: &framework.ExposureConfig{Public: true},
     Fields: []schema.Field{
         {Name: "title", Type: schema.String, Required: true},
         {Name: "body", Type: schema.Text},
@@ -385,10 +385,12 @@ fwApp.Use(auth.SessionMiddleware(authMgr))`,
 				CodeFile: "entities.go",
 				CodeLang: "go",
 				Code: `app.Entity("notes", framework.EntityConfig{
-    OwnerField: "user_id", // every read and write is scoped to the signed-in user
-    Access: framework.AccessControl{
-        Read: "notes:read", Create: "notes:write",
-        Update: "notes:write", Delete: "notes:admin",
+    Scope: &framework.ScopeConfig{OwnerField: "user_id"}, // every read and write is scoped to the signed-in user
+    Exposure: &framework.ExposureConfig{
+        Access: framework.AccessControl{
+            Read: "notes:read", Create: "notes:write",
+            Update: "notes:write", Delete: "notes:admin",
+        },
     },
 })`,
 				RefSlug: "access-control",

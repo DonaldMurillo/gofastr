@@ -29,8 +29,7 @@ Every command below is copy-paste runnable. Each step ends with a
 - the `gofastr` CLI:
 
 ```bash
-# until the next tagged release — see the version note above
-go install github.com/DonaldMurillo/gofastr/cmd/gofastr@main
+go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest
 ```
 
 ## 1. Blueprint → running app

@@ -51,11 +51,13 @@ app.Entity("posts", framework.EntityConfig{
 app.Start(":8080")
 ```
 
-See [Entity declarations](/docs/entity-declarations). Generated code is regular
-Go at the module root (`main.go`, `app.go`, `screens.go`, `entities/`) — read
-it, edit it, commit it. When the framework is in your way, drop back to `core/`.
-You can also scaffold a set of entities from a `gofastr.yml` with the
-[code generator](/docs/codegen); the running app never needs the file.
+See [Entity declarations](/docs/entity-declarations). The `app.Entity` call
+above is a runtime registration — it wires the table, routes, and tools in
+memory and writes no files. `gofastr init` scaffolds the project that hosts it:
+`main.go`, `screens.go`, and `entities/entities.go` at the module root, all plain
+Go you read, edit, and commit. When the framework is in your way, drop back to
+`core/`. You can also scaffold a whole app from a `gofastr.yml` blueprint with
+the [code generator](/docs/codegen); the running app never needs the file.
 
 (Only `core/middleware` pulls in a dependency — OpenTelemetry, for tracing.
 Everything else in `core/` is stdlib-only.)
@@ -136,8 +138,11 @@ SQLite and Postgres, dialect-aware.
 
 - **[Agent-readiness](/docs/agent-ready)** — per-entity MCP tools, auto
   `llm.md`, and the discovery endpoints your app serves.
-- **[Embed](/docs/embed)** — local semantic search, no API key.
-  **[Audit deps](/docs/audit-deps)** — flag packages an agent shouldn't import.
+- **[Embed](/docs/embed)** — hand a screen to a site you don't control: one
+  `<script>` tag, an origin allowlist, a themed iframe.
+  **[Semantic search](/docs/semantic-search)** — local vector retrieval, no API
+  key. **[Audit deps](/docs/audit-deps)** — flag packages an agent shouldn't
+  import.
 - **[Kiln](/docs/kiln)** — experimental build-mode binary: an agent edits an
   in-memory model over HTTP.
 

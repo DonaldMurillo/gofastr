@@ -116,11 +116,6 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// HTML forms, mount auth.CSRF — see `gofastr docs blueprints`
 		// (Auth section) and `gofastr docs auth`.
 	}
-	{
-		_, b := ui.ConfirmAction(ui.ConfirmActionConfig{Name: "delete-products", TriggerLabel: "Delete", Title: "Delete this Products?", Body: "This action will soft-delete the record. It can be restored later.", RPCPath: "/products/{id}"})
-		d := b.Build()
-		widget.Mount(fwApp.Router(), &d)
-	}
 	mountGenerated(fwApp, site, db)
 	fwApp.Router().Handle("POST", "/orders/{id}/confirm", http.HandlerFunc(ConfirmOrder))
 	fwApp.Router().Handle("POST", "/orders/{id}/ship", http.HandlerFunc(ShipOrder))

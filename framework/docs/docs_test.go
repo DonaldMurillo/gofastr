@@ -10,11 +10,13 @@ import (
 
 // MinExpectedTopics is the manifest floor: if a doc is accidentally
 // deleted in a rebase, the embed FS is silently smaller and the count
-// regresses. Bumping this constant in the same commit that adds a new
-// doc enforces "every doc removal requires an explicit decision."
+// regresses below this floor. Set to the EXACT current doc count so a
+// single deletion fails the test — not a wide cushion that hides drift.
 //
-// Bump it up when adding docs. Be reluctant to decrement.
-const MinExpectedTopics = 65
+// Adding a doc raises the count above the floor and still passes; no
+// bump is needed. Lower this only when intentionally removing a doc,
+// and re-count first: ls framework/docs/content/*.md | wc -l
+const MinExpectedTopics = 92
 
 func TestEmbedManifestFloor(t *testing.T) {
 	topics, err := List()

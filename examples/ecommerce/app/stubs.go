@@ -40,14 +40,14 @@ func seedData() []seedEntity {
 			{"active": true, "description": "Everything for your home", "name": "Home & Garden", "slug": "home-garden", "sort_order": 3},
 		}},
 		{Entity: "products", Rows: []map[string]any{
-			{"description": "Premium noise-cancelling wireless headphones with 30-hour battery life.", "featured": true, "name": "Wireless Headphones", "price": "79.99", "sku": "WH-001", "slug": "wireless-headphones", "status": "active", "stock": 150},
-			{"description": "7-in-1 USB-C hub with HDMI, USB 3.0, SD card reader, and PD charging.", "name": "USB-C Hub", "price": "49.99", "sku": "UCH-002", "slug": "usb-c-hub", "status": "active", "stock": 200},
-			{"description": "Hot-swappable mechanical keyboard with RGB backlighting.", "featured": true, "name": "Mechanical Keyboard", "price": "129.99", "sku": "MK-003", "slug": "mechanical-keyboard", "status": "active", "stock": 75},
-			{"compare_at_price": "59.99", "description": "1080p HD webcam with auto-focus and built-in microphone.", "name": "Webcam HD", "price": "39.99", "sku": "WC-004", "slug": "webcam-hd", "status": "draft", "stock": 300},
+			{"category_id": "@categories.slug=electronics", "description": "Premium noise-cancelling wireless headphones with 30-hour battery life.", "featured": true, "name": "Wireless Headphones", "price": "79.99", "sku": "WH-001", "slug": "wireless-headphones", "status": "active", "stock": 150},
+			{"category_id": "@categories.slug=electronics", "description": "7-in-1 USB-C hub with HDMI, USB 3.0, SD card reader, and PD charging.", "name": "USB-C Hub", "price": "49.99", "sku": "UCH-002", "slug": "usb-c-hub", "status": "active", "stock": 200},
+			{"category_id": "@categories.slug=home-garden", "description": "Hot-swappable mechanical keyboard with RGB backlighting.", "featured": true, "name": "Mechanical Keyboard", "price": "129.99", "sku": "MK-003", "slug": "mechanical-keyboard", "status": "active", "stock": 75},
+			{"category_id": "@categories.slug=clothing", "compare_at_price": "59.99", "description": "1080p HD webcam with auto-focus and built-in microphone.", "name": "Webcam HD", "price": "39.99", "sku": "WC-004", "slug": "webcam-hd", "status": "draft", "stock": 300},
 		}},
 		{Entity: "reviews", Rows: []map[string]any{
-			{"author_name": "Sarah M.", "body": "The noise cancellation is incredible. Battery lasts forever.", "rating": 5, "title": "Best headphones I ever owned", "verified": true},
-			{"author_name": "Mike T.", "body": "Solid build quality for the price. Wish the case was included.", "rating": 4, "title": "Great value", "verified": true},
+			{"author_name": "Sarah M.", "body": "The noise cancellation is incredible. Battery lasts forever.", "product_id": "@products.slug=wireless-headphones", "rating": 5, "title": "Best headphones I ever owned", "verified": true},
+			{"author_name": "Mike T.", "body": "Solid build quality for the price. Wish the case was included.", "product_id": "@products.slug=mechanical-keyboard", "rating": 4, "title": "Great value", "verified": true},
 		}},
 	}
 }

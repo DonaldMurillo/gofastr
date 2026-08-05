@@ -307,6 +307,7 @@ func mergeBlueprints(a, b Blueprint) Blueprint {
 	a.Entities = append(a.Entities, b.Entities...)
 	a.Screens = append(a.Screens, b.Screens...)
 	a.Nav = append(a.Nav, b.Nav...)
+	a.Seed = append(a.Seed, b.Seed...)
 	a.Endpoints = append(a.Endpoints, b.Endpoints...)
 	a.Middleware = append(a.Middleware, b.Middleware...)
 	a.Plugins = append(a.Plugins, b.Plugins...)
@@ -532,8 +533,16 @@ func decodeBlueprintAuth(node *coreyaml.Node) (BlueprintAuth, error) {
 		}
 		devMode = v
 	}
+	// enabled is access-gating: false means the auth subsystem is OFF and the
+	// whole app is public (no login, no JWT, no enforced screen policies). A
+	// YAML-1.1 truthy like `enabled: yes` (a string in YAML 1.2) silently
+	// reading false is fail-OPEN, so decode it strictly. See protectiveBool.
+	enabled, err := protectiveBool(m, "enabled", "app.auth")
+	if err != nil {
+		return BlueprintAuth{}, err
+	}
 	return BlueprintAuth{
-		Enabled:   boolValue(m["enabled"]),
+		Enabled:   enabled,
 		DevMode:   devMode,
 		BasePath:  stringValue(m["base_path"]),
 		JWTSecret: stringValue(m["jwt_secret"]),
@@ -744,15 +753,26 @@ func mergeEntityScopeDeclaration(
 	if grouped == nil {
 		grouped = &fwentity.ScopeDeclaration{}
 	}
+	// soft_delete and multi_tenant are access-gating: their FALSE value is the
+	// permissive state (hard deletes, no tenant scoping). The grouped
+	// scope.* spellings use protectiveBool; the flat spellings MUST too, or a
+	// YAML-1.1 truthy like `multi_tenant: yes` (a string in YAML 1.2) silently
+	// reads false and drops tenant isolation. See protectiveBool for the why.
 	if node := root["soft_delete"]; node != nil {
-		flat := boolValue(node)
+		flat, err := protectiveBool(root, "soft_delete", context)
+		if err != nil {
+			return nil, err
+		}
 		if groupMap["soft_delete"] != nil && flat != grouped.SoftDelete {
 			return nil, entityDeclarationConflict(name, "soft_delete", "scope.soft_delete", flat, grouped.SoftDelete)
 		}
 		grouped.SoftDelete = flat
 	}
 	if node := root["multi_tenant"]; node != nil {
-		flat := boolValue(node)
+		flat, err := protectiveBool(root, "multi_tenant", context)
+		if err != nil {
+			return nil, err
+		}
 		if groupMap["multi_tenant"] != nil && flat != grouped.MultiTenant {
 			return nil, entityDeclarationConflict(name, "multi_tenant", "scope.multi_tenant", flat, grouped.MultiTenant)
 		}
@@ -2044,6 +2064,19 @@ func validateBlueprint(bp Blueprint) error {
 		for _, block := range screen.Body {
 			if err := validateBlueprintBlock(screen.Name, entitiesByName, block); err != nil {
 				return err
+			}
+		}
+		// entity_detail renders .Detail(ctx, s.id) and the list's "View" link is
+		// BasePath+"/"+id; entity_form mode:edit posts to {entity}/{id}. Both
+		// need the record id from a route param. A route with no {id} produces
+		// an empty render and a dead link that matches no registered route.
+		if detail, edit := screenNeedsRouteID(screen); detail || edit {
+			if len(routeParamNames(screen.Route)) == 0 {
+				what := "entity_detail"
+				if !detail {
+					what = "entity_form (mode: edit)"
+				}
+				return fmt.Errorf("blueprint: screen %q has an %s block but its route %q has no {id} parameter — add {id} (e.g. %s/{id}) so the record id is in the URL", screen.Name, what, screen.Route, strings.TrimRight(screen.Route, "/"))
 			}
 		}
 		if err := validateBlueprintActions(screen.Name, screen.Body); err != nil {
@@ -5078,6 +5111,27 @@ func screenNeedsParams(screen BlueprintScreen) bool {
 	return false
 }
 
+// screenNeedsRouteID reports whether a screen's body tree contains an
+// entity_detail block or an entity_form with mode "edit" — both render a
+// specific record identified by a route {id} param. The first return is the
+// detail case, the second the edit-form case, so the validator can name it.
+func screenNeedsRouteID(screen BlueprintScreen) (detail, editForm bool) {
+	var walk func([]BlueprintBlock)
+	walk = func(blocks []BlueprintBlock) {
+		for _, b := range blocks {
+			if isEntityDetailBlock(b) {
+				detail = true
+			}
+			if isEntityFormBlock(b) && strings.EqualFold(strings.TrimSpace(b.Mode), "edit") {
+				editForm = true
+			}
+			walk(b.Children)
+		}
+	}
+	walk(screen.Body)
+	return
+}
+
 // blueprintDetailExpr emits the server-side detail render call, with any
 // status-transition workflow buttons chained in via WithTransitions.
 func blueprintDetailExpr(block BlueprintBlock) string {
@@ -6365,8 +6419,8 @@ func renderBlueprintApp(bp Blueprint) string {
 			hasAccess = true
 		}
 	}
-	needWidget := len(bp.Nav) > 0 || blueprintNeedsToasts(bp) || blueprintHasSoftDelete(bp)
-	needUI := len(bp.Nav) > 0 || hasMarketing || blueprintHasSoftDelete(bp)
+	needWidget := len(bp.Nav) > 0 || blueprintNeedsToasts(bp)
+	needUI := len(bp.Nav) > 0 || hasMarketing
 	roleNav := bp.App.Auth.Enabled && blueprintNavHasRoles(bp.Nav)
 	// authHeader: an auth-aware marketing header (Sign in ↔ account + Sign out).
 	// guestRedirect: bounce already-signed-in visitors off the auth screens.
@@ -6769,22 +6823,6 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\t// HTML forms, mount auth.CSRF — see `gofastr docs blueprints`\n")
 		sb.WriteString("\t\t// (Auth section) and `gofastr docs auth`.\n")
 		sb.WriteString("\t}\n")
-	}
-	// ConfirmAction dialogs — mount a delete confirmation modal for each
-	// soft-delete entity so entity_detail screens can render a trigger.
-	for _, decl := range bp.Entities {
-		if entityDeclarationScope(decl).SoftDelete {
-			sb.WriteString("\t{\n")
-			sb.WriteString(fmt.Sprintf("\t\t_, b := ui.ConfirmAction(ui.ConfirmActionConfig{Name: %q, TriggerLabel: \"Delete\", Title: %q, Body: %q, RPCPath: %q})\n",
-				"delete-"+decl.Name,
-				"Delete this "+toDisplayName(decl.Name)+"?",
-				"This action will soft-delete the record. It can be restored later.",
-				"/"+decl.Name+"/{id}",
-			))
-			sb.WriteString("\t\td := b.Build()\n")
-			sb.WriteString("\t\twidget.Mount(fwApp.Router(), &d)\n")
-			sb.WriteString("\t}\n")
-		}
 	}
 	// Screens (authored + synthesized CRUD) mount themselves: each screen_*.go
 	// self-registers a mount func, and mountGenerated runs them in declaration
@@ -7509,8 +7547,10 @@ func boolValue(node *coreyaml.Node) bool {
 //
 // Deliberately NOT applied to flags whose false value is the safe/inert one
 // (`exposure.public`, `exposure.mcp`, `exposure.crud`, `app.public_openapi`,
-// `*.enabled`, `llm_md`, `timestamps`, `many`, `create`): there, a coerced
-// false turns a feature OFF, which is the direction we would want anyway.
+// `pwa.enabled`, `admin.enabled`, `llm_md`, `timestamps`, `many`, `create`):
+// there, a coerced false turns a feature OFF, which is the direction we would
+// want anyway. NOTE: `*.enabled` is NOT a blanket exception — app.auth.enabled
+// IS routed here: false means the auth subsystem is off and the app is public.
 func protectiveBool(m map[string]*coreyaml.Node, key, context string) (bool, error) {
 	node, ok := m[key]
 	if !ok || node == nil {
@@ -7660,14 +7700,6 @@ func blueprintBlockNeedsToasts(block BlueprintBlock) bool {
 	}
 	for _, child := range block.Children {
 		if blueprintBlockNeedsToasts(child) {
-			return true
-		}
-	}
-	return false
-}
-func blueprintHasSoftDelete(bp Blueprint) bool {
-	for _, decl := range bp.Entities {
-		if entityDeclarationScope(decl).SoftDelete {
 			return true
 		}
 	}

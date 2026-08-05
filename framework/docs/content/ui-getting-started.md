@@ -2,7 +2,7 @@
 
 Running `gofastr init` scaffolds a themed, product-specific app built from framework primitives. This doc walks through the setup steps in order — you'll have a working app after each one.
 
-The module is published — `go mod tidy` resolves it from the Go module proxy. Pin a tagged version (e.g. `v0.4.0`) rather than tracking `main`.
+The module is published — `go mod tidy` resolves it from the Go module proxy. Pin a tagged release rather than tracking `main` (`go get github.com/DonaldMurillo/gofastr@latest` resolves the newest).
 
 ---
 
@@ -24,14 +24,14 @@ Only add a `replace` directive pointing at a local checkout if you are
 hacking on the framework itself and want your app to pick up unreleased
 changes.
 
-Visit <http://localhost:8080> — you should see a placeholder home page served by `screens/home.go`. The CRUD entity at `/posts` works too.
+Visit <http://localhost:8080> — you should see a placeholder home page served by `screens.go`. The CRUD entity at `/posts` works too.
 
 Scaffold layout:
 
 ```
 myapp/
   main.go            # wires entities + adaptive framework theme + UI host
-  screens/home.go    # the home page you'll edit
+  screens.go         # the home page you'll edit
   DESIGN.md          # product intent, hierarchy, composition, and mobile direction
   entities/entities.go # Go-declared CRUD entities (try /posts)
   migrations/

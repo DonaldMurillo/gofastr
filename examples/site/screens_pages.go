@@ -158,10 +158,10 @@ func gsBody() render.HTML {
 	)
 
 	step2 := step("s2", "02", "Scaffold", "~45s",
-		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/, a home screen in screens/, a versioned migration, DESIGN.md, a gofastr.yml project config, and the agent onboarding files (AGENTS.md + agents/, CLAUDE.md), then initializes git.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, a versioned migration, DESIGN.md, gofastr.isolation.yml, and the agent onboarding files (AGENTS.md + agents/, CLAUDE.md), then initializes git.")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
-			ok("→ created blog/: main.go, entities/, screens/, gofastr.yml, DESIGN.md, AGENTS.md, CLAUDE.md\n"),
+			ok("✓ Created project blog in ./blog/: main.go, screens.go, entities/entities.go, gofastr.isolation.yml, DESIGN.md, CLAUDE.md, AGENTS.md\n"),
 			ok("→ next: cd blog && go mod tidy && gofastr dev\n"),
 		),
 		html.Paragraph(html.TextConfig{}, render.Text("Open the scaffolded "), codeText("main.go"), render.Text(". It's short, it's yours, and every registration in it is plain Go. Read it.")),
@@ -176,7 +176,7 @@ func gsBody() render.HTML {
 			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"body"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("Text"), pn("},")),
 			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"published"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("Bool"), pn("},")),
 			ln(render.Text("  "), pn("},")),
-			ln(render.Text("  CRUD"), pn(":"), render.Text(" boolPtr("), kw("true"), pn("),")),
+			ln(render.Text("  Exposure"), pn(":"), render.Text(" &entity."), ty("ExposureConfig"), pn("{"), render.Text("CRUD"), pn(":"), render.Text(" boolPtr("), kw("true"), pn(")},")),
 			ln(pn("})")),
 		}),
 		html.Paragraph(html.TextConfig{}, render.Text("The matching versioned migration is next to it in the same file. "), codeText("gofastr docs migrations"), render.Text(" covers how those run.")),
@@ -199,8 +199,8 @@ func gsBody() render.HTML {
 	)
 
 	step5 := step("s5", "05", "First page", "~60s",
-		html.Paragraph(html.TextConfig{}, render.Text("Add a second server-rendered page. A screen is a Go struct whose Render returns the markup. The scaffolded home screen in "), codeText("screens/home.go"), render.Text(" is the pattern:")),
-		codeBlock("blog/screens/about.go", []render.HTML{
+		html.Paragraph(html.TextConfig{}, render.Text("Add a second server-rendered page. A screen is a Go struct whose Render returns the markup. The scaffolded home screen in "), codeText("screens.go"), render.Text(" is the pattern:")),
+		codeBlock("blog/about.go", []render.HTML{
 			ln(kw("type"), render.Text(" "), ty("AboutScreen"), render.Text(" "), kw("struct"), pn("{}")),
 			ln(render.Text("")),
 			ln(kw("func"), render.Text(" (s "), pn("*"), ty("AboutScreen"), pn(")"), render.Text(" "), fn_("ScreenTitle"), pn("()"), render.Text(" "), ty("string"), pn(" {"), render.Text(" "), kw("return"), render.Text(" "), str_(`"About"`), pn(" }")),
@@ -208,7 +208,7 @@ func gsBody() render.HTML {
 			ln(render.Text("  "), kw("return"), render.Text(" ui."), fn_("PageHeader"), pn("("), render.Text("ui."), ty("PageHeaderConfig"), pn("{"), render.Text("Title"), pn(":"), render.Text(" "), str_(`"About"`), pn("})")),
 			ln(pn("}")),
 		}),
-		html.Paragraph(html.TextConfig{}, render.Text("Register it in "), codeText("main.go"), render.Text(" next to the home screen: "), codeText(`site.Register("/about", &screens.AboutScreen{}, nil)`), render.Text(". Save, and the dev server serves it.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Register it in "), codeText("main.go"), render.Text(" next to the home screen: "), codeText(`site.Register("/about", &AboutScreen{}, nil)`), render.Text(". Save, and the dev server serves it.")),
 		callout("Tip", "Run `gofastr docs` to browse all embedded docs offline, including entity-declarations, query-dsl, and hooks."),
 	)
 

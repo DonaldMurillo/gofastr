@@ -141,11 +141,11 @@ func mountProductsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 }
 
 func mountProductDetailScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	site.Register("/product-detail", &ProductDetailScreen{}, appLayout)
+	site.Register("/products/:id", &ProductDetailScreen{}, appLayout)
 }
 
 func mountProductsEditScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	site.Register("/product-detail/edit", &ProductsEditScreen{}, appLayout)
+	site.Register("/products/:id/edit", &ProductsEditScreen{}, appLayout)
 }
 
 func init() {

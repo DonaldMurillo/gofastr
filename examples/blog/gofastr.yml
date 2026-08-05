@@ -190,7 +190,7 @@ screens:
         fields: [title, body, status, author_id]
 
   - name: post_detail
-    route: /post-detail
+    route: /posts/{id}
     title: Post Details
     description: View blog post
     body:

@@ -2497,6 +2497,13 @@ func reverseAuthCard(call *ast.CallExpr) BlueprintBlock {
 		}
 	}
 	footerHref := htmlAttr(rawString(c["Footer"]), "href")
+	if footerHref == "" {
+		// Since v0.61 the emitter renders the auth footer as the URL-checked
+		// ui.Link component instead of a raw anchor; read Href from its config.
+		if link, ok := c["Footer"].(*ast.CallExpr); ok && callSel(link) == "ui.Link" {
+			footerHref = astString(cfgOf(link, 0)["Href"])
+		}
+	}
 	kind, hrefKey := "login_form", "register_href"
 	if strings.Contains(action, "register") {
 		kind, hrefKey = "signup_form", "login_href"

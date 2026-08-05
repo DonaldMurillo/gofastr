@@ -241,7 +241,16 @@ func irQuotingSites(payload string) []irSite {
 
 	// ---- blocks ----
 	block := func(site string, blk BlueprintBlock) {
-		add(site, func(b *Blueprint) { b.Screens[0].Body = []BlueprintBlock{blk} })
+		add(site, func(b *Blueprint) {
+			b.Screens[0].Body = []BlueprintBlock{blk}
+			// entity_detail / entity_form(edit) render a specific record and
+			// require an {id} route param to clear validateBlueprint; without it
+			// the validator (correctly) rejects and these injection sites would
+			// be skipped instead of exercised.
+			if blk.Kind == "entity_detail" || (blk.Kind == "entity_form" && strings.EqualFold(blk.Mode, "edit")) {
+				b.Screens[0].Route = "/tickets/{id}"
+			}
+		})
 	}
 	block("block.mode", BlueprintBlock{Kind: "entity_form", Entity: "tickets", Mode: payload})
 	block("block.search", BlueprintBlock{Kind: "entity_list", Entity: "tickets", Search: payload})

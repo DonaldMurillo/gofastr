@@ -388,7 +388,7 @@ screens:
         fields: [title, slug, body, excerpt, category, status, featured]
 
   - name: post_detail
-    route: /post-detail
+    route: /blog/{id}
     title: Post Details
     description: View blog post
     body:

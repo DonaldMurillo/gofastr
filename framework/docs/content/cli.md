@@ -12,7 +12,10 @@ each command to the doc that covers it.
 - `gofastr init <name>` — a new project: framework UI, `DESIGN.md`, a
   sample entity (`--no-entity` to skip), git, and the agent onboarding
   files. `--module=<path>` sets the Go module; `--db=sqlite|postgres`
-  picks the driver. A released CLI pins the generated `go.mod` to its
+  picks the driver (default `sqlite`; `sqlite3` and `postgresql` are
+  accepted aliases, anything else is an error). `init . --reinit` refreshes the
+  AI-agent onboarding files in place (`--force` overwrites your edits);
+  no Go code or git changes. A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.
 - `gofastr new handler <name>` / `gofastr new route <path>` — scaffold
@@ -21,7 +24,8 @@ each command to the doc that covers it.
   and the per-battery detail files under `agents/`.
 - `gofastr theme edit` — a local theme configurator: every token as a control,
   the whole component gallery as a live preview, write-back to `theme/theme.go`.
-- `gofastr theme init` — scaffold a typed `theme/theme.go` you own.
+- `gofastr theme init` — scaffold a typed `theme/theme.go` you own
+  (`--out=<path>` writes elsewhere; `--force` overwrites).
 
 ## Blueprints
 
@@ -29,8 +33,11 @@ each command to the doc that covers it.
   (exit 0 = valid; includes the unscoped-PII lint).
 - `gofastr generate --from=<yml>` — one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-blueprint-app.md)). `generate --add`
-  / `generate entity <name>` scaffold *new* files into an existing app;
-  owned files are never touched.
+  / `generate entity <name>` / `generate screen <name>` scaffold *new*
+  files into an existing app; owned files are never touched.
+  `generate --config=<codegen.yml>` runs the configurable codegen engine
+  ([codegen](codegen.md)); `generate --watch` re-runs on every change.
+  `generate all` is the full-project path (same engine as `--from`).
 - `gofastr pack [app-dir]` — snapshot a generated app into a
   best-effort `gofastr.yml`. Lossy; not an inverse of `generate`.
 
@@ -40,13 +47,18 @@ each command to the doc that covers it.
   for what you changed (after the reload, never blocking it), and the dev
   MCP tools for your coding agent ([dev-livereload](dev-livereload.md)).
   `--dir` sets the watch root, `--pkg` the main package under it,
-  `--addr`/`-p` the port.
+  `--addr`/`-p` the port; `--no-a11y` skips the accessibility lint on
+  each rebuild.
 - `gofastr build` — codegen + `go vet` + accessibility lint + the embed
-  server-action gate + `go build` (`--no-a11y` skips the lint, `--pkg`
-  selects the main package, `--no-embed-check` skips the embed gate, and
-  `--allow-unverified-embeds` keeps proven violations fatal while
-  downgrading a surface the analyzer cannot follow — see
-  [embed](embed.md)).
+  server-action gate + contract verification + `go build`. Only
+  error-severity contract findings stop the build (`gofastr verify` is
+  the full report; an existing app adopts the gate with a baseline — see
+  [contracts](contracts.md)). Flags: `--no-a11y` skips the a11y lint,
+  `--no-embed-check` skips the embed gate, `--no-contracts` skips the
+  contract gate, `--no-generate` skips codegen, `--pkg` selects the main
+  package, and `-o`/`--output` names the binary (default `bin/server`).
+  `--allow-unverified-embeds` keeps proven embed violations fatal while
+  downgrading a surface the analyzer cannot follow ([embed](embed.md)).
 - `gofastr test` — run the project's tests.
 - `gofastr docs [topic]` — these docs, offline, versioned with the
   binary (`--list` every topic, `--grep <term>` to search).
@@ -61,8 +73,9 @@ each command to the doc that covers it.
 - `gofastr generate sdk` — Go + JS/TS clients your app can host behind
   a live docs page ([sdk](sdk.md)).
 - `gofastr upgrade` — move to a newer release: lists every migration
-  note between your `go.mod` version and the target and points at
-  affected lines; `--apply` runs the steps ([upgrading](upgrading.md)).
+  note between your `go.mod` version and the target (`--to vX.Y.Z`;
+  without it the newest tagged release is resolved via the proxy) and
+  points at affected lines; `--apply` runs the steps ([upgrading](upgrading.md)).
 
 ## Verify
 
@@ -83,6 +96,9 @@ each command to the doc that covers it.
 - `gofastr verify --strict --baseline-write` — record today's findings as
   accepted debt so only NEW ones fail. How an existing codebase adopts the
   gate.
+- `gofastr verify --rule <id> --fix` — apply one rule's fixes at a time
+  so edits stay reviewable; `--analyzer <name>` scopes to one analyzer,
+  `--config <file>` picks a non-default config, `--no-vet` skips `go vet`.
 
 ## Audit
 

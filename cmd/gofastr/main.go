@@ -105,7 +105,7 @@ func printHelp() {
     Flags:
       --module=<path>  Set Go module path (default: local/<name>)
       --no-entity      Skip sample entity scaffolding
-      --db=<driver>    Database driver: sqlite3 (default) or postgres
+      --db=<driver>    Database driver: sqlite (default) or postgres (aliases: sqlite3, postgresql)
   new handler <n>       Scaffold a new HTTP handler
   new route <path>      Scaffold a route registration
   generate (gen, g) --from=<yml> Generate code from a deterministic YAML blueprint
