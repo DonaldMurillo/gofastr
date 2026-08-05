@@ -566,7 +566,7 @@ screens:
         fields: [title, slug, subtitle, description, category, level, price, is_free]
 
   - name: course_detail
-    route: /course-detail
+    route: /courses/{id}
     title: Course Details
     description: View course details
     body:
@@ -638,6 +638,7 @@ seed:
     rows:
       - title: Introduction to Web Development
         slug: intro-web-dev
+        instructor_id: "@instructors.email=sarah@learnhub.dev"
         subtitle: Learn HTML, CSS, and JavaScript from scratch
         description: A comprehensive beginner course covering the fundamentals of web development. No prior experience required.
         category: Web Development
@@ -649,6 +650,7 @@ seed:
         estimated_duration_weeks: 6
       - title: Advanced Go Programming
         slug: advanced-go
+        instructor_id: "@instructors.email=sarah@learnhub.dev"
         subtitle: Master Go concurrency, generics, and performance
         description: Deep dive into Go's advanced features including goroutines, channels, generics, and profiling.
         category: Backend Development
@@ -660,6 +662,7 @@ seed:
         estimated_duration_weeks: 8
       - title: Cloud Fundamentals
         slug: cloud-fundamentals
+        instructor_id: "@instructors.email=alex@learnhub.dev"
         subtitle: Understanding cloud computing concepts
         description: Free course covering AWS, GCP, and Azure basics. Perfect for beginners exploring cloud computing.
         category: Cloud Computing
@@ -672,12 +675,12 @@ seed:
   - entity: modules
     rows:
       - title: Getting Started with HTML
-        course_id: 1
+        course_id: "@courses.slug=intro-web-dev"
         description: Learn the building blocks of every web page
         position: 1
         status: published
       - title: CSS Styling Fundamentals
-        course_id: 1
+        course_id: "@courses.slug=intro-web-dev"
         description: Make your web pages look beautiful
         position: 2
         status: published

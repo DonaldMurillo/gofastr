@@ -106,11 +106,11 @@ func mountOrdersScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 }
 
 func mountOrderDetailScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	site.Register("/order-detail", &OrderDetailScreen{}, appLayout)
+	site.Register("/orders/:id", &OrderDetailScreen{}, appLayout)
 }
 
 func mountOrdersEditScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	site.Register("/order-detail/edit", &OrdersEditScreen{}, appLayout)
+	site.Register("/orders/:id/edit", &OrdersEditScreen{}, appLayout)
 }
 
 func init() {

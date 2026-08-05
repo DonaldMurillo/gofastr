@@ -447,7 +447,7 @@ screens:
         fields: [title, description, priority, task_type, status, assignee_email, due_date]
 
   - name: task_detail
-    route: /task-detail
+    route: /tasks/{id}
     title: Task Details
     description: View task details
     body:
@@ -499,6 +499,32 @@ seed:
         description: Native mobile app for iOS and Android
         status: planning
         color: "#10B981"
+  - entity: boards
+    rows:
+      - name: Web Board
+        project_id: "@projects.key=WEB"
+        description: Kanban board for the website redesign
+        position: 1
+        color: "#3B82F6"
+      - name: Mobile Board
+        project_id: "@projects.key=MOB"
+        description: Backlog board for the mobile app
+        position: 1
+        color: "#10B981"
+  - entity: columns
+    rows:
+      - name: Backlog
+        board_id: "@boards.name=Web Board"
+        position: 1
+      - name: In Progress
+        board_id: "@boards.name=Web Board"
+        position: 2
+      - name: Done
+        board_id: "@boards.name=Web Board"
+        position: 3
+      - name: Mobile Backlog
+        board_id: "@boards.name=Mobile Board"
+        position: 1
   - entity: labels
     rows:
       - name: Bug
@@ -516,24 +542,28 @@ seed:
   - entity: tasks
     rows:
       - title: Design new homepage hero section
+        column_id: "@columns.name=In Progress"
         description: Create a visually striking hero section with animated gradient background
         priority: high
         task_type: feature
         status: in_progress
         estimated_hours: 8
       - title: Fix mobile navigation overflow
+        column_id: "@columns.name=Backlog"
         description: Hamburger menu items overflow on screens smaller than 375px
         priority: urgent
         task_type: bug
         status: todo
         estimated_hours: 2
       - title: Add dark mode toggle
+        column_id: "@columns.name=Backlog"
         description: Implement system-preference-aware dark mode with manual override
         priority: medium
         task_type: improvement
         status: todo
         estimated_hours: 4
       - title: Write API documentation
+        column_id: "@columns.name=Backlog"
         description: Document all REST endpoints with request/response examples
         priority: low
         task_type: task
@@ -542,6 +572,8 @@ seed:
   - entity: comments
     rows:
       - body: The hero section looks great on desktop but needs work on mobile.
+        task_id: "@tasks.title=Design new homepage hero section"
         author_email: designer@team.dev
       - body: Reproduced on iPhone SE. The overflow happens when nav items exceed 5.
+        task_id: "@tasks.title=Fix mobile navigation overflow"
         author_email: dev@team.dev

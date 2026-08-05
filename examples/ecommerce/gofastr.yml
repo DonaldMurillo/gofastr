@@ -399,7 +399,7 @@ screens:
         fields: [name, slug, sku, description, price, stock, status, featured]
 
   - name: product_detail
-    route: /product-detail
+    route: /products/{id}
     title: Product Details
     description: View product details
     body:
@@ -412,7 +412,7 @@ screens:
         fields: [name, slug, sku, description, price, stock, status, featured]
 
   - name: order_detail
-    route: /order-detail
+    route: /orders/{id}
     title: Order Details
     description: View order details
     body:
@@ -465,6 +465,7 @@ seed:
     rows:
       - name: Wireless Headphones
         slug: wireless-headphones
+        category_id: "@categories.slug=electronics"
         sku: WH-001
         description: Premium noise-cancelling wireless headphones with 30-hour battery life.
         price: 79.99
@@ -473,6 +474,7 @@ seed:
         featured: true
       - name: USB-C Hub
         slug: usb-c-hub
+        category_id: "@categories.slug=electronics"
         sku: UCH-002
         description: 7-in-1 USB-C hub with HDMI, USB 3.0, SD card reader, and PD charging.
         price: 49.99
@@ -480,6 +482,7 @@ seed:
         status: active
       - name: Mechanical Keyboard
         slug: mechanical-keyboard
+        category_id: "@categories.slug=home-garden"
         sku: MK-003
         description: Hot-swappable mechanical keyboard with RGB backlighting.
         price: 129.99
@@ -488,6 +491,7 @@ seed:
         featured: true
       - name: Webcam HD
         slug: webcam-hd
+        category_id: "@categories.slug=clothing"
         sku: WC-004
         description: 1080p HD webcam with auto-focus and built-in microphone.
         price: 39.99
@@ -497,11 +501,13 @@ seed:
   - entity: reviews
     rows:
       - author_name: Sarah M.
+        product_id: "@products.slug=wireless-headphones"
         rating: 5
         title: Best headphones I ever owned
         body: The noise cancellation is incredible. Battery lasts forever.
         verified: true
       - author_name: Mike T.
+        product_id: "@products.slug=mechanical-keyboard"
         rating: 4
         title: Great value
         body: Solid build quality for the price. Wish the case was included.

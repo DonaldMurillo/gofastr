@@ -45,7 +45,7 @@ func TestE2E(t *testing.T) {
 	}
 
 	// Public screens render for anonymous visitors.
-	for _, p := range []string{"/", "/products", "/categories", "/orders", "/reviews", "/new-product", "/product-detail", "/order-detail", "/product-detail/edit", "/order-detail/edit"} {
+	for _, p := range []string{"/", "/products", "/categories", "/orders", "/reviews", "/new-product"} {
 		if code, body := e2eDo(t, http.DefaultClient, "GET", base+p, ""); code != http.StatusOK {
 			t.Errorf("public screen %s = %d, want 200", p, code)
 		} else if len(body) < 120 {

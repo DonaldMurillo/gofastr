@@ -499,7 +499,7 @@ screens:
         fields: [title, property_type, listing_type, price, address, city, bedrooms, bathrooms, sqft, description]
 
   - name: property_detail
-    route: /property-detail
+    route: /properties/{id}
     title: Property Details
     description: View property details
     body:
@@ -572,11 +572,13 @@ seed:
     rows:
       - name: Emma Sterling
         email: emma@premierrealty.dev
+        agency_id: "@agencies.slug=premier-realty"
         phone: "+1-555-0101"
         bio: 15 years experience in luxury residential real estate.
         active: true
       - name: James Rivera
         email: james@coastalhomes.dev
+        agency_id: "@agencies.slug=coastal-homes"
         phone: "+1-555-0201"
         bio: Specialist in coastal and beachfront properties.
         active: true
@@ -584,6 +586,8 @@ seed:
     rows:
       - title: Modern Downtown Loft
         slug: modern-downtown-loft
+        agency_id: "@agencies.slug=premier-realty"
+        agent_id: "@agents.email=emma@premierrealty.dev"
         description: Stunning 2-bedroom loft in the heart of downtown with floor-to-ceiling windows and city views.
         property_type: apartment
         listing_type: sale
@@ -599,6 +603,8 @@ seed:
         featured: true
       - title: Beachfront Villa
         slug: beachfront-villa
+        agency_id: "@agencies.slug=coastal-homes"
+        agent_id: "@agents.email=james@coastalhomes.dev"
         description: Spectacular 4-bedroom beachfront villa with private pool and ocean views.
         property_type: house
         listing_type: sale
@@ -615,6 +621,8 @@ seed:
         featured: true
       - title: Cozy Studio Near Park
         slug: cozy-studio-near-park
+        agency_id: "@agencies.slug=premier-realty"
+        agent_id: "@agents.email=emma@premierrealty.dev"
         description: Affordable studio apartment walking distance from Golden Gate Park.
         property_type: apartment
         listing_type: rent
