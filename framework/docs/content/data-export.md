@@ -5,6 +5,11 @@ registered battery table) to a portable archive and restore it with
 validation. This is a **data** export — anti-lock-in for the rows you own —
 and is distinct from `ExportStatic`, which renders the site to static HTML.
 
+`App.EraseUserData` is the matching **erasure** primitive (GDPR
+right-to-be-forgotten): it expunges a user's rows across the same surfaces and
+anonymizes their actor reference in the audit trail. It is documented in the
+[Data erasure](#data-erasure) section below.
+
 ```go
 app := framework.NewApp(framework.WithDB(db))
 app.Entity("posts", framework.EntityConfig{ … })
@@ -186,3 +191,137 @@ datexport.Register(datexport.DataExporter{
 - **Editing an archive by hand.** The manifest carries a SHA-256 per file;
   a hand-edited NDJSON fails the checksum and the whole import is rejected
   before any write.
+
+## Data erasure
+
+`App.EraseUserData(ctx, userID, opts...)` is the right-to-be-forgotten
+primitive. It mirrors `ExportData`'s two-plane design — the entity registry
+plus the `datexport` registry — so an erasure reaches exactly the tables an
+export does, and adds a third, built-in plane for the audit trail.
+
+```go
+report, err := app.EraseUserData(ctx, "user_42")
+if err != nil { return err }
+log.Printf("erased %d rows for user_42", report.TotalErased())
+```
+
+### The three planes
+
+1. **Entity plane.** Every owner-scoped entity (`Scope.OwnerField` set) is
+   hard-deleted: `DELETE FROM <table> WHERE <owner_field> = $1`. The delete is
+   raw, so it removes soft-deleted rows too — a row the user previously
+   "deleted" is now actually expunged. Erasure means erasure: no tombstone, no
+   undo. Entities without an `OwnerField` hold no per-user data and are
+   skipped.
+2. **Battery plane.** Every registered `datexport.DataEraser` runs. A battery
+   declares each table it owns and how to erase it: hard-delete, or anonymize
+   (overwrite named columns with a tombstone and keep the row). `battery/auth`
+   registers `auth_sessions` (delete by `user_id`) and `auth_users` (delete by
+   `id`).
+3. **Audit plane (built-in).** The audit table is retained — it is the
+   compliance record of who did what — but the user's `actor_id` is
+   anonymized: every row where `actor_id = userID` is set to `[erased]`. See
+   [Audit retention](#audit-retention) below.
+
+### Audit retention
+
+Audit rows are **not deleted**. This is deliberate and is the industry-standard
+posture for a compliance trail. Instead the personal link is cut:
+
+- `actor_id` (the *who*) is overwritten with `[erased]` for every row the
+  erased user acted from.
+- `record_id` (the *what*) is left intact. It is heterogeneous — a resource id
+  for CRUD events, sometimes a user id for auth events — and records which
+  object was acted on, which is legitimate audit content. Blanket-anonymizing
+  it would also destroy the resource ids that make the trail useful.
+
+The default audit table is `audit_log` (matching `EnsureAuditTable`). If your
+app renamed it via `AuditConfig.Table`, pass the name to `EraseUserData`:
+
+```go
+app.EraseUserData(ctx, uid, framework.WithEraseAuditTable("my_audit"))
+```
+
+### EraseReport
+
+`EraseUserData` returns a structured summary so a host can log or persist what
+was erased:
+
+```go
+type EraseReport struct {
+    DryRun    bool
+    Entities  []EraseTableResult // owner-scoped entity tables (always delete)
+    Batteries []EraseTableResult // registered erasers (delete or anonymize)
+    Audit     *EraseTableResult  // built-in audit anonymization
+}
+```
+
+Each `EraseTableResult` carries the table name, the mode (`delete` or
+`anonymize`), and the row count. `report.TotalErased()` sums every plane.
+
+### Dry-run
+
+`WithEraseDryRun()` switches the call to count-only: the report carries the
+rows that *would* be affected, but nothing is deleted or scrubbed. Use it for a
+compliance review before committing to an erasure.
+
+```go
+dry, _ := app.EraseUserData(ctx, uid, framework.WithEraseDryRun())
+// dry.TotalErased() == the count a real call would erase; DB unchanged
+```
+
+### Idempotency
+
+`EraseUserData` is idempotent: a second call for the same user matches zero
+rows and returns a zero report without error. The delete plane is naturally
+idempotent (the rows are gone). The anonymize plane is idempotent by count
+because it scrubs its match column too — once `user_id` (or `actor_id`) holds
+the tombstone, a re-run's `WHERE` matches nothing.
+
+### Registering an eraser
+
+A battery or app registers a table for erasure the same way it registers one
+for export. Two modes:
+
+```go
+// Hard-delete every row owned by the user.
+datexport.RegisterEraser(datexport.DataEraser{
+    Name: "orders", Source: "billing", Table: "orders",
+    Column: "customer_id", Mode: datexport.EraseDelete,
+})
+
+// Keep the row, scrub the personal columns.
+datexport.RegisterEraser(datexport.DataEraser{
+    Name: "support_tickets", Source: "helpdesk", Table: "support_tickets",
+    Column: "reporter_id", Mode: datexport.EraseAnonymize,
+    ScrubColumns: []string{"email", "phone"},
+    Tombstone:    "[redacted]",   // empty defaults to "[erased]"
+})
+```
+
+`Column` is the user-id column matched against the erased user's id. For
+`EraseAnonymize`, both `ScrubColumns` and `Column` are overwritten with
+`Tombstone`. As with export: a registered table that is absent from the live
+DB is skipped with a note; an unregistered raw table is silently excluded.
+
+### SQL safety
+
+Erasure rides the same identifier firewall as export: every table and column
+name is registry- or eraser-derived and passes through `core/query.SafeIdent`
+before `core/query.QuoteIdent`; the user id and the tombstone are `$n` bound
+arguments. A misconfigured eraser fails loud at `SafeIdent` rather than
+interpolating an unsafe name. The whole write runs inside one transaction and
+rolls back on any error.
+
+### Common mistakes (erasure)
+
+- **Expecting soft-delete to protect rows.** Erasure is a raw hard-delete that
+  ignores `deleted_at`. If you need a recoverable "soft erasure," do it in app
+  code — `EraseUserData` is for the irrevocable case.
+- **Forgetting battery tables.** Just as with export, a registry walk only
+  sees declared entities. `battery/auth` registers its tables; a custom raw
+  table with per-user data needs its own `datexport.RegisterEraser`, or it is
+  silently left in place.
+- **Renaming the audit table without telling erasure.** The built-in audit
+  plane defaults to `audit_log`. A renamed audit table must be passed via
+  `WithEraseAuditTable`, or the user's `actor_id` is left intact.
