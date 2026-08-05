@@ -69,7 +69,7 @@ func (a *App) registerIntrospectionTools() error {
 		},
 		{
 			name:        "app_config",
-			description: "Return the current AppConfig snapshot: Name, JSONCase, DebugEndpoints, NoLLMMD, RequestTimeout, DisableRequestTimeout. Read-only.",
+			description: "Return the current AppConfig snapshot: Name, JSONCase, DebugEndpoints, NoLLMMD, RequestTimeout, DisableRequestTimeout, and the resolved http.Server connection timeouts (read_header/read/write/idle in ms). Read-only.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolConfig,
 		},
@@ -200,7 +200,33 @@ func (a *App) toolConfig(_ context.Context, _ map[string]any) (any, error) {
 		"no_llmmd":                a.Config.NoLLMMD,
 		"request_timeout_ms":      a.Config.RequestTimeout.Milliseconds(),
 		"disable_request_timeout": a.Config.DisableRequestTimeout,
+		// The resolved connection deadlines the http.Server actually uses
+		// (defaults applied, HTTPServerTimeouts overrides honored, DisableRequestTimeout
+		// zeroing reflected). Answers "why did my handler get cut?" without guessing.
+		"http_server_timeouts_ms": a.effectiveServerTimeoutsMs(),
 	}, nil
+}
+
+// effectiveServerTimeoutsMs reports the four http.Server connection deadlines
+// after defaults and AppConfig.HTTPServerTimeouts / DisableRequestTimeout are
+// resolved, for the app_config introspection tool. Before Start the server is
+// nil, so the documented defaults are reported instead of zeros.
+func (a *App) effectiveServerTimeoutsMs() map[string]int64 {
+	rh := defaultServerReadHeaderTimeout
+	r := defaultServerReadTimeout
+	w := defaultServerWriteTimeout
+	idle := defaultServerIdleTimeout
+	a.serverMu.Lock()
+	if srv := a.server; srv != nil {
+		rh, r, w, idle = srv.ReadHeaderTimeout, srv.ReadTimeout, srv.WriteTimeout, srv.IdleTimeout
+	}
+	a.serverMu.Unlock()
+	return map[string]int64{
+		"read_header_ms": rh.Milliseconds(),
+		"read_ms":        r.Milliseconds(),
+		"write_ms":       w.Milliseconds(),
+		"idle_ms":        idle.Milliseconds(),
+	}
 }
 
 // toolDocsList enumerates every embedded framework doc topic. Each

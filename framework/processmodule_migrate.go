@@ -144,10 +144,18 @@ func NewMigrationCoordinator(store ProcessModuleStore, adminDB *sql.DB, opts ...
 	if adminDB == nil {
 		return nil, errors.New("processmodule: NewMigrationCoordinator: nil admin db")
 	}
+	// The dialect picks the migration path — including whether the
+	// per-module Postgres schema/role boundary applies — and is cached for
+	// the coordinator's lifetime. A guess here would run trusted module DDL
+	// down the wrong path, so fail closed.
+	dialect, err := migrate.DetectDialectStrict(adminDB)
+	if err != nil {
+		return nil, fmt.Errorf("processmodule: NewMigrationCoordinator: %w", err)
+	}
 	c := &MigrationCoordinator{
 		store:   store,
 		adminDB: adminDB,
-		dialect: migrate.DetectDialect(adminDB),
+		dialect: dialect,
 		now:     time.Now,
 	}
 	for _, opt := range opts {

@@ -737,9 +737,30 @@ if err := framework.AutoMigrate(db, app.Registry); err != nil { … }
 ```
 
 `framework.AutoMigrate` is a package-level function, not a method on
-`App`. It probes the connection to pick the SQL dialect (Postgres
-first, SQLite on failure) and emits `CREATE TABLE IF NOT EXISTS` and
-`CREATE INDEX IF NOT EXISTS` so it is safe to re-run.
+`App`. It probes the connection to pick the SQL dialect (Postgres first;
+SQLite when the engine answers but is not Postgres) and emits
+`CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` so it is
+safe to re-run.
+
+Dialect detection **fails closed**. If the `SELECT version()` probe cannot
+reach the database after its retries — a bad or unreachable DSN, a connection
+reset, a pooler in statement mode — `AutoMigrate`, `MigrateEntity`,
+`DiffSchema`, and `RunSeeds` return an error naming the probe failure and
+pointing at the database connection instead of guessing SQLite. The detected
+dialect decides whether the cross-replica advisory lock is taken at all and
+which stored routines apply, so a transient probe failure that silently
+downgraded to SQLite would skip the lock and every Postgres-only routine on a
+routine-only Postgres app. The boot error looks like:
+
+```
+migrate: dialect probe failed after 3 attempts: <cause> (check the database connection / DATABASE_URL)
+```
+
+Remedy: check `DATABASE_URL` — for SQLite the file path must exist and be
+writable; for Postgres the host, port, and credentials must be reachable —
+then re-boot. An engine that genuinely lacks `version()` (SQLite's
+`no such function: version`) is the deterministic, non-transient case: it
+resolves to SQLite without retrying and without erroring.
 
 It creates tables, indexes, and foreign keys, and **adds missing
 columns to existing tables** (`ALTER TABLE ADD COLUMN`, built by the

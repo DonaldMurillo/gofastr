@@ -1,0 +1,5 @@
+# The frozen pre-upgrade seed DBs are committed fixtures (tiny, ~77 KB each),
+# not local dev databases — re-include them despite the root .gitignore's
+# blanket *.db rule. Without this they would silently fail to commit and the
+# upgrade driver would have no existing data to migrate over.
+!**/seed.db

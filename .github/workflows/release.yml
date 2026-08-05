@@ -1,17 +1,26 @@
-# Safety net for the release flow: every pushed v* tag must have a
-# GitHub release. The human/agent flow (merge → tag → `gh release create`
-# with a descriptive title) is still the primary path — this workflow
-# exists because the last step got skipped twice (v0.22–v0.24 era, then
-# v0.34.0–v0.39.0 backfilled 2026-07-22).
+# Release publisher for a release tag. The ONLY normal way a GitHub release is
+# created here is this workflow — never a manual `gh release create`.
 #
-# Behavior on tag push:
-#   - release already exists → no-op success.
-#   - release missing, CHANGELOG.md has a `## [X.Y.Z]` section → create
-#     the release with that section as the body. Title is just the tag;
-#     edit it afterward to the usual "vX.Y.Z — short description" form.
-#   - release missing AND changelog section missing → FAIL. That means
-#     the changelog roll never happened, which the single-PR release
-#     flow requires; fix the changelog, then re-run via workflow_dispatch.
+# Supported flow (the ONLY supported flow):
+#   1. merge the release PR to main,
+#   2. push the v* tag on the current green main head.
+# The tag push triggers this workflow, which runs the publish gate
+# (scripts/release-gate.sh) and creates the release only if the gate passes.
+# To re-check an existing tag once CI has settled, run it via workflow_dispatch.
+#
+# The gate (locally testable via cmd/gofastr/release_gate_test.go) refuses to
+# publish unless:
+#   - no release for the tag already exists (a manual `gh release create`
+#     bypassed the gate — the old flow documented exactly that, and the old
+#     "already exists" check ran only AFTER the CI gate),
+#   - the tag commit IS the current head of main (not a stale re-tag, not an
+#     unmerged-PR commit), and
+#   - EVERY required blocking check in scripts/release-required-checks.txt ran
+#     green on that commit's main-push CI run (ci.yml has no v* trigger; check
+#     runs attach to the commit, so the main-push run carries them).
+# Fail-closed: a red / cancelled / missing check, a stale or unmerged SHA, or a
+# pre-existing release all abort before anything is published. This closes the
+# holes behind v0.61.0 (shipped a red commit) and the manual-release bypass.
 name: release
 
 on:
@@ -20,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing v* tag to (re)check, e.g. v0.40.0'
+        description: 'Existing v* tag to (re)check, e.g. v0.63.0'
         required: true
 
 permissions:
@@ -34,73 +43,97 @@ jobs:
         id: tag
         env:
           DISPATCH_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$DISPATCH_TAG"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            tag="$GITHUB_REF_NAME"
           fi
+          # Git allows command-substitution syntax in tag names, and a
+          # ${{ }} expression is spliced into the shell source BEFORE bash
+          # parses it. Pin the shape here, once, and pass the value through
+          # env everywhere else so no step interpolates it into source.
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::refusing tag $tag — a release tag must look like v1.2.3"; exit 1 ;;
+          esac
+          if printf '%s' "$tag" | grep -q '[^A-Za-z0-9._-]'; then
+            echo "::error::refusing tag $tag — only [A-Za-z0-9._-] are allowed in a release tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       # SHA-pinned like every other action in this repo: a tag is mutable,
       # so `@v4` executes whatever the tag points at on release day.
+      # fetch-depth 0: the gate verifies the tag SHA is the current main HEAD,
+      # which needs main's ref and the ancestry path for a precise error.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
 
-      # A release must not ship a red commit. v0.61.0 published while its
-      # blocking build·vet·test check had FAILED, because nothing here ever
-      # consulted CI. Waits for every "(blocking)" check run on the exact
-      # tag SHA and refuses to publish unless all of them — at least three
-      # — completed green. Check runs attach to the commit, and a release
-      # tag points at a merge commit on main, so the checks this finds are
-      # the ones from that commit's main-push CI run; ci.yml deliberately
-      # has no v* trigger (it would re-run the identical pipeline on the
-      # same SHA). If the tag points at a commit that never ran CI — or
-      # whose run was cancelled — zero checks turn up and the wait below
-      # times out red: retag on a commit with green CI, or re-run the
-      # failed jobs of that commit's existing CI run (check runs update in
-      # place on the same SHA), then re-run this via workflow_dispatch.
-      - name: Require green blocking CI on the tag commit
+      - name: Resolve tag SHA
+        id: sha
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          sha=$(git rev-parse "${TAG}^{commit}")
-          echo "gating release of $TAG on blocking check runs at $sha"
-          deadline=$((SECONDS + 3600))
-          while :; do
-            runs=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --paginate \
-              --jq '[.check_runs[] | select(.name | test("\\(blocking\\)"))]')
-            total=$(jq 'length' <<<"$runs")
-            green=$(jq '[.[] | select(.status=="completed" and .conclusion=="success")] | length' <<<"$runs")
-            red=$(jq -r '[.[] | select(.status=="completed" and .conclusion!=null and .conclusion!="success")] | map(.name) | join(", ")' <<<"$runs")
-            if [ -n "$red" ]; then
-              echo "::error::blocking checks failed on $sha: $red — a release must not ship a red commit. Fix, retag (or re-run CI), then re-run via workflow_dispatch."
-              exit 1
-            fi
-            if [ "$total" -ge 3 ] && [ "$green" -eq "$total" ]; then
-              echo "all $total blocking checks green on $sha"
-              break
-            fi
-            if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::timed out waiting for blocking checks on $sha ($green/$total green). Re-run via workflow_dispatch once CI finishes."
-              exit 1
-            fi
-            echo "waiting: $green/$total blocking checks green"
-            sleep 30
-          done
+          sha=$(git rev-parse "$TAG^{commit}")
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "gating release of $TAG at $sha"
 
-      - name: Create release if missing
+      # The gate's SHA-on-main check resolves origin/main; fetch it explicitly
+      # so the ref exists regardless of how checkout materialized the tree.
+      - name: Fetch main for the SHA-on-main gate
+        run: git fetch --no-tags origin main
+
+      # The publish gate. Everything testable lives in the script (stubbed
+      # gh/git); this step only invokes it. On failure it emits ::error::
+      # naming the exact cause (pre-existing release / unmerged SHA / stale
+      # SHA / red or missing check) and the workflow stops — no release.
+      - name: Run the publish gate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.tag.outputs.tag }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          bash scripts/release-gate.sh "$TAG" "$REPO" "$SHA" scripts/release-required-checks.txt
+
+      # main can move (or the tag can be force-updated) while the gate waits
+      # for checks, so re-verify immediately before publishing: the window
+      # between the gate's last check and `gh release create` is the only
+      # remaining TOCTOU, and it closes here.
+      - name: Re-verify the tag is still main head
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          SHA: ${{ steps.sha.outputs.sha }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
-            echo "release for $TAG already exists — nothing to do"
-            exit 0
+          git fetch --no-tags --force origin main "refs/tags/${TAG}:refs/tags/${TAG}"
+          head=$(git rev-parse origin/main)
+          now=$(git rev-parse "$TAG^{commit}")
+          if [ "$now" != "$SHA" ]; then
+            echo "::error::$TAG moved during the gate ($SHA -> $now) — nothing was published. Re-run via workflow_dispatch."
+            exit 1
           fi
+          if [ "$head" != "$SHA" ]; then
+            echo "::error::main advanced during the gate (head is $head, tag is $SHA) — nothing was published. Re-tag on the new head."
+            exit 1
+          fi
+
+      # The gate guarantees no release exists and every blocking check is green,
+      # so publishing is unconditional here. The CHANGELOG section requirement
+      # is preserved: a tag without a rolled changelog section fails the
+      # single-PR release flow loudly rather than shipping an empty body.
+      - name: Create release from CHANGELOG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
           ver="${TAG#v}"
           awk -v ver="$ver" '
             $0 ~ "^## \\["ver"\\]" {found=1; next}

@@ -75,7 +75,11 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("seed %s: no handler: %w", s.Entity, err)
 			}
-			if n, err := ch.CountAll(ctx, framework.ListOptions{}); err == nil && n > 0 {
+			n, err := ch.CountAll(ctx, framework.ListOptions{})
+			if err != nil {
+				return fmt.Errorf("seed %s: count: %w", s.Entity, err)
+			}
+			if n > 0 {
 				continue
 			}
 			for _, row := range s.Rows {

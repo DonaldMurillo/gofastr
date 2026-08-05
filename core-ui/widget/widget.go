@@ -197,6 +197,18 @@ type Definition struct {
 	// capped at 5×) on fetch failure until the next success.
 	// Set via Builder.Poll.
 	PollMS int
+
+	// PollTerminal, when non-nil, is evaluated on every /state fetch.
+	// When it returns true, serveState sets the X-Gofastr-Poll-Stop
+	// response header so the runtime applies the final signal values
+	// and then ends the cadence — the server-side half of the terminal
+	// contract (#192). Use it for widgets whose freshness job is done
+	// once a terminal state is reached (a job that completed, a batch
+	// that finished). Set via Builder.PollTerminal. The predicate sees
+	// the same process-global state the signal sources do; like signals
+	// it must not branch on per-user data (/state is unauthenticated
+	// unless RequireSession is set).
+	PollTerminal func() bool
 }
 
 // registry is the process-global list of mounted widgets. The framework
@@ -379,6 +391,19 @@ func (b *Builder) Signal(name string, src SignalSource) *Builder {
 // path clamps at 5s instead, because markup is cheap to typo).
 func (b *Builder) Poll(interval time.Duration) *Builder {
 	b.def.PollMS = int(interval / time.Millisecond)
+	return b
+}
+
+// PollTerminal declares a predicate evaluated on every /state fetch.
+// When it returns true, serveState emits X-Gofastr-Poll-Stop and the
+// runtime applies the final signal snapshot and then ends the poll
+// cadence — the server-side half of the terminal contract (#192). Use
+// it for a polling widget whose freshness job finishes once a terminal
+// state is reached (a job-status pill that hits completed, a batch that
+// finishes); without it the widget polls forever after going terminal.
+// No-op when the widget does not also call Poll.
+func (b *Builder) PollTerminal(fn func() bool) *Builder {
+	b.def.PollTerminal = fn
 	return b
 }
 

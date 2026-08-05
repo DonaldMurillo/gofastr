@@ -186,6 +186,11 @@ type Host struct {
 	nonceKey []byte
 	grantKey []byte
 
+	// Retired keys accepted for verification only during an app-secret
+	// rotation drain window; minting always uses the current keys.
+	prevNonceKeys [][]byte
+	prevGrantKeys [][]byte
+
 	// reserved is this host's effective reserved-prefix list: the package
 	// defaults plus whatever the framework registered for the batteries this
 	// app actually mounted. Per-host rather than package-global so one app's
@@ -344,6 +349,51 @@ func New(cfg Config) (*Host, error) {
 func (h *Host) SetKeys(nonceKey, grantKey []byte) {
 	h.nonceKey = nonceKey
 	h.grantKey = grantKey
+}
+
+// SetPreviousKeys installs retired nonce and grant keys accepted for
+// VERIFICATION only, so an app-secret rotation does not invalidate every
+// outstanding handshake nonce and frame grant the instant the new secret
+// deploys. Minting always uses the current keys from SetKeys.
+func (h *Host) SetPreviousKeys(nonceKeys, grantKeys [][]byte) {
+	h.prevNonceKeys = nonceKeys
+	h.prevGrantKeys = grantKeys
+}
+
+// verifyNonce checks a nonce against the current key, then each previous key
+// (rotation drain window). The first key that verifies wins; every candidate
+// goes through the same constant-time HMAC comparison VerifyNonce performs.
+func (h *Host) verifyNonce(token string, now time.Time) (Nonce, error) {
+	n, err := VerifyNonce(h.nonceKey, token, now)
+	if err == nil {
+		return n, nil
+	}
+	for _, k := range h.prevNonceKeys {
+		if len(k) == 0 {
+			continue
+		}
+		if n2, err2 := VerifyNonce(k, token, now); err2 == nil {
+			return n2, nil
+		}
+	}
+	return Nonce{}, err
+}
+
+// verifyGrant is verifyNonce's counterpart for frame grants.
+func (h *Host) verifyGrant(token string, now time.Time) (Grant, error) {
+	g, err := VerifyGrant(h.grantKey, token, now)
+	if err == nil {
+		return g, nil
+	}
+	for _, k := range h.prevGrantKeys {
+		if len(k) == 0 {
+			continue
+		}
+		if g2, err2 := VerifyGrant(k, token, now); err2 == nil {
+			return g2, nil
+		}
+	}
+	return Grant{}, err
 }
 
 // Ready reports whether the host has signing keys. A host without keys cannot
@@ -508,7 +558,7 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 		return ExchangeResult{}, errors.New("embed: no signing key")
 	}
 	now := time.Now()
-	n, err := VerifyNonce(h.nonceKey, nonceToken, now)
+	n, err := h.verifyNonce(nonceToken, now)
 	if err != nil {
 		return ExchangeResult{}, err
 	}
@@ -581,7 +631,7 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 		// one we just computed: a replay returns the original grant, and
 		// reporting a fresh expiry for it would tell the frame to stop
 		// refreshing well after the credential actually died.
-		g, err := VerifyGrant(h.grantKey, issued, now)
+		g, err := h.verifyGrant(issued, now)
 		if err != nil {
 			return ExchangeResult{}, ErrSpent
 		}
@@ -596,7 +646,7 @@ func (h *Host) VerifyGrant(ctx context.Context, token string) (Grant, error) {
 	if !h.Ready() {
 		return Grant{}, errors.New("embed: no signing key")
 	}
-	g, err := VerifyGrant(h.grantKey, token, time.Now())
+	g, err := h.verifyGrant(token, time.Now())
 	if err != nil {
 		return Grant{}, err
 	}

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "generated": "2026-08-03T07:56:18Z",
-  "note": "recorded by gofastr verify --baseline-write",
+  "note": "recorded by gofastr verify --baseline-write; upgrade-fixture entries added by hand \u2014 historical apps stay as their CLI generated them",
   "counts": {
     "GOFASTR1003": {
       "examples/backoffice/main.go": 1,
@@ -33,6 +33,10 @@
       "examples/site/main.go": 18,
       "framework/uihost/uihost.go": 2,
       "kiln/chat/server.go": 2
+    },
+    "GOFASTR1901": {
+      "evals/upgrade-fixtures/fixtures/v0.38.0-app/entities/users.go": 1,
+      "evals/upgrade-fixtures/fixtures/v0.53.0-app/entities/users.go": 1
     }
   }
 }

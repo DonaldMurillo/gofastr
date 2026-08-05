@@ -163,6 +163,52 @@ planned rotation without bouncing in-flight forms, list the previous
 secret(s) in `AdditionalKeys`; drain once the old tokens have
 expired.
 
+## Secret rotation
+
+Two app secrets can be rotated without a mass logout: the uihost session
+signing key (`GOFASTR_SECRET`) and the auth battery's JWT signing key
+(`AuthConfig.JWTSecret`). Both follow the same shape as the CSRF
+`AdditionalKeys` idiom above — **sign with the current secret, verify
+against the current OR any listed previous secret**, then drop the previous
+secret once the drain window (one session/token TTL) has elapsed.
+
+### GOFASTR_SECRET (uihost session tokens)
+
+Set the new secret as the current and move the old one into the previous
+list. New session tokens are signed with the current secret; tokens signed
+by a previous secret still verify until the window closes.
+
+```go
+app := framework.NewApp(
+    framework.WithSecretRotation(newSecret, oldSecret),
+    // ...rest unchanged
+)
+```
+
+Equivalent zero-code path via the environment (comma-separated; each entry
+must independently meet the 32-char floor):
+
+```sh
+GOFASTR_SECRET=new-secret-...
+GOFASTR_SECRET_PREVIOUS=old-secret-...
+```
+
+An explicit `WithSecretRotation` option wins over `GOFASTR_SECRET_PREVIOUS`.
+`WithSecret(secret)` — the no-rotation shorthand — stays unchanged.
+
+### AuthConfig.JWTSecret (auth battery JWTs)
+
+```go
+mgr := auth.New(auth.AuthConfig{
+    JWTSecret:          newSecret,            // signs new tokens
+    JWTPreviousSecrets: []string{oldSecret},  // verify-only during the drain
+    // ...rest unchanged
+})
+```
+
+See [auth](auth.md) for the full procedure. Production mode still requires
+a non-empty `JWTSecret`; a previous-only configuration is rejected at Init.
+
 ## Rate limiting
 
 ```go
@@ -189,7 +235,11 @@ by remaining budget; `Retry-After` on the 429 path is unaffected. The auth
 battery's own limiter (`battery/auth`) intentionally exposes **only**
 `Retry-After` and never the budget headers — a live remaining-attempt count
 on login / password-reset endpoints would hand an attacker exact brute-force
-pacing information.
+pacing information. That limiter is the general-purpose sliding-window limiter
+now in `framework/ratelimit` — the same package to reach for when you want "at
+most N per period, then lock out" on your own routes. See
+[rate-limit.md](rate-limit.md) for the quickstart and the token-bucket-vs-
+sliding-window choice.
 
 ## OpenAPI coverage for auth endpoints
 

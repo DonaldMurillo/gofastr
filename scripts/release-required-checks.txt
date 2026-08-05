@@ -1,0 +1,23 @@
+# Required blocking check runs for a release tag — the release gate's manifest.
+#
+# Every name below MUST be present, completed, and "success" on the tag
+# commit's main-push CI run before scripts/release-gate.sh lets the release
+# publish. Sourced from the job `name:` fields in .github/workflows/ci.yml:
+# the `test` job, the `security` job, and the 8 matrix shards of
+# `browser-e2e` (one check run per shard).
+#
+# This file is cross-checked against ci.yml by
+# cmd/gofastr/release_gate_test.go (TestReleaseManifestMatchesCI): renaming a
+# CI job without updating this list breaks the BUILD, not silently the gate
+# (the v0.63 PR #193 rename orphaned branch-protection contexts for exactly
+# this reason — a rename must not be able to slip past the gate).
+build · vet · test (blocking)
+vulncheck · secrets · mod-verify (blocking)
+browser e2e · site (blocking)
+browser e2e · site-axe (blocking)
+browser e2e · kiln-integration (blocking)
+browser e2e · gofastr-cli (blocking)
+browser e2e · core-ui-runtime (blocking)
+browser e2e · core-ui-widget (blocking)
+browser e2e · meridian (blocking)
+browser e2e · ui-quality-evals (blocking)

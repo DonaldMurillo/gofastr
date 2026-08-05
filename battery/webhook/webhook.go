@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -220,6 +221,16 @@ type Manager struct {
 
 	// nowFn lets tests inject a clock; defaults to time.Now.
 	nowFn func() time.Time
+
+	// deliveriesTotal counts every delivery attempt processed by attempt
+	// (one per due delivery dequeued by tick). failuresTotal counts every
+	// attempt that did not succeed (transport error, request-build error,
+	// non-2xx response, or subscriber gone/inactive). Both are exposed via
+	// MetricsCollector so operators can alert on delivery volume and failure
+	// rate from the unified /metrics surface; failuresTotal is always <=
+	// deliveriesTotal.
+	deliveriesTotal atomic.Uint64
+	failuresTotal   atomic.Uint64
 }
 
 // New constructs a Manager with defaults applied.
@@ -464,8 +475,13 @@ func (m *Manager) tick(ctx context.Context) {
 }
 
 func (m *Manager) attempt(ctx context.Context, d Delivery) {
+	// One delivery attempt is being processed: count it now. Every
+	// non-success branch below bumps failuresTotal exactly once, so
+	// failuresTotal stays <= deliveriesTotal. Success bumps nothing else.
+	m.deliveriesTotal.Add(1)
 	sub, err := m.store.GetSubscriber(ctx, d.SubscriberID)
 	if err != nil || sub == nil || !sub.Active {
+		m.failuresTotal.Add(1)
 		d.Status = StatusDead
 		d.LastError = "subscriber gone or inactive"
 		d.UpdatedAt = m.nowFn()
@@ -480,6 +496,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	body := bytes.NewReader(d.Payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.URL, body)
 	if err != nil {
+		m.failuresTotal.Add(1)
 		d.Status = StatusFailed
 		d.LastError = err.Error()
 		m.schedule(&d)
@@ -496,6 +513,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 
 	resp, err := m.opts.HTTPClient.Do(req)
 	if err != nil {
+		m.failuresTotal.Add(1)
 		d.Status = StatusFailed
 		d.LastError = err.Error()
 		m.schedule(&d)
@@ -518,6 +536,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		return
 	}
 	d.Status = StatusFailed
+	m.failuresTotal.Add(1)
 	d.LastError = fmt.Sprintf("http %d", resp.StatusCode)
 	m.schedule(&d)
 	m.saveDelivery(d)
@@ -553,6 +572,33 @@ func (m *Manager) schedule(d *Delivery) {
 	}
 	d.NextAttemptAt = m.nowFn().Add(wait)
 	d.Status = StatusPending
+}
+
+// DeliveriesTotal returns the number of delivery attempts that have been
+// processed by the worker (one per due delivery dequeued by tick).
+func (m *Manager) DeliveriesTotal() uint64 {
+	return m.deliveriesTotal.Load()
+}
+
+// FailuresTotal returns the number of delivery attempts that did not
+// succeed (transport error, request-build error, non-2xx response, or
+// subscriber gone/inactive). It is always <= DeliveriesTotal.
+func (m *Manager) FailuresTotal() uint64 {
+	return m.failuresTotal.Load()
+}
+
+// MetricsCollector returns a Prometheus text-exposition collector for the
+// manager's delivery counters. Register it on the app's *middleware.Metrics
+// (via RegisterCollector) so the totals appear on the single /metrics surface.
+func (m *Manager) MetricsCollector() func(w io.Writer) {
+	return func(w io.Writer) {
+		fmt.Fprintf(w, "# HELP webhook_deliveries_total Total webhook delivery attempts.\n")
+		fmt.Fprintf(w, "# TYPE webhook_deliveries_total counter\n")
+		fmt.Fprintf(w, "webhook_deliveries_total %d\n", m.deliveriesTotal.Load())
+		fmt.Fprintf(w, "# HELP webhook_failures_total Webhook delivery attempts that did not succeed (transport error, non-2xx, dead-lettered).\n")
+		fmt.Fprintf(w, "# TYPE webhook_failures_total counter\n")
+		fmt.Fprintf(w, "webhook_failures_total %d\n", m.failuresTotal.Load())
+	}
 }
 
 // ----- helpers --------------------------------------------------------------

@@ -3,6 +3,7 @@ package middleware
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sort"
@@ -19,9 +20,10 @@ import (
 // Single instance per process; pass the *Metrics into MetricsMiddleware and
 // MetricsHandler so both share the same store.
 type Metrics struct {
-	mu        sync.Mutex
-	counters  map[metricKey]*atomic.Uint64
-	durations map[string]*latencyHistogram
+	mu         sync.Mutex
+	counters   map[metricKey]*atomic.Uint64
+	durations  map[string]*latencyHistogram
+	collectors map[string]CollectorFunc
 }
 
 type metricKey struct {
@@ -44,9 +46,35 @@ var histogramBoundsMS = [...]float64{1, 5, 10, 50, 100, 250, 500, 1000}
 // NewMetrics returns an empty Metrics store.
 func NewMetrics() *Metrics {
 	return &Metrics{
-		counters:  map[metricKey]*atomic.Uint64{},
-		durations: map[string]*latencyHistogram{},
+		counters:   map[metricKey]*atomic.Uint64{},
+		durations:  map[string]*latencyHistogram{},
+		collectors: map[string]CollectorFunc{},
 	}
+}
+
+// CollectorFunc writes Prometheus text exposition lines (HELP / TYPE /
+// samples) for a subsystem into w. It is invoked once per /metrics scrape,
+// after the HTTP metrics, in collector-name order. It must be cheap, must
+// not panic, and must tolerate concurrent calls. A collector that needs a
+// live value (DB count, queue depth) samples it at scrape time.
+type CollectorFunc func(w io.Writer)
+
+// RegisterCollector registers (or, for a known name, replaces) a named
+// metrics collector that contributes subsystem metrics to the single
+// /metrics surface. Intended for batteries and plugins that call it from
+// their Init once they have the app's *Metrics handle (see app.Metrics):
+// this is how subsystem metrics (queue depth, outbox lag, webhook
+// failures, DB pool, …) land on the same endpoint as http_requests_total
+// without a second handler and without any cross-package import cycle.
+// Passing a nil fn removes a previously-registered collector.
+func (m *Metrics) RegisterCollector(name string, fn CollectorFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if fn == nil {
+		delete(m.collectors, name)
+		return
+	}
+	m.collectors[name] = fn
 }
 
 // MetricsMiddleware returns Middleware that records counters + latency for
@@ -180,7 +208,24 @@ func MetricsHandler(m *Metrics) http.Handler {
 			fmt.Fprintf(&sb, "http_request_duration_ms_count{route=%q} %d\n", r, h.count)
 			h.mu.Unlock()
 		}
+		// Snapshot collectors — names AND funcs — under the lock, then run
+		// them OUTSIDE m.mu: a collector may do I/O (DB count, queue stats)
+		// and must never block request recording or hold the metrics lock.
+		// Reading the live map after Unlock would race a concurrent
+		// RegisterCollector (a runtime fatal, not a recoverable panic).
+		type namedCollector struct {
+			name string
+			fn   CollectorFunc
+		}
+		snapshot := make([]namedCollector, 0, len(m.collectors))
+		for name, fn := range m.collectors {
+			snapshot = append(snapshot, namedCollector{name, fn})
+		}
 		m.mu.Unlock()
+		sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].name < snapshot[j].name })
+		for _, c := range snapshot {
+			c.fn(&sb)
+		}
 
 		w.Write([]byte(sb.String()))
 	})

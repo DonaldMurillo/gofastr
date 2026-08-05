@@ -80,6 +80,19 @@
     ps.lastTickAt = Date.now();
   }
 
+  // isStop: a poll response signals "terminal — stop polling" via the
+  // X-Gofastr-Poll-Stop header (truthy: 1/true/yes/on). Empty/0/false
+  // are no-ops so an absent header never trips it. This is the analog
+  // of X-Gofastr-Infinite-Cursor's empty=done, but opt-IN (presence
+  // stops) rather than opt-OUT (absence stops): a poll handler that
+  // forgets the header keeps polling rather than silently dying, and
+  // the server can't accidentally terminate a still-live poll. Fixes
+  // #192 — a region/widget that reached a terminal state polled
+  // forever because the runtime never re-read a per-response signal.
+  function isStop(v) {
+    return /^(1|true|yes|on)$/i.test((v || '').trim());
+  }
+
   function teardown(el) {
     const s = stateByEl.get(el);
     if (!s) return;
@@ -128,9 +141,14 @@
           // a bare `null` return would skip both success and catch,
           // leaving the interval untouched on 500s.
           if (!r.ok) throw new Error('poll: HTTP ' + r.status);
-          return r.text();
+          // #192: the server ends the poll by setting
+          // X-Gofastr-Poll-Stop on the terminal response. Capture it
+          // before consuming the body so the apply-then-stop order is
+          // guaranteed — the terminal body must render before teardown.
+          const stop = isStop(r.headers.get('x-gofastr-poll-stop'));
+          return r.text().then((html) => ({ html, stop }));
         })
-        .then((html) => {
+        .then(({ html, stop }) => {
           if (s.stopped || html == null) return;
           s.current = s.base; // success resets any prior back-off
           // Reuse the same per-region swap pattern setSignal uses
@@ -141,6 +159,10 @@
           el.innerHTML = html;
           if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(el);
           pollTicked();
+          // Terminal: the body is applied, now end the cadence.
+          // teardown sets s.stopped so the .finally below short-circuits
+          // and does not re-arm the timer.
+          if (stop) teardown(el);
         })
         .catch(() => {
           // Double the interval, capped at 5× base; the next
@@ -222,9 +244,14 @@
         .then((r) => {
           // HTTP errors must reach .catch so back-off applies.
           if (!r.ok) throw new Error('poll ' + r.status);
-          return r.json();
+          // #192: the server ends the poll by setting
+          // X-Gofastr-Poll-Stop on the terminal /state response.
+          // Capture before consuming the body so the final state is
+          // applied before the cadence ends.
+          const stop = isStop(r.headers.get('x-gofastr-poll-stop'));
+          return r.json().then((state) => ({ state, stop }));
         })
-        .then((state) => {
+        .then(({ state, stop }) => {
           if (stopped || !state) return; // dismissed mid-flight: drop
           current = base; // success resets any prior back-off
           for (const k in state) {
@@ -235,6 +262,10 @@
             NS.setSignal(k, next);
           }
           pollTicked();
+          // Terminal: the final state is applied, now end the cadence.
+          // entry.pollStop sets stopped=true so the .finally below
+          // short-circuits and does not re-arm the timer.
+          if (stop) entry.pollStop();
         })
         .catch(() => {
           // Double the interval, capped at 5x base; reset on next success.

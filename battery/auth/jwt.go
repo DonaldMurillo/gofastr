@@ -19,9 +19,17 @@ type Claims struct {
 
 // JWTAuth manages JWT token generation and validation.
 type JWTAuth struct {
+	// Secret is the current signing key; new tokens are always signed
+	// with it.
 	Secret string
-	Expiry time.Duration
-	Issuer string
+	// PreviousSecrets are verify-only signing keys retained for a drain
+	// window after a JWTSecret rotation, mirroring the CSRF AdditionalKeys
+	// idiom. Tokens signed by any key here still validate; the operator
+	// drops them once old tokens have expired. GenerateToken never signs
+	// with these.
+	PreviousSecrets []string
+	Expiry          time.Duration
+	Issuer          string
 }
 
 // NewJWTAuth creates a new JWTAuth with the given secret and token expiry duration.
@@ -52,12 +60,36 @@ func (j *JWTAuth) GenerateToken(user User) (string, error) {
 	return encodeToken(j.Secret, j.Issuer, claims)
 }
 
-// ValidateToken parses and validates a JWT token string.
-// Returns the claims if the token is valid, or an error otherwise.
+// ValidateToken parses and validates a JWT token string. It accepts the
+// current signing key OR any previous (rotation) key, so a JWTSecret
+// rotation drains over a token TTL instead of invalidating every session at
+// once. Each candidate signature is compared with hmac.Equal via
+// decodeToken (constant-time); the count and order of keys is not secret, so
+// first-match-return is sound. Returns the claims if valid, or an error.
 func (j *JWTAuth) ValidateToken(tokenString string) (Claims, error) {
-	claims, err := decodeToken(j.Secret, j.Issuer, tokenString)
-	if err != nil {
-		return Claims{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
+	// Try the current secret first, then each previous key. decodeToken is
+	// a full parse (signature + header + payload + issuer), and only a key
+	// that produces a valid signature can pass it, so re-parsing per key is
+	// safe and bounded by the (small) rotation set.
+	candidates := make([]string, 0, 1+len(j.PreviousSecrets))
+	candidates = append(candidates, j.Secret)
+	candidates = append(candidates, j.PreviousSecrets...)
+
+	var claims Claims
+	matched := false
+	for _, secret := range candidates {
+		if secret == "" {
+			continue
+		}
+		c, err := decodeToken(secret, j.Issuer, tokenString)
+		if err == nil {
+			claims = c
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return Claims{}, fmt.Errorf("%w: no matching signing key", ErrUnauthorized)
 	}
 
 	if claims.UserID == "" {

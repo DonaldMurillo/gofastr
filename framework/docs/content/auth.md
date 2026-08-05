@@ -64,6 +64,31 @@ your secret store, or set DevMode: true for local development`, and
 `App.Start` refuses to boot. There is no warn-and-continue path — an
 empty HMAC key would make every JWT forgeable.
 
+### Rotating JWTSecret
+
+Rotating `AuthConfig.JWTSecret` no longer invalidates every session at once.
+List the retiring secret in `JWTPreviousSecrets`; new tokens are signed with
+`JWTSecret`, and tokens signed by any previous secret still verify for the
+drain window. The idiom mirrors the CSRF `AdditionalKeys` rotation path.
+
+1. Set `JWTSecret` to the new secret and move the old one into
+   `JWTPreviousSecrets`. Deploy across every replica.
+2. Hold both for the drain window — one `JWTExpiry` (default 1h).
+3. Once every pre-rotation token has expired, remove the old secret from
+   `JWTPreviousSecrets` and redeploy.
+
+```go
+mgr := auth.New(auth.AuthConfig{
+    JWTSecret:          newSecret,            // signs new tokens
+    JWTPreviousSecrets: []string{oldSecret},  // verify-only during the drain
+    // ...rest unchanged
+})
+```
+
+Production mode still requires a non-empty `JWTSecret` — a previous-only
+configuration (`JWTPreviousSecrets` set, `JWTSecret` empty) is rejected at
+`Init`, because a verify-only setup cannot sign new tokens.
+
 ## The plugins
 
 | Plugin | Routes | Notes |

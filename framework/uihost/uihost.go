@@ -83,38 +83,44 @@ type UIHost struct {
 	// replaced the old in-memory session map (issue #112): any process
 	// holding the same key accepts any process's tokens, so sessions are
 	// portable across replicas with zero shared state. New() self-mints a
-	// per-boot key (single-replica, zero config — sessions roll over on
+	// per-boot key (single-replica zero-config path; sessions roll on
 	// restart exactly like the map did); framework.App.Mount overwrites it
 	// via SetSessionKey with a key derived from the app secret
 	// (WithSecret / GOFASTR_SECRET).
-	sessionKey      []byte
-	actionJS        map[string]string                    // componentID → compiled JS
-	actionHash      map[string]string                    // componentID → content hash of the compiled JS (?v= addressing)
-	actionHandlers  map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
-	actionComps     map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
-	customCSS       string                               // extra CSS to inject (e.g. demo.css)
-	extraScripts    []string                             // extra <script src="…"> URLs to inject before </body>
-	staticDir       string                               // directory to serve static files from
-	staticFS        fs.FS                                // embedded filesystem for static files
-	llmMDPublic     bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
-	headHTML        string                               // raw HTML to inject into <head> (escape hatch)
-	lang            string                               // WithLang document language for host-built shells; EffectiveLang resolves it
-	headTags        []string                             // typed head tags built from convenience options
-	faviconURL      string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
-	appIcons        map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
-	notFoundScreen  component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
-	sitemapConfig   *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
-	robotsConfig    *RobotsConfig                        // when set, /robots.txt is served from this config
-	agentReady      *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
-	pwaConfig       *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
-	pwaSWOnce       sync.Once                            // guards the memoized service-worker body below
-	pwaSW           string                               // deployment-constant service worker, computed on first request
-	pwaSWErr        error                                // paired with pwaSW
-	strict          bool                                 // WithStrict — Mount refuses to serve an app that fails the strict checks (strict.go)
-	strictConfig    StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
-	siteDescription bool                                 // set by WithDescription; read by the strict site-surface check
-	embedHost       *fembed.Host                         // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
-	embedThemes     embedThemeState                      // per-surface cap on distinct customer theme variants
+	sessionKey []byte
+	// previousSessionKeys are verify-only keys retained for a drain window
+	// after a GOFASTR_SECRET rotation, mirroring the CSRF AdditionalKeys
+	// idiom. New tokens are always signed with sessionKey; tokens signed by
+	// any key here still verify until the window closes and the operator
+	// drops the old key. Set via SetSessionKeys (framework.App.Mount).
+	previousSessionKeys [][]byte
+	actionJS            map[string]string                    // componentID → compiled JS
+	actionHash          map[string]string                    // componentID → content hash of the compiled JS (?v= addressing)
+	actionHandlers      map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
+	actionComps         map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
+	customCSS           string                               // extra CSS to inject (e.g. demo.css)
+	extraScripts        []string                             // extra <script src="…"> URLs to inject before </body>
+	staticDir           string                               // directory to serve static files from
+	staticFS            fs.FS                                // embedded filesystem for static files
+	llmMDPublic         bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
+	headHTML            string                               // raw HTML to inject into <head> (escape hatch)
+	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
+	headTags            []string                             // typed head tags built from convenience options
+	faviconURL          string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
+	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
+	notFoundScreen      component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
+	sitemapConfig       *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
+	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
+	agentReady          *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
+	pwaConfig           *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
+	pwaSWOnce           sync.Once                            // guards the memoized service-worker body below
+	pwaSW               string                               // deployment-constant service worker, computed on first request
+	pwaSWErr            error                                // paired with pwaSW
+	strict              bool                                 // WithStrict — Mount refuses to serve an app that fails the strict checks (strict.go)
+	strictConfig        StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
+	siteDescription     bool                                 // set by WithDescription; read by the strict site-surface check
+	embedHost           *fembed.Host                         // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
+	embedThemes         embedThemeState                      // per-surface cap on distinct customer theme variants
 
 	// Hot-path caches. The route table and the default-theme component catalog
 	// are static after wire time, so they are marshaled once and reused on every
@@ -181,27 +187,47 @@ func selfMintedSessionKey() []byte {
 	return b[:]
 }
 
-// SetSessionKey replaces the session-signing key. Called once by
+// SetSessionKey replaces the session-signing key and clears any
+// previous (rotation) keys — the single-secret path. Called once by
 // framework.App.Mount (before any traffic) with the HKDF-derived key
 // from the app secret; every replica configured with the same secret
 // then accepts every other replica's session tokens. Not intended for
-// per-request use.
+// per-request use. For graceful rotation use SetSessionKeys.
 func (ds *UIHost) SetSessionKey(key []byte) {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	ds.sessionKey = key
+	ds.previousSessionKeys = nil
+}
+
+// SetSessionKeys sets the current session-signing key and the
+// verify-only previous keys for graceful GOFASTR_SECRET rotation,
+// mirroring the CSRF AdditionalKeys idiom. New tokens are signed with
+// the current key only; tokens signed by any previous key still verify
+// for the drain window (one session TTL), after which the operator
+// drops the old key and calls SetSessionKey (or SetSessionKeys with no
+// previous keys) to close the window. framework.App.Mount prefers this
+// seam when previousSecrets are configured. Not for per-request use.
+func (ds *UIHost) SetSessionKeys(current []byte, previous ...[]byte) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.sessionKey = current
+	ds.previousSessionKeys = previous
 }
 
 // verifySessionToken authenticates a cookie token and returns the bare
-// session id embedded in it.
+// session id embedded in it. It accepts the current key OR any previous
+// (rotation) key, so a GOFASTR_SECRET rotation drains over a session
+// TTL instead of logging every user out at once.
 func (ds *UIHost) verifySessionToken(token string) (string, bool) {
 	if token == "" {
 		return "", false
 	}
 	ds.mu.RLock()
-	key := ds.sessionKey
+	current := ds.sessionKey
+	previous := ds.previousSessionKeys
 	ds.mu.RUnlock()
-	return sessiontoken.Verify(key, token, time.Now(), sessionMaxAge)
+	return sessiontoken.VerifyAny(current, previous, token, time.Now(), sessionMaxAge)
 }
 
 // SEOScreen is an optional interface that screens can implement to

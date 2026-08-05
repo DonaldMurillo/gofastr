@@ -186,7 +186,10 @@ If `BaseURL` is unset, the PDF link stays relative (PDFs render with the
 print base + inlined component CSS, just without app.css tokens).
 
 `chromepdf` is the only package in this feature that imports `chromedp`;
-apps that don't need PDF never pull it in.
+apps that don't need PDF never pull it in. It is also its own Go module
+(`battery/print/chromepdf/go.mod`, same import path) so its dependency surface
+is isolated from the print battery's core — the nested module can declare its
+own `go` directive and be built/tested independently of the root module.
 
 ## Common mistakes
 

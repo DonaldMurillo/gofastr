@@ -26,7 +26,7 @@ Rules are grouped into capabilities, and each capability is also a filter:
 | `permissions` | per-user data exposed with no owner field, mutating routes outside any guarded group, auth configured but never mounted |
 | `security` | SQL built by concatenation, POST forms with no CSRF input, `render.HTML` on a concatenation, cookies missing HttpOnly/Secure/SameSite, committed credentials |
 | `data` | writes whose result and error are both discarded |
-| `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access |
+| `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access, a CRUD entity exposed with no auth wired (every operation 401s) |
 | `architecture` | imports that point up the layer stack, explicitly forbidden edges |
 | `rendering` | CSS outside the design system, `location.href` used as navigation, bespoke `EventSource`, inline `style=`, `<script>` with an inline body |
 | `accessibility` | the static WCAG floor — missing alt text, unnamed controls and landmarks, incomplete form controls, implicit heading levels, elements missing required metadata |

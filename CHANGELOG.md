@@ -7,17 +7,135 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-08-05
+
+### Added
+
+- **HTTP server timeouts are configurable.** `AppConfig.HTTPServerTimeouts`
+  (or `framework.WithHTTPServerTimeouts`) sets `ReadHeaderTimeout`,
+  `ReadTimeout`, `WriteTimeout`, and `IdleTimeout` on the embedded
+  `http.Server`. Fields are `*time.Duration`: nil keeps the defaults
+  (10s/60s/60s/120s), an explicit 0 disables that deadline, matching
+  `net/http`. A request that needs longer than the old hardcoded 60s cap now
+  has a knob. SSE is unaffected — streams already survive the write deadline
+  via `EventSource` reconnect. The resolved values appear in the `app_config`
+  MCP tool. See `gofastr docs deploy`.
+- **A poll can stop.** A server response carrying `X-Gofastr-Poll-Stop: 1`
+  ends that region's `data-fui-poll` cadence after the body is applied —
+  widgets declare it with `Builder.PollTerminal(func() bool)`. A job-status
+  widget that reaches `completed` stops hitting the server. No new DOM
+  attributes; a swapped-in fragment without the poll marker (or with
+  `"off"`/`"0"`) also never re-wires. See `gofastr docs reactivity`.
+- **Subsystem metrics at `/metrics`.** The metrics endpoint now reports DB
+  pool stats (`sql.DBStats`), queue depth and dead-letter counts per lane,
+  outbox pending/dead-letter per consumer, webhook delivery/failure counts,
+  and a slow-query counter — each family appears when its subsystem is
+  wired. Batteries register through `App.Metrics().RegisterCollector`. The
+  panic-recovery middleware routes through a new `log.ErrorReporter` seam
+  (slog default; an HTTP JSON sink ships for Slack-style collectors), and
+  `gofastr docs observability` has the copy-paste OTLP exporter wiring.
+- **Secrets rotate without a mass logout.** `GOFASTR_SECRET` verification
+  accepts previous keys from `GOFASTR_SECRET_PREVIOUS` (or
+  `framework.WithSecretRotation(current, previous...)`); the auth battery
+  accepts `AuthConfig.JWTPreviousSecrets`. Embedded surfaces rotate too —
+  outstanding handshake nonces and frame grants verify against the previous
+  keys. New tokens always sign with the current secret; an explicit
+  `WithSecret` or previous-less `WithSecretRotation` closes the window even
+  when `GOFASTR_SECRET_PREVIOUS` is still in the environment; production
+  mode still refuses a previous-only config. The drain procedure is in
+  `gofastr docs deploy`.
+- **`App.EraseUserData` — the erasure half of GDPR.** Hard-deletes a user's
+  rows across every `OwnerField`-scoped entity and registered battery tables
+  (auth users, sessions, 2FA secrets, and OAuth links), anonymizes the actor
+  on audit rows instead of deleting them, and returns a per-table report.
+  Entity tables are deleted children-first so foreign keys without
+  `ON DELETE CASCADE` do not roll the erasure back; a blank user id is
+  refused rather than matching every unowned row. Idempotent, with a dry-run
+  mode. Batteries declare erasure the same way they declare export. Magic-link
+  tokens are keyed by email rather than user id and are not reached — see the
+  note in `gofastr docs data-export`.
+- **`framework/ratelimit` — the auth limiter, extracted for any route.**
+  The sliding-window limiter that guarded login/register/password-reset is
+  now a package with `Middleware()` (per-IP) and `MiddlewareByKey(fn)`;
+  `battery/auth` keeps its behavior through a thin wrapper. Limits are
+  per-replica (process memory) unless a shared `Store` is wired. New doc
+  topic: `gofastr docs rate-limit`.
+- **`gofastr verify`: `entities/crud-without-auth`.** Warns when an entity
+  exposes CRUD routes while the app wires no auth and the entity is not
+  `Public` — the state where every advertised route answers 401. The
+  catalog is now 50 rules.
+- **Historical upgrades are proven in CI.** Two generated apps pinned to
+  v0.38.0 and v0.53.0 (with committed pre-upgrade databases) are upgraded to
+  the current tree, built, booted, and exercised over HTTP — migrations over
+  existing rows, login, owner isolation, OpenAPI, and one island RPC. The
+  shipped `gofastr upgrade` detector must flag the pre-upgrade source, and a
+  negative test proves a skipped migration step fails the build.
+  `evals/upgrade-fixtures/`, non-blocking CI job.
+
 ### Changed
 
+- **Dialect detection fails closed.** When the migration engine cannot
+  determine whether the database is PostgreSQL or SQLite after retries,
+  `AutoMigrate` (and `MigrateEntity`, `DiffSchema`, `RunSeeds`, the
+  `WithSeed` hook path, and the process-module store and migration
+  coordinator) now return an error naming the probe failure instead of
+  assuming SQLite — a guess there skipped the cross-replica advisory lock
+  and every Postgres-only routine. `migrate.DetectDialectStrict` is the
+  exported fail-closed probe for coordination decisions; `DetectDialect`
+  keeps its signature for callers that only pick DDL types. The probe
+  classifier ignores quoted identifiers, so a Postgres error naming a role
+  like `"syntax error"` is no longer read as evidence of SQLite.
+  Connection-class failures carry a "check the database connection /
+  DATABASE_URL" hint.
+- **The release gate is a tested script with an exact manifest.**
+  `scripts/release-gate.sh` (stubbed and tested against nine failure
+  fixtures) replaces the inline workflow poll. Every check in
+  `scripts/release-required-checks.txt` — all ten blocking CI checks — must
+  complete green on the tagged SHA, the tag must equal the current main
+  head (an unmerged or stale commit cannot publish), and a pre-existing
+  release for the tag fails the gate. A repo test pins the manifest to
+  ci.yml's job names, so a CI rename breaks the build instead of the gate.
+  The supported flow is merge → tag push; the workflow is the publisher.
+  The tag name is shape-validated once and passed through the environment,
+  never spliced into a step's shell source — Git accepts command-substitution
+  syntax in tag names. Check runs fold newest-first across all pages, so a red
+  re-run of an already-green check blocks the release; tag and main head are
+  re-verified immediately before publishing.
 - **Release tags no longer re-run CI.** A release tag points at a merge
-  commit on main, so the release gate now consults the blocking check runs
+  commit on main, so the release gate consults the blocking check runs
   that commit's main-push CI run already produced; the tag-triggered
-  duplicate of the identical pipeline is gone. A tag on a commit with no CI
-  run still fails the gate. CI itself got faster: the Go build/test cache
-  persists per commit, so packages whose sources and dependencies are
-  unchanged skip re-execution, and each browser e2e suite runs on its own
-  runner — the browser-e2e wall clock drops from the ~28-minute serial sum
-  to the slowest suite (~13 minutes).
+  duplicate of the identical pipeline is gone. CI itself got faster: the Go
+  build/test cache persists per commit, so packages whose sources and
+  dependencies are unchanged skip re-execution, and each browser e2e suite
+  runs on its own runner — the browser-e2e wall clock drops from the
+  ~28-minute serial sum to the slowest suite (~13 minutes).
+- **`battery/print/chromepdf` is a nested module.** Same import path, own
+  `go.mod`/`go.sum`, excluded from the root module's `./...`. The root Go
+  floor stays 1.26 — `chromedp` is also a direct dependency of the CLI's
+  accessibility audit and `framework/testkit/axetest`, and deploy.md
+  wrongly attributed the floor to the print battery.
+- **Coverage floors extend to the UI and auth plane.** `framework/ui`,
+  `framework/uihost`, `framework/access`, and `battery/auth` are gated in
+  `scripts/coverage-floors.sh`; previously only the data plane was.
+
+### Fixed
+
+- **`gofastr dev --addr` reaches the app again.** The dev runner passed
+  `--addr` as argv, but generated scaffolds read only the `PORT` env var —
+  so the child bound the committed `.env` default while the banner printed
+  the requested address. The runner now injects `PORT=<addr>` into the
+  child environment (a stale parent-shell `PORT` is dropped).
+- **The startup banner says which routes need auth.** A fresh scaffold
+  advertised `/posts`, `/openapi.json`, `/api/docs/`, and `/api/llm.md`,
+  all of which answer 401 to an anonymous request. Non-`Public` entity
+  routes and the non-public API surface are now annotated
+  `(requires auth …)`.
+- **Generated seeding no longer re-runs on a failed count.** The blueprint
+  seed hook treated a `CountAll` error as "not seeded" and inserted again —
+  a transient read failure could duplicate seed rows. A count error now
+  aborts startup naming the entity. Regenerate to pick it up.
+- **`app-cli.md` build path matches the generated directory** (`cmd/<binary>/`),
+  and deploy.md's Go-version note names the real source of the 1.26 floor.
 
 ## [0.62.0] - 2026-08-05
 
@@ -423,7 +541,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   where they no longer hold — with the reason and the fix attached to
   every finding. See `gofastr docs contracts`.
 
-  49 rules across twelve capabilities: `routing`, `permissions`,
+  49 rules at launch spanning twelve capabilities: `routing`, `permissions`,
   `security`, `data`, `entities`, `architecture`, `rendering`,
   `accessibility`, `performance`, `testing`, `ai`, `meta`. Each is also a
   filter — `gofastr verify routing security` runs two of them.
