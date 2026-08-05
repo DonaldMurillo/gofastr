@@ -83,7 +83,32 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          # setup-go's built-in cache keys on go.sum alone: the entry is
+          # saved once per dependency bump, then restored read-only by every
+          # later run — test results for code that changed since are never
+          # persisted, so the test step re-executed every package on every
+          # run (observed: the v0.62.0 tag run re-ran 7.5 min of tests on a
+          # SHA whose main-push twin was concurrently running the identical
+          # suite). The explicit per-SHA cache below replaces it.
+          cache: false
+
+      - name: Go module + build/test cache (per-SHA)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          # Keyed on the commit so every run SAVES a fresh snapshot (cache
+          # entries are immutable — an existing key is never updated), and
+          # restore-keys hands the next run the newest prior snapshot. That
+          # is what lets Go's content-addressed test cache skip every
+          # package whose sources + transitive deps are unchanged since the
+          # last run — the affected-tests mechanism the Test step's comment
+          # relies on. GOCACHE self-trims stale entries; GitHub's 10 GB
+          # per-repo LRU evicts old SHAs.
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-
 
       - name: Install Chrome (stable chromedp suites run here too)
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
@@ -120,11 +145,11 @@ jobs:
       - name: Test (deterministic packages)
         # -timeout=20m, -p 2 to keep httptest/chromedp sockets off the
         # ephemeral-port ceiling. Intentionally NO -count=1: Go's
-        # content-addressed test cache (persisted across runs by
-        # setup-go's GOCACHE) then skips re-executing any package whose
-        # sources + transitive deps + test inputs are byte-identical to a
-        # prior PASS — the free, correct-by-construction analog of Nx's
-        # affected/cache. Do NOT re-add -count=1 here to "force fresh
+        # content-addressed test cache (persisted across runs by the
+        # per-SHA cache step above) then skips re-executing any package
+        # whose sources + transitive deps + test inputs are byte-identical
+        # to a prior PASS — the free, correct-by-construction analog of
+        # Nx's affected/cache. Do NOT re-add -count=1 here to "force fresh
         # runs"; the flaky chromedp suites keep it in browser-e2e, which
         # is where forcing a fresh run per push actually matters.
         # Excluded here and run in browser-e2e instead:
@@ -232,7 +257,24 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          # See the test job: setup-go's go.sum-keyed cache goes stale
+          # between dependency bumps. This job restores the test job's
+          # per-SHA cache instead.
+          cache: false
+
+      - name: Go module + build cache (restore only)
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          # Restore-only: every suite here runs -count=1, so the cache buys
+          # compile time, not test skips — and saving this job's
+          # near-duplicate GOCACHE would crowd the repo's 10 GB cache LRU
+          # for no extra hits.
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
