@@ -28,3 +28,19 @@ func TestSeedHookReturnsHandlerErrors(t *testing.T) {
 		t.Fatalf("seed hook swallows a missing CRUD handler instead of failing the boot:\n%s", main)
 	}
 }
+
+// A CountAll ERROR must abort startup, not fall through into inserts: the
+// idempotency gate's premise is "skip if non-empty", and an unreadable
+// table is uncertainty about exactly that. Guessing "empty" on a
+// transient read failure re-seeds — duplicates for non-unique rows — the
+// fail-open the fail-fast comment above promises to prevent. Sibling of
+// the CreateOne / missing-handler fixes (v0.62) on the same seed path.
+func TestSeedHookReturnsCountAllErrors(t *testing.T) {
+	main := renderBlueprintMain(websitesBlueprint())
+	if strings.Contains(main, "err == nil && n > 0") {
+		t.Fatalf("seed gate uses fail-open `err == nil && n > 0` — a CountAll error falls through to inserts:\n%s", main)
+	}
+	if !strings.Contains(main, `return fmt.Errorf("seed %s: count: %w", s.Entity, err)`) {
+		t.Fatalf("seed hook must return the CountAll error instead of guessing empty:\n%s", main)
+	}
+}
