@@ -17,6 +17,25 @@ import (
 
 const ginVersion = "v1.11.0"
 
+// Pinned modules the non-GoFastr lanes get in go.mod. Shared with the
+// resolvability test: a version that stops resolving (as happened when the
+// sqlite driver swap carried the old mattn version onto a path that isn't a
+// module) makes every baseline lane — and so the whole eval — unrunnable.
+const (
+	sqliteRequirement = "modernc.org/sqlite@v1.55.0"
+	cryptoRequirement = "golang.org/x/crypto@v0.52.0"
+)
+
+// baselineRequirements are every module@version a baseline lane writes into
+// its workspace go.mod.
+func baselineRequirements() []string {
+	return []string{
+		"github.com/gin-gonic/gin@" + ginVersion,
+		sqliteRequirement,
+		cryptoRequirement,
+	}
+}
+
 type Config struct {
 	RepoRoot    string
 	ArtifactDir string
@@ -264,8 +283,8 @@ files as needed, but do not replace GoFastr with another web framework.
 		}
 		if output, err := commandOutput(ctx, workspace, "go", "mod", "edit",
 			"-require=github.com/gin-gonic/gin@"+ginVersion,
-			"-require=github.com/DonaldMurillo/gofastr/sqlite/stdlib@v1.14.44",
-			"-require=golang.org/x/crypto@v0.52.0"); err != nil {
+			"-require="+sqliteRequirement,
+			"-require="+cryptoRequirement); err != nil {
 			return fmt.Errorf("add Gin requirement: %w\n%s", err, output)
 		}
 		if err := writeNeutralGuidance(workspace); err != nil {
@@ -282,8 +301,8 @@ hashing. Do not replace Gin with another web framework.
 			return fmt.Errorf("go mod init: %w\n%s", err, output)
 		}
 		if output, err := commandOutput(ctx, workspace, "go", "mod", "edit",
-			"-require=github.com/DonaldMurillo/gofastr/sqlite/stdlib@v1.14.44",
-			"-require=golang.org/x/crypto@v0.52.0"); err != nil {
+			"-require="+sqliteRequirement,
+			"-require="+cryptoRequirement); err != nil {
 			return fmt.Errorf("add focused requirements: %w\n%s", err, output)
 		}
 		if err := writeNeutralGuidance(workspace); err != nil {

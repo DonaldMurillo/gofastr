@@ -102,6 +102,18 @@ func BaseDSN(t *testing.T) string {
 	return dsn
 }
 
+// skipOrFail is the same fail-closed rule BaseDSN applies, extended to the
+// URL-shape checks that run after it: skip locally, fail under required
+// mode. Without it, a non-URL TEST_POSTGRES_DSN — the override
+// CONTRIBUTING.md advertises — turns the CI canary into a silent skip.
+func skipOrFail(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if required() {
+		t.Fatalf(format, args...)
+	}
+	t.Skipf(format, args...)
+}
+
 // DB returns a *sql.DB scoped to a fresh, uniquely-named schema (via
 // search_path) on the shared Postgres, or skips if Postgres is unreachable.
 // The schema and connection are dropped/closed on t.Cleanup.
@@ -116,7 +128,7 @@ func DB(t *testing.T) *sql.DB {
 	// default schema.
 	dsn, err := dsnWithSearchPath(base, schema)
 	if err != nil {
-		t.Skipf("pgtest.DB needs a URL-form base DSN, got %q (%v)", RedactDSN(base), err)
+		skipOrFail(t, "pgtest.DB needs a URL-form base DSN, got %q (%v)", RedactDSN(base), err)
 	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -163,7 +175,7 @@ func FreshDatabaseDSN(t *testing.T) string {
 	base := BaseDSN(t)
 	u, err := url.Parse(base)
 	if err != nil || u.Scheme == "" {
-		t.Skipf("pgtest.FreshDatabaseDSN needs a URL-form base DSN, got %q", RedactDSN(base))
+		skipOrFail(t, "pgtest.FreshDatabaseDSN needs a URL-form base DSN, got %q", RedactDSN(base))
 	}
 	admin, err := sql.Open("postgres", base)
 	if err != nil {
@@ -196,7 +208,7 @@ func UnusedDSN(t *testing.T) (string, func()) {
 	base := BaseDSN(t)
 	u, err := url.Parse(base)
 	if err != nil || u.Scheme == "" {
-		t.Skipf("pgtest.UnusedDSN needs a URL-form base DSN, got %q", RedactDSN(base))
+		skipOrFail(t, "pgtest.UnusedDSN needs a URL-form base DSN, got %q", RedactDSN(base))
 	}
 	name := fmt.Sprintf("created_%d_%d", os.Getpid(), schemaSeq.Add(1))
 	u.Path = "/" + name

@@ -448,8 +448,11 @@ func main() {
 	// Run migrations
 	migrator := migrate.New(db, migrate.WithTableName("_migrations"), migrate.WithDialect(%[6]s))
 	entities.RegisterMigrations(migrator)
+	// A migration that cannot apply is a failed deploy, not a warning: the
+	// server must not report ready over a schema the committed migrations
+	// never reached.
 	if err := migrator.Up(context.Background()); err != nil {
-		log.Printf("Migration warning: %%v", err)
+		log.Fatalf("migrations: %%v", err)
 	}
 
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))

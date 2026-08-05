@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.61.0
+through: v0.62.0
 
 releases:
   - version: v0.3.0
@@ -663,3 +663,11 @@ releases:
       - change: Every package now carries a stability tier
         breaking: false
         guidance: "Informational. docs/public-api.md says what Stable, Provisional, Experimental, Internal and Excluded promise. Nothing is Stable before v1.0.0 — the supported framework surface is Provisional, meaning documented and covered by the deprecation window in `gofastr docs stability`, not frozen. No import paths changed."
+
+  - version: v0.62.0
+    title: Green-gated releases and fail-closed generated boot
+    notes:
+      - change: Generated apps abort startup on failed migrations or seed rows
+        breaking: false
+        guidance: "Behavioral: `gofastr init` scaffolds now exit on a migrator.Up error instead of logging 'Migration warning' and starting, and blueprint seed hooks return the first failing row's error (WithSeed errors abort Start). A deploy that previously came up over an unapplied schema, or with seed rows silently dropped, now fails the rollout with the entity named. Regenerate to pick both up, and fix the migration or seed data rather than restoring warn-and-boot."
+        detect: "Migration warning|seed %s: skipping row"
