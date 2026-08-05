@@ -289,6 +289,11 @@ type App struct {
 	// Set via WithSecretRotation or GOFASTR_SECRET_PREVIOUS.
 	previousSecrets [][]byte
 
+	// secretOptionSet records that WithSecret or WithSecretRotation ran, so
+	// the GOFASTR_SECRET_PREVIOUS env fallback stays out of an explicitly
+	// configured rotation window (including one explicitly emptied).
+	secretOptionSet bool
+
 	// noAutoMigrate suppresses the boot-time entity auto-migration
 	// (WithoutAutoMigrate) for deployments that require every schema
 	// change to be an explicit, operator-invoked step.
@@ -1418,7 +1423,7 @@ func NewApp(opts ...AppOption) *App {
 	// ≥32 chars), mirroring GOFASTR_SECRET. An explicit
 	// WithSecretRotation option wins over the env. Each entry is
 	// validated against the same length floor as the current secret.
-	if len(a.previousSecrets) == 0 {
+	if !a.secretOptionSet {
 		if env := os.Getenv("GOFASTR_SECRET_PREVIOUS"); env != "" {
 			for _, p := range splitSecretList(env) {
 				a.previousSecrets = append(a.previousSecrets, []byte(validateSecret(p)))

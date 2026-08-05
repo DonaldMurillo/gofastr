@@ -38,6 +38,12 @@ func WithSecret(secret string) AppOption {
 	validated := validateSecret(secret)
 	return func(a *App) {
 		a.secret = []byte(validated)
+		// An explicit secret option is authoritative for the whole
+		// rotation window: WithSecret is the no-rotation shorthand, so
+		// it must also close a window a stale GOFASTR_SECRET_PREVIOUS
+		// would otherwise hold open.
+		a.previousSecrets = nil
+		a.secretOptionSet = true
 	}
 }
 
@@ -71,6 +77,7 @@ func WithSecretRotation(current string, previous ...string) AppOption {
 	return func(a *App) {
 		a.secret = []byte(validated)
 		a.previousSecrets = prev
+		a.secretOptionSet = true
 	}
 }
 

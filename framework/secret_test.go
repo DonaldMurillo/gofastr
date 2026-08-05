@@ -232,3 +232,36 @@ func TestEmbedKeysRequireASecret(t *testing.T) {
 		t.Fatal("key derivation is not deterministic — replicas would not accept each other's tokens")
 	}
 }
+
+// An explicit secret option closes the rotation window: WithSecret (the
+// no-rotation shorthand) and WithSecretRotation with no previous keys must
+// BOTH refuse to inherit GOFASTR_SECRET_PREVIOUS from a stale environment.
+// Removing the previous key in code has to actually stop accepting retired
+// tokens, or the drain window never closes.
+func TestExplicitSecretOptionIgnoresEnvPrevious(t *testing.T) {
+	const cur = "current-secret-aaaaaaaaaaaaaaaaaaaaaaaa"
+	const stale = "stale-previous-secret-bbbbbbbbbbbbbbbbbb"
+	t.Setenv("GOFASTR_SECRET_PREVIOUS", stale)
+
+	for _, tc := range []struct {
+		name string
+		opt  AppOption
+	}{
+		{"WithSecret", WithSecret(cur)},
+		{"WithSecretRotation no previous", WithSecretRotation(cur)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := NewApp(WithoutDefaultMiddleware(), tc.opt)
+			if len(app.previousSecrets) != 0 {
+				t.Fatalf("%s inherited %d previous secret(s) from the environment", tc.name, len(app.previousSecrets))
+			}
+		})
+	}
+
+	// The env path still works when no secret option is passed at all.
+	t.Setenv("GOFASTR_SECRET", cur)
+	app := NewApp(WithoutDefaultMiddleware())
+	if len(app.previousSecrets) != 1 {
+		t.Fatalf("env-only config lost its previous secret: got %d, want 1", len(app.previousSecrets))
+	}
+}
