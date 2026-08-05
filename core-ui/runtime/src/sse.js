@@ -19,10 +19,17 @@
 //   - core looks for the <meta name="gofastr-sse"> tag on
 //     DOMContentLoaded; if present, idle-loads this module.
 //   - reconnects on transport error (3s back-off).
+//   - closes the transport on pagehide and re-establishes it on a
+//     bfcache restore (pageshow.persisted) — see the lifecycle block.
 (() => {
   'use strict';
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
+
+  // The live transport and any pending reconnect timer, held at module
+  // scope so the pagehide handler below can tear them down.
+  let source = null;
+  let retryTimer = 0;
 
   // One live status object. Mutated in place — never reassigned — so
   // every reference (banner poll, app listener) sees updates.
@@ -52,7 +59,7 @@
     const sseUrl = document.querySelector('meta[name="gofastr-sse"]')?.getAttribute('content');
     if (!sseUrl) return;
 
-    const source = new EventSource(sseUrl);
+    source = new EventSource(sseUrl);
 
     source.onopen = () => {
       status.connected = true;
@@ -92,6 +99,7 @@
       status.retryCount++;
       emit();
       source.close();
+      source = null;
       // After repeated failures the cause is more likely a dead token
       // than a flapping network — attempt a re-mint (throttled to every
       // other failure past the 2nd, so a genuine outage doesn't hammer
@@ -99,9 +107,36 @@
       // picks it up on this or the next cycle. Reconnect timing is NOT
       // blocked on the re-mint (a hung fetch must not stall recovery).
       if (status.retryCount >= 2 && status.retryCount % 2 === 0) remintSession();
-      setTimeout(connect, 3000);
+      retryTimer = setTimeout(connect, 3000);
     };
   }
+
+  // bfcache lifecycle. On a hard navigation Chrome puts the outgoing
+  // page into the back/forward cache WITHOUT closing its EventSource:
+  // the dead page's stream keeps hoarding one of the tab's ~6 per-host
+  // HTTP/1.1 connections until the cache entry is evicted, so six
+  // SSE-bearing navigations starve the tab and the seventh page never
+  // loads. Close the transport when the page is hidden (pagehide fires
+  // on both bfcache entry and real unload; closing is correct for
+  // either), and re-establish it when the page comes back out of the
+  // cache (pageshow.persisted). connect() re-reads the stream meta, so
+  // a session re-mint that landed before hiding is honored, and its
+  // onopen resets retryCount/lastEventAt and re-announces the status.
+  // The retry timer is cleared so a bfcached page's pending reconnect
+  // can't fire on restore alongside pageshow's own connect.
+  addEventListener('pagehide', () => {
+    clearTimeout(retryTimer);
+    if (source) {
+      source.close();
+      source = null;
+    }
+    // Silent: the page is going away — holders re-learn the state from
+    // onopen's emit after the pageshow reconnect.
+    status.connected = false;
+  });
+  addEventListener('pageshow', (e) => {
+    if (e.persisted && !source) connect();
+  });
 
   // Connect immediately when the module loads — by the time we're
   // executed core has already determined the SSE meta tag is on the

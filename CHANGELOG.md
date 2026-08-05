@@ -50,6 +50,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   or hijacks, the deadline now stops terminating the response (the request
   context still expires, so handlers that honor it still unwind); hung
   non-streaming handlers keep their 504 at the deadline.
+- **Navigated-away pages no longer hoard SSE connections.** The SSE client
+  module never closed its EventSource on navigation, and Chrome keeps
+  bfcached pages' sockets open — so hard-navigating six SSE-bearing pages
+  exhausted the tab's per-host connection budget and the seventh page never
+  loaded. The transport now closes on `pagehide` and reconnects on a
+  bfcache restore (`pageshow.persisted`). This had been masked by the
+  request-timeout bug above, which was killing every stream at 30s.
 - **The harness ws control channel could lose an entire turn's events.** The
   event pump subscribed to the bus in its own goroutine after the read loop
   was already accepting commands, so a turn dispatched before the

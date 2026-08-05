@@ -609,7 +609,7 @@ NetworkRetryBanner, app code) sees updates without re-reading:
 
 | Field | Updated when |
 | --- | --- |
-| `window.__gofastr.sseStatus.connected` | `true` on EventSource `open`, `false` on `error` |
+| `window.__gofastr.sseStatus.connected` | `true` on EventSource `open`, `false` on `error` and on `pagehide` (the transport closes when the page hides — bfcache entry or unload — and reconnects on `pageshow.persisted`, so a navigated-away page never hoards one of the tab's ~6 per-host connections) |
 | `window.__gofastr.sseStatus.lastEventAt` | every received `island` frame and on `open` (a `Date.now()` ms timestamp) |
 | `window.__gofastr.sseStatus.retryCount` | incremented on each transport error, reset to 0 on `open` |
 
