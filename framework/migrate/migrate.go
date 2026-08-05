@@ -53,6 +53,15 @@ func DetectDialect(db *sql.DB) Dialect {
 	return d
 }
 
+// DetectDialectStrict is the exported fail-closed probe for callers outside
+// this package that make coordination decisions on the answer (advisory
+// locks, dialect-scoped routines). A transient probe failure returns an
+// error; it never resolves to a guessed dialect. Callers that only pick DDL
+// types can keep using best-effort DetectDialect.
+func DetectDialectStrict(db *sql.DB) (Dialect, error) {
+	return detectDialectFailClosed(db)
+}
+
 // detectDialectFailClosed is DetectDialect with a fail-closed posture. The
 // version() probe is retried with backoff; an engine that lacks version()
 // answers immediately and deterministically (SQLite's "no such function") and

@@ -2573,7 +2573,18 @@ func (a *App) Shutdown(ctx context.Context) error {
 // replica, so keep them idempotent.
 func (a *App) runSeedHooksSerialized() error {
 	a.ensureLifecycleContext()
-	if a.DB == nil || migrate.DetectDialect(a.DB) != migrate.DialectPostgres {
+	if a.DB == nil {
+		return a.runSeedHooks()
+	}
+	// Fail closed on an unknown dialect: whether to take the advisory lock
+	// is a coordination decision, and a transient probe failure on Postgres
+	// must not demote hooks to the unlocked branch (the same invariant
+	// AutoMigrate and RunSeeds hold).
+	dialect, err := migrate.DetectDialectStrict(a.DB)
+	if err != nil {
+		return fmt.Errorf("seed hooks: %w", err)
+	}
+	if dialect != migrate.DialectPostgres {
 		return a.runSeedHooks()
 	}
 	if a.DB.Stats().MaxOpenConnections == 1 {

@@ -102,3 +102,27 @@ func TestAutoMigratePlan_LockAcquireConnErrorActionable(t *testing.T) {
 		t.Errorf("error must add an actionable reachability hint, got: %v", err)
 	}
 }
+
+// DetectDialectStrict is the exported fail-closed probe for callers OUTSIDE
+// this package that make coordination decisions (e.g. the framework's seed
+// advisory lock). A transient probe failure must surface as an error, never
+// resolve to a guessed dialect.
+func TestDetectDialectStrict_TransientFailureErrors(t *testing.T) {
+	db, m := mock(t)
+	transient := errors.New("connection reset by peer")
+	for range 3 {
+		m.ExpectQuery("SELECT version").WillReturnError(transient)
+	}
+	if _, err := DetectDialectStrict(db); err == nil {
+		t.Fatal("expected an error from a transiently failing probe, got nil")
+	}
+	db2, m2 := mock(t)
+	m2.ExpectQuery("SELECT version").WillReturnRows(m2.NewRows([]string{"v"}).AddRow("PostgreSQL 16.2"))
+	d, err := DetectDialectStrict(db2)
+	if err != nil {
+		t.Fatalf("healthy probe errored: %v", err)
+	}
+	if d != DialectPostgres {
+		t.Fatalf("got %q, want postgres", d)
+	}
+}
