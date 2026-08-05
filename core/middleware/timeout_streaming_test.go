@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,6 +69,85 @@ func TestTimeoutStreamingOutlivesDeadline(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "data: second") {
 		t.Fatalf("client never received the post-deadline frame; body=%q", body)
+	}
+}
+
+// TestTimeoutStreamDisconnectAfterDeadline pins the third leg of the
+// streaming contract: a client disconnect must promptly unwind a streaming
+// handler even when it happens AFTER the request deadline has passed. The
+// handler mimics the SSE stream loop (core-ui/island/stream.go): a one-shot
+// watcher on r.Context() that ignores DeadlineExceeded (issue #159 — the
+// timeout firing on a live client) and unwinds only on context.Canceled (a
+// real disconnect). With context.WithTimeout, the deadline permanently
+// freezes ctx.Err() at DeadlineExceeded, so a later disconnect is invisible
+// and the stream lives to its own bound instead of unwinding.
+func TestTimeoutStreamDisconnectAfterDeadline(t *testing.T) {
+	unwound := make(chan string, 1)
+	h := Timeout(40 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: first\n\n"))
+		w.(http.Flusher).Flush()
+
+		// stream.go's disconnect discrimination, verbatim in shape.
+		reqCtx := r.Context()
+		streamCtx, streamCancel := context.WithCancel(context.Background())
+		defer streamCancel()
+		go func() {
+			<-reqCtx.Done()
+			if reqCtx.Err() == context.Canceled {
+				streamCancel()
+			}
+		}()
+
+		tick := time.NewTicker(25 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-streamCtx.Done():
+				unwound <- "canceled"
+				return
+			case <-tick.C:
+				if _, err := w.Write([]byte(": ping\n\n")); err != nil {
+					// A cancel racing the same tick still counts as clean.
+					select {
+					case <-streamCtx.Done():
+						unwound <- "canceled"
+					default:
+						unwound <- "write-error"
+					}
+					return
+				}
+				w.(http.Flusher).Flush()
+			}
+		}
+	}))
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if _, err := conn.Write([]byte("GET / HTTP/1.1\r\nHost: t\r\n\r\n")); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	// Read the response head + first frame so the stream is known-started.
+	buf := make([]byte, 512)
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		t.Fatalf("read response head: %v", err)
+	}
+
+	time.Sleep(120 * time.Millisecond) // deadline (40ms) fires in here; stream survives
+	_ = conn.Close()                   // the disconnect happens AFTER the deadline
+
+	select {
+	case reason := <-unwound:
+		if reason != "canceled" {
+			t.Fatalf("stream unwound via %q, want context.Canceled from the disconnect", reason)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream handler never unwound after post-deadline client disconnect")
 	}
 }
 
