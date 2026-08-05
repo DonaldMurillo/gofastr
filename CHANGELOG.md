@@ -37,15 +37,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **Secrets rotate without a mass logout.** `GOFASTR_SECRET` verification
   accepts previous keys from `GOFASTR_SECRET_PREVIOUS` (or
   `framework.WithSecretRotation(current, previous...)`); the auth battery
-  accepts `AuthConfig.JWTPreviousSecrets`. New tokens always sign with the
-  current secret; production mode still refuses a previous-only config. The
-  drain procedure is in `gofastr docs deploy`.
+  accepts `AuthConfig.JWTPreviousSecrets`. Embedded surfaces rotate too —
+  outstanding handshake nonces and frame grants verify against the previous
+  keys. New tokens always sign with the current secret; an explicit
+  `WithSecret` or previous-less `WithSecretRotation` closes the window even
+  when `GOFASTR_SECRET_PREVIOUS` is still in the environment; production
+  mode still refuses a previous-only config. The drain procedure is in
+  `gofastr docs deploy`.
 - **`App.EraseUserData` — the erasure half of GDPR.** Hard-deletes a user's
   rows across every `OwnerField`-scoped entity and registered battery tables
-  (auth users and sessions included), anonymizes the actor on audit rows
-  instead of deleting them, and returns a per-table report. Idempotent, with
-  a dry-run mode. Batteries declare erasure the same way they declare
-  export. See `gofastr docs data-export`.
+  (auth users, sessions, 2FA secrets, and OAuth links), anonymizes the actor
+  on audit rows instead of deleting them, and returns a per-table report.
+  Entity tables are deleted children-first so foreign keys without
+  `ON DELETE CASCADE` do not roll the erasure back; a blank user id is
+  refused rather than matching every unowned row. Idempotent, with a dry-run
+  mode. Batteries declare erasure the same way they declare export. Magic-link
+  tokens are keyed by email rather than user id and are not reached — see the
+  note in `gofastr docs data-export`.
 - **`framework/ratelimit` — the auth limiter, extracted for any route.**
   The sliding-window limiter that guarded login/register/password-reset is
   now a package with `Middleware()` (per-IP) and `MiddlewareByKey(fn)`;
@@ -68,12 +76,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 - **Dialect detection fails closed.** When the migration engine cannot
   determine whether the database is PostgreSQL or SQLite after retries,
-  `AutoMigrate` (and `MigrateEntity`, `DiffSchema`, `RunSeeds`) now return
-  an error naming the probe failure instead of assuming SQLite — a guess
-  there skipped the cross-replica advisory lock and every Postgres-only
-  routine. Connection-class failures carry a "check the database connection
-  / DATABASE_URL" hint. `DetectDialect` keeps its signature for callers
-  that only pick DDL types.
+  `AutoMigrate` (and `MigrateEntity`, `DiffSchema`, `RunSeeds`, the
+  `WithSeed` hook path, and the process-module store and migration
+  coordinator) now return an error naming the probe failure instead of
+  assuming SQLite — a guess there skipped the cross-replica advisory lock
+  and every Postgres-only routine. `migrate.DetectDialectStrict` is the
+  exported fail-closed probe for coordination decisions; `DetectDialect`
+  keeps its signature for callers that only pick DDL types. The probe
+  classifier ignores quoted identifiers, so a Postgres error naming a role
+  like `"syntax error"` is no longer read as evidence of SQLite.
+  Connection-class failures carry a "check the database connection /
+  DATABASE_URL" hint.
 - **The release gate is a tested script with an exact manifest.**
   `scripts/release-gate.sh` (stubbed and tested against nine failure
   fixtures) replaces the inline workflow poll. Every check in
@@ -83,6 +96,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   release for the tag fails the gate. A repo test pins the manifest to
   ci.yml's job names, so a CI rename breaks the build instead of the gate.
   The supported flow is merge → tag push; the workflow is the publisher.
+  The tag name is shape-validated once and passed through the environment,
+  never spliced into a step's shell source — Git accepts command-substitution
+  syntax in tag names. Check runs fold newest-first across all pages, so a red
+  re-run of an already-green check blocks the release; tag and main head are
+  re-verified immediately before publishing.
 - **Release tags no longer re-run CI.** A release tag points at a merge
   commit on main, so the release gate consults the blocking check runs
   that commit's main-push CI run already produced; the tag-triggered
