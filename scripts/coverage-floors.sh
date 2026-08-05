@@ -67,6 +67,10 @@ FLOORS="
 ./framework/migrate/ 73.5
 ./framework/semcov/ 87.0
 ./framework/tenant/ 85.5
+./framework/ui/ 84.0
+./framework/uihost/ 85.5
+./framework/access/ 80.5
+./battery/auth/ 77.5
 "
 
 profdir=$(mktemp -d)
