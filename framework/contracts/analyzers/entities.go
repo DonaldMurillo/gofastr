@@ -18,6 +18,7 @@ func init() {
 		Rules: []string{
 			contracts.RuleMCPWithoutCRUD,
 			contracts.RulePublicEntity,
+			contracts.RuleCrudWithoutAuth,
 			contracts.RuleUnscopedPII,
 		},
 		Run: runEntities,
@@ -605,6 +606,14 @@ func splitIdentifier(s string) []string {
 
 func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	var out []contracts.Diagnostic
+	// GOFASTR1703 keys on auth being absent app-wide, which is a property
+	// of the whole module rather than any one entity — compute it once.
+	// Auth is "absent" when no battery/auth manager is configured and no
+	// reader (SessionMiddleware / RequireAuth / BFF) is mounted anywhere;
+	// that is the half-wiring complement GOFASTR1903 does not cover (1903
+	// fires only when an auth.New exists with no reader).
+	auth := AuthWiring(p)
+	noAuth := len(auth.Configured) == 0 && len(auth.Mounted) == 0
 	for _, e := range Entities(p) {
 		if e.MCP && e.CRUDDisabled {
 			d := diag(p, contracts.RuleMCPWithoutCRUD, e.File, e.Pos,
@@ -615,6 +624,12 @@ func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		if e.Public {
 			d := diag(p, contracts.RulePublicEntity, e.File, e.Pos, fmt.Sprintf(
 				"entity %q is Public — anonymous callers can create, update, and delete rows, not only read them", e.Name))
+			d.Evidence = map[string]string{"entity": e.Name}
+			out = append(out, d)
+		}
+		if noAuth && !e.CRUDDisabled && !e.Public {
+			d := diag(p, contracts.RuleCrudWithoutAuth, e.File, e.Pos, fmt.Sprintf(
+				"entity %q mounts auto-CRUD routes but the app wires no auth — every operation 401s for every caller; wire battery/auth or mark the entity Public", e.Name))
 			d.Evidence = map[string]string{"entity": e.Name}
 			out = append(out, d)
 		}

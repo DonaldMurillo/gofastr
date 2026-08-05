@@ -125,8 +125,9 @@ const RuleIgnoredExec = "GOFASTR1601"
 
 // Entity rules.
 const (
-	RuleMCPWithoutCRUD = "GOFASTR1701"
-	RulePublicEntity   = "GOFASTR1702"
+	RuleMCPWithoutCRUD  = "GOFASTR1701"
+	RulePublicEntity    = "GOFASTR1702"
+	RuleCrudWithoutAuth = "GOFASTR1703"
 )
 
 // Rendering rules.
@@ -709,6 +710,24 @@ func entityRules() []Rule {
 		Examples: []Example{{
 			Bad:  "app.Entity(\"invoices\", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}})",
 			Good: "app.Entity(\"invoices\", entity.EntityConfig{Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: \"invoices:read\"}}})",
+		}},
+	}, {
+		ID: RuleCrudWithoutAuth, Slug: "entities/crud-without-auth",
+		Title: "CRUD entity exposed with no auth wired", Capability: CapEntities, Severity: SeverityWarn,
+		Summary: "An entity mounts auto-CRUD routes, but the app wires no auth — so every operation 401s for every caller.",
+		Why: "Auto-CRUD is secure by default: each operation requires a session. With no auth battery " +
+			"(no auth.New and no SessionMiddleware / RequireAuth / BFF), no request ever carries a user, " +
+			"so the entire CRUD surface is unreachable — the app boots and advertises endpoints that " +
+			"always return 401. That is the worst first-contact signal: a curl to the documented URL " +
+			"fails, which reads as broken. It is almost always an oversight, not a decision — wiring " +
+			"auth makes signed-in callers reach the API. This complements GOFASTR1903 (auth configured " +
+			"but never mounted): 1903 fires when an auth.New exists with no reader; this fires when no " +
+			"auth battery is present at all.",
+		Fix: "Wire battery/auth — auth.New(auth.AuthConfig{…}) plus fwApp.Use(auth.SessionMiddleware(mgr)) (or auth.BFF) — so authenticated callers reach the routes. If the entity is genuinely public data, set Exposure.Public (GOFASTR1702 then applies). Run `gofastr docs auth`.",
+		Doc: "auth",
+		Examples: []Example{{
+			Bad:  "app.Entity(\"posts\", entity.EntityConfig{Exposure: &entity.ExposureConfig{}}) // CRUD on, not public, no auth wired",
+			Good: "// Wire auth so signed-in callers can reach the API.\nimport \"github.com/DonaldMurillo/gofastr/battery/auth\"\n\nfunc wire(app *framework.App) {\n\tmgr := auth.New(auth.AuthConfig{})\n\tapp.Use(auth.SessionMiddleware(mgr))\n\tapp.Entity(\"posts\", entity.EntityConfig{})\n}",
 		}},
 	}}
 }

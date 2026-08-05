@@ -730,6 +730,68 @@ func wire(app *framework.App) {
 	assertNot(t, ds, contracts.RuleUnscopedPII, "the field list could not be read, so nothing is claimed")
 }
 
+// GOFASTR1703 — CRUD entity exposed with no auth wired. The secure-by-
+// default session requirement makes every operation 401 when no auth
+// battery is present, so the whole surface reads as broken on first
+// contact. Fires when no auth.New and no reader (SessionMiddleware /
+// RequireAuth / BFF) appear anywhere.
+func TestCrudEntityWithoutAuthIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"e.go": entityImports + `
+func wire(app *framework.App) {
+	app.Entity("posts", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+	})
+}
+`,
+	})
+	d := assertHas(t, ds, contracts.RuleCrudWithoutAuth)
+	if !strings.Contains(d.Message, "posts") {
+		t.Errorf("message does not name the entity: %q", d.Message)
+	}
+}
+
+// Wiring auth (auth.New + a reader) clears the rule even though the entity
+// is CRUD-exposed and not Public: authenticated callers can now reach it.
+func TestCrudEntityWithAuthWiredIsClean(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"e.go": `package main
+
+import (
+	"github.com/DonaldMurillo/gofastr/battery/auth"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+)
+
+func wire(app *framework.App) {
+	mgr := auth.New(auth.AuthConfig{})
+	app.Use(auth.SessionMiddleware(mgr))
+	app.Entity("posts", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+	})
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleCrudWithoutAuth, "auth.New + SessionMiddleware is wired")
+}
+
+// A Public entity opts out of the session requirement by intent, so the
+// no-auth posture is not a finding (GOFASTR1702 covers the Public choice).
+func TestPublicEntityIsCleanOfCrudWithoutAuth(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"e.go": entityImports + `
+func wire(app *framework.App) {
+	app.Entity("posts", entity.EntityConfig{
+		Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+		Exposure: &entity.ExposureConfig{Public: true},
+	})
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleCrudWithoutAuth, "a Public entity is not flagged for lacking auth")
+}
+
 const eventSource = `package main
 
 import (
