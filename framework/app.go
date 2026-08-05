@@ -1123,6 +1123,9 @@ func (a *App) Mount(m Mountable) *App {
 				panic(err.Error())
 			}
 			host.SetKeys(nonceKey, grantKey)
+			if prevNonce, prevGrant := embedPreviousKeysForMount(a.previousSecrets); len(prevNonce) > 0 {
+				host.SetPreviousKeys(prevNonce, prevGrant)
+			}
 			a.embedHost = host
 		}
 	}

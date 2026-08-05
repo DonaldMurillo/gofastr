@@ -158,3 +158,18 @@ func embedKeysForMount(secret []byte) (nonceKey, grantKey []byte, err error) {
 	}
 	return deriveKey(secret, embedNoncePurpose), deriveKey(secret, embedGrantPurpose), nil
 }
+
+// embedPreviousKeysForMount derives the verify-only embed keys for each
+// retired app secret, so a rotation does not invalidate outstanding nonces
+// and grants. Previous secrets go through the SAME HKDF derivation as the
+// current one — a raw secret is never used as a key.
+func embedPreviousKeysForMount(previous [][]byte) (nonceKeys, grantKeys [][]byte) {
+	for _, p := range previous {
+		if len(p) == 0 {
+			continue
+		}
+		nonceKeys = append(nonceKeys, deriveKey(p, embedNoncePurpose))
+		grantKeys = append(grantKeys, deriveKey(p, embedGrantPurpose))
+	}
+	return nonceKeys, grantKeys
+}
