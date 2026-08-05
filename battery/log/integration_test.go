@@ -3,6 +3,7 @@ package log_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,9 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/battery/log"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/framework"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // memSink is a concurrency-safe in-memory sink used by integration tests
@@ -388,4 +391,37 @@ func TestPluginDefaultsToFileSinkWhenEmpty(t *testing.T) {
 	}
 	lp := p.(*log.Plugin)
 	lp.Logger().Info("hello")
+}
+
+// TestLogInit_AttachesFrameworkMetrics pins the zero-config path: an app
+// with WithDB + WithMetrics and the log plugin (but NO explicit collector
+// registration) still surfaces db_pool_* on /metrics, because the log
+// battery takes the metrics handle during Init and the framework attaches
+// its DB-pool collector there.
+func TestLogInit_AttachesFrameworkMetrics(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite driver not available")
+	}
+	t.Cleanup(func() { db.Close() })
+
+	app := framework.NewApp(
+		framework.WithConfig(framework.AppConfig{Name: "test"}),
+		framework.WithDB(db),
+		framework.WithMetrics(),
+	)
+	app.RegisterPlugin(log.New(log.Config{Sinks: []log.Sink{&memSink{}}}))
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+
+	m := app.Metrics()
+	if m == nil {
+		t.Fatal("app.Metrics() = nil with WithMetrics enabled")
+	}
+	rec := httptest.NewRecorder()
+	middleware.MetricsHandler(m).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), "db_pool_open_connections") {
+		t.Fatalf("log battery did not surface db_pool metrics:\n%s", rec.Body.String())
+	}
 }

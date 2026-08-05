@@ -81,28 +81,33 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 	}
 }
 
-// recoveryMiddleware logs panics with full request context and a stack
-// trace, then returns 500. Replaces middleware.Recovery for apps using
-// the log plugin so panics flow through the configured sinks.
+// recoveryMiddleware recovers panics, reports them through the configured
+// ErrorReporter (default: the log plugin's slog reporter, preserving the
+// http.panic log line), then returns 500. A nil reporter is a safe no-op so
+// the middleware never nil-derefs on the recovery path.
 //
-// The panic value and stack are capped (4 KiB / 64 KiB) so a handler
-// that panics with a 100 MB string doesn't write a 100 MB log entry —
-// the file sink would happily serialize all of it before rotating, and
-// the webhook sink would try to POST it as a batch element.
-func recoveryMiddleware(logger *slog.Logger) middleware.Middleware {
+// The panic value and stack are capped (4 KiB / 64 KiB) so a handler that
+// panics with a 100 MB string doesn't write a 100 MB log entry or POST one
+// to an error collector — the file sink would serialize all of it before
+// rotating, and the webhook sink would try to deliver it as a batch element.
+func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
+	if reporter == nil {
+		reporter = noopReporter{}
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if v := recover(); v != nil {
-					panicStr := truncateString(fmt.Sprint(v), maxPanicValueLen)
-					stack := truncateString(string(debug.Stack()), maxStackLen)
-					logger.LogAttrs(r.Context(), slog.LevelError, "http.panic",
-						slog.String("panic", panicStr),
-						slog.String("method", r.Method),
-						slog.String("path", truncateString(r.URL.Path, maxPathLen)),
-						slog.String("request_id", middleware.GetRequestID(r.Context())),
-						slog.String("stack", stack),
-					)
+					reporter.Report(ErrorReport{
+						Message:   "http.panic",
+						Error:     truncateString(fmt.Sprint(v), maxPanicValueLen),
+						Stack:     truncateString(string(debug.Stack()), maxStackLen),
+						Method:    r.Method,
+						Path:      truncateString(r.URL.Path, maxPathLen),
+						Route:     r.Pattern,
+						RequestID: middleware.GetRequestID(r.Context()),
+						ctx:       r.Context(),
+					})
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				}
 			}()

@@ -86,6 +86,15 @@ type Config struct {
 	// ring + access log. Enable only when /mcp is reachable solely from
 	// trusted callers (localhost, authenticated proxy, etc.).
 	AllowMCPMutation bool
+
+	// ErrorReporter receives recovered panics (from the plugin's
+	// panic-recovery middleware) and any errors app code forwards via
+	// Plugin.Reporter(). nil (the default) keeps the existing behaviour:
+	// panics are logged as http.panic through the plugin's sinks and nothing
+	// is sent elsewhere. Set it to log.NewHTTPErrorReporter(url, opts) to
+	// additionally POST reports to a generic JSON collector / Slack. A
+	// reporter implementing io.Closer is closed on app shutdown.
+	ErrorReporter ErrorReporter
 }
 
 // Plugin is the log plugin. Implements framework.Plugin.
@@ -108,6 +117,11 @@ type Plugin struct {
 	// tail the file for historical entries beyond the ring window.
 	resolvedFilePath string
 
+	// reporter is the configured ErrorReporter (defaults to a SlogErrorReporter
+	// over the plugin's logger). Exposed via Reporter() so app code can forward
+	// non-panic errors through the same seam the recovery middleware uses.
+	reporter ErrorReporter
+
 	// mutationDevImplied records that log_set_level exists only because
 	// `gofastr dev` turned mutation on, not because the host asked. Those
 	// tools are NOT auth-gated: the dev loop has no auth configured at all,
@@ -127,6 +141,28 @@ func New(cfg Config) *Plugin {
 
 // Name implements framework.Plugin.
 func (p *Plugin) Name() string { return "log" }
+
+// Reporter returns the configured ErrorReporter (the same one the
+// panic-recovery middleware reports to). App code can forward non-panic
+// errors through it so they reach the configured sink (slog, HTTP
+// collector, …) alongside recovered panics. Never nil after Init.
+func (p *Plugin) Reporter() ErrorReporter {
+	if p.reporter == nil {
+		return noopReporter{}
+	}
+	return p.reporter
+}
+
+// closeReporter always runs the fan-out handler's close (drains sinks) and
+// additionally closes the ErrorReporter when it owns a sink (HTTPErrorReporter).
+// The handler close is the primary effect; a reporter close error is ignored
+// so a stuck error collector never blocks app shutdown.
+func (p *Plugin) closeReporter(handlerErr error) error {
+	if c, ok := p.reporter.(interface{ Close() error }); ok {
+		_ = c.Close()
+	}
+	return handlerErr
+}
 
 // Logger returns the *slog.Logger that fans out to every configured sink.
 // Useful for app code that wants explicit access without relying on
@@ -246,6 +282,13 @@ func (p *Plugin) Init(app *framework.App) error {
 	// other code calling app.Logger() routes through our sinks. Scoped to
 	// this App — no slog.Default rewiring, no stdlib log side effects.
 	app.SetLogger(p.logger)
+	// Take the metrics handle so the framework-owned collectors (DB pool,
+	// outbox) attach to the single /metrics surface with no extra wiring.
+	// No-op when metrics are disabled (app.Metrics() returns nil). The log
+	// plugin does not itself depend on the handle; this is the universal
+	// battery bridging framework collectors onto the surface for apps that
+	// register no subsystem collector of their own.
+	_ = app.Metrics()
 
 	// Install our own access-log + panic-recovery middleware. Order is
 	// access OUTSIDE recovery so the access log's defer reads the
@@ -255,7 +298,16 @@ func (p *Plugin) Init(app *framework.App) error {
 	// default Recovery + Logging — log-recovery catches first because
 	// it's the innermost recover.
 	app.Use(router.Middleware(accessMiddleware(p.logger, cfg.TrustForwardedFor)))
-	app.Use(router.Middleware(recoveryMiddleware(p.logger)))
+
+	// Resolve the ErrorReporter: an explicit one from Config wins, otherwise
+	// the default SlogErrorReporter preserves the pre-existing http.panic log
+	// line. Held on the plugin so Reporter() can hand it to app code, and
+	// closed on shutdown if it owns a sink (e.g. HTTPErrorReporter).
+	p.reporter = cfg.ErrorReporter
+	if p.reporter == nil {
+		p.reporter = SlogErrorReporter{Logger: p.logger}
+	}
+	app.Use(router.Middleware(recoveryMiddleware(p.reporter)))
 
 	if !cfg.DisableLifecycleEvents {
 		appName := app.Config.Name
@@ -277,11 +329,11 @@ func (p *Plugin) Init(app *framework.App) error {
 			p.logger.LogAttrs(context.Background(), slog.LevelInfo, "app.stop",
 				slog.String("app", appName),
 			)
-			return p.handler.close()
+			return p.closeReporter(p.handler.close())
 		})
 	} else {
 		app.OnStopFirst(func() error {
-			return p.handler.close()
+			return p.closeReporter(p.handler.close())
 		})
 	}
 

@@ -131,6 +131,44 @@ app.Router().Handle("GET", "/metrics", logp.MetricsHandler())
 The handler is stateless and safe to mount under any access-controlled
 prefix you use for ops endpoints.
 
+## Error reporting
+
+The plugin installs a panic-recovery middleware that catches handler panics,
+returns 500, and reports each one through an **ErrorReporter**. The default
+reporter writes the existing `http.panic` log line through the configured
+sinks — zero behaviour change when you do nothing. Supply a reporter to also
+forward panics (and any error app code reports) to an external collector:
+
+```go
+app.RegisterPlugin(log.New(log.Config{
+    ErrorReporter: log.NewHTTPErrorReporter(
+        "https://errors.example.com/gofastr",
+        log.WebhookOpts{BatchSize: 1, Headers: map[string]string{"Authorization": "Bearer ..."}},
+    ),
+}))
+```
+
+`HTTPErrorReporter` POSTs a JSON report (`time`, `msg`, `error`, `stack`,
+`method`, `path`, `route`, `request_id`) to a URL, reusing the plugin's
+webhook-sink machinery — bounded async queue, exponential backoff on 5xx /
+transport errors, drop-oldest under backpressure. No vendor SDK. Point it at
+a generic JSON collector, or a small Slack adapter that maps the report to
+an incoming-webhook payload.
+
+App code can forward non-panic errors through the same seam:
+
+```go
+logp, _ := framework.PluginGetAs[*log.Plugin](app.Plugins, "log")
+logp.Reporter().Report(log.ErrorReport{
+    Message: "worker.failed",
+    Error:   err.Error(),
+    Stack:   log.CaptureStack(),
+})
+```
+
+The reporter is closed on app shutdown when it implements `io.Closer`
+(`HTTPErrorReporter` does, so pending reports flush before exit).
+
 ## Configuration
 
 `log.Config` fields (all optional):
@@ -141,6 +179,7 @@ prefix you use for ops endpoints.
 | `Sinks`                  | `[DefaultFileSink]` | If empty, resolves a per-app file under the OS state dir.      |
 | `DisableLifecycleEvents` | `false`             | Set true to skip `app.start` / `app.stop` entries.             |
 | `AddSource`              | `false`             | Adds `source` (file:line) attribute to every entry.            |
+| `ErrorReporter`          | `nil` (slog)        | Receives recovered panics + app-reported errors. nil keeps the existing `http.panic` log line; set to `NewHTTPErrorReporter(url, opts)` to POST JSON reports. |
 
 > **Zero-config = full plugin.** `Config{}` gives you everything: file
 > sink, structured `http.access` + `http.panic` middleware, lifecycle

@@ -132,7 +132,7 @@ func TestRecoveryMiddlewareLogsPanic(t *testing.T) {
 	h := newFanoutHandler([]Sink{sink}, &slog.HandlerOptions{Level: slog.LevelDebug})
 	logger := slog.New(h)
 
-	mw := recoveryMiddleware(logger)
+	mw := recoveryMiddleware(SlogErrorReporter{Logger: logger})
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("boom")
 	}))
