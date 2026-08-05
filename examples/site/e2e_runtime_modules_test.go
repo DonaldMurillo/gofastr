@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	cdruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -342,15 +343,30 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
                 }
             });
         })()`, nil),
-		chromedp.Sleep(800*time.Millisecond),
 		// The fallback should produce SOME visible toast-shaped node
-		// with the title text the server sent.
-		chromedp.Evaluate(`(() => {
-            // Look for the fallback container by a stable hook.
-            const fallback = document.querySelector('[data-fui-toast-fallback]');
-            if (!fallback) return false;
-            return fallback.textContent.includes('Saved');
-        })()`, &fallbackVisible),
+		// with the title text the server sent. POLL for it rather than
+		// sampling once after a fixed sleep: loadModule inserts module
+		// <script>s with async=false, so they join the document's
+		// in-order script list — and per the HTML spec even the ERROR
+		// event of an in-order script waits for every earlier pending
+		// in-order script to settle. The home page queues several
+		// modules at boot (toasts, sse, widgets, …); on a starved CI
+		// runner any of those fetches can outlive a fixed sleep, which
+		// delays the toasts.js onerror → fallback render past the
+		// sample point. The fallback is delayed, never lost — so wait
+		// on the real signal with a generous budget.
+		chromedp.Evaluate(`new Promise((resolve) => {
+            const t0 = performance.now();
+            const tick = () => {
+                const fallback = document.querySelector('[data-fui-toast-fallback]');
+                if (fallback && fallback.textContent.includes('Saved')) { resolve(true); return; }
+                if (performance.now() - t0 > 10000) { resolve(false); return; }
+                setTimeout(tick, 100);
+            };
+            tick();
+        })`, &fallbackVisible, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		}),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
