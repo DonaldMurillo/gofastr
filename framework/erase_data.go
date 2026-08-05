@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/datexport"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
@@ -132,6 +133,12 @@ func (a *App) EraseUserData(ctx context.Context, userID string, opts ...EraseOpt
 	if a.DB == nil {
 		return EraseReport{}, fmt.Errorf("framework: EraseUserData requires App.DB")
 	}
+	// A blank id is never a real user: `WHERE owner = ''` matches every
+	// unowned row, so a caller that failed to resolve its principal would
+	// erase them instead of erroring.
+	if strings.TrimSpace(userID) == "" {
+		return EraseReport{}, fmt.Errorf("framework: EraseUserData requires a non-empty user id")
+	}
 	cfg := eraseConfig{auditTable: "audit_log", auditTombstone: "[erased]"}
 	for _, o := range opts {
 		o(&cfg)
@@ -185,9 +192,82 @@ func (a *App) collectEraseEntitySources() []eraseEntitySource {
 		tables = append(tables, t)
 	}
 	sort.Strings(tables)
+	tables = orderChildrenFirst(tables, merged, names)
 	for _, t := range tables {
 		out = append(out, eraseEntitySource{name: tableName[t], table: t, owner: tableOwner[t]})
 	}
+	return out
+}
+
+// orderChildrenFirst sorts erasable tables so a table holding a foreign key
+// is deleted before the table it points at. The generated schema has no ON
+// DELETE CASCADE, so deleting a parent first fails the constraint and rolls
+// the whole erasure back. Input order (lexical) is preserved between tables
+// with no dependency, keeping the result deterministic; a relation cycle
+// degrades to the input order rather than looping.
+func orderChildrenFirst(tables []string, merged map[string]*entity.Entity, names []string) []string {
+	erasable := make(map[string]bool, len(tables))
+	for _, t := range tables {
+		erasable[t] = true
+	}
+	// parents[child] = the tables that child references via BelongsTo — the
+	// child holds the FK column (RelManyToOne, i.e. BelongsTo), so it must
+	// be deleted first.
+	parents := map[string][]string{}
+	for _, n := range names {
+		ent := merged[n]
+		if ent == nil || !erasable[ent.GetTable()] {
+			continue
+		}
+		child := ent.GetTable()
+		for _, rel := range ent.Config.Relations {
+			if rel.Type != entity.RelManyToOne {
+				continue
+			}
+			target := merged[rel.Entity]
+			if target == nil || !erasable[target.GetTable()] || target.GetTable() == child {
+				continue
+			}
+			parents[child] = append(parents[child], target.GetTable())
+		}
+	}
+	if len(parents) == 0 {
+		return tables
+	}
+	var ordered []string
+	state := map[string]int{} // 0 unvisited, 1 in-progress, 2 done
+	var visit func(string)
+	visit = func(t string) {
+		switch state[t] {
+		case 1, 2: // in-progress means a cycle: stop rather than loop
+			return
+		}
+		state[t] = 1
+		for _, child := range childrenOf(t, parents) {
+			visit(child)
+		}
+		state[t] = 2
+		ordered = append(ordered, t)
+	}
+	for _, t := range tables {
+		visit(t)
+	}
+	return ordered
+}
+
+// childrenOf returns the tables that reference parent, in the deterministic
+// order their names sort.
+func childrenOf(parent string, parents map[string][]string) []string {
+	var out []string
+	for child, ps := range parents {
+		for _, p := range ps {
+			if p == parent {
+				out = append(out, child)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

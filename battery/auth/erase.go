@@ -17,10 +17,23 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 //     battery's tables are created with raw DDL and carry NO foreign-key
 //     constraints, so hard-deleting the user row cannot cascade-fail; an
 //     anonymizing tombstone would leave a login-oracle row behind, so
-//     hard-delete is both safe and the stronger erasure. (Other auth tables —
-//     twofa, oauth_links, apitokens — are NOT registered here: they are not in
-//     the export registry either, and an app that wants them erased registers
-//     its own eraser for the actual table name, exactly as it must for export.)
+//     hard-delete is both safe and the stronger erasure.
+//   - auth_twofa: EraseDelete by user_id. TOTP secrets and backup codes are
+//     credential material; leaving them behind survives the erasure.
+//   - users_oauth_links: EraseDelete by user_id, the canonical name for the
+//     "<user table>_oauth_links" convention. A surviving link re-attaches the
+//     erased account on the next provider sign-in.
+//
+// KNOWN GAP — magic_link_tokens is keyed by EMAIL, not user id, so the
+// declarative eraser (which receives only the user id) cannot reach it. A
+// magic link minted before an erasure and redeemed after it creates a fresh
+// account for that address. Hosts that use magic links should expire
+// outstanding tokens for the address alongside the erasure. Tracked
+// separately; do not assume erasure revokes an in-flight magic link.
+//
+// API tokens (auth_api_tokens) are named credentials, not per-user rows —
+// the table has no user column — so a host that scopes tokens to users
+// registers its own eraser for the actual column.
 //
 // The audit trail is deliberately NOT registered as an eraser. It is the
 // framework's table (audit_log), host-configurable via AuditConfig.Table, and
@@ -42,5 +55,13 @@ func init() {
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name: "auth_users", Source: "auth", Table: "auth_users",
 		Column: "id", Mode: datexport.EraseDelete,
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "auth_twofa", Source: "auth", Table: "auth_twofa",
+		Column: "user_id", Mode: datexport.EraseDelete,
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "users_oauth_links", Source: "auth", Table: "users_oauth_links",
+		Column: "user_id", Mode: datexport.EraseDelete,
 	})
 }

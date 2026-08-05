@@ -332,3 +332,68 @@ func equalStringSlices(a, b []string) bool {
 	}
 	return true
 }
+
+// An empty user id must be refused before any statement runs: WHERE
+// owner = ” matches every unowned row, so a host that calls this after
+// failing to resolve the caller would wipe them.
+func TestEraseUserData_RejectsEmptyUserID(t *testing.T) {
+	app, _ := newEraseTestApp(t)
+	for _, id := range []string{"", "   "} {
+		if _, err := app.EraseUserData(context.Background(), id); err == nil {
+			t.Fatalf("empty user id %q was accepted", id)
+		}
+		if _, err := app.EraseUserData(context.Background(), id, WithEraseDryRun()); err == nil {
+			t.Fatalf("empty user id %q was accepted in dry-run", id)
+		}
+	}
+}
+
+// Erasure must delete children before parents: the generated foreign keys
+// carry no ON DELETE CASCADE, so a lexical order that hits the parent first
+// makes the whole transaction roll back and erases nothing.
+func TestEraseUserData_ChildBeforeParentFKOrder(t *testing.T) {
+	db := openSQLiteMem(t)
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatal(err)
+	}
+	app := NewApp(WithDB(db))
+	// "accounts" sorts before "posts": lexical order would delete the parent
+	// first and trip the constraint.
+	app.Registry.Register(entity.Define("accounts", entity.EntityConfig{
+		Table:  "accounts",
+		Scope:  &entity.ScopeConfig{OwnerField: "owner_id"},
+		Fields: []schema.Field{{Name: "owner_id", Type: schema.String}},
+	}))
+	app.Registry.Register(entity.Define("posts", entity.EntityConfig{
+		Table:     "posts",
+		Scope:     &entity.ScopeConfig{OwnerField: "owner_id"},
+		Fields:    []schema.Field{{Name: "owner_id", Type: schema.String}, {Name: "account_id", Type: schema.String}},
+		Relations: []entity.Relation{entity.BelongsTo("account", "accounts", "account_id")},
+	}))
+
+	if _, err := db.Exec(`CREATE TABLE accounts (id TEXT PRIMARY KEY, owner_id TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, owner_id TEXT, account_id TEXT REFERENCES accounts(id))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO accounts VALUES ('a1','u1')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO posts VALUES ('p1','u1','a1')`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatalf("erase failed on a parent/child graph: %v", err)
+	}
+	for _, table := range []string{"accounts", "posts"} {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("%s still has %d row(s) after erasure", table, n)
+		}
+	}
+}

@@ -34,3 +34,26 @@ func TestAuthErasersRegistered(t *testing.T) {
 		}
 	}
 }
+
+// Every auth table that holds per-user state must be reachable by
+// App.EraseUserData. A table left unregistered survives an erasure —
+// 2FA secrets and OAuth links are credential material, not metadata.
+func TestAuthErasersCoverCredentialTables(t *testing.T) {
+	want := map[string]string{
+		"auth_sessions":     "user_id",
+		"auth_users":        "id",
+		"auth_twofa":        "user_id",
+		"users_oauth_links": "user_id",
+	}
+	got := map[string]string{}
+	for _, e := range datexport.AllErasers() {
+		if e.Source == "auth" {
+			got[e.Table] = e.Column
+		}
+	}
+	for table, col := range want {
+		if got[table] != col {
+			t.Errorf("auth eraser for %q: got column %q, want %q", table, got[table], col)
+		}
+	}
+}
