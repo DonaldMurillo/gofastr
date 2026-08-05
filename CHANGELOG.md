@@ -7,7 +7,33 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Generated apps fail closed at boot.** `gofastr init`'s scaffold used to
+  log `Migration warning` on a failed `migrator.Up` and start the server
+  anyway; it now exits, so a deploy whose committed migration did not apply
+  fails the rollout instead of surfacing as later request errors. Blueprint
+  seeding is fail-fast for the same reason: a seed row that fails (or an
+  entity with no handler) aborts startup naming the entity, where it used to
+  be logged and skipped — and never retried, since the idempotency check
+  marks a partially-seeded entity as done. Regenerate to pick both up.
+
 ### Fixed
+
+- **A release tag now requires green CI on the exact tagged commit.** CI runs
+  on `v*` tag pushes, and the release workflow refuses to publish until every
+  blocking check on the tag SHA has completed successfully — it previously
+  checked only that a changelog section existed, which is how v0.61.0
+  published while its build·vet·test check was red.
+- **The Postgres CI canary cannot skip in required mode.** The URL-shape
+  guards in `pgtest.DB` / `FreshDatabaseDSN` / `UnusedDSN` ran after the
+  fail-closed choke point and still skipped, so a non-URL `TEST_POSTGRES_DSN`
+  — the documented override — silently turned the canary green.
+- **The backend-adoption eval runs again.** The Gin and stdlib baseline lanes
+  required `gofastr/sqlite/stdlib@v1.14.44` — mattn's version carried onto a
+  path that is not a module during the driver swap — so lane setup failed
+  before any trial. They now pin `modernc.org/sqlite`, and a test fails when
+  any baseline requirement stops resolving.
 
 - **Flat blueprint booleans that gate access are strict.** The entity-level
   `soft_delete:` and `multi_tenant:` keys and `app.auth.enabled` now demand a
