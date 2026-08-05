@@ -52,9 +52,12 @@ jobs:
             tag="$GITHUB_REF_NAME"
           fi
           # Git allows command-substitution syntax in tag names, and a
-          # ${{ }} expression is spliced into the shell source BEFORE bash
+          # GitHub expression is spliced into the shell source BEFORE bash
           # parses it. Pin the shape here, once, and pass the value through
           # env everywhere else so no step interpolates it into source.
+          # (Do not write an empty GitHub expression anywhere in this file,
+          # even in a shell comment: expressions are parsed file-wide and an
+          # empty one fails the whole workflow at startup.)
           case "$tag" in
             v[0-9]*.[0-9]*.[0-9]*) ;;
             *) echo "::error::refusing tag $tag — a release tag must look like v1.2.3"; exit 1 ;;

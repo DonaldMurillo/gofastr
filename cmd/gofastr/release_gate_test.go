@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -419,5 +420,34 @@ func writeFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// GitHub parses ${…} expressions file-wide, including inside what looks like
+// a shell comment in a run: block. An EMPTY expression is invalid syntax and
+// fails the whole workflow at startup with no jobs — which is exactly how a
+// comment explaining expression injection took the release workflow down.
+// Every expression in a workflow must have a body.
+func TestWorkflowsHaveNoEmptyExpressions(t *testing.T) {
+	dir := filepath.Join("..", "..", ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read workflows dir: %v", err)
+	}
+	empty := regexp.MustCompile(`\$\{\{\s*\}\}`)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", e.Name(), err)
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			if empty.MatchString(line) {
+				t.Errorf("%s:%d has an empty GitHub expression — the workflow will fail at startup: %s",
+					e.Name(), i+1, strings.TrimSpace(line))
+			}
+		}
 	}
 }
