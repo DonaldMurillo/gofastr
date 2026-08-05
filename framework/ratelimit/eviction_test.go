@@ -1,23 +1,27 @@
-package auth
+package ratelimit
 
 import (
 	"testing"
 	"time"
 )
 
+// These tests travel with the limiter internals (the map cap + eviction
+// machinery): they poke the unexported mu/states fields directly. They moved
+// here from battery/auth when the limiter was promoted to framework/ratelimit.
+
 // Property: the rate limiter must not let attacker-chosen keys grow process
 // memory without bound. Distinct non-existent login emails (or rotated IPs)
 // each insert a state; without eviction the map grows until OOM.
-func TestRateLimiter_BoundedUnderKeyFlood(t *testing.T) {
-	rl := NewRateLimiter(RateLimiterConfig{
+func TestLimiter_BoundedUnderKeyFlood(t *testing.T) {
+	rl := NewLimiter(Config{
 		MaxAttempts:   3,
 		Window:        50 * time.Millisecond,
 		BlockDuration: 50 * time.Millisecond,
 	})
 
 	// Flood with far more distinct keys than the cap allows.
-	const flood = maxRateLimitKeys * 3
-	for i := 0; i < flood; i++ {
+	const flood = maxKeys * 3
+	for i := range flood {
 		rl.Allow(uniqueKey(i))
 	}
 
@@ -28,21 +32,21 @@ func TestRateLimiter_BoundedUnderKeyFlood(t *testing.T) {
 	if n >= flood {
 		t.Fatalf("limiter map grew unbounded: %d entries for %d distinct keys", n, flood)
 	}
-	if n > maxRateLimitKeys {
-		t.Fatalf("limiter map exceeded cap: %d entries, cap %d", n, maxRateLimitKeys)
+	if n > maxKeys {
+		t.Fatalf("limiter map exceeded cap: %d entries, cap %d", n, maxKeys)
 	}
 }
 
 // Idle states (block elapsed, attempts aged out of the window) must be
 // reclaimed rather than pinned forever — one-shot probes shouldn't leak.
-func TestRateLimiter_EvictsIdleStates(t *testing.T) {
-	rl := NewRateLimiter(RateLimiterConfig{
+func TestLimiter_EvictsIdleStates(t *testing.T) {
+	rl := NewLimiter(Config{
 		MaxAttempts:   3,
 		Window:        20 * time.Millisecond,
 		BlockDuration: 20 * time.Millisecond,
 	})
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		rl.Allow(uniqueKey(i))
 	}
 	// Let every attempt age out of the window.
@@ -62,8 +66,8 @@ func TestRateLimiter_EvictsIdleStates(t *testing.T) {
 
 // An active block must still be honoured even while the limiter is shedding
 // idle keys — eviction must not become a block-bypass primitive.
-func TestRateLimiter_BlockSurvivesEviction(t *testing.T) {
-	rl := NewRateLimiter(RateLimiterConfig{
+func TestLimiter_BlockSurvivesEviction(t *testing.T) {
+	rl := NewLimiter(Config{
 		MaxAttempts:   2,
 		Window:        time.Hour,
 		BlockDuration: time.Hour,
@@ -77,7 +81,7 @@ func TestRateLimiter_BlockSurvivesEviction(t *testing.T) {
 	}
 
 	// Flood with unrelated keys to drive eviction.
-	for i := 0; i < 100_000; i++ {
+	for i := range 100_000 {
 		rl.Allow(uniqueKey(i))
 	}
 
@@ -88,11 +92,10 @@ func TestRateLimiter_BlockSurvivesEviction(t *testing.T) {
 }
 
 func uniqueKey(i int) string {
-	// Deterministic distinct keys without allocating a sprintf each time
-	// in hot loops is fine here; readability over micro-optimisation.
+	// Deterministic distinct keys; readability over micro-optimisation.
 	const hex = "0123456789abcdef"
 	var b [8]byte
-	for j := 0; j < 8; j++ {
+	for j := range 8 {
 		b[j] = hex[(i>>(uint(j)*4))&0xF]
 	}
 	return "account:" + string(b[:])
