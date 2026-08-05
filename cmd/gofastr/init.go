@@ -72,9 +72,22 @@ func runInit(args []string) {
 		case args[i] == "--no-entity":
 			noEntity = true
 		case strings.HasPrefix(args[i], "--db="):
-			dbDriver = strings.TrimPrefix(args[i], "--db=")
-			if dbDriver == "postgres" {
+			// Accept the docs-canonical spellings (sqlite, postgres) plus the
+			// wire/alias spellings (sqlite3, postgresql) the framework already
+			// honors, and map them to the real driver name. Anything else used
+			// to fall through and silently scaffold SQLite (dbDriver set, dbURL
+			// left as a SQLite file) — a broken app that looked configured.
+			switch strings.ToLower(strings.TrimSpace(strings.TrimPrefix(args[i], "--db="))) {
+			case "sqlite", "sqlite3":
+				dbDriver = "sqlite3"
+				dbURL = "file:" + name + ".db"
+			case "postgres", "postgresql":
+				dbDriver = "postgres"
 				dbURL = "postgres://user:password@localhost:5432/" + name + "?sslmode=disable"
+			default:
+				choice := strings.TrimPrefix(args[i], "--db=")
+				fail("--db=%q is not a recognized database driver. Accepted values: sqlite, postgres (aliases: sqlite3, postgresql).", choice)
+				osExit(1)
 			}
 		}
 	}
@@ -275,7 +288,7 @@ Usage:
 
 Flags:
   --module=<path>  Go module path (default: local/<name>)
-  --db=<driver>    sqlite3 (default) or postgres
+  --db=<driver>    sqlite (default) or postgres (aliases: sqlite3, postgresql)
   --no-entity      Omit the sample entity and database wiring
   --reinit         Refresh AI onboarding files in an existing project
   --force          With --reinit, overwrite customized onboarding files
