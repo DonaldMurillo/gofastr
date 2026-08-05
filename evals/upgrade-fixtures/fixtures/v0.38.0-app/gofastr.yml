@@ -1,0 +1,124 @@
+app:
+  name: UpgradeFixture
+  module: example.com/upgrade-fixture
+  db:
+    driver: sqlite
+    url: file:fixture.db
+  auth:
+    enabled: true
+    dev_mode: true
+  api_prefix: api
+
+entities:
+  - name: users
+    crud: true
+    access:
+      read: users:read
+      create: users:write
+      update: users:write
+      delete: users:admin
+    properties:
+      label: Users
+      icon: user
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: email
+        type: string
+        required: true
+        unique: true
+
+  - name: tasks
+    owner_field: user_id
+    crud: true
+    mcp: true
+    properties:
+      label: Tasks
+      icon: check-square
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 200
+      - name: done
+        type: bool
+        default: false
+      - name: user_id
+        type: relation
+        to: users
+    relations:
+      - type: belongs_to
+        name: owner
+        entity: users
+        foreign_key: user_id
+
+  - name: tags
+    public: true
+    crud: true
+    properties:
+      label: Tags
+      icon: tag
+    fields:
+      - name: name
+        type: string
+        required: true
+        unique: true
+
+screens:
+  - name: home
+    route: /
+    title: Upgrade Fixture
+    description: Upgrade fixture home
+    body:
+      - type: heading
+        level: 1
+        text: Upgrade Fixture
+      - type: paragraph
+        text: A generated app used to prove the upgrade path.
+  - name: tasks
+    route: /tasks
+    title: Tasks
+    description: My tasks
+    body:
+      - type: heading
+        level: 1
+        text: Tasks
+      - kind: entity_list
+        text: My Tasks
+        entity: tasks
+        fields: [title, done]
+        limit: 20
+        empty_text: No tasks yet.
+  - name: tags
+    route: /tags
+    title: Tags
+    description: All tags
+    body:
+      - type: heading
+        level: 1
+        text: Tags
+      - kind: entity_list
+        text: All Tags
+        entity: tags
+        fields: [name]
+        limit: 50
+        empty_text: No tags yet.
+
+nav:
+  - label: Home
+    href: /
+    icon: home
+  - label: Tasks
+    href: /tasks
+    icon: check-square
+  - label: Tags
+    href: /tags
+    icon: tag
+
+seed:
+  - entity: tags
+    rows:
+      - name: urgent
+      - name: backend
+      - name: design

@@ -1,0 +1,22 @@
+# Pre-upgrade seed shape — what the committed seed.db in EACH fixture holds.
+# The upgrade driver asserts these row counts survive the framework bump
+# (migrations applied over existing data, nothing dropped). Edit here when the
+# regenerate-seed.sh seeding shape changes.
+#
+# auth_users / auth_sessions come from registering alice + bob against the OLD
+# app. tasks are owner-scoped (alice owns 2, bob owns 1). tags are seeded by the
+# app's own WithSeed hook (3 rows). users is the RBAC entity table — empty
+# because auth lives in auth_users.
+fixtures:
+  v0.38.0-app:
+    auth_users: 2
+    tasks: 3
+    tags: 3
+    alice_tasks: 2
+    bob_tasks: 1
+  v0.53.0-app:
+    auth_users: 2
+    tasks: 3
+    tags: 3
+    alice_tasks: 2
+    bob_tasks: 1
