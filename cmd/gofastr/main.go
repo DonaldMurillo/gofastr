@@ -134,8 +134,8 @@ func printHelp() {
                        against the project root
   migrate (m) [up|down|status|generate|force]  Run database migrations
   test (t)              Run project tests
-  semantic <sub>        Local semantic index (index/watch/query/stats/clear)
-  harness               Start the AI agent harness (interactive loop / TUI)
+  semantic <sub>        Local semantic index (index/watch/query/stats/clear) — experimental
+  harness               Start the AI agent harness (interactive loop / TUI) — experimental
     mcp                 Launch harness as a stdio MCP server for IDE integration
     creds [add|list|delete]  Manage encrypted API-key credentials
   agents [init|sync|skill]  Generate/refresh AGENTS.md and per-battery detail files

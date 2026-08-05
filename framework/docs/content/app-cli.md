@@ -9,7 +9,7 @@ token minted in your app, and every entity gets the full set of CRUD
 operations plus batch operations and a live event stream.
 
 ```bash
-cd your-app        # the directory holding entities/
+cd myapp           # the directory holding entities/
 gofastr generate cli
 go build ./cmd/myapp
 ```
