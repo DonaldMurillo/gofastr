@@ -5,7 +5,9 @@
 // Resolution order (memoised once per process):
 //  1. TEST_POSTGRES_DSN env var — point CI at an existing server.
 //  2. testcontainers postgres:16-alpine — spun up on demand (needs Docker).
-//  3. neither reachable → tests call t.Skip via DB/DSN.
+//  3. neither reachable → t.Skip locally; under CI (PGTEST_REQUIRED=1 or
+//     GITHUB_ACTIONS=true) escalate to t.Fatal so the ~30 real-PG suites can't
+//     silently degrade to SQLite-only behind a green build.
 //
 // Each DB(t) hands back a connection scoped to a unique schema (search_path),
 // so concurrent tests don't collide, with cleanup registered on t.
@@ -67,13 +69,31 @@ func resolve() (string, error) {
 	return baseDSN, resolveErr
 }
 
-// BaseDSN returns the resolved base DSN (the maintenance/default database), or
-// skips the test if Postgres is unreachable. Use for EnsureDatabase / CLI
-// round-trips that need a raw connection string.
+// required reports whether a reachable Postgres is mandatory for this run.
+// True when PGTEST_REQUIRED is set to any non-empty value (the explicit opt-in
+// the CI workflow sets) or when running under GitHub Actions (GITHUB_ACTIONS).
+// When true the harness escalates the no-Postgres t.Skip to a t.Fatal so the
+// ~30 real-PG suites cannot silently degrade to SQLite-only behind a green
+// build. Local dev (neither set) keeps the cheap skip — no Docker, no failure.
+func required() bool {
+	if strings.TrimSpace(os.Getenv("PGTEST_REQUIRED")) != "" {
+		return true
+	}
+	return os.Getenv("GITHUB_ACTIONS") == "true"
+}
+
+// BaseDSN returns the resolved base DSN (the maintenance/default database).
+// When Postgres is unreachable it skips locally but fails the test under CI
+// (see required); this is the single choke point every pgtest entry point
+// (DB, FreshDatabaseDSN, UnusedDSN) flows through. Use BaseDSN directly for
+// EnsureDatabase / CLI round-trips that need a raw connection string.
 func BaseDSN(t *testing.T) string {
 	t.Helper()
 	dsn, err := resolve()
 	if err != nil {
+		if required() {
+			t.Fatalf("pgtest: Postgres is required (PGTEST_REQUIRED/GITHUB_ACTIONS) but unreachable — real-PG suites would otherwise silently skip. resolve error: %v", err)
+		}
 		t.Skipf("Postgres unavailable: %v", err)
 	}
 	if logged.CompareAndSwap(false, true) {

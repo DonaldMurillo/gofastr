@@ -64,6 +64,14 @@ jobs:
     timeout-minutes: 45
     env:
       CGO_ENABLED: "1" # mattn/go-sqlite3 requires cgo
+      # Fail-closed for the real-Postgres suites: when set, internal/pgtest
+      # escalates the no-Postgres t.Skip to t.Fatal so the ~30 dual-dialect
+      # tests can't silently degrade to SQLite-only behind a green build
+      # (e.g. if testcontainers breaks on a runner-image bump). Ubuntu
+      # runners have Docker, so testcontainers spins up postgres:16-alpine;
+      # this var just guarantees that fact is asserted, not assumed. Local
+      # dev leaves it unset → tests keep skipping when Docker is absent.
+      PGTEST_REQUIRED: "1"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
