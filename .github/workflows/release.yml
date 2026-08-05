@@ -50,8 +50,16 @@ jobs:
       # A release must not ship a red commit. v0.61.0 published while its
       # blocking build·vet·test check had FAILED, because nothing here ever
       # consulted CI. Waits for every "(blocking)" check run on the exact
-      # tag SHA (ci.yml now runs on v* tags) and refuses to publish unless
-      # all of them — at least the three known jobs — completed green.
+      # tag SHA and refuses to publish unless all of them — at least three
+      # — completed green. Check runs attach to the commit, and a release
+      # tag points at a merge commit on main, so the checks this finds are
+      # the ones from that commit's main-push CI run; ci.yml deliberately
+      # has no v* trigger (it would re-run the identical pipeline on the
+      # same SHA). If the tag points at a commit that never ran CI — or
+      # whose run was cancelled — zero checks turn up and the wait below
+      # times out red: retag on a commit with green CI, or re-run the
+      # failed jobs of that commit's existing CI run (check runs update in
+      # place on the same SHA), then re-run this via workflow_dispatch.
       - name: Require green blocking CI on the tag commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

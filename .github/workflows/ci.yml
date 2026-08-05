@@ -43,10 +43,13 @@ permissions:
 on:
   push:
     branches: [main]
-    # Tag pushes get their own run so the release workflow has blocking
-    # check runs on the exact tag SHA to gate on — v0.61.0 published off a
-    # red commit because tags never triggered CI.
-    tags: ['v*']
+    # No v* tag trigger: a release tag points at a merge commit on main,
+    # and check runs attach to the commit SHA, so the main-push run
+    # already carries the blocking checks the release gate (release.yml)
+    # polls for. A tag trigger re-ran the identical pipeline on the same
+    # SHA — v0.62.0 ran twice, concurrently. Fail-closed is preserved: a
+    # tag on a commit with no CI run finds zero check runs and the
+    # release gate times out red.
   pull_request:
   # The `security` job needs a time trigger, not just a code trigger: an
   # advisory can land against a dependency nobody touched. GO-2026-5158
