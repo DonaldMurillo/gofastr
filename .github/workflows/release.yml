@@ -43,12 +43,27 @@ jobs:
         id: tag
         env:
           DISPATCH_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$DISPATCH_TAG"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            tag="$GITHUB_REF_NAME"
           fi
+          # Git allows command-substitution syntax in tag names, and a
+          # ${{ }} expression is spliced into the shell source BEFORE bash
+          # parses it. Pin the shape here, once, and pass the value through
+          # env everywhere else so no step interpolates it into source.
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::refusing tag $tag — a release tag must look like v1.2.3"; exit 1 ;;
+          esac
+          if printf '%s' "$tag" | grep -q '[^A-Za-z0-9._-]'; then
+            echo "::error::refusing tag $tag — only [A-Za-z0-9._-] are allowed in a release tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       # SHA-pinned like every other action in this repo: a tag is mutable,
       # so `@v4` executes whatever the tag points at on release day.
@@ -61,11 +76,13 @@ jobs:
 
       - name: Resolve tag SHA
         id: sha
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          sha=$(git rev-parse "${{ steps.tag.outputs.tag }}^{commit}")
+          sha=$(git rev-parse "$TAG^{commit}")
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "gating release of ${{ steps.tag.outputs.tag }} at $sha"
+          echo "gating release of $TAG at $sha"
 
       # The gate's SHA-on-main check resolves origin/main; fetch it explicitly
       # so the ref exists regardless of how checkout materialized the tree.
@@ -79,12 +96,33 @@ jobs:
       - name: Run the publish gate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.sha.outputs.sha }}
         run: |
-          bash scripts/release-gate.sh \
-            "${{ steps.tag.outputs.tag }}" \
-            "${{ github.repository }}" \
-            "${{ steps.sha.outputs.sha }}" \
-            scripts/release-required-checks.txt
+          bash scripts/release-gate.sh "$TAG" "$REPO" "$SHA" scripts/release-required-checks.txt
+
+      # main can move (or the tag can be force-updated) while the gate waits
+      # for checks, so re-verify immediately before publishing: the window
+      # between the gate's last check and `gh release create` is the only
+      # remaining TOCTOU, and it closes here.
+      - name: Re-verify the tag is still main head
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin main "refs/tags/${TAG}:refs/tags/${TAG}"
+          head=$(git rev-parse origin/main)
+          now=$(git rev-parse "$TAG^{commit}")
+          if [ "$now" != "$SHA" ]; then
+            echo "::error::$TAG moved during the gate ($SHA -> $now) — nothing was published. Re-run via workflow_dispatch."
+            exit 1
+          fi
+          if [ "$head" != "$SHA" ]; then
+            echo "::error::main advanced during the gate (head is $head, tag is $SHA) — nothing was published. Re-tag on the new head."
+            exit 1
+          fi
 
       # The gate guarantees no release exists and every blocking check is green,
       # so publishing is unconditional here. The CHANGELOG section requirement

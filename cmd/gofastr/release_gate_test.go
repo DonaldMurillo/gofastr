@@ -187,6 +187,32 @@ func TestReleaseGate(t *testing.T) {
 			wantSubs: []string{"all 3 required checks green"},
 		},
 		{
+			// Newest run wins: a red re-run of an already-green check
+			// must block, or a release ships on a stale success.
+			name:     "red rerun of a green check fails",
+			manifest: []string{A, B},
+			runs: []stubRun{
+				{ID: 1, Name: A, Status: "completed", Conclusion: "success"},
+				{ID: 2, Name: A, Status: "completed", Conclusion: "failure"},
+				{ID: 3, Name: B, Status: "completed", Conclusion: "success"},
+			},
+			onMain:   true,
+			wantSubs: []string{"not green", A, "failure"},
+		},
+		{
+			// The mirror: a green re-run of a red check must unblock.
+			name:     "green rerun of a red check passes",
+			manifest: []string{A, B},
+			runs: []stubRun{
+				{ID: 1, Name: A, Status: "completed", Conclusion: "failure"},
+				{ID: 2, Name: A, Status: "completed", Conclusion: "success"},
+				{ID: 3, Name: B, Status: "completed", Conclusion: "success"},
+			},
+			onMain:   true,
+			wantPass: true,
+			wantSubs: []string{"all 2 required checks green"},
+		},
+		{
 			name:     "one failed check fails",
 			manifest: []string{A, B, C},
 			runs: []stubRun{
@@ -295,7 +321,18 @@ type gateCase struct {
 const stubGH = `#!/bin/sh
 case "$1" in
   api)
-    cat "$STUB_CHECK_RUNS"
+    # Real gh applies --jq to the response; the gate relies on that to
+    # stream one row per run. Mirror it with the jq the gate passes.
+    filter=""
+    for a in "$@"; do
+      case "$prev" in --jq) filter="$a" ;; esac
+      prev="$a"
+    done
+    if [ -n "$filter" ]; then
+      jq -r "$filter" "$STUB_CHECK_RUNS"
+    else
+      cat "$STUB_CHECK_RUNS"
+    fi
     ;;
   release)
     if [ "$STUB_RELEASE_EXISTS" = "1" ]; then

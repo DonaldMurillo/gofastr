@@ -88,7 +88,11 @@ fi
 
 # --- 3. Every required blocking check must be present + green ----------------
 # Fetch the tag commit's check runs and reduce them to one (status, conclusion)
-# per name (newest wins, by id). Then classify each manifest entry:
+# per name — NEWEST wins, by descending id, so a red re-run of an
+# already-green check blocks the release (and a green re-run unblocks a
+# previously red one). The reduction happens AFTER paginate concatenates
+# every page: --jq streams rows, sort/awk fold them globally. A per-page jq
+# group_by would reduce each page independently. Then classify each entry:
 #   missing  — no run for that name (race while CI uploads, or a rename)
 #   running  — present but not yet completed
 #   bad      — completed with a non-success conclusion (failure/cancelled/
@@ -120,14 +124,9 @@ deadline=$((SECONDS + GATE_TIMEOUT))
 while :; do
 	map_data="$(
 		"$GH_BIN" api "repos/${REPO}/commits/${SHA}/check-runs" --paginate \
-			| jq -r '
-				(.check_runs // [])
-				| sort_by(.id)
-				| group_by(.name)
-				| map(.[0])
-				| .[]
-				| [.name, .status, (.conclusion // "")] | @tsv
-			'
+			--jq '(.check_runs // [])[] | [.id, .name, .status, (.conclusion // "")] | @tsv' \
+			| sort -t"$(printf '\t')" -k1,1nr \
+			| awk -F'\t' '!seen[$2]++ {print $2"\t"$3"\t"$4}'
 	)"
 
 	missing=() running=() bad=()
