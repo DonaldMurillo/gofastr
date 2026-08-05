@@ -87,3 +87,55 @@ func TestCatalog_PollMsEmittedOnlyWithSignals(t *testing.T) {
 		})
 	}
 }
+
+// ptrBool returns a pointer to b, used to parameterise the
+// PollTerminal subtests (nil pointer ⇒ no predicate wired).
+func ptrBool(b bool) *bool { return &b }
+
+// TestServeState_PollTerminalHeader pins the server side of issue #192:
+// a widget built with Builder.PollTerminal emits X-Gofastr-Poll-Stop on
+// its /state response when the predicate is true, and omits it
+// otherwise (including when no predicate was declared). The runtime
+// honors the header to end the cadence; without it the widget polls
+// forever after reaching a terminal state.
+func TestServeState_PollTerminalHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		terminal *bool // nil = no PollTerminal predicate wired
+		wantStop bool
+	}{
+		{"terminal true sets header", ptrBool(true), true},
+		{"terminal false omits header", ptrBool(false), false},
+		{"no predicate omits header", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			name := "pollterm-" + strings.ReplaceAll(tc.name, " ", "-")
+			b := widget.New(name).
+				Signal("status", widget.SignalFunc(func() (any, error) {
+					return "completed", nil
+				})).
+				Poll(5 * time.Second)
+			if tc.terminal != nil {
+				v := *tc.terminal
+				b = b.PollTerminal(func() bool { return v })
+			}
+			def := b.Build()
+
+			r := router.New()
+			widget.Mount(r, &def)
+			srv := httptest.NewServer(r)
+			t.Cleanup(srv.Close)
+
+			resp, err := http.Get(srv.URL + def.StatePath)
+			if err != nil || resp.StatusCode != 200 {
+				t.Fatalf("state: err=%v code=%d", err, resp.StatusCode)
+			}
+			hdr := resp.Header.Get("X-Gofastr-Poll-Stop")
+			resp.Body.Close()
+			gotStop := hdr != ""
+			if gotStop != tc.wantStop {
+				t.Errorf("X-Gofastr-Poll-Stop = %q, want present=%v", hdr, tc.wantStop)
+			}
+		})
+	}
+}

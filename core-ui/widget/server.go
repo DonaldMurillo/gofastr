@@ -363,6 +363,14 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 	// post-mutation pollNow would re-apply the stale value. The sibling
 	// catalog + chrome handlers already set no-store; /state needs it most.
 	w.Header().Set("Cache-Control", "no-store")
+	// #192: terminal contract. When the widget declares PollTerminal
+	// and it reports a terminal state, signal the runtime to end the
+	// cadence after applying this (final) snapshot. Opt-in: a widget
+	// without PollTerminal never emits it, so the historical "poll for-
+	// ever" behavior is unchanged for widgets that don't opt in.
+	if s.def.PollTerminal != nil && s.def.PollTerminal() {
+		w.Header().Set("X-Gofastr-Poll-Stop", "1")
+	}
 	_ = json.NewEncoder(w).Encode(out)
 }
 

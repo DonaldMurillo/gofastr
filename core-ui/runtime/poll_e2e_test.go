@@ -514,3 +514,185 @@ func TestWidgetPollLargeIntervalNoOverflow(t *testing.T) {
 		t.Errorf("/state hit %d times in 2.5s for a 30-day interval — large pollMs collapsed to the 100ms floor (overflow)", hits)
 	}
 }
+
+// TestPoll_StopsOnTerminalHeader pins issue #192 on the page-level path:
+// a poll-src handler ends the poll by setting X-Gofastr-Poll-Stop on its
+// response. The terminal body is applied (innerHTML swap) and the timer
+// is torn down — the region reaches terminal state and /fresh is never
+// hit again. Without honoring the header the poll runs forever (#192).
+func TestPoll_StopsOnTerminalHeader(t *testing.T) {
+	var mu sync.Mutex
+	hits := 0
+	page := `<!doctype html><html><head></head><body>
+<div id="region" data-fui-poll="5s" data-fui-poll-src="/fresh">stale</div>
+<script src="/__gofastr/runtime.js"></script></body></html>`
+	base := startPollServer(t, page, map[string]http.HandlerFunc{
+		"/fresh": func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			hits++
+			n := hits
+			mu.Unlock()
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// The 2nd tick is terminal: emit the stop header AND the
+			// final body. The runtime must apply the body and clear
+			// the timer so no 3rd tick fires.
+			if n >= 2 {
+				w.Header().Set("X-Gofastr-Poll-Stop", "1")
+				fmt.Fprintf(w, `<span id="done">completed-%d</span>`, n)
+				return
+			}
+			fmt.Fprintf(w, `<span id="hit">fresh-%d</span>`, n)
+		},
+	})
+
+	ctx := newPollBrowserCtx(t)
+	var finalText string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		// Wait for the terminal body to land (tick 2, ~10s at the 5s
+		// clamp) — proves the poll armed, ticked at least once, and
+		// applied the terminal response body.
+		chromedp.Poll(`/completed-/.test(document.getElementById('region').textContent)`, nil,
+			chromedp.WithPollingInterval(200*time.Millisecond)),
+		// Sleep one full clamped interval. A leaked timer would fire
+		// /fresh a 3rd time in this window.
+		chromedp.Sleep(6*time.Second),
+		chromedp.Evaluate(`document.getElementById('region').textContent`, &finalText),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	mu.Lock()
+	finalHits := hits
+	mu.Unlock()
+
+	if !strings.Contains(finalText, "completed") {
+		t.Errorf("terminal body not applied: region=%q", finalText)
+	}
+	// Exactly 2 hits: tick 1 (non-terminal) + tick 2 (terminal). A 3rd
+	// means the timer survived the stop header.
+	if finalHits != 2 {
+		t.Errorf("/fresh hits = %d, want 2 — poll did not stop on terminal header", finalHits)
+	}
+}
+
+// TestWidgetPoll_StopsOnTerminalHeader pins issue #192 on the widget
+// path: a Builder.Poll widget whose /state response carries
+// X-Gofastr-Poll-Stop applies the final signal values, then stops — no
+// further /state fetches. The stop header is the only thing that ends
+// the cadence; without it the widget polls forever after terminal state.
+func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
+	var mu sync.Mutex
+	stateHits := 0
+	// 1s pollMs — the widget poll path doesn't apply the 5s clamp, so
+	// the test observes multiple ticks within the chromedp timeout.
+	const pollMs = 1000
+	const terminalAt = 3
+
+	page := `<!doctype html><html><head></head><body>
+<div class="fui-widget fui-pos-bottom-right" data-fui-widget="jobpoll" role="status"><span data-fui-signal="status">0</span></div>
+<script src="/__gofastr/runtime.js"></script>
+</body></html>`
+	widgetsJS, _ := Module("widgets")
+	base := startPollServer(t, page, map[string]http.HandlerFunc{
+		"/__gofastr/widgets": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			enc := json.NewEncoder(w)
+			enc.SetEscapeHTML(false)
+			_ = enc.Encode([]map[string]any{
+				{
+					"hidden": false,
+					"cfg": map[string]any{
+						"name":          "jobpoll",
+						"position":      "bottom-right",
+						"backdrop":      false,
+						"closeOnEscape": false,
+						"closeOnClick":  false,
+						"stylePath":     "/core-ui/widget/jobpoll/style.css",
+						"chromePath":    "/core-ui/widget/jobpoll/chrome",
+						"statePath":     "/core-ui/widget/jobpoll/state",
+						"pollMs":        pollMs,
+					},
+				},
+			})
+		},
+		"/core-ui/widget/jobpoll/state": func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			stateHits++
+			n := stateHits
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			// Once terminal, the server signals stop on this response.
+			if n >= terminalAt {
+				w.Header().Set("X-Gofastr-Poll-Stop", "1")
+				fmt.Fprint(w, `{"status":"completed"}`)
+				return
+			}
+			fmt.Fprintf(w, `{"status":"running-%d"}`, n)
+		},
+		"/core-ui/widget/jobpoll/chrome": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, `<div class="fui-widget fui-pos-bottom-right" data-fui-widget="jobpoll" role="status"><span data-fui-signal="status">0</span></div>`)
+		},
+		"/core-ui/widget/jobpoll/style.css": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/css")
+		},
+		"/__gofastr/runtime/widgets.js": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/javascript")
+			w.Write([]byte(widgetsJS))
+		},
+	})
+
+	ctx := newPollBrowserCtx(t)
+
+	// Phase 1: wait for the terminal signal to land — proves ≥2 poll
+	// ticks fired after mount hydration and the terminal body applied.
+	var snapshot string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.Poll(`window.__gofastr?._widgets?.["jobpoll"]`, nil,
+			chromedp.WithPollingInterval(100*time.Millisecond)),
+		chromedp.Poll(`document.querySelector('[data-fui-signal="status"]')?.textContent === 'completed'`, nil,
+			chromedp.WithPollingInterval(100*time.Millisecond)),
+		chromedp.Evaluate(`JSON.stringify({
+			val: document.querySelector('[data-fui-signal="status"]')?.textContent,
+			hasPollStop: typeof window.__gofastr?._widgets?.["jobpoll"]?.pollStop === 'function',
+		})`, &snapshot),
+	); err != nil {
+		t.Fatalf("chromedp phase 1: %v", err)
+	}
+	mu.Lock()
+	hitsAtTerminal := stateHits
+	mu.Unlock()
+
+	// Phase 2: sleep well past 3 cadences — a leaked timer would have
+	// fired /state several more times in this window.
+	if err := chromedp.Run(ctx,
+		chromedp.Sleep(3500*time.Millisecond),
+	); err != nil {
+		t.Fatalf("chromedp phase 2: %v", err)
+	}
+	mu.Lock()
+	hitsAfter := stateHits
+	mu.Unlock()
+
+	t.Logf("snapshot=%s hitsAtTerminal=%d hitsAfter=%d", snapshot, hitsAtTerminal, hitsAfter)
+
+	var state struct {
+		Val         string `json:"val"`
+		HasPollStop bool   `json:"hasPollStop"`
+	}
+	if err := json.Unmarshal([]byte(snapshot), &state); err != nil {
+		t.Fatalf("unmarshal snapshot: %v", err)
+	}
+	if state.Val != "completed" {
+		t.Errorf("status signal = %q, want \"completed\" (terminal body not applied)", state.Val)
+	}
+	if !state.HasPollStop {
+		t.Errorf("pollStop missing on widget entry — poll loop did not arm")
+	}
+	// After the terminal tick, /state must not be hit again. The stop
+	// is authoritative; growth means the timer survived the header.
+	if hitsAfter > hitsAtTerminal {
+		t.Errorf("/state hits grew %d → %d after terminal — poll did not stop on header", hitsAtTerminal, hitsAfter)
+	}
+}

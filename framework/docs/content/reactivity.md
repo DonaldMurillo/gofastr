@@ -103,6 +103,22 @@ not need `WithFanout`, you do not need sticky routing, and the page works the
 same way on a single replica as it does behind a load balancer. For dashboards,
 counters, and statuses this is the recommended tier.
 
+**Stopping a poll (terminal state).** A poll whose job is done — a
+job-status pill that reached `completed`, a batch that finished — should
+not keep hitting the server forever. The server ends the cadence by
+setting `X-Gofastr-Poll-Stop: 1` (truthy: `1`/`true`/`yes`/`on`) on the
+terminal poll response. The runtime applies the response body (or, for
+a widget, the final signal snapshot) and then tears down the timer, so
+no further fetches land. The header is opt-in: a handler that forgets
+it keeps polling, so a still-live poll cannot be terminated by
+accident. For `Builder.Poll` widgets, declare the terminal condition
+with `Builder.PollTerminal(func() bool)` — the `/state` handler emits
+the header automatically once the predicate returns true. A poll whose
+region is swapped out entirely (an island swap that replaces the
+`data-fui-poll` element, or a replacement carrying
+`data-fui-poll="off"`/`"0"`) is not re-wired either, so removing the
+marker also ends the poll.
+
 ### 4. SSE push
 
 The single `/__gofastr/sse` bus. One long-lived connection per page; the server
