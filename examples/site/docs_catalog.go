@@ -89,6 +89,7 @@ var docIntents = []docIntent{
 			{"api-versioning", "API prefix & versioning", "Mount the API under a prefix and evolve it across versions."},
 			{"cache", "Cache", "Memoize expensive reads with a pluggable backend and TTLs."},
 			{"security", "Security defaults", "CSP, CSRF, rate limit, headers — all on by default."},
+			{"rate-limit", "Rate limiting", "Throttle any route with the sliding-window limiter the auth flows use."},
 			{"health-checks", "Health checks", "/healthz + /readyz with plugin checks."},
 			{"webhooks", "Webhooks", "Signed outbound delivery with retry-with-backoff."},
 			{"notifications", "Notifications", "Multi-channel fan-out with per-channel templates."},
