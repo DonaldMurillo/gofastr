@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-08-05
+
 ### Changed
 
 - **Generated apps fail closed at boot.** `gofastr init`'s scaffold used to
