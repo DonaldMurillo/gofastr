@@ -7,6 +7,82 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `IdempotencyStore.Finish` takes the request fingerprint.** The
+  signature is now
+  `Finish(ctx, key, fingerprint string, resp *IdempotentResponse) error`, and
+  the write is bound to the claim that produced it. Custom stores must accept
+  the fingerprint and refuse to write a row that no longer carries it. The
+  unbound signature was rejected rather than kept behind an optional interface
+  because a store that ignores the fingerprint can serve one principal's
+  response to another, and that must not be the quiet default.
+- **A brokered call can never lift owner scoping.** A process module's reverse
+  entity call is now marked at the boundary and `CrossOwnerRead` is refused for
+  it unconditionally, instead of being predicted from the policy captured when
+  the delegation was minted. The re-dispatch runs the full middleware chain and
+  re-resolves authority, so the old check could pass judgement on a context the
+  query never used. This matches what the broker already documented — a
+  delegated user who legitimately holds `CrossOwnerRead` in their own session
+  cannot exercise it through a module — but it is a behavior change for a host
+  that relied on the carve-out silently not applying.
+
+### Fixed
+
+- **An idempotent request could be answered with another caller's response.**
+  When a handler outran the in-flight TTL and a second request re-claimed the
+  same `Idempotency-Key`, the first handler's `Finish` wrote its response into
+  the second's row while leaving that row's fingerprint in place — so the
+  retry passed the fingerprint check and was served a body it never asked for.
+  With `Principal` set to a tenant id, as the configuration documents, that
+  crosses users. Proven by execution before it was fixed. The expired-claim
+  re-claim also deleted by key alone, so two racing re-claims could destroy a
+  fresh claim and run the handler twice; it now deletes only a still-expired
+  row.
+- **A process module could read entities outside its approved grant.** Every
+  key of a module's filter object was forwarded into the CRUD list query, so
+  `include=` eager-loaded a second entity the grant never named — with no row
+  scoping at all when that entity declares no owner and no tenant — and
+  `trashed=true` surfaced soft-deleted rows. Filter keys are now allow-listed
+  against the resolved entity's declared, non-hidden, queryable fields, which
+  is what the code claimed to do. Delegation handles are also bound to the
+  module they were issued to, and handle minting fails loudly on an entropy
+  error instead of silently producing a constant.
+- **`/api/llm.md` listed every entity to any signed-in caller.** The index was
+  rendered once at startup and gated on a session, while the per-entity
+  document it links to runs the full scope chain — the schema is the
+  disclosure, not the rows. It is now rendered per request and filtered to the
+  entities that caller can list.
+- **`SearchInput` and `FilterToolbar` put their `Action` into a form without
+  the URL guard** every sibling form applies, so a `javascript:` action
+  survived to submit. `FilterToolbar` only appeared safe because an unrelated
+  button panicked first, which `HideReset` skipped.
+- **Panic and timeout logs carried raw request paths.** `URL.Path` is
+  percent-decoded, so a `%0d%0a` in the request forged log lines through the
+  recovery and timeout sinks, which never scrubbed; the access-log sink
+  scrubbed but never bounded, so an oversized path was logged whole. Both
+  halves now hold at all three.
+- **An unknown filter parameter could pin a CPU.** The "did you mean" suggestion
+  ran an edit-distance pass over an unbounded, unauthenticated query-parameter
+  name; the suggestion is now skipped past a sane length and the plain error is
+  returned.
+- **One panicking metrics collector no longer drops the whole scrape** — each
+  runs isolated, matching how the hook runner already treats third-party
+  callbacks.
+- **Magic-link tokens are erased with the user.** `EraseUserData` gained a
+  declarative identity seam: a battery can key an eraser on a resolved
+  identity, such as the user's email, instead of the user id. Magic-link
+  tokens are keyed by email and so survived an erasure — a link minted before
+  it and redeemed after created a fresh account for the erased address. Shipped
+  as a documented limitation in v0.63.0; it is closed now. 2FA secrets and
+  OAuth links are erased too.
+- **`SegmentedControl` posts the selected value.** `RPCPath` attached the RPC
+  attribute and fired the request with an empty body, so the handler fell
+  through to its default and confidently rendered the wrong selection. Any form
+  control dispatching an RPC now serializes its enclosing form; an explicit
+  body still wins, and a control outside a form is unchanged. The same gap in
+  the tool-call dispatcher is fixed with it.
+
 ## [0.63.0] - 2026-08-05
 
 ### Added
