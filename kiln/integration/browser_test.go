@@ -142,7 +142,18 @@ func newChrome(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Cleanup(allocCancel)
 	browser, browserCancel := chromedp.NewContext(alloc)
 	t.Cleanup(browserCancel)
-	ctx, timeoutCancel := context.WithTimeout(browser, 30*time.Second)
+
+	// chromedp starts Chrome lazily on the first Run, so one timeout would
+	// have to cover BOTH the cold start and the page work — and it caps the
+	// WSURLReadTimeout above, making that ineffective. Start the browser
+	// under its own budget first; the returned context covers only the work.
+	startCtx, startCancel := context.WithTimeout(browser, 90*time.Second)
+	t.Cleanup(startCancel)
+	if err := chromedp.Run(startCtx); err != nil {
+		t.Fatalf("chrome did not start within 90s: %v", err)
+	}
+
+	ctx, timeoutCancel := context.WithTimeout(browser, 60*time.Second)
 	return ctx, timeoutCancel
 }
 
