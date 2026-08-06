@@ -11,9 +11,10 @@ import (
 // string doesn't write a 100 MB log line through slog.Default for
 // apps that don't load a structured-logging plugin.
 const (
-	maxRecoveryPanicLen = 4 << 10  // 4 KiB
-	maxRecoveryStackLen = 64 << 10 // 64 KiB
-	maxRecoveryPathLen  = 2 << 10  // 2 KiB
+	maxRecoveryPanicLen  = 4 << 10  // 4 KiB
+	maxRecoveryStackLen  = 64 << 10 // 64 KiB
+	maxRecoveryPathLen   = 2 << 10  // 2 KiB
+	maxRecoveryMethodLen = 1 << 5   // 32 B — real HTTP methods are ≤ ~10 chars
 )
 
 func truncate(s string, max int) string {
@@ -49,9 +50,9 @@ func RecoveryFn(getLogger func() *slog.Logger) Middleware {
 						}
 					}
 					logger.Error("panic recovered",
-						"error", scrubControlBytes(truncate(fmt.Sprint(err), maxRecoveryPanicLen)),
-						"path", safeLogPath(truncate(r.URL.Path, maxRecoveryPathLen)),
-						"method", safeLogMethod(r.Method),
+						"error", truncate(scrubControlBytes(fmt.Sprint(err)), maxRecoveryPanicLen),
+						"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
+						"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 						"stack", truncate(string(debug.Stack()), maxRecoveryStackLen),
 					)
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)

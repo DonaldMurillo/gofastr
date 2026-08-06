@@ -97,6 +97,15 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
    end-to-end — marketing, app, auth, admin, mobile, light + dark. Meridian
    is the design-system completeness canary: a surface there that needs
    CSS the components don't provide is a gap to fix upstream, never a patch.
+10. **Read the PR's line-level review comments before merging.** After
+    opening a PR and after every push to it, run
+    `gh api repos/DonaldMurillo/gofastr/pulls/<N>/comments` — the
+    line-level review lives there, NOT in `gh pr view --json comments`,
+    which returns only issue-level comments. A review bot showing `pass`
+    in `gh pr checks` means it RAN, not that it found nothing: PR #198
+    showed `CodeRabbit pass` while holding 12 unread comments, six of
+    them Major. Triage every finding on merit and say which you rejected
+    and why — silence is not triage.
 
 ## Common operations
 

@@ -247,6 +247,11 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	for k, v := range cfg.ExtraAttrs {
 		formAttrs[k] = v
 	}
+	// The sanitized action must win: ExtraAttrs is a developer escape hatch,
+	// but letting it rewrite "action" would silently undo the
+	// urlsafe.CleanAnchor pass above (a "javascript:" action would come back
+	// live). Re-assert after the merge so the sanitizer is not reversible.
+	formAttrs["action"] = action
 
 	return filterToolbarStyle.WrapHTML(render.Tag("form", flattenAttrs(formAttrs), controls...))
 }

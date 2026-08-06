@@ -845,3 +845,26 @@ func schemeOf(u string) string {
 	}
 	return strings.ToLower(u[:i])
 }
+
+// TestFilterToolbarExtraAttrsCannotOverrideAction pins that the sanitized
+// form action is NOT silently reversible via ExtraAttrs. #198 ran cfg.Action
+// through urlsafe.CleanAnchor, but the ExtraAttrs merge that followed wrote
+// cfg.ExtraAttrs["action"] straight over the sanitized value — so a
+// developer-supplied "javascript:" action undid the sanitizer our own code
+// just applied. The sanitized action must win. (SearchInput merges
+// ExtraAttrs into the <input>, never the <form>, so it does not share this
+// shape — covered by TestFormActionSinksRejectUnsafeURL instead.)
+func TestFilterToolbarExtraAttrsCannotOverrideAction(t *testing.T) {
+	out := string(ui.FilterToolbar(ui.FilterToolbarConfig{
+		Action:     "/search",
+		HideReset:  true,
+		Sort:       []ui.SortOption{{Value: "x", Label: "X"}},
+		ExtraAttrs: html.Attrs{"action": "javascript:alert(1)"},
+	}))
+	if strings.Contains(out, "javascript:") {
+		t.Errorf("SECURITY: ExtraAttrs overrode the sanitized form action:\n%s", out)
+	}
+	if !strings.Contains(out, `action="/search"`) {
+		t.Errorf("sanitized action lost from output:\n%s", out)
+	}
+}

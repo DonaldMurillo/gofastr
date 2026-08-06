@@ -111,3 +111,42 @@ func TestMetricsCollectorPanicIsolated(t *testing.T) {
 		t.Errorf("SECURITY: [availability] collector AFTER the panicking one was lost:\n%s", body)
 	}
 }
+
+// TestMetricsCollectorPanicDiscardsPartialOutput pins the second half of
+// panic isolation: a collector that has already written a PARTIAL metric
+// line into the shared exposition buffer before it panics must contribute
+// NOTHING to the scrape. Without a per-collector buffer, the half-written
+// line ("partial_metric{...} " with no value or newline) survived the
+// recover and corrupted the output — a truncated line a Prometheus parser
+// rejects, dropping families after it too. The good families still appear.
+func TestMetricsCollectorPanicDiscardsPartialOutput(t *testing.T) {
+	m := NewMetrics()
+	m.RegisterCollector("good", func(w io.Writer) {
+		fmt.Fprintln(w, "good_metric 42")
+	})
+	m.RegisterCollector("partial", func(w io.Writer) {
+		// Write a half-line (no value, no newline) then blow up.
+		fmt.Fprint(w, "partial_metric{label=\"x\"} ")
+		panic("mid-write explosion")
+	})
+	m.RegisterCollector("also_good", func(w io.Writer) {
+		fmt.Fprintln(w, "also_good_metric 7")
+	})
+
+	rec := httptest.NewRecorder()
+	MetricsHandler(m).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("scrape status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "good_metric 42") {
+		t.Errorf("good collector lost:\n%s", body)
+	}
+	if !strings.Contains(body, "also_good_metric 7") {
+		t.Errorf("collector after the panicking one lost:\n%s", body)
+	}
+	if strings.Contains(body, "partial_metric") {
+		t.Errorf("SECURITY: partial output from a panicking collector leaked into the scrape:\n%s", body)
+	}
+}

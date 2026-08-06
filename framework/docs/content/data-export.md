@@ -253,12 +253,16 @@ type EraseReport struct {
     DryRun    bool
     Entities  []EraseTableResult // owner-scoped entity tables (always delete)
     Batteries []EraseTableResult // registered erasers (delete or anonymize)
-    Audit     *EraseTableResult  // built-in audit anonymization
-}
+    Audit     *EraseTableResult  // built-in audit anonymization; nil if the audit table is absent
+    Skipped   []string           // erasers skipped because their identity could not be resolved (idempotent re-run)
 ```
 
 Each `EraseTableResult` carries the table name, the mode (`delete` or
 `anonymize`), and the row count. `report.TotalErased()` sums every plane.
+`Skipped` names identity-resolved erasers that were skipped because the
+resolved identity row was already gone — the idempotent-re-run case (see
+"Identity-keyed tables" above): skipping is not an error, and the erasure
+reports zero for those tables rather than failing.
 
 ### Dry-run
 

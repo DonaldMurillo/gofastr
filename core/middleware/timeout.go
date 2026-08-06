@@ -311,7 +311,7 @@ func Timeout(d time.Duration) Middleware {
 						slog.Error("panic in timed-out handler",
 							"error", scrubControlBytes(truncate(fmt.Sprint(childPanic), maxRecoveryPanicLen)),
 							"path", safeLogPath(truncate(r.URL.Path, maxRecoveryPathLen)),
-							"method", safeLogMethod(r.Method),
+							"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 						)
 					}
 				}()

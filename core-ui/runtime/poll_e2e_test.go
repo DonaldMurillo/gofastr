@@ -85,15 +85,19 @@ func newPollBrowserCtx(t *testing.T) context.Context {
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	t.Cleanup(browserCancel)
 
-	// chromedp starts Chrome lazily on the first Run, so one timeout would
-	// have to cover BOTH the cold start and the page work — and it caps the
-	// WSURLReadTimeout above, making that 90s ineffective. Start the browser
-	// under its own budget first; the returned context then only has to cover
-	// the assertions.
-	startCtx, startCancel := context.WithTimeout(browserCtx, 90*time.Second)
-	t.Cleanup(startCancel)
-	if err := chromedp.Run(startCtx); err != nil {
-		t.Fatalf("chrome did not start within 90s: %v", err)
+	// chromedp starts Chrome lazily on the first Run: allocate against the
+	// browser context so the browser's lifetime is the browser context's —
+	// passing a timeout context here would make the browser die when that
+	// deadline passed. The watchdog bounds only the startup wait.
+	started := make(chan error, 1)
+	go func() { started <- chromedp.Run(browserCtx) }()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("chrome did not start: %v", err)
+		}
+	case <-time.After(90 * time.Second):
+		t.Fatal("chrome did not start within 90s")
 	}
 
 	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
