@@ -216,8 +216,9 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
 2. **Battery plane.** Every registered `datexport.DataEraser` runs. A battery
    declares each table it owns and how to erase it: hard-delete, or anonymize
    (overwrite named columns with a tombstone and keep the row). `battery/auth`
-   registers `auth_sessions` (delete by `user_id`) and `auth_users` (delete by
-   `id`).
+   registers `auth_sessions` (delete by `user_id`), `auth_users` (delete by
+   `id`), and `magic_link_tokens` (delete by `email` via the `IdentityEmail`
+   resolver — see [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
 3. **Audit plane (built-in).** The audit table is retained — it is the
    compliance record of who did what — but the user's `actor_id` is
    anonymized: every row where `actor_id = userID` is set to `[erased]`. See
@@ -303,6 +304,53 @@ datexport.RegisterEraser(datexport.DataEraser{
 `EraseAnonymize`, both `ScrubColumns` and `Column` are overwritten with
 `Tombstone`. As with export: a registered table that is absent from the live
 DB is skipped with a note; an unregistered raw table is silently excluded.
+
+### Identity-keyed tables (non-user-id match)
+
+Most tables are reached by the user id — `Column` holds the user id directly.
+Some tables are keyed by a *different* identity: `battery/auth`'s
+`magic_link_tokens` is keyed by **email**, not user id, so a plain user-id match
+cannot reach it. Before this seam, a magic link minted before an erasure and
+redeemed after it found no user and *created a new account* for the erased
+address — an account-restoration path straight through a completed erasure.
+
+An eraser declares the identity with `Identity`; the framework resolves it ONCE
+at erase time (before the write transaction opens) through a registered
+`DataIdentityResolver` and binds the resolved value for `Column` instead of the
+user id:
+
+```go
+// Resolve email from the user table: SELECT email FROM auth_users WHERE id = $1
+datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
+    Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+})
+
+datexport.RegisterEraser(datexport.DataEraser{
+    Name: "magic_link_tokens", Source: "auth", Table: "magic_link_tokens",
+    Column: "email", Mode: datexport.EraseDelete,
+    Identity: datexport.IdentityEmail, // default IdentityUserID matches by user id
+})
+```
+
+Resolution stays **declarative** — the framework remains the single place raw
+SQL is built (`SafeIdent`-guarded identifiers, `$n`-bound values); a battery
+never runs arbitrary SQL. Two guarantees:
+
+- **No resolver for a declared identity → fail loud.** An erasure that cannot
+  reach a declared table is incomplete, and silently-incomplete is the failure
+  mode this primitive exists to prevent.
+- **Resolver finds no row → skip, don't fail.** On an idempotent re-run the
+  user row is already gone, so the identity cannot be resolved. That means
+  "nothing left to match": the eraser is skipped (named in `report.Skipped`),
+  the rest of the erasure reports zero, and no error is returned.
+
+`battery/auth` registers the `IdentityEmail` resolver and the `magic_link_tokens`
+eraser from `init()`, so any app importing `battery/auth` closes the gap
+automatically. The token table is created lazily by
+`NewSQLMagicLinkTokenStore`; on the in-memory token store there is no such table
+and the eraser is a no-op. A host that renames the user table must re-register
+the resolver against the actual name, mirroring how a renamed eraser table is
+re-registered.
 
 ### SQL safety
 
