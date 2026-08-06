@@ -1,11 +1,13 @@
 package filter
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -311,5 +313,44 @@ func TestSearchSQLPayloadParameterized(t *testing.T) {
 				t.Errorf("SECURITY: [filter_search] payload %q leaked into SQL: %q", p, sql)
 			}
 		}
+	}
+}
+
+// TestUnknownFilterKeyIsBounded pins the cost ceiling on the "did you mean"
+// suggestion path. The unrecognized filter key is a query-param NAME straight
+// off the request URL — unauthenticated, no body — and nearestField runs
+// fuzzy.Levenshtein over it against every field name, so cost is
+// len(key) × Σ len(fieldNames) (~225ms/MiB measured over 30 fields). With
+// Go's default 1 MiB MaxHeaderBytes that is a per-GET CPU spike an
+// unauthenticated caller can trigger at will. A real field name is short, so
+// the suggestion is skipped past a small bound and the plain unknown-field
+// error returns instantly.
+func TestUnknownFilterKeyIsBounded(t *testing.T) {
+	fields := make([]schema.Field, 30)
+	for i := range fields {
+		fields[i] = schema.Field{Name: fmt.Sprintf("field_%02d", i), Type: schema.String}
+	}
+	// 8 MiB key: uncapped Levenshtein over 30 fields is ~1.7s here; after the
+	// len-bound guard it is microseconds. A 500ms budget separates the two by
+	// ~300×, so it holds across any realistic CI machine speed.
+	bigKey := strings.Repeat("x", 8<<20)
+	q := url.Values{}
+	q.Set(bigKey, "1")
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := ParseFiltersValues(q, fields)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected an unknown-filter error for the oversized key, got nil")
+		}
+		if strings.Contains(err.Error(), "did you mean") {
+			t.Errorf("oversized key still computed a suggestion: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("unknown-filter parse did not return promptly — uncapped Levenshtein over an 8 MiB key")
 	}
 }

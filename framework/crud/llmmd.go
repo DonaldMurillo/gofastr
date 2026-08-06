@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -274,8 +275,20 @@ func EntityLLMMD(ent *entity.Entity) string {
 }
 
 // RegistryLLMMD generates a top-level LLM-friendly markdown index that
-// lists every registered entity with a link to its detailed llm.md page.
+// lists every registered entity with a link to its detailed llm.md page. It
+// lists every entity — callers that serve this to a request (the /api/llm.md
+// index) MUST filter per request via [registryLLMMD] so the index does not
+// disclose entities the caller cannot read.
 func RegistryLLMMD(registry entity.Registry, appName string) string {
+	return registryLLMMD(registry, appName, nil)
+}
+
+// registryLLMMD renders the index, keeping only entities for which keep
+// returns true (a nil keep keeps all). The /api/llm.md handler passes a
+// per-request keep that mirrors List's read-scope predicate (owner, tenant,
+// RBAC) so an authenticated caller with no grant for an entity gets 403 on
+// its rows AND never sees its name, base path or flags in the index.
+func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.Entity) bool) string {
 	var b strings.Builder
 	title := appName
 	if title == "" {
@@ -294,6 +307,9 @@ func RegistryLLMMD(registry entity.Registry, appName string) string {
 	b.WriteString("| Resource | Base Path | Endpoints | Description |\n")
 	b.WriteString("|----------|-----------|-----------|-------------|\n")
 	for _, ent := range entities {
+		if keep != nil && !keep(ent) {
+			continue
+		}
 		table := ent.GetTable()
 		basePath := "/" + table
 		llmLink := "/" + table + "/llm.md"
@@ -384,18 +400,47 @@ func LLMMDHandlerFor(ch *CrudHandler) http.Handler {
 // RegistryLLMMDHandler returns an http.Handler that serves the top-level
 // LLM-friendly markdown index for all registered entities. Auth-required
 // for the same reason as [LLMMDHandler].
+//
+// The index is rendered per request, filtered to the entities THIS caller
+// can list — the same read-scope predicate each entity's List route runs
+// (see canListEntity). Serving a construction-time-precomputed document
+// instead disclosed every entity's name, base path, endpoint count and
+// soft-delete/multi-tenant flags to an authenticated caller who would get
+// 403 on the rows. The index is the disclosure, not the row.
 func RegistryLLMMDHandler(registry entity.Registry, appName string) http.Handler {
-	md := RegistryLLMMD(registry, appName)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if _, ok := handler.GetUser(r.Context()); !ok {
+		ctx := r.Context()
+		if _, ok := handler.GetUser(ctx); !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		md := registryLLMMD(registry, appName, func(ent *entity.Entity) bool {
+			return canListEntity(ctx, ent)
+		})
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
 		w.Write([]byte(md))
 	})
+}
+
+// canListEntity reports whether ctx passes every read-scope gate that the
+// entity's List route runs, as a boolean (no HTTP response). It reuses the
+// SAME in-process predicates List's requireScope delegates to —
+// requireOwnerContext, requireTenantContext and CanRead — so the index
+// filter cannot drift from the read path. A caller who would receive 401/403
+// on an entity's rows is hidden from its index entry too. The baseline
+// session gate (requireAuthenticated) is enforced once at the handler entry,
+// so it is not re-checked here.
+func canListEntity(ctx context.Context, ent *entity.Entity) bool {
+	ch := &CrudHandler{Entity: ent}
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return false
+	}
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return false
+	}
+	return ch.CanRead(ctx)
 }
 
 // fieldTypeLabel returns a human-readable label for a schema field type.

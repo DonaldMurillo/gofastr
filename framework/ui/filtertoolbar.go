@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -159,6 +160,15 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Action flows to both the <form action> and the reset LinkButton, so
+	// clean it once here through the same urlsafe.CleanAnchor allow-list
+	// ui.Form uses. A javascript:/vbscript:/data: action never becomes a
+	// live form action and never reaches LinkButton's scheme check (which
+	// would otherwise panic); a rejected value degrades to the inert "#".
+	action := urlsafe.CleanAnchor(cfg.Action)
+	if action == "" {
+		action = "#"
+	}
 
 	label := cfg.Label
 	if label == "" {
@@ -215,7 +225,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		}
 		actionsKids = append(actionsKids, LinkButton(LinkButtonConfig{
 			Label:   resetLabel,
-			Href:    cfg.Action,
+			Href:    action,
 			Variant: ButtonGhost,
 			Class:   "ui-filter-toolbar__reset",
 		}))
@@ -227,7 +237,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	formAttrs := html.Attrs{
 		"class":      cls("ui-filter-toolbar", cfg.Class),
 		"method":     "GET",
-		"action":     cfg.Action,
+		"action":     action,
 		"role":       "search",
 		"aria-label": label,
 	}

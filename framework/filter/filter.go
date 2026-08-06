@@ -425,6 +425,17 @@ func nearestField(key string, fieldNames []string) string {
 			break
 		}
 	}
+	// The key arrives straight off the request URL (a query-param NAME,
+	// unauthenticated, no body). Levenshtein's cost is len(key) ×
+	// Σ len(fieldNames), so an attacker can push ~1 MiB of key at a 30-field
+	// entity for a per-GET CPU spike. A real field name is short — skip the
+	// suggestion entirely past a small bound and return the plain
+	// unknown-field error. (Build-time/argv callers in contracts and the CLI
+	// pass trusted, tiny identifiers and never hit this.)
+	const maxSuggestionKeyLen = 64
+	if len(base) > maxSuggestionKeyLen {
+		return ""
+	}
 	best, bestDist, ties := "", 1<<30, 0
 	// Allow more slack for longer names; a 1-char typo in "status" and a
 	// 2-char transposition should both resolve.

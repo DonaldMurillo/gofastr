@@ -36,7 +36,7 @@ func LoggingFn(getLogger func() *slog.Logger) Middleware {
 			}
 			logger.Info("request",
 				"method", safeLogMethod(r.Method),
-				"path", safeLogPath(r.URL.Path),
+				"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
 				"status", wrapped.statusCode,
 				"duration", duration.String(),
 			)
@@ -109,7 +109,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			if wrapped.statusCode >= 400 || duration > slowThreshold {
 				logger.Info("request",
 					"method", safeLogMethod(r.Method),
-					"path", safeLogPath(r.URL.Path),
+					"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
 					"status", wrapped.statusCode,
 					"duration", duration.String(),
 					"sampled", false,
@@ -122,7 +122,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			if n%uint64(sampleN) == 1 {
 				logger.Info("request",
 					"method", safeLogMethod(r.Method),
-					"path", safeLogPath(r.URL.Path),
+					"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
 					"status", wrapped.statusCode,
 					"duration", duration.String(),
 					"sampled", true,
@@ -132,18 +132,26 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 	}
 }
 
-// safeLogMethod percent-encodes control bytes (and DEL) in the HTTP
-// method so an attacker who got a CRLF / ESC sequence into r.Method
-// can't forge a fake log entry or smuggle a terminal-control payload
-// into an operator's tail/less session.
-func safeLogMethod(m string) string {
-	if !strings.ContainsAny(m, "\x00\r\n\t\v\f\b\x1b") {
-		return m
+// scrubControlBytes percent-encodes ASCII control bytes (the C0 range) and
+// DEL in a request-derived value — URL path, method, or a panic that embeds
+// a request string — so an attacker can't forge a fake log entry or smuggle
+// a terminal-control payload into an operator's tail/less session. slog's
+// JSON handler escapes these for valid JSON, but a JSON-escaped \r\n is still
+// visible to text grep, and naive log shippers render the injected payload on
+// its own line.
+//
+// r.URL.Path is percent-DECODED, so a %0d%0a in the raw request is a real
+// CRLF by the time it reaches any sink here. The fast-path probe includes
+// DEL (0x7f): without it, a path carrying only DEL bypassed the encoder and
+// was logged raw.
+func scrubControlBytes(s string) string {
+	if !strings.ContainsAny(s, "\x00\r\n\t\v\f\b\x1b\x7f") {
+		return s
 	}
 	var b strings.Builder
-	b.Grow(len(m))
-	for i := 0; i < len(m); i++ {
-		c := m[i]
+	b.Grow(len(s))
+	for i := range s {
+		c := s[i]
 		if c < 0x20 || c == 0x7f {
 			fmt.Fprintf(&b, "%%%02x", c)
 			continue
@@ -153,28 +161,11 @@ func safeLogMethod(m string) string {
 	return b.String()
 }
 
-// safeLogPath re-encodes control characters in a URL path so an
-// attacker can't forge a fake log entry by injecting CRLF (or other
-// terminal-escape sequences). slog's JSON handler already escapes
-// these for valid JSON, but a JSON-escaped \r\n is still visible to
-// text grep — and naive log shippers / console viewers can be tricked
-// into rendering the injected payload on its own line.
-func safeLogPath(p string) string {
-	if !strings.ContainsAny(p, "\x00\r\n\t\v\f\b\x1b") {
-		return p
-	}
-	var b strings.Builder
-	b.Grow(len(p))
-	for i := 0; i < len(p); i++ {
-		c := p[i]
-		if c < 0x20 || c == 0x7f {
-			fmt.Fprintf(&b, "%%%02x", c)
-			continue
-		}
-		b.WriteByte(c)
-	}
-	return b.String()
-}
+// safeLogMethod percent-encodes control bytes (and DEL) in the HTTP method.
+func safeLogMethod(m string) string { return scrubControlBytes(m) }
+
+// safeLogPath percent-encodes control characters in a URL path.
+func safeLogPath(p string) string { return scrubControlBytes(p) }
 
 // DiscardLogging returns middleware that tracks request timing but
 // writes no log output. Useful for benchmarks and high-throughput

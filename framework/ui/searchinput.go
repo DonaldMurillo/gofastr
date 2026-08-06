@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -105,12 +106,18 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 	innerWrapper := render.Tag("label",
 		map[string]string{"class": cls, "for": cfg.ID},
 		inner...)
-
-	// Wrap in <form role="search"> when Action is provided.
+	// Wrap in <form role="search"> when Action is provided. The action
+	// runs through the same urlsafe.CleanAnchor allow-list as ui.Form so a
+	// javascript:/vbscript:/data: Action never becomes a live form action;
+	// a rejected value degrades to the inert "#" ui.Form uses.
 	if cfg.Action != "" {
+		action := urlsafe.CleanAnchor(cfg.Action)
+		if action == "" {
+			action = "#"
+		}
 		return searchInputStyle.WrapHTML(render.Tag("form", map[string]string{
 			"role":   "search",
-			"action": cfg.Action,
+			"action": action,
 			"method": method,
 			"class":  "ui-search-input__form",
 		}, innerWrapper))
