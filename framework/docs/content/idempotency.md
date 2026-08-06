@@ -125,9 +125,21 @@ the client can retry against a recovered server.
 ```go
 type IdempotencyStore interface {
     Begin(ctx, key, fingerprint string) (*IdempotentResponse, bool, error)
-    Finish(ctx, key string, resp *IdempotentResponse) error
+    Finish(ctx, key, fingerprint string, resp *IdempotentResponse) error
 }
 ```
+
+`Finish` is fingerprint-bound: it must only persist into (or release) the row
+that `Begin` created under that exact fingerprint. An in-flight claim can expire
+while its handler is still running and be re-claimed by a *different* caller
+under a *different* fingerprint; if `Finish` wrote by key alone, the first
+caller's late `Finish` would staple its response onto the second caller's row —
+and because `Begin` never rewrites the fingerprint column, the second caller's
+retry would match the fingerprint and be served the **first caller's body**.
+That is a cross-user disclosure whenever `Principal` returns a user/tenant id,
+so the fingerprint is a required parameter, not an optional one: a third-party
+store that ignores it is silently vulnerable. The bundled memory and SQL stores
+both scope their `UPDATE`/`DELETE` by `key AND fingerprint`.
 
 Two stores are bundled:
 
@@ -149,7 +161,10 @@ behind a 503 (current default).
 
 For clustered deployments without a database, drop a Redis adapter
 behind the same interface — only `Begin` and `Finish` need
-implementing.
+implementing. `Finish` receives the fingerprint the claim was created
+with; a custom store MUST scope its write and its release to the row
+matching that fingerprint (see the note above), or a late `Finish` from
+an expired claim can overwrite another principal's row.
 
 `Begin` returns one of:
 
@@ -161,8 +176,8 @@ implementing.
   by default (503) and falls through to the handler only when
   `FailOpen: true` is set.
 
-`Finish(ctx, key, nil)` releases the claim without caching — used on
-non-success responses.
+`Finish(ctx, key, fingerprint, nil)` releases the claim without caching —
+used on non-success responses.
 
 `Finish` is invoked with a fresh `context.WithTimeout(context.Background(),
 5*time.Second)`, NOT the request context. A client disconnect mid-
@@ -173,6 +188,12 @@ next reap cycle.
 
 - **Don't forget `Principal`.** Without it the cache is global and a
   client-chosen `Idempotency-Key` collides across users.
+- **Don't ignore the fingerprint in a custom `Finish`.** `Finish` is
+  fingerprint-bound for a reason: a claim can expire mid-handler and be
+  re-claimed by another principal, and a `Finish` that writes by key alone
+  then overwrites that principal's row and serves the first caller's body
+  on retry. Scope the write (`UPDATE … WHERE key AND fingerprint`) and the
+  release (`DELETE … WHERE key AND fingerprint`) — the bundled stores do.
 - **Don't put state-mutating side effects in middleware that runs
   before `Idempotency`.** The cached response only covers downstream
   handlers; anything that happened earlier in the chain runs every

@@ -47,7 +47,7 @@ func TestSQLIdempotency_FreshClaimAndReplay(t *testing.T) {
 		Header: http.Header{"X-Custom": []string{"v"}},
 		Body:   []byte(`{"id":1}`),
 	}
-	if err := s.Finish(ctx, "k1", cached); err != nil {
+	if err := s.Finish(ctx, "k1", "fp1", cached); err != nil {
 		t.Fatalf("finish: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func TestSQLIdempotency_FingerprintMismatch(t *testing.T) {
 	_, s := openSQLIdemStore(t)
 	ctx := context.Background()
 	_, _, _ = s.Begin(ctx, "k", "fp1")
-	_ = s.Finish(ctx, "k", &IdempotentResponse{Status: 200, Header: http.Header{}, Body: []byte("ok")})
+	_ = s.Finish(ctx, "k", "fp1", &IdempotentResponse{Status: 200, Header: http.Header{}, Body: []byte("ok")})
 
 	_, _, err := s.Begin(ctx, "k", "different-fp")
 	if !errors.Is(err, ErrFingerprintMismatch) {
@@ -77,7 +77,7 @@ func TestSQLIdempotency_FinishNilReleasesClaim(t *testing.T) {
 	_, s := openSQLIdemStore(t)
 	ctx := context.Background()
 	_, _, _ = s.Begin(ctx, "k", "fp")
-	if err := s.Finish(ctx, "k", nil); err != nil {
+	if err := s.Finish(ctx, "k", "fp", nil); err != nil {
 		t.Fatalf("finish nil: %v", err)
 	}
 	// Subsequent call should be a fresh claim, not in-flight.
@@ -95,7 +95,7 @@ func TestSQLIdempotency_ExpiryAllowsFreshClaim(t *testing.T) {
 	}
 	ctx := context.Background()
 	_, _, _ = s.Begin(ctx, "k", "fp")
-	_ = s.Finish(ctx, "k", &IdempotentResponse{Status: 200, Header: http.Header{}, Body: []byte("ok")})
+	_ = s.Finish(ctx, "k", "fp", &IdempotentResponse{Status: 200, Header: http.Header{}, Body: []byte("ok")})
 	time.Sleep(40 * time.Millisecond)
 	resp, ok, err := s.Begin(ctx, "k", "fp")
 	if err != nil || ok || resp != nil {
