@@ -104,7 +104,7 @@ server side and the runtime does the work.
 
 | Attribute | Purpose |
 |---|---|
-| `data-fui-rpc="<path>"` | Click / form-submit fires a request to `<path>` |
+| `data-fui-rpc="<path>"` | Click on the element (or submit of a `<form data-fui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-fui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this — place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. |
 | `data-fui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
 | `data-fui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-fui-rpc-close` | Containing widget closes on 2xx |

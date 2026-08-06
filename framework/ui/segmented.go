@@ -55,8 +55,13 @@ type SegmentedControlConfig struct {
 	// the SegmentedControl is not inside a <label> or FormField).
 	Label string
 
-	// RPCPath, when set, attaches data-fui-rpc to each radio so a
-	// change submits to the server. Method is POST.
+	// RPCPath, when set, attaches data-fui-rpc to each radio so a change
+	// POSTs to the server carrying the selected segment's name=value. The
+	// runtime serializes the form the radio belongs to (node.form), so place
+	// the SegmentedControl inside a <form> for the selection to round-trip —
+	// a radio with no enclosing form posts an empty body and the handler
+	// cannot see which segment was chosen. An explicit data-fui-rpc-body on a
+	// radio still wins over form serialization. Method is POST.
 	RPCPath string
 
 	// RPCSignal, when set, broadcasts the response as the given
