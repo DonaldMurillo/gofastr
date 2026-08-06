@@ -98,12 +98,43 @@ var errOwnerRequired = errors.New("owner context required for owner-scoped entit
 // in-process callers (typed repos, jobs, scripts) bypass that path.
 var errTenantRequired = errors.New("tenant context required for multi-tenant entity")
 
+// brokeredCallKey marks a context as a process-module broker re-dispatch.
+// A module never brokers data in a cross-owner frame (design #37 §5), so a
+// brokered call must never exercise CrossOwnerRead — even when the
+// re-resolved caller legitimately holds it in their own session. The
+// unexported key type means no HTTP-derived context can carry it: it is set
+// ONLY by the broker (framework/processmodule_broker.go resolveCaller) via
+// WithBrokeredCall, exactly mirroring owner.crossOwnerKey / AllowCrossOwner.
+type brokeredCallKey struct{}
+
+// WithBrokeredCall stamps ctx as originating from the process-module
+// broker's CRUD re-dispatch. crossOwnerReadGranted returns false
+// unconditionally when it is present, so owner scoping holds by
+// construction for every brokered call regardless of the re-resolved
+// caller's permissions. SECURITY: set ONLY from the broker's resolveCaller.
+func WithBrokeredCall(ctx context.Context) context.Context {
+	return context.WithValue(ctx, brokeredCallKey{}, true)
+}
+
+// IsBrokeredCall reports whether ctx was stamped by the process-module
+// broker. Exported so the broker test surface can pin the root-cause marker.
+func IsBrokeredCall(ctx context.Context) bool {
+	v, _ := ctx.Value(brokeredCallKey{}).(bool)
+	return v
+}
+
 // crossOwnerReadGranted reports whether the request context holds the
 // entity's declared CrossOwnerRead permission. Returns false when the
-// entity does not opt in (empty permission) or when access.Can denies
-// (including the fail-closed "no policy in context" case). READ-ONLY by
-// construction: only ApplyOwnerScope / ApplyOwnerScopeCount consult it.
+// entity does not opt in (empty permission), when access.Can denies
+// (including the fail-closed "no policy in context" case), and — the F3
+// root-cause fix — unconditionally when the call was brokered through a
+// process module, so a delegated caller who holds CrossOwnerRead cannot
+// exercise it through a module. READ-ONLY by construction: only
+// ApplyOwnerScope / ApplyOwnerScopeCount consult it.
 func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
+	if IsBrokeredCall(ctx) {
+		return false
+	}
 	perm := ch.Entity.Config.Scope.CrossOwnerRead
 	return perm != "" && access.Can(ctx, access.Permission(perm))
 }

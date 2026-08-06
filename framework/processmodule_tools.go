@@ -309,14 +309,16 @@ func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleNa
 		return nil, ErrModuleToolNotReady
 	}
 
-	// Mint a delegation handle from the calling agent's context so a
-	// reverse host.* call re-attaches THIS caller's authority to the CRUD
-	// re-dispatch (design §5.1 ↔ §5). The agent's authority arrives in ctx
-	// (roles / policy / user); MintDelegation snapshots them. An anonymous
-	// agent (no user) mints an ambient handle — the broker's owner/tenant
-	// gates then refuse owner-scoped reads by construction.
+	// Mint a delegation handle bound to THIS module (F6) so a reverse host.*
+	// call cannot replay it under another module's handler. The agent's
+	// authority arrives in ctx (roles / policy / user); MintDelegation
+	// snapshots them, but they are NOT re-attached on the reverse path
+	// (snapshotRequest copies only Cookie/Authorization, which tool calls
+	// lack) — so a tool-sourced reverse call re-dispatches anonymously and
+	// requireScope refuses owner-scoped reads by construction. See the F7
+	// note on requestFromToolCtx.
 	callID := moduleToolCallID.Add(1)
-	mintReq := requestFromToolCtx(ctx)
+	mintReq := requestFromToolCtx(withDelegationModule(ctx, moduleName))
 	handle, release := s.broker.MintDelegation(mintReq, callID)
 	defer release()
 
@@ -345,12 +347,15 @@ func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleNa
 }
 
 // requestFromToolCtx builds a minimal *http.Request carrying the calling
-// agent's context so [Broker.MintDelegation] can snapshot roles + policy
-// (it reads them off r.Context()). MCP tool calls arrive with no
-// Cookie/Authorization header — the agent's authority is role/policy
-// based, not session-cookie based — so cookie/auth stay empty and the
-// broker re-attaches via roles+policy, which is the correct model for an
-// agent-originated tool invocation.
+// agent's context so [Broker.MintDelegation] can snapshot the module binding
+// (F6) off r.Context(). MCP tool calls arrive with no Cookie/Authorization
+// header — the agent's authority is role/policy based, not session-cookie
+// based — so cookie/auth stay empty. The broker's re-dispatch therefore
+// re-resolves to an ANONYMOUS caller: snapshotRequest copies only
+// Cookie/Authorization and resolveCaller never re-attaches the stashed
+// roles/policy. requireScope then refuses owner-scoped reads by construction.
+// That is the SAFE behavior — do NOT "fix" it by re-attaching the agent's
+// roles/policy, which would let a tool-sourced reverse call read cross-owner.
 func requestFromToolCtx(ctx context.Context) *http.Request {
 	r := &http.Request{
 		Method: http.MethodPost,
