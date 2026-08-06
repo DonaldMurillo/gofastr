@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,5 +76,38 @@ func TestMetricsBoundsMethodCardinality(t *testing.T) {
 	}
 	if keys > 4 {
 		t.Fatalf("counter cardinality unbounded: %d keys after 1008 distinct methods", keys)
+	}
+}
+
+// TestMetricsCollectorPanicIsolated pins panic isolation at the collector
+// extension point. A third-party CollectorFunc runs with no recover, and the
+// buffer is flushed only AFTER the loop — so one panicking collector dropped
+// the whole /metrics scrape. The property (mirroring hook.runHookSafely):
+// a bad collector is isolated, logged once, and the remaining families still
+// land on the scrape.
+func TestMetricsCollectorPanicIsolated(t *testing.T) {
+	m := NewMetrics()
+	m.RegisterCollector("good", func(w io.Writer) {
+		fmt.Fprintln(w, "good_metric 42")
+	})
+	m.RegisterCollector("bad", func(w io.Writer) {
+		panic("collector explosion")
+	})
+	m.RegisterCollector("also_good", func(w io.Writer) {
+		fmt.Fprintln(w, "also_good_metric 7")
+	})
+
+	rec := httptest.NewRecorder()
+	MetricsHandler(m).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("scrape status = %d, want 200 (a panicking collector must not fail the scrape)", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "good_metric 42") {
+		t.Errorf("SECURITY: [availability] a good collector was lost when a sibling panicked:\n%s", body)
+	}
+	if !strings.Contains(body, "also_good_metric 7") {
+		t.Errorf("SECURITY: [availability] collector AFTER the panicking one was lost:\n%s", body)
 	}
 }

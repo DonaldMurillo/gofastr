@@ -779,3 +779,69 @@ func extractAttr(htmlStr, attrName string) string {
 	}
 	return htmlStr[start : start+end]
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Form action sinks — SearchInput + FilterToolbar (sibling drift of ui.Form)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// TestFormActionSinksRejectUnsafeURL pins the URL-scheme allow-list on the
+// two <form action> sinks that previously put cfg.Action straight into a
+// hand-rolled render.Tag while the sibling ui.Form ran it through
+// urlsafe.CleanAnchor. Property × surface: loop the same attack shapes over
+// BOTH components. FilterToolbar runs with HideReset so the form action is
+// the only sink exercised (its reset LinkButton already had a guard).
+func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
+	unsafe := []string{
+		"javascript:alert(1)",
+		"vbscript:msgbox(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"//evil.com/x",
+	}
+	sinks := []struct {
+		name   string
+		render func(action string) render.HTML
+	}{
+		{"SearchInput", func(a string) render.HTML {
+			return ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: "q", Action: a})
+		}},
+		{"FilterToolbar", func(a string) render.HTML {
+			return ui.FilterToolbar(ui.FilterToolbarConfig{
+				Action: a, HideReset: true,
+				Sort: []ui.SortOption{{Value: "x", Label: "X"}},
+			})
+		}},
+	}
+	for _, s := range sinks {
+		t.Run(s.name, func(t *testing.T) {
+			for _, action := range unsafe {
+				h := string(s.render(action))
+				if strings.Contains(h, action) {
+					t.Errorf("SECURITY: %s rendered unsafe form action %q verbatim:\n%s", s.name, action, h)
+				}
+				if scheme := schemeOf(action); scheme != "" && strings.Contains(h, scheme+":") {
+					t.Errorf("SECURITY: %s kept dangerous scheme %q in output:\n%s", s.name, scheme, h)
+				}
+			}
+			// A valid relative action must round-trip unchanged — the guard
+			// is a scheme allow-list, not a blanket reject.
+			h := string(s.render("/search"))
+			if !strings.Contains(h, `action="/search"`) {
+				t.Errorf("%s dropped a valid relative action:\n%s", s.name, h)
+			}
+		})
+	}
+}
+
+// schemeOf returns the lowercased scheme prefix of u ("" for relative /
+// protocol-relative URLs), used only to narrow the unsafe-action assertion.
+func schemeOf(u string) string {
+	i := strings.Index(u, ":")
+	if i <= 0 {
+		return ""
+	}
+	// protocol-relative ("//host") has no scheme.
+	if strings.HasPrefix(u, "//") {
+		return ""
+	}
+	return strings.ToLower(u[:i])
+}

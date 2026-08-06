@@ -19,7 +19,7 @@ type finishErrorStore struct{}
 func (finishErrorStore) Begin(context.Context, string, string) (*IdempotentResponse, bool, error) {
 	return nil, true, nil // first writer; middleware must call Finish
 }
-func (finishErrorStore) Finish(context.Context, string, *IdempotentResponse) error {
+func (finishErrorStore) Finish(context.Context, string, string, *IdempotentResponse) error {
 	return errors.New("finish failed: db down")
 }
 

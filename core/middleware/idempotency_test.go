@@ -284,7 +284,7 @@ func TestMemoryStore_TTLExpiry(t *testing.T) {
 	if _, _, err := s.Begin(nil, "k", "fp"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Finish(nil, "k", resp); err != nil {
+	if err := s.Finish(nil, "k", "fp", resp); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := s.Begin(nil, "k", "fp")
@@ -379,7 +379,7 @@ type failingStore struct{ err error }
 func (f failingStore) Begin(_ context.Context, _, _ string) (*IdempotentResponse, bool, error) {
 	return nil, false, f.err
 }
-func (f failingStore) Finish(_ context.Context, _ string, _ *IdempotentResponse) error { return nil }
+func (f failingStore) Finish(_ context.Context, _, _ string, _ *IdempotentResponse) error { return nil }
 
 // TestIdempotencyRequiresPrincipal pins that the middleware cannot be
 // wired into a shared key namespace by omission.

@@ -105,6 +105,10 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 	// in-memory table cannot leak across a long-lived connection.
 	callID := proxyCallID.Add(1)
 	requestID := fmt.Sprintf("%s-%d", name, callID)
+	// F6: bind the delegation handle to THIS module (name) so it cannot be
+	// replayed under another module's reverse handler — the handle table is
+	// app-global.
+	r = r.WithContext(withDelegationModule(r.Context(), name))
 	handle, release := s.broker.MintDelegation(r, callID)
 	defer release()
 

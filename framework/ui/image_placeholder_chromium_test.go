@@ -59,7 +59,17 @@ func TestPlaceholderPaintsWhileSourceIsPending(t *testing.T) {
 	defer cancelAlloc()
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
-	ctx, cancelTimeout := context.WithTimeout(ctx, 40*time.Second)
+
+	// chromedp starts Chrome lazily on the first Run: give the cold
+	// start its own budget so the work budget below is not also a
+	// launch budget (and so it does not cap WSURLReadTimeout).
+	startCtx, startCancel := context.WithTimeout(ctx, 90*time.Second)
+	defer startCancel()
+	if err := chromedp.Run(startCtx); err != nil {
+		t.Fatalf("chrome did not start within 90s: %v", err)
+	}
+
+	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelTimeout()
 
 	var shot []byte

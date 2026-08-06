@@ -2,10 +2,12 @@ package middleware
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -98,7 +100,7 @@ type brokenStore struct{}
 func (brokenStore) Begin(context.Context, string, string) (*IdempotentResponse, bool, error) {
 	return nil, false, errors.New("store down")
 }
-func (brokenStore) Finish(context.Context, string, *IdempotentResponse) error {
+func (brokenStore) Finish(context.Context, string, string, *IdempotentResponse) error {
 	return nil
 }
 
@@ -165,7 +167,7 @@ func (s *recordingStore) Begin(ctx context.Context, key, fp string) (*Idempotent
 	return nil, false, nil
 }
 
-func (s *recordingStore) Finish(ctx context.Context, key string, resp *IdempotentResponse) error {
+func (s *recordingStore) Finish(ctx context.Context, key, fingerprint string, resp *IdempotentResponse) error {
 	s.mu.Lock()
 	s.finishCalled = true
 	s.finishCtxErr = ctx.Err()
@@ -217,4 +219,204 @@ func TestIdempotency_FinishUsesUncancelledContext(t *testing.T) {
 	if store.finishCtxErr != nil {
 		t.Fatalf("Finish must use uncancelled context to record cleanup; ctx.Err at call time=%v", store.finishCtxErr)
 	}
+}
+
+// ----- F1: Finish must only write the claim Begin created -------------------
+//
+// SECURITY (cross-user disclosure): Begin claims a key with a fingerprint, but
+// the in-flight claim can expire while the handler is still running. A second
+// caller then re-claims the SAME key under a DIFFERENT fingerprint. If Finish
+// persists by key alone (ignoring which fingerprint owns the row), the first
+// caller's late Finish staples its response onto the second caller's row — and
+// because Begin never rewrites the fingerprint column, the second caller's
+// retry matches the fingerprint and is served the FIRST caller's body. That is a
+// cross-user leak whenever Principal returns a user/tenant id.
+//
+// The fix is a breaking signature change — Finish now takes the fingerprint and
+// a store MUST refuse to write a row whose fingerprint does not match. The
+// optional-interface alternative was rejected: it leaves every third-party
+// IdempotencyStore silently vulnerable, which is the wrong default for a leak of
+// this kind. Memory and SQL both honour it below.
+
+func TestIdemFinishOnlyWritesOwnClaim(t *testing.T) {
+	t.Run("memory", func(t *testing.T) {
+		s := &memoryIdempotencyStore{
+			ttl:         time.Second,
+			inFlightTTL: 50 * time.Millisecond,
+			entries:     map[string]*idemEntry{},
+		}
+		runFinishOwnClaim(t, s)
+	})
+	t.Run("sql", func(t *testing.T) {
+		_, s := openSQLIdemStore(t)
+		s.inFlightTTL = 50 * time.Millisecond // tiny in-flight window so the claim expires mid-handler
+		runFinishOwnClaim(t, s)
+	})
+}
+
+func runFinishOwnClaim(t *testing.T, s IdempotencyStore) {
+	t.Helper()
+	ctx := context.Background()
+	const key = "k-f1"
+	const fpA = "fp-userA"
+	const fpB = "fp-userB"
+	const secretA = `{"secret":"USER-A-PRIVATE-ORDER"}`
+
+	// 1. User A claims the key (in-flight, short TTL).
+	if _, ok, err := s.Begin(ctx, key, fpA); err != nil || ok {
+		t.Fatalf("A fresh claim: ok=%v err=%v", ok, err)
+	}
+	// 2. A's claim expires while its handler is still running.
+	time.Sleep(80 * time.Millisecond)
+	// 3. User B — same key, DIFFERENT body/fingerprint — re-claims the stale row.
+	if _, ok, err := s.Begin(ctx, key, fpB); err != nil || ok {
+		t.Fatalf("B re-claim of A's expired claim: ok=%v err=%v", ok, err)
+	}
+	// 4. A's handler finally returns and tries to persist A's response.
+	respA := &IdempotentResponse{
+		Status: http.StatusOK,
+		Header: http.Header{"X-Owner": []string{"user-A"}},
+		Body:   []byte(secretA),
+	}
+	if err := s.Finish(ctx, key, fpA, respA); err != nil {
+		t.Fatalf("A Finish: %v", err)
+	}
+	// 5. B's retry must NEVER receive A's response body. Assert on the BODY — a
+	// status-only check would miss the disclosure (A's status can be 200 too).
+	replay, ok, err := s.Begin(ctx, key, fpB)
+	if ok && replay != nil && string(replay.Body) == secretA {
+		t.Fatalf("F1 cross-user disclosure: B's retry was served A's body %q (status=%d, err=%v)",
+			secretA, replay.Status, err)
+	}
+}
+
+// ----- F4: expired-claim reclaim must not delete a fresh claim --------------
+//
+// When Begin finds an expired row it deletes the stale claim and re-claims. The
+// DELETE once matched on key alone, with no expiry predicate. Under contention
+// two callers can both observe the expired row: the first deletes it and inserts
+// a FRESH claim; the second's key-only DELETE then destroys that FRESH claim and
+// it re-inserts — so BOTH believe they own the key and BOTH run the handler.
+// That is the double-execution the middleware exists to prevent, and it defeats
+// the ErrInFlight fallback. The DELETE is now expiry-gated
+// (WHERE key = $1 AND expires_at <= $2).
+//
+// This is a race-invariant guard: with the fix exactly ONE caller ever obtains a
+// fresh claim, so the assertion never false-fails on correct code. The memory
+// store serializes under a mutex and is immune by construction; it is covered
+// here as the property x surface pairing.
+//
+// The in-flight TTL here is deliberately LONG. The seeded row is already
+// expired, so the reclaim path still runs, but a winner's fresh claim cannot
+// legitimately expire mid-race — with a short TTL a slow, loaded runner lets a
+// later racer correctly re-claim an expired row, which is the TTL working and
+// is indistinguishable from the bug. A long TTL makes a second fresh claim
+// proof that the DELETE removed a live one.
+
+func TestIdemReclaimKeepsFreshRow(t *testing.T) {
+	t.Run("memory", func(t *testing.T) {
+		ms := &memoryIdempotencyStore{
+			ttl:         time.Minute,
+			inFlightTTL: 30 * time.Second,
+			entries:     map[string]*idemEntry{},
+		}
+		ctx := context.Background()
+		_, _, _ = ms.Begin(ctx, "warmup", "fp-w") // consume the first-call reap
+		reseed := func() {
+			ms.mu.Lock()
+			ms.entries["k-f4"] = &idemEntry{
+				fingerprint: "fp-seed",
+				expires:     time.Now().Add(-time.Second),
+				createdAt:   time.Now().Add(-2 * time.Second),
+			}
+			ms.mu.Unlock()
+		}
+		runReclaimOneWinner(t, ms, "k-f4", reseed)
+	})
+	t.Run("sql", func(t *testing.T) {
+		db, s := newWALSQLIdemStore(t, 30*time.Second)
+		ctx := context.Background()
+		// Run one Begin up front so the per-minute reap has already fired and
+		// won't delete our seeded expired row before the racers reach the
+		// reclaim path (the steady-state condition this fix targets).
+		if _, _, err := s.Begin(ctx, "warmup", "fp-warmup"); err != nil {
+			t.Fatalf("warmup Begin: %v", err)
+		}
+		reseed := func() {
+			if _, err := db.Exec("DELETE FROM idempotency_keys WHERE key = ?", "k-f4"); err != nil {
+				t.Fatalf("reseed delete: %v", err)
+			}
+			now := time.Now()
+			if _, err := db.Exec(
+				"INSERT INTO idempotency_keys (key, fingerprint, expires_at, created_at) VALUES (?, ?, ?, ?)",
+				"k-f4", "fp-seed", now.Add(-time.Second), now.Add(-2*time.Second),
+			); err != nil {
+				t.Fatalf("reseed insert: %v", err)
+			}
+		}
+		runReclaimOneWinner(t, s, "k-f4", reseed)
+	})
+}
+
+func runReclaimOneWinner(t *testing.T, s IdempotencyStore, key string, reseed func()) {
+	t.Helper()
+	ctx := context.Background()
+
+	// The F4 window (SELECT sees an expired row, then a concurrent INSERT lands,
+	// then this caller's key-only DELETE removes the fresh claim) is narrow, so a
+	// single race rarely trips. We run many reseeded iterations per invocation to
+	// make a regression reliably observable while keeping the guard deterministic
+	// on correct code: with the fix every iteration yields exactly one winner, so
+	// the assertion can never false-fail.
+	const racers = 60
+	const iters = 60
+	var maxFresh int64
+	for range iters {
+		reseed()
+		var fresh int64
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i := range racers {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				<-start
+				fp := fmt.Sprintf("fp-%d", i)
+				_, ok, err := s.Begin(ctx, key, fp)
+				if err == nil && !ok {
+					atomic.AddInt64(&fresh, 1)
+				}
+			}(i)
+		}
+		close(start)
+		wg.Wait()
+		if f := atomic.LoadInt64(&fresh); f > maxFresh {
+			maxFresh = f
+		}
+		if maxFresh > 1 {
+			break
+		}
+	}
+	t.Logf("F4 race: maxFresh=%d over up to %d iterations x %d racers (want <=1)", maxFresh, iters, racers)
+	if maxFresh > 1 {
+		t.Fatalf("F4: %d callers obtained a fresh claim for one key in a single iteration — the reclaim path deleted a fresh claim", maxFresh)
+	}
+}
+
+// newWALSQLIdemStore opens a file-backed sqlite DB in WAL mode with several
+// connections so concurrent Begins genuinely interleave. The in-memory store
+// used elsewhere is pinned to one connection and cannot reproduce the race.
+func newWALSQLIdemStore(t *testing.T, inFlightTTL time.Duration) (*sql.DB, *SQLIdempotencyStore) {
+	t.Helper()
+	dsn := filepath.Join(t.TempDir(), "idem_f4.db") + "?_pragma=journal_mode(WAL)"
+	db, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	s, err := NewSQLIdempotencyStore(db, WithSQLIdempotencyInFlightTTL(inFlightTTL))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	return db, s
 }

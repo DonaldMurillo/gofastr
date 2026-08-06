@@ -41,6 +41,15 @@
       const obj = {};
       new FormData(node).forEach((v, k) => { obj[k] = v; });
       body = JSON.stringify(obj);
+    } else if (!body && node.form) {
+      // A form control that belongs to a form (radio/select/input/textarea
+      // with node.form set) carries its value by serializing the enclosing
+      // form — the same class as the data-fui-rpc fix below. Explicit
+      // data-kiln-args wins (read above); a control with no form keeps the
+      // legacy '' body rather than erroring.
+      const obj = {};
+      new FormData(node.form).forEach((v, k) => { obj[k] = v; });
+      body = JSON.stringify(obj);
     }
     await _kilnPost(node, body);
   }
@@ -130,14 +139,20 @@
     let body = node.getAttribute('data-fui-rpc-body');
     let resolvedPath = path;
     let bodyIsFormData = false;
-    if (!body && node.tagName === 'FORM') {
-      const fd = new FormData(node);
+    // A form control that belongs to a form (every radio/input/select/
+    // textarea with node.form set) carries its value exactly like a FORM
+    // node: serialize the enclosing form so the handler sees name=value.
+    // An explicit data-fui-rpc-body (read above) still wins; a control with
+    // no enclosing form and no explicit body keeps the legacy empty body.
+    const formSource = node.tagName === 'FORM' ? node : (node.form || null);
+    if (!body && formSource) {
+      const fd = new FormData(formSource);
       if (method === 'GET') {
         const params = new URLSearchParams();
         fd.forEach((v, k) => { if (v != null) params.append(k, String(v)); });
         const qs = params.toString();
         if (qs) resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
-      } else if (node.enctype === 'multipart/form-data' || node.querySelector('input[type="file"]')) {
+      } else if (formSource.enctype === 'multipart/form-data' || formSource.querySelector('input[type="file"]')) {
         body = fd;
         bodyIsFormData = true;
       } else {

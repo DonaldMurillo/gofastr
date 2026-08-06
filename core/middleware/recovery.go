@@ -49,9 +49,9 @@ func RecoveryFn(getLogger func() *slog.Logger) Middleware {
 						}
 					}
 					logger.Error("panic recovered",
-						"error", truncate(fmt.Sprint(err), maxRecoveryPanicLen),
-						"path", truncate(r.URL.Path, maxRecoveryPathLen),
-						"method", r.Method,
+						"error", scrubControlBytes(truncate(fmt.Sprint(err), maxRecoveryPanicLen)),
+						"path", safeLogPath(truncate(r.URL.Path, maxRecoveryPathLen)),
+						"method", safeLogMethod(r.Method),
 						"stack", truncate(string(debug.Stack()), maxRecoveryStackLen),
 					)
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)

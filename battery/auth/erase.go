@@ -8,7 +8,7 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 // erasure is complete. The framework centralizes all raw write behind one
 // SafeIdent-guarded path; these registrations are purely declarative.
 //
-// Two erasers are registered under the canonical table names:
+// These erasers are registered under the canonical table names:
 //
 //   - auth_sessions: EraseDelete by user_id. A user's sessions are pure
 //     credential state — they are hard-deleted, revoking every active session
@@ -24,12 +24,12 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 //     "<user table>_oauth_links" convention. A surviving link re-attaches the
 //     erased account on the next provider sign-in.
 //
-// KNOWN GAP — magic_link_tokens is keyed by EMAIL, not user id, so the
-// declarative eraser (which receives only the user id) cannot reach it. A
-// magic link minted before an erasure and redeemed after it creates a fresh
-// account for that address. Hosts that use magic links should expire
-// outstanding tokens for the address alongside the erasure. Tracked
-// separately; do not assume erasure revokes an in-flight magic link.
+//   - magic_link_tokens: EraseDelete by EMAIL. The token table is keyed by
+//     email, not user id, so the eraser declares IdentityEmail and the
+//     framework resolves the user's email from the user table at erase time
+//     (see the IdentityEmail registration below) and binds it instead of the
+//     user id. This closes the gap where a magic link minted before an erasure
+//     and redeemed after it re-created the erased account.
 //
 // API tokens (auth_api_tokens) are named credentials, not per-user rows —
 // the table has no user column — so a host that scopes tokens to users
@@ -43,8 +43,9 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 //
 // The table names are host-configured (commonly "users"/"auth_users" for the
 // user table). These registrations cover the canonical names; a host that
-// renamed either must datexport.RegisterEraser the actual name, or the
-// canonical entry is skipped with a note at erase time and that table is
+// renamed either must datexport.RegisterEraser the actual name (and, for a
+// renamed user table, re-register the IdentityEmail resolver against it), or
+// the canonical entry is skipped with a note at erase time and that table is
 // excluded from the erasure.
 
 func init() {
@@ -63,5 +64,21 @@ func init() {
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name: "users_oauth_links", Source: "auth", Table: "users_oauth_links",
 		Column: "user_id", Mode: datexport.EraseDelete,
+	})
+	// IdentityEmail resolves the erased user's email from the user table
+	// (auth_users.id → email) ONCE per erasure, before the tx. The
+	// magic-link token table is keyed by email, so its eraser declares
+	// IdentityEmail and the framework binds the resolved email instead of
+	// the user id — closing the gap where an in-flight magic link survived
+	// an erasure and re-created the account. The token table is created
+	// lazily by NewSQLMagicLinkTokenStore; a host on the in-memory store has
+	// no such table, so this eraser is a no-op (skipped at erase time).
+	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
+		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "magic_link_tokens", Source: "auth", Table: "magic_link_tokens",
+		Column: "email", Mode: datexport.EraseDelete,
+		Identity: datexport.IdentityEmail,
 	})
 }

@@ -60,3 +60,29 @@ func TestBannerPublicOpenAPIUnmarked(t *testing.T) {
 		}
 	}
 }
+
+// TestStartupBannerVersionedEntityPathAndLabel: an entity mounted under a
+// versioned route group (App.GroupEntity) must advertise its version-prefixed
+// mount path and carry the "(version)" label, not the bare "/table" path a
+// single-version entity gets. A user curling the banner URL for /v2/widgets
+// must reach it; printing "/widgets" would advertise a 404.
+func TestStartupBannerVersionedEntityPathAndLabel(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	g := app.Group("/v2")
+	app.GroupEntity(g, "widgets", EntityConfig{
+		Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+		Exposure: &ExposureConfig{CRUD: boolPtr(false)},
+	}.WithTimestamps(false))
+	var out bytes.Buffer
+	app.startupOutput = &out
+
+	app.printStartupBanner("127.0.0.1:8080", "test", false, false, "")
+	got := out.String()
+
+	if !strings.Contains(got, "widgets (/v2)") {
+		t.Errorf("versioned entity label missing; banner:\n%s", got)
+	}
+	if !strings.Contains(got, "127.0.0.1:8080/v2/widgets") {
+		t.Errorf("versioned mount path missing; banner:\n%s", got)
+	}
+}

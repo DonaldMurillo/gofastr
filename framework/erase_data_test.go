@@ -729,3 +729,260 @@ func countRows(t *testing.T, db *sql.DB, table string) int {
 	}
 	return n
 }
+
+// ---- Identity resolution (email-keyed tables) ------------------------------
+//
+// App.EraseUserData matches by USER id, but some tables are keyed by another
+// identity — battery/auth's magic_link_tokens is keyed by EMAIL. The
+// IdentityKind seam lets an eraser declare a non-user-id identity that the
+// framework resolves ONCE at erase time (before the tx) and binds for the
+// match column. These scenarios prove the seam end to end using the magic-link
+// schema shape: a token table (token PK, email, expires_at) plus an auth_users
+// table the email resolver reads (id → email).
+
+// newIdentityEraseApp builds a minimal App (no entities) over an in-memory
+// SQLite DB. The caller creates the raw tables, seeds rows, and registers the
+// erasers/resolvers under test.
+func newIdentityEraseApp(t *testing.T) (*App, *sql.DB) {
+	t.Helper()
+	db := openSQLiteMem(t)
+	return NewApp(WithDB(db)), db
+}
+
+// createMagicLinkTables makes the auth_users + magic_link_tokens tables in the
+// exact schema the auth battery ships (email-keyed tokens).
+func createMagicLinkTables(t *testing.T, db *sql.DB) {
+	t.Helper()
+	ctx := context.Background()
+	for _, ddl := range []string{
+		`CREATE TABLE auth_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL)`,
+		`CREATE TABLE magic_link_tokens (token TEXT PRIMARY KEY, email TEXT NOT NULL, expires_at BIGINT NOT NULL)`,
+	} {
+		if _, err := db.ExecContext(ctx, ddl); err != nil {
+			t.Fatalf("create magic-link tables: %v", err)
+		}
+	}
+}
+
+// registerMagicLinkEraseScenario wires an ISOLATED registry: the email
+// identity resolver (auth_users.id → email), the auth_users eraser (so erasing
+// the user drops the user row — making the idempotency check meaningful), and
+// the magic_link_tokens eraser keyed by email (the gap this closes).
+func registerMagicLinkEraseScenario(t *testing.T) {
+	t.Helper()
+	datexport.Reset(t)
+	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
+		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "auth_users", Source: "auth", Table: "auth_users",
+		Column: "id", Mode: datexport.EraseDelete,
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "magic_link_tokens", Source: "auth", Table: "magic_link_tokens",
+		Column: "email", Mode: datexport.EraseDelete,
+		Identity: datexport.IdentityEmail,
+	})
+}
+
+// A user's magic-link tokens are erased via the email identity, while another
+// user's tokens survive. This is the gap the seam exists to close: pre-seam the
+// token table was unreachable (keyed by email; the eraser receives only the
+// user id) and the tokens silently survived — letting a pre-erasure magic link
+// re-create the account after erasure.
+func TestEraseUserData_EmailIdentityErasesMagicLinkTokens(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("seed: %v\nquery: %s", err, q)
+		}
+	}
+	exec(`INSERT INTO auth_users (id, email) VALUES ('u1','u1@x.test'),('u2','u2@x.test')`)
+	exec(`INSERT INTO magic_link_tokens (token, email, expires_at) VALUES
+		('t1','u1@x.test',0),('t1b','u1@x.test',0),('t2','u2@x.test',0)`)
+	registerMagicLinkEraseScenario(t)
+
+	rep, err := app.EraseUserData(ctx, "u1")
+	if err != nil {
+		t.Fatalf("EraseUserData u1: %v", err)
+	}
+
+	// u1's tokens are gone; u2's survive.
+	if got := countWhere(t, db, "magic_link_tokens", "email", "u1@x.test"); got != 0 {
+		t.Errorf("u1 magic-link tokens after erase = %d, want 0", got)
+	}
+	if got := countWhere(t, db, "magic_link_tokens", "email", "u2@x.test"); got != 1 {
+		t.Errorf("u2 magic-link tokens after erase = %d, want 1 (other user intact)", got)
+	}
+	// The user row is erased too (auth_users eraser, IdentityUserID).
+	if got := countWhere(t, db, "auth_users", "id", "u1"); got != 0 {
+		t.Errorf("auth_users u1 after erase = %d, want 0", got)
+	}
+	if got := countWhere(t, db, "auth_users", "id", "u2"); got != 1 {
+		t.Errorf("auth_users u2 after erase = %d, want 1", got)
+	}
+	// The magic-link plane reports the two erased rows.
+	var ml int
+	for _, b := range rep.Batteries {
+		if b.Name == "magic_link_tokens" {
+			ml = b.RowsAffected
+		}
+	}
+	if ml != 2 {
+		t.Errorf("report magic_link_tokens RowsAffected = %d, want 2", ml)
+	}
+}
+
+// A second erasure is idempotent. After the first erase the user row is gone,
+// so the email identity CANNOT be resolved — the magic-link eraser is SKIPPED
+// (not failed), the user-id erasers match zero rows, and the report carries
+// zero with no error. An unresolvable identity is "nothing left to match", not
+// a failure.
+func TestEraseUserData_EmailIdentityIdempotentSecondRun(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("seed: %v\nquery: %s", err, q)
+		}
+	}
+	exec(`INSERT INTO auth_users (id, email) VALUES ('u1','u1@x.test')`)
+	exec(`INSERT INTO magic_link_tokens (token, email, expires_at) VALUES ('t1','u1@x.test',0)`)
+	registerMagicLinkEraseScenario(t)
+
+	if _, err := app.EraseUserData(ctx, "u1"); err != nil {
+		t.Fatalf("first erase u1: %v", err)
+	}
+
+	rep, err := app.EraseUserData(ctx, "u1")
+	if err != nil {
+		t.Fatalf("second erase u1 (idempotent): %v", err)
+	}
+	if got := rep.TotalErased(); got != 0 {
+		t.Errorf("idempotent re-erase TotalErased = %d, want 0", got)
+	}
+	// The magic-link eraser was skipped because its email identity could not
+	// be resolved (the user row is gone).
+	skipped := false
+	for _, s := range rep.Skipped {
+		if s == "magic_link_tokens" {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Errorf("report.Skipped = %v, want it to contain magic_link_tokens", rep.Skipped)
+	}
+}
+
+// Dry-run takes the SAME resolution path as a real erase — it resolves the
+// email, counts the token rows that would be deleted, and leaves the DB
+// untouched.
+func TestEraseUserData_EmailIdentityDryRunCounts(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("seed: %v\nquery: %s", err, q)
+		}
+	}
+	exec(`INSERT INTO auth_users (id, email) VALUES ('u1','u1@x.test')`)
+	exec(`INSERT INTO magic_link_tokens (token, email, expires_at) VALUES
+		('t1','u1@x.test',0),('t1b','u1@x.test',0)`)
+	registerMagicLinkEraseScenario(t)
+
+	rep, err := app.EraseUserData(ctx, "u1", WithEraseDryRun())
+	if err != nil {
+		t.Fatalf("dry-run u1: %v", err)
+	}
+	if !rep.DryRun {
+		t.Errorf("rep.DryRun = false, want true")
+	}
+	var ml int
+	for _, b := range rep.Batteries {
+		if b.Name == "magic_link_tokens" {
+			ml = b.RowsAffected
+		}
+	}
+	if ml != 2 {
+		t.Errorf("dry-run magic_link_tokens RowsAffected = %d, want 2", ml)
+	}
+	// DB untouched: both tokens and the user row still present.
+	if got := countWhere(t, db, "magic_link_tokens", "email", "u1@x.test"); got != 2 {
+		t.Errorf("dry-run deleted tokens: %d remain, want 2 (DB unchanged)", got)
+	}
+	if got := countWhere(t, db, "auth_users", "id", "u1"); got != 1 {
+		t.Errorf("dry-run deleted user row: %d remain, want 1 (DB unchanged)", got)
+	}
+}
+
+// An eraser that declares a non-user-id identity with NO registered resolver
+// must FAIL LOUD — an unresolvable declared identity means the erasure is
+// incomplete, and silently-incomplete is the failure mode this primitive
+// exists to prevent. Both real and dry-run paths must fail.
+func TestEraseUserData_IdentityWithoutResolverFailsLoud(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users (id, email) VALUES ('u1','u1@x.test')`); err != nil {
+		t.Fatal(err)
+	}
+	datexport.Reset(t)
+	// NO IdentityEmail resolver registered — the eraser declares an identity
+	// the framework cannot resolve at all.
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "magic_link_tokens", Source: "auth", Table: "magic_link_tokens",
+		Column: "email", Mode: datexport.EraseDelete,
+		Identity: datexport.IdentityEmail,
+	})
+
+	if _, err := app.EraseUserData(ctx, "u1"); err == nil {
+		t.Fatal("erasure with a declared identity but no resolver succeeded (must fail loud)")
+	}
+	if _, err := app.EraseUserData(ctx, "u1", WithEraseDryRun()); err == nil {
+		t.Fatal("dry-run with a declared identity but no resolver succeeded (must fail loud)")
+	}
+}
+
+// The resolved value is BOUND, not interpolated into SQL. An email containing
+// a single quote (o'brien@x.test) must erase correctly — neither breaking the
+// statement nor injecting past the match. Interpolating it would syntax-error
+// the DELETE or delete more than intended.
+func TestEraseUserData_EmailIdentityBindsQuotedValue(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("seed: %v\nquery: %s", err, q)
+		}
+	}
+	exec(`INSERT INTO auth_users (id, email) VALUES ('u1',$1),('u2',$2)`, "o'brien@x.test", "u2@x.test")
+	exec(`INSERT INTO magic_link_tokens (token, email, expires_at) VALUES ($1,$3,0),($2,$4,0)`,
+		"tok-u1", "tok-u2", "o'brien@x.test", "u2@x.test")
+	registerMagicLinkEraseScenario(t)
+
+	if _, err := app.EraseUserData(ctx, "u1"); err != nil {
+		t.Fatalf("EraseUserData u1 (quoted email): %v", err)
+	}
+	// The quoted-email token is gone; the other user's token survives (no
+	// injection widened the delete).
+	if got := countWhere(t, db, "magic_link_tokens", "email", "o'brien@x.test"); got != 0 {
+		t.Errorf("o'brien token after erase = %d, want 0 (quote must not break the bind)", got)
+	}
+	if got := countWhere(t, db, "magic_link_tokens", "email", "u2@x.test"); got != 1 {
+		t.Errorf("u2 token after erase = %d, want 1 (quote must not inject past the match)", got)
+	}
+}

@@ -38,7 +38,7 @@ const IdempotencyKeyHeader = "Idempotency-Key"
 //     unless IdempotencyConfig.FailOpen is true.
 type IdempotencyStore interface {
 	Begin(ctx context.Context, key, fingerprint string) (replay *IdempotentResponse, ok bool, err error)
-	Finish(ctx context.Context, key string, resp *IdempotentResponse) error
+	Finish(ctx context.Context, key, fingerprint string, resp *IdempotentResponse) error
 }
 
 // IdempotentResponse is the cached snapshot of a completed write.
@@ -266,7 +266,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			// only correct action is to make the loss observable — silently
 			// dropping it is the bug this fixes.
 			finish := func(resp *IdempotentResponse) {
-				if err := cfg.Store.Finish(finishCtx, storeKey, resp); err != nil {
+				if err := cfg.Store.Finish(finishCtx, storeKey, fp, resp); err != nil {
 					cfg.Logger.Error("idempotency: Finish failed (claim stranded; retries of this key will 409 until TTL)",
 						"key", key, "error", err)
 				}
@@ -499,13 +499,21 @@ func (s *memoryIdempotencyStore) Begin(_ context.Context, key, fingerprint strin
 	return nil, false, nil
 }
 
-func (s *memoryIdempotencyStore) Finish(_ context.Context, key string, resp *IdempotentResponse) error {
+func (s *memoryIdempotencyStore) Finish(_ context.Context, key, fingerprint string, resp *IdempotentResponse) error {
 	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	e, ok := s.entries[key]
 	if !ok {
+		return nil
+	}
+	// Only the owner of the in-flight claim may mutate or release it. If the
+	// claim expired and was re-assigned to a different fingerprint while this
+	// handler was still running, Finish must be a no-op: writing would clobber
+	// the new owner's claim and replay this caller's response to them on retry
+	// — a cross-user disclosure. See TestIdemFinishOnlyWritesOwnClaim.
+	if e.fingerprint != fingerprint {
 		return nil
 	}
 	if resp == nil {

@@ -96,6 +96,7 @@ type EraseReport struct {
 	Entities  []EraseTableResult // owner-scoped entity tables (always delete)
 	Batteries []EraseTableResult // registered erasers (delete or anonymize)
 	Audit     *EraseTableResult  // built-in audit anonymization; nil if the audit table is absent
+	Skipped   []string           // erasers skipped because their identity could not be resolved (idempotent re-run)
 }
 
 // TotalErased returns the sum of every RowsAffected across all planes. In
@@ -148,10 +149,110 @@ func (a *App) EraseUserData(ctx context.Context, userID string, opts ...EraseOpt
 	ents := a.collectEraseEntitySources()
 	erasers := datexport.AllErasers()
 
-	if cfg.dryRun {
-		return a.eraseDryRun(ctx, dialect, userID, cfg, ents, erasers)
+	// Resolve every non-user-id identity ONCE, before the write transaction
+	// opens (a single-connection pool deadlocks on a read inside the tx). An
+	// eraser declaring an identity with no resolver fails loud here; an
+	// identity whose value cannot be resolved is skipped, not failed.
+	resolved, skipped, err := a.resolveEraserIdentities(ctx, dialect, userID, erasers)
+	if err != nil {
+		return EraseReport{}, err
 	}
-	return a.eraseWrite(ctx, dialect, userID, cfg, ents, erasers)
+
+	if cfg.dryRun {
+		rep, derr := a.eraseDryRun(ctx, dialect, userID, cfg, ents, resolved)
+		if derr == nil {
+			rep.Skipped = skipped
+		}
+		return rep, derr
+	}
+	rep, werr := a.eraseWrite(ctx, dialect, userID, cfg, ents, resolved)
+	if werr == nil {
+		rep.Skipped = skipped
+	}
+	return rep, werr
+}
+
+// resolvedEraser pairs a registered eraser with the value its match column is
+// bound against. For IdentityUserID (the default) the value IS the user id;
+// for a non-default identity it is the value resolved once at erase time
+// through the matching DataIdentityResolver.
+type resolvedEraser struct {
+	eraser datexport.DataEraser
+	value  string
+}
+
+// resolveEraserIdentities resolves the bound match value for every eraser,
+// ONCE, before the write transaction opens (a single-connection pool deadlocks
+// on a read inside the tx). It is the identity-resolver seam:
+//
+//   - IdentityUserID (the default): the value is the user id, unchanged. Every
+//     existing registration behaves exactly as before.
+//   - A non-default identity with NO registered resolver: FAIL LOUD. An erasure
+//     that cannot reach a declared table is incomplete, and silently-incomplete
+//     is the failure mode this primitive exists to prevent.
+//   - A non-default identity whose resolver runs but finds no row (the user row
+//     is already gone on an idempotent re-run) or whose table is absent (host
+//     renamed it): the eraser is SKIPPED (added to skipped, not returned)
+//     rather than failed. An unresolvable identity means "nothing left to
+//     match".
+func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Dialect, userID string, erasers []datexport.DataEraser) (resolved []resolvedEraser, skipped []string, err error) {
+	for _, e := range erasers {
+		if e.Identity == datexport.IdentityUserID {
+			resolved = append(resolved, resolvedEraser{eraser: e, value: userID})
+			continue
+		}
+		r, ok := datexport.ResolveIdentity(e.Identity)
+		if !ok {
+			return nil, nil, fmt.Errorf("framework: erase %q declares identity %d but no resolver is registered — erasure would be incomplete", e.Name, e.Identity)
+		}
+		val, found, rerr := a.resolveIdentityValue(ctx, dialect, userID, r)
+		if rerr != nil {
+			return nil, nil, fmt.Errorf("framework: erase %q: resolve identity: %w", e.Name, rerr)
+		}
+		if !found {
+			skipped = append(skipped, e.Name)
+			continue
+		}
+		resolved = append(resolved, resolvedEraser{eraser: e, value: val})
+	}
+	return resolved, skipped, nil
+}
+
+// resolveIdentityValue runs the declarative resolver —
+//
+//	SELECT ValueColumn FROM Table WHERE IDColumn = userID
+//
+// against a.DB, NOT inside the transaction, and reports whether a row matched.
+// An absent resolver table is treated as "not found" (skip, not fail): the host
+// may have renamed the user table, mirroring how an absent eraser table is
+// skipped. Table/IDColumn/ValueColumn are MustIdent-guarded (decision E3); the
+// user id is a $n bound argument. A NULL or blank value is treated as
+// unresolvable (the eraser is skipped) — an empty identity cannot usefully
+// match rows.
+func (a *App) resolveIdentityValue(ctx context.Context, dialect migrate.Dialect, userID string, r datexport.DataIdentityResolver) (string, bool, error) {
+	exists, err := tableExists(ctx, a.DB, r.Table, dialect)
+	if err != nil {
+		return "", false, fmt.Errorf("probe resolver table %q: %w", r.Table, err)
+	}
+	if !exists {
+		return "", false, nil
+	}
+	qt := query.QuoteIdent(query.MustIdent(r.Table))
+	qID := query.QuoteIdent(query.MustIdent(r.IDColumn))
+	qVal := query.QuoteIdent(query.MustIdent(r.ValueColumn))
+	var val sql.NullString
+	err = a.DB.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1", qVal, qt, qID), userID).Scan(&val)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if !val.Valid || val.String == "" {
+		return "", false, nil
+	}
+	return val.String, true, nil
 }
 
 // collectEraseEntitySources enumerates every owner-scoped PHYSICAL table in
@@ -274,18 +375,20 @@ func childrenOf(parent string, parents map[string][]string) []string {
 // eraseWrite performs the real erasure inside one transaction. Existence
 // probes run against a.DB BEFORE BeginTx so a single-connection SQLite pool
 // does not deadlock (the tx would otherwise hold the only connection while
-// the probe waited for one).
-func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID string, cfg eraseConfig, ents []eraseEntitySource, erasers []datexport.DataEraser) (EraseReport, error) {
+// the probe waited for one). Erasers arrive already identity-resolved (see
+// resolveEraserIdentities): each carries the value its match column is bound
+// against — the user id, or a resolved identity like email.
+func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID string, cfg eraseConfig, ents []eraseEntitySource, erasers []resolvedEraser) (EraseReport, error) {
 	report := EraseReport{DryRun: false}
 
-	liveErasers := make([]datexport.DataEraser, 0, len(erasers))
+	liveErasers := make([]resolvedEraser, 0, len(erasers))
 	for _, e := range erasers {
-		exists, err := tableExists(ctx, a.DB, e.Table, dialect)
+		exists, err := tableExists(ctx, a.DB, e.eraser.Table, dialect)
 		if err != nil {
-			return report, fmt.Errorf("framework: erase probe %q: %w", e.Table, err)
+			return report, fmt.Errorf("framework: erase probe %q: %w", e.eraser.Table, err)
 		}
 		if !exists {
-			fmt.Fprintf(os.Stderr, "framework: erase: table %q absent, skipping\n", e.Table)
+			fmt.Fprintf(os.Stderr, "framework: erase: table %q absent, skipping\n", e.eraser.Table)
 			continue
 		}
 		liveErasers = append(liveErasers, e)
@@ -303,8 +406,8 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 		}
 	}
 	for _, e := range liveErasers {
-		if err := requireColumn(ctx, a.DB, e.Table, e.Column, dialect); err != nil {
-			return report, fmt.Errorf("framework: erase %q: %w", e.Name, err)
+		if err := requireColumn(ctx, a.DB, e.eraser.Table, e.eraser.Column, dialect); err != nil {
+			return report, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
 		}
 	}
 
@@ -330,28 +433,29 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 		})
 	}
 
-	// Battery plane: registered erasers.
+	// Battery plane: registered erasers, each matched against its resolved
+	// value (user id, or a resolved identity like email).
 	for _, e := range liveErasers {
-		switch e.Mode {
+		switch e.eraser.Mode {
 		case datexport.EraseDelete:
-			n, derr := eraseDelete(ctx, tx, e.Table, e.Column, userID)
+			n, derr := eraseDelete(ctx, tx, e.eraser.Table, e.eraser.Column, e.value)
 			if derr != nil {
-				return report, fmt.Errorf("framework: erase %q: %w", e.Name, derr)
+				return report, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, derr)
 			}
 			report.Batteries = append(report.Batteries, EraseTableResult{
-				Name: e.Name, Source: e.Source, Table: e.Table, Mode: "delete", RowsAffected: n,
+				Name: e.eraser.Name, Source: e.eraser.Source, Table: e.eraser.Table, Mode: "delete", RowsAffected: n,
 			})
 		case datexport.EraseAnonymize:
-			ts := e.Tombstone
+			ts := e.eraser.Tombstone
 			if ts == "" {
 				ts = "[erased]"
 			}
-			n, derr := eraseAnonymize(ctx, tx, e, userID, ts)
+			n, derr := eraseAnonymize(ctx, tx, e.eraser, e.value, ts)
 			if derr != nil {
-				return report, fmt.Errorf("framework: erase %q: %w", e.Name, derr)
+				return report, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, derr)
 			}
 			report.Batteries = append(report.Batteries, EraseTableResult{
-				Name: e.Name, Source: e.Source, Table: e.Table, Mode: "anonymize", RowsAffected: n,
+				Name: e.eraser.Name, Source: e.eraser.Source, Table: e.eraser.Table, Mode: "anonymize", RowsAffected: n,
 			})
 		}
 	}
@@ -377,7 +481,10 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 
 // eraseDryRun counts every row that WOULD be affected without writing. No
 // transaction (read-only); absent tables contribute nothing and are skipped.
-func (a *App) eraseDryRun(ctx context.Context, dialect migrate.Dialect, userID string, cfg eraseConfig, ents []eraseEntitySource, erasers []datexport.DataEraser) (EraseReport, error) {
+// Erasers arrive already identity-resolved (see resolveEraserIdentities): each
+// is counted against its resolved value, taking the SAME resolution path as a
+// real erase.
+func (a *App) eraseDryRun(ctx context.Context, dialect migrate.Dialect, userID string, cfg eraseConfig, ents []eraseEntitySource, erasers []resolvedEraser) (EraseReport, error) {
 	report := EraseReport{DryRun: true}
 
 	for _, s := range ents {
@@ -393,26 +500,26 @@ func (a *App) eraseDryRun(ctx context.Context, dialect migrate.Dialect, userID s
 		})
 	}
 	for _, e := range erasers {
-		exists, err := tableExists(ctx, a.DB, e.Table, dialect)
+		exists, err := tableExists(ctx, a.DB, e.eraser.Table, dialect)
 		if err != nil {
-			return report, fmt.Errorf("framework: erase probe %q: %w", e.Table, err)
+			return report, fmt.Errorf("framework: erase probe %q: %w", e.eraser.Table, err)
 		}
 		if !exists {
 			continue
 		}
-		if err := requireColumn(ctx, a.DB, e.Table, e.Column, dialect); err != nil {
-			return report, fmt.Errorf("framework: erase %q: %w", e.Name, err)
+		if err := requireColumn(ctx, a.DB, e.eraser.Table, e.eraser.Column, dialect); err != nil {
+			return report, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
 		}
 		mode := "delete"
-		if e.Mode == datexport.EraseAnonymize {
+		if e.eraser.Mode == datexport.EraseAnonymize {
 			mode = "anonymize"
 		}
-		n, err := eraseCount(ctx, a.DB, e.Table, e.Column, userID)
+		n, err := eraseCount(ctx, a.DB, e.eraser.Table, e.eraser.Column, e.value)
 		if err != nil {
-			return report, fmt.Errorf("framework: erase %q: %w", e.Name, err)
+			return report, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
 		}
 		report.Batteries = append(report.Batteries, EraseTableResult{
-			Name: e.Name, Source: e.Source, Table: e.Table, Mode: mode, RowsAffected: n,
+			Name: e.eraser.Name, Source: e.eraser.Source, Table: e.eraser.Table, Mode: mode, RowsAffected: n,
 		})
 	}
 	auditExists, err := tableExists(ctx, a.DB, cfg.auditTable, dialect)

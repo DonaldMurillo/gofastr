@@ -41,7 +41,19 @@ func newBareBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(allocCancel)
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	t.Cleanup(browserCancel)
-	ctx, cancel := context.WithTimeout(browserCtx, 30*time.Second)
+
+	// chromedp starts Chrome lazily on the first Run, so one timeout would
+	// have to cover BOTH the cold start and the page work — and it caps the
+	// WSURLReadTimeout above, making that 90s ineffective. Start the browser
+	// under its own budget first; the returned context then only has to cover
+	// the assertions. (Same fix as cmd/gofastr's blueprint e2e.)
+	startCtx, startCancel := context.WithTimeout(browserCtx, 90*time.Second)
+	t.Cleanup(startCancel)
+	if err := chromedp.Run(startCtx); err != nil {
+		t.Fatalf("chrome did not start within 90s: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
 	t.Cleanup(cancel)
 	return ctx
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"sort"
@@ -224,11 +225,28 @@ func MetricsHandler(m *Metrics) http.Handler {
 		m.mu.Unlock()
 		sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].name < snapshot[j].name })
 		for _, c := range snapshot {
-			c.fn(&sb)
+			runCollectorSafely(&sb, c.name, c.fn)
 		}
 
 		w.Write([]byte(sb.String()))
 	})
+}
+
+// runCollectorSafely runs one metrics collector with a per-call recover,
+// mirroring hook.runHookSafely. A third-party CollectorFunc that panics is
+// isolated (logged once) instead of aborting the whole /metrics scrape: the
+// exposition buffer is shared across the loop, so without this guard one bad
+// collector would drop every family's metrics for that scrape.
+func runCollectorSafely(w io.Writer, name string, fn CollectorFunc) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("metrics collector panic isolated",
+				"collector", name,
+				"error", truncate(fmt.Sprint(r), maxRecoveryPanicLen),
+			)
+		}
+	}()
+	fn(w)
 }
 
 // metricsResponseWriter captures the response status code so the recording

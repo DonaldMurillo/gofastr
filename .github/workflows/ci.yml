@@ -52,6 +52,13 @@ on:
     # tag on a commit with no CI run finds zero check runs and the
     # release gate times out red.
   pull_request:
+  # Merge queue: GitHub tests the queued commit (main + this PR, as it will
+  # actually land) and merges that exact commit, so its check runs attach to
+  # the SHA the release gate polls. Without the queue, every change runs this
+  # pipeline twice — once on the PR's ephemeral merge commit, once on the
+  # identical tree after it lands on main. This trigger is inert until the
+  # queue is enabled on main; enabling it removes the duplicate.
+  merge_group:
   # The `security` job needs a time trigger, not just a code trigger: an
   # advisory can land against a dependency nobody touched. GO-2026-5158
   # (otel baggage, reachable from core/middleware.Tracing) shipped in a

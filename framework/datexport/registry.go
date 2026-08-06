@@ -60,6 +60,29 @@ const (
 	EraseAnonymize
 )
 
+// IdentityKind selects which principal an eraser matches against. The default
+// (zero value, IdentityUserID) matches the erased user's id — the original
+// behavior every existing registration relies on. A non-default identity is
+// resolved ONCE at erase time via a registered [DataIdentityResolver], and the
+// resolved value is bound for the eraser's Column instead of the user id.
+//
+// This is the seam that reaches tables keyed by an identity OTHER than the
+// user id: battery/auth's magic_link_tokens is keyed by EMAIL, so it declares
+// IdentityEmail and the framework resolves email from the user table at erase
+// time. See framework/erase_data.go → identity resolution.
+type IdentityKind int
+
+const (
+	// IdentityUserID matches Column against the erased user's id. It is the
+	// zero value so every DataEraser that leaves Identity unset keeps the
+	// original behavior.
+	IdentityUserID IdentityKind = iota
+	// IdentityEmail matches Column against the erased user's email, resolved
+	// from the user table at erase time. battery/auth registers the resolver
+	// against auth_users (id → email).
+	IdentityEmail
+)
+
 // DataEraser declares the right-to-be-forgotten behavior for one physical
 // table that lives outside the entity registry — the erase-plane mirror of
 // DataExporter. The framework's App.EraseUserData walks both the entity
@@ -78,6 +101,11 @@ const (
 //     Tombstone. Each is SafeIdent-checked before SQL.
 //   - Tombstone (EraseAnonymize only) is the replacement written to every
 //     ScrubColumn. Empty defaults to "[erased]".
+//   - Identity selects which principal Column is matched against. The default
+//     (IdentityUserID, the zero value) matches the erased user's id — the
+//     original behavior. A non-default Identity (e.g. IdentityEmail) is
+//     resolved once at erase time through the matching DataIdentityResolver,
+//     and the resolved value is bound for Column instead of the user id.
 type DataEraser struct {
 	Name         string
 	Source       string
@@ -86,12 +114,37 @@ type DataEraser struct {
 	Mode         EraseMode
 	ScrubColumns []string
 	Tombstone    string
+	Identity     IdentityKind
+}
+
+// DataIdentityResolver declares how the framework resolves a non-user-id
+// identity at erase time — declaratively, so the framework stays the single
+// place raw SQL is built (decision E3). The framework runs, ONCE per erasure
+// and BEFORE the write transaction opens,
+//
+//	SELECT ValueColumn FROM Table WHERE IDColumn = <erased user id>
+//
+// and binds the result for every eraser declaring the resolver's
+// IdentityKind. Table, IDColumn, and ValueColumn are SafeIdent-checked before
+// SQL; the erased user id is a $n bound argument.
+//
+// battery/auth registers IdentityEmail against auth_users (id → email) so the
+// magic-link token table — keyed by email, not user id — becomes reachable by
+// App.EraseUserData. A resolver whose Table is absent at erase time, or whose
+// SELECT finds no row (the user row is already gone on an idempotent re-run),
+// means the identity cannot be resolved: erasers declaring it are SKIPPED with
+// a note rather than failed (nothing left to match).
+type DataIdentityResolver struct {
+	Table       string
+	IDColumn    string
+	ValueColumn string
 }
 
 var (
-	mu      sync.RWMutex
-	entries = []*DataExporter{}
-	erasers = []*DataEraser{}
+	mu        sync.RWMutex
+	entries   = []*DataExporter{}
+	erasers   = []*DataEraser{}
+	resolvers = map[IdentityKind]DataIdentityResolver{}
 )
 
 // Register adds a data exporter. Safe to call from init(). An exporter whose
@@ -168,6 +221,7 @@ func cloneEraser(e DataEraser) *DataEraser {
 	return &DataEraser{
 		Name: e.Name, Source: e.Source, Table: e.Table, Column: e.Column,
 		Mode: e.Mode, ScrubColumns: scrub, Tombstone: e.Tombstone,
+		Identity: e.Identity,
 	}
 }
 
@@ -194,10 +248,53 @@ func AllErasers() []DataEraser {
 		out = append(out, DataEraser{
 			Name: ex.Name, Source: ex.Source, Table: ex.Table, Column: ex.Column,
 			Mode: ex.Mode, ScrubColumns: append([]string(nil), ex.ScrubColumns...),
-			Tombstone: ex.Tombstone,
+			Tombstone: ex.Tombstone, Identity: ex.Identity,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// RegisterIdentityResolver registers how a non-user-id identity is resolved at
+// erase time. Safe to call from init(); a re-registration for the same kind
+// replaces it (last-writer-wins), mirroring RegisterEraser. battery/auth
+// registers IdentityEmail from init() so any app importing battery/auth can
+// reach email-keyed tables (magic_link_tokens) via App.EraseUserData.
+func RegisterIdentityResolver(kind IdentityKind, r DataIdentityResolver) {
+	mu.Lock()
+	defer mu.Unlock()
+	resolvers[kind] = r
+}
+
+// UnregisterIdentityResolver removes a resolver by kind. Returns true if one
+// was present.
+func UnregisterIdentityResolver(kind IdentityKind) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	_, ok := resolvers[kind]
+	delete(resolvers, kind)
+	return ok
+}
+
+// ResolveIdentity looks up the resolver declared for kind. The second return
+// is false when no resolver is registered — App.EraseUserData treats an eraser
+// that declares such an identity as a FAIL-LOUD misconfiguration (the erasure
+// would be incomplete).
+func ResolveIdentity(kind IdentityKind) (DataIdentityResolver, bool) {
+	mu.RLock()
+	defer mu.RUnlock()
+	r, ok := resolvers[kind]
+	return r, ok
+}
+
+// AllIdentityResolvers returns a copy of the registered resolvers.
+func AllIdentityResolvers() map[IdentityKind]DataIdentityResolver {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make(map[IdentityKind]DataIdentityResolver, len(resolvers))
+	for k, v := range resolvers {
+		out[k] = v
+	}
 	return out
 }
 
@@ -208,4 +305,7 @@ func Reset(_ *testing.T) {
 	defer mu.Unlock()
 	entries = nil
 	erasers = nil
+	for k := range resolvers {
+		delete(resolvers, k)
+	}
 }

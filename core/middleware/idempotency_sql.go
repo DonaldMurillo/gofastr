@@ -186,11 +186,15 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		// Existing row was expired (or reaped between the failed insert
-		// and this read). Delete any stale row then retry the claim
-		// once — second insert wins now that the conflict is gone.
+		// and this read). Delete the stale row then retry the claim once —
+		// the second insert wins now that the conflict is gone. The DELETE is
+		// expiry-gated so a concurrent re-claimer can never remove a FRESH
+		// claim another caller just inserted (which would let both run the
+		// handler — the double-execution idempotency exists to prevent). See
+		// TestIdemReclaimKeepsFreshRow.
 		if _, deleteErr := s.db.ExecContext(ctx,
-			fmt.Sprintf("DELETE FROM %s WHERE key = %s", s.table, s.placeholder(1)),
-			key,
+			fmt.Sprintf("DELETE FROM %s WHERE key = %s AND expires_at <= %s", s.table, s.placeholder(1), s.placeholder(2)),
+			key, now,
 		); deleteErr != nil {
 			return nil, false, fmt.Errorf("idempotency: delete expired claim: %w", deleteErr)
 		}
@@ -227,11 +231,11 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 }
 
 // Finish implements IdempotencyStore.
-func (s *SQLIdempotencyStore) Finish(ctx context.Context, key string, resp *IdempotentResponse) error {
+func (s *SQLIdempotencyStore) Finish(ctx context.Context, key, fingerprint string, resp *IdempotentResponse) error {
 	if resp == nil {
 		_, err := s.db.ExecContext(ctx,
-			fmt.Sprintf("DELETE FROM %s WHERE key = %s", s.table, s.placeholder(1)),
-			key,
+			fmt.Sprintf("DELETE FROM %s WHERE key = %s AND fingerprint = %s", s.table, s.placeholder(1), s.placeholder(2)),
+			key, fingerprint,
 		)
 		return err
 	}
@@ -241,10 +245,10 @@ func (s *SQLIdempotencyStore) Finish(ctx context.Context, key string, resp *Idem
 	}
 	expires := time.Now().Add(s.ttl)
 	_, err = s.db.ExecContext(ctx, fmt.Sprintf(
-		"UPDATE %s SET status = %s, headers = %s, body = %s, expires_at = %s WHERE key = %s",
+		"UPDATE %s SET status = %s, headers = %s, body = %s, expires_at = %s WHERE key = %s AND fingerprint = %s",
 		s.table,
-		s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5),
-	), resp.Status, string(hdrJSON), resp.Body, expires, key)
+		s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6),
+	), resp.Status, string(hdrJSON), resp.Body, expires, key, fingerprint)
 	return err
 }
 

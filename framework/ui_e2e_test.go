@@ -260,7 +260,17 @@ func newE2EChrome(t *testing.T) context.Context {
 	t.Cleanup(allocCancel)
 	browser, browserCancel := chromedp.NewContext(alloc)
 	t.Cleanup(browserCancel)
-	ctx, cancel := context.WithTimeout(browser, 30*time.Second)
+
+	// chromedp starts Chrome lazily on the first Run: give the cold start its
+	// own budget so the work budget below is not also a launch budget (and so
+	// it does not cap WSURLReadTimeout).
+	startCtx, startCancel := context.WithTimeout(browser, 90*time.Second)
+	t.Cleanup(startCancel)
+	if err := chromedp.Run(startCtx); err != nil {
+		t.Fatalf("chrome did not start within 90s: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(browser, 60*time.Second)
 	t.Cleanup(cancel)
 	return ctx
 }

@@ -309,9 +309,9 @@ func Timeout(d time.Duration) Middleware {
 					<-done
 					if childPanic != nil {
 						slog.Error("panic in timed-out handler",
-							"error", truncate(fmt.Sprint(childPanic), maxRecoveryPanicLen),
-							"path", truncate(r.URL.Path, maxRecoveryPathLen),
-							"method", r.Method,
+							"error", scrubControlBytes(truncate(fmt.Sprint(childPanic), maxRecoveryPanicLen)),
+							"path", safeLogPath(truncate(r.URL.Path, maxRecoveryPathLen)),
+							"method", safeLogMethod(r.Method),
 						)
 					}
 				}()
