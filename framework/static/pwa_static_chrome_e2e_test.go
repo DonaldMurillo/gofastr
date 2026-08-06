@@ -57,6 +57,18 @@ func TestPWAStaticChromeE2E(t *testing.T) {
 	defer allocCancel()
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
+
+	// chromedp starts Chrome lazily on the first Run, so one timeout would
+	// have to cover BOTH the cold start and the page work — and it caps the
+	// WSURLReadTimeout above, making that 90s ineffective. Start the browser
+	// under its own budget first; the work context then only has to cover the
+	// assertions.
+	startCtx, startCancel := context.WithTimeout(browserCtx, 90*time.Second)
+	defer startCancel()
+	if err := chromedp.Run(startCtx); err != nil {
+		t.Fatalf("chrome did not start within 90s: %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(browserCtx, 120*time.Second)
 	defer cancel()
 

@@ -305,12 +305,19 @@ func runFinishOwnClaim(t *testing.T, s IdempotencyStore) {
 // fresh claim, so the assertion never false-fails on correct code. The memory
 // store serializes under a mutex and is immune by construction; it is covered
 // here as the property x surface pairing.
+//
+// The in-flight TTL here is deliberately LONG. The seeded row is already
+// expired, so the reclaim path still runs, but a winner's fresh claim cannot
+// legitimately expire mid-race — with a short TTL a slow, loaded runner lets a
+// later racer correctly re-claim an expired row, which is the TTL working and
+// is indistinguishable from the bug. A long TTL makes a second fresh claim
+// proof that the DELETE removed a live one.
 
 func TestIdemReclaimKeepsFreshRow(t *testing.T) {
 	t.Run("memory", func(t *testing.T) {
 		ms := &memoryIdempotencyStore{
-			ttl:         time.Second,
-			inFlightTTL: 30 * time.Millisecond,
+			ttl:         time.Minute,
+			inFlightTTL: 30 * time.Second,
 			entries:     map[string]*idemEntry{},
 		}
 		ctx := context.Background()
@@ -327,7 +334,7 @@ func TestIdemReclaimKeepsFreshRow(t *testing.T) {
 		runReclaimOneWinner(t, ms, "k-f4", reseed)
 	})
 	t.Run("sql", func(t *testing.T) {
-		db, s := newWALSQLIdemStore(t, 30*time.Millisecond)
+		db, s := newWALSQLIdemStore(t, 30*time.Second)
 		ctx := context.Background()
 		// Run one Begin up front so the per-minute reap has already fired and
 		// won't delete our seeded expired row before the racers reach the

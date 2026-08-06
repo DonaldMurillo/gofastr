@@ -63,10 +63,21 @@ func newSeedBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(allocCancel)
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	t.Cleanup(browserCancel)
-	// Windows runners can spend longer connecting to a freshly started
-	// browser when the package has already exercised several E2E fixtures.
-	// Keep the operation deadline aligned with the allocator's generous
-	// websocket startup budget instead of failing during browser startup.
+
+	// chromedp starts Chrome lazily on the first Run, so one timeout would
+	// have to cover BOTH the cold start and the page work — and it caps the
+	// WSURLReadTimeout above, making that 90s ineffective. Start the browser
+	// under its own budget first; the returned context then only has to cover
+	// the assertions. Windows runners can spend longer connecting to a freshly
+	// started browser when the package has already exercised several E2E
+	// fixtures, so this cold-start budget matches the allocator's generous
+	// websocket startup budget.
+	startCtx, startCancel := context.WithTimeout(browserCtx, 90*time.Second)
+	t.Cleanup(startCancel)
+	if err := chromedp.Run(startCtx); err != nil {
+		t.Fatalf("chrome did not start within 90s: %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(browserCtx, 90*time.Second)
 	t.Cleanup(cancel)
 	return ctx

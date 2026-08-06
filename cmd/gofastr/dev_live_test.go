@@ -467,7 +467,19 @@ location.reload = function() { window.__reloadCalled = true; };
 	defer allocCancel()
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
-	ctx, cancel := context.WithTimeout(browserCtx, 30*time.Second)
+
+	// chromedp starts Chrome lazily on the first Run, so one timeout would
+	// have to cover BOTH the cold start and the page work — and it caps the
+	// WSURLReadTimeout above, making that 90s ineffective. Start the browser
+	// under its own budget first; the work context then only has to cover the
+	// assertions.
+	startCtx, startCancel := context.WithTimeout(browserCtx, 90*time.Second)
+	defer startCancel()
+	if err := chromedp.Run(startCtx); err != nil {
+		t.Fatalf("chrome did not start within 90s: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
 	defer cancel()
 
 	// Load page.
