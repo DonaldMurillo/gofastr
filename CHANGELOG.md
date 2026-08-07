@@ -29,6 +29,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Five of seven shipped blueprints generated an app that did not compile.**
+  `blog`, `lms`, `portfolio`, `project-manager`, and `real-estate` each emitted
+  `app.go` using `context.Context` without importing `context`, and the four
+  with a home screen also emitted `screen_home.go` calling
+  `resource.PublicIsland()` without importing `framework/ui/resource`. Two
+  independent import-set bugs, both the same shape: a condition that re-derives
+  what the emitter already decided. `rbac` was computed *below* the import
+  block, so the `"context"` condition could not see it; and the screen walker
+  set `needs.resource` only for blocks declaring filters or transitions, while
+  `blueprintEntityListConfigExpr` attaches an island policy to *every*
+  entity_list — `resource.PublicIsland()` on an ungated screen. The walker now
+  asks `blueprintIslandPolicyExpr`, the emitter's own helper, instead of
+  guessing alongside it.
+
+  These survived because only two blueprints ever had their emitted Go
+  compiled: `examples/meridian` (a per-example build gate) and
+  `examples/ecommerce` (byte-parity against a committed `app/` that CI builds).
+  ecommerce declares no home screen and no `access:` role policy, so it is the
+  one example that reaches neither broken path. Every other blueprint was
+  covered solely by a test asserting its YAML parses.
+  `TestExampleBlueprintsGenerateAndCompile` now generates *and* builds *and*
+  vets every `examples/*/gofastr.yml`, so a generator path is gated the moment
+  any blueprint uses it.
+
 - **An idempotent request could be answered with another caller's response.**
   When a handler outran the in-flight TTL and a second request re-claimed the
   same `Idempotency-Key`, the first handler's `Finish` wrote its response into

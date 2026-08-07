@@ -5351,6 +5351,18 @@ func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string
 					if len(block.Filters) > 0 || len(block.Transitions) > 0 {
 						needs.resource = true
 					}
+					// An entity_list ALWAYS gets an island, and the island
+					// always carries the screen's own gate — see
+					// blueprintEntityListConfigExpr. On an ungated screen that
+					// gate is resource.PublicIsland(), which needs the import
+					// with no filters and no transitions declared. Ask the
+					// emitter's own helper instead of re-deriving the
+					// condition: the two answers drifting apart is precisely
+					// what shipped screen files calling resource.PublicIsland()
+					// without importing resource.
+					if isEntityListBlock(block) && strings.Contains(blueprintIslandPolicyExpr(screen), "resource.") {
+						needs.resource = true
+					}
 					continue
 				}
 				if blueprintCatalogKind(kind) {
@@ -6429,9 +6441,17 @@ func renderBlueprintApp(bp Blueprint) string {
 	// guestRedirect: bounce already-signed-in visitors off the auth screens.
 	authHeader := hasMarketing && bp.App.Auth.Enabled
 	guestRedirect := bp.App.Auth.Enabled && blueprintHasAuthFormScreen(bp)
+	// rbac gates the access.Middleware block, whose role-resolver closure is
+	// `func(ctx context.Context) []string`. It is computed HERE, above the
+	// import block, rather than beside the framework/access import below:
+	// leaving it below meant the "context" condition could not see it, so an
+	// app with `access:` entities but no auth-gated screen emitted
+	// context.Context without importing context. Every blueprint that reached
+	// that path shipped an app.go that did not compile.
+	rbac := bp.App.Auth.Enabled && blueprintHasEntityAccess(bp)
 	sb.WriteString("package main\n\n")
 	sb.WriteString("import (\n")
-	if adminSeed || hasAccess || roleNav || authHeader || guestRedirect {
+	if adminSeed || hasAccess || roleNav || authHeader || guestRedirect || rbac {
 		sb.WriteString("\t\"context\"\n")
 	}
 	sb.WriteString("\t\"database/sql\"\n")
@@ -6469,7 +6489,6 @@ func renderBlueprintApp(bp Blueprint) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/router\"\n")
 	}
-	rbac := bp.App.Auth.Enabled && blueprintHasEntityAccess(bp)
 	if hasAccess || rbac || roleNav || authHeader || guestRedirect {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
