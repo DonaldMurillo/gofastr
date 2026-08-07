@@ -45,7 +45,7 @@ Input is normalised: `"api"`, `"/api"`, and `"/api/"` all become
 | --- | --- |
 | **REST routes** | mounted at `/api/v1/<table>` (list/get/create/update/delete, `_batch`, `_events`, …). |
 | **Custom `Endpoints`** | a **relative** `Endpoint.Path` (`"{id}/publish"`) resolves under the prefixed table path → `/api/v1/posts/{id}/publish`. An **absolute** path (`"/health/posts"`) bypasses the prefix — the escape hatch for mounting outside the API namespace. |
-| **OpenAPI** (`/openapi.json`) | every operation path carries the prefix (`/api/v1/posts`), and `servers` stays `[{ url: "/" }]`. A documented path IS the path you request. |
+| **OpenAPI** (`/openapi.json`) | operation paths carry the prefix (`/api/v1/posts`) wherever the route does; an **absolute** `Endpoint.Path` bypasses the prefix in the document exactly as it does in the router. `servers` stays `[{ url: "/" }]`. Either way, a documented path IS the path you request. |
 | **MCP tools** | `posts_list` / `posts_get` / `posts_create` / … dispatch against the prefixed path, so an agent driving the app over MCP reaches the same routes as REST. |
 
 Because the prefix is part of one declaration, you never hand-edit the

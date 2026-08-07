@@ -61,15 +61,15 @@ func exampleBlueprints(t *testing.T) []string {
 // ./...` and a byte-parity test pins the generator to it.
 //
 // Those two were the ONLY blueprints whose emitted Go was ever compiled. The
-// other four — blog, lms, portfolio, project-manager, real-estate — were
+// other five — blog, lms, portfolio, project-manager, real-estate — were
 // covered solely by TestExampleBlueprintsLoad above, which checks that the YAML
-// parses. All four emitted code that did not compile, and neither of the two
+// parses. All five emitted code that did not compile, and neither of the two
 // gated examples could catch it: ecommerce declares no home screen and no
 // `access:` role policy, so it is the one example that never reaches either
 // broken generator path.
 //
 // The lesson is that a gate aimed at one fixture proves one fixture. This test
-// is aimed at all of them, so a generator path is covered the moment any
+// is aimed at all seven, so a generator path is covered the moment any
 // blueprint uses it.
 func TestExampleBlueprintsGenerateAndCompile(t *testing.T) {
 	if testing.Short() {

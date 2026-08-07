@@ -108,11 +108,11 @@ func TestAPIPrefix_OpenAPIPathsMatchLiveRoutes(t *testing.T) {
 		}
 
 		// A server entry that repeats the prefix would double it for any
-		// client that composes servers + paths.
-		for _, s := range servers {
-			if s != "/" {
-				t.Errorf("servers[].url = %q, want %q — the prefix now lives in the path keys, so repeating it here doubles it to /api/api/tickets", s, "/")
-			}
+		// client that composes servers + paths. Assert the count too: a
+		// range over an empty slice passes vacuously, which would leave the
+		// servers half of this contract untested.
+		if len(servers) != 1 || servers[0] != "/" {
+			t.Errorf("servers = %q, want exactly [\"/\"] — the prefix now lives in the path keys, so repeating it here doubles it to /api/api/tickets, and emitting none leaves clients without a base", servers)
 		}
 	})
 }
@@ -169,10 +169,8 @@ func TestAPIPrefix_DefaultOpenAPIPathsStayBare(t *testing.T) {
 				t.Errorf("unprefixed app documents %q, want a bare /tickets… path", p)
 			}
 		}
-		for _, s := range servers {
-			if s != "/" {
-				t.Errorf("servers[].url = %q, want \"/\" with no prefix configured", s)
-			}
+		if len(servers) != 1 || servers[0] != "/" {
+			t.Errorf("servers = %q, want exactly [\"/\"] with no prefix configured", servers)
 		}
 	})
 }

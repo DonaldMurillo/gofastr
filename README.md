@@ -194,7 +194,13 @@ To work on the framework itself, or run the examples:
 ```bash
 git clone https://github.com/DonaldMurillo/gofastr.git
 cd gofastr
-go test ./...                        # full suite needs Postgres (make postgres-up) and Chrome (chromedp e2e)
+go test ./...                        # SQLite + everything but the Postgres halves and chromedp e2e
+
+# The Postgres suites read TEST_POSTGRES_DSN and skip without it. `make
+# postgres-up` starts the service but cannot export into your shell:
+make postgres-up
+export TEST_POSTGRES_DSN='postgres://test:test@localhost:5432/framework_test?sslmode=disable'
+go test ./...                        # now both dialects (Chrome still needed for chromedp e2e)
 go run ./cmd/gofastr --help          # CLI overview
 go run ./examples/blog               # minimal blog with auto-CRUD on SQLite
 ```

@@ -111,6 +111,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `cmd/repolint` gained a `test-only-dep-in-consumer-graph` rule so a test-only
   dependency cannot return to the root `go.mod` unnoticed.
 
+  One consequence for anyone running the Postgres suites locally: all test
+  processes now share a single server instead of getting an ephemeral
+  container each, so per-test schema names have to be unique across processes.
+  `testdb.NewSchemaName` now embeds the pid (`internal/pgtest` always did), and
+  the one test that created a fixed database-scoped schema drops it on
+  cleanup. Without those, `go test -p 2` raced itself with `schema … already
+  exists`.
+
 - **`gofastr generate --from=` outside a Go module recommended a command that
   could not run.** It reported plain success and led its next steps with
   `go mod tidy`, which fails with a raw `go.mod file not found in current

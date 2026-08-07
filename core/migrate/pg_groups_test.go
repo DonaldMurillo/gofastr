@@ -11,6 +11,8 @@ package migrate_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"os"
 	"sync"
 	"testing"
 
@@ -234,10 +236,22 @@ func TestPG_SiblingSchemaDoesNotFalsePositive(t *testing.T) {
 	db := pgtest.DB(t)
 	ctx := context.Background()
 
-	if _, err := db.Exec(`CREATE SCHEMA zz_sibling`); err != nil {
+	// CREATE SCHEMA is database-scoped, not scoped to the per-test schema
+	// pgtest.DB hands back, so a fixed name leaks into the shared server and
+	// collides with the next run. That was invisible while every test process
+	// got its own ephemeral container; against one long-lived Postgres — the
+	// CI service, or a local `make postgres-up` — the second run fails with
+	// `schema "zz_sibling" already exists`. CI's coverage-floors step re-runs
+	// this package in the same job, so the collision is guaranteed, not racy.
+	sibling := fmt.Sprintf("zz_sibling_%d", os.Getpid())
+	if _, err := db.Exec(`CREATE SCHEMA ` + sibling); err != nil {
 		t.Fatalf("create sibling schema: %v", err)
 	}
-	if _, err := db.Exec(`CREATE TABLE zz_sibling._migrations (
+	t.Cleanup(func() {
+		// Best-effort: the assertions above already stand or fall on their own.
+		_, _ = db.Exec(`DROP SCHEMA IF EXISTS ` + sibling + ` CASCADE`)
+	})
+	if _, err := db.Exec(`CREATE TABLE ` + sibling + `._migrations (
 		group_name TEXT NOT NULL DEFAULT '',
 		version    BIGINT NOT NULL,
 		name       TEXT NOT NULL DEFAULT '',

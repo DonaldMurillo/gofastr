@@ -272,13 +272,48 @@ func lintConsumerModuleGraph(root string) ([]finding, error) {
 		return nil, err
 	}
 	var out []finding
+	// Only `require` entries put a module in a consumer's graph. A `replace`
+	// line does not, and matching one would report a finding that cannot be
+	// acted on. Track which block each line sits in, and handle both the
+	// parenthesised block and the single-line `require x v1` form.
+	inRequireBlock := false
+	inOtherBlock := false
 	for i, line := range strings.Split(string(body), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "//") {
 			continue
 		}
+		switch {
+		case trimmed == "require (":
+			inRequireBlock = true
+			continue
+		case strings.HasSuffix(trimmed, "("):
+			// replace ( / exclude ( / retract (
+			inOtherBlock = true
+			continue
+		case trimmed == ")":
+			inRequireBlock, inOtherBlock = false, false
+			continue
+		}
+		if inOtherBlock {
+			continue
+		}
+		entry := trimmed
+		if !inRequireBlock {
+			rest, ok := strings.CutPrefix(trimmed, "require ")
+			if !ok {
+				continue
+			}
+			entry = strings.TrimSpace(rest)
+		}
+		// The module path is the first field; the version and any
+		// `// indirect` marker follow it.
+		path, _, _ := strings.Cut(entry, " ")
 		for _, mod := range testOnlyModules {
-			if !strings.HasPrefix(trimmed, mod) {
+			// Exact match, or a submodule of it — testcontainers-go and
+			// testcontainers-go/modules/postgres are both the same problem,
+			// while a hypothetical testcontainers-go-helpers is not.
+			if path != mod && !strings.HasPrefix(path, mod+"/") {
 				continue
 			}
 			out = append(out, finding{

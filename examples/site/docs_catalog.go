@@ -52,6 +52,7 @@ var docIntents = []docIntent{
 		Lede: "What GoFastr is, how a project is laid out, and a map of every feature — the newcomer narrative before the per-feature references.",
 		Path: []string{"Overview", "Tutorial: blueprint app", "Project structure"},
 		Docs: []docEntry{
+			{"backend-capability-map", "Backend capability map", "One row per job — scope rows to a user, add auth, run background work — with the symbols to compose and a command that proves it."},
 			{"overview", "Overview", "What the framework is, the two layers, and a linked map of every capability."},
 			{"cli", "The gofastr CLI", "Every subcommand mapped to its doc — init, dev, migrate, generate, audit, upgrade."},
 			{"tutorial-blueprint-app", "Tutorial: blueprint app", "The optional blueprint scaffolder end to end: one gofastr.yml becomes a UI + API you own, in about twenty minutes."},
@@ -151,6 +152,7 @@ var docIntents = []docIntent{
 			{"email", "Email", "SMTP sending, a dev log sender, and template rendering."},
 			{"dotenv", "Env / .env", "core/dotenv auto-loaded by NewApp."},
 			{"core-packages", "Core packages", "A map of the exported core/* packages and when to reach for each directly."},
+			{"sqlite-engine", "The in-house SQLite engine", "Why the repo carries a second, from-scratch SQLite for testing — and why an application never imports it."},
 		},
 	},
 	{

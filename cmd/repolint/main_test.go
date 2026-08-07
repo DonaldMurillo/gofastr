@@ -201,3 +201,80 @@ func TestLintRepoAcceptsLowercaseFeatureDocs(t *testing.T) {
 		t.Fatalf("unexpected findings: %+v", findings)
 	}
 }
+
+// The test-only-dep rule has to distinguish three shapes that a naive
+// strings.HasPrefix over every go.mod line conflates: a real require (report
+// it), a replace directive (do not — a replace does not put the module in a
+// consumer's graph, so there is nothing to act on), and a different module
+// that merely starts with the same characters (do not — a false positive in a
+// blocking lint is worse than the dependency it guards).
+//
+// The submodule case is the one that must keep working: the dependency that
+// prompted this rule was required as testcontainers-go/modules/postgres, not
+// as testcontainers-go, so exact equality alone would miss it.
+func TestConsumerModuleGraphRuleDistinguishesRequireFromReplace(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go.mod", `module example.com/app
+
+go 1.26
+
+require (
+	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
+	github.com/testcontainers/testcontainers-go-helpers v1.0.0
+	github.com/other/thing v1.2.3
+)
+
+require github.com/testcontainers/testcontainers-go v0.42.0 // indirect
+
+replace github.com/testcontainers/testcontainers-go => ../local/testcontainers
+`)
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	var lines []int
+	for _, f := range findings {
+		if f.Rule == "test-only-dep-in-consumer-graph" {
+			lines = append(lines, f.Line)
+		}
+	}
+	// Line 6: the submodule require. Line 11: the single-line indirect
+	// require. Nothing else: line 7 is a lookalike module, line 13 is a
+	// replace.
+	if len(lines) != 2 {
+		t.Fatalf("flagged lines %v, want exactly the two require entries (6 and 11) — a replace directive and a same-prefix module must not be reported", lines)
+	}
+	for _, want := range []int{6, 11} {
+		found := false
+		for _, got := range lines {
+			if got == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("did not flag go.mod line %d; flagged %v", want, lines)
+		}
+	}
+}
+
+// The rule must stay silent on a go.mod that requires none of them, or it
+// blocks every clean tree.
+func TestConsumerModuleGraphRuleQuietWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go.mod", `module example.com/app
+
+go 1.26
+
+require github.com/other/thing v1.2.3
+`)
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	for _, f := range findings {
+		if f.Rule == "test-only-dep-in-consumer-graph" {
+			t.Errorf("unexpected finding on a clean go.mod: %+v", f)
+		}
+	}
+}

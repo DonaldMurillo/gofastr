@@ -3,9 +3,9 @@
 // framework/internal/testdb, which is import-restricted to the framework tree.
 //
 // Resolution (memoised once per process):
-//  1. TEST_POSTGRES_DSN env var — CI's `postgres:16-alpine` service sets it;
-//     locally, `make postgres-up` starts the docker-compose service and
-//     `make test-pg` exports the matching DSN.
+//  1. TEST_POSTGRES_DSN env var — CI's `pgvector/pgvector:pg16` service sets
+//     it; locally, `make postgres-up` starts the docker-compose service (same
+//     image) and `make test-pg` exports the matching DSN.
 //  2. unset → t.Skip locally; under CI (PGTEST_REQUIRED=1 or
 //     GITHUB_ACTIONS=true) escalate to t.Fatal so the ~30 real-PG suites can't
 //     silently degrade to SQLite-only behind a green build.

@@ -42,6 +42,12 @@ curl localhost:8080/healthz          # is it up
 curl localhost:8080/openapi.json | jq '.paths | keys'   # every mounted API path
 ```
 
+Every `/api/…` path below assumes `framework.WithAPIPrefix("/api")` from the
+snippet above. It is **optional**: without it, entities mount at the bare
+`/tickets`, and every command here works with the `/api` dropped. Reach for
+`curl localhost:8080/openapi.json | jq '.paths | keys'` when you are unsure —
+under either setting, a documented path is the path you request.
+
 **`/openapi.json` and `/api/llm.md` answer `401` by default** — the schema is
 a disclosure, so both are behind the auth gate until you pass
 `framework.WithPublicOpenAPI()`. That is not a bug to debug; the startup

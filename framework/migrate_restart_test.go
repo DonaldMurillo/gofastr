@@ -146,5 +146,34 @@ func TestRepeatedStartsPreserveEveryRow(t *testing.T) {
 		if n := countTickets(t, db); n != seeded {
 			t.Fatalf("after a schema change and a restart: %d rows, want %d", n, seeded)
 		}
+
+		// The count alone would pass if a migration rebuilt the table with
+		// duplicated or blanked titles — same cardinality, different data,
+		// which is still data loss. Compare every value.
+		rows, err := db.Query(`SELECT title FROM tickets ORDER BY title`)
+		if err != nil {
+			t.Fatalf("read surviving rows: %v", err)
+		}
+		defer rows.Close()
+		var got []string
+		for rows.Next() {
+			var title string
+			if err := rows.Scan(&title); err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			got = append(got, title)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("iterate: %v", err)
+		}
+		for i := range seeded {
+			want := fmt.Sprintf("ticket-%03d", i)
+			if i >= len(got) {
+				t.Fatalf("row %d (%q) is missing after the restart", i, want)
+			}
+			if got[i] != want {
+				t.Fatalf("row %d = %q, want %q — the rows survived but their contents did not", i, got[i], want)
+			}
+		}
 	})
 }

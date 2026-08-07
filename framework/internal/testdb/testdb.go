@@ -151,10 +151,18 @@ func ForEachDialect(t *testing.T, fn func(t *testing.T, db *sql.DB, dialect migr
 var schemaCounter atomic.Uint64
 
 // NewSchemaName produces a unique, lowercase, identifier-safe schema name
-// from the test's name plus a process-local counter. Postgres identifiers
-// have a 63-byte cap; truncated aggressively.
+// from the test's name, the process id, and a process-local counter. Postgres
+// identifiers have a 63-byte cap; truncated aggressively.
+//
+// The pid is load-bearing, not decoration. The counter alone is process-local,
+// which was sufficient only while every test process got its own ephemeral
+// container: `go test -p 2` runs packages as separate processes, and against
+// one shared Postgres — the CI service, or a local `make postgres-up` — two of
+// them reach `t_<sametest>_1` and the second fails to create its schema.
+// internal/pgtest has always included the pid for this reason.
 func NewSchemaName(t *testing.T) string {
 	id := schemaCounter.Add(1)
+	pid := os.Getpid()
 	clean := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
@@ -165,10 +173,13 @@ func NewSchemaName(t *testing.T) string {
 			return '_'
 		}
 	}, t.Name())
-	if len(clean) > 40 {
-		clean = clean[:40]
+	// 40 chars of test name + the pid and counter suffixes stay inside
+	// Postgres's 63-byte identifier cap. Trimmed to 30 to make room for the
+	// pid without silently truncating the discriminator instead of the name.
+	if len(clean) > 30 {
+		clean = clean[:30]
 	}
-	return fmt.Sprintf("t_%s_%d", clean, id)
+	return fmt.Sprintf("t_%s_%d_%d", clean, pid, id)
 }
 
 // WaitPGReady pings the database with linear backoff until it answers or

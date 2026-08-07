@@ -4,6 +4,15 @@ import (
 	"database/sql"
 	"slices"
 	"testing"
+
+	// Registers modernc.org/sqlite as "sqlite3" — the thing this test asserts
+	// the in-house engine is NOT. Imported here rather than relied on
+	// transitively: the only other import of it in this package is
+	// cgo_bench_test.go, which is behind `//go:build cgo`, so under
+	// CGO_ENABLED=0 "sqlite3" went unregistered and the assertion below
+	// skipped itself. A guard against a silent failure must not fail
+	// silently.
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // TestEngineNeverClaimsTheDefaultDriverName is the load-bearing guard on this
