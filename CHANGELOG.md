@@ -48,6 +48,32 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   cannot exercise it through a module — but it is a behavior change for a host
   that relied on the carve-out silently not applying.
 
+### Added
+
+- **`gofastr docs backend-capability-map` — one page from job to primitive to
+  proof.** The 2026-07-26 backend eval measured GoFastr at 313,579 cold-start
+  tokens against Gin's 72,172 (4.35×) for 48% fewer lines of application code:
+  the compression is real, and finding the primitive is what costs. Its sixth
+  next-move was "one short capability map and exact verification commands
+  before deep topical docs". `ui-capability-map.md` already did that for the
+  UI lane; the backend lane — where the tokens actually went — had nothing.
+
+  One row per job (scope rows to a user, add auth, run background work, prove
+  the API works), naming the symbols to compose, a command that verifies it,
+  and the one topic to open next. Generated `AGENTS.md` now points at both
+  maps above everything else, so an agent lands on a row before it opens a
+  reference.
+
+  Three tests keep it honest, because a lookup table that lies costs more than
+  no lookup table: every `pkg.Symbol` it names must be exported by a real
+  package (it caught two wrong references while being written), every doc link
+  must resolve to an embedded topic, and every `gofastr <sub>` must be in the
+  CLI's dispatch table. The verification commands were run against a live
+  scaffold rather than assumed — which is how the page came to state that
+  `/openapi.json` and `/api/llm.md` answer 401 by default, that `/metrics`
+  404s until `WithMetrics()`, and that a granular option placed before
+  `WithConfig` is silently zeroed by it.
+
 ### Fixed
 
 - **The in-house SQLite engine is documented.** `sqlite/` holds a

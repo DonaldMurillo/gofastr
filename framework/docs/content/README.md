@@ -10,6 +10,10 @@ results, the harness contract) are exempt — the exemption list lives in
 
 ## Start here
 
+- [Backend capability map](backend-capability-map.md) — one row per job
+  (scope rows to a user, add auth, prove the API works), the symbols to
+  compose, and a command that verifies it. Land here before opening any
+  topic page below.
 - [UI capability map](ui-capability-map.md) — start from a product job
   such as a live dashboard, optimistic board, master/detail workspace,
   or server-authoritative reactive SaaS; choose state and delivery
