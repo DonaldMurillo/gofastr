@@ -76,6 +76,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **A process module's migrations failed on every deploy after the first.**
+  `provisionModuleSchemaRole` creates the module's restricted Postgres role
+  inside `DO $$ … CREATE ROLE … PASSWORD '<new>' … EXCEPTION WHEN
+  duplicate_object THEN null; END $$`. That is idempotent for the role's
+  *existence* and a silent no-op for its *password*: roles are cluster-scoped,
+  so on the second deploy the role already exists, the `CREATE` raises
+  `duplicate_object`, the handler swallows it, and the role keeps its original
+  secret. The following `ALTER ROLE` re-asserted every privilege flag but not
+  the password. The coordinator's very next step is to authenticate as that
+  role with the freshly generated one, so it got `password authentication
+  failed for user "module_<name>_role" (28P01)` and the migration never ran.
+
+  The `ALTER ROLE` now re-asserts `LOGIN PASSWORD` alongside the flags. The
+  DDL is split into `moduleSchemaRoleStmts` so the invariant is pinned by an
+  ordinary unit test rather than one that needs a live server — the defect
+  survived precisely because it was only reachable with a *pre-existing* role,
+  and CI handed every test process a throwaway Postgres container where no
+  role ever pre-existed. Sharing one server is what exposed it.
+
 - **The in-house SQLite engine is documented.** `sqlite/` holds a
   from-scratch SQLite — pager, B-tree, parser, file format, ~7k lines plus as
   many again in tests — that nothing outside this repo should ever import. It
