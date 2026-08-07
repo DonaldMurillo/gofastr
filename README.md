@@ -194,7 +194,7 @@ To work on the framework itself, or run the examples:
 ```bash
 git clone https://github.com/DonaldMurillo/gofastr.git
 cd gofastr
-go test ./...                        # full suite needs Docker (Postgres testcontainers) and Chrome (chromedp e2e)
+go test ./...                        # full suite needs Postgres (make postgres-up) and Chrome (chromedp e2e)
 go run ./cmd/gofastr --help          # CLI overview
 go run ./examples/blog               # minimal blog with auto-CRUD on SQLite
 ```
@@ -436,7 +436,7 @@ running, every dialect-aware test runs on both engines automatically:
 
 ```bash
 make test            # SQLite only, fast
-make test-pg         # both dialects via testcontainers (Docker)
+make test-pg         # both dialects against the docker-compose Postgres
 make test-pg-env     # both dialects, points at TEST_POSTGRES_DSN
 make test-race       # race detector across the whole repo
 ```

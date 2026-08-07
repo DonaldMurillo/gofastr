@@ -79,14 +79,38 @@ jobs:
     timeout-minutes: 45
     env:
       CGO_ENABLED: "1" # mattn/go-sqlite3 requires cgo
-      # Fail-closed for the real-Postgres suites: when set, internal/pgtest
-      # escalates the no-Postgres t.Skip to t.Fatal so the ~30 dual-dialect
-      # tests can't silently degrade to SQLite-only behind a green build
-      # (e.g. if testcontainers breaks on a runner-image bump). Ubuntu
-      # runners have Docker, so testcontainers spins up postgres:16-alpine;
-      # this var just guarantees that fact is asserted, not assumed. Local
-      # dev leaves it unset → tests keep skipping when Docker is absent.
+      # Every Postgres suite in the repo resolves through TEST_POSTGRES_DSN.
+      # The service below supplies it. This replaced testcontainers-go, which
+      # spawned the container from inside the tests but had to be a require in
+      # the root go.mod — and Go hands a module's requirements to everything
+      # importing it, so every app built on GoFastr resolved the Docker client
+      # stack. See cmd/repolint's test-only-dep-in-consumer-graph rule.
+      TEST_POSTGRES_DSN: "postgres://test:test@localhost:5432/framework_test?sslmode=disable"
+      # Fail-closed for the real-Postgres suites: internal/pgtest escalates the
+      # no-Postgres t.Skip to t.Fatal so the ~30 dual-dialect tests can't
+      # silently degrade to SQLite-only behind a green build. That guard now
+      # covers this wiring too — a service that fails to come up, or a DSN that
+      # drifts from it, fails the job instead of quietly skipping. Local dev
+      # leaves it unset → tests keep skipping when no Postgres is around.
       PGTEST_REQUIRED: "1"
+    services:
+      # pgvector/pgvector:pg16 is stock Postgres 16 plus the `vector`
+      # extension, so this one service also covers battery/semantic's pgvector
+      # store. Mirrors the `postgres` service in docker-compose.yml, which is
+      # what `make test-pg` starts locally — keep the two images in step.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: framework_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d framework_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 

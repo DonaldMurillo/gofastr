@@ -1,16 +1,44 @@
 # Dev-only Docker services for GoFastr.
 #
-# Today this is just Ollama — a local embedding/model server consumed
-# by battery/semantic.OllamaEmbedder and the live-tagged test suite.
+#   ollama    — local embedding/model server consumed by
+#               battery/semantic.OllamaEmbedder and the live-tagged suite.
+#   postgres  — the real-Postgres test target for the ~30 dual-dialect
+#               suites, plus battery/{auth,search,semantic}.
 #
-# Bring up:    make ollama-up         (or: docker compose up -d ollama)
-# Run tests:   make semantic-live
-# Tear down:   make ollama-down       (or: docker compose down)
+# Bring up:    make ollama-up | make postgres-up   (or: docker compose up -d <svc>)
+# Run tests:   make semantic-live  | make test-pg
+# Tear down:   make ollama-down | make postgres-down
 #
 # Model files persist in ./.ollama/ (bind-mounted, gitignored) so
 # `ollama pull <model>` is a one-time cost per workstation.
 
 services:
+  postgres:
+    # pgvector/pgvector:pg16 is stock Postgres 16 PLUS the `vector`
+    # extension. One image therefore serves every Postgres suite in the
+    # repo — the plain-SQL ones and battery/semantic's pgvector store —
+    # so there is a single TEST_POSTGRES_DSN rather than two.
+    image: pgvector/pgvector:pg16
+    container_name: gofastr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: framework_test
+    ports:
+      # Loopback-only, same reasoning as ollama below: this is a
+      # trust-nothing dev database with a guessable password.
+      - "127.0.0.1:5432:5432"
+    # No volume on purpose. Test databases are disposable, and a
+    # persisted one silently carries a stale schema between branches —
+    # the exact failure the dual-dialect suites exist to catch.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d framework_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
   ollama:
     image: ollama/ollama:latest
     container_name: gofastr-ollama

@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 // Postgres integration tests for PostgresSearch. Postgres comes from
@@ -30,7 +30,6 @@ var (
 	searchPGErr     error
 	searchPGUsing   string
 	searchPGLogged  atomic.Bool
-	searchPGKeepRef *tcpostgres.PostgresContainer
 )
 
 func resolveSearchPG() (string, error) {
@@ -40,25 +39,7 @@ func resolveSearchPG() (string, error) {
 			searchPGUsing = "env"
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		c, err := tcpostgres.Run(ctx, "postgres:16-alpine",
-			tcpostgres.WithDatabase("search_test"),
-			tcpostgres.WithUsername("test"),
-			tcpostgres.WithPassword("test"),
-		)
-		if err != nil {
-			searchPGErr = fmt.Errorf("testcontainers: %w", err)
-			return
-		}
-		dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-		if err != nil {
-			searchPGErr = err
-			return
-		}
-		searchPGBaseDSN = dsn
-		searchPGUsing = "container"
-		searchPGKeepRef = c
+		searchPGErr = errNoPG
 	})
 	return searchPGBaseDSN, searchPGErr
 }
@@ -465,3 +446,8 @@ func TestPostgresHyphenatedQueryTerm(t *testing.T) {
 		t.Fatalf("hyphenated first term missed: %#v", got)
 	}
 }
+
+// errNoPG mirrors battery/auth: env-supplied Postgres or skip. See
+// cmd/repolint's test-only-dep-in-consumer-graph rule for why the
+// testcontainers fallback was removed.
+var errNoPG = errors.New("TEST_POSTGRES_DSN is not set — `make postgres-up` starts one")

@@ -111,6 +111,11 @@ func lintRepo(root string) ([]finding, error) {
 		return nil, err
 	}
 	findings = append(findings, rootMDFindings...)
+	graphFindings, err := lintConsumerModuleGraph(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, graphFindings...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
 			return findings[i].File < findings[j].File
@@ -234,6 +239,57 @@ func lintBytes(rel string, body []byte) []finding {
 		}
 	}
 	return out
+}
+
+// testOnlyModules are dependencies that exist purely to run GoFastr's own
+// tests. They must never appear in the root go.mod, because a require there is
+// inherited by every application that imports the framework: Go records a
+// checksum for each of the dependency's requirements, so `go mod tidy` in a
+// hello-world app resolves them all. Measured before this rule existed, the
+// testcontainers require dragged the whole Docker client stack — go-winio,
+// go-ansiterm, plan9stats, perfstat, purego, wmi, go-ole — into a scaffold
+// that never starts a container.
+//
+// The escape route is not a build tag: `go mod tidy` considers every build
+// configuration, so a tagged file's imports are recorded anyway. A test-only
+// dependency has to be absent from the module's packages entirely — reached
+// through an env var the CI lane supplies, or moved to a nested module.
+//
+// chromedp and lib/pq deliberately are NOT listed: battery/print renders PDFs
+// with the former and framework/fanout speaks Postgres with the latter, so both
+// are genuine runtime dependencies of code an app can import.
+var testOnlyModules = []string{
+	"github.com/testcontainers/testcontainers-go",
+}
+
+// lintConsumerModuleGraph keeps test-only dependencies out of the root go.mod.
+func lintConsumerModuleGraph(root string) ([]finding, error) {
+	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []finding
+	for i, line := range strings.Split(string(body), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		for _, mod := range testOnlyModules {
+			if !strings.HasPrefix(trimmed, mod) {
+				continue
+			}
+			out = append(out, finding{
+				File:    "go.mod",
+				Line:    i + 1,
+				Rule:    "test-only-dep-in-consumer-graph",
+				Message: mod + " is test-only; a require here is inherited by every app that imports GoFastr. Supply it through TEST_POSTGRES_DSN in CI, or move it to a nested module",
+			})
+		}
+	}
+	return out, nil
 }
 
 func lintRepositoryTruth(root string) ([]finding, error) {

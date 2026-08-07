@@ -55,9 +55,9 @@ dist/bench/new.txt`.
 Postgres benchmarks resolve a connection via the same path as the test
 suite:
 
-1. `TEST_POSTGRES_DSN` env var, or
-2. testcontainers-go (requires Docker), or
-3. **skip** — Postgres sub-benchmarks are silently skipped, not failed.
+1. `TEST_POSTGRES_DSN` env var (`make postgres-up` starts one via
+   docker-compose and prints the DSN), or
+2. **skip** — Postgres sub-benchmarks are silently skipped, not failed.
 
 `make bench-pg` fails fast if neither path is available; `make bench` and
 the tier targets will just skip the Postgres half.

@@ -2,12 +2,21 @@
 // package in the module (core/migrate, cmd/gofastr, …) without importing
 // framework/internal/testdb, which is import-restricted to the framework tree.
 //
-// Resolution order (memoised once per process):
-//  1. TEST_POSTGRES_DSN env var — point CI at an existing server.
-//  2. testcontainers postgres:16-alpine — spun up on demand (needs Docker).
-//  3. neither reachable → t.Skip locally; under CI (PGTEST_REQUIRED=1 or
+// Resolution (memoised once per process):
+//  1. TEST_POSTGRES_DSN env var — CI's `postgres:16-alpine` service sets it;
+//     locally, `make postgres-up` starts the docker-compose service and
+//     `make test-pg` exports the matching DSN.
+//  2. unset → t.Skip locally; under CI (PGTEST_REQUIRED=1 or
 //     GITHUB_ACTIONS=true) escalate to t.Fatal so the ~30 real-PG suites can't
 //     silently degrade to SQLite-only behind a green build.
+//
+// This used to spawn postgres:16-alpine through testcontainers-go when the env
+// var was unset. Convenient, but testcontainers had to be a require in the root
+// go.mod, and Go hands a module's requirements to everything that imports it —
+// so every application built on GoFastr resolved the Docker client stack to run
+// `go mod tidy` on a hello-world. A build tag would not have helped: tidy walks
+// every build configuration. The env var was already the preferred path and the
+// documented one for CI, so the container branch was removed rather than hidden.
 //
 // Each DB(t) hands back a connection scoped to a unique schema (search_path),
 // so concurrent tests don't collide, with cleanup registered on t.
@@ -16,6 +25,7 @@ package pgtest
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -26,7 +36,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 var (
@@ -38,6 +47,13 @@ var (
 	logged     atomic.Bool
 )
 
+// errNoPostgres is what every caller sees when TEST_POSTGRES_DSN is unset. It
+// names the two ways to supply one rather than reporting a bare absence.
+var errNoPostgres = errors.New(
+	"TEST_POSTGRES_DSN is not set — start one with `make postgres-up` (docker compose) " +
+		"or point at an existing server, e.g. " +
+		"TEST_POSTGRES_DSN='postgres://test:test@localhost:5432/pgtest?sslmode=disable'")
+
 // resolve returns a base DSN to a working Postgres, or an error describing why
 // one isn't reachable. Memoised across the whole test process.
 func resolve() (string, error) {
@@ -46,25 +62,7 @@ func resolve() (string, error) {
 			baseDSN, using = dsn, "env"
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-		defer cancel()
-		c, err := postgres.Run(ctx, "postgres:16-alpine",
-			postgres.WithDatabase("pgtest"),
-			postgres.WithUsername("test"),
-			postgres.WithPassword("test"),
-		)
-		if err != nil {
-			resolveErr = fmt.Errorf("testcontainers postgres: %w", err)
-			return
-		}
-		dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-		if err != nil {
-			resolveErr = err
-			return
-		}
-		baseDSN, using = dsn, "container"
-		// The container is intentionally not terminated: it is shared across
-		// every test in the process and reaped when the test binary exits.
+		resolveErr = errNoPostgres
 	})
 	return baseDSN, resolveErr
 }

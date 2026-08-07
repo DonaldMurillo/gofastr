@@ -50,6 +50,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Every app built on GoFastr inherited the Docker client stack.**
+  `testcontainers-go` was a direct require in the root `go.mod` — used only to
+  spawn `postgres:16-alpine` for this repo's own tests — and Go hands a
+  module's requirements to everything that imports it. A hello-world scaffold
+  therefore resolved 95 modules and 178 `go.sum` lines, pulling `go-winio`,
+  `go-ansiterm`, `plan9stats`, `perfstat`, `purego`, `wmi`, `go-ole` and
+  `pprof` to run `go mod tidy`. It is now **57 modules and 100 `go.sum`
+  lines**, with zero Docker-stack entries.
+
+  Every Postgres suite already preferred `TEST_POSTGRES_DSN`; the container
+  branch behind it was removed rather than hidden, because `go mod tidy` walks
+  every build configuration and a build tag would have kept the require. CI
+  supplies the DSN from a `pgvector/pgvector:pg16` service, and
+  `docker-compose.yml` gained a matching `postgres` service — `make
+  postgres-up` starts it, `make test-pg` starts it and runs against it. One
+  image covers the plain-SQL suites and `battery/semantic`'s pgvector store
+  alike. The fail-closed `PGTEST_REQUIRED` canary now also guards this wiring:
+  a service that fails to come up fails the job instead of skipping quietly.
+  `cmd/repolint` gained a `test-only-dep-in-consumer-graph` rule so a test-only
+  dependency cannot return to the root `go.mod` unnoticed.
+
 - **`gofastr generate --from=` outside a Go module recommended a command that
   could not run.** It reported plain success and led its next steps with
   `go mod tidy`, which fails with a raw `go.mod file not found in current
