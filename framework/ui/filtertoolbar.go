@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -245,6 +246,14 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		formAttrs["id"] = cfg.ID
 	}
 	for k, v := range cfg.ExtraAttrs {
+		// HTML attribute names are case-insensitive, so a case-variant key
+		// ("Action"/"ACTION"/"AcTiOn") would survive a lowercase-only drop,
+		// render as a second attribute, and fold back onto "action" in the
+		// parser (first occurrence wins) — silently reversing the
+		// urlsafe.CleanAnchor pass below. Drop every case-variant here.
+		if strings.EqualFold(k, "action") {
+			continue
+		}
 		formAttrs[k] = v
 	}
 	// The sanitized action must win: ExtraAttrs is a developer escape hatch,

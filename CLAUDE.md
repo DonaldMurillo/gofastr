@@ -99,8 +99,10 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
    CSS the components don't provide is a gap to fix upstream, never a patch.
 10. **Read the PR's line-level review comments before merging.** After
     opening a PR and after every push to it, run
-    `gh api repos/DonaldMurillo/gofastr/pulls/<N>/comments` — the
-    line-level review lives there, NOT in `gh pr view --json comments`,
+    `gh api --paginate repos/DonaldMurillo/gofastr/pulls/<N>/comments` — the
+    `--paginate` is load-bearing: without it the fetch silently stops at the
+    first page, so a multi-page review (exactly the miss this rule exists to
+    catch) looks empty. The line-level review lives there, NOT in
     which returns only issue-level comments. A review bot showing `pass`
     in `gh pr checks` means it RAN, not that it found nothing: PR #198
     showed `CodeRabbit pass` while holding 12 unread comments, six of

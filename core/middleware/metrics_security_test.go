@@ -119,9 +119,15 @@ func TestMetricsCollectorPanicIsolated(t *testing.T) {
 // line ("partial_metric{...} " with no value or newline) survived the
 // recover and corrupted the output — a truncated line a Prometheus parser
 // rejects, dropping families after it too. The good families still appear.
+//
+// Collectors run in SORTED name order, so the names are chosen to put
+// "partial" in the MIDDLE (aaa_good < partial < zzz_also_good): a collector
+// runs both before AND after the panicking one. With the old names
+// (good/partial/also_good) "partial" sorted last, so the test proved nothing
+// about a collector running after the panic.
 func TestMetricsCollectorPanicDiscardsPartialOutput(t *testing.T) {
 	m := NewMetrics()
-	m.RegisterCollector("good", func(w io.Writer) {
+	m.RegisterCollector("aaa_good", func(w io.Writer) {
 		fmt.Fprintln(w, "good_metric 42")
 	})
 	m.RegisterCollector("partial", func(w io.Writer) {
@@ -129,7 +135,7 @@ func TestMetricsCollectorPanicDiscardsPartialOutput(t *testing.T) {
 		fmt.Fprint(w, "partial_metric{label=\"x\"} ")
 		panic("mid-write explosion")
 	})
-	m.RegisterCollector("also_good", func(w io.Writer) {
+	m.RegisterCollector("zzz_also_good", func(w io.Writer) {
 		fmt.Fprintln(w, "also_good_metric 7")
 	})
 

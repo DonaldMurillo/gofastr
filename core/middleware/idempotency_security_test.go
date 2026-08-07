@@ -399,9 +399,18 @@ func runReclaimOneWinner(t *testing.T, s IdempotencyStore, key string, reseed fu
 				case errors.Is(err, ErrInFlight), errors.Is(err, ErrFingerprintMismatch):
 					// Expected: lost the race to another claimant, or a
 					// sibling won under a different fingerprint.
-				default:
+				case err == nil && ok:
 					// ok==true (replay) is impossible against a seeded
-					// in-flight row; any other error is a store fault.
+					// in-flight row. The store-fault default below sends
+					// err — which is nil here — so the post-loop nil check
+					// never fired and a replay passed silently. Surface a
+					// non-nil error so the race is actually caught.
+					select {
+					case unexpected <- fmt.Errorf("unexpected replay: Begin returned ok=true (a response) against a seeded in-flight row"):
+					default:
+					}
+				default:
+					// Any other error is a store fault.
 					select {
 					case unexpected <- err:
 					default:

@@ -847,24 +847,58 @@ func schemeOf(u string) string {
 }
 
 // TestFilterToolbarExtraAttrsCannotOverrideAction pins that the sanitized
-// form action is NOT silently reversible via ExtraAttrs. #198 ran cfg.Action
-// through urlsafe.CleanAnchor, but the ExtraAttrs merge that followed wrote
-// cfg.ExtraAttrs["action"] straight over the sanitized value — so a
-// developer-supplied "javascript:" action undid the sanitizer our own code
-// just applied. The sanitized action must win. (SearchInput merges
-// ExtraAttrs into the <input>, never the <form>, so it does not share this
-// shape — covered by TestFormActionSinksRejectUnsafeURL instead.)
+// form action is NOT silently reversible via ExtraAttrs — including via a
+// case-VARIANT key, because HTML attribute names are case-insensitive.
+// #198 ran cfg.Action through urlsafe.CleanAnchor but let the ExtraAttrs
+// merge write cfg.ExtraAttrs["action"] straight over it; #199 dropped the
+// lowercase "action" key from ExtraAttrs. A mixed-case key ("Action" /
+// "ACTION" / "AcTiOn") still survived as a distinct map entry, rendered as a
+// SECOND attribute, and the HTML parser folds duplicate attributes back onto
+// "action" (first occurrence wins) — so whichever rendered first became the
+// live form action, silently reversing the sanitizer. Property × key-case:
+// the sanitized action must be the ONLY attribute that folds to "action".
 func TestFilterToolbarExtraAttrsCannotOverrideAction(t *testing.T) {
-	out := string(ui.FilterToolbar(ui.FilterToolbarConfig{
-		Action:     "/search",
-		HideReset:  true,
-		Sort:       []ui.SortOption{{Value: "x", Label: "X"}},
-		ExtraAttrs: html.Attrs{"action": "javascript:alert(1)"},
-	}))
-	if strings.Contains(out, "javascript:") {
-		t.Errorf("SECURITY: ExtraAttrs overrode the sanitized form action:\n%s", out)
+	for _, key := range []string{"action", "Action", "ACTION", "AcTiOn"} {
+		t.Run(key, func(t *testing.T) {
+			out := string(ui.FilterToolbar(ui.FilterToolbarConfig{
+				Action:     "/search",
+				HideReset:  true,
+				Sort:       []ui.SortOption{{Value: "x", Label: "X"}},
+				ExtraAttrs: html.Attrs{key: "javascript:alert(1)"},
+			}))
+			if strings.Contains(out, "javascript:") {
+				t.Errorf("SECURITY: ExtraAttrs[%q] (case-variant of action) leaked a javascript: action:\n%s", key, out)
+			}
+			if !strings.Contains(out, `action="/search"`) {
+				t.Errorf("sanitized action lost from output:\n%s", out)
+			}
+		})
 	}
-	if !strings.Contains(out, `action="/search"`) {
-		t.Errorf("sanitized action lost from output:\n%s", out)
+}
+
+// TestSearchInputExtraAttrsCaseInsensitiveProtected pins the same property on
+// SearchInput's <input>: the re-asserted attributes (type/name/id) must win
+// over ExtraAttrs even when the caller uses a case-variant key. HTML attribute
+// names are case-insensitive, so an ExtraAttrs "Type"/"Name"/"ID" survives the
+// lowercase re-assert as a distinct map key, renders as a second attribute,
+// and folds back onto the protected one in the parser (e.g. "Type" can flip a
+// search box to a hidden/submit input, "Name" can clobber the submitted field).
+func TestSearchInputExtraAttrsCaseInsensitiveProtected(t *testing.T) {
+	// Every case-variant of each re-asserted key; "PWNED" must never render.
+	cases := []string{
+		"type", "Type", "TYPE", "tYpE",
+		"name", "Name", "NAME", "nAmE",
+		"id", "ID", "Id", "iD",
+	}
+	for _, key := range cases {
+		t.Run(key, func(t *testing.T) {
+			out := string(ui.SearchInput(ui.SearchInputConfig{
+				Name: "q", ID: "q",
+				ExtraAttrs: html.Attrs{key: "PWNED"},
+			}))
+			if strings.Contains(out, "PWNED") {
+				t.Errorf("SECURITY: ExtraAttrs[%q] (case-variant of a protected attr) leaked into <input>:\n%s", key, out)
+			}
+		})
 	}
 }

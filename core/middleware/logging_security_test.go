@@ -239,6 +239,7 @@ func TestScrubControlBytes_FullC0Range(t *testing.T) {
 	// DEL.
 	out := scrubControlBytes("x" + string(byte(0x7f)) + "y")
 	if strings.ContainsRune(out, rune(byte(0x7f))) {
+		t.Errorf("byte 0x7f (DEL) reached output raw: %q", out)
 	}
 }
 
@@ -287,8 +288,8 @@ func TestLogSinks_BoundMethod(t *testing.T) {
 			if got == "" {
 				t.Fatalf("no method attribute captured")
 			}
-			if len(got) >= huge {
-				t.Errorf("10KB method logged unbounded: %d bytes", len(got))
+			if len(got) > maxRecoveryMethodLen {
+				t.Errorf("method not bounded to maxRecoveryMethodLen (%d): got %d bytes", maxRecoveryMethodLen, len(got))
 			}
 		})
 	}
@@ -319,5 +320,41 @@ func TestRecovery_EncodeBeforeTruncate(t *testing.T) {
 	}
 	if len(got) > maxRecoveryPanicLen {
 		t.Errorf("encoded error exceeded cap: got %d bytes, max %d (encode-then-truncate violated)", len(got), maxRecoveryPanicLen)
+	}
+}
+
+// TestTimeout_EncodeBeforeTruncate is the timeout-sink twin of
+// TestRecovery_EncodeBeforeTruncate. PR #199 fixed recovery.go to
+// control-byte-encode FIRST and only then length-bound, but the sibling
+// slog.Error in timeout.go's late-panic watcher kept the reverse order
+// (truncate-then-encode): N bytes of \r truncate to N bytes, then each
+// encodes to %0d (3 bytes), yielding 3N bytes in the log — blowing past
+// maxRecoveryPanicLen. The property: the logged "error" attribute never
+// exceeds maxRecoveryPanicLen, even when every byte expands on encoding.
+func TestTimeout_EncodeBeforeTruncate(t *testing.T) {
+	prev := slog.Default()
+	cap := &captureHandler{}
+	slog.SetDefault(slog.New(cap))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	h := Timeout(50 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // wait for the deadline, then panic late
+		panic(strings.Repeat("\r", maxRecoveryPanicLen))
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	// The late-panic log fires from a watcher goroutine after the 504.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && cap.get("error") == "" {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	got := cap.get("error")
+	if got == "" {
+		t.Fatalf("no error attribute captured (late-panic watcher did not fire)")
+	}
+	if len(got) > maxRecoveryPanicLen {
+		t.Errorf("encoded error exceeded cap: got %d bytes, max %d (timeout encodes AFTER truncating)", len(got), maxRecoveryPanicLen)
 	}
 }
