@@ -15,6 +15,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	migrate "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
@@ -248,8 +249,21 @@ func TestPG_SiblingSchemaDoesNotFalsePositive(t *testing.T) {
 		t.Fatalf("create sibling schema: %v", err)
 	}
 	t.Cleanup(func() {
-		// Best-effort: the assertions above already stand or fall on their own.
-		_, _ = db.Exec(`DROP SCHEMA IF EXISTS ` + sibling + ` CASCADE`)
+		// Bounded and reported, not best-effort. A silently failed DROP leaks
+		// the schema, and a leaked schema is exactly the collision this whole
+		// change fixes — it would come back on the next run with no clue where
+		// it came from. An unbounded Exec could also block on lock contention
+		// and hang the suite, which matters now that every test process shares
+		// one server. Same shape as testdb.Open's own schema cleanup.
+		//
+		// The identifier is interpolated because Postgres does not accept a
+		// placeholder for a DDL object name; the value is this process's own
+		// pid, not input.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := db.ExecContext(ctx, `DROP SCHEMA IF EXISTS `+sibling+` CASCADE`); err != nil {
+			t.Errorf("drop sibling schema %s: %v — it will collide with the next run", sibling, err)
+		}
 	})
 	if _, err := db.Exec(`CREATE TABLE ` + sibling + `._migrations (
 		group_name TEXT NOT NULL DEFAULT '',

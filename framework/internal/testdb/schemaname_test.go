@@ -32,9 +32,25 @@ func TestNewSchemaNameFitsPostgresIdentifierLimit(t *testing.T) {
 	if len(name) > 63 {
 		t.Errorf("NewSchemaName() = %q (%d bytes), over Postgres's 63-byte identifier cap", name, len(name))
 	}
-	// The discriminator must survive truncation of the test-name portion.
-	if !strings.HasSuffix(name, "_1") && !strings.Contains(name, "_"+strconv.Itoa(os.Getpid())+"_") {
-		t.Errorf("NewSchemaName() = %q lost its uniqueness suffix", name)
+	// The discriminator must survive truncation of the test-name portion —
+	// both halves of it, checked independently.
+	//
+	// The first version of this assertion was `!HasSuffix(name, "_1") &&
+	// !Contains(name, "_<pid>_")`, which never fired: the name always
+	// contains the pid marker, so the second operand was always false and
+	// `&&` short-circuited the whole branch to dead code. It also pinned the
+	// literal "_1", which only describes the first call in a process. Caught
+	// in review, which is the correct outcome but an uncomfortable one for an
+	// assertion living in the file that exists to stop vacuous tests.
+	if !strings.Contains(name, "_"+strconv.Itoa(os.Getpid())+"_") {
+		t.Errorf("NewSchemaName() = %q dropped the pid marker after truncation", name)
+	}
+	last := strings.LastIndexByte(name, '_')
+	if last < 0 {
+		t.Fatalf("NewSchemaName() = %q has no counter component", name)
+	}
+	if _, err := strconv.ParseUint(name[last+1:], 10, 64); err != nil {
+		t.Errorf("NewSchemaName() = %q does not end in a numeric counter (%v)", name, err)
 	}
 }
 
