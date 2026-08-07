@@ -85,7 +85,18 @@ profile_for() {
   local prof="$profdir/$key.out"
   if [ ! -f "$prof" ]; then
     if ! go test -coverprofile="$prof" "$pkg" >"$profdir/$key.log" 2>&1; then
-      cat "$profdir/$key.log"
+      # stderr, not stdout. This function is called as $(profile_for ...), so
+      # anything on stdout is captured into the caller's variable instead of
+      # reaching the log — which is how a filtered package could fail a
+      # BLOCKING gate while printing nothing but "tests failed (no coverage
+      # measurement)". The failing test name was simply swallowed.
+      cat "$profdir/$key.log" >&2
+      # Go writes a partial coverprofile even when the run fails. Leaving it
+      # behind let the package's SECOND bucket skip the re-run, read the
+      # partial data, and report a comfortable "ok NN%" for a suite that had
+      # just failed. Remove it so every bucket of a failed package reports the
+      # failure.
+      rm -f "$prof"
       return 1
     fi
   fi

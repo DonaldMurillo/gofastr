@@ -9,6 +9,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
+- **BREAKING: `/openapi.json` path keys now carry the API prefix.** Under
+  `WithAPIPrefix("/api")` the document keys its operations `/api/posts` with
+  `servers: [{url: "/"}]`, where it previously keyed them `/posts` with
+  `servers: [{url: "/api"}]`. Both compose to the same URL, so Swagger UI and
+  every servers-aware SDK generator are unaffected; a consumer that
+  concatenated `servers[0].url` onto each path key must drop the
+  concatenation.
+
+  The old shape was legal OpenAPI and deliberately chosen. It was also the one
+  shape that misleads a reader who takes `paths` at face value, and that reader
+  is this framework's stated audience: the 2026-07-26 backend eval reproduced
+  the confusion twice — in its agent *and* in its deterministic grader, which
+  both concluded "the document does not describe the live `/api/tickets` path"
+  — and ranked fixing it the highest-leverage change available. Custom
+  `Endpoints` are documented at their mounted path too, via the same
+  `EntityEndpointRoutePath` the router uses, so the absolute-path escape hatch
+  behaves identically in both. Pinned by
+  `TestAPIPrefix_OpenAPIPathsMatchLiveRoutes` and
+  `TestAPIPrefix_EveryDocumentedPathIsRoutable`, which requests every
+  documented path/method pair and fails on a 404.
+
 - **BREAKING: `IdempotencyStore.Finish` takes the request fingerprint.** The
   signature is now
   `Finish(ctx, key, fingerprint string, resp *IdempotentResponse) error`, and
@@ -27,7 +48,129 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   cannot exercise it through a module — but it is a behavior change for a host
   that relied on the carve-out silently not applying.
 
+### Added
+
+- **`gofastr docs backend-capability-map` — one page from job to primitive to
+  proof.** The 2026-07-26 backend eval measured GoFastr at 313,579 cold-start
+  tokens against Gin's 72,172 (4.35×) for 48% fewer lines of application code:
+  the compression is real, and finding the primitive is what costs. Its sixth
+  next-move was "one short capability map and exact verification commands
+  before deep topical docs". `ui-capability-map.md` already did that for the
+  UI lane; the backend lane — where the tokens actually went — had nothing.
+
+  One row per job (scope rows to a user, add auth, run background work, prove
+  the API works), naming the symbols to compose, a command that verifies it,
+  and the one topic to open next. Generated `AGENTS.md` now points at both
+  maps above everything else, so an agent lands on a row before it opens a
+  reference.
+
+  Three tests keep it honest, because a lookup table that lies costs more than
+  no lookup table: every `pkg.Symbol` it names must be exported by a real
+  package (it caught two wrong references while being written), every doc link
+  must resolve to an embedded topic, and every `gofastr <sub>` must be in the
+  CLI's dispatch table. The verification commands were run against a live
+  scaffold rather than assumed — which is how the page came to state that
+  `/openapi.json` and `/api/llm.md` answer 401 by default, that `/metrics`
+  404s until `WithMetrics()`, and that a granular option placed before
+  `WithConfig` is silently zeroed by it.
+
 ### Fixed
+
+- **A process module's migrations failed on every deploy after the first.**
+  `provisionModuleSchemaRole` creates the module's restricted Postgres role
+  inside `DO $$ … CREATE ROLE … PASSWORD '<new>' … EXCEPTION WHEN
+  duplicate_object THEN null; END $$`. That is idempotent for the role's
+  *existence* and a silent no-op for its *password*: roles are cluster-scoped,
+  so on the second deploy the role already exists, the `CREATE` raises
+  `duplicate_object`, the handler swallows it, and the role keeps its original
+  secret. The following `ALTER ROLE` re-asserted every privilege flag but not
+  the password. The coordinator's very next step is to authenticate as that
+  role with the freshly generated one, so it got `password authentication
+  failed for user "module_<name>_role" (28P01)` and the migration never ran.
+
+  The `ALTER ROLE` now re-asserts `LOGIN PASSWORD` alongside the flags. The
+  DDL is split into `moduleSchemaRoleStmts` so the invariant is pinned by an
+  ordinary unit test rather than one that needs a live server — the defect
+  survived precisely because it was only reachable with a *pre-existing* role,
+  and CI handed every test process a throwaway Postgres container where no
+  role ever pre-existed. Sharing one server is what exposed it.
+
+- **The in-house SQLite engine is documented.** `sqlite/` holds a
+  from-scratch SQLite — pager, B-tree, parser, file format, ~7k lines plus as
+  many again in tests — that nothing outside this repo should ever import. It
+  had no doc topic, no ROADMAP entry, and no README mention, so the only way
+  to learn what it was for was to read it. `gofastr docs sqlite-engine` now
+  states the split plainly: applications get modernc.org/sqlite as `sqlite3`
+  via `sqlite/stdlib`; the in-house engine is registered as `gofastr-sqlite`
+  and exists so ~20 suites can validate the framework's generated SQL against
+  an implementation that shares no code with the one it was developed on.
+  `sqlite/BENCHMARKS.md` is marked as the 2025-05-15 snapshot it is, and
+  `sqlite/driver_name_test.go` fails if the engine ever claims the `sqlite3`
+  name — the day it does, the whole suite starts validating the wrong engine
+  while every app still ships modernc.
+
+- **Every app built on GoFastr inherited the Docker client stack.**
+  `testcontainers-go` was a direct require in the root `go.mod` — used only to
+  spawn `postgres:16-alpine` for this repo's own tests — and Go hands a
+  module's requirements to everything that imports it. A hello-world scaffold
+  therefore resolved 95 modules and 178 `go.sum` lines, pulling `go-winio`,
+  `go-ansiterm`, `plan9stats`, `perfstat`, `purego`, `wmi`, `go-ole` and
+  `pprof` to run `go mod tidy`. It is now **57 modules and 100 `go.sum`
+  lines**, with zero Docker-stack entries.
+
+  Every Postgres suite already preferred `TEST_POSTGRES_DSN`; the container
+  branch behind it was removed rather than hidden, because `go mod tidy` walks
+  every build configuration and a build tag would have kept the require. CI
+  supplies the DSN from a `pgvector/pgvector:pg16` service, and
+  `docker-compose.yml` gained a matching `postgres` service — `make
+  postgres-up` starts it, `make test-pg` starts it and runs against it. One
+  image covers the plain-SQL suites and `battery/semantic`'s pgvector store
+  alike. The fail-closed `PGTEST_REQUIRED` canary now also guards this wiring:
+  a service that fails to come up fails the job instead of skipping quietly.
+  `cmd/repolint` gained a `test-only-dep-in-consumer-graph` rule so a test-only
+  dependency cannot return to the root `go.mod` unnoticed.
+
+  One consequence for anyone running the Postgres suites locally: all test
+  processes now share a single server instead of getting an ephemeral
+  container each, so per-test schema names have to be unique across processes.
+  `testdb.NewSchemaName` now embeds the pid (`internal/pgtest` always did), and
+  the one test that created a fixed database-scoped schema drops it on
+  cleanup. Without those, `go test -p 2` raced itself with `schema … already
+  exists`.
+
+- **`gofastr generate --from=` outside a Go module recommended a command that
+  could not run.** It reported plain success and led its next steps with
+  `go mod tidy`, which fails with a raw `go.mod file not found in current
+  directory or any parent` before anything else happens — the generated code
+  imports itself by module path, so nothing it wrote could build yet. The
+  adjacent case (a `go.mod` declaring a *different* module) already failed with
+  the exact remedy; the absent case now warns and prints the runnable
+  `go mod init <app.module>` ahead of `go mod tidy`. Still a warning, not a
+  refusal: generating into a directory about to become a module is legitimate.
+
+- **Five of seven shipped blueprints generated an app that did not compile.**
+  `blog`, `lms`, `portfolio`, `project-manager`, and `real-estate` each emitted
+  `app.go` using `context.Context` without importing `context`, and the four
+  with a home screen also emitted `screen_home.go` calling
+  `resource.PublicIsland()` without importing `framework/ui/resource`. Two
+  independent import-set bugs, both the same shape: a condition that re-derives
+  what the emitter already decided. `rbac` was computed *below* the import
+  block, so the `"context"` condition could not see it; and the screen walker
+  set `needs.resource` only for blocks declaring filters or transitions, while
+  `blueprintEntityListConfigExpr` attaches an island policy to *every*
+  entity_list — `resource.PublicIsland()` on an ungated screen. The walker now
+  asks `blueprintIslandPolicyExpr`, the emitter's own helper, instead of
+  guessing alongside it.
+
+  These survived because only two blueprints ever had their emitted Go
+  compiled: `examples/meridian` (a per-example build gate) and
+  `examples/ecommerce` (byte-parity against a committed `app/` that CI builds).
+  ecommerce declares no home screen and no `access:` role policy, so it is the
+  one example that reaches neither broken path. Every other blueprint was
+  covered solely by a test asserting its YAML parses.
+  `TestExampleBlueprintsGenerateAndCompile` now generates *and* builds *and*
+  vets every `examples/*/gofastr.yml`, so a generator path is gated the moment
+  any blueprint uses it.
 
 - **An idempotent request could be answered with another caller's response.**
   When a handler outran the in-flight TTL and a second request re-claimed the

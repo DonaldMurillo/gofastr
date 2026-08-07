@@ -10,6 +10,7 @@ package testdb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -20,7 +21,6 @@ import (
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	_ "github.com/lib/pq"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -28,20 +28,36 @@ import (
 // Postgres connection resolution
 //
 // Order:
-//  1. TEST_POSTGRES_DSN env var      — fastest, you wire your local PG.
-//  2. testcontainers-go (Docker)     — auto-spawn an ephemeral container.
-//  3. t.Skip                         — neither available; SQLite-only.
+//  1. TEST_POSTGRES_DSN env var — CI's postgres service sets it; locally
+//     `make postgres-up` starts the docker-compose service.
+//  2. t.Skip — unset; SQLite-only. This package always skips; the fail-closed
+//     canary for a broken CI Postgres lives in internal/pgtest, which
+//     escalates to t.Fatal under PGTEST_REQUIRED/GITHUB_ACTIONS. One loud
+//     canary is enough, and it fires on the same missing env var.
 //
 // Resolution is memoised across all tests in the process.
+//
+// A testcontainers-go branch used to sit between the two, spawning
+// postgres:16-alpine on demand. It cost every downstream application the
+// Docker client stack in its module graph — a require in this module's go.mod
+// is inherited by everything that imports the framework — for a convenience
+// only this repo's own tests used. See cmd/repolint's
+// test-only-dep-in-consumer-graph rule, which now keeps it out.
 
 var (
-	pgOnce     sync.Once
-	pgBaseDSN  string
-	pgErr      error
-	pgUsing    string
-	pgLogged   atomic.Bool
-	pgContaine *tcpostgres.PostgresContainer //nolint:unused // kept alive for process lifetime
+	pgOnce    sync.Once
+	pgBaseDSN string
+	pgErr     error
+	pgUsing   string
+	pgLogged  atomic.Bool
 )
+
+// errNoPostgres names the two ways to supply a server rather than reporting a
+// bare absence.
+var errNoPostgres = errors.New(
+	"TEST_POSTGRES_DSN is not set — start one with `make postgres-up` (docker compose) " +
+		"or point at an existing server, e.g. " +
+		"TEST_POSTGRES_DSN='postgres://test:test@localhost:5432/framework_test?sslmode=disable'")
 
 // ResolvePostgresOnce returns a base DSN to a working Postgres or an error
 // describing why one isn't reachable. Resolution is memoised across all
@@ -53,25 +69,7 @@ func ResolvePostgresOnce() (string, error) {
 			pgUsing = "env"
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		c, err := tcpostgres.Run(ctx, "postgres:16-alpine",
-			tcpostgres.WithDatabase("framework_test"),
-			tcpostgres.WithUsername("test"),
-			tcpostgres.WithPassword("test"),
-		)
-		if err != nil {
-			pgErr = fmt.Errorf("testcontainers Postgres: %w", err)
-			return
-		}
-		dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-		if err != nil {
-			pgErr = err
-			return
-		}
-		pgBaseDSN = dsn
-		pgUsing = "container"
-		pgContaine = c
+		pgErr = errNoPostgres
 	})
 	return pgBaseDSN, pgErr
 }
@@ -153,10 +151,18 @@ func ForEachDialect(t *testing.T, fn func(t *testing.T, db *sql.DB, dialect migr
 var schemaCounter atomic.Uint64
 
 // NewSchemaName produces a unique, lowercase, identifier-safe schema name
-// from the test's name plus a process-local counter. Postgres identifiers
-// have a 63-byte cap; truncated aggressively.
+// from the test's name, the process id, and a process-local counter. Postgres
+// identifiers have a 63-byte cap; truncated aggressively.
+//
+// The pid is load-bearing, not decoration. The counter alone is process-local,
+// which was sufficient only while every test process got its own ephemeral
+// container: `go test -p 2` runs packages as separate processes, and against
+// one shared Postgres — the CI service, or a local `make postgres-up` — two of
+// them reach `t_<sametest>_1` and the second fails to create its schema.
+// internal/pgtest has always included the pid for this reason.
 func NewSchemaName(t *testing.T) string {
 	id := schemaCounter.Add(1)
+	pid := os.Getpid()
 	clean := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
@@ -167,10 +173,13 @@ func NewSchemaName(t *testing.T) string {
 			return '_'
 		}
 	}, t.Name())
-	if len(clean) > 40 {
-		clean = clean[:40]
+	// 40 chars of test name + the pid and counter suffixes stay inside
+	// Postgres's 63-byte identifier cap. Trimmed to 30 to make room for the
+	// pid without silently truncating the discriminator instead of the name.
+	if len(clean) > 30 {
+		clean = clean[:30]
 	}
-	return fmt.Sprintf("t_%s_%d", clean, id)
+	return fmt.Sprintf("t_%s_%d_%d", clean, pid, id)
 }
 
 // WaitPGReady pings the database with linear backoff until it answers or

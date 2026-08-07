@@ -859,9 +859,41 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		devCmd = "gofastr dev --dir " + outDir
 	}
 	fmt.Println()
+	// The generated code imports itself by module path (<module>/entities), so
+	// outside a Go module nothing just written can build — and `go mod tidy`,
+	// the step this block used to lead with, fails with a raw toolchain error
+	// before anything else runs. resolveBlueprintModule already refuses the
+	// adjacent case (a go.mod declaring a DIFFERENT module) with the exact
+	// remedy; this is the same courtesy for the absent case.
+	//
+	// A warning rather than a refusal: generating into a directory that is
+	// about to become a module is legitimate, and app.module is declared, so
+	// the runnable command can be printed instead of the work being rejected.
+	if modulePath, _ := findEnclosingGoMod(absOrDot(".")); modulePath == "" {
+		warn("No go.mod here or in any parent — the generated code imports itself\n" +
+			"    by module path, so it cannot build until this directory is a Go module.")
+		fmt.Println()
+		fmt.Println("  Next steps:")
+		fmt.Printf("    go mod init %s\n", bp.App.Module)
+		fmt.Println("    go mod tidy          — the generated code pulls new imports")
+		fmt.Printf("    %-20s — dev server with hot-reload\n", devCmd)
+		return
+	}
 	fmt.Println("  Next steps:")
 	fmt.Println("    go mod tidy          — the generated code pulls new imports")
 	fmt.Printf("    %-20s — dev server with hot-reload\n", devCmd)
+}
+
+// absOrDot resolves dir to an absolute path, falling back to the input when
+// the working directory cannot be read. findEnclosingGoMod walks upward, so a
+// relative path would terminate at the first parent instead of the filesystem
+// root.
+func absOrDot(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return dir
+	}
+	return abs
 }
 
 type generatedFile struct {

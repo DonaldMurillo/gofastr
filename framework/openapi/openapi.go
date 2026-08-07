@@ -18,16 +18,25 @@ import (
 //   - Proper error response schemas
 //
 // EntityOpenAPI builds the spec for every registered entity. An optional
-// basePath (e.g. "/api", from AppConfig.APIPrefix) is expressed as the server
-// URL so the documented paths match where the routes actually mount — the
-// per-path keys stay relative (e.g. "/posts"), and clients prepend the server.
+// basePath (e.g. "/api", from AppConfig.APIPrefix) is baked into the per-path
+// keys, so a documented path IS the path a client requests ("/api/posts"), and
+// the single server entry stays "/".
+//
+// This used to be the other way round: relative path keys ("/posts") plus a
+// servers[0].url of "/api". That composes to the same URL and is legal
+// OpenAPI, but it is the one form that misleads a reader who takes `paths`
+// literally — and that reader is this framework's primary audience. The
+// 2026-07-26 backend eval reproduced the confusion twice, in both its agent
+// and its deterministic grader, and ranked fixing it as the highest-leverage
+// change available. Repeating the prefix in `servers` as well would double it
+// to /api/api/posts for any client that composes the two, so it does not.
 func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...string) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
-	server := "/"
+	apiPrefix := ""
 	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
-		server = basePath[0]
+		apiPrefix = "/" + strings.Trim(basePath[0], "/")
 	}
-	s.AddServer(server, "current")
+	s.AddServer("/", "current")
 
 	// Add common error response schema
 	s.AddSchema("Error", map[string]any{
@@ -178,7 +187,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 			if hasCustomEndpoints(ent) {
 				s.AddTag(tagName, entityName+" operations")
 			}
-			addCustomEndpoints(s, ent, schemaName, tagName)
+			addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
 			continue
 		}
 
@@ -198,7 +207,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		cursorRef := map[string]any{"$ref": "#/components/schemas/CursorPage"}
 		errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
-		path := pathPrefix + "/" + tableName
+		// apiPrefix first, then any per-entity version group: the router
+		// mounts /api/v2/posts, so the document has to key it that way.
+		path := apiPrefix + pathPrefix + "/" + tableName
 
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts
@@ -515,7 +526,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
 
-		addCustomEndpoints(s, ent, schemaName, tagName)
+		addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
 	}
 
 	// When at least one entity is auth-gated, advertise how callers
@@ -685,7 +696,7 @@ func hasCustomEndpoints(ent *entity.Entity) bool {
 // of the main loop because it runs on both sides of the auto-CRUD
 // opt-out: the router mounts these endpoints regardless of
 // Exposure.CRUD, so the spec advertises them regardless too.
-func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName string) {
+func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string) {
 	for _, endpoint := range ent.Config.Endpoints {
 		if endpoint.Method == "" || endpoint.Path == "" {
 			continue
@@ -704,6 +715,6 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 			customOp.SetRequestBody("application/json", EndpointInputSchema(endpoint), true)
 		}
 		customOp.AddResponse(200, "OK", EndpointOutputSchema(endpoint))
-		s.AddPath(endpoint.Method, EntityEndpointPath(ent, endpoint.Path), *customOp)
+		s.AddPath(endpoint.Method, EntityEndpointRoutePath(ent, endpoint.Path, apiPrefix), *customOp)
 	}
 }

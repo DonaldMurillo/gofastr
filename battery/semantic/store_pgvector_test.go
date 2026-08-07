@@ -14,7 +14,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 // pgvector integration tests. A live Postgres-with-pgvector comes from
@@ -33,7 +32,6 @@ var (
 	pgVecErr     error
 	pgVecUsing   string
 	pgVecLogged  atomic.Bool
-	pgVecKeepRef *tcpostgres.PostgresContainer
 )
 
 func resolvePgVector() (string, error) {
@@ -43,27 +41,7 @@ func resolvePgVector() (string, error) {
 			pgVecUsing = "env"
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-		defer cancel()
-		// pgvector/pgvector:pg16 bundles the vector extension; the plain
-		// postgres:16-alpine image used by battery/search has no vector type.
-		c, err := tcpostgres.Run(ctx, "pgvector/pgvector:pg16",
-			tcpostgres.WithDatabase("embed_test"),
-			tcpostgres.WithUsername("test"),
-			tcpostgres.WithPassword("test"),
-		)
-		if err != nil {
-			pgVecErr = fmt.Errorf("testcontainers: %w", err)
-			return
-		}
-		dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-		if err != nil {
-			pgVecErr = err
-			return
-		}
-		pgVecBaseDSN = dsn
-		pgVecUsing = "container"
-		pgVecKeepRef = c
+		pgVecErr = errNoPG
 	})
 	return pgVecBaseDSN, pgVecErr
 }
@@ -471,3 +449,12 @@ func cloneChunks(in []Chunk) []Chunk {
 	}
 	return out
 }
+
+// errNoPG is the pgvector suite's skip reason. Note this suite needs the
+// `vector` extension, not merely a Postgres: the compose service and the CI
+// service both run pgvector/pgvector:pg16 for exactly that reason, so one
+// TEST_POSTGRES_DSN serves this suite and the plain-Postgres ones alike. A DSN
+// pointing at a stock postgres image reaches CREATE EXTENSION and fails there
+// rather than skipping — which is the honest outcome, since the database was
+// supplied but cannot do the job.
+var errNoPG = errors.New("TEST_POSTGRES_DSN is not set — `make postgres-up` starts pgvector/pgvector:pg16")
