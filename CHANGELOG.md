@@ -29,6 +29,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`gofastr generate --from=` outside a Go module recommended a command that
+  could not run.** It reported plain success and led its next steps with
+  `go mod tidy`, which fails with a raw `go.mod file not found in current
+  directory or any parent` before anything else happens — the generated code
+  imports itself by module path, so nothing it wrote could build yet. The
+  adjacent case (a `go.mod` declaring a *different* module) already failed with
+  the exact remedy; the absent case now warns and prints the runnable
+  `go mod init <app.module>` ahead of `go mod tidy`. Still a warning, not a
+  refusal: generating into a directory about to become a module is legitimate.
+
 - **Five of seven shipped blueprints generated an app that did not compile.**
   `blog`, `lms`, `portfolio`, `project-manager`, and `real-estate` each emitted
   `app.go` using `context.Context` without importing `context`, and the four
