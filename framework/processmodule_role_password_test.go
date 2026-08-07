@@ -35,8 +35,8 @@ func TestModuleSchemaRoleStmtsResetPasswordOnReprovision(t *testing.T) {
 	const pw = "deadbeefcafe0123456789ab"
 	stmts := moduleSchemaRoleStmts("module_demo", "module_demo_role", pw)
 
-	var inCreate, inAlter bool
-	for _, s := range stmts {
+	createAt, alterAt := -1, -1
+	for i, s := range stmts {
 		if !strings.Contains(s, pw) {
 			continue
 		}
@@ -44,20 +44,28 @@ func TestModuleSchemaRoleStmtsResetPasswordOnReprovision(t *testing.T) {
 		// The CREATE lives inside a DO $$ … $$ block whose exception handler
 		// makes it a no-op for a role that already exists.
 		case strings.Contains(s, "CREATE ROLE"):
-			inCreate = true
+			createAt = i
 		case strings.Contains(s, "ALTER ROLE"):
-			inAlter = true
+			alterAt = i
 		}
 	}
 
-	if !inCreate {
+	if createAt < 0 {
 		t.Error("no CREATE ROLE statement carries the password — a first-time provision would create a role nobody can log in as")
 	}
-	if !inAlter {
+	if alterAt < 0 {
 		t.Error("the password appears ONLY in the swallowed CREATE ROLE. " +
 			"A role that already exists (any redeploy, since roles are cluster-scoped) keeps its old password, " +
 			"and the coordinator's very next step — connecting as that role — fails with 28P01. " +
 			"Re-assert it with ALTER ROLE … PASSWORD alongside the privilege flags.")
+	}
+	// Order matters, and only the slice order encodes it:
+	// execModuleSchemaRoleStmts runs these sequentially, so an ALTER placed
+	// before the CREATE would error on a role that does not exist yet and
+	// break FIRST-time provisioning — the opposite of the bug above, and
+	// invisible to a test that merely checks both statements are present.
+	if createAt >= 0 && alterAt >= 0 && createAt >= alterAt {
+		t.Errorf("CREATE ROLE is at index %d and ALTER ROLE at %d — the CREATE must come first, or first-time provisioning alters a role that does not exist yet", createAt, alterAt)
 	}
 }
 

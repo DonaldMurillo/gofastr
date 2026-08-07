@@ -251,7 +251,6 @@ func TestEmbeddedDocTablesHaveHeaderText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	separator := regexp.MustCompile(`^\s*\|[\s:|-]+\|\s*$`)
 	checked := 0
 	for _, top := range topics {
 		body, err := Get(top.Name)
@@ -261,16 +260,12 @@ func TestEmbeddedDocTablesHaveHeaderText(t *testing.T) {
 		}
 		lines := strings.Split(string(body), "\n")
 		for i, line := range lines {
-			row := strings.TrimSpace(line)
-			if !strings.HasPrefix(row, "|") || !strings.HasSuffix(row, "|") {
-				continue
-			}
-			// A header row is the line immediately above the |---|---| rule.
-			if i+1 >= len(lines) || !separator.MatchString(lines[i+1]) {
+			// A header row is the line immediately above the ---|--- rule.
+			if i+1 >= len(lines) || !isMarkdownTableHeader(line, lines[i+1]) {
 				continue
 			}
 			checked++
-			for col, cell := range strings.Split(strings.Trim(row, "|"), "|") {
+			for col, cell := range splitMarkdownRow(line) {
 				if strings.TrimSpace(cell) == "" {
 					t.Errorf("content/%s.md line %d: table header column %d is empty — it renders as <th></th> and fails axe's empty-table-header rule. Give the column a name.",
 						top.Name, i+1, col+1)
@@ -282,4 +277,49 @@ func TestEmbeddedDocTablesHaveHeaderText(t *testing.T) {
 		t.Fatal("found no markdown tables at all — the header-row detection has drifted and this test is vacuous")
 	}
 	t.Logf("checked %d table header rows across the embedded docs", checked)
+}
+
+// isMarkdownTableHeader mirrors core/markdown's atTable: a row containing a
+// pipe, followed by a separator that contains a pipe and nothing but `-`, `|`,
+// `:` and spaces.
+//
+// Deliberately NOT "the line starts and ends with |". GFM makes the outer
+// pipes optional, and core/markdown accepts that form — splitTableRow trims a
+// leading and trailing pipe if present rather than requiring them. An earlier
+// version of this test demanded them, so
+//
+//	Name | Package
+//	---- | -------
+//
+// with a blank header cell would have rendered <th></th> and slipped straight
+// past the guard. Matching the parser's own rule is what keeps the two from
+// drifting; anything looser or stricter checks a different language than the
+// one the site actually renders.
+func isMarkdownTableHeader(line, next string) bool {
+	if !strings.Contains(line, "|") || !strings.Contains(next, "|") {
+		return false
+	}
+	sep := strings.TrimSpace(next)
+	if sep == "" {
+		return false
+	}
+	for _, ch := range sep {
+		if ch != '-' && ch != '|' && ch != ':' && ch != ' ' {
+			return false
+		}
+	}
+	return true
+}
+
+// splitMarkdownRow mirrors core/markdown's splitTableRow: trim one optional
+// outer pipe on each side, split on the rest.
+func splitMarkdownRow(line string) []string {
+	t := strings.TrimSpace(line)
+	t = strings.TrimPrefix(t, "|")
+	t = strings.TrimSuffix(t, "|")
+	parts := strings.Split(t, "|")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return parts
 }
