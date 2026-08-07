@@ -4,7 +4,7 @@ There are two SQLite implementations in this repository. If you are building
 an application on GoFastr, you want the first one and can stop reading after
 the next paragraph.
 
-| | Package | Driver name | Who uses it |
+| Which engine | Package | Driver name | Who uses it |
 |---|---|---|---|
 | **What apps ship** | `modernc.org/sqlite`, registered by `gofastr/sqlite/stdlib` | `sqlite3` | every generated app, `gofastr` CLI, the whole framework at runtime |
 | **A test cross-check** | `gofastr/sqlite` | `gofastr-sqlite` | ~20 test files in this repo. Nothing else. |

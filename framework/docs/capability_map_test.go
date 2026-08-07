@@ -231,3 +231,55 @@ func TestBackendCapabilityMapCommandsAreReal(t *testing.T) {
 		t.Error("the map names no gofastr command; it is supposed to carry exact verification commands")
 	}
 }
+
+// TestEmbeddedDocTablesHaveHeaderText catches an empty markdown table header
+// cell — `| | Package | … |` — which renders as `<th></th>` and trips axe's
+// empty-table-header rule on whatever route serves the doc.
+//
+// This exists because that is exactly how it was found: a table in
+// sqlite-engine.md whose first header cell was blank failed the site's
+// full axe crawl, which takes ~11 minutes and only runs in the browser-e2e
+// job. The defect is a string in a markdown file; it does not need a browser
+// to detect, and waiting eleven minutes for a headless Chrome to tell you a
+// `<th>` is empty is the wrong feedback loop.
+//
+// Deliberately scoped to header rows. Empty cells in a table BODY are
+// ordinary — "not applicable" is a legitimate value — and axe does not
+// object to them.
+func TestEmbeddedDocTablesHaveHeaderText(t *testing.T) {
+	topics, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	separator := regexp.MustCompile(`^\s*\|[\s:|-]+\|\s*$`)
+	checked := 0
+	for _, top := range topics {
+		body, err := Get(top.Name)
+		if err != nil {
+			t.Errorf("Get(%q): %v", top.Name, err)
+			continue
+		}
+		lines := strings.Split(string(body), "\n")
+		for i, line := range lines {
+			row := strings.TrimSpace(line)
+			if !strings.HasPrefix(row, "|") || !strings.HasSuffix(row, "|") {
+				continue
+			}
+			// A header row is the line immediately above the |---|---| rule.
+			if i+1 >= len(lines) || !separator.MatchString(lines[i+1]) {
+				continue
+			}
+			checked++
+			for col, cell := range strings.Split(strings.Trim(row, "|"), "|") {
+				if strings.TrimSpace(cell) == "" {
+					t.Errorf("content/%s.md line %d: table header column %d is empty — it renders as <th></th> and fails axe's empty-table-header rule. Give the column a name.",
+						top.Name, i+1, col+1)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("found no markdown tables at all — the header-row detection has drifted and this test is vacuous")
+	}
+	t.Logf("checked %d table header rows across the embedded docs", checked)
+}
