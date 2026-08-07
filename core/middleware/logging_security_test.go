@@ -221,3 +221,140 @@ func TestLogSinksScrubAndBound(t *testing.T) {
 		})
 	}
 }
+
+// TestScrubControlBytes_FullC0Range pins that EVERY C0 control byte
+// (0x00–0x1F) and DEL (0x7F) is percent-encoded by scrubControlBytes.
+// The fast-path probe is a ContainsAny allow-list over a byte set; if it
+// omits any byte the encoder loop would catch, a string carrying ONLY that
+// byte bypasses the encoder and is returned raw — so a lone SOH (0x01) or
+// FS (0x1c) reached the log attribute verbatim. Property: no raw C0/DEL
+// byte survives scrubbing, for every byte in the range.
+func TestScrubControlBytes_FullC0Range(t *testing.T) {
+	for b := byte(0); b < 0x20; b++ {
+		out := scrubControlBytes("x" + string(b) + "y")
+		if strings.ContainsRune(out, rune(b)) {
+			t.Errorf("byte %#02x reached output raw: %q", b, out)
+		}
+	}
+	// DEL.
+	out := scrubControlBytes("x" + string(byte(0x7f)) + "y")
+	if strings.ContainsRune(out, rune(byte(0x7f))) {
+		t.Errorf("byte 0x7f (DEL) reached output raw: %q", out)
+	}
+}
+
+// TestLogSinks_BoundMethod pins the third log-injection axis the path
+// already had: the HTTP method (attacker-controlled — net/http accepts any
+// RFC 7230 token) must be length-bounded in every request-log sink, or a
+// forged 10 KB method string lands in the log whole. Recovery/Logging both
+// logged it unbounded after the path got its cap.
+func TestLogSinks_BoundMethod(t *testing.T) {
+	prev := slog.Default()
+	cap := &captureHandler{}
+	slog.SetDefault(slog.New(cap))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	sinks := []struct {
+		name    string
+		handler http.Handler
+		async   bool
+	}{
+		{"logging", Logging()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})), false},
+		{"recovery", Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			panic("boom")
+		})), false},
+		{"timeout", Timeout(50 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+			panic("late")
+		})), true},
+	}
+
+	const huge = 10000
+	for _, sk := range sinks {
+		t.Run(sk.name, func(t *testing.T) {
+			cap.reset()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Method = strings.Repeat("X", huge)
+			sk.handler.ServeHTTP(httptest.NewRecorder(), req)
+			if sk.async {
+				deadline := time.Now().Add(2 * time.Second)
+				for time.Now().Before(deadline) && cap.get("method") == "" {
+					time.Sleep(5 * time.Millisecond)
+				}
+			}
+			got := cap.get("method")
+			if got == "" {
+				t.Fatalf("no method attribute captured")
+			}
+			if len(got) > maxRecoveryMethodLen {
+				t.Errorf("method not bounded to maxRecoveryMethodLen (%d): got %d bytes", maxRecoveryMethodLen, len(got))
+			}
+		})
+	}
+}
+
+// TestRecovery_EncodeBeforeTruncate pins the order: the panic value is
+// control-byte-encoded FIRST and only then length-bounded. The reverse
+// (truncate-then-encode) lets the encoded form blow past the cap — N bytes
+// of \r truncate to N bytes, then each encodes to %0d (3 bytes), yielding
+// 3N bytes in the log — and can also split a %xx encoding at the cut. The
+// property: the logged "error" attribute never exceeds maxRecoveryPanicLen,
+// even when every byte expands on encoding.
+func TestRecovery_EncodeBeforeTruncate(t *testing.T) {
+	prev := slog.Default()
+	cap := &captureHandler{}
+	slog.SetDefault(slog.New(cap))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	h := Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic(strings.Repeat("\r", maxRecoveryPanicLen))
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	got := cap.get("error")
+	if got == "" {
+		t.Fatalf("no error attribute captured")
+	}
+	if len(got) > maxRecoveryPanicLen {
+		t.Errorf("encoded error exceeded cap: got %d bytes, max %d (encode-then-truncate violated)", len(got), maxRecoveryPanicLen)
+	}
+}
+
+// TestTimeout_EncodeBeforeTruncate is the timeout-sink twin of
+// TestRecovery_EncodeBeforeTruncate. PR #199 fixed recovery.go to
+// control-byte-encode FIRST and only then length-bound, but the sibling
+// slog.Error in timeout.go's late-panic watcher kept the reverse order
+// (truncate-then-encode): N bytes of \r truncate to N bytes, then each
+// encodes to %0d (3 bytes), yielding 3N bytes in the log — blowing past
+// maxRecoveryPanicLen. The property: the logged "error" attribute never
+// exceeds maxRecoveryPanicLen, even when every byte expands on encoding.
+func TestTimeout_EncodeBeforeTruncate(t *testing.T) {
+	prev := slog.Default()
+	cap := &captureHandler{}
+	slog.SetDefault(slog.New(cap))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	h := Timeout(50 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // wait for the deadline, then panic late
+		panic(strings.Repeat("\r", maxRecoveryPanicLen))
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	// The late-panic log fires from a watcher goroutine after the 504.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && cap.get("error") == "" {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	got := cap.get("error")
+	if got == "" {
+		t.Fatalf("no error attribute captured (late-panic watcher did not fire)")
+	}
+	if len(got) > maxRecoveryPanicLen {
+		t.Errorf("encoded error exceeded cap: got %d bytes, max %d (timeout encodes AFTER truncating)", len(got), maxRecoveryPanicLen)
+	}
+}

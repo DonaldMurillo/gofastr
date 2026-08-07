@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -225,28 +226,38 @@ func MetricsHandler(m *Metrics) http.Handler {
 		m.mu.Unlock()
 		sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].name < snapshot[j].name })
 		for _, c := range snapshot {
-			runCollectorSafely(&sb, c.name, c.fn)
+			if out := runCollectorSafely(c.name, c.fn); out != nil {
+				sb.Write(out)
+			}
 		}
 
 		w.Write([]byte(sb.String()))
 	})
 }
 
-// runCollectorSafely runs one metrics collector with a per-call recover,
-// mirroring hook.runHookSafely. A third-party CollectorFunc that panics is
-// isolated (logged once) instead of aborting the whole /metrics scrape: the
-// exposition buffer is shared across the loop, so without this guard one bad
-// collector would drop every family's metrics for that scrape.
-func runCollectorSafely(w io.Writer, name string, fn CollectorFunc) {
+// runCollectorSafely runs one metrics collector into an ISOLATED buffer with
+// a per-call recover, mirroring hook.runHookSafely. A third-party
+// CollectorFunc that panics is isolated (logged once) instead of aborting
+// the whole /metrics scrape. The collector writes into its OWN buffer, so a
+// half-written line from a collector that panics mid-write is discarded:
+// only a collector that returns normally contributes its bytes to the
+// scrape. Without the private buffer the partial bytes a panicking collector
+// had already flushed into the shared exposition buffer would survive the
+// recover and corrupt the output (a truncated metric line a parser rejects).
+// Returns nil on panic so the caller appends nothing.
+func runCollectorSafely(name string, fn CollectorFunc) (out []byte) {
 	defer func() {
 		if r := recover(); r != nil {
+			out = nil
 			slog.Error("metrics collector panic isolated",
 				"collector", name,
 				"error", truncate(fmt.Sprint(r), maxRecoveryPanicLen),
 			)
 		}
 	}()
-	fn(w)
+	var buf bytes.Buffer
+	fn(&buf)
+	return buf.Bytes()
 }
 
 // metricsResponseWriter captures the response status code so the recording

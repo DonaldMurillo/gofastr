@@ -35,7 +35,7 @@ func LoggingFn(getLogger func() *slog.Logger) Middleware {
 				}
 			}
 			logger.Info("request",
-				"method", safeLogMethod(r.Method),
+				"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 				"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
 				"status", wrapped.statusCode,
 				"duration", duration.String(),
@@ -108,7 +108,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			// Always log errors and slow requests
 			if wrapped.statusCode >= 400 || duration > slowThreshold {
 				logger.Info("request",
-					"method", safeLogMethod(r.Method),
+					"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 					"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
 					"status", wrapped.statusCode,
 					"duration", duration.String(),
@@ -121,7 +121,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			n := atomic.AddUint64(&counter, 1)
 			if n%uint64(sampleN) == 1 {
 				logger.Info("request",
-					"method", safeLogMethod(r.Method),
+					"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 					"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
 					"status", wrapped.statusCode,
 					"duration", duration.String(),
@@ -132,6 +132,22 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 	}
 }
 
+// c0AndDelSet is the complete set of bytes scrubControlBytes percent-encodes:
+// every C0 control byte (0x00–0x1F) plus DEL (0x7F). It MUST cover exactly
+// the range the encoder loop encodes (c < 0x20 || c == 0x7f): the fast-path
+// ContainsAny returns its input unchanged when none of these are present, so
+// a single missing byte means a string carrying ONLY that byte bypasses the
+// encoder and is logged raw. The earlier hand-written probe omitted most of
+// the C0 range (SOH, EOT, FS, …) and those leaked.
+var c0AndDelSet = func() string {
+	var b [33]byte
+	for i := range 32 {
+		b[i] = byte(i)
+	}
+	b[32] = 0x7f
+	return string(b[:])
+}()
+
 // scrubControlBytes percent-encodes ASCII control bytes (the C0 range) and
 // DEL in a request-derived value — URL path, method, or a panic that embeds
 // a request string — so an attacker can't forge a fake log entry or smuggle
@@ -141,11 +157,11 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 // its own line.
 //
 // r.URL.Path is percent-DECODED, so a %0d%0a in the raw request is a real
-// CRLF by the time it reaches any sink here. The fast-path probe includes
-// DEL (0x7f): without it, a path carrying only DEL bypassed the encoder and
-// was logged raw.
+// CRLF by the time it reaches any sink here. The fast-path probe (c0AndDelSet)
+// covers the whole C0 range plus DEL: without the full set, a path carrying
+// only an uncovered byte (e.g. a lone SOH) bypassed the encoder.
 func scrubControlBytes(s string) string {
-	if !strings.ContainsAny(s, "\x00\r\n\t\v\f\b\x1b\x7f") {
+	if !strings.ContainsAny(s, c0AndDelSet) {
 		return s
 	}
 	var b strings.Builder

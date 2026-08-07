@@ -60,13 +60,19 @@ func TestResolverRulesBlockIPLiteral(t *testing.T) {
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 
-	// chromedp starts Chrome lazily on the first Run: give the cold
-	// start its own budget so the work budget below is not also a
-	// launch budget (and so it does not cap WSURLReadTimeout).
-	startCtx, startCancel := context.WithTimeout(ctx, 90*time.Second)
-	defer startCancel()
-	if err := chromedp.Run(startCtx); err != nil {
-		t.Fatalf("chrome did not start within 90s: %v", err)
+	// chromedp starts Chrome lazily on the first Run: allocate against the
+	// browser context so the browser's lifetime is the browser context's —
+	// passing a timeout context here would make the browser die when that
+	// deadline passed. The watchdog bounds only the startup wait.
+	started := make(chan error, 1)
+	go func() { started <- chromedp.Run(ctx) }()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("chrome did not start: %v", err)
+		}
+	case <-time.After(90 * time.Second):
+		t.Fatal("chrome did not start within 90s")
 	}
 
 	ctx, cancelT := context.WithTimeout(ctx, 60*time.Second)

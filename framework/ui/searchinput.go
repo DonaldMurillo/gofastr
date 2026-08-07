@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -79,6 +80,15 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		"aria-label":  i18nui.T(ctx, i18nui.KeySearchLabel),
 	}
 	for k, v := range cfg.ExtraAttrs {
+		// HTML attribute names are case-insensitive: a case-variant key
+		// ("Type"/"Name"/"ID") survives a lowercase-only re-assert as a
+		// distinct entry, renders as a second attribute, and folds back onto
+		// the protected one in the parser (e.g. "Type" can flip the search
+		// box to a hidden/submit input, "Name" can clobber the submitted
+		// field). Drop every case-variant of the re-asserted keys here.
+		if strings.EqualFold(k, "type") || strings.EqualFold(k, "name") || strings.EqualFold(k, "id") {
+			continue
+		}
 		inputAttrs[k] = v
 	}
 	// Protect critical attrs from Attrs override.

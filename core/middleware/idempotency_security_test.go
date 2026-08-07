@@ -364,16 +364,26 @@ func runReclaimOneWinner(t *testing.T, s IdempotencyStore, key string, reseed fu
 
 	// The F4 window (SELECT sees an expired row, then a concurrent INSERT lands,
 	// then this caller's key-only DELETE removes the fresh claim) is narrow, so a
-	// single race rarely trips. We run many reseeded iterations per invocation to
-	// make a regression reliably observable while keeping the guard deterministic
-	// on correct code: with the fix every iteration yields exactly one winner, so
-	// the assertion can never false-fail.
+	// single race rarely trips. We run many reseeded iterations to make a
+	// regression reliably observable.
+	//
+	// The invariant on CORRECT code is exactly ONE fresh claimant per reseeded
+	// iteration: the reclaim DELETE is expiry-gated, so it can never remove a
+	// fresh claim another caller just inserted, which means a second re-claimer's
+	// retry-INSERT conflicts and surfaces ErrInFlight instead. Asserting
+	// fresh==1 (not merely fresh<=1) is what makes the test non-vacuous: the old
+	// guard only failed when fresh>1, so if contention stopped EVERY claimant
+	// from reaching the reclaim path (fresh==0) the test passed without
+	// exercising the property at all.
+	//
+	// Per-finding: any Begin error other than the two expected race outcomes
+	// (ErrInFlight, ErrFingerprintMismatch) is a store fault and must fail.
 	const racers = 60
 	const iters = 60
-	var maxFresh int64
-	for range iters {
+	for iter := range iters {
 		reseed()
 		var fresh int64
+		unexpected := make(chan error, racers)
 		var wg sync.WaitGroup
 		start := make(chan struct{})
 		for i := range racers {
@@ -383,23 +393,46 @@ func runReclaimOneWinner(t *testing.T, s IdempotencyStore, key string, reseed fu
 				<-start
 				fp := fmt.Sprintf("fp-%d", i)
 				_, ok, err := s.Begin(ctx, key, fp)
-				if err == nil && !ok {
+				switch {
+				case err == nil && !ok:
 					atomic.AddInt64(&fresh, 1)
+				case errors.Is(err, ErrInFlight), errors.Is(err, ErrFingerprintMismatch):
+					// Expected: lost the race to another claimant, or a
+					// sibling won under a different fingerprint.
+				case err == nil && ok:
+					// ok==true (replay) is impossible against a seeded
+					// in-flight row. The store-fault default below sends
+					// err — which is nil here — so the post-loop nil check
+					// never fired and a replay passed silently. Surface a
+					// non-nil error so the race is actually caught.
+					select {
+					case unexpected <- fmt.Errorf("unexpected replay: Begin returned ok=true (a response) against a seeded in-flight row"):
+					default:
+					}
+				default:
+					// Any other error is a store fault.
+					select {
+					case unexpected <- err:
+					default:
+					}
 				}
 			}(i)
 		}
 		close(start)
 		wg.Wait()
-		if f := atomic.LoadInt64(&fresh); f > maxFresh {
-			maxFresh = f
+		close(unexpected)
+		var firstUnexpected error
+		for e := range unexpected {
+			if firstUnexpected == nil {
+				firstUnexpected = e
+			}
 		}
-		if maxFresh > 1 {
-			break
+		if firstUnexpected != nil {
+			t.Fatalf("F4 iter %d: unexpected Begin error (only ErrInFlight/ErrFingerprintMismatch expected): %v", iter, firstUnexpected)
 		}
-	}
-	t.Logf("F4 race: maxFresh=%d over up to %d iterations x %d racers (want <=1)", maxFresh, iters, racers)
-	if maxFresh > 1 {
-		t.Fatalf("F4: %d callers obtained a fresh claim for one key in a single iteration — the reclaim path deleted a fresh claim", maxFresh)
+		if f := atomic.LoadInt64(&fresh); f != 1 {
+			t.Fatalf("F4 iter %d: expected exactly ONE fresh claimant (the reclaim path must run AND must not delete a fresh claim), got %d", iter, f)
+		}
 	}
 }
 

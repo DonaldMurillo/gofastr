@@ -116,13 +116,19 @@ func newE2EChromeForUIHost(t *testing.T) context.Context {
 	browser, browserCancel := chromedp.NewContext(alloc)
 	t.Cleanup(browserCancel)
 
-	// chromedp starts Chrome lazily on the first Run: give the cold start its
-	// own budget so the work budget below is not also a launch budget (and so
-	// it does not cap WSURLReadTimeout).
-	startCtx, startCancel := context.WithTimeout(browser, 90*time.Second)
-	t.Cleanup(startCancel)
-	if err := chromedp.Run(startCtx); err != nil {
-		t.Fatalf("chrome did not start within 90s: %v", err)
+	// chromedp starts Chrome lazily on the first Run: allocate against the
+	// browser context so the browser's lifetime is the browser context's —
+	// passing a timeout context here would make the browser die when that
+	// deadline passed. The watchdog bounds only the startup wait.
+	started := make(chan error, 1)
+	go func() { started <- chromedp.Run(browser) }()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("chrome did not start: %v", err)
+		}
+	case <-time.After(90 * time.Second):
+		t.Fatal("chrome did not start within 90s")
 	}
 
 	ctx, cancel := context.WithTimeout(browser, 60*time.Second)

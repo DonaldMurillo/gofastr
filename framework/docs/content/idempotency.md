@@ -72,9 +72,11 @@ Principal: func(r *http.Request) string {
 the user value is whatever your middleware stored, so the assertion is
 yours to write.
 
-When `Principal` is unset, the middleware still runs — but the cache
-is shared globally across callers and you accept the cross-request
-leak. Set it.
+When `Principal` is unset, the middleware disables replay caching
+entirely: it degrades to a pass-through that logs a warning and never
+caches, so there is no shared namespace and no cross-request leak. The
+cost is that you lose duplicate-suppression until you wire one. Set it
+to enable caching.
 
 ### Headers stripped from replays
 
@@ -186,8 +188,10 @@ next reap cycle.
 
 ## Common mistakes
 
-- **Don't forget `Principal`.** Without it the cache is global and a
-  client-chosen `Idempotency-Key` collides across users.
+- **Don't forget `Principal`.** Without it the middleware disables
+  replay caching entirely (a pass-through that logs a warning) rather
+  than cache into a namespace shared across callers — so you silently
+  lose duplicate-suppression, you don't leak cross-request.
 - **Don't ignore the fingerprint in a custom `Finish`.** `Finish` is
   fingerprint-bound for a reason: a claim can expire mid-handler and be
   re-claimed by another principal, and a `Finish` that writes by key alone

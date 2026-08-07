@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -28,6 +29,12 @@ func TestTypedHook_AfterCreateErrorPropagates(t *testing.T) {
 		}
 		if err == nil {
 			t.Fatal("AfterCreate hook error did not propagate to CreateOne")
+		}
+		// Assert the SPECIFIC hook error, not merely that some error occurred:
+		// a generic failure (e.g. a SQL error from a broken hook) would satisfy
+		// a nil-check and mask the propagation contract this test pins.
+		if !strings.Contains(err.Error(), "typed after-create reject") {
+			t.Fatalf("AfterCreate returned the wrong error, want the hook's typed after-create reject: %v", err)
 		}
 	})
 }
@@ -55,6 +62,10 @@ func TestTypedHook_AfterUpdateErrorPropagates(t *testing.T) {
 		}
 		if err == nil {
 			t.Fatal("AfterUpdate hook error did not propagate to UpdateOne")
+		}
+		// Same as the AfterCreate case: pin the SPECIFIC error, not just non-nil.
+		if !strings.Contains(err.Error(), "typed after-update reject") {
+			t.Fatalf("UpdateOne returned the wrong error, want the hook's typed after-update reject: %v", err)
 		}
 	})
 }
