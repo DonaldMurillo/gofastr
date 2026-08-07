@@ -41,9 +41,12 @@ func EntityEndpointPath(ent *entity.Entity, path string) string {
 // An absolute path keeps bypassing the prefix. That is the documented escape
 // hatch for mounting outside the entity's namespace.
 //
-// The OpenAPI spec deliberately keeps using EntityEndpointPath: it carries the
-// prefix in the `servers` entry, so its paths are prefix-relative by
-// construction.
+// The OpenAPI spec calls this too, not the unprefixed EntityEndpointPath. It
+// used to use the latter, because the spec carried the prefix in its `servers`
+// entry and its paths were prefix-relative by construction. Path keys are now
+// absolute (see EntityOpenAPI), so the documented endpoint path has to be the
+// mounted one — and routing through the same helper is what keeps the escape
+// hatch behaving identically in both.
 func EntityEndpointRoutePath(ent *entity.Entity, path, apiPrefix string) string {
 	relative := !strings.HasPrefix(strings.TrimSpace(path), "/")
 	out := EntityEndpointPath(ent, path)

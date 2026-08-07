@@ -9,6 +9,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
+- **BREAKING: `/openapi.json` path keys now carry the API prefix.** Under
+  `WithAPIPrefix("/api")` the document keys its operations `/api/posts` with
+  `servers: [{url: "/"}]`, where it previously keyed them `/posts` with
+  `servers: [{url: "/api"}]`. Both compose to the same URL, so Swagger UI and
+  every servers-aware SDK generator are unaffected; a consumer that
+  concatenated `servers[0].url` onto each path key must drop the
+  concatenation.
+
+  The old shape was legal OpenAPI and deliberately chosen. It was also the one
+  shape that misleads a reader who takes `paths` at face value, and that reader
+  is this framework's stated audience: the 2026-07-26 backend eval reproduced
+  the confusion twice — in its agent *and* in its deterministic grader, which
+  both concluded "the document does not describe the live `/api/tickets` path"
+  — and ranked fixing it the highest-leverage change available. Custom
+  `Endpoints` are documented at their mounted path too, via the same
+  `EntityEndpointRoutePath` the router uses, so the absolute-path escape hatch
+  behaves identically in both. Pinned by
+  `TestAPIPrefix_OpenAPIPathsMatchLiveRoutes` and
+  `TestAPIPrefix_EveryDocumentedPathIsRoutable`, which requests every
+  documented path/method pair and fails on a 404.
+
 - **BREAKING: `IdempotencyStore.Finish` takes the request fingerprint.** The
   signature is now
   `Finish(ctx, key, fingerprint string, resp *IdempotentResponse) error`, and

@@ -45,11 +45,19 @@ Input is normalised: `"api"`, `"/api"`, and `"/api/"` all become
 | --- | --- |
 | **REST routes** | mounted at `/api/v1/<table>` (list/get/create/update/delete, `_batch`, `_events`, …). |
 | **Custom `Endpoints`** | a **relative** `Endpoint.Path` (`"{id}/publish"`) resolves under the prefixed table path → `/api/v1/posts/{id}/publish`. An **absolute** path (`"/health/posts"`) bypasses the prefix — the escape hatch for mounting outside the API namespace. |
-| **OpenAPI** (`/openapi.json`) | the prefix is expressed as the spec's **server URL** (`servers: [{ url: "/api/v1" }]`); operation paths stay bare (`/posts`). Generated SDKs prepend the server URL, so they call `/api/v1/posts`. |
+| **OpenAPI** (`/openapi.json`) | every operation path carries the prefix (`/api/v1/posts`), and `servers` stays `[{ url: "/" }]`. A documented path IS the path you request. |
 | **MCP tools** | `posts_list` / `posts_get` / `posts_create` / … dispatch against the prefixed path, so an agent driving the app over MCP reaches the same routes as REST. |
 
 Because the prefix is part of one declaration, you never hand-edit the
 spec or the tool paths — they can't drift from the routes.
+
+> **Changed:** the spec used to keep bare operation paths (`/posts`) and carry
+> the prefix in `servers` instead. Both forms resolve to the same URL, and a
+> servers-aware client (Swagger UI, most SDK generators) was never affected.
+> The old form did mislead anything that reads `paths` literally — which is
+> most agents, and was also the 2026-07-26 backend eval's grader. If you have a
+> consumer that concatenated `servers[0].url` with each path key, drop the
+> concatenation: the path key is now complete on its own.
 
 ---
 
