@@ -1,5 +1,13 @@
 # SQLite Driver Benchmarks: Pure Go vs CGO
 
+> **Historical snapshot — captured 2025-05-15 at commit `14f7059`, not
+> re-measured since.** Both engines have changed substantially in the
+> intervening year. Treat every number below as a record of what was true
+> then, not as current guidance. What has not changed is the conclusion that
+> shaped the design: this engine is a correctness cross-check for the
+> framework's generated SQL, never something an application should run on.
+> See `gofastr docs sqlite-engine`.
+
 ## How to reproduce
 
 ```bash

@@ -35,6 +35,10 @@ results, the harness contract) are exempt — the exemption list lives in
 - [Core packages](core-packages.md) — a map of the exported `core/*`
   packages with no dedicated page: what each does, when you touch it
   directly vs through the framework, and one code anchor.
+- [The in-house SQLite engine](sqlite-engine.md) — why this repo holds a
+  second, from-scratch SQLite (`gofastr-sqlite`) alongside the
+  modernc.org/sqlite your app actually ships, and why you should never
+  import it.
 
 ## Entity APIs
 

@@ -50,6 +50,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **The in-house SQLite engine is documented.** `sqlite/` holds a
+  from-scratch SQLite — pager, B-tree, parser, file format, ~7k lines plus as
+  many again in tests — that nothing outside this repo should ever import. It
+  had no doc topic, no ROADMAP entry, and no README mention, so the only way
+  to learn what it was for was to read it. `gofastr docs sqlite-engine` now
+  states the split plainly: applications get modernc.org/sqlite as `sqlite3`
+  via `sqlite/stdlib`; the in-house engine is registered as `gofastr-sqlite`
+  and exists so ~20 suites can validate the framework's generated SQL against
+  an implementation that shares no code with the one it was developed on.
+  `sqlite/BENCHMARKS.md` is marked as the 2025-05-15 snapshot it is, and
+  `sqlite/driver_name_test.go` fails if the engine ever claims the `sqlite3`
+  name — the day it does, the whole suite starts validating the wrong engine
+  while every app still ships modernc.
+
 - **Every app built on GoFastr inherited the Docker client stack.**
   `testcontainers-go` was a direct require in the root `go.mod` — used only to
   spawn `postgres:16-alpine` for this repo's own tests — and Go hands a
