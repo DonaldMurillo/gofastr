@@ -7,6 +7,48 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **The release gate now checks SECURITY.md.** `scripts/release-gate.sh`
+  refuses to publish a tag unless SECURITY.md names the released minor as
+  the supported line (v0.64.0 shipped while the policy still said
+  `0.63.x`; that class of drift now aborts the release instead).
+- **CI cross-compiles for Windows and macOS.** The blocking job now runs
+  `GOOS=windows` / `GOOS=darwin` compile smokes, so the windows-tagged
+  runtime files can no longer rot uncompiled on the ubuntu-only matrix.
+- **The layering rules are now a test.** `framework/layering_test.go`
+  mechanically enforces the ARCHITECTURE.md invariants: no framework
+  subpackage depends on the root facade (with the one sanctioned
+  `pluginhost` → `battery/auth` carve-out pinned), `uihost` never links
+  `framework/ui`, and `core-ui` never imports `framework`.
+- Direct tests and a 98.0 coverage floor for `framework/datexport`, the
+  registry behind `ExportData` / `ImportData` / `EraseUserData` —
+  previously covered only from the consumer side.
+
+### Fixed
+
+- **Docs told the truth about `.env` loading.** `deploy.md` claimed
+  dotfiles load "in development"; `NewApp` loads them in every
+  environment unless `GOFASTR_DOTENV=off`, and `.env.<APP_ENV>` joins the
+  load order whenever `APP_ENV` is set. The corrected wording is pinned
+  by the docs truth sweep.
+- `query-dsl.md` pointed composite cursors at `EntityConfig.CursorFields`;
+  the real path is `EntityConfig.Pagination.CursorFields`. Also pinned.
+- **The docs site stopped calling Meridian regenerable.** The homepage and
+  `/examples` cards said Meridian "is generated from one gofastr.yml"
+  (the `/examples` card added "zero hand-written app code" and a
+  `gofastr generate` run command its own doc.go forbids). Both now say
+  what `examples/meridian/doc.go` says: seeded from one blueprint,
+  hand-evolved since.
+- `framework/ARCHITECTURE.md` caught up with the tree: the real
+  subpackage count, map entries for the eight packages that had none
+  (contracts, datexport, embed, fanout, gallery, outbox, ratelimit,
+  semcov), the current intra-layer import edges, and why-it-stays rows
+  for the root files added since the last refresh.
+- README's documentation list now links the auth reference, access
+  control, the runtime contract, and the browsable docs index — the
+  most-asked topics were previously unreachable from the front door.
+
 ## [0.64.0] - 2026-08-16
 
 ### Changed

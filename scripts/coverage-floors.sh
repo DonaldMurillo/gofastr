@@ -63,6 +63,7 @@ FLOORS="
 ./framework/contracts/ 72.0
 ./framework/contracts/analyzers/ 70.5
 ./framework/crud/ 96.9
+./framework/datexport/ 98.0
 ./framework/entity/ 86.5
 ./framework/migrate/ 73.5
 ./framework/semcov/ 87.0

@@ -188,6 +188,36 @@ func TestReleaseGate(t *testing.T) {
 			wantSubs: []string{"all 3 required checks green"},
 		},
 		{
+			// The policy check fires when SECURITY_MD is supplied: the
+			// declared supported line must name the minor being released.
+			name:       "current SECURITY.md passes",
+			manifest:   []string{A},
+			runs:       mk(A),
+			onMain:     true,
+			securityMD: "## Supported versions\n\nOnly `0.99.x` receives security fixes.\n",
+			wantPass:   true,
+			wantSubs:   []string{"all 1 required checks green"},
+		},
+		{
+			name:       "stale SECURITY.md fails",
+			manifest:   []string{A},
+			runs:       mk(A),
+			onMain:     true,
+			securityMD: "## Supported versions\n\nOnly `0.63.x` receives security fixes.\n",
+			wantSubs:   []string{"does not name 0.99.x"},
+		},
+		{
+			// A mention of the minor OUTSIDE the Supported versions section
+			// must not satisfy the gate while the declaration stays stale.
+			name:     "minor named outside the section fails",
+			manifest: []string{A},
+			runs:     mk(A),
+			onMain:   true,
+			securityMD: "## Audit trail\n\n0.99.x fixed a header bug.\n\n" +
+				"## Supported versions\n\nOnly `0.63.x` receives security fixes.\n",
+			wantSubs: []string{"does not name 0.99.x"},
+		},
+		{
 			// Newest run wins: a red re-run of an already-green check
 			// must block, or a release ships on a stale success.
 			name:     "red rerun of a green check fails",
@@ -315,6 +345,7 @@ type gateCase struct {
 	releaseExists bool
 	onMain        bool
 	mainHead      string
+	securityMD    string // written to a fixture and passed as SECURITY_MD when non-empty
 	wantPass      bool
 	wantSubs      []string
 }
@@ -409,6 +440,16 @@ func runGate(t *testing.T, sha, mainHead string, tc gateCase) (bool, string) {
 		"STUB_MAIN_HEAD="+mainHead,
 		"STUB_ON_MAIN="+onMain,
 	)
+	// Always set SECURITY_MD so an ambient value in the runner's
+	// environment cannot leak into non-fixture cases. Empty falls through
+	// to the script's default, which does not exist at this cwd, so the
+	// policy check stays out of cases that do not opt in.
+	securityPath := ""
+	if tc.securityMD != "" {
+		securityPath = filepath.Join(dir, "SECURITY.md")
+		writeFixture(t, securityPath, tc.securityMD)
+	}
+	cmd.Env = append(cmd.Env, "SECURITY_MD="+securityPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil && cmd.ProcessState.ExitCode() != 1 {
 		t.Fatalf("unexpected exit (not 0/1): %v\n--- output ---\n%s", err, out)

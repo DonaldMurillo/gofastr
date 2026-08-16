@@ -515,7 +515,7 @@ func builtWithSection() render.HTML {
 		card("https://barcode.donaldmurillo.com/", "in production", "Barcode & QR Code Maker",
 			render.Text("A live tool, no signup required, to generate and read barcodes and QR codes as PNG, SVG, or PDF, with CSV/Excel batch export, a REST API, and an MCP server."), true),
 		card("/examples#meridian", "examples/meridian", "Meridian: SaaS console",
-			render.Text("The flagship is a billing console with customers, subscriptions, invoices, MRR, and charts, plus its marketing site, auth, and admin. It is generated from one gofastr.yml."), false),
+			render.Text("The flagship is a billing console with customers, subscriptions, invoices, MRR, and charts, plus its marketing site, auth, and admin. It was seeded from one gofastr.yml and has been hand-evolved since."), false),
 	)
 
 	head := sectionHead(

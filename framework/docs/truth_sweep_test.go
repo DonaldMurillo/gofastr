@@ -188,6 +188,48 @@ func TestIsolationDocNamesTheRealConfigFile(t *testing.T) {
 	}
 }
 
+// ── 2026-08-16 truth audit ──
+
+// query-dsl.md pointed composite cursors at EntityConfig.CursorFields.
+// Cursor config lives in the Pagination group: the real path is
+// EntityConfig.Pagination.CursorFields (framework/entity/entity.go).
+func TestQueryDSLDocUsesGroupedCursorPath(t *testing.T) {
+	doc := readDoc(t, "query-dsl.md")
+	if strings.Contains(doc, "EntityConfig.CursorFields") {
+		t.Error("query-dsl.md references EntityConfig.CursorFields; the field is EntityConfig.Pagination.CursorFields (framework/entity/entity.go)")
+	}
+	if !strings.Contains(doc, "EntityConfig.Pagination.CursorFields") {
+		t.Error("query-dsl.md no longer documents EntityConfig.Pagination.CursorFields — the composite-cursor paragraph must name the real path")
+	}
+	if !strings.Contains(readRepo(t, "framework/entity/entity.go"), "CursorFields []string") {
+		t.Error("PaginationConfig lost CursorFields — recheck query-dsl.md's composite-cursor paragraph")
+	}
+}
+
+// deploy.md qualified the .env auto-load with "in development". NewApp
+// loads dotfiles in EVERY environment; only GOFASTR_DOTENV=off suppresses
+// the load, and .env.<APP_ENV> is probed whenever APP_ENV is set.
+func TestDeployDocDotenvLoadIsUnconditional(t *testing.T) {
+	// Collapse whitespace so the assertion survives line-wrapping.
+	doc := strings.Join(strings.Fields(readDoc(t, "deploy.md")), " ")
+	for _, stale := range []string{
+		"auto-loaded in development",
+		"`.env.<APP_ENV>` in development",
+	} {
+		if strings.Contains(doc, stale) {
+			t.Errorf("deploy.md says %q; the load is unconditional, gated only by GOFASTR_DOTENV=off (framework/app.go NewApp)", stale)
+		}
+	}
+	for _, want := range []string{"every environment", "GOFASTR_DOTENV=off"} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("deploy.md no longer says %q — the Configuration section must state the unconditional load and its kill switch", want)
+		}
+	}
+	if !strings.Contains(readRepo(t, "framework/app.go"), `os.Getenv("GOFASTR_DOTENV") != "off"`) {
+		t.Error("the NewApp dotenv gate changed — recheck deploy.md's Configuration section")
+	}
+}
+
 // access-control.md used framework.Wildcard. Wildcard lives in
 // framework/access and is not among the framework facade's re-exports.
 func TestAccessControlDocUsesTheRealWildcardPath(t *testing.T) {

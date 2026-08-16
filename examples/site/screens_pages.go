@@ -403,10 +403,10 @@ func exHero() render.HTML {
 // the content again.
 func exRowItems() []render.HTML {
 	return []render.HTML{
-		exRow("01", "examples/meridian", "Meridian — SaaS console", "flagship", "100% generated",
-			"A billing & revenue console (customers, subscriptions, invoices, MRR + charts) plus its marketing site, auth, RBAC, and an admin back-office — generated from one gofastr.yml, with writable screens (add/edit/delete) and zero hand-written app code.",
-			[]string{"One blueprint → marketing + app + auth + admin", "Server-rendered DataTable / charts / forms, island RPCs", "Writable CRUD + RBAC, with a generated end-to-end test suite"},
-			"cd examples/meridian && gofastr generate --from=gofastr.yml && go run .",
+		exRow("01", "examples/meridian", "Meridian — SaaS console", "flagship", "seeded + hand-evolved",
+			"A billing & revenue console (customers, subscriptions, invoices, MRR + charts) plus its marketing site, auth, RBAC, and an admin back-office — seeded from one gofastr.yml and hand-evolved since, with writable screens (add/edit/delete).",
+			[]string{"One blueprint seeded marketing + app + auth + admin", "Server-rendered DataTable / charts / forms, island RPCs", "Writable CRUD + RBAC, with a generated end-to-end test suite"},
+			"cd examples/meridian && go run .",
 			// The exact, full blueprint that generates the app — embedded at
 			// build time, shown verbatim in a scrolling block. Drift-guarded by
 			// TestEmbeddedBlueprintsMatchSource.

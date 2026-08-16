@@ -95,8 +95,8 @@ pagination via `after(cursor)` instead.
 ### `after(cursor)`
 
 Forward keyset pagination. `BuildDSLQuery` wires `after(value)` into a
-`field > value` predicate on the entity's cursor column — `CursorField`
-when set, otherwise the primary key. Unlike the HTTP cursor API (which
+`field > value` predicate on the entity's cursor column —
+`Pagination.CursorField` when set, otherwise the primary key. Unlike the HTTP cursor API (which
 round-trips an opaque base64 token), the DSL takes the **bare keyset
 value**: `posts.after(1024)` means "rows after id 1024".
 
@@ -105,7 +105,7 @@ posts.where(status="published").order(id).after(1024).limit(20)
 → … WHERE (status = $1) AND (id > $2) ORDER BY id LIMIT $3
 ```
 
-Composite cursors (`EntityConfig.CursorFields`) have no single-value
+Composite cursors (`EntityConfig.Pagination.CursorFields`) have no single-value
 DSL form, so `after()` on such an entity returns an error rather than
 silently paging from the start — use the HTTP cursor API for those.
 

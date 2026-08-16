@@ -167,6 +167,18 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Cross-compile smoke (windows, darwin)
+        # The runner is ubuntu-only, so windows-tagged files never compile
+        # in any gate without this. Compile-only — no tests run. CGO_ENABLED
+        # is forced off: the job-level "1" would make the cross-build
+        # compile runtime/cgo with the host gcc, which cannot target the
+        # other OSes.
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          GOOS=windows go build ./...
+          GOOS=darwin go build ./...
+
       - name: gofmt (tracked files must be clean)
         run: |
           drift=$(git ls-files '*.go' | xargs gofmt -l)

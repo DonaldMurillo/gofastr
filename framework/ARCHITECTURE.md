@@ -12,7 +12,7 @@
 
 `framework/` used to be a single 22k-LOC package. It now exposes the same
 public API through a thin **facade** at `framework/`, with the actual
-implementations split across ~25 runtime subpackages (plus a handful of
+implementations split across ~44 runtime subpackages (plus a handful of
 test-infra and `experimental/` packages that are out-of-contract — see
 the map). The facade re-exports
 types/funcs via type aliases and `var` bindings so external callers
@@ -193,23 +193,41 @@ framework/
 │                    written by testkit/axetest scans, read by uihost strict
 │                    mode. Deliberately chromedp-free so production code can
 │                    read it without linking a browser.
+├── contracts/       Semantic analysis: the rule catalog (stable GOFASTR
+│                    ids, each with Why/Fix + a bad/good example pair) and
+│                    the analyzer runner behind `gofastr verify`. The
+│                    analyzers self-register from `contracts/analyzers`.
 ├── cron/            CronJob / Scheduler — minimal in-process tick loop
 ├── crud/            HTTP CRUD layer, eager loading, includes, nested
 │                    filters, typed query, MCP tool generator,
 │                    JSONCase config, owner/tenant scoping, in-tx helper.
 │                    The biggest pkg.
+├── datexport/       Process-wide registry of data-bearing tables that live
+│                    outside the entity registry (battery raw DDL), so
+│                    App.ExportData / ImportData / EraseUserData reach them.
 ├── db/              Executor + tx context primitives shared across
 │                    crud, slowquery, and the framework root tx wrapper
 ├── dev/             Dev-mode-only helpers (livereload, debug surfaces)
 ├── docs/            Embedded doc content (framework/docs/content/*.md) + `gofastr docs`
 ├── dsl/             ?dsl=… query string parser/builder
+├── embed/           Embeddable screens/islands — a customer pastes one
+│                    <script> tag and gets a live, themed, authenticated
+│                    iframe of the app, gated by a per-surface origin list.
 ├── entity/          Entity + EntityConfig + Define, all column types
 │                    and operators (And/Or/Not/Condition/Order),
 │                    relations, validators, EntityDeclaration JSON
 │                    loader, and the shared Registry interface
 ├── event/           EventBus / Event / EventHandler
+├── fanout/          Postgres LISTEN/NOTIFY implementation of the
+│                    core/fanout.Fanout interface — one channel, fallback
+│                    table for oversize payloads. Lossy best-effort by
+│                    design; durable delivery is outbox's job.
 ├── file/            FileField + Process/Delete/GeneratePath
 ├── filter/          Query-string filter & sort parsing
+├── gallery/         Importable component catalog behind the /components
+│                    showcase — renders every design-system component
+│                    against an arbitrary theme. Composes framework/ui, so
+│                    like sdkdocs it is deliberately NOT a uihost option.
 ├── hook/            HookRegistry / HookType + lifecycle constants
 │                    (BeforeCreate, AfterCreate, etc.)
 ├── i18nui/          Translated default strings for framework UI surfaces
@@ -229,6 +247,10 @@ framework/
 ├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
 │                    URL builders (EntityEndpointPath etc.)
+├── outbox/          Transactional outbox — Append writes the event row in
+│                    the caller's tx; a background Relay delivers each
+│                    committed row to declared durable consumers with
+│                    at-least-once semantics.
 ├── owner/           "Who owns this row" seam — OwnerField scoping for CRUD
 ├── pagination/      Cursor + offset pagination
 ├── pluginhost/      Heavy-JS plugin platform: sandboxed-iframe isolation host
@@ -238,6 +260,10 @@ framework/
 │                    relaxation, data-fui-plugin* mount markers, capability
 │                    gate over battery/auth scopes. Extracted from the
 │                    gofastr-plugins wysiwyg build (#37 client mirror).
+├── ratelimit/       Sliding-window + lockout HTTP rate limiter ("N per
+│                    period, then block") — battery/auth's login/register/
+│                    reset limiters build on it. The token-bucket sibling
+│                    is core/middleware.RateLimit.
 ├── routegroup/      Route groups — prefix, middleware, access, OpenAPI tags
 ├── sdk/             Shared contract between `gofastr generate sdk` and the
 │                    serving side (sdkdocs): artifact manifest schema, the
@@ -250,6 +276,10 @@ framework/
 │                    is NOT a uihost option: uihost must never import
 │                    framework/ui (always-on styles would leak into every
 │                    host's CSS bundle).
+├── semcov/          Semantic-coverage manifest — records which routes,
+│                    permissions, and entity endpoints a test run actually
+│                    exercised through the real router, as opposed to line
+│                    coverage's "did this statement run".
 ├── slowquery/       SlowQueryLogger — wraps any db.Executor
 ├── softdelete/      SoftDelete / Restore / ForceDelete + filter
 ├── tenant/          TenantConfig / Middleware / GetTenantID / etc.
@@ -276,12 +306,22 @@ Out-of-contract (NOT part of the layering rules below):
 
 The root package `framework/` itself contains:
 
-- **App spine**: `app.go`, `plugin.go`, `battery.go`, `module.go`, `registry.go`, `typed_hooks.go`
+- **App spine**: `app.go`, `plugin.go`, `battery.go`, `module.go`, `registry.go`, `typed_hooks.go`, `role.go`, `setup.go`
 - **App-method-tied helpers**: `audit.go` (App.WithAuditLog),
   `tx.go` (App.InTx), `flags.go` (App feature-flag store),
   `health.go` (App health/readiness probes), `i18n.go` (App.WithI18n / T),
-  `mcp_introspection.go` (App.WithMCPIntrospection), `agents.go`
+  `seed.go` (App.WithSeed), `metrics.go` (App.Metrics accessor),
+  `export.go` (App.ExportStatic), `export_data.go` / `erase_data.go`
+  (App.ExportData / ImportData / EraseUserData), `dbctx.go`
+  (WithDBContext / DBFromContext), `agents.go`
   (App agents-inventory wiring)
+- **MCP surfaces**: `mcp_introspection.go` (App.WithMCPIntrospection),
+  `mcp_control.go` (WithMCPControl / WithMCPGate), `mcp_app.go`
+  (WithMCPApp), `mcp_contracts.go` + `mcp_contracts_dev.go` (contract
+  tools), `devmcp_bind.go` (loopback guard for the dev MCP listener)
+- **Agent-readiness endpoints**: `wellknown.go`, `agent_extras.go`,
+  `authmd.go`, `oauth_resource.go`
+- **Semantic coverage**: `semanticcoverage.go` (RecordSemanticCoverage)
 - **Test harness**: `testharness.go` (TestApp wraps `*App`)
 - **Facade re-exports**: `reexports_*.go` — one file per subpackage
   whose symbols are referenced as `framework.X` by external code
@@ -293,31 +333,44 @@ The root package `framework/` itself contains:
 
 ```
 L1  internal/casing                         (no internal deps)
-L2  entity                                   (imports core/ only — no
-                                              framework-internal deps)
+L2  entity                                   (imports core/ +
+                                              internal/casing only)
 L3  hook, event, file, cron, access, db,    (leaf packages — no framework-
-    pagination, filter, owner                internal imports at all)
-    dsl, tenant, softdelete, migrate         (each imports entity)
-    slowquery, outbox                        (intra-L3 edges: slowquery
-                                             → db; outbox → event + db)
+    pagination, filter, owner, agentsinv,    internal imports at all)
+    axecov, datexport, fanout, i18nui,
+    image, lifecycle, ratelimit, semcov,
+    docs, dev, routegroup
+    dsl, tenant, softdelete, migrate, sdk    (each imports entity)
+    slowquery, outbox, embed, imagefield,    (intra-L3 edges — listed
+    contracts                                 below)
 L4  crud                                     (uses entity, hook, event, db,
                                               file, filter, pagination,
-                                              tenant, owner, access,
+                                              tenant, owner, access, embed,
                                               internal/casing; softdelete
                                               is inlined, not imported)
     openapi                                  (uses crud, entity,
                                               internal/casing — sits above
                                               crud within L4)
+L4+ ui, uihost, and the packages             (the UI stack — same direction
+    composing them: ui/resource, static,      rule; uihost never imports
+    gallery, sdkdocs, pluginhost              ui — edges listed below)
 L5  framework/  (facade)                     (re-exports everything for
                                               the public API surface)
 ```
 
-(The map above is the real import graph as of v0.5.0 — verify with
+(The map above is the real import graph as of v0.64.0 — verify with
 `go list -f '{{join .Imports "\n"}}' ./framework/<pkg>` when in doubt.
 The rule is direction: a package may import packages in lower layers,
-never higher, and intra-layer edges should stay rare and deliberate —
-today only `slowquery → db`, `outbox → event`, `outbox → db`, and
-`openapi → crud` exist.)
+never higher, and intra-layer edges should stay rare and deliberate.
+Today's intra-L3 edges: `slowquery → db`, `outbox → event + db`,
+`embed → db + migrate + tenant`, `imagefield → file + image`,
+`contracts → agentsinv`. Within L4: `openapi → crud`. In the UI stack:
+`ui → i18nui + agentsinv`, `uihost → axecov + dev + embed + image +
+tenant`, `ui/resource → crud + filter + ui`, `static → ui + uihost`,
+`gallery → ui + image + agentsinv`, `sdkdocs → ui + sdk + entity +
+internal/casing`, and `pluginhost → uihost`. `uihost/uinoderender → ui` is a separate
+package on purpose: the host itself never links `framework/ui` — the
+node renderer that needs the component catalog sits above it.)
 
 One cross-tree edge is deliberate: **`battery/auth` → `framework/access`.**
 The token-scope matcher (`scopeMatches`, backing `auth.HasScope` and the
@@ -328,9 +381,23 @@ the framework tree, so the edge points downward and introduces no cycle;
 `core/handler` + `core/query`). `access.Can` — the exact-match RBAC hot
 path — is a different matcher on purpose and never learns wildcards.
 
+One edge runs the other way and is tracked, not hidden:
+**`framework/pluginhost` → `battery/auth`.** The capability gate
+(`pluginhost.Allow`) needs both halves of the scope check —
+`access.ScopeMatch` (reachable downward) and `auth.HasScope`, which reads
+the caller's token out of the request context and is genuinely
+battery/auth's. The import carries a `//gofastr:allow(GOFASTR1301)`
+annotation in `pluginhost/gate.go` and is the only upward edge in the
+tree.
+
 **No subpackage may import `framework/`.** If a subpackage needs a type
 defined in framework root (App, Registry, CrudHandler), one of three
-patterns applies — see "Cycle-breaking interfaces" below.
+patterns applies — see "Cycle-breaking interfaces" below. This invariant
+is enforced mechanically by `framework/layering_test.go`, which also
+asserts that `uihost`'s dependency closure excludes `framework/ui` and
+that no `core-ui` package imports `framework`. The test pins one
+sanctioned carve-out: `pluginhost` carries the root in its closure
+transitively, through the `battery/auth` edge above — and only there.
 
 ---
 
@@ -353,6 +420,13 @@ either require an API redesign or create an unbreakable import cycle.
 | `tx.go` | `(a *App) InTx(...)` is the public entry. The lower-level context helpers already moved to `framework/db`; this file is just App's wrapper. |
 | `testharness.go` | `TestApp.App *App` field is used by tests. Sixteen test files use `TestApp` / `TestHarness` unqualified inside `package framework`. Extracting requires either an interface refactor or qualifying every test. |
 | `processmodule*.go` | Process-isolated third-party modules (#37). The supervisor, store, runner, sandbox, broker, and proxy are bound to `*App` (spawn under the app's lifecycle drainer, re-dispatch reverse calls through the app router, enforce the app's `RolePolicy`). `RegisterProcessModule` is the single `(a *App)` entry. See the process-module section below. |
+| `role.go` | `Role` (all / serve / worker) + `WithRole` + `resolveRole`. The role decides at boot which responsibilities the binary assumes; `App.Start` consults it to skip worker-scoped consumers (cron, queues, the outbox relay) or the HTTP surface, so it is read directly by the spine. An unknown role fails loudly in `NewApp`. |
+| `setup.go` | `SetupRunner` interface + `WithSetup` first-run setup. framework defines the interface rather than importing `battery/setup` to avoid a layering cycle; `App.Start` owns the lifecycle (incomplete → wizard or headless run → atomic swap to the real handler). |
+| `export_data.go`, `erase_data.go` | `(a *App) ExportData` / `ImportData` / `EraseUserData` — data portability and right-to-be-forgotten. Both walk the App's entity registry plus the `datexport` registry, and all raw table access funnels through the SafeIdent-guarded path here, so they need the App's DB handle and migrate dialect. |
+| `wellknown.go`, `agent_extras.go`, `authmd.go`, `oauth_resource.go` | The agent-readiness discovery endpoints (`/.well-known/api-catalog`, the MCP server card, Web Bot Auth JWKS, UCP/ACP docs, `/auth.md`, RFC 9728 protected-resource metadata). Each auto-serves when its precondition holds — entities registered, WithMCP mounted, or a host opt-in config — all of which is App state. |
+| `mcp_contracts.go` (+ `mcp_contracts_dev.go`) | Contract-catalog MCP tools (`contracts_list` / `_explain` / `_capabilities`) registered alongside `WithMCPIntrospection`; the dev file adds the verify/fix tools that read the source tree and exist only in the dev loop. Registration hangs off the App's `/mcp` server. |
+| `mcp_control.go` | `WithMCPControl` — the mutating tool set (`app_module_enable` / `app_module_disable`), deliberately separate from read-only introspection, plus `WithMCPGate` for caller gating. Outside the dev loop the tools require an authenticated caller and refuse embed-grant credentials; dev-implied tools are ungated but loopback-bound. Same App-bound registration shape as introspection. |
+| `semanticcoverage.go` | `RecordSemanticCoverage(t, app)` wires the app's router serve hook and the access/hook/event observers into the `semcov` recorder; `TestHarness` calls it automatically, and `GOFASTR_SEMANTIC_COVERAGE=1` enables it in a serving process. Needs `app.router`, so it stays with App. |
 
 ---
 

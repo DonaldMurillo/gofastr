@@ -10,17 +10,20 @@
 # creates the release — the workflow step after a passing gate does) and
 # refuses to publish unless:
 #
-#   1. no release for the tag already exists (a manual `gh release create`
+#   1. SECURITY.md names the minor being released as the supported line
+#      (vX.Y.Z tag -> `X.Y.x` in the "Supported versions" section),
+#   2. no release for the tag already exists (a manual `gh release create`
 #      bypassed the gate, or a prior run already shipped),
-#   2. the tag commit IS the current head of main (not a stale re-tag, not an
+#   3. the tag commit IS the current head of main (not a stale re-tag, not an
 #      unmerged-PR commit), and
-#   3. EVERY required blocking check named in the manifest ran green on that
+#   4. EVERY required blocking check named in the manifest ran green on that
 #      commit's main-push CI run (ci.yml has no v* trigger; check runs attach
 #      to the commit, so the main-push run carries them).
 #
 # Fail-closed by construction: a red / cancelled / skipped / neutral /
-# timed-out check, a missing check, a stale or unmerged SHA, or a
-# pre-existing release all abort before anything is published.
+# timed-out check, a missing check, a stale or unmerged SHA, a stale
+# SECURITY.md, or a pre-existing release all abort before anything is
+# published.
 #
 # Why a script (not inline YAML): the gate is behavioral and must be testable
 # locally — GitHub Actions cannot run as a PR check. The logic lives here and
@@ -34,6 +37,7 @@
 #   MAIN_REF       ref to validate on    (default: origin/main)
 #   GATE_TIMEOUT   seconds to wait       (default: 3600)
 #   POLL_INTERVAL  seconds between polls (default: 30)
+#   SECURITY_MD    security policy file  (default: SECURITY.md)
 set -euo pipefail
 
 TAG="${1:?usage: release-gate.sh <tag> <repo> <sha> <manifest>}"
@@ -45,6 +49,7 @@ GIT_BIN="${GIT_BIN:-git}"
 MAIN_REF="${MAIN_REF:-origin/main}"
 GATE_TIMEOUT="${GATE_TIMEOUT:-3600}"
 POLL_INTERVAL="${POLL_INTERVAL:-30}"
+SECURITY_MD="${SECURITY_MD:-SECURITY.md}"
 
 fail() { echo "::error::release gate: $*" >&2; exit 1; }
 
@@ -64,7 +69,35 @@ if [ "${#REQUIRED[@]}" -eq 0 ]; then
 	fail "manifest $MANIFEST lists no required checks"
 fi
 
-# --- 1. A release must not pre-exist -----------------------------------------
+# --- 1. SECURITY.md must name the minor being released -----------------------
+# The "Supported versions" section promises fixes for the latest minor only,
+# and it drifts silently on release (it still named 0.63.x after v0.64.0
+# shipped). Derive the supported line from the tag (vX.Y.Z -> X.Y.x) and
+# require SECURITY.md to contain it. The workflow always invokes this script
+# from the checkout root (the scripts/ path could not resolve otherwise), so
+# there a missing SECURITY.md fails rather than skips; the one caller NOT at
+# the root is cmd/gofastr/release_gate_test.go, which drives the script from
+# its own package dir against stub tags — neither path below exists there, so
+# the policy check stays out of that harness.
+if [ -f "$SECURITY_MD" ] || [ -f scripts/release-gate.sh ]; then
+	supported="${TAG#v}"
+	supported="${supported%.*}.x"
+	if [ ! -f "$SECURITY_MD" ]; then
+		fail "$SECURITY_MD not found — the supported-versions policy must exist and name $supported before $TAG ships."
+	fi
+	# Scope the match to the "Supported versions" section: a mention of the
+	# minor elsewhere (audit-trail prose, a "not supported" sentence) must
+	# not satisfy the gate while the declaration itself stays stale.
+	section=$(awk '/^## Supported versions/{f=1; next} /^## /{f=0} f' "$SECURITY_MD")
+	if [ -z "$section" ]; then
+		fail "$SECURITY_MD has no '## Supported versions' section — the gate cannot verify $supported is the declared line for $TAG."
+	fi
+	if ! printf '%s\n' "$section" | grep -qF "$supported"; then
+		fail "$SECURITY_MD's 'Supported versions' section does not name $supported as the supported minor for $TAG — update it, merge that to main, and re-tag."
+	fi
+fi
+
+# --- 2. A release must not pre-exist -----------------------------------------
 # The workflow is the publisher. An existing release means someone ran
 # `gh release create` by hand (bypassing this gate entirely — the old flow
 # documented exactly that, and the old "already exists" check ran only AFTER
@@ -73,7 +106,7 @@ if "$GH_BIN" release view "$TAG" --json tagName >/dev/null 2>&1; then
 	fail "a release for $TAG already exists. The workflow must be the only publisher — delete the release (gh release delete $TAG --yes) and let the gate create it; do not run 'gh release create' by hand."
 fi
 
-# --- 2. The tag commit must BE the current head of main ----------------------
+# --- 3. The tag commit must BE the current head of main ----------------------
 # Equality is the rule. The ancestor check runs first only to give a sharper
 # error for a tag pointing at a commit that never landed on main at all
 # (unmerged PR / wrong branch); the equality check then catches a stale re-tag
@@ -86,7 +119,7 @@ if [ "$main_head" != "$SHA" ]; then
 	fail "$SHA ($TAG) is behind $MAIN_REF (head is $main_head). Re-tag on the current main head."
 fi
 
-# --- 3. Every required blocking check must be present + green ----------------
+# --- 4. Every required blocking check must be present + green ----------------
 # Fetch the tag commit's check runs and reduce them to one (status, conclusion)
 # per name — NEWEST wins, by descending id, so a red re-run of an
 # already-green check blocks the release (and a green re-run unblocks a
