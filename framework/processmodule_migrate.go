@@ -407,7 +407,10 @@ END $$`,
 func execModuleSchemaRoleStmts(ctx context.Context, adminDB *sql.DB, stmts []string) error {
 	for _, s := range stmts {
 		if _, err := adminDB.ExecContext(ctx, s); err != nil {
-			return fmt.Errorf("exec %q: %w", firstLine(s), err)
+			// Redact before quoting: the ALTER ROLE that re-asserts the
+			// password is a single line, so firstLine alone would hand the
+			// live credential to whatever logs this error.
+			return fmt.Errorf("exec %q: %w", firstLine(redactRolePassword(s)), err)
 		}
 	}
 	// Best-effort hardening of the public schema (design §7 lists it).
@@ -466,6 +469,24 @@ func shortHash(s string) string {
 		return s
 	}
 	return s[:12]
+}
+
+// redactRolePassword masks the literal after PASSWORD in role DDL so the
+// statement can appear in an error message without carrying the credential.
+// The literal is randomHex output (no embedded quotes), so the closing quote
+// found here is always the real terminator.
+func redactRolePassword(s string) string {
+	const marker = "PASSWORD '"
+	i := strings.Index(s, marker)
+	if i < 0 {
+		return s
+	}
+	rest := s[i+len(marker):]
+	j := strings.IndexByte(rest, '\'')
+	if j < 0 {
+		return s[:i+len(marker)] + "[redacted]"
+	}
+	return s[:i+len(marker)] + "[redacted]" + rest[j:]
 }
 
 // firstLine returns the first line of a (possibly multi-line) SQL

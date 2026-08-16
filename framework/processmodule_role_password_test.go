@@ -1,6 +1,10 @@
 package framework
 
 import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -96,3 +100,32 @@ func TestModuleSchemaRoleStmtsReassertPrivilegeFence(t *testing.T) {
 		t.Error("the public-schema REVOKE is missing — that statement is the actual privilege fence")
 	}
 }
+
+// The wrap in execModuleSchemaRoleStmts quotes the failing statement's first
+// line. The ALTER ROLE that re-asserts the password is a single line, so
+// without redaction an exec failure hands the live credential to whatever
+// logs the returned error. Driven through a driver that fails every exec so
+// each statement's wrapped error is observed, not just the first one's.
+func TestModuleSchemaRoleExecErrDoesNotLeakPassword(t *testing.T) {
+	const pw = "deadbeefcafe0123456789ab"
+	db := sql.OpenDB(failConnector{})
+	defer db.Close()
+	for _, s := range moduleSchemaRoleStmts("module_demo", "module_demo_role", pw) {
+		err := execModuleSchemaRoleStmts(context.Background(), db, []string{s})
+		if err == nil {
+			t.Fatal("fail-driver exec unexpectedly succeeded")
+		}
+		if strings.Contains(err.Error(), pw) {
+			t.Errorf("exec error leaks the role password: %v", err)
+		}
+	}
+}
+
+// failConnector hands out no connections, so every ExecContext errors and the
+// statement-quoting wrap path runs for the statement under test.
+type failConnector struct{}
+
+func (failConnector) Connect(context.Context) (driver.Conn, error) {
+	return nil, errors.New("provision exec refused by test driver")
+}
+func (failConnector) Driver() driver.Driver { return nil }
