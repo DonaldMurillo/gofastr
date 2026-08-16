@@ -134,6 +134,23 @@ func assemble(directive, code string) string {
 // topLevelFunc detects a snippet that declares its own functions.
 var topLevelFunc = regexp.MustCompile(`(?m)^func\s`)
 
+// repoGoDirective reads the `go` line out of the repository's own go.mod so a
+// generated temp module can declare the same floor.
+func repoGoDirective(t *testing.T, repoRoot string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
+	if err != nil {
+		t.Fatalf("read repo go.mod: %v", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if fields := strings.Fields(line); len(fields) >= 2 && fields[0] == "go" {
+			return fields[1]
+		}
+	}
+	t.Fatalf("no go directive in %s/go.mod", repoRoot)
+	return ""
+}
+
 func TestDocExamplesCompile(t *testing.T) {
 	entries, err := fs.ReadDir(contentFS, "content")
 	if err != nil {
@@ -172,14 +189,18 @@ func TestDocExamplesCompile(t *testing.T) {
 		t.Fatalf("resolve repo root: %v", err)
 	}
 	dir := t.TempDir()
+	// Track the repo's own `go` directive rather than hardcoding one: this
+	// module `replace`s gofastr to the checkout, and Go refuses to build a
+	// module whose directive is below a dependency's, so a hardcoded version
+	// breaks this gate on every toolchain bump.
 	gomod := fmt.Sprintf(`module docsnippet
 
-go 1.26.5
+go %s
 
 require github.com/DonaldMurillo/gofastr v0.0.0
 
 replace github.com/DonaldMurillo/gofastr => %s
-`, root)
+`, repoGoDirective(t, root), root)
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}

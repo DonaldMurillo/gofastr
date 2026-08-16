@@ -76,6 +76,33 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Go floor raised to 1.26.6 for six standard-library advisories.** `go.mod`
+  declared `go 1.26.5`, and govulncheck found six advisories reachable from
+  this tree that are all fixed in the *toolchain*, not in any dependency:
+  GO-2026-6089 (`net/http` skips `ReadHeaderTimeout` on the unencrypted HTTP/2
+  check, reached from `framework.App.Start`), GO-2026-5972 (`encoding/asn1`
+  unbounded recursion, reached from `uihost.UIHost.ServeHTTP`), GO-2026-5026
+  (`x/net/idna` accepts ASCII-only Punycode labels, reached from every
+  outbound `http.Client` call including `battery/auth`'s OAuth2 provider), and
+  three more. CI resolves its toolchain from `go-version-file: go.mod`, so the
+  directive is the pin. `CONTRIBUTING.md` and `deploy.md` were updated in the
+  same commit — the last time they drifted from `go.mod` it took a release to
+  notice.
+
+  Three temp modules that `replace` gofastr with the checkout hardcoded the old
+  directive, which Go rejects (a module may not declare a `go` version below a
+  dependency's). Two now read the repo's own go.mod, and the upgrade-fixture
+  harness rewrites the directive the same way it already rewrote the `replace`
+  — so a committed fixture stays an honest snapshot of the app its version
+  generated and a future bump touches neither.
+
+- **`battery/print/chromepdf` went stale on a root dependency bump.** The
+  nested module reaches its dependencies through a local `replace` to the repo
+  root, so raising `golang.org/x/image` in the root left its own go.mod/go.sum
+  behind and `go build` refused with a bare "updates to go.mod needed". Its
+  go.sum was also still carrying the entire testcontainers/Docker closure this
+  release removed from the root graph — 84 lines of it. Re-tidied.
+
 - **A process module's migrations failed on every deploy after the first.**
   `provisionModuleSchemaRole` creates the module's restricted Postgres role
   inside `DO $$ … CREATE ROLE … PASSWORD '<new>' … EXCEPTION WHEN

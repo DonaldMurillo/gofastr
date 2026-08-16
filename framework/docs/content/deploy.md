@@ -25,7 +25,7 @@ gofastr build
 gofastr build --pkg ./cmd/server
 ```
 
-> **Go version.** `go.mod` declares `go 1.26.5`. The floor comes from
+> **Go version.** `go.mod` declares `go 1.26.6`. The floor comes from
 > `chromedp/chromedp` (v0.15.1 declares `go 1.26`), which the root module
 > imports directly for browser-driven tooling — `framework/testkit/axetest`,
 > the `gofastr` CLI accessibility audit, and the eval harness — not from the

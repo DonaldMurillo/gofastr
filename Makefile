@@ -297,8 +297,10 @@ vulncheck:
 		"$$GVC" ./... && echo "  ✓ No known vulnerabilities"; \
 	else \
 		echo "  ! govulncheck not installed — gate cannot run (failing closed)"; \
-		echo "    Install with the repo's Go toolchain so it can load go1.26 packages:"; \
-		echo "    GOTOOLCHAIN=go1.26.3 go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+		echo "    Install with the repo's OWN toolchain, not whatever go install picks:"; \
+		echo "    a govulncheck built by an older Go cannot load this module's packages"; \
+		echo "    and reports 'package requires newer Go version' for every one of them."; \
+		echo "    GOTOOLCHAIN=go$$(awk '/^go /{print $$2; exit}' go.mod) go install golang.org/x/vuln/cmd/govulncheck@v1.1.4"; \
 		exit 1; \
 	fi
 

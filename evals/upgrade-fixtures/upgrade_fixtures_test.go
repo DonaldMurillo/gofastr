@@ -592,6 +592,14 @@ func mustCopyFile(t *testing.T, src, dst string) {
 // rewriteGomodReplace ensures the temp copy's go.mod resolves gofastr to the
 // current repo tree. It removes any prior gofastr replace line first so the
 // fixture stays reusable across re-runs.
+//
+// It also raises the fixture's `go` directive to the repo's. Go refuses to
+// build a module whose directive sits below a dependency's, and the replace
+// above makes THIS repo a dependency — so a fixture frozen at the toolchain of
+// its era would stop building the moment the repo's floor moves. Rewriting it
+// here rather than editing the committed fixtures keeps each fixture an honest
+// snapshot of the app its version generated, and keeps a toolchain bump from
+// touching every fixture in the tree.
 func rewriteGomodReplace(t *testing.T, appDir, repoRoot string) {
 	t.Helper()
 	gomod := filepath.Join(appDir, "go.mod")
@@ -602,6 +610,7 @@ func rewriteGomodReplace(t *testing.T, appDir, repoRoot string) {
 	s := string(b)
 	// Drop any existing gofastr replace directive.
 	s = regexp.MustCompile(`(?m)^replace\s+github\.com/DonaldMurillo/gofastr\b[^\n]*\n`).ReplaceAllString(s, "")
+	s = regexp.MustCompile(`(?m)^go\s+\S+$`).ReplaceAllString(s, "go "+repoGoDirective(t, repoRoot))
 	if !strings.HasSuffix(s, "\n") {
 		s += "\n"
 	}
@@ -609,6 +618,22 @@ func rewriteGomodReplace(t *testing.T, appDir, repoRoot string) {
 	if err := os.WriteFile(gomod, []byte(s), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
+}
+
+// repoGoDirective reads the `go` line out of the repository's own go.mod.
+func repoGoDirective(t *testing.T, repoRoot string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
+	if err != nil {
+		t.Fatalf("read repo go.mod: %v", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if fields := strings.Fields(line); len(fields) >= 2 && fields[0] == "go" {
+			return fields[1]
+		}
+	}
+	t.Fatalf("no go directive in %s/go.mod", repoRoot)
+	return ""
 }
 
 // assertShippedUpgradeDetector runs the CURRENT tree's `gofastr upgrade`

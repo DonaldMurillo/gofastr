@@ -1,6 +1,6 @@
 module checkembedtestdata
 
-go 1.26.5
+go 1.26.6
 
 require github.com/DonaldMurillo/gofastr v0.0.0
 
