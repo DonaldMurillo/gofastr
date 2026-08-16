@@ -237,8 +237,17 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 
 	// Re-check Complete: if setup already finished (concurrent path),
 	// don't re-run.
+	//
+	// A probe ERROR is not "not done" — it is "unknown", and this guard is
+	// the only thing standing between a second caller and a re-run of a
+	// step that typically creates the admin account. Refuse rather than
+	// proceed: a failed setup step is recoverable, a silently re-run one
+	// is not.
 	done, err := r.cfg.Complete(ctx)
-	if err == nil && done {
+	if err != nil {
+		return fmt.Errorf("setup: completion check failed, refusing to run step: %w", err)
+	}
+	if done {
 		return nil
 	}
 

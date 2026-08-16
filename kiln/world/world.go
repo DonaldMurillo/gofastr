@@ -1,6 +1,10 @@
 package world
 
-import "github.com/DonaldMurillo/gofastr/core-ui/node"
+import (
+	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/node"
+)
 
 // The UI node tree (Node, Action, action-kind consts) and its helpers now
 // live in the first-party core-ui/node package so the blueprint codegen
@@ -87,6 +91,39 @@ type AppConfig struct {
 	// dark overrides accept the semantic color keys. Values are CSS literals.
 	Theme     map[string]string `json:"theme,omitempty"`
 	ThemeDark map[string]string `json:"theme_dark,omitempty"`
+}
+
+// SafeThemeValue reports whether v may be emitted as a CSS custom-property
+// value.
+//
+// Theme values are agent-authored (the set_theme tool) and land in a
+// `--color-x: <value>;` declaration that core-ui/style writes out with no
+// escaping of its own. A `;` closes the declaration and `url(...)` fetches
+// off-origin, so an unvalidated value is arbitrary CSS: exfiltration
+// beacons, external @import, and restyling of the plan-approval UI that
+// gates destructive world edits.
+//
+// Allow-list, not block-list: colors, lengths, and font stacks need only
+// alphanumerics and a short punctuation set.
+func SafeThemeValue(v string) bool {
+	if v == "" || len(v) > 128 {
+		return false
+	}
+	for _, r := range v {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case strings.ContainsRune(" #%.,-+()/'\"_", r):
+		default:
+			return false
+		}
+	}
+	lower := strings.ToLower(v)
+	for _, bad := range []string{"url(", "image(", "expression(", "/*", "*/", "//"} {
+		if strings.Contains(lower, bad) {
+			return false
+		}
+	}
+	return true
 }
 
 // AuthConfig, AdminConfig, and PWAConfig mirror the corresponding current

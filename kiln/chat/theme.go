@@ -33,6 +33,15 @@ func applyAppOverrides(t *style.Theme, app *world.AppConfig) {
 		return
 	}
 	for k, v := range app.Theme {
+		// Emission-side guard, mirroring the one kiln/render applies on the
+		// /__gofastr/app.css path. This endpoint had none, so a set_theme
+		// value like `red;} @import url(//evil/x.css); :root{--x:0` was
+		// copied straight into the stylesheet. Checked here as well as at
+		// ingestion so a journal already holding a hostile value cannot
+		// render it on replay.
+		if !world.SafeThemeValue(v) {
+			continue
+		}
 		switch k {
 		case "primary":
 			t.Colors.Primary = style.Color{Name: t.Colors.Primary.Name, Value: v}

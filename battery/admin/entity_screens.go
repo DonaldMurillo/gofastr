@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -516,17 +517,34 @@ func formatValue(col string, ft schema.FieldType, raw any, relLabels map[string]
 	case schema.Image:
 		// Thumbnail in the list, larger preview in detail. src is the stored
 		// URL/path; alt is the column for a non-empty accessible name.
+		//
+		// The stored value is scheme-checked on write (crud.validateMediaURLs
+		// covers create/update/upsert/batch), but this render path is the
+		// last hop before it becomes a live attribute, and it was the only
+		// dynamic href/src sink in the repo not going through the guard.
+		// Seeded, migrated, and hook-written rows never met the write check.
+		src := urlsafe.Clean(val, urlsafe.Resource)
+		if src == "" {
+			return render.Tag("span", map[string]string{"class": "admin-muted"}, render.Text("—"))
+		}
 		cls := "admin-thumb"
 		if detail {
 			cls += " admin-thumb--lg"
 		}
-		return render.VoidTag("img", map[string]string{"class": cls, "src": val, "alt": col, "loading": "lazy"})
+		return render.VoidTag("img", map[string]string{"class": cls, "src": src, "alt": col, "loading": "lazy"})
 	case schema.File:
 		name := val
 		if i := strings.LastIndexAny(val, "/\\"); i >= 0 && i < len(val)-1 {
 			name = val[i+1:]
 		}
-		return render.Tag("a", map[string]string{"class": "admin-file", "href": val, "download": "", "rel": "noopener"}, render.Text(name))
+		// `download` does not defuse a javascript: href — browsers ignore
+		// the attribute for non-http(s) schemes — so an unguarded stored
+		// value here would execute in the admin's origin on click.
+		href := urlsafe.Clean(val, urlsafe.Resource)
+		if href == "" {
+			return render.Tag("span", map[string]string{"class": "admin-muted"}, render.Text(name))
+		}
+		return render.Tag("a", map[string]string{"class": "admin-file", "href": href, "download": "", "rel": "noopener"}, render.Text(name))
 	case schema.JSON:
 		if detail {
 			return render.Tag("pre", map[string]string{"class": "admin-json"},

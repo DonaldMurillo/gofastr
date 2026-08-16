@@ -997,17 +997,17 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-approve" `+
 				`data-plan-action="approve" data-plan-id="%s" `+
 				`data-fui-rpc="/kiln/panel/approve_plan"  `+
-				`data-fui-rpc-body='{"plan_id":"%s"}'%s>%s</button>`+
+				`data-fui-rpc-body='%s'%s>%s</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-reject" `+
 				`data-plan-action="reject" data-plan-id="%s" `+
 				`data-fui-rpc="/kiln/panel/reject_plan"  `+
-				`data-fui-rpc-body='{"plan_id":"%s"}'%s>%s</button>`+
+				`data-fui-rpc-body='%s'%s>%s</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-modify" `+
 				`data-fui-fill-input=".kiln-input" `+
 				`data-fui-fill-text="Refine plan %s: "%s>%s</button>`+
 				`</div>`,
-			escAttr(p.PlanID), escAttr(p.PlanID), approveExtra, approveLabel,
-			escAttr(p.PlanID), escAttr(p.PlanID), rejectExtra, rejectLabel,
+			escAttr(p.PlanID), attrJSON(map[string]string{"plan_id": p.PlanID}), approveExtra, approveLabel,
+			escAttr(p.PlanID), attrJSON(map[string]string{"plan_id": p.PlanID}), rejectExtra, rejectLabel,
 			escAttr(p.PlanID), modifyExtra, modifyLabel)
 	}
 	b.WriteString(`</li>`)
@@ -1155,9 +1155,33 @@ func escHTML(s string) string {
 	return r.Replace(s)
 }
 
+// escAttr escapes a value for an HTML attribute.
+//
+// The single quote is NOT optional here: this panel emits
+// single-quoted attributes (the data-fui-rpc-body payloads in
+// renderPlanCard), so omitting `'` let a model-chosen plan_id close the
+// attribute and plant a live event handler on the operator's own
+// Approve button — the control that gates destructive world mutations.
+// Escape both quote characters and this function is correct for either
+// delimiter.
 func escAttr(s string) string {
-	r := strings.NewReplacer(`"`, `&quot;`, `&`, `&amp;`, `<`, `&lt;`, `>`, `&gt;`)
+	r := strings.NewReplacer(`&`, `&amp;`, `"`, `&quot;`, `'`, `&#39;`, `<`, `&lt;`, `>`, `&gt;`)
 	return r.Replace(s)
+}
+
+// attrJSON renders v as JSON for embedding in an HTML attribute.
+//
+// Hand-building the JSON and escaping the pieces cannot work: escAttr
+// turns a `"` inside a value into &quot;, which the browser decodes
+// back to a bare quote INSIDE the JSON string, corrupting the document
+// the runtime then parses. Encoding first and escaping the whole
+// result round-trips exactly.
+func attrJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return escAttr(string(b))
 }
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }

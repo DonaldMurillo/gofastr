@@ -708,6 +708,13 @@ func (t *Tools) SetTheme(_ context.Context, args SetThemeArgs) Result {
 	} else {
 		next.Theme = map[string]string{}
 		for k, v := range args.Theme {
+			// Ingestion-side guard: keep hostile CSS out of the world
+			// entirely rather than relying on every renderer to strip it.
+			// Values reach a `--token: <value>;` declaration unescaped, so
+			// a `;` or `url(...)` here is arbitrary CSS on every page.
+			if !world.SafeThemeValue(v) {
+				return Result{Error: fmt.Sprintf("theme value for %q is not a safe CSS literal", k)}
+			}
 			next.Theme[k] = v
 		}
 	}

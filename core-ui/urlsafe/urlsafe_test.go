@@ -23,6 +23,13 @@ func TestRejectedUnderEveryPolicy(t *testing.T) {
 		{"view-source:https://x", "view-source scheme"},
 		{"chrome://settings", "browser-internal scheme"},
 		{"//evil.example/x", "protocol-relative inherits the page scheme"},
+		// Browsers normalize '\' to '/' at the authority boundary, so each
+		// of these is //evil.example by the time it is resolved. `/\` is
+		// the one that matters most: it starts with '/', so before the
+		// backslash rule it passed as an ordinary relative reference.
+		{"\\\\evil.example/x", "double backslash normalizes to protocol-relative"},
+		{"\\/evil.example/x", "backslash-slash normalizes to protocol-relative"},
+		{"/\\evil.example/x", "slash-backslash normalizes to protocol-relative"},
 		{"/x\x00y", "NUL byte"},
 		{"/x\ny", "raw LF splits the attribute"},
 		{"/x\ry", "raw CR splits the attribute"},

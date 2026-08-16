@@ -75,6 +75,17 @@ func OK(u string, p Policy) bool {
 	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
 		return false
 	}
+	// Browsers normalize '\' to '/' at the authority boundary for special
+	// schemes, so `\\host`, `\/host` and `/\host` all resolve to `//host`
+	// — the protocol-relative form rejected just below. `/\host` is the
+	// dangerous spelling: it starts with '/', so it would otherwise pass
+	// the relative-reference check and read as same-origin to anyone
+	// eyeballing it. No reference this package should pass contains a
+	// backslash, so reject it outright — the same posture as
+	// core-ui/app.redirect and core-ui/uinodev1.IsValidHostRelative.
+	if strings.IndexByte(trimmed, '\\') >= 0 {
+		return false
+	}
 	if strings.HasPrefix(trimmed, "//") {
 		return false
 	}

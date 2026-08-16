@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-08-16
+
 ### Changed
 
 - **BREAKING: `/openapi.json` path keys now carry the API prefix.** Under
@@ -73,6 +75,90 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `/openapi.json` and `/api/llm.md` answer 401 by default, that `/metrics`
   404s until `WithMetrics()`, and that a granular option placed before
   `WithConfig` is silently zeroed by it.
+
+### Security
+
+An audit of the packages that had no `*_security_test.go` coverage. The 194
+existing files pin what earlier passes cleared; this one worked the
+never-looked list instead. Every fix below has a test that was confirmed
+failing against the unfixed code first.
+
+- **SSRF: an IPv4-translation address reached internal space.**
+  `netguard.IsInternal` normalized only the IPv4-mapped form
+  (`::ffff:a.b.c.d`, via `net.IP.To4`), so every other encoding that resolves
+  to an IPv4 destination read as public. `64:ff9b::a9fe:a9fe` is cloud
+  instance metadata behind NAT64, and it passed both guards that use this
+  predicate: webhook subscriber registration and the harness's webfetch, at
+  registration *and* at dial time. A static AAAA record is enough — no
+  rebinding — and on an IPv6-only subnet with NAT64 (the documented AWS and
+  GCP pattern) the translator forwards to `169.254.169.254`. NAT64
+  (`64:ff9b::/96` and `64:ff9b:1::/48`), 6to4, and IPv4-compatible addresses
+  are now classified by the IPv4 they carry. Public embeddings stay external,
+  since `64:ff9b::/96` is the sanctioned egress path for IPv6-only workloads.
+
+- **A panicking fanout subscriber killed every replica.**
+  `SubscriberQueue` ran the callback bare on a framework-owned goroutine.
+  Nothing can recover a panic there — no caller frame, no middleware — so one
+  poison payload took down every process subscribed to the topic. Subscribers
+  are an extension point, and the framework already recovers around those in
+  `hook.runHookSafely`; the same rule now applies here. Proven by a test that
+  forks a child and observes real process death.
+
+- **Rate-limit keys were attacker-chosen and unbounded.** `maxKeys` capped how
+  many keys the in-memory limiter tracked, never how large one could be. The
+  per-account login limiter keys on the submitted email — deliberately, so
+  account existence cannot be probed — so the 1 MiB body cap was the only
+  bound, and one unauthenticated POST could park ~1 MiB for a full block
+  duration. Keys past 256 bytes now fold to a digest, and an address longer
+  than RFC 5321 allows is rejected before it becomes a key.
+
+- **Key-flood eviction lifted the attacker's own lockout.** The limiter's
+  low-water shed sorted by ascending `blockedUntil`, which is creation order
+  once every block shares one duration — so the oldest block, the one predating
+  the flood, went first. Burn the login budget, spray keys, walk free. Eviction
+  now sheds unblocked entries first, then the newest blocks.
+
+- **`/\evil.example` passed the URL guard.** Browsers normalize `\` to `/` at
+  the authority boundary, so `\\host`, `\/host`, and `/\host` all resolve to
+  `//host`. Only the `//` spelling was checked. `/\host` matters most: it
+  begins with `/`, so it matched the relative-reference check one line below
+  the `//` guard and reads as same-origin. Eight sinks delegate to this
+  predicate.
+
+- **A `.env` typo put a secret in the logs.** `dotenv`'s missing-`=` error
+  formatted the whole raw line, so `API_TOKEN sk-live-…` reached stderr and
+  everything behind it. Hosts wrap `LoadAndApply` in `log.Fatal`. The line
+  number stays; the line does not.
+
+- **Kiln: four holes on the agent-facing surface.** `escAttr` did not escape
+  `'` while the panel emits single-quoted attributes, so a model-chosen
+  `plan_id` planted a live event handler on the operator's Approve button —
+  the control gating destructive world edits. `/kiln/status` returned
+  `Auth.JWTSecret` and `Admin.SeedPassword` unredacted under `?fields=world`
+  and `?fields=app`, while `serveWorld` twenty lines away redacted both.
+  `set_theme` values reached `/kiln/theme.css` unvalidated, giving an agent
+  arbitrary CSS on every page. And `X-Forwarded-Host` chose a string
+  substituted into the fallback page, on a server that binds loopback and is
+  never proxied.
+
+- **The admin rendered stored media URLs without a scheme check.** Image `src`
+  and File `href` came straight from the column value — the last two dynamic
+  URL sinks in the repo not routed through `urlsafe`. Writes are validated, so
+  this is defense in depth, but seeds, migrations, and hook-written rows never
+  meet that check. Worth noting that `download` does not defuse a `javascript:`
+  href; browsers ignore it for non-http(s) schemes.
+
+- **Setup ran a wizard step while the completion probe was erroring.** An error
+  means unknown, not "not done", and that guard is the only thing between a
+  second caller and a step that usually creates the admin account. It now
+  refuses.
+
+- **`gofastr init` scaffolded `.env` world-readable.** It carries
+  `DATABASE_URL` and is the documented home of `GOFASTR_SECRET`. Now `0600`.
+
+- **`softdelete.SoftDelete` gained the unscoped-operation warning** its
+  siblings `Restore` and `HardDelete` already carried. Same shape:
+  `UPDATE … WHERE id = $1` with no tenant, owner, or access filter.
 
 ### Fixed
 

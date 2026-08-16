@@ -114,7 +114,7 @@ func HostHTML() string {
 func HostHTMLForRequest(r *http.Request) string {
 	return strings.NewReplacer(
 		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag()+`<script src="/.kiln/reload.js"></script>`,
-		`__KILN_BASE__`, baseFromRequest(r),
+		`__KILN_BASE__`, escHTML(baseFromRequest(r)),
 		`__KILN_LEAD__`, defaultEmptyLead,
 	).Replace(hostHTML)
 }
@@ -131,7 +131,7 @@ func HostHTMLForLive(l *live.Live) func(*http.Request) string {
 		l.ReadSession(func(sess *journal.Session) { lead = leadForWorld(sess.World) })
 		return strings.NewReplacer(
 			`<script src="/__gofastr/runtime.js"></script>`, WidgetTag()+`<script src="/.kiln/reload.js"></script>`,
-			`__KILN_BASE__`, baseFromRequest(r),
+			`__KILN_BASE__`, escHTML(baseFromRequest(r)),
 			`__KILN_LEAD__`, lead,
 		).Replace(hostHTML)
 	}
@@ -162,19 +162,24 @@ func leadForWorld(w *world.World) string {
 	return strings.Join(parts, " · ") + " live. Open the floating panel to keep building, or visit /kiln/world for the IR."
 }
 
+// baseFromRequest builds the absolute base URL echoed into the fallback
+// host page's curl examples.
+//
+// It deliberately does NOT honour X-Forwarded-Proto / X-Forwarded-Host.
+// Kiln binds loopback and is served directly, so nothing legitimately
+// sets those; trusting them only let a caller-supplied header choose the
+// string that gets substituted into the page. r.Host is safe by
+// comparison because the listener pins it (see rebind_security_test.go).
+//
+// The result is still escaped at the substitution site — the value lands
+// in HTML, and this function should not be the only thing standing
+// between a header and the document.
 func baseFromRequest(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if h := r.Header.Get("X-Forwarded-Proto"); h != "" {
-		scheme = h
-	}
-	host := r.Host
-	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-		host = h
-	}
-	return scheme + "://" + host
+	return scheme + "://" + r.Host
 }
 
 func (s *Server) serveWidgetCSS(w http.ResponseWriter, _ *http.Request) {
@@ -323,17 +328,25 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 			out["recent"] = sess.Chat[start:]
 		}
 
-		if want["world"] {
-			out["world"] = sess.World
+		// Both world-shaped fields go through redactedWorld for the same
+		// reason serveWorld does: App.Auth.JWTSecret is a session-forging
+		// key and App.Admin.SeedPassword is a live credential. serveWorld
+		// redacted them and this endpoint did not, so ?fields=world and
+		// ?fields=app handed both out verbatim.
+		if want["world"] || want["app"] {
+			redacted := redactedWorld(sess.World)
+			if want["world"] {
+				out["world"] = redacted
+			}
+			if want["app"] && redacted != nil {
+				out["app"] = redacted.App
+			}
 		}
 		if want["plans"] {
 			out["plans"] = sess.Plans
 		}
 		if want["chat"] {
 			out["chat"] = sess.Chat
-		}
-		if want["app"] {
-			out["app"] = sess.World.App
 		}
 
 		_ = json.NewEncoder(&buf).Encode(out)
