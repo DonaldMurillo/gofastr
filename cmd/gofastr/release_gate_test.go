@@ -440,11 +440,16 @@ func runGate(t *testing.T, sha, mainHead string, tc gateCase) (bool, string) {
 		"STUB_MAIN_HEAD="+mainHead,
 		"STUB_ON_MAIN="+onMain,
 	)
+	// Always set SECURITY_MD so an ambient value in the runner's
+	// environment cannot leak into non-fixture cases. Empty falls through
+	// to the script's default, which does not exist at this cwd, so the
+	// policy check stays out of cases that do not opt in.
+	securityPath := ""
 	if tc.securityMD != "" {
-		sec := filepath.Join(dir, "SECURITY.md")
-		writeFixture(t, sec, tc.securityMD)
-		cmd.Env = append(cmd.Env, "SECURITY_MD="+sec)
+		securityPath = filepath.Join(dir, "SECURITY.md")
+		writeFixture(t, securityPath, tc.securityMD)
 	}
+	cmd.Env = append(cmd.Env, "SECURITY_MD="+securityPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil && cmd.ProcessState.ExitCode() != 1 {
 		t.Fatalf("unexpected exit (not 0/1): %v\n--- output ---\n%s", err, out)
