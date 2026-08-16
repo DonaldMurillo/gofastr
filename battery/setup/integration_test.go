@@ -580,9 +580,14 @@ func TestSwap_CompleteStuckFalseIsHonest(t *testing.T) {
 	}
 }
 
-// A transient Complete ERROR at the final re-check must also be honest and
-// recoverable: the error is shown, and a later request (predicate healed)
-// completes and swaps — no restart required.
+// A transient Complete ERROR must be honest and recoverable: the error is
+// shown, and once the predicate heals the flow finishes without a restart.
+//
+// It must ALSO be fail-closed. A probe error means "unknown", not "not
+// done", so the step does not run while the probe is erroring — this test
+// previously relied on it running anyway and healing into completion, which
+// would re-run admin creation on a boot where setup was already complete but
+// the probe was failing. Recovery is now: heal, re-submit, complete.
 func TestSwap_CompleteErrorRecovers(t *testing.T) {
 	var swapped int32
 	var failing atomic.Bool
@@ -607,12 +612,15 @@ func TestSwap_CompleteErrorRecovers(t *testing.T) {
 	if strings.Contains(w.Body.String(), "Setup Complete") || atomic.LoadInt32(&swapped) != 0 {
 		t.Fatal("completion must not be claimed while the Complete check errors")
 	}
+	if ran {
+		t.Fatal("step ran while the Complete probe errored — unknown state must fail closed")
+	}
 
-	// Predicate heals; a plain GET /setup now completes and swaps.
+	// Predicate heals; re-submitting now runs the step and completes.
 	failing.Store(false)
-	w = doGet(h, "/setup")
+	w = doPost(h, "/setup", "NAME=alice", nil)
 	if atomic.LoadInt32(&swapped) != 1 {
-		t.Fatalf("healed Complete on a later request must fire the swap (code %d)", w.Code)
+		t.Fatalf("healed Complete on a later submit must fire the swap (code %d)", w.Code)
 	}
 	if !strings.Contains(w.Body.String(), "Setup Complete") {
 		t.Fatal("healed request should render the completion page")
