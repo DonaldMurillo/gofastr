@@ -371,6 +371,7 @@ connected to a running app.
 - [UI composition recipes](framework/docs/content/ui-composition-recipes.md) — product-shaped page structures built entirely from `framework/ui` primitives
 - [UI components index](framework/docs/content/ui-new-components.md) — **the catalog**: every component the framework ships, with its `go doc` path and live demo at `/components/<slug>` in `examples/site`
 - [core-ui architecture](core-ui/ARCHITECTURE.md) — **deeper UI/runtime reference** (SSR, hydration, islands, component CSS, data-fui-* primitives)
+- [Runtime contract](framework/docs/content/runtime-contract.md) — the SSR/hydration/island/SSE model and the full `data-fui-*` attribute reference as an embedded page (extract of `core-ui/ARCHITECTURE.md`, kept in sync by test)
 - [Interactive patterns](framework/docs/content/interactive-patterns.md) — every `data-fui-*` behavior, plus **"Writing a hand-written island, end to end"** (no-reload updates on your own screens) and themed confirms
 - [framework architecture](framework/ARCHITECTURE.md) — package layout, layering rules, cycle-breaking interfaces
 - [Entity declarations](framework/docs/content/entity-declarations.md) — JSON schema reference
@@ -379,6 +380,8 @@ connected to a running app.
 - [Search](framework/docs/content/search.md) — the `battery/search` interface
 - [Semantic search](framework/docs/content/semantic-search.md) — local semantic search via `battery/semantic`
 - [Embeddable surfaces](framework/docs/content/embed.md) — hand a screen to a website you don't control: single-use handshake nonce, exact origin allowlist, a frame runtime with no SPA navigation
+- [Authentication](framework/docs/content/auth.md) — the `battery/auth` reference: password login, magic links, OAuth (Google + GitHub built in, any OIDC IdP), 2FA, password reset, sessions, scoped API tokens — each method an opt-in plugin
+- [Access control](framework/docs/content/access-control.md) — permission-based RBAC: `RequirePermission` on your own routes, `AccessMiddleware`, gating auto-CRUD per entity, and where owner scoping fits alongside it
 - [Security](framework/docs/content/security.md) — defaults, headers, and limits
 - [Deployment](framework/docs/content/deploy.md) — single-binary build, graceful shutdown, production checklist
 - [Horizontal scaling](framework/docs/content/scaling.md) — what's process-local by default and the replica-safe alternative for each
@@ -387,7 +390,7 @@ connected to a running app.
 - [Agent-ready](framework/docs/content/agent-ready.md) — the discovery endpoints for AI agents (llms.txt, agent card, MCP)
 - [Strict mode](framework/docs/content/strict-mode.md) — `uihost.WithStrict` turns missing SEO and missing per-screen axe tests into boot failures
 
-The full, per-topic index lives in the docs site catalogue (`gofastr docs --list`, or `examples/site/docs_catalog.go`), which a parity test keeps in sync with every embedded page. The list above is a curated subset.
+The list above is a curated subset. The [docs index](framework/docs/content/README.md) is the browsable entry point to the rest; the full, per-topic catalogue lives in the docs site (`gofastr docs --list`, or `examples/site/docs_catalog.go`), which a parity test keeps in sync with every embedded page.
 
 ## Project status
 
