@@ -83,6 +83,9 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 		}
 		email = r.PostFormValue("email")
 		password = r.PostFormValue("password")
+		if !emailWithinLimit(w, email) {
+			return "", "", true, false
+		}
 		return email, password, true, true
 	}
 
@@ -93,7 +96,29 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 	if !decodeJSONLimited(w, r, &body) {
 		return "", "", false, false
 	}
+	if !emailWithinLimit(w, body.Email) {
+		return "", "", false, false
+	}
 	return body.Email, body.Password, false, true
+}
+
+// maxEmailLen is RFC 5321's 254-octet ceiling on a forward-path address.
+const maxEmailLen = 254
+
+// emailWithinLimit rejects an address longer than any real one can be.
+//
+// This is not cosmetic validation. The submitted address becomes the
+// per-account rate-limiter key in the login handler and a user-table
+// value in register, so without a bound here maxAuthBodyBytes (1 MiB)
+// is the only limit on how much state one unauthenticated request can
+// park in either. Length does not depend on whether the account exists,
+// so rejecting here opens no account-existence oracle.
+func emailWithinLimit(w http.ResponseWriter, email string) bool {
+	if len(email) > maxEmailLen {
+		writeAuthError(w, http.StatusBadRequest, "invalid email")
+		return false
+	}
+	return true
 }
 
 // successRedirect returns the redirect target for a form-based auth

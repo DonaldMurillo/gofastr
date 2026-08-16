@@ -29,6 +29,8 @@ package ratelimit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net"
@@ -148,6 +150,32 @@ func (rl *Limiter) Allow(key string) (allowed bool, retryAfter time.Duration) {
 	return rl.AllowContext(context.Background(), key)
 }
 
+// maxKeyLen bounds the bytes one limiter key may retain. No legitimate
+// identity — IP, email, API token, tenant id — comes close; 256 leaves
+// room for a scope prefix on a long-but-real key.
+const maxKeyLen = 256
+
+// foldKey replaces an over-long key with a digest of itself.
+//
+// maxKeys caps how MANY keys the in-memory limiter tracks, but nothing
+// capped how LARGE one could be, and the keys are attacker-chosen: the
+// per-account login limiter keys on the submitted email
+// (battery/auth.core), which the 1 MiB body cap is the only bound on. A
+// single login POST could therefore park ~1 MiB in the states map for a
+// full block duration — retention amplified ~20,000x over the ~50 bytes
+// a real key costs.
+//
+// Digesting rather than rejecting keeps the identity one-to-one, so a
+// long-but-legitimate key still gets its own budget instead of being
+// denied or sharing a bucket with every other long key.
+func foldKey(key string) string {
+	if len(key) <= maxKeyLen {
+		return key
+	}
+	sum := sha256.Sum256([]byte(key))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
 // AllowContext records an attempt for key against the configured backend: the
 // shared Store when one is set (replica-wide budget), the in-process sliding
 // window otherwise. A store failure DENIES the attempt — the limiter guards
@@ -162,6 +190,7 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 	if rl.cfg.DevMode {
 		return true, 0
 	}
+	key = foldKey(key)
 	if rl.cfg.Store != nil {
 		ok, retry, err := rl.cfg.Store.Allow(ctx, rl.cfg.Scope+"|"+key, rl.cfg)
 		if err != nil {
@@ -226,11 +255,12 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 // "fresh key" behaviour. Callers MUST hold rl.mu.
 //
 // If the map is still at/over the cap after shedding idle entries (i.e. every
-// tracked key is actively blocked or mid-window), the entries whose blocks
-// expire soonest are dropped to keep the map strictly bounded. An active block
-// is preserved as long as the map has room, so eviction is never a routine
-// block-bypass — it only sheds the soonest-to-expire blocks under genuine flood
-// pressure, which is strictly better than OOM.
+// tracked key is actively blocked or mid-window), entries are dropped to keep
+// the map strictly bounded: unblocked ones first, then the most recently
+// created blocks. An active block is preserved as long as the map has room, so
+// eviction is never a routine block-bypass — and because the newest blocks go
+// first, a key flood can only ever evict the flood's own entries, never the
+// older lockout an attacker is trying to shake off.
 func (rl *Limiter) evictLocked(now time.Time) {
 	cutoff := now.Add(-rl.cfg.Window)
 	for key, st := range rl.states {
@@ -254,11 +284,20 @@ func (rl *Limiter) evictLocked(now time.Time) {
 		return
 	}
 
-	// Still at/over the cap after shedding idle entries. Shed the entries whose
-	// blocks expire soonest (unblocked entries sort first, as their zero
-	// blockedUntil is the earliest) down to a low-water mark, so this expensive
-	// path runs at most once per ~10% of the cap rather than on every insert
-	// under sustained flood.
+	// Still at/over the cap after shedding idle entries. Shed down to a
+	// low-water mark so this expensive path runs at most once per ~10% of the
+	// cap rather than on every insert under sustained flood.
+	//
+	// Order matters for correctness, not just efficiency. Shed unblocked
+	// entries first, then the FRESHEST blocks — never the oldest.
+	//
+	// Sorting by ascending blockedUntil (which reads naturally as "drop the
+	// ones expiring soonest") makes eviction a lockout-lift primitive: every
+	// block shares one BlockDuration, so ascending expiry is creation order,
+	// and the oldest block is the one that existed BEFORE the flood — the
+	// legitimate one. An attacker could burn their login budget, spray keys to
+	// force this path, and have their own block shed first. Dropping the
+	// newest blocks instead means a flood can only evict the flood.
 	lowWater := maxKeys * 9 / 10
 	type expiring struct {
 		key string
@@ -268,7 +307,19 @@ func (rl *Limiter) evictLocked(now time.Time) {
 	for key, st := range rl.states {
 		pending = append(pending, expiring{key: key, at: st.blockedUntil})
 	}
-	sort.Slice(pending, func(i, j int) bool { return pending[i].at.Before(pending[j].at) })
+	sort.Slice(pending, func(i, j int) bool {
+		iBlocked, jBlocked := !pending[i].at.IsZero(), !pending[j].at.IsZero()
+		if iBlocked != jBlocked {
+			// Unblocked entries carry no lockout, so they go first. (A
+			// blanket reversal of the old comparison would sink them below
+			// active blocks and shed real lockouts ahead of idle state.)
+			return !iBlocked
+		}
+		if !iBlocked {
+			return false
+		}
+		return pending[i].at.After(pending[j].at)
+	})
 	for i := 0; i < len(pending) && len(rl.states) > lowWater; i++ {
 		delete(rl.states, pending[i].key)
 	}
