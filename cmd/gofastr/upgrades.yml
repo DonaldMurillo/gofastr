@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.63.0
+through: v0.64.0
 
 releases:
   - version: v0.3.0
@@ -686,3 +686,24 @@ releases:
         breaking: false
         guidance: "The import path is unchanged, but the package now lives in its own Go module. Apps that import it add the module explicitly: go get github.com/DonaldMurillo/gofastr/battery/print/chromepdf@latest. Apps that do not import chromepdf need nothing."
         detect: "battery/print/chromepdf"
+
+  - version: v0.64.0
+    title: OpenAPI path keys, bound idempotency writes, never-audited surfaces
+    notes:
+      - change: /openapi.json path keys carry the API prefix
+        breaking: true
+        guidance: "Under WithAPIPrefix(\"/api\") the document now keys operations /api/posts with servers [{url: \"/\"}], where it keyed them /posts with servers [{url: \"/api\"}] before. Both compose to the same URL, so Swagger UI and servers-aware SDK generators are unaffected. A consumer that concatenated servers[0].url onto each path key must drop the concatenation."
+        detect: "servers\\[0\\]\\.url"
+      - change: IdempotencyStore.Finish takes the request fingerprint
+        breaking: true
+        guidance: "The signature is now Finish(ctx, key, fingerprint string, resp *IdempotentResponse) error. Custom stores must accept the fingerprint and refuse to write a row that no longer carries it — a store that ignores it can serve one principal's response to another. Built-in stores need no change."
+        detect: "Finish\\(ctx context\\.Context, key string, resp"
+      - change: An email longer than RFC 5321 allows is rejected at login and register
+        breaking: false
+        guidance: "Addresses past 254 octets now get a 400 instead of becoming a rate-limiter key and a user-table value. The submitted email keys the per-account limiter, so without the bound one unauthenticated POST could park ~1 MiB of limiter state. No legitimate address is affected."
+      - change: IPv4-translation addresses count as internal for SSRF guards
+        breaking: false
+        guidance: "netguard.IsInternal now classifies NAT64 (64:ff9b::/96, 64:ff9b:1::/48), 6to4, and IPv4-compatible addresses by the IPv4 they carry, so 64:ff9b::a9fe:a9fe is instance metadata rather than a public host. Webhook subscriber URLs and harness webfetch targets that resolved to one of these and previously worked will now be refused — which is the point. Public embeddings still pass."
+      - change: gofastr init scaffolds .env as 0600
+        breaking: false
+        guidance: "New projects only; existing files are untouched. The file carries DATABASE_URL and is where GOFASTR_SECRET goes, so a world-readable scaffold handed both to every local account. Run chmod 600 .env on projects scaffolded earlier."
