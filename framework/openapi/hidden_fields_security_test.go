@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,8 +27,13 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 		Table: "invoices",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
-			{Name: "internal_note", Type: schema.String, Hidden: true},
-			{Name: "audit_meta", Type: schema.String, Hidden: true, WireName: "auditMeta"},
+			// Both hidden fields are Required on purpose. A hidden field
+			// that is not required never reaches the required list, so the
+			// required-list assertion below would hold no matter what the
+			// filter did — the test would stay green through a regression
+			// in exactly the code it exists to pin.
+			{Name: "internal_note", Type: schema.String, Hidden: true, Required: true},
+			{Name: "audit_meta", Type: schema.String, Hidden: true, Required: true, WireName: "auditMeta"},
 		},
 	}.WithTimestamps(false))
 
@@ -44,12 +50,20 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 		}
 	}
 
-	// 2. Required list.
-	if reqs, ok := inv["required"].([]string); ok {
-		for _, r := range reqs {
-			if r == "internalNote" || r == "auditMeta" || r == "internal_note" {
-				t.Errorf("hidden field %q listed as required", r)
-			}
+	// 2. Required list. Assert the visible required field is present before
+	// checking the hidden ones are absent — a type assertion that quietly
+	// failed, or a builder that stopped emitting `required` at all, would
+	// otherwise make the absence check pass by finding nothing to look at.
+	reqs, ok := inv["required"].([]string)
+	if !ok {
+		t.Fatalf("required list missing or not []string: %#v", inv["required"])
+	}
+	if !slices.Contains(reqs, "title") {
+		t.Fatalf("required = %v, want the visible required field present", reqs)
+	}
+	for _, r := range reqs {
+		if r == "internalNote" || r == "auditMeta" || r == "internal_note" || r == "audit_meta" {
+			t.Errorf("SECURITY: [openapi] hidden field %q listed as required", r)
 		}
 	}
 

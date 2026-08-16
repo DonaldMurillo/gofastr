@@ -104,8 +104,13 @@ func translatedV4(ip net.IP) net.IP {
 	}
 	switch {
 	case ip[0] == 0x00 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b:
-		// RFC 8215 local-use 64:ff9b:1::/48 — u octet must be zero.
-		if ip[4] == 0x00 && ip[5] == 0x01 && ip[8] == 0x00 {
+		// RFC 8215 local-use 64:ff9b:1::/48. The u octet (byte 8) must be
+		// zero, and so must the 40-bit suffix (bytes 11-15) — RFC 6052
+		// §2.2 defines both as zero for a canonical embedding. Checking
+		// the suffix keeps an unrelated address that merely shares the
+		// prefix, such as 64:ff9b:1:a9fe:a9:fe00:0:1, from being read as
+		// an embedded IPv4 and refused.
+		if ip[4] == 0x00 && ip[5] == 0x01 && ip[8] == 0x00 && isZero(ip[11:]) {
 			return net.IPv4(ip[6], ip[7], ip[9], ip[10])
 		}
 		// RFC 6052 well-known 64:ff9b::/96.

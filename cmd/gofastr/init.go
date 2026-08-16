@@ -145,7 +145,13 @@ PORT=localhost:8080
 	// embed a password) and is where the operator is told to put
 	// GOFASTR_SECRET, the session-signing key. Scaffolding it
 	// world-readable hands every local account the app's secrets.
-	if err := os.WriteFile(filepath.Join(name, ".env"), []byte(envContent), 0o600); err != nil {
+	//
+	// os.WriteFile applies its mode only when CREATING the file — on an
+	// existing one it truncates and leaves the mode alone. `gofastr init .`
+	// runs in a directory that may already hold a 0644 .env, so the mode is
+	// set explicitly, and set BEFORE the write, so no secret is ever on disk
+	// while the file is world-readable.
+	if err := writeEnvFile(filepath.Join(name, ".env"), envContent); err != nil {
 		fail("Failed to write .env: %v", err)
 		osExit(1)
 	}
@@ -493,6 +499,32 @@ func getEnv(key, fallback string) string {
 		fail("Failed to write main.go: %v", err)
 		osExit(1)
 	}
+}
+
+// writeEnvFile writes the scaffolded .env with owner-only permissions,
+// tightening an existing file's mode before any content lands.
+//
+// The order is the point. os.WriteFile would truncate a pre-existing 0644
+// file and write the secrets into it while it is still world-readable, then
+// leave it that way — so the mode is fixed first, on the open handle, and
+// the write happens after.
+func writeEnvFile(path, content string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	// Chmod on the handle, not the path: it cannot be redirected by a
+	// symlink swapped in between the open and the mode change, and it
+	// corrects a file that already existed with a looser mode.
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func writeIsolationConfig(name, _ string) {

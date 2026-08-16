@@ -119,11 +119,20 @@ type Limiter struct {
 	mu        sync.Mutex
 	states    map[string]*rlState
 	lastSweep time.Time
+
+	// blockSeq numbers blocks in creation order. Expiry alone cannot order
+	// two blocks created in the same clock tick, and map iteration is
+	// randomized, so without this a flood could evict an equally-timed
+	// victim lockout on some runs and not others. Guarded by mu.
+	blockSeq uint64
 }
 
 type rlState struct {
 	attempts     []time.Time
 	blockedUntil time.Time
+	// blockOrder is the blockSeq value assigned when blockedUntil was set;
+	// 0 when not blocked. Breaks expiry ties deterministically.
+	blockOrder uint64
 }
 
 // NewLimiter constructs a Limiter with the given config. Zero fields fall back
@@ -228,6 +237,7 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 		// Block has elapsed — clear and continue.
 		state.blockedUntil = time.Time{}
 		state.attempts = state.attempts[:0]
+		state.blockOrder = 0
 	}
 
 	// Drop attempts outside the rolling window before counting.
@@ -242,6 +252,8 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 
 	if len(state.attempts) >= rl.cfg.MaxAttempts {
 		state.blockedUntil = now.Add(rl.cfg.BlockDuration)
+		rl.blockSeq++
+		state.blockOrder = rl.blockSeq
 		return false, rl.cfg.BlockDuration
 	}
 
@@ -264,6 +276,17 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 func (rl *Limiter) evictLocked(now time.Time) {
 	cutoff := now.Add(-rl.cfg.Window)
 	for key, st := range rl.states {
+		// Normalize an elapsed block before anything reads blockedUntil.
+		// AllowContext clears it lazily on the key's next touch, so a key
+		// that is not touched again keeps a stale non-zero timestamp — and
+		// the shed below reads exactly that field to decide what is still
+		// protecting someone. Left stale, an expired block outranks a live
+		// one and the live lockout gets dropped first.
+		if !st.blockedUntil.IsZero() && !now.Before(st.blockedUntil) {
+			st.blockedUntil = time.Time{}
+			st.attempts = st.attempts[:0]
+			st.blockOrder = 0
+		}
 		blockActive := !st.blockedUntil.IsZero() && now.Before(st.blockedUntil)
 		if blockActive {
 			continue
@@ -298,14 +321,20 @@ func (rl *Limiter) evictLocked(now time.Time) {
 	// legitimate one. An attacker could burn their login budget, spray keys to
 	// force this path, and have their own block shed first. Dropping the
 	// newest blocks instead means a flood can only evict the flood.
+	//
+	// Two details this ordering depends on: elapsed blocks were normalized
+	// above (a stale timestamp would otherwise outrank a live lockout), and
+	// equal expiries fall back to creation sequence (map iteration is
+	// randomized, so expiry alone leaves same-tick ties to chance).
 	lowWater := maxKeys * 9 / 10
 	type expiring struct {
-		key string
-		at  time.Time
+		key   string
+		at    time.Time
+		order uint64
 	}
 	pending := make([]expiring, 0, len(rl.states))
 	for key, st := range rl.states {
-		pending = append(pending, expiring{key: key, at: st.blockedUntil})
+		pending = append(pending, expiring{key: key, at: st.blockedUntil, order: st.blockOrder})
 	}
 	sort.Slice(pending, func(i, j int) bool {
 		iBlocked, jBlocked := !pending[i].at.IsZero(), !pending[j].at.IsZero()
@@ -318,7 +347,14 @@ func (rl *Limiter) evictLocked(now time.Time) {
 		if !iBlocked {
 			return false
 		}
-		return pending[i].at.After(pending[j].at)
+		if !pending[i].at.Equal(pending[j].at) {
+			return pending[i].at.After(pending[j].at)
+		}
+		// Same expiry: both blocks were created in one clock tick, so
+		// expiry cannot separate them and map order is randomized. Fall
+		// back to creation sequence, newest first, so the shed is
+		// deterministic rather than dropping the victim on some runs.
+		return pending[i].order > pending[j].order
 	})
 	for i := 0; i < len(pending) && len(rl.states) > lowWater; i++ {
 		delete(rl.states, pending[i].key)

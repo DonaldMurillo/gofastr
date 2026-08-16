@@ -55,6 +55,12 @@ func TestIsInternalTranslationPrefixes(t *testing.T) {
 		// legitimate fetches.
 		{"NAT64 public 64:ff9b::808:808", net.ParseIP("64:ff9b::808:808"), false},
 		{"6to4 public 2002:808:808::", net.ParseIP("2002:808:808::"), false},
+
+		// Non-canonical /48: the same prefix and the same bytes 6-10, but a
+		// non-zero 40-bit suffix, which RFC 6052 §2.2 requires to be zero.
+		// It carries no embedded IPv4, so reading one out of it would refuse
+		// an unrelated address.
+		{"non-canonical /48 suffix 64:ff9b:1:a9fe:a9:fe00:0:1", net.ParseIP("64:ff9b:1:a9fe:a9:fe00:0:1"), false},
 	}
 
 	for _, c := range cases {
