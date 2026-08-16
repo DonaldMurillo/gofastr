@@ -1,6 +1,30 @@
 package fanout
 
-import "sync"
+import (
+	"log/slog"
+	"sync"
+)
+
+// deliver runs one subscriber callback with panic isolation, mirroring
+// [framework/hook].runHookSafely: a subscriber is an extension point, and
+// third-party code at an extension point must not be able to take the
+// process down.
+//
+// This goroutine is framework-owned and has no caller frame to unwind
+// into, so an unrecovered panic here is fatal — no HTTP middleware
+// recover can see it. In a multi-replica deployment every replica
+// subscribes to the same topic, so one poison payload would take down
+// the whole fleet at once. Dropping the payload and continuing keeps the
+// blast radius at one message.
+func deliver(fn func([]byte), p []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("fanout: subscriber panicked — payload dropped",
+				slog.Any("panic", r))
+		}
+	}()
+	fn(p)
+}
 
 // SubscriberQueue wraps a subscriber callback in a per-subscriber bounded
 // queue with drop-oldest overflow, running fn on a dedicated goroutine.
@@ -32,7 +56,7 @@ func SubscriberQueue(fn func([]byte), depth int) (send func([]byte), stop func()
 			case <-stopped:
 				return
 			case p := <-q:
-				fn(p)
+				deliver(fn, p)
 			}
 		}
 	}()
