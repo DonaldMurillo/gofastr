@@ -85,8 +85,15 @@ if [ -f "$SECURITY_MD" ] || [ -f scripts/release-gate.sh ]; then
 	if [ ! -f "$SECURITY_MD" ]; then
 		fail "$SECURITY_MD not found — the supported-versions policy must exist and name $supported before $TAG ships."
 	fi
-	if ! grep -qF "$supported" "$SECURITY_MD"; then
-		fail "$SECURITY_MD does not name $supported as the supported minor for $TAG — update its 'Supported versions' section, merge that to main, and re-tag."
+	# Scope the match to the "Supported versions" section: a mention of the
+	# minor elsewhere (audit-trail prose, a "not supported" sentence) must
+	# not satisfy the gate while the declaration itself stays stale.
+	section=$(awk '/^## Supported versions/{f=1; next} /^## /{f=0} f' "$SECURITY_MD")
+	if [ -z "$section" ]; then
+		fail "$SECURITY_MD has no '## Supported versions' section — the gate cannot verify $supported is the declared line for $TAG."
+	fi
+	if ! printf '%s\n' "$section" | grep -qF "$supported"; then
+		fail "$SECURITY_MD's 'Supported versions' section does not name $supported as the supported minor for $TAG — update it, merge that to main, and re-tag."
 	fi
 fi
 

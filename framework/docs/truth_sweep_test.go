@@ -198,6 +198,9 @@ func TestQueryDSLDocUsesGroupedCursorPath(t *testing.T) {
 	if strings.Contains(doc, "EntityConfig.CursorFields") {
 		t.Error("query-dsl.md references EntityConfig.CursorFields; the field is EntityConfig.Pagination.CursorFields (framework/entity/entity.go)")
 	}
+	if !strings.Contains(doc, "EntityConfig.Pagination.CursorFields") {
+		t.Error("query-dsl.md no longer documents EntityConfig.Pagination.CursorFields — the composite-cursor paragraph must name the real path")
+	}
 	if !strings.Contains(readRepo(t, "framework/entity/entity.go"), "CursorFields []string") {
 		t.Error("PaginationConfig lost CursorFields — recheck query-dsl.md's composite-cursor paragraph")
 	}
@@ -215,6 +218,11 @@ func TestDeployDocDotenvLoadIsUnconditional(t *testing.T) {
 	} {
 		if strings.Contains(doc, stale) {
 			t.Errorf("deploy.md says %q; the load is unconditional, gated only by GOFASTR_DOTENV=off (framework/app.go NewApp)", stale)
+		}
+	}
+	for _, want := range []string{"every environment", "GOFASTR_DOTENV=off"} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("deploy.md no longer says %q — the Configuration section must state the unconditional load and its kill switch", want)
 		}
 	}
 	if !strings.Contains(readRepo(t, "framework/app.go"), `os.Getenv("GOFASTR_DOTENV") != "off"`) {

@@ -1,6 +1,7 @@
 package framework_test
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -15,6 +16,23 @@ import (
 // and framework/crud/layering_test.go: go list, then fail on the edge.
 
 const modRoot = "github.com/DonaldMurillo/gofastr"
+
+// ARCHITECTURE.md's "Out-of-contract" list: these trees are exempt from
+// the layering rules (test helpers, fixtures, dev tooling, experimental).
+func outOfContract(pkg string) bool {
+	root := modRoot + "/framework"
+	for _, prefix := range []string{
+		root + "/experimental",
+		root + "/testkit",
+		root + "/factory",
+		root + "/isolation",
+	} {
+		if pkg == prefix || strings.HasPrefix(pkg, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 // The framework root package is the facade: it imports the subpackages,
 // never the reverse. A subpackage that pulls the root into its dependency
@@ -35,7 +53,7 @@ func TestFrameworkPkgsDontImportRoot(t *testing.T) {
 	}
 	for _, line := range strings.Split(string(out), "\n") {
 		pkg, deps, ok := strings.Cut(line, ": ")
-		if !ok || pkg == root {
+		if !ok || pkg == root || outOfContract(pkg) {
 			continue
 		}
 		hasRoot := false
@@ -52,6 +70,30 @@ func TestFrameworkPkgsDontImportRoot(t *testing.T) {
 			t.Errorf("%s no longer depends on the root — delete its exemption "+
 				"from this test so the allowlist cannot rot", pkg)
 		}
+	}
+
+	// The exemption is valid only via the documented route: pluginhost's
+	// direct battery/auth import, annotated //gofastr:allow(GOFASTR1301) in
+	// gate.go. If the route or its annotation is gone, the root dependency
+	// arrived some other way and must not ride the old carve-out.
+	imp, err := exec.Command("go", "list", "-f", "{{join .Imports \" \"}}",
+		root+"/pluginhost").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list pluginhost imports: %v\n%s", err, imp)
+	}
+	if !strings.Contains(" "+string(imp)+" ", " "+modRoot+"/battery/auth ") {
+		t.Error("pluginhost no longer imports battery/auth — its root exemption " +
+			"above no longer describes reality; re-derive how the root enters " +
+			"its closure and cut or re-sanction that edge")
+	}
+	gate, err := os.ReadFile("pluginhost/gate.go")
+	if err != nil {
+		t.Fatalf("read pluginhost/gate.go: %v", err)
+	}
+	if !strings.Contains(string(gate), "gofastr:allow(GOFASTR1301)") {
+		t.Error("pluginhost/gate.go lost its gofastr:allow(GOFASTR1301) " +
+			"annotation — the sanctioned edge this test exempts is no longer " +
+			"marked in code")
 	}
 }
 
