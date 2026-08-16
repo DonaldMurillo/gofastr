@@ -58,7 +58,13 @@ func Parse(r io.Reader) (map[string]string, error) {
 		}
 		eq := strings.IndexByte(trimmed, '=')
 		if eq < 0 {
-			return nil, fmt.Errorf("dotenv: line %d: missing '=' in %q", lineNum, raw)
+			// The line number locates the problem; the line itself is a
+			// secret. A .env holds credentials by definition, and hosts
+			// wrap LoadAndApply in log.Fatal, so echoing the raw line
+			// puts "API_TOKEN sk-live-..." (the exact typo this branch
+			// catches) into stderr. The sibling branches below already
+			// name only the key or the shape — match them.
+			return nil, fmt.Errorf("dotenv: line %d: missing '='", lineNum)
 		}
 		key := strings.TrimSpace(trimmed[:eq])
 		if !isValidKey(key) {
