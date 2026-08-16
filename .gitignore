@@ -35,6 +35,12 @@ gen/
 examples/meridian/blueprintgen/
 examples/ecommerce/blueprintgen/
 
+# Scratch packages cmd/gofastr's TestExampleBlueprintsGenerateAndCompile
+# generates EVERY examples/<name>/gofastr.yml into before compiling it. Same
+# contract as the two above, one directory per example; the distinct name keeps
+# it from colliding with those suites under `go test -p 2`.
+examples/*/blueprintbuildgen/
+
 # Local Ollama model cache (bind-mount target of docker-compose.yml).
 # Pulled models are ~hundreds of MB; never commit.
 .ollama/

@@ -1,5 +1,14 @@
 # Agent Notes
 
+## 2026-08-07 - Maturity audit → closed the 2026-07-26 eval's open items
+- Scope: `cmd/gofastr` blueprint generator, `framework/openapi`, Postgres test infrastructure (`internal/pgtest`, `framework/internal/testdb`, CI, docker-compose), `framework/docs`, `framework/processmodule_migrate.go`
+- Trigger: "Where is GoFastr, what are we missing, make the developer experience better." Audited first, then implemented all seven prioritised findings TDD-style.
+- Approach: Measure before believing. The audit ran the cold-start path rather than reading status docs, which is how it found that **five of seven shipped blueprints emitted Go that did not compile** (`undefined: context`, `undefined: resource`) — two import-set bugs whose common shape is a condition re-deriving what the emitter already decided. Only `examples/ecommerce` and `examples/meridian` ever had their generated Go compiled, and ecommerce is the single example declaring neither a home screen nor an `access:` policy, so it reached neither broken path. Also closed eval next-moves 1, 2 and 6 (OpenAPI prefix parity, repeated-start migration coverage, backend capability map), removed testcontainers from the consumer module graph (95→57 modules), and documented `sqlite/`.
+- Evidence: PR #200, 12 commits, all 11 CI checks green on `2021cfc`. `TestExampleBlueprintsGenerateAndCompile` red on five blueprints before the fix, green on seven after. Every test that passed on first write was mutation-checked before being trusted.
+- Gotcha: **A gate aimed at one fixture proves one fixture.** Both P0-class defects lived in paths the single gated example never touched. The same lesson repeated three times in one PR — the empty `<th>` was caught only by an 11-minute axe crawl, and `scripts/coverage-floors.sh` called `profile_for` inside a command substitution, so a *blocking* gate swallowed the failing package's test log and reported "tests failed (no coverage measurement)" with no test name for three CI runs.
+- Next time: When a test suite moves from per-process ephemeral Postgres containers to one shared server, everything holding **cluster- or database-scoped** state breaks on the second run: fixed schema names, pid-less per-test schemas, and roles. Chasing that class is what surfaced a real production bug — `provisionModuleSchemaRole` creates the module role inside `DO $$ … CREATE ROLE … EXCEPTION WHEN duplicate_object THEN null $$`, which is idempotent for the role's *existence* and a silent no-op for its *password*, so process-module migrations failed with `28P01` on every deploy after the first. It was unreachable in CI while each test process got a throwaway container. Prefer a plain unit test over a live-infrastructure one wherever the invariant is expressible in a string.
+- Status: active
+
 ## 2026-08-01 - Browser Reader Mode (`app.AsArticle()` + `ScreenArticle`)
 - Scope: `core-ui/app`, `framework/uihost` — browser reader-mode readiness
 - Trigger: User wanted pages marked up so Safari Reader / Firefox Reader View detect them and render them well (the browser's built-in feature, NOT a layout "reader mode" CSS shape — an earlier attempt built the wrong thing and was reverted). Then refined: it had to be SEAMLESS — "turn any normal screen into an article", not write a metadata method + duplicate the title.
@@ -87,4 +96,12 @@
 - Approach: Keep the behavioral security test and place the supported `csrf-exempt:` explanation beside forms protected by an equivalent control.
 - Evidence: `go run ./cmd/gofastr audit lint .` reports `battery/auth/magiclink.go:415`; `TestMagicLinkConfirmRejectsCrossSite` pins the guard.
 - Next time: Run audit lint at repository scope and document intentional alternative controls where the heuristic can verify them.
+- Status: active
+
+## 2026-08-16 - Measure the discovery-tax fix and close the WithConfig footgun
+- Scope: `evals/backend-adoption` rerun, `framework.WithConfig`, `gofastr init` scaffold
+- Trigger: PR #200 left two reviewer items open — the capability map's effect was unmeasured, and an option placed before `WithConfig` was silently discarded.
+- Approach: Rerun the eval's GoFastr lane with Gin as a drift control on the same codex-cli 0.145.0; keep WithConfig's replace semantics but scaffold it first and warn at boot naming discarded fields.
+- Evidence: `evals/backend-adoption/results/2026-08-16-codex.md` — cold-start 313,579 → 233,716 tokens against a control that rose 34%, ratio 4.35× → 2.42×; `framework/withconfig_order_test.go` and `TestInitScaffoldsWithConfigFirst` pin the fix.
+- Next time: When a run fails a probe, read the candidate's code before blaming the framework — run 1's isolation miss was a hand-rolled handler validating before the owner-scoped lookup, with the framework's contract warning suppressed.
 - Status: active

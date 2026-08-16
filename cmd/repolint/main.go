@@ -111,6 +111,11 @@ func lintRepo(root string) ([]finding, error) {
 		return nil, err
 	}
 	findings = append(findings, rootMDFindings...)
+	graphFindings, err := lintConsumerModuleGraph(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, graphFindings...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
 			return findings[i].File < findings[j].File
@@ -234,6 +239,92 @@ func lintBytes(rel string, body []byte) []finding {
 		}
 	}
 	return out
+}
+
+// testOnlyModules are dependencies that exist purely to run GoFastr's own
+// tests. They must never appear in the root go.mod, because a require there is
+// inherited by every application that imports the framework: Go records a
+// checksum for each of the dependency's requirements, so `go mod tidy` in a
+// hello-world app resolves them all. Measured before this rule existed, the
+// testcontainers require dragged the whole Docker client stack — go-winio,
+// go-ansiterm, plan9stats, perfstat, purego, wmi, go-ole — into a scaffold
+// that never starts a container.
+//
+// The escape route is not a build tag: `go mod tidy` considers every build
+// configuration, so a tagged file's imports are recorded anyway. A test-only
+// dependency has to be absent from the module's packages entirely — reached
+// through an env var the CI lane supplies, or moved to a nested module.
+//
+// chromedp and lib/pq deliberately are NOT listed: battery/print renders PDFs
+// with the former and framework/fanout speaks Postgres with the latter, so both
+// are genuine runtime dependencies of code an app can import.
+var testOnlyModules = []string{
+	"github.com/testcontainers/testcontainers-go",
+}
+
+// lintConsumerModuleGraph keeps test-only dependencies out of the root go.mod.
+func lintConsumerModuleGraph(root string) ([]finding, error) {
+	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []finding
+	// Only `require` entries put a module in a consumer's graph. A `replace`
+	// line does not, and matching one would report a finding that cannot be
+	// acted on. Track which block each line sits in, and handle both the
+	// parenthesised block and the single-line `require x v1` form.
+	inRequireBlock := false
+	inOtherBlock := false
+	for i, line := range strings.Split(string(body), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		switch {
+		case trimmed == "require (":
+			inRequireBlock = true
+			continue
+		case strings.HasSuffix(trimmed, "("):
+			// replace ( / exclude ( / retract (
+			inOtherBlock = true
+			continue
+		case trimmed == ")":
+			inRequireBlock, inOtherBlock = false, false
+			continue
+		}
+		if inOtherBlock {
+			continue
+		}
+		entry := trimmed
+		if !inRequireBlock {
+			rest, ok := strings.CutPrefix(trimmed, "require ")
+			if !ok {
+				continue
+			}
+			entry = strings.TrimSpace(rest)
+		}
+		// The module path is the first field; the version and any
+		// `// indirect` marker follow it.
+		path, _, _ := strings.Cut(entry, " ")
+		for _, mod := range testOnlyModules {
+			// Exact match, or a submodule of it — testcontainers-go and
+			// testcontainers-go/modules/postgres are both the same problem,
+			// while a hypothetical testcontainers-go-helpers is not.
+			if path != mod && !strings.HasPrefix(path, mod+"/") {
+				continue
+			}
+			out = append(out, finding{
+				File:    "go.mod",
+				Line:    i + 1,
+				Rule:    "test-only-dep-in-consumer-graph",
+				Message: mod + " is test-only; a require here is inherited by every app that imports GoFastr. Supply it through TEST_POSTGRES_DSN in CI, or move it to a nested module",
+			})
+		}
+	}
+	return out, nil
 }
 
 func lintRepositoryTruth(root string) ([]finding, error) {

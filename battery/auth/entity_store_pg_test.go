@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 // Cross-dialect smoke for EntityUserStore + EntitySessionStore. The
@@ -31,7 +31,6 @@ var (
 	batteryPGErr     error
 	batteryPGUsing   string
 	batteryPGLogged  atomic.Bool
-	batteryPGKeepRef *tcpostgres.PostgresContainer
 )
 
 func resolveBatteryPG() (string, error) {
@@ -41,25 +40,7 @@ func resolveBatteryPG() (string, error) {
 			batteryPGUsing = "env"
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		c, err := tcpostgres.Run(ctx, "postgres:16-alpine",
-			tcpostgres.WithDatabase("auth_test"),
-			tcpostgres.WithUsername("test"),
-			tcpostgres.WithPassword("test"),
-		)
-		if err != nil {
-			batteryPGErr = fmt.Errorf("testcontainers: %w", err)
-			return
-		}
-		dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-		if err != nil {
-			batteryPGErr = err
-			return
-		}
-		batteryPGBaseDSN = dsn
-		batteryPGUsing = "container"
-		batteryPGKeepRef = c
+		batteryPGErr = errNoPG
 	})
 	return batteryPGBaseDSN, batteryPGErr
 }
@@ -363,3 +344,9 @@ func TestSessionStorePGLegacyBools(t *testing.T) {
 		t.Fatalf("MarkPendingTwoFactor after conversion: %v", err)
 	}
 }
+
+// errNoPG is what the auth Postgres suite reports when no server is supplied.
+// The testcontainers fallback that used to sit here was removed so the Docker
+// client stack stays out of every consumer's module graph — see cmd/repolint's
+// test-only-dep-in-consumer-graph rule.
+var errNoPG = errors.New("TEST_POSTGRES_DSN is not set — `make postgres-up` starts one")

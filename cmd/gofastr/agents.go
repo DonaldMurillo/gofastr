@@ -365,6 +365,18 @@ const agentsPreamble = `# AGENTS.md
 > exists to keep you from reinventing primitives the framework
 > already provides.
 
+## Two maps, then the detail
+
+Both are one page each, and both are cheaper than the topic docs they route
+into. Land on the row for your job first; open a topic only when a row
+points you at one.
+
+- ` + "`" + `gofastr docs backend-capability-map` + "`" + ` — data, auth, APIs, jobs,
+  deploys. Every row names the symbols to compose and a command that
+  proves the result.
+- ` + "`" + `gofastr docs ui-capability-map` + "`" + ` — screens, state ownership, and
+  delivery.
+
 ## UI starts with product direction
 
 Before selecting UI components, complete or refresh ` + "`" + `DESIGN.md` + "`" + `: primary

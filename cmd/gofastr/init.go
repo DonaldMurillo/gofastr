@@ -355,6 +355,10 @@ func main() {
 	}
 
 	fwApp := framework.NewApp(
+		// WithConfig replaces the whole AppConfig, so it goes FIRST — a
+		// granular option (framework.WithPublicOpenAPI(), WithAPIPrefix, …)
+		// added below this line takes effect; above it, WithConfig would
+		// discard it (the framework warns at boot if that happens).
 		framework.WithConfig(framework.AppConfig{Name: "%[2]s"}),
 	)
 
@@ -432,8 +436,12 @@ func main() {
 	defer db.Close()
 
 	fwApp := framework.NewApp(
-		framework.WithDB(db),
+		// WithConfig replaces the whole AppConfig, so it goes FIRST — a
+		// granular option (framework.WithPublicOpenAPI(), WithAPIPrefix, …)
+		// added below this line takes effect; above it, WithConfig would
+		// discard it (the framework warns at boot if that happens).
 		framework.WithConfig(framework.AppConfig{Name: "%[2]s"}),
+		framework.WithDB(db),
 	)
 
 	// Register entities from the entities package.

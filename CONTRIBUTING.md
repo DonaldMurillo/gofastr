@@ -12,10 +12,13 @@ Security bugs: see [SECURITY.md](SECURITY.md) — do not open a public issue.
 
 ## Prerequisites (the honest list)
 
-- **Go 1.26+** (`go.mod` says `go 1.26.5`).
-- **Docker** — the `framework/` test suites spin up Postgres via
-  testcontainers. Without Docker running, large parts of the suite fail or
-  skip. (Alternative: set `TEST_POSTGRES_DSN` and use `make test-pg-env`.)
+- **Go 1.26+** (`go.mod` says `go 1.26.6`).
+- **Docker** — the Postgres suites need a server. `make postgres-up` starts
+  the `postgres` service from `docker-compose.yml` (pgvector/pgvector:pg16,
+  which also covers `battery/semantic`), and `make test-pg` starts it and runs
+  against it. Without one, the Postgres halves of the dual-dialect subtests
+  skip; SQLite still runs. (Alternative: point `TEST_POSTGRES_DSN` at any
+  Postgres and use `make test-pg-env` — no Docker needed.)
 - **Chrome/Chromium** — the chromedp end-to-end suites (`examples/site`,
   `core-ui/runtime`, `kiln/integration`) drive a real browser.
 

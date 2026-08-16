@@ -352,7 +352,16 @@ func (c *MigrationCoordinator) stampApplied(ctx context.Context, module string) 
 // make authenticate-as impossible. search_path is a convenience default;
 // the REVOKE on public is the real fence (design §7 point 1).
 func provisionModuleSchemaRole(ctx context.Context, adminDB *sql.DB, schema, role, password string) error {
-	stmts := []string{
+	stmts := moduleSchemaRoleStmts(schema, role, password)
+	return execModuleSchemaRoleStmts(ctx, adminDB, stmts)
+}
+
+// moduleSchemaRoleStmts builds the provisioning DDL. Split out from the
+// execution so the ordering invariants below can be unit-tested without a
+// Postgres server — the one that matters most was invisible for exactly that
+// reason (see TestModuleSchemaRoleStmtsResetPasswordOnReprovision).
+func moduleSchemaRoleStmts(schema, role, password string) []string {
+	return []string{
 		// Own schema (idempotent).
 		`CREATE SCHEMA IF NOT EXISTS ` + query.QuoteIdent(schema),
 		// Restricted role. CREATE ROLE fails on duplicate; DO $$ swallows
@@ -363,9 +372,25 @@ func provisionModuleSchemaRole(ctx context.Context, adminDB *sql.DB, schema, rol
   CREATE ROLE ` + query.QuoteIdent(role) + ` LOGIN PASSWORD '` + password + `' NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 EXCEPTION WHEN duplicate_object THEN null;
 END $$`,
-		// Re-assert the privilege flags even if the role pre-existed (a
-		// prior run may have left it with broader rights).
-		`ALTER ROLE ` + query.QuoteIdent(role) + ` NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
+		// Re-assert the privilege flags AND the password even if the role
+		// pre-existed (a prior run may have left it with broader rights, and
+		// will certainly have left it with a different password).
+		//
+		// The password is the load-bearing part. Roles are CLUSTER-scoped, so
+		// a role provisioned by an earlier deploy — or an earlier test run
+		// against the same server — still exists with its old password. The
+		// CREATE above then raises duplicate_object, the handler swallows it,
+		// and without this line the freshly generated password is never
+		// applied. The coordinator immediately tries to authenticate as the
+		// role and gets `password authentication failed (28P01)`, so every
+		// process-module migration fails on the second and later deploys.
+		//
+		// This went unnoticed because CI used to give each test process a
+		// throwaway Postgres container, where the role never pre-existed.
+		//
+		// The literal is safe to interpolate: password is randomHex(24), so
+		// it cannot contain a quote.
+		`ALTER ROLE ` + query.QuoteIdent(role) + ` WITH LOGIN PASSWORD '` + password + `' NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
 		// USAGE+CREATE on its own schema ONLY.
 		`GRANT USAGE, CREATE ON SCHEMA ` + query.QuoteIdent(schema) + ` TO ` + query.QuoteIdent(role),
 		// search_path = module_<M> — convenience, NOT the fence.
@@ -376,9 +401,16 @@ END $$`,
 		// writes to public is permission-denied regardless of search_path.
 		`REVOKE ALL ON SCHEMA public FROM ` + query.QuoteIdent(role),
 	}
+}
+
+// execModuleSchemaRoleStmts runs the provisioning DDL in order.
+func execModuleSchemaRoleStmts(ctx context.Context, adminDB *sql.DB, stmts []string) error {
 	for _, s := range stmts {
 		if _, err := adminDB.ExecContext(ctx, s); err != nil {
-			return fmt.Errorf("exec %q: %w", firstLine(s), err)
+			// Redact before quoting: the ALTER ROLE that re-asserts the
+			// password is a single line, so firstLine alone would hand the
+			// live credential to whatever logs this error.
+			return fmt.Errorf("exec %q: %w", firstLine(redactRolePassword(s)), err)
 		}
 	}
 	// Best-effort hardening of the public schema (design §7 lists it).
@@ -437,6 +469,24 @@ func shortHash(s string) string {
 		return s
 	}
 	return s[:12]
+}
+
+// redactRolePassword masks the literal after PASSWORD in role DDL so the
+// statement can appear in an error message without carrying the credential.
+// The literal is randomHex output (no embedded quotes), so the closing quote
+// found here is always the real terminator.
+func redactRolePassword(s string) string {
+	const marker = "PASSWORD '"
+	i := strings.Index(s, marker)
+	if i < 0 {
+		return s
+	}
+	rest := s[i+len(marker):]
+	j := strings.IndexByte(rest, '\'')
+	if j < 0 {
+		return s[:i+len(marker)] + "[redacted]"
+	}
+	return s[:i+len(marker)] + "[redacted]" + rest[j:]
 }
 
 // firstLine returns the first line of a (possibly multi-line) SQL

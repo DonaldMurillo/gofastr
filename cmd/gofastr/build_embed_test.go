@@ -14,14 +14,21 @@ func embedGateModule(t *testing.T) (dir, output string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Track the repo's own `go` directive rather than hardcoding one — this
+	// module replaces gofastr with the checkout, and Go refuses to build a
+	// module whose directive is below a dependency's.
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
 	devPkgWrite(t, filepath.Join(dir, "go.mod"), fmt.Sprintf(`module embedgatetest
 
-go 1.26.5
+go %s
 
 require github.com/DonaldMurillo/gofastr v0.0.0
 
 replace github.com/DonaldMurillo/gofastr => %s
-`, repoRoot))
+`, goVersion, repoRoot))
 	devPkgWrite(t, filepath.Join(dir, "main.go"), `package main
 
 import (

@@ -8,7 +8,7 @@
 // isolated. The parent module is referenced via a local replace.
 module github.com/DonaldMurillo/gofastr/battery/print/chromepdf
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/DonaldMurillo/gofastr v0.0.0
@@ -29,8 +29,8 @@ require (
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
-	golang.org/x/image v0.43.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/image v0.45.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 )
 
 // Local replace: the parent module is the repo root. Standard nested-module

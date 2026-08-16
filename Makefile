@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -69,23 +69,39 @@ test-pg-env:
 	fi
 	TEST_POSTGRES_DSN="$$TEST_POSTGRES_DSN" go test -count=1 ./framework/...
 
-# Run framework tests against an ephemeral testcontainers-spawned Postgres.
-# Requires Docker; the container is reused across tests inside a single `go
-# test` invocation, then torn down on exit.
-test-pg:
+# The DSN of the docker-compose `postgres` service. Every Postgres suite in
+# the repo reads TEST_POSTGRES_DSN, so this one value drives all of them.
+COMPOSE_PG_DSN ?= postgres://test:test@localhost:5432/framework_test?sslmode=disable
+
+# Start the compose Postgres and wait for it to accept connections.
+#
+# Tests used to spawn this themselves through testcontainers-go. That was
+# convenient but forced testcontainers into the root go.mod, and Go hands a
+# module's requirements to every module that imports it — so applications
+# built on GoFastr resolved the whole Docker client stack to tidy a
+# hello-world. See cmd/repolint's test-only-dep-in-consumer-graph rule.
+postgres-up:
 	@if ! command -v docker >/dev/null 2>&1; then \
-		echo "✗ Docker not found. Install Docker or use `make test-pg-env`."; \
+		echo "✗ Docker not found. Point TEST_POSTGRES_DSN at an existing server and use \`make test-pg-env\`."; \
 		exit 1; \
 	fi
-	go test -count=1 ./framework/...
+	docker compose up -d --wait postgres
+	@echo "  ✓ postgres ready — export TEST_POSTGRES_DSN='$(COMPOSE_PG_DSN)'"
+
+postgres-down:
+	docker compose rm -sf postgres
+
+# Run framework tests against the compose Postgres, starting it if needed.
+test-pg: postgres-up
+	TEST_POSTGRES_DSN="$(COMPOSE_PG_DSN)" go test -count=1 ./framework/...
 
 # Subset: only the Postgres halves of the dual-dialect subtests. Useful when
 # iterating on a Postgres-specific bug to skip the SQLite branch's noise.
 test-pg-only:
-	@if ! command -v docker >/dev/null 2>&1 && [ -z "$$TEST_POSTGRES_DSN" ]; then \
-		echo "✗ Need Docker or TEST_POSTGRES_DSN."; exit 1; \
+	@if [ -z "$$TEST_POSTGRES_DSN" ]; then \
+		$(MAKE) postgres-up; \
 	fi
-	go test -count=1 -run '/postgres' ./framework/...
+	TEST_POSTGRES_DSN="$${TEST_POSTGRES_DSN:-$(COMPOSE_PG_DSN)}" go test -count=1 -run '/postgres' ./framework/...
 
 # -short skips the chromedp e2e suites (site, meridian, kiln browser):
 # under the race detector they run 2-3x slower, blow the default test
@@ -281,8 +297,10 @@ vulncheck:
 		"$$GVC" ./... && echo "  ✓ No known vulnerabilities"; \
 	else \
 		echo "  ! govulncheck not installed — gate cannot run (failing closed)"; \
-		echo "    Install with the repo's Go toolchain so it can load go1.26 packages:"; \
-		echo "    GOTOOLCHAIN=go1.26.3 go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+		echo "    Install with the repo's OWN toolchain, not whatever go install picks:"; \
+		echo "    a govulncheck built by an older Go cannot load this module's packages"; \
+		echo "    and reports 'package requires newer Go version' for every one of them."; \
+		echo "    GOTOOLCHAIN=go$$(awk '/^go /{print $$2; exit}' go.mod) go install golang.org/x/vuln/cmd/govulncheck@v1.1.4"; \
 		exit 1; \
 	fi
 

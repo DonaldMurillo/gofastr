@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -83,7 +84,8 @@ type AppConfig struct {
 	// delete + _batch + _events + per-entity llm.md) under this path — e.g.
 	// "/api" serves GET /api/posts instead of GET /posts. Empty (default)
 	// keeps the bare entity-name mounts, so this is not a breaking change.
-	// The generated OpenAPI spec expresses the prefix via its server URL.
+	// The generated OpenAPI spec bakes the prefix into its path keys
+	// (servers stays [{url: "/"}]), so documented paths match requests.
 	// GroupEntity routes are unaffected — a group owns its own prefix. MCP
 	// tool names are unchanged.
 	APIPrefix string
@@ -417,6 +419,13 @@ type App struct {
 	roleOpt Role
 	roleSet bool
 
+	// configDiscards collects AppConfig field names WithConfig zeroed after
+	// an earlier option had set them. NewApp filters it against the final
+	// Config (a later option may have restored the field) and warns once —
+	// the discard is legal, replace-semantics are the contract, but it is
+	// almost always a misplaced option and used to be perfectly silent.
+	configDiscards []string
+
 	// setup is the optional first-run setup runner (WithSetup). When set
 	// and setup is incomplete at boot, Start either runs the steps
 	// headlessly (all required env present) or serves an interactive
@@ -458,10 +467,45 @@ func WithDB(db *sql.DB) AppOption {
 // value, not "keep whatever a previous option set". To turn a boolean back off,
 // set it in the AppConfig passed to WithConfig (or place a granular setter
 // after it) instead of relying on a zero field to preserve a prior value.
+//
+// Because that discard used to be perfectly silent — the classic form is a
+// scaffold that pastes WithPublicOpenAPI() next to WithDB, one line above the
+// WithConfig that zeroes it — NewApp now logs a warning naming every field an
+// earlier option set that the replacement returned to zero (and that no later
+// option restored). Place WithConfig first to stay silent.
 func WithConfig(config AppConfig) AppOption {
 	return func(a *App) {
+		a.configDiscards = append(a.configDiscards, discardedConfigFields(a.Config, config)...)
 		a.Config = config
 	}
+}
+
+// defaultAppConfig is the Config NewApp seeds before options run. It exists so
+// the seed and discardedConfigFields' notion of "nothing was set yet" cannot
+// drift: a seeded default (JSONCase) being replaced is business as usual, not
+// a lost option.
+func defaultAppConfig() AppConfig {
+	return AppConfig{JSONCase: crud.CaseCamel}
+}
+
+// discardedConfigFields reports the AppConfig fields that old carried beyond
+// the NewApp seed and replacement returns to zero — the fields a wholesale
+// WithConfig replacement silently throws away.
+func discardedConfigFields(old, replacement AppConfig) []string {
+	def := reflect.ValueOf(defaultAppConfig())
+	ov := reflect.ValueOf(old)
+	nv := reflect.ValueOf(replacement)
+	var out []string
+	for i := 0; i < ov.NumField(); i++ {
+		if !nv.Field(i).IsZero() {
+			continue // the replacement sets it; nothing lost
+		}
+		if reflect.DeepEqual(ov.Field(i).Interface(), def.Field(i).Interface()) {
+			continue // nothing beyond the seed to lose
+		}
+		out = append(out, ov.Type().Field(i).Name)
+	}
+	return out
 }
 
 // WithAPIPrefix mounts auto-CRUD entity routes under prefix (e.g. "/api").
@@ -1402,7 +1446,7 @@ func NewApp(opts ...AppOption) *App {
 		Registry:      NewRegistry(),
 		router:        router.New(),
 		MCP:           mcp.NewServer(),
-		Config:        AppConfig{JSONCase: crud.CaseCamel},
+		Config:        defaultAppConfig(),
 		Plugins:       NewPluginManager(),
 		Batteries:     NewBatteryManager(),
 		events:        event.NewEventBus(),
@@ -1449,6 +1493,29 @@ func NewApp(opts ...AppOption) *App {
 	// it during Init via app.SetLogger.
 	if a.logger.Load() == nil {
 		a.logger.Store(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	}
+
+	// Surface options WithConfig silently threw away. Filtered against the
+	// FINAL config: a later granular option restoring the field means
+	// nothing was ultimately lost, so it doesn't warn.
+	if len(a.configDiscards) > 0 {
+		final := reflect.ValueOf(a.Config)
+		seen := make(map[string]bool, len(a.configDiscards))
+		var lost []string
+		for _, name := range a.configDiscards {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			if f := final.FieldByName(name); f.IsValid() && f.IsZero() {
+				lost = append(lost, name)
+			}
+		}
+		if len(lost) > 0 {
+			a.Logger().Warn("WithConfig replaced AppConfig fields set by earlier options — WithConfig replaces the whole config, so options placed before it are discarded. Move the granular options after WithConfig, or set these fields in the AppConfig literal.",
+				"discarded", strings.Join(lost, ", "))
+		}
+		a.configDiscards = nil
 	}
 
 	// Construct the transactional outbox after all options have applied,
