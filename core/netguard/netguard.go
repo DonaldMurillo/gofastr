@@ -35,7 +35,9 @@ var metadataIPv4 = net.IPv4(169, 254, 169, 254)
 //
 // IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) are normalized to their
 // 4-byte form first, so a mapped internal literal cannot slip past the
-// v4 range checks.
+// v4 range checks. Addresses in an IPv4-*translation* prefix (NAT64,
+// 6to4, IPv4-compatible) are checked against the IPv4 they carry — see
+// [translatedV4].
 func IsInternal(ip net.IP) bool {
 	if ip == nil {
 		// A caller with no address to check has nothing to vouch for.
@@ -44,6 +46,24 @@ func IsInternal(ip net.IP) bool {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
+	if internalRange(ip) {
+		return true
+	}
+	// Not internal as written. If it is a translation address, it is only
+	// as safe as the IPv4 it carries: a NAT64 translator on the path will
+	// forward to that IPv4. Checked AFTER the direct ranges so `::` and
+	// `::1` are classified by their own rules rather than by the
+	// all-zero IPv4-compatible payload they would otherwise decode to.
+	if v4 := translatedV4(ip); v4 != nil {
+		return internalRange(v4)
+	}
+	return false
+}
+
+// internalRange is the range check itself, shared by IsInternal and
+// Reason so the predicate and its diagnostic can never disagree — the
+// drift this package was created to end.
+func internalRange(ip net.IP) bool {
 	switch {
 	case ip.IsUnspecified(),
 		ip.IsLoopback(),
@@ -60,6 +80,58 @@ func IsInternal(ip net.IP) bool {
 	return ip.Equal(metadataIPv4)
 }
 
+// translatedV4 returns the IPv4 address carried by an IPv4-translation
+// IPv6 address, or nil when ip is not one.
+//
+// net.IP.To4 normalizes only the IPv4-*mapped* form (`::ffff:0:0/96`).
+// These other encodings also resolve to an IPv4 destination, so a guard
+// that skips them lets `64:ff9b::a9fe:a9fe` — cloud instance metadata
+// behind NAT64 — read as a public address:
+//
+//   - NAT64 well-known prefix `64:ff9b::/96` (RFC 6052): v4 at bytes 12-16.
+//   - NAT64 local-use prefix `64:ff9b:1::/48` (RFC 8215): the RFC 6052
+//     /48 embedding splits the v4 across bytes 6-7 and 9-10, skipping
+//     the reserved u octet at byte 8. It is NOT contiguous.
+//   - 6to4 `2002::/16` (RFC 3056): v4 at bytes 2-6.
+//   - Deprecated IPv4-compatible `::/96` (RFC 4291): v4 at bytes 12-16.
+//
+// 6to4 and IPv4-compatible are defense in depth: Linux routes only
+// `::ffff:0:0/96` onto IPv4 today, so neither is directly routable. The
+// predicate must not depend on that staying true.
+func translatedV4(ip net.IP) net.IP {
+	if len(ip) != net.IPv6len {
+		return nil
+	}
+	switch {
+	case ip[0] == 0x00 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b:
+		// RFC 8215 local-use 64:ff9b:1::/48 — u octet must be zero.
+		if ip[4] == 0x00 && ip[5] == 0x01 && ip[8] == 0x00 {
+			return net.IPv4(ip[6], ip[7], ip[9], ip[10])
+		}
+		// RFC 6052 well-known 64:ff9b::/96.
+		if isZero(ip[4:12]) {
+			return net.IPv4(ip[12], ip[13], ip[14], ip[15])
+		}
+	case ip[0] == 0x20 && ip[1] == 0x02:
+		// 6to4.
+		return net.IPv4(ip[2], ip[3], ip[4], ip[5])
+	case isZero(ip[0:12]):
+		// IPv4-compatible. `::` and `::1` never reach here — IsInternal
+		// and Reason both run the direct range checks first.
+		return net.IPv4(ip[12], ip[13], ip[14], ip[15])
+	}
+	return nil
+}
+
+func isZero(b []byte) bool {
+	for _, c := range b {
+		if c != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // Reason returns a short description of why ip counts as internal, for
 // error messages. Returns "" when IsInternal(ip) is false.
 func Reason(ip net.IP) string {
@@ -69,6 +141,22 @@ func Reason(ip net.IP) string {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
+	if r := rangeReason(ip); r != "" {
+		return r
+	}
+	// Same fallback as IsInternal: a translation address inherits the
+	// verdict of the IPv4 it carries, so the diagnostic must too.
+	if v4 := translatedV4(ip); v4 != nil {
+		if r := rangeReason(v4); r != "" {
+			return r + ", carried by an IPv4-translation address"
+		}
+	}
+	return ""
+}
+
+// rangeReason is internalRange's half of the pair: the same ladder,
+// worded for humans. Keep the two in lockstep.
+func rangeReason(ip net.IP) string {
 	switch {
 	case ip.IsUnspecified():
 		return "unspecified address"
