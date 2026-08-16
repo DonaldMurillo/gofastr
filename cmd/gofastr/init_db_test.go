@@ -71,3 +71,29 @@ func TestInitAcceptsDBDriverAliases(t *testing.T) {
 		})
 	}
 }
+
+// The scaffold must emit WithConfig BEFORE any other framework option.
+// WithConfig replaces the whole AppConfig, so with it scaffolded last the
+// natural paste point for a granular option — next to WithDB — was before
+// WithConfig, which silently zeroed it (the 2026-07-26 eval's #2 footgun).
+// Ordering makes every below-the-line paste work; framework.NewApp warns at
+// boot about the remaining above-the-line case.
+func TestInitScaffoldsWithConfigFirst(t *testing.T) {
+	for _, args := range [][]string{{"app"}, {"app", "--no-entity"}} {
+		dir := t.TempDir()
+		covT_chdir(t, dir)
+		covT_capStdout(t, func() { runInit(args) })
+		b, err := os.ReadFile(filepath.Join(dir, "app", "main.go"))
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		main := string(b)
+		cfg := strings.Index(main, "framework.WithConfig(")
+		if cfg < 0 {
+			t.Fatalf("%v: scaffolded main.go has no WithConfig", args)
+		}
+		if db := strings.Index(main, "framework.WithDB("); db >= 0 && db < cfg {
+			t.Errorf("%v: WithDB at byte %d precedes WithConfig at %d — options pasted beside WithDB land before WithConfig and are silently discarded", args, db, cfg)
+		}
+	}
+}

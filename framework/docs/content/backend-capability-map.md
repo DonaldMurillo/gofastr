@@ -110,13 +110,14 @@ an app ends up with a bug the framework would have prevented:
   [API versioning](api-versioning.md).
 - **Adding an option before `framework.WithConfig`.** `WithConfig` replaces
   the whole `AppConfig` struct rather than merging into it, so any granular
-  option placed *before* it is silently zeroed. `gofastr init` scaffolds
-  `WithConfig` as the last option, which means the natural place to paste
-  `framework.WithPublicOpenAPI()` — right next to `framework.WithDB` — does
-  nothing, with no error. Verified against a fresh scaffold: the startup
-  banner still printed "requires auth — WithPublicOpenAPI() to expose" and
-  `/openapi.json` still answered 401. Put granular options *after*
-  `WithConfig`. Later options win.
+  option placed *before* it is zeroed. Put granular options *after*
+  `WithConfig` — later options win. Two guards make the mistake hard to keep:
+  `gofastr init` scaffolds `WithConfig` as the *first* option (so pasting
+  `framework.WithPublicOpenAPI()` anywhere below it works), and `NewApp` logs
+  a warning naming each field an earlier option set that `WithConfig` zeroed
+  and no later option restored. Replace semantics are deliberate: a merge
+  could not tell an explicit zero from an unset field, so `WithConfig` could
+  never turn a boolean back off.
 - **Adding a route for in-page state.** Sorting and paginating are islands,
   not routes. That is a UI question — see
   [ui-capability-map.md](ui-capability-map.md).

@@ -76,6 +76,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **An option placed before `WithConfig` is no longer discarded in silence.**
+  `WithConfig` replaces the whole `AppConfig` — deliberate, since a merge
+  could not tell an explicit zero from an unset field — but the discard was
+  invisible: `gofastr init` scaffolded `WithConfig` last, so pasting
+  `framework.WithPublicOpenAPI()` at the natural spot next to `WithDB` did
+  nothing, with no error. The scaffold now emits `WithConfig` first (any
+  option pasted below it takes effect), and `NewApp` logs a warning naming
+  each field an earlier option set that `WithConfig` zeroed and no later
+  option restored. Replace semantics are unchanged.
+
 - **Go floor raised to 1.26.6 for six standard-library advisories.** `go.mod`
   declared `go 1.26.5`, and govulncheck found six advisories reachable from
   this tree that are all fixed in the *toolchain*, not in any dependency:
