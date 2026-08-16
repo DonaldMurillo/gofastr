@@ -68,14 +68,16 @@ ENTRYPOINT ["/app"]
 
 ## Configuration (env)
 
-GoFastr reads config from the environment (with `.env` auto-loaded in
-development — see [dotenv](dotenv.md); real env always wins). Common vars:
+GoFastr reads config from the environment. `NewApp` also loads `.env`
+files at boot in every environment, not just development; set
+`GOFASTR_DOTENV=off` to suppress it — see [dotenv](dotenv.md); real env
+always wins. Common vars:
 
 | Var | Purpose |
 |-----|---------|
 | `PORT` | Listen port. A bare value like `8080` is normalized to `:8080`, so PaaS-injected `$PORT` works. |
 | `DATABASE_URL` | Your app reads this and passes the connection to `WithDB`. |
-| `APP_ENV` | Selects `.env.<APP_ENV>` in development. |
+| `APP_ENV` | Adds `.env.<APP_ENV>` to the dotenv load order whenever it is set. |
 | auth secrets | If you use `battery/auth`, set its JWT/session secret explicitly in production — do not rely on the dev auto-generated secret (it rotates per process and silently invalidates sessions). See [auth](auth.md). |
 | `GOFASTR_SECRET` | HMAC signing key for the uihost session token. Set it (or use `framework.WithSecret` in code) so a session token issued by one replica verifies on every other replica. With one replica and no secret, an ephemeral boot secret is minted (sessions roll over on restart). With `WithFanout` and no secret, the app refuses to boot. See [Reactivity model](reactivity.md) and [Horizontal scaling](scaling.md). |
 
