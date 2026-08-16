@@ -23,6 +23,14 @@ func WithSoftDelete(ent *entity.Entity) *entity.Entity {
 
 // SoftDelete marks a record as deleted by setting deleted_at to NOW().
 // The record remains in the database but will be excluded from normal queries.
+//
+// SECURITY — UNSCOPED OPERATION: this function issues UPDATE … WHERE id = $1
+// with NO tenant, owner, or access-control filter. Any id supplied will be
+// soft-deleted regardless of which tenant or user owns it. Call this only after
+// you have independently verified that the caller is authorised to delete that
+// specific record (e.g. behind an admin gate, or after an explicit ownership
+// check). Using this helper in a user-facing endpoint without such a check
+// creates a cross-tenant / IDOR vulnerability.
 func SoftDelete(ctx context.Context, db *sql.DB, table string, id string) error {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {

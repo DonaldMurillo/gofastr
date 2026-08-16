@@ -141,7 +141,11 @@ DATABASE_URL=%s
 PORT=localhost:8080
 `, dbURL)
 	}
-	if err := os.WriteFile(filepath.Join(name, ".env"), []byte(envContent), 0o644); err != nil {
+	// 0600, not 0644: this file already carries DATABASE_URL (which may
+	// embed a password) and is where the operator is told to put
+	// GOFASTR_SECRET, the session-signing key. Scaffolding it
+	// world-readable hands every local account the app's secrets.
+	if err := os.WriteFile(filepath.Join(name, ".env"), []byte(envContent), 0o600); err != nil {
 		fail("Failed to write .env: %v", err)
 		osExit(1)
 	}
