@@ -97,3 +97,11 @@
 - Evidence: `go run ./cmd/gofastr audit lint .` reports `battery/auth/magiclink.go:415`; `TestMagicLinkConfirmRejectsCrossSite` pins the guard.
 - Next time: Run audit lint at repository scope and document intentional alternative controls where the heuristic can verify them.
 - Status: active
+
+## 2026-08-16 - Measure the discovery-tax fix and close the WithConfig footgun
+- Scope: `evals/backend-adoption` rerun, `framework.WithConfig`, `gofastr init` scaffold
+- Trigger: PR #200 left two reviewer items open — the capability map's effect was unmeasured, and an option placed before `WithConfig` was silently discarded.
+- Approach: Rerun the eval's GoFastr lane with Gin as a drift control on the same codex-cli 0.145.0; keep WithConfig's replace semantics but scaffold it first and warn at boot naming discarded fields.
+- Evidence: `evals/backend-adoption/results/2026-08-16-codex.md` — cold-start 313,579 → 233,716 tokens against a control that rose 34%, ratio 4.35× → 2.42×; `framework/withconfig_order_test.go` and `TestInitScaffoldsWithConfigFirst` pin the fix.
+- Next time: When a run fails a probe, read the candidate's code before blaming the framework — run 1's isolation miss was a hand-rolled handler validating before the owner-scoped lookup, with the framework's contract warning suppressed.
+- Status: active
