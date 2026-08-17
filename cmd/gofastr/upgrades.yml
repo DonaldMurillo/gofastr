@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.64.0
+through: v0.65.0
 
 releases:
   - version: v0.3.0
@@ -707,3 +707,16 @@ releases:
       - change: gofastr init scaffolds .env as 0600
         breaking: false
         guidance: "New projects only; existing files are untouched. The file carries DATABASE_URL and is where GOFASTR_SECRET goes, so a world-readable scaffold handed both to every local account. Run chmod 600 .env on projects scaffolded earlier."
+  - version: v0.65.0
+    title: Owner-column injection, public llm.md opt-in, CLI casing convergence
+    notes:
+      - change: Undeclared owner columns are auto-created
+        breaking: false
+        guidance: "An entity with Scope.OwnerField set but no matching field in Fields now gets a hidden read-only string column injected by entity.Define, and the next AutoMigrate adds it to the table. Before, the column never existed: creates persisted rows without an owner and scoped reads failed with no-such-column. Rows created while broken have an empty owner value and stay invisible to owner-scoped reads; backfill the column or delete them."
+        detect: "OwnerField"
+      - change: WithPublicOpenAPI() also serves /api/llm.md without a session
+        breaking: false
+        guidance: "The startup banner always claimed this; the route now matches it. The public route serves the full entity index, the same exposure class as the public /openapi.json. Without the option the route stays session-gated, and per-entity llm.md routes keep their own scope gates. If you enabled WithPublicOpenAPI but relied on /api/llm.md staying gated, drop the option."
+      - change: The CLI snake-cases leading acronyms correctly
+        breaking: false
+        guidance: "gofastr generate and gofastr pack now agree: HTTPServer becomes http_server (generate previously produced httpserver, pack h_t_t_p_server). Shipped goldens are unchanged; only identifiers with leading acronym runs are affected on the next generate/pack run."
