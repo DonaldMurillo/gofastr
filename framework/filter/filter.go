@@ -2,6 +2,7 @@ package filter
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -29,18 +30,52 @@ const MaxINListEntries = 1000
 // same list, so the cap (MaxINListEntries) can't be bypassed by
 // splitting one huge list across several occurrences either.
 func SplitINValues(values []string) []string {
-	if len(values) == 1 {
-		return strings.Split(values[0], ",")
-	}
+	parts, _ := SplitINValuesBounded(values, math.MaxInt)
+	return parts
+}
+
+// SplitINValuesBounded is SplitINValues with an allocation bound for the
+// HTTP filter paths that enforce MaxINListEntries: it never materializes
+// more than max+1 entries. SplitINValues built the entire list before the
+// caller compared it against the cap, so one request carrying hundreds of
+// thousands of commas allocated that many strings just to earn a 400 —
+// repeated per request. Here the total is counted first (strings.Count,
+// no allocation) and the list is only built in full when it fits; an
+// over-cap input yields a max+1-entry prefix plus the exact total, which
+// is everything the rejection error needs. parts holds the complete list
+// iff total <= max.
+func SplitINValuesBounded(values []string, max int) (parts []string, total int) {
 	n := 0
 	for _, v := range values {
 		n += strings.Count(v, ",") + 1
 	}
-	parts := make([]string, 0, n)
-	for _, v := range values {
-		parts = append(parts, strings.Split(v, ",")...)
+	if n <= max {
+		out := make([]string, 0, n)
+		for _, v := range values {
+			out = append(out, strings.Split(v, ",")...)
+		}
+		return out, n
 	}
-	return parts
+	out := make([]string, 0, max+1)
+outer:
+	for _, v := range values {
+		for {
+			// Check before appending so the slice never exceeds max+1
+			// entries — the no-comma tail append must respect the bound
+			// just like the comma-split pieces.
+			if len(out) > max {
+				break outer
+			}
+			if i := strings.IndexByte(v, ','); i >= 0 {
+				out = append(out, v[:i])
+				v = v[i+1:]
+			} else {
+				out = append(out, v)
+				break
+			}
+		}
+	}
+	return out, n
 }
 
 // maxSortFields bounds the number of ORDER BY clauses a single request
@@ -400,8 +435,8 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			}
 			consumed[col] = true
 			if s.Op == OpIn {
-				parts := SplitINValues(values)
-				if len(parts) > MaxINListEntries {
+				parts, total := SplitINValuesBounded(values, MaxINListEntries)
+				if total > MaxINListEntries {
 					// Fail closed: a truncated list silently narrows the
 					// predicate (rows past entry N drop out of results)
 					// without telling the caller. Record the lexically-
@@ -409,7 +444,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 					// randomized map iteration and error after the loop.
 					if overCapField == "" || col < overCapField {
 						overCapField = col
-						overCapCount = len(parts)
+						overCapCount = total
 					}
 				} else {
 					for _, p := range parts {

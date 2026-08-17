@@ -50,9 +50,15 @@ var errUnsupportedMediaType = errors.New("unsupported media type")
 var errBodyTooLarge = errors.New("request body too large")
 
 // isMultipart reports whether the request carries a multipart/form-data body.
+// Parsed with mime.ParseMediaType — media types are case-insensitive
+// (RFC 9110 §8.3.1) and lowercased by the parser — so this agrees with
+// enforceJSONContentType for a header like `Multipart/Form-Data; …`. A
+// case-sensitive prefix check here let such a request through the gate
+// but not the multipart branch, so the JSON 1 MiB body cap applied and
+// >1 MiB uploads failed with a bogus 400.
 func isMultipart(r *http.Request) bool {
-	ct := r.Header.Get("Content-Type")
-	return strings.HasPrefix(ct, "multipart/form-data")
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mediaType == "multipart/form-data"
 }
 
 // enforceJSONContentType refuses requests whose Content-Type isn't either

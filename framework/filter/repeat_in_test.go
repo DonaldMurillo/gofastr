@@ -40,7 +40,7 @@ func TestRepeatedInKeysUnion(t *testing.T) {
 
 // TestRepeatedInKeysOverCapErrors: the 1000-entry cap counts the UNION of
 // all occurrences, so a caller can't bypass it by splitting one huge list
-// across repeated keys (1101 entries as 2 keys must fail like 1 key does).
+// across repeated keys (1002 entries as 2 keys must fail like 1 key does).
 func TestRepeatedInKeysOverCapErrors(t *testing.T) {
 	fields := []schema.Field{{Name: "tag", Type: schema.String}}
 

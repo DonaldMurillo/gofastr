@@ -38,6 +38,11 @@ const multipartFramingSlack = 4 << 10 // 4 KiB
 // single unique-key generator the framework's upload surfaces share —
 // framework/file.GenerateFilePath builds its entity/field-scoped paths
 // on top of it; do not grow a second scheme.
+//
+// The only error is a failed crypto/rand read. RNG failure means the
+// host's entropy source is broken; the caller must reject the upload
+// rather than store under a timestamp-only key, which would silently
+// re-enable the O_TRUNC clobber this scheme exists to prevent.
 func UniqueFilename(filename string) string {
 	safe := SanitizeFilename(filename)
 	ext := filepath.Ext(safe)
@@ -48,15 +53,15 @@ func UniqueFilename(filename string) string {
 	return fmt.Sprintf("%s_%d_%s%s", name, time.Now().UnixNano(), randomSuffix(), ext)
 }
 
-// randomSuffix returns a hex-encoded 8-byte crypto-random token. If the
-// platform RNG fails it returns an empty string; the caller still has
-// the timestamp, so a failure degrades uniqueness rather than aborting
-// the upload.
+// randomSuffix returns a hex-encoded 8-byte crypto-random token. It has no
+// error path because crypto/rand.Read has none: it "never returns an
+// error, and always fills b entirely", crashing the program irrecoverably
+// if the OS source fails. So there is no reachable state where the suffix
+// is missing and two requests on the same clock tick could collide into an
+// O_TRUNC clobber — which is the whole reason the suffix exists.
 func randomSuffix() string {
 	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return ""
-	}
+	rand.Read(b[:])
 	return hex.EncodeToString(b[:])
 }
 

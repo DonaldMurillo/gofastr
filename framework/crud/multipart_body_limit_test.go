@@ -97,3 +97,22 @@ func TestMultipartCreateOverWireCapIs413(t *testing.T) {
 		t.Fatalf("over-cap multipart create = %d, want 413. body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestMultipartMixedCaseTypeLargeFile: media types are case-insensitive
+// (RFC 9110 §8.3.1). enforceJSONContentType parses the header with
+// mime.ParseMediaType — which lowercases — so `Multipart/Form-Data`
+// passes the content-type gate, but isMultipart used a case-sensitive
+// prefix check and routed the request down the JSON path: the 1 MiB
+// MaxJSONBodyBytes cap applied and every >1 MiB upload died. The two
+// checks must agree, whatever the case.
+func TestMultipartMixedCaseTypeLargeFile(t *testing.T) {
+	ch := multipartLimitHandler(t)
+	req := withTestUser(multipartRequest("POST", "/uploads", 2<<20), "u1")
+	ct := req.Header.Get("Content-Type")
+	req.Header.Set("Content-Type", "Multipart/Form-Data"+strings.TrimPrefix(ct, "multipart/form-data"))
+	rec := httptest.NewRecorder()
+	ch.Create()(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("2 MiB mixed-case multipart create = %d, want 201. body=%s", rec.Code, rec.Body.String())
+	}
+}

@@ -26,6 +26,8 @@ func TestOffsetForPage(t *testing.T) {
 		{"just-over-boundary", math.MaxInt/100 + 2, 100, 0},    // product exceeds MaxInt
 		{"at-boundary-exact", math.MaxInt / 100, 100, (math.MaxInt/100 - 1) * 100},
 		{"negative-page", -5, 20, 0},
+		{"limit0-page2", 2, 0, 0},    // MaxInt/limit was a division by zero panic
+		{"negative-limit", 2, -3, 0}, // a non-positive page size has no offset math
 	}
 	for _, c := range cases {
 		if got := OffsetForPage(c.page, c.limit); got != c.want {

@@ -162,13 +162,13 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			// unmatchable — a single related row can't equal every value — so
 			// `?author.name_in=a,b` silently returned nothing. One IN matches
 			// the top-level _in semantics, including the union across
-			// repeated keys (filter.SplitINValues) and the entry cap the
-			// flat path enforces — same cap, same error shape, so the
+			// repeated keys (filter.SplitINValuesBounded) and the entry cap
+			// the flat path enforces — same cap, same error shape, so the
 			// nested surface can't drive uncapped placeholders per request.
-			vals := filter.SplitINValues(values)
-			if len(vals) > filter.MaxINListEntries {
+			vals, total := filter.SplitINValuesBounded(values, filter.MaxINListEntries)
+			if total > filter.MaxINListEntries {
 				return nil, fmt.Errorf("nested filter %q: in-list on %q has %d entries (max %d)",
-					key, fieldName, len(vals), filter.MaxINListEntries)
+					key, fieldName, total, filter.MaxINListEntries)
 			}
 			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Values: vals, isBool: isBool})
 		} else {

@@ -125,7 +125,12 @@ func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
 // call site (buffered list, streaming list, admin table) must go
 // through this — never multiply a client-supplied page by hand.
 func OffsetForPage(page, limit int) int {
-	if page < 2 {
+	// limit < 1 guards the MaxInt/limit division below (limit == 0 is an
+	// integer-division panic; negative limit is nonsense arithmetic).
+	// OffsetForPage is exported, so it protects its own inputs even though
+	// every in-repo caller floors its page size — ServeStreamingList, for
+	// one, is also exported and takes an arbitrary limit.
+	if page < 2 || limit < 1 {
 		return 0
 	}
 	if page-1 > math.MaxInt/limit {
