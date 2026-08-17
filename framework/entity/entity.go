@@ -397,6 +397,13 @@ func Define(name string, config EntityConfig) *Entity {
 	// would fail with "no such column". A field the caller DID declare
 	// with that name is left untouched.
 	if config.Scope.OwnerField != "" {
+		// Validate the owner column name once, here, matching the
+		// TenantField check above: it is interpolated into owner-scope
+		// WHERE clauses, so a bad name should fail loud at definition,
+		// not as an opaque panic on the first scoped request.
+		if _, err := query.SafeIdent(config.Scope.OwnerField); err != nil {
+			panic(fmt.Sprintf("entity %q: OwnerField %q is not a valid SQL identifier: %v", name, config.Scope.OwnerField, err))
+		}
 		hasOwner := false
 		for _, f := range config.Fields {
 			if f.Name == config.Scope.OwnerField {

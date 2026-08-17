@@ -269,11 +269,11 @@ func TestDropdown_ItemValueXSS(t *testing.T) {
 			{Label: "Click", Href: `javascript:alert(1)`},
 		},
 	}))
-	// render.Escape escapes quotes but not URL schemes. javascript: has
-	// no chars that get HTML-escaped, so it passes through into the href.
-	// This is a FINDING — hosts must validate Href before passing it.
+	// URL-scheme sanitization is urlsafe.CleanAnchor's job (menu.go runs
+	// every Href through it); render.Escape only HTML-escapes, and
+	// javascript: has no chars that get HTML-escaped.
 	if strings.Contains(h, `javascript:`) {
-		t.Errorf("SECURITY: [dropdown-item-value-xss] javascript: URI in menu href not sanitized by render.Escape")
+		t.Errorf("SECURITY: [dropdown-item-value-xss] javascript: URI in menu href not sanitized by urlsafe.CleanAnchor")
 	} else {
 		t.Logf("NOTE: [dropdown-item-value-xss] href value is attr-escaped")
 	}

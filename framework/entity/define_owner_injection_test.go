@@ -71,3 +71,16 @@ func TestDefine_DeclaredOwnerFieldLeftUntouched(t *testing.T) {
 		t.Fatalf("user_id appears %d times, want exactly the caller's declaration", count)
 	}
 }
+
+func TestDefine_RejectsUnsafeOwnerField(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Define accepted an OwnerField that is not a valid SQL identifier; " +
+				"the name is interpolated into owner-scope WHERE clauses")
+		}
+	}()
+	Define("notes", EntityConfig{
+		Fields: []schema.Field{{Name: "id", Type: schema.String}},
+		Scope:  &ScopeConfig{OwnerField: `user_id"; DROP TABLE notes--`},
+	})
+}

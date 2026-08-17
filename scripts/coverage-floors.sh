@@ -38,9 +38,9 @@
 # 2026-08-16 extension sweep: every remaining package the blocking CI job
 # runs (i.e. not the chromedp-isolated packages ci.yml's Test step excludes,
 # not cmd/gofastr per below) was measured with `go test -cover`; every one
-# at ≥70% got a floor at measured − 1.5. Packages below 70% — and battery/log,
-# mid-refactor at sweep time — were left unfloored deliberately: a floor
-# under weak coverage pins the weakness instead of catching drift.
+# at ≥70% got a floor at measured − 1.5. Packages below 70% were left
+# unfloored deliberately: a floor under weak coverage pins the weakness
+# instead of catching drift.
 #
 # Exclusions:
 #   cmd/gofastr (claimed 84% full-suite) is NOT gated here: its suite is
