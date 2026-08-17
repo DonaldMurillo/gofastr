@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.65.0
+through: v0.66.0
 
 releases:
   - version: v0.3.0
@@ -720,3 +720,24 @@ releases:
       - change: The CLI snake-cases leading acronyms correctly
         breaking: false
         guidance: "gofastr generate and gofastr pack now agree: HTTPServer becomes http_server (generate previously produced httpserver, pack h_t_t_p_server). Shipped goldens are unchanged; only identifiers with leading acronym runs are affected on the next generate/pack run."
+  - version: v0.66.0
+    title: Queue lease fencing, multipart wire cap, blueprint boot gate
+    notes:
+      - change: "BREAKING: Queue.Ack and Queue.Nack take a Job, not a job ID"
+        breaking: true
+        guidance: "Pass the Job returned by Dequeue instead of job.ID. The string form carried no claim identity, so a worker that stalled past its lease could Ack a job another worker had already re-claimed — deleting the new holder's lease and losing the job with no dead-letter trace. RedisQueue now checks Job.ClaimToken and counts rejected calls in StaleClaimCount(). Custom Queue implementations must update both method signatures."
+        detect: "\\.Ack\\(|\\.Nack\\("
+      - change: Multipart request bodies are capped on the wire and rejected 413
+        breaking: false
+        guidance: "CRUD write handlers previously wrapped every body in a 1 MiB reader before checking the content type, so any multipart upload over 1 MiB failed with a 400. Multipart bodies now cap at crud.MaxMultipartBodyBytes (64 MiB) and over-limit requests get a 413. If you relied on the 400, expect 413; if you need a different ceiling, the constant is exported."
+      - change: Standalone upload keys are unique, not the client filename
+        breaking: false
+        guidance: "upload.Handler now keys objects with upload.UniqueFilename (sanitized name plus a timestamp and 8 random bytes), matching the auto-CRUD path. Two users uploading report.txt no longer overwrite each other. Read `key` from the response; code that rebuilt the storage key from `originalName` will no longer find the object. Objects stored before this release keep their old keys."
+        detect: "upload.Handler"
+      - change: Repeated ?field_in= keys union instead of dropping
+        breaking: false
+        guidance: "?tag_in=a,b&tag_in=c previously filtered on a,b alone and reported nothing. Every occurrence now contributes and the 1000-entry cap counts the union, so a client that sent repeated keys will get more rows than before — the rows it was already asking for. Relation-scoped lists (?author.name_in=) now enforce the same cap and 400 above it."
+      - change: gofastr generate rejects seed values that cannot satisfy their field
+        breaking: false
+        guidance: "A seed row assigning a number to a relation column now fails at generate time naming the @entity.field=value form to use, instead of emitting an app that compiles and then dies at boot. Regenerate any blueprint carrying a numeric foreign key in its seed block."
+        detect: "seed:"

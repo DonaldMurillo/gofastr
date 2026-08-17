@@ -15,7 +15,7 @@ func TestSeedHookReturnsRowErrors(t *testing.T) {
 	if strings.Contains(main, "skipping row") {
 		t.Fatalf("seed hook logs-and-skips failed rows — fail-open boot:\n%s", main)
 	}
-	if !strings.Contains(main, `return fmt.Errorf("seed %s: %w", s.Entity, err)`) {
+	if !strings.Contains(main, "return seedCreateError(s.Entity, row, err)") {
 		t.Fatalf("seed hook does not return CreateOne errors:\n%s", main)
 	}
 }

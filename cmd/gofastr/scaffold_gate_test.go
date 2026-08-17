@@ -101,6 +101,18 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	if homeResp.StatusCode != http.StatusOK || !strings.Contains(string(homeBody), "blog") {
 		t.Fatalf("GET / = %d — want 200 with the scaffolded home screen\n%s", homeResp.StatusCode, output.String())
 	}
+	// The browser tab must not parrot the app name twice: the scaffold's
+	// home screen used to carry ScreenTitle() == app name, which the page
+	// renderer composes as "<title>NAME — NAME</title>". With no screen
+	// title the tab reads exactly the app name.
+	titleStart := strings.Index(string(homeBody), "<title>")
+	titleEnd := strings.Index(string(homeBody), "</title>")
+	if titleStart < 0 || titleEnd < titleStart {
+		t.Fatalf("GET / has no <title> element:\n%s", string(homeBody))
+	}
+	if got := string(homeBody)[titleStart : titleEnd+len("</title>")]; got != "<title>blog</title>" {
+		t.Fatalf("GET / title = %s, want <title>blog</title> — the scaffold duplicated the app name into the screen title:\n%s", got, string(homeBody))
+	}
 
 	// Secure by default: the sample entity has no Public/Access/OwnerField,
 	// so anonymous CRUD refuses — the 401 /get-started demonstrates.

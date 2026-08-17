@@ -1832,13 +1832,42 @@ func validateIslandPathsAreDistinct(bp Blueprint) error {
 	return nil
 }
 
+// schemaErrors accumulates validation findings so one pass reports every
+// fixable problem, not just the first. The alternative is a serial
+// guess-and-recompile loop: fix one error, rerun, meet the next. A single
+// finding returns unchanged (existing exact-shape callers keep their
+// message); multiple findings join under a count.
+type schemaErrors struct{ errs []error }
+
+func (s *schemaErrors) add(err error) {
+	if err != nil {
+		s.errs = append(s.errs, err)
+	}
+}
+
+func (s *schemaErrors) err() error {
+	switch len(s.errs) {
+	case 0:
+		return nil
+	case 1:
+		return s.errs[0]
+	default:
+		msgs := make([]string, len(s.errs))
+		for i, err := range s.errs {
+			msgs[i] = err.Error()
+		}
+		return fmt.Errorf("blueprint has %d validation errors:\n  - %s", len(s.errs), strings.Join(msgs, "\n  - "))
+	}
+}
+
 func validateBlueprint(bp Blueprint) error {
+	var errs schemaErrors
 	// Production auth without a signing key: the generated app's auth
 	// battery fails closed at boot (battery/auth Init refuses an empty
 	// JWTSecret with DevMode=false). Fail at generate/validate time
 	// instead, with the same remedy.
 	if bp.App.Auth.Enabled && !bp.App.Auth.DevMode && bp.App.Auth.JWTSecret == "" {
-		return fmt.Errorf("blueprint: app.auth has dev_mode: false but no jwt_secret — the generated app would refuse to boot (production auth requires a signing key); set jwt_secret from your secret store, or set dev_mode: true for local development")
+		errs.add(fmt.Errorf("blueprint: app.auth has dev_mode: false but no jwt_secret — the generated app would refuse to boot (production auth requires a signing key); set jwt_secret from your secret store, or set dev_mode: true for local development"))
 	}
 	// A multi-tenant entity needs a request-time tenant resolver, and the
 	// right one is host-specific (subdomain, JWT claim, user's org). The
@@ -1848,7 +1877,7 @@ func validateBlueprint(bp Blueprint) error {
 	// to generate rather than ship that.
 	for _, decl := range bp.Entities {
 		if entityDeclarationScope(decl).MultiTenant {
-			return fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy — subdomain, JWT claim, user's org — is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name)
+			errs.add(fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy — subdomain, JWT claim, user's org — is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name))
 		}
 	}
 	// Island endpoints are keyed by toSnakeCase(screen name) + entity, so
@@ -1861,20 +1890,18 @@ func validateBlueprint(bp Blueprint) error {
 	// The same collapse happens when one screen lists the same entity twice:
 	// both blocks derive one endpoint and one signal, so sorting either table
 	// rewrites both from the first block's columns.
-	if err := validateIslandPathsAreDistinct(bp); err != nil {
-		return err
-	}
+	errs.add(validateIslandPathsAreDistinct(bp))
 	if bp.App.PWA.Enabled {
 		switch bp.App.PWA.Display {
 		case "", "standalone", "fullscreen", "minimal-ui", "browser":
 		default:
-			return fmt.Errorf("blueprint: app.pwa.display %q is not a web-app-manifest display mode; use standalone, fullscreen, minimal-ui, or browser (or omit it for standalone)", bp.App.PWA.Display)
+			errs.add(fmt.Errorf("blueprint: app.pwa.display %q is not a web-app-manifest display mode; use standalone, fullscreen, minimal-ui, or browser (or omit it for standalone)", bp.App.PWA.Display))
 		}
 		if u := bp.App.PWA.StartURL; u != "" && !strings.HasPrefix(u, "/") {
-			return fmt.Errorf("blueprint: app.pwa.start_url %q must be a root-relative path (start with /)", u)
+			errs.add(fmt.Errorf("blueprint: app.pwa.start_url %q must be a root-relative path (start with /)", u))
 		}
 		if s := bp.App.PWA.Scope; s != "" && !strings.HasPrefix(s, "/") {
-			return fmt.Errorf("blueprint: app.pwa.scope %q must be a root-relative path (start with /)", s)
+			errs.add(fmt.Errorf("blueprint: app.pwa.scope %q must be a root-relative path (start with /)", s))
 		}
 	}
 	// Theme VALUES need the same boundary as theme keys. The emitter writes
@@ -1885,11 +1912,13 @@ func validateBlueprint(bp Blueprint) error {
 	// host (/app.css) and the admin battery serve. A `;` or `}` there closes
 	// :root and appends rules of the author's choosing; `url(` is an outbound
 	// fetch on every page load. style.ValidateColorValue is that one grammar,
-	// called here rather than copied.
-	for key, value := range bp.App.Theme {
+	// called here rather than copied. Keys are sorted so the multi-error
+	// report is deterministic (map iteration order is not).
+	for _, key := range sortedMapKeys(bp.App.Theme) {
+		value := bp.App.Theme[key]
 		if _, ok := blueprintThemeColorPath(key); ok {
 			if err := style.ValidateColorValue(value); err != nil {
-				return fmt.Errorf("blueprint: app.theme %s %q: %w", key, value, err)
+				errs.add(fmt.Errorf("blueprint: app.theme %s %q: %w", key, value, err))
 			}
 			continue
 		}
@@ -1900,24 +1929,28 @@ func validateBlueprint(bp Blueprint) error {
 		if key == "font_body" || key == "font_heading" || key == "font_display" {
 			continue
 		}
-		return fmt.Errorf("blueprint: app.theme has unsupported token %q", key)
+		errs.add(fmt.Errorf("blueprint: app.theme has unsupported token %q", key))
 	}
-	for key, value := range bp.App.ThemeDark {
+	for _, key := range sortedMapKeys(bp.App.ThemeDark) {
+		value := bp.App.ThemeDark[key]
 		if _, ok := blueprintThemeColorPath(key); !ok {
-			return fmt.Errorf("blueprint: app.theme.dark has unsupported color token %q", key)
+			errs.add(fmt.Errorf("blueprint: app.theme.dark has unsupported color token %q", key))
+			continue
 		}
 		if err := style.ValidateColorValue(value); err != nil {
-			return fmt.Errorf("blueprint: app.theme.dark %s %q: %w", key, value, err)
+			errs.add(fmt.Errorf("blueprint: app.theme.dark %s %q: %w", key, value, err))
 		}
 	}
 	entityNames := map[string]bool{}
 	entitiesByName := map[string]framework.EntityDeclaration{}
 	for _, decl := range bp.Entities {
 		if decl.Name == "" {
-			return fmt.Errorf("blueprint: entity name is required")
+			errs.add(fmt.Errorf("blueprint: entity name is required"))
+			continue
 		}
 		if !isGoIdentifier(toCamelCase(decl.Name)) {
-			return fmt.Errorf("blueprint: entity %q does not produce a valid Go identifier — the generated code would not compile; rename it to start with a letter (e.g. \"two_fa_tokens\" instead of \"2fa_tokens\")", decl.Name)
+			errs.add(fmt.Errorf("blueprint: entity %q does not produce a valid Go identifier — the generated code would not compile; rename it to start with a letter (e.g. \"two_fa_tokens\" instead of \"2fa_tokens\")", decl.Name))
+			continue
 		}
 		// The table name reaches two sinks that neither re-escape nor
 		// re-validate it: the generated typed client emits it into Go string
@@ -1926,11 +1959,12 @@ func validateBlueprint(bp Blueprint) error {
 		// identifier above; `table:` was the way around that.
 		if decl.Table != "" {
 			if _, err := query.SafeIdent(decl.Table); err != nil {
-				return fmt.Errorf("blueprint: entity %q table %q must be letters, digits and underscores (it becomes a SQL identifier and is emitted into generated Go)", decl.Name, decl.Table)
+				errs.add(fmt.Errorf("blueprint: entity %q table %q must be letters, digits and underscores (it becomes a SQL identifier and is emitted into generated Go)", decl.Name, decl.Table))
 			}
 		}
 		if entityNames[decl.Name] {
-			return fmt.Errorf("blueprint: duplicate entity %q", decl.Name)
+			errs.add(fmt.Errorf("blueprint: duplicate entity %q", decl.Name))
+			continue
 		}
 		entityNames[decl.Name] = true
 		entitiesByName[decl.Name] = decl
@@ -1940,20 +1974,20 @@ func validateBlueprint(bp Blueprint) error {
 		// where the error can name the offending field.
 		for _, f := range decl.Fields {
 			if !isGoIdentifier(toCamelCase(f.Name)) {
-				return fmt.Errorf("blueprint: entity %q field %q does not produce a valid Go identifier — rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name)
+				errs.add(fmt.Errorf("blueprint: entity %q field %q does not produce a valid Go identifier — rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name))
 			}
 			for _, v := range f.Values {
 				if strings.ContainsAny(v, "`\"\\\n\r") {
-					return fmt.Errorf("blueprint: entity %q field %q enum value %q contains a quote, backtick, backslash or newline — these break the generated Go source", decl.Name, f.Name, v)
+					errs.add(fmt.Errorf("blueprint: entity %q field %q enum value %q contains a quote, backtick, backslash or newline — these break the generated Go source", decl.Name, f.Name, v))
 				}
 			}
 		}
 		if _, err := decl.Config(); err != nil {
-			return fmt.Errorf("blueprint: entity %q: %w", decl.Name, err)
+			errs.add(fmt.Errorf("blueprint: entity %q: %w", decl.Name, err))
 		}
 		for _, endpoint := range decl.Endpoints {
 			if endpoint.MCP {
-				return fmt.Errorf("blueprint: entity %q endpoint %q cannot set mcp=true without Go MCP handler", decl.Name, endpoint.Path)
+				errs.add(fmt.Errorf("blueprint: entity %q endpoint %q cannot set mcp=true without Go MCP handler", decl.Name, endpoint.Path))
 			}
 		}
 	}
@@ -1967,10 +2001,11 @@ func validateBlueprint(bp Blueprint) error {
 				continue
 			}
 			if strings.TrimSpace(field.To) == "" {
-				return fmt.Errorf("blueprint: entity %q field %q has type \"relation\" but no target — add `to: <entity>` naming a declared entity", decl.Name, field.Name)
+				errs.add(fmt.Errorf("blueprint: entity %q field %q has type \"relation\" but no target — add `to: <entity>` naming a declared entity", decl.Name, field.Name))
+				continue
 			}
 			if !entityNames[field.To] {
-				return fmt.Errorf("blueprint: entity %q field %q is a relation to unknown entity %q — declare an entity named %q under entities: (or fix the field's to: value)", decl.Name, field.Name, field.To, field.To)
+				errs.add(fmt.Errorf("blueprint: entity %q field %q is a relation to unknown entity %q — declare an entity named %q under entities: (or fix the field's to: value)", decl.Name, field.Name, field.To, field.To))
 			}
 		}
 		// Both sides of a rename become column names in emitted
@@ -1985,19 +2020,19 @@ func validateBlueprint(bp Blueprint) error {
 		}
 		for old, next := range decl.Renames {
 			if _, err := query.SafeIdent(old); err != nil {
-				return fmt.Errorf("blueprint: entity %q rename key %q is not a safe column name: %w", decl.Name, old, err)
+				errs.add(fmt.Errorf("blueprint: entity %q rename key %q is not a safe column name: %w", decl.Name, old, err))
 			}
 			if _, err := query.SafeIdent(next); err != nil {
-				return fmt.Errorf("blueprint: entity %q rename target %q is not a safe column name: %w", decl.Name, next, err)
+				errs.add(fmt.Errorf("blueprint: entity %q rename target %q is not a safe column name: %w", decl.Name, next, err))
 			}
 			if old == next {
-				return fmt.Errorf("blueprint: entity %q renames %q to itself — drop the entry", decl.Name, old)
+				errs.add(fmt.Errorf("blueprint: entity %q renames %q to itself — drop the entry", decl.Name, old))
 			}
 			if !declaredFields[next] {
-				return fmt.Errorf("blueprint: entity %q renames %q to %q, but %q is not a declared field — a rename only fires when the new name is declared on the entity", decl.Name, old, next, next)
+				errs.add(fmt.Errorf("blueprint: entity %q renames %q to %q, but %q is not a declared field — a rename only fires when the new name is declared on the entity", decl.Name, old, next, next))
 			}
 			if declaredFields[old] {
-				return fmt.Errorf("blueprint: entity %q renames %q to %q while still declaring %q as a field — the diff would see both columns; remove the old field", decl.Name, old, next, old)
+				errs.add(fmt.Errorf("blueprint: entity %q renames %q to %q while still declaring %q as a field — the diff would see both columns; remove the old field", decl.Name, old, next, old))
 			}
 		}
 		// A relation name is an identifier, not a label: the entity emitter
@@ -2013,41 +2048,52 @@ func validateBlueprint(bp Blueprint) error {
 		}
 		for _, rel := range decl.Relations {
 			if rel.Name == "" {
-				return fmt.Errorf("blueprint: entity %q has a relation with no name — add `name: <name>`; it becomes a struct field and an include name in the generated Go", decl.Name)
+				errs.add(fmt.Errorf("blueprint: entity %q has a relation with no name — add `name: <name>`; it becomes a struct field and an include name in the generated Go", decl.Name))
+				continue
 			}
 			camel := toCamelCase(rel.Name)
 			if !isGoIdentifier(camel) {
-				return fmt.Errorf("blueprint: entity %q relation %q does not produce a valid Go identifier — it is emitted as a struct field name and an include constant, so the generated code would not compile; use letters, digits and underscores (e.g. \"author\" or \"line_items\")", decl.Name, rel.Name)
+				errs.add(fmt.Errorf("blueprint: entity %q relation %q does not produce a valid Go identifier — it is emitted as a struct field name and an include constant, so the generated code would not compile; use letters, digits and underscores (e.g. \"author\" or \"line_items\")", decl.Name, rel.Name))
+				continue
 			}
 			if owner, dup := relNames[camel]; dup {
-				return fmt.Errorf("blueprint: entity %q relation %q collides with %s — both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel)
+				errs.add(fmt.Errorf("blueprint: entity %q relation %q collides with %s — both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel))
+				continue
 			}
 			relNames[camel] = "relation " + rel.Name
 			if rel.Entity == "" {
-				return fmt.Errorf("blueprint: entity %q relation %q target entity is required — add `entity: <name>` referencing a declared entity", decl.Name, rel.Name)
+				errs.add(fmt.Errorf("blueprint: entity %q relation %q target entity is required — add `entity: <name>` referencing a declared entity", decl.Name, rel.Name))
+				continue
 			}
 			if !entityNames[rel.Entity] {
-				return fmt.Errorf("blueprint: entity %q relation %q targets unknown entity %q — declare an entity named %q under entities: (or fix the relation's entity: value)", decl.Name, rel.Name, rel.Entity, rel.Entity)
+				errs.add(fmt.Errorf("blueprint: entity %q relation %q targets unknown entity %q — declare an entity named %q under entities: (or fix the relation's entity: value)", decl.Name, rel.Name, rel.Entity, rel.Entity))
 			}
 		}
 	}
+	// Seed values are typed inserts the generated app runs through the
+	// CRUD validators at boot. Check them here — see validateBlueprintSeedTypes.
+	errs.add(validateBlueprintSeedTypes(bp, entitiesByName))
 	routes := map[string]bool{}
 	for _, screen := range bp.Screens {
 		if screen.Name == "" {
-			return fmt.Errorf("blueprint: screen name is required")
+			errs.add(fmt.Errorf("blueprint: screen name is required"))
+			continue
 		}
 		if !isGoIdentifier(toCamelCase(screen.Name)) {
-			return fmt.Errorf("blueprint: screen %q does not produce a valid Go identifier", screen.Name)
+			errs.add(fmt.Errorf("blueprint: screen %q does not produce a valid Go identifier", screen.Name))
+			continue
 		}
 		if screen.Route == "" {
-			return fmt.Errorf("blueprint: screen %q route is required", screen.Name)
+			errs.add(fmt.Errorf("blueprint: screen %q route is required", screen.Name))
+			continue
 		}
 		if routes[screen.Route] {
-			return fmt.Errorf("blueprint: duplicate screen route %q", screen.Route)
+			errs.add(fmt.Errorf("blueprint: duplicate screen route %q", screen.Route))
+			continue
 		}
 		routes[screen.Route] = true
 		if _, err := screenTypeConst(screen.Type); err != nil {
-			return err
+			errs.add(err)
 		}
 		// blueprintScreenLayoutExpr maps ANYTHING that is not "marketing" to
 		// appLayout, so a typo ("markting") silently renders a public marketing
@@ -2059,12 +2105,10 @@ func validateBlueprint(bp Blueprint) error {
 		case "", "app", "marketing":
 			// recognized
 		default:
-			return fmt.Errorf("blueprint: screen %q layout %q is not a layout; use \"app\", \"marketing\", or omit it", screen.Name, screen.Layout)
+			errs.add(fmt.Errorf("blueprint: screen %q layout %q is not a layout; use \"app\", \"marketing\", or omit it", screen.Name, screen.Layout))
 		}
 		for _, block := range screen.Body {
-			if err := validateBlueprintBlock(screen.Name, entitiesByName, block); err != nil {
-				return err
-			}
+			errs.add(validateBlueprintBlock(screen.Name, entitiesByName, block))
 		}
 		// entity_detail renders .Detail(ctx, s.id) and the list's "View" link is
 		// BasePath+"/"+id; entity_form mode:edit posts to {entity}/{id}. Both
@@ -2076,12 +2120,10 @@ func validateBlueprint(bp Blueprint) error {
 				if !detail {
 					what = "entity_form (mode: edit)"
 				}
-				return fmt.Errorf("blueprint: screen %q has an %s block but its route %q has no {id} parameter — add {id} (e.g. %s/{id}) so the record id is in the URL", screen.Name, what, screen.Route, strings.TrimRight(screen.Route, "/"))
+				errs.add(fmt.Errorf("blueprint: screen %q has an %s block but its route %q has no {id} parameter — add {id} (e.g. %s/{id}) so the record id is in the URL", screen.Name, what, screen.Route, strings.TrimRight(screen.Route, "/")))
 			}
 		}
-		if err := validateBlueprintActions(screen.Name, screen.Body); err != nil {
-			return err
-		}
+		errs.add(validateBlueprintActions(screen.Name, screen.Body))
 	}
 	endpointNames := map[string]bool{}
 	endpointHandlers := map[string]bool{}
@@ -2089,46 +2131,55 @@ func validateBlueprint(bp Blueprint) error {
 	crudRoutes := blueprintCRUDRoutes(bp.Entities)
 	for _, endpoint := range bp.Endpoints {
 		if endpoint.Name == "" {
-			return fmt.Errorf("blueprint: endpoint name is required")
+			errs.add(fmt.Errorf("blueprint: endpoint name is required"))
+			continue
 		}
 		if endpointNames[endpoint.Name] {
-			return fmt.Errorf("blueprint: duplicate endpoint %q", endpoint.Name)
+			errs.add(fmt.Errorf("blueprint: duplicate endpoint %q", endpoint.Name))
+			continue
 		}
 		endpointNames[endpoint.Name] = true
 		if endpoint.Handler == "" {
-			return fmt.Errorf("blueprint: endpoint %q handler is required", endpoint.Name)
+			errs.add(fmt.Errorf("blueprint: endpoint %q handler is required", endpoint.Name))
+			continue
 		}
 		handlerName := toCamelCase(endpoint.Handler)
 		if !isGoIdentifier(handlerName) {
-			return fmt.Errorf("blueprint: endpoint %q handler %q does not produce a valid Go identifier", endpoint.Name, endpoint.Handler)
+			errs.add(fmt.Errorf("blueprint: endpoint %q handler %q does not produce a valid Go identifier", endpoint.Name, endpoint.Handler))
+			continue
 		}
 		if endpointHandlers[handlerName] {
-			return fmt.Errorf("blueprint: duplicate endpoint handler %q", endpoint.Handler)
+			errs.add(fmt.Errorf("blueprint: duplicate endpoint handler %q", endpoint.Handler))
+			continue
 		}
 		endpointHandlers[handlerName] = true
 		if endpoint.Path == "" {
-			return fmt.Errorf("blueprint: endpoint %q path is required", endpoint.Name)
+			errs.add(fmt.Errorf("blueprint: endpoint %q path is required", endpoint.Name))
+			continue
 		}
 		method := strings.ToUpper(endpoint.Method)
 		if method == "" {
-			return fmt.Errorf("blueprint: endpoint %q method is required", endpoint.Name)
+			errs.add(fmt.Errorf("blueprint: endpoint %q method is required", endpoint.Name))
+			continue
 		}
 		if _, ok := validHTTPMethods[method]; !ok {
-			return fmt.Errorf("blueprint: endpoint %q method %q is not supported", endpoint.Name, endpoint.Method)
+			errs.add(fmt.Errorf("blueprint: endpoint %q method %q is not supported", endpoint.Name, endpoint.Method))
+			continue
 		}
 		if endpoint.Entity != "" && !entityNames[endpoint.Entity] {
-			return fmt.Errorf("blueprint: endpoint %q targets unknown entity %q", endpoint.Name, endpoint.Entity)
+			errs.add(fmt.Errorf("blueprint: endpoint %q targets unknown entity %q", endpoint.Name, endpoint.Entity))
 		}
 		routeKey := method + " " + blueprintEndpointPath(endpoint)
 		if endpointRoutes[routeKey] {
-			return fmt.Errorf("blueprint: duplicate endpoint route %q", routeKey)
+			errs.add(fmt.Errorf("blueprint: duplicate endpoint route %q", routeKey))
+			continue
 		}
 		endpointRoutes[routeKey] = true
 		if crudRoutes[routeKey] {
-			return fmt.Errorf("blueprint: endpoint %q collides with generated CRUD route %q", endpoint.Name, routeKey)
+			errs.add(fmt.Errorf("blueprint: endpoint %q collides with generated CRUD route %q", endpoint.Name, routeKey))
 		}
 		if endpoint.MCP {
-			return fmt.Errorf("blueprint: endpoint %q cannot set mcp=true without Go MCP handler", endpoint.Name)
+			errs.add(fmt.Errorf("blueprint: endpoint %q cannot set mcp=true without Go MCP handler", endpoint.Name))
 		}
 	}
 	for _, group := range []struct {
@@ -2142,18 +2193,177 @@ func validateBlueprint(bp Blueprint) error {
 		names := map[string]bool{}
 		for _, item := range group.items {
 			if item.Name == "" {
-				return fmt.Errorf("blueprint: %s name is required", group.label)
+				errs.add(fmt.Errorf("blueprint: %s name is required", group.label))
+				continue
 			}
 			if !isGoIdentifier(toCamelCase(item.Name)) {
-				return fmt.Errorf("blueprint: %s %q does not produce a valid Go identifier", group.label, item.Name)
+				errs.add(fmt.Errorf("blueprint: %s %q does not produce a valid Go identifier", group.label, item.Name))
+				continue
 			}
 			if names[item.Name] {
-				return fmt.Errorf("blueprint: duplicate %s %q", group.label, item.Name)
+				errs.add(fmt.Errorf("blueprint: duplicate %s %q", group.label, item.Name))
+				continue
 			}
 			names[item.Name] = true
 		}
 	}
+	return errs.err()
+}
+
+// sortedMapKeys returns m's keys in sorted order, so multi-error reports
+// built from map iteration are deterministic.
+func sortedMapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// validateBlueprintSeedTypes rejects seed values whose YAML type can never
+// satisfy the target field's runtime validator (core/schema/validate.go).
+//
+// Without this check, a blueprint like the blog's — comments.post_id is a
+// relation (a UUID string column) seeded with `post_id: 1` — sails through
+// generate, compiles, and then the app DIES at boot with
+// "seed comments: validation failed": the least discoverable point in the
+// pipeline, after the author has done everything the tool told them to.
+// Every generated entity has a UUID string primary key, so a numeric
+// literal on a relation column can never work; the fix the author needs is
+// the "@entity.field=value" reference form resolveSeedRefs resolves at
+// boot. The check mirrors the runtime's coercion rules exactly (a string
+// "42" on an int column is fine, a fractional float is not) so it never
+// rejects a seed that would have booted.
+func validateBlueprintSeedTypes(bp Blueprint, entitiesByName map[string]framework.EntityDeclaration) error {
+	for _, seed := range bp.Seed {
+		decl, known := entitiesByName[seed.Entity]
+		if !known {
+			// A seed for an undeclared entity fails at boot with
+			// "no handler" — same fail-late shape, catch it here too.
+			return fmt.Errorf("blueprint: seed targets unknown entity %q — declare an entity named %q under entities: (or fix the seed's entity: value)", seed.Entity, seed.Entity)
+		}
+		for i, row := range seed.Rows {
+			for name, value := range row {
+				field, fieldKind := blueprintSeedFieldKind(decl, name)
+				if !fieldKind {
+					continue // not a declared column: not this check's business
+				}
+				reason := seedValueRejection(field, value)
+				if reason == "" {
+					continue
+				}
+				if strings.EqualFold(strings.TrimSpace(field.Type), "relation") && strings.TrimSpace(field.To) != "" {
+					if target, ok := entitiesByName[strings.TrimSpace(field.To)]; ok {
+						return fmt.Errorf("blueprint: seed row %d for entity %q sets %q to %v — a relation column holds the target row's id, and every generated entity's id is a UUID string, so a number can never satisfy it; reference a row seeded earlier in the same pass instead: %q", i, seed.Entity, name, value, "@"+strings.TrimSpace(field.To)+"."+blueprintDisplayField(target)+"=<value>")
+					}
+				}
+				return fmt.Errorf("blueprint: seed row %d for entity %q sets %q (type %s) to %v — the generated app would reject it at boot: %s", i, seed.Entity, name, field.Type, value, reason)
+			}
+		}
+	}
 	return nil
+}
+
+// blueprintSeedFieldKind resolves a seed row key to the field declaration
+// it targets. Synthesized system columns (the UUID id) get a synthesized
+// declaration. The second return is false for keys that match no column.
+func blueprintSeedFieldKind(decl framework.EntityDeclaration, name string) (framework.FieldDeclaration, bool) {
+	for _, f := range decl.Fields {
+		if f.Name == name {
+			return f, true
+		}
+	}
+	if name == "id" {
+		// Every generated model carries `ID string` (renderEntityModel);
+		// seeding it directly is legal but takes a UUID string.
+		return framework.FieldDeclaration{Name: "id", Type: "uuid"}, true
+	}
+	return framework.FieldDeclaration{}, false
+}
+
+// seedValueRejection returns "" when value can satisfy the field's runtime
+// validator, else the message that validator would produce. Mirrors the
+// per-type validators in core/schema/validate.go — including their
+// coercions (toString accepts only strings; toInt64 accepts integral
+// floats and integer-parsable strings; toFloat64 accepts no strings) —
+// so the generate-time verdict never disagrees with boot.
+func seedValueRejection(field framework.FieldDeclaration, value any) string {
+	if value == nil {
+		return "" // absent value; required-ness fails at boot with field detail
+	}
+	switch strings.ToLower(strings.TrimSpace(field.Type)) {
+	case "relation", "uuid":
+		if _, ok := value.(string); !ok {
+			return "must be a string reference"
+		}
+	case "string", "text", "enum", "timestamp", "date", "image", "file":
+		s, ok := value.(string)
+		if !ok {
+			return "must be a string"
+		}
+		// An enum's Values list is closed; a string outside it can never
+		// satisfy the validator either.
+		if strings.EqualFold(strings.TrimSpace(field.Type), "enum") && len(field.Values) > 0 {
+			for _, allowed := range field.Values {
+				if s == allowed {
+					return ""
+				}
+			}
+			return fmt.Sprintf("must be one of %v", field.Values)
+		}
+	case "int", "integer":
+		switch v := value.(type) {
+		case int64:
+		case float64:
+			if v != math.Trunc(v) {
+				return "must be an integer"
+			}
+		case string:
+			if _, err := strconv.ParseInt(v, 10, 64); err != nil {
+				return "must be an integer"
+			}
+		default:
+			return "must be an integer"
+		}
+	case "float", "number":
+		switch value.(type) {
+		case int64, float64:
+		default:
+			return "must be a number"
+		}
+	case "decimal":
+		// Numbers are fine: the stub emitter re-quotes them as the decimal
+		// string the validator expects (blueprintSeedFieldIsDecimal).
+		switch value.(type) {
+		case string, int64, float64:
+		default:
+			return "must be a decimal string"
+		}
+	case "bool", "boolean":
+		switch v := value.(type) {
+		case bool:
+		case int64:
+			if v != 0 && v != 1 {
+				return "must be true or false"
+			}
+		case float64:
+			if v != 0 && v != 1 {
+				return "must be true or false"
+			}
+		case string:
+			switch strings.ToLower(v) {
+			case "true", "false", "1", "0":
+			default:
+				return "must be true or false"
+			}
+		default:
+			return "must be true or false"
+		}
+	case "json":
+		// Any value marshals — the validator accepts strings, maps, lists.
+	}
+	return ""
 }
 
 func blueprintCRUDRoutes(entities []framework.EntityDeclaration) map[string]bool {
@@ -3812,6 +4022,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("import (\n")
 	if hasSeed {
 		sb.WriteString("\t\"context\"\n")
+		sb.WriteString("\t\"errors\"\n")
 	}
 	sb.WriteString("\t\"database/sql\"\n")
 	sb.WriteString("\t\"fmt\"\n")
@@ -3819,6 +4030,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\t\"net/http\"\n")
 	sb.WriteString("\t\"os\"\n")
 	if hasSeed {
+		sb.WriteString("\t\"sort\"\n")
 		sb.WriteString("\t\"strings\"\n")
 	}
 	sb.WriteString("\n")
@@ -3836,6 +4048,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 	if hasSeed {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/crud\"\n")
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/filter\"\n")
 	}
 	sb.WriteString("\tfwimage \"github.com/DonaldMurillo/gofastr/framework/image\"\n")
@@ -3937,7 +4150,7 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t\t\tfor _, row := range s.Rows {\n")
 		sb.WriteString("\t\t\t\tresolveSeedRefs(ctx, fwApp, row)\n")
 		sb.WriteString("\t\t\t\tif _, err := ch.CreateOne(ctx, row); err != nil {\n")
-		sb.WriteString("\t\t\t\t\treturn fmt.Errorf(\"seed %s: %w\", s.Entity, err)\n")
+		sb.WriteString("\t\t\t\t\treturn seedCreateError(s.Entity, row, err)\n")
 		sb.WriteString("\t\t\t\t}\n")
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t}\n")
@@ -4103,6 +4316,42 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t\tif err != nil || len(rows) == 0 {\n\t\t\tcontinue\n\t\t}\n")
 		sb.WriteString("\t\tif id, ok := rows[0][\"id\"]; ok {\n\t\t\trow[k] = id\n\t\t}\n")
 		sb.WriteString("\t}\n")
+		sb.WriteString("}\n")
+		sb.WriteString("\n// seedCreateError renders a failed seed insert with the per-field detail\n")
+		sb.WriteString("// the CRUD validator already computed. ValidationError.Error() is the\n")
+		sb.WriteString("// bare string \"validation failed\" — the messages worth reading live in\n")
+		sb.WriteString("// Fields() — so a plain %w would abort the boot with zero actionable\n")
+		sb.WriteString("// information. Unwrap, print every field message (sorted, so the output\n")
+		sb.WriteString("// is stable), and name the row so it can be found in gofastr.yml.\n")
+		sb.WriteString("func seedCreateError(entity string, row map[string]any, err error) error {\n")
+		sb.WriteString("\tvar ve *crud.ValidationError\n")
+		sb.WriteString("\tif !errors.As(err, &ve) || len(ve.Fields()) == 0 {\n")
+		sb.WriteString("\t\treturn fmt.Errorf(\"seed %s: %w\", entity, err)\n")
+		sb.WriteString("\t}\n")
+		sb.WriteString("\tnames := make([]string, 0, len(ve.Fields()))\n")
+		sb.WriteString("\tfor name := range ve.Fields() {\n")
+		sb.WriteString("\t\tnames = append(names, name)\n")
+		sb.WriteString("\t}\n")
+		sb.WriteString("\tsort.Strings(names)\n")
+		sb.WriteString("\tvar b strings.Builder\n")
+		sb.WriteString("\tfmt.Fprintf(&b, \"seed %s row %s failed validation:\", entity, seedRowLabel(row))\n")
+		sb.WriteString("\tfor _, name := range names {\n")
+		sb.WriteString("\t\tfor _, msg := range ve.Fields()[name] {\n")
+		sb.WriteString("\t\t\tfmt.Fprintf(&b, \"\\n  - %s: %s\", name, msg)\n")
+		sb.WriteString("\t\t}\n")
+		sb.WriteString("\t}\n")
+		sb.WriteString("\treturn fmt.Errorf(\"%s\\ncause: %w\", b.String(), err)\n")
+		sb.WriteString("}\n")
+		sb.WriteString("\n// seedRowLabel picks the scalar that identifies a seed row against the\n")
+		sb.WriteString("// blueprint's seed: block (the title/name/email it was authored under),\n")
+		sb.WriteString("// falling back to the whole row.\n")
+		sb.WriteString("func seedRowLabel(row map[string]any) string {\n")
+		sb.WriteString("\tfor _, k := range []string{\"title\", \"name\", \"email\", \"label\", \"slug\", \"body\", \"key\"} {\n")
+		sb.WriteString("\t\tif s, ok := row[k].(string); ok && s != \"\" {\n")
+		sb.WriteString("\t\t\treturn fmt.Sprintf(\"%q\", s)\n")
+		sb.WriteString("\t\t}\n")
+		sb.WriteString("\t}\n")
+		sb.WriteString("\treturn fmt.Sprintf(\"%v\", row)\n")
 		sb.WriteString("}\n")
 	}
 	return sb.String()
@@ -4486,11 +4735,19 @@ func blueprintScreenMountStmt(screen BlueprintScreen, bp Blueprint) string {
 	typeName := toCamelCase(screen.Name) + "Screen"
 	layoutExpr := blueprintScreenLayoutExpr(screen, bp)
 	guestRedirect := bp.App.Auth.Enabled && blueprintHasAuthFormScreen(bp)
+	// NewScreen does not probe the component the way site.Register does
+	// (no ScreenDescriber discovery), so a declared description must be
+	// chained explicitly or uihost strict mode fails the boot with
+	// `screen %q: no description`.
+	withDescription := ""
+	if screen.Description != "" {
+		withDescription = fmt.Sprintf(".WithDescription(%q)", screen.Description)
+	}
 	switch {
 	case screen.Access.Auth:
-		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(authPolicy(%q, %q)), %s)", route, typeName, screen.TitleOrName(), "/login", screen.Access.Role, layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q)%s.WithPolicy(authPolicy(%q, %q)), %s)", route, typeName, screen.TitleOrName(), withDescription, "/login", screen.Access.Role, layoutExpr)
 	case guestRedirect && screenHasAuthForm(screen):
-		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(guestPolicy(%q)), %s)", route, typeName, screen.TitleOrName(), blueprintAppHome(bp), layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q)%s.WithPolicy(guestPolicy(%q)), %s)", route, typeName, screen.TitleOrName(), withDescription, blueprintAppHome(bp), layoutExpr)
 	default:
 		return fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)", route, typeName, layoutExpr)
 	}
@@ -7523,13 +7780,72 @@ func expectList(node *coreyaml.Node, label string) ([]*coreyaml.Node, error) {
 	return node.List, nil
 }
 
-func rejectUnknownKeys(m map[string]*coreyaml.Node, allowed map[string]bool, label string) error {
-	for key, node := range m {
-		if !allowed[key] && !strings.HasPrefix(key, "x_") && !strings.HasPrefix(key, "x-") {
-			return fmt.Errorf("blueprint: unknown key %q in %s at line %d", key, label, node.Line)
+// appLevelKeys are settings that live under `app:` — the most common
+// misplacement is writing them at the blueprint root, where they silently
+// do nothing (an agent or a YAML-merge tool has no way to know).
+var appLevelKeys = map[string]bool{
+	"name": true, "description": true, "base_url": true, "module": true,
+	"db": true, "static_dir": true, "output_dir": true, "api_prefix": true,
+	"public_openapi": true, "theme": true, "auth": true, "admin": true,
+	"pwa": true, "llm_md": true,
+}
+
+// topLevelKeys are the blueprint's root sections — written under `app:`
+// they are equally dead.
+var topLevelKeys = map[string]bool{
+	"entities": true, "screens": true, "nav": true, "seed": true,
+	"endpoints": true, "middleware": true, "plugins": true, "helpers": true,
+	"isolation": true,
+}
+
+// unknownKeyLocationHint names the correct nesting for a known key found
+// at the wrong level, so the fix is one edit instead of a schema hunt.
+func unknownKeyLocationHint(key, label string) string {
+	switch label {
+	case "blueprint":
+		if appLevelKeys[key] {
+			return fmt.Sprintf("did you mean \"app.%s:\"? %s is an app-level setting and has no effect at the blueprint root", key, key)
+		}
+	case "app":
+		if topLevelKeys[key] {
+			return fmt.Sprintf("did you mean \"%s:\" at the top level? %s is a blueprint section, not an app setting", key, key)
 		}
 	}
-	return nil
+	return ""
+}
+
+// rejectUnknownKeys reports EVERY unknown key at the level in one pass,
+// sorted for determinism, each with a location hint when the key is a
+// known setting nested at the wrong level. Reporting one per run turned
+// fixing a blueprint into a serial guess-and-recompile loop.
+func rejectUnknownKeys(m map[string]*coreyaml.Node, allowed map[string]bool, label string) error {
+	var unknown []string
+	for key, node := range m {
+		if !allowed[key] && !strings.HasPrefix(key, "x_") && !strings.HasPrefix(key, "x-") {
+			unknown = append(unknown, fmt.Sprintf("unknown key %q in %s at line %d", key, label, node.Line))
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	msgs := make([]string, len(unknown))
+	for i, msg := range unknown {
+		if idx := strings.IndexByte(msg, '"'); idx >= 0 {
+			key := msg[idx+1:]
+			if end := strings.IndexByte(key, '"'); end >= 0 {
+				key = key[:end]
+				if hint := unknownKeyLocationHint(key, label); hint != "" {
+					msg += " — " + hint
+				}
+			}
+		}
+		msgs[i] = msg
+	}
+	if len(msgs) == 1 {
+		return fmt.Errorf("blueprint: %s", msgs[0])
+	}
+	return fmt.Errorf("blueprint: %d unknown keys in %s:\n  - %s", len(msgs), label, strings.Join(msgs, "\n  - "))
 }
 
 func stringValue(node *coreyaml.Node) string {
