@@ -3,8 +3,8 @@
 # Every name below MUST be present, completed, and "success" on the tag
 # commit's main-push CI run before scripts/release-gate.sh lets the release
 # publish. Sourced from the job `name:` fields in .github/workflows/ci.yml:
-# the `test` job, the `security` job, and the 8 matrix shards of
-# `browser-e2e` (one check run per shard).
+# the `test` job, the `security` job, the 8 matrix shards of `browser-e2e`
+# (one check run per shard), and the `upgrade-fixtures` job.
 #
 # This file is cross-checked against ci.yml by
 # cmd/gofastr/release_gate_test.go (TestReleaseManifestMatchesCI): renaming a
@@ -21,3 +21,4 @@ browser e2e · core-ui-runtime (blocking)
 browser e2e · core-ui-widget (blocking)
 browser e2e · meridian (blocking)
 browser e2e · ui-quality-evals (blocking)
+historical upgrade fixtures (blocking)
