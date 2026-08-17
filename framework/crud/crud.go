@@ -25,6 +25,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
@@ -655,7 +656,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		filter.ApplySortToQuery(qb, sorts)
 
-		offset := (page - 1) * perPage
+		offset := pagination.OffsetForPage(page, perPage)
 		// An explicit ?offset= overrides the page-derived offset. The
 		// process-module broker paginates by raw offset (it sets ?offset=
 		// without ?page=), and it is a documented control param — honoring it
@@ -915,7 +916,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		if !ch.requireScope(w, r, opCreate) {
 			return
 		}
-		limitJSONBody(w, r)
+		limitRequestBody(w, r)
 		body, err := ch.readRequestBody(r)
 		if err != nil {
 			if errors.Is(err, errBodyTooLarge) {
@@ -981,7 +982,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			return
 		}
 
-		limitJSONBody(w, r)
+		limitRequestBody(w, r)
 		body, err := ch.readRequestBody(r)
 		if err != nil {
 			if errors.Is(err, errBodyTooLarge) {
