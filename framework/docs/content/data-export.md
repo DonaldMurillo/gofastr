@@ -173,7 +173,8 @@ datexport.Register(datexport.DataExporter{
   dialect before relying on it.
 - **Not a substitute for DB-native backup**. This is application-level,
   declaration-aware portability (and anti-lock-in). For point-in-time disaster
-  recovery, use your database's own backup tooling.
+  recovery, use your database's own backup tooling — see
+  [Backups and restore](backups.md).
 
 ## Common mistakes
 

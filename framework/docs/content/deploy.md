@@ -243,6 +243,7 @@ what-breaks/what-fixes-it list.
 - [ ] Readiness/liveness probes wired.
 - [ ] `/metrics` scraped from inside the network only.
 - [ ] TLS terminated at ingress.
+- [ ] Database backup scheduled and a restore actually tested. See [Backups and restore](backups.md).
 - [ ] Server timeouts fit your slowest real request — raise `WriteTimeout` via `WithHTTPServerTimeouts` for report/export/AI endpoints instead of letting the 60s default cut them.
 
 ## Common mistakes
