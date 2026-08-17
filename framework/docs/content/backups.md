@@ -62,10 +62,14 @@ reasonable floor):
 
 1. Restore the latest backup into a scratch database or file.
 2. Run the same migration step your deploy runs (`gofastr migrate up
-   --db-url` against the scratch copy — or nothing, if you accept
-   on-boot auto-migrate) so the drill exercises the real upgrade path.
+   --db-url=<scratch-dsn>` — pass the scratch URL explicitly; a bare
+   `--db-url` falls back to `DATABASE_URL` and migrates the wrong
+   database — or nothing, if you accept on-boot auto-migrate) so the
+   drill exercises the real upgrade path.
 3. Point a build of your app at it (`DATABASE_URL` set to the scratch copy)
-   and boot it. Boot will fail loudly on a damaged or ancient snapshot.
+   and boot it. Boot surfaces startup and schema failures; it does not
+   prove the restored rows and uploads are complete — that is what the
+   next step checks.
 4. Spot-check what matters: row counts on your core entities, one login, one
    file download if you back up uploads.
 

@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -74,9 +75,14 @@ func TestDefine_DeclaredOwnerFieldLeftUntouched(t *testing.T) {
 
 func TestDefine_RejectsUnsafeOwnerField(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
+		r := recover()
+		if r == nil {
 			t.Fatal("Define accepted an OwnerField that is not a valid SQL identifier; " +
 				"the name is interpolated into owner-scope WHERE clauses")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, "OwnerField") || !strings.Contains(msg, "not a valid SQL identifier") {
+			t.Fatalf("panic = %v, want the OwnerField invalid-identifier message — an unrelated panic must not satisfy this test", r)
 		}
 	}()
 	Define("notes", EntityConfig{
