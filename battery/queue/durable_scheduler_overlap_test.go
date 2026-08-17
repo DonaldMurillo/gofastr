@@ -43,7 +43,7 @@ func TestDurableSchedulerSkipsTickWhilePriorOccurrenceIsActive(t *testing.T) {
 		t.Fatalf("skip reason = %q, want overlap", reason)
 	}
 
-	if err := q.Ack(context.Background(), first[0].ID); err != nil {
+	if err := q.Ack(context.Background(), first[0]); err != nil {
 		t.Fatal(err)
 	}
 	if err := sched.RunOnce(context.Background(), base.Add(3*time.Minute)); err != nil {

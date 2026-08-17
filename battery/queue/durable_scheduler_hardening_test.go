@@ -103,7 +103,7 @@ func TestDurableSchedulerRetentionPrunesOnlySafeOldOccurrences(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := q.Ack(context.Background(), "done-job"); err != nil {
+	if err := q.Ack(context.Background(), Job{ID: "done-job"}); err != nil {
 		t.Fatal(err)
 	}
 

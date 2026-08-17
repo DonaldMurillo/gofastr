@@ -158,7 +158,7 @@ func TestDBQueue_AckRemovesRow(t *testing.T) {
 
 	q.Enqueue(ctx, Job{Type: "x"})
 	job, _ := q.Dequeue(ctx)
-	if err := q.Ack(ctx, job.ID); err != nil {
+	if err := q.Ack(ctx, job); err != nil {
 		t.Fatalf("ack: %v", err)
 	}
 	var count int
@@ -178,7 +178,7 @@ func TestDBQueue_NackRequeuesWhenRetriesLeft(t *testing.T) {
 
 	q.Enqueue(ctx, Job{Type: "x", MaxAttempts: 3})
 	job1, _ := q.Dequeue(ctx)
-	if err := q.Nack(ctx, job1.ID); err != nil {
+	if err := q.Nack(ctx, job1); err != nil {
 		t.Fatalf("nack: %v", err)
 	}
 	job2, err := q.Dequeue(ctx)
@@ -203,7 +203,7 @@ func TestDBQueue_NackMovesToFailedAtMaxAttempts(t *testing.T) {
 
 	q.Enqueue(ctx, Job{Type: "x", MaxAttempts: 1})
 	job, _ := q.Dequeue(ctx) // attempts now = 1 = max
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("nack: %v", err)
 	}
 	var status string

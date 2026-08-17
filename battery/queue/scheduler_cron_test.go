@@ -20,8 +20,8 @@ func (r *recordQueue) Enqueue(_ context.Context, j Job) error {
 	return nil
 }
 func (r *recordQueue) Dequeue(_ context.Context, _ ...string) (Job, error) { return Job{}, ErrNoJob }
-func (r *recordQueue) Ack(_ context.Context, _ string) error               { return nil }
-func (r *recordQueue) Nack(_ context.Context, _ string) error              { return nil }
+func (r *recordQueue) Ack(_ context.Context, _ Job) error                  { return nil }
+func (r *recordQueue) Nack(_ context.Context, _ Job) error                 { return nil }
 func (r *recordQueue) Close() error                                        { return nil }
 
 func (r *recordQueue) count() int {

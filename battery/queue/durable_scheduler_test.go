@@ -238,7 +238,7 @@ func TestDurableSchedulerRestartResumesPersistedWatermark(t *testing.T) {
 	}
 	firstOccurrenceID := firstJobs[0].OccurrenceID
 	// Complete the first occurrence so the next tick is not an overlap skip.
-	if err := q.Ack(context.Background(), firstJobs[0].ID); err != nil {
+	if err := q.Ack(context.Background(), firstJobs[0]); err != nil {
 		t.Fatal(err)
 	}
 

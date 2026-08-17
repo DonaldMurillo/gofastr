@@ -101,7 +101,7 @@ func drainPending(t *testing.T, q *DBQueue) {
 		if err != nil {
 			return
 		}
-		if err := q.Ack(context.Background(), job.ID); err != nil {
+		if err := q.Ack(context.Background(), job); err != nil {
 			t.Fatalf("ack drained job: %v", err)
 		}
 	}

@@ -38,9 +38,9 @@ func (q *stubQueue) Enqueue(_ context.Context, job queue.Job) error {
 func (q *stubQueue) Dequeue(context.Context, ...string) (queue.Job, error) {
 	return queue.Job{}, queue.ErrNoJob
 }
-func (q *stubQueue) Ack(context.Context, string) error  { return nil }
-func (q *stubQueue) Nack(context.Context, string) error { return nil }
-func (q *stubQueue) Close() error                       { return nil }
+func (q *stubQueue) Ack(context.Context, queue.Job) error  { return nil }
+func (q *stubQueue) Nack(context.Context, queue.Job) error { return nil }
+func (q *stubQueue) Close() error                          { return nil }
 
 func (q *stubQueue) count() int {
 	q.mu.Lock()

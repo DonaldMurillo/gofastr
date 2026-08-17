@@ -64,6 +64,10 @@ and stamping `claimed_at`. If the worker dies before Ack/Nack the row would
 otherwise be stranded; instead, a claimed row whose `claimed_at` is older than
 the lease timeout (default 5m, set via `WithLeaseTimeout` / `SetLeaseTimeout`)
 becomes eligible for re-dequeue again — as long as it still has attempts left.
+An expired lease on the FINAL permitted attempt is not re-delivered; it is
+swept to `status='failed'` inside Dequeue (the crash equivalent of a terminal
+Nack) and logged at ERROR, so it shows up in `Stats`/`ListJobs("failed")` and
+is rescuable via `Replay` instead of being stranded in `claimed` forever.
 A handler that **panics** is recovered and routed through Nack (retry /
 dead-letter); the worker goroutine is respawned, so a poison message can never
 permanently drain the pool or crash the process. `MemoryQueue` recovers handler
@@ -73,9 +77,13 @@ panics the same way.
 `queue.WithBackoff(base, max)` to delay each retry by `base*2^(attempts-1)`,
 capped at `max`, so a flapping handler can't burn through every attempt in a
 tight loop. `RegisterHandler` and `SetLeaseTimeout` are safe to call while the
-worker loop is running. `MemoryQueue.Nack(jobID)` re-enqueues a manually
+worker loop is running. `MemoryQueue.Nack(job)` re-enqueues a manually
 dequeued job (incrementing `Attempts`) when retries remain, rather than
-silently dropping it.
+silently dropping it. Note Ack/Nack take the claimed `Job`, not an ID:
+RedisQueue verifies `Job.ClaimToken` against the current processing entry and
+treats a stale claimant's completion as a counted no-op
+(`StaleClaimCount()`), so a worker that outlived its visibility timeout can
+no longer delete or re-enqueue the newer claimant's in-flight job.
 
 `RedisQueue` records a visibility timeout per in-flight job; call
 `RedisQueue.Reclaim(ctx)` periodically (e.g. from a ticker) to re-deliver jobs
