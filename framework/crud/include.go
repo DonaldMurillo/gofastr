@@ -274,6 +274,10 @@ func splitIncludePath(s string) []string {
 // every field name is accepted at parse time.
 func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string) ([]filter.ParsedFilter, error) {
 	knownField := map[string]bool{}
+	// colType records each visible column's schema type so the built
+	// ParsedFilters carry the same coercion ParseFiltersValues applies
+	// (a raw "true" binds TEXT against SQLite's INTEGER Bool storage).
+	colType := map[string]schema.FieldType{}
 	var noQueryField map[string]bool
 	// wireAlias maps a field's wire key to its column, so a scoped filter may
 	// use the name clients are actually told — ?include=comments(content=x)
@@ -311,6 +315,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		}
 		if !f.Hidden {
 			knownField[f.Name] = true
+			colType[f.Name] = f.Type
 			if f.WireName != "" && f.WireName != f.Name {
 				knownField[f.WireName] = true
 				wireAlias[f.WireName] = f.Name
@@ -363,10 +368,10 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 				return nil, fmt.Errorf("include %q: scoped IN list on %q has %d entries (max %d)", pathForErrors, field, len(vals), maxScopedINEntries)
 			}
 			for _, v := range vals {
-				out = append(out, filter.ParsedFilter{Field: field, Op: filter.OpIn, Value: v})
+				out = append(out, filter.ParsedFilter{Field: field, Op: filter.OpIn, Value: v}.Coerced(colType[field]))
 			}
 		} else {
-			out = append(out, filter.ParsedFilter{Field: field, Op: op, Value: value})
+			out = append(out, filter.ParsedFilter{Field: field, Op: op, Value: value}.Coerced(colType[field]))
 		}
 	}
 	return out, nil

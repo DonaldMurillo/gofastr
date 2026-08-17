@@ -28,6 +28,10 @@ type Predicate struct {
 	Op     FilterOp
 	Value  string   // for scalar ops
 	Values []string // for OpIn
+	// isBool marks a leaf on a Bool-typed column, set by ParseWhere from
+	// the schema. BuildPredicate coerces true/false spellings to Go
+	// bools at bind time — same rationale as ParsedFilter's typed value.
+	isBool bool
 
 	// Group fields (Children != nil):
 	Or       bool // false = AND, true = OR
@@ -91,6 +95,9 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 	allow := make(map[string]bool, len(fields))
 	var noQuery map[string]bool
 	alias := make(map[string]string, len(fields))
+	// Bool-typed columns, keyed by column name (leaves resolve aliases
+	// to columns before the type lookup matters).
+	boolCol := make(map[string]bool, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
 			continue
@@ -110,6 +117,9 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 			continue
 		}
 		allow[f.Name] = true
+		if f.Type == schema.Bool {
+			boolCol[f.Name] = true
+		}
 		if f.WireName != "" && f.WireName != f.Name {
 			allow[f.WireName] = true
 			alias[f.WireName] = f.Name
@@ -120,14 +130,14 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 		return nil, fmt.Errorf("where: invalid JSON: %w", err)
 	}
 	count := 0
-	p, err := parseNode(msg, allow, noQuery, alias, 1, &count)
+	p, err := parseNode(msg, allow, noQuery, alias, boolCol, 1, &count)
 	if err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
-func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[string]string, depth int, count *int) (Predicate, error) {
+func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[string]string, boolCol map[string]bool, depth int, count *int) (Predicate, error) {
 	if depth > maxPredicateDepth {
 		return Predicate{}, fmt.Errorf("where: nesting exceeds max depth %d", maxPredicateDepth)
 	}
@@ -154,7 +164,7 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 		}
 		children := make([]Predicate, 0, len(kids))
 		for _, k := range kids {
-			c, err := parseNode(k, allow, noQuery, alias, depth+1, count)
+			c, err := parseNode(k, allow, noQuery, alias, boolCol, depth+1, count)
 			if err != nil {
 				return Predicate{}, err
 			}
@@ -186,7 +196,7 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 	if !ok {
 		return Predicate{}, fmt.Errorf("where: unknown operator %q", rp.Op)
 	}
-	leaf := Predicate{Field: rp.Field, Op: op}
+	leaf := Predicate{Field: rp.Field, Op: op, isBool: boolCol[rp.Field]}
 	if op == OpIn {
 		vals := rp.Values
 		if len(vals) == 0 && rp.Value != "" {
@@ -244,7 +254,7 @@ func buildPredSQL(p Predicate, args *[]any) string {
 	case OpIn:
 		ph := make([]string, len(p.Values))
 		for i, v := range p.Values {
-			*args = append(*args, v)
+			*args = append(*args, BoolBind(p.isBool, v))
 			ph[i] = "$" + itoa(len(*args))
 		}
 		return "(" + p.Field + " IN (" + strings.Join(ph, ",") + "))"
@@ -252,7 +262,7 @@ func buildPredSQL(p Predicate, args *[]any) string {
 		*args = append(*args, escapeLikePattern(p.Value))
 		return "(" + p.Field + ` LIKE $` + itoa(len(*args)) + ` ESCAPE '\')`
 	default:
-		*args = append(*args, p.Value)
+		*args = append(*args, BoolBind(p.isBool, p.Value))
 		return "(" + p.Field + " " + sqlOp(p.Op) + " $" + itoa(len(*args)) + ")"
 	}
 }
