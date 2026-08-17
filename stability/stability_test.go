@@ -7,11 +7,27 @@ import (
 )
 
 // modulePackages returns every package in the module via `go list ./...`.
+//
+// The `go list` runs from the MODULE ROOT, not from this package's
+// directory. `go test` sets the working directory to the package under
+// test, so a bare `go list ./...` here would enumerate exactly one package
+// — stability itself — and TestEveryPackageIsClassified would pass no
+// matter how many unclassified trees the module grew.
 func modulePackages(t *testing.T) []string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "./...").Output()
+	rootOut, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}").Output()
 	if err != nil {
-		t.Fatalf("go list ./...: %v", err)
+		t.Fatalf("go list -m: %v", err)
+	}
+	root := strings.TrimSpace(string(rootOut))
+	if root == "" {
+		t.Fatal("go list -m returned no module directory")
+	}
+	cmd := exec.Command("go", "list", "./...")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list ./... in %s: %v", root, err)
 	}
 	var pkgs []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -39,6 +55,20 @@ func TestEveryPackageIsClassified(t *testing.T) {
 	if len(unclassified) > 0 {
 		t.Fatalf("packages missing a stability tier — add each to the manifest in stability.go:\n  %s",
 			strings.Join(unclassified, "\n  "))
+	}
+}
+
+// TestGateSeesWholeModule pins the breadth of the enumeration, not its
+// contents. TestEveryPackageIsClassified was vacuous for its whole life
+// because `go list ./...` inherited the package's own directory and
+// returned exactly one package; the gate ran, reported green, and would
+// have missed an entire unclassified top-level tree. A count assertion is
+// the only thing that catches that class of regression, since a gate over
+// one package looks identical to a gate over all of them.
+func TestGateSeesWholeModule(t *testing.T) {
+	const floor = 50 // the module had 219 packages when this was written
+	if got := len(modulePackages(t)); got < floor {
+		t.Fatalf("modulePackages returned %d packages, want >= %d — the enumeration is scoped too narrowly and every gate built on it is vacuous", got, floor)
 	}
 }
 

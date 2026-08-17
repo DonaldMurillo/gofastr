@@ -7,6 +7,109 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-08-17
+
+### Fixed
+
+- **BREAKING: a stale queue worker could delete another worker's job.**
+  `Queue.Ack` and `Queue.Nack` now take a `Job` instead of a job ID
+  string, and `RedisQueue` verifies `Job.ClaimToken` before acting. The
+  old signature carried no claim identity, so this sequence lost a job
+  outright: worker A claims job J, A stalls past its lease, worker B
+  re-claims J, A wakes and Acks. A's Ack deleted the processing entry
+  that belonged to B, and when B then crashed the job was on no list, in
+  no hash, and had never been dead-lettered. A mismatched token is now a
+  no-op counted by `StaleClaimCount()`. Update call sites to pass the
+  `Job` returned by `Dequeue`.
+- **A worker crash on a job's final attempt stranded it forever.**
+  `DBQueue` reclaimed expired leases only while `attempts <
+  max_attempts`, but `Dequeue` had already incremented `attempts` — so a
+  crash on the last permitted attempt left the row `claimed` with
+  nothing able to see it, including `Replay`. An expired lease on the
+  final attempt is now dead-lettered and logged.
+- **Multipart uploads over 1 MiB always failed.** The CRUD write
+  handlers wrapped every request body in a 1 MiB `MaxBytesReader` before
+  deciding whether it was multipart, so `ParseMultipartForm` read
+  through a cap 32× smaller than the 32 MiB it was asked for. JSON
+  bodies still cap at `MaxJSONBodyBytes`; multipart bodies now cap at
+  the new `crud.MaxMultipartBodyBytes` (64 MiB) and a request over it
+  gets a 413 instead of a 400.
+- **Cursor pagination re-served rows whose sort key held invisible
+  characters.** `EncodeCursor` kept the raw keyset value while
+  `DecodeCursor` stripped zero-width and bidi codepoints, so paging
+  resumed before the row it had just emitted. Values now decode
+  verbatim; field names, which reach SQL as identifiers, are still
+  scrubbed.
+- **Repeating a `?field_in=` key dropped every occurrence but the
+  first.** `?tag_in=a,b&tag_in=c` filtered on `a,b` alone and said
+  nothing. All occurrences now union, and the 1000-entry cap counts the
+  union. The same cap now applies to relation-scoped lists
+  (`?author.name_in=`), which had no cap at all.
+- **`?page=` near `MaxInt64` wrapped to a negative offset.** The guard
+  in `framework/pagination` existed but nothing called it. It is now
+  wired into the buffered list, the streaming list, and the admin table.
+- **Two users uploading the same filename overwrote each other.** The
+  standalone `upload.Handler` keyed objects on the sanitized client
+  filename with no unique component, and `LocalStorage.Save` opens
+  `O_TRUNC`. Keys now come from `upload.UniqueFilename`, matching what
+  the auto-CRUD path already did. Read `key` from the response rather
+  than rebuilding it from `originalName`.
+- **The blog blueprint generated an app that would not boot.**
+  `examples/blog/gofastr.yml` seeded `post_id: 1` against UUID string
+  primary keys; the generated app compiled and then died at startup with
+  `seed comments: validation failed`. `gofastr generate` now rejects a
+  seed value whose type cannot satisfy its target field and names the
+  `@entity.field=value` form to use instead. The blueprint uses that
+  form.
+- **A failing seed said only "validation failed".** The generated seed
+  hook discarded `crud.ValidationError.Fields()`, where the per-field
+  messages live. It now reports the entity, the row, and each field's
+  message.
+- **Auth-gated blueprint screens panicked under strict mode.** The
+  generator chained `WithTitle` but not `WithDescription` when mounting
+  a screen behind a policy, so every screen with a declared description
+  tripped `uihost strict mode: screen "…": no description`. Meridian's
+  generated app could not start.
+- **The stability tier gate checked one package instead of 219.**
+  `TestEveryPackageIsClassified` ran `go list ./...` from its own
+  package directory, so it saw only `stability` itself and an entire
+  unclassified top-level tree would have shipped green. The enumeration
+  runs from the module root, and `TestGateSeesWholeModule` fails if it
+  ever narrows again.
+- **Every contract diagnostic linked to a domain that does not resolve.**
+  `contracts.docBaseURL` pointed at `gofastr.dev`, which has no A
+  record, so each `HelpURI` was dead. It points at the published docs
+  site.
+- **Eight documentation claims contradicted the code.** `multi-tenant.md`
+  taught reading the tenant from a request header — `TenantMiddleware`
+  ignores any client header precisely because trusting one lets a caller
+  impersonate a tenant, so the page described a vulnerability the code
+  refuses to have. Also corrected: the webhook secret codec default,
+  the idempotency middleware's position, `EnableMCP`'s tool count,
+  anonymous subjects at partial rollout, batch rollback's `data`
+  scrubbing, the `TrustTrusted` tier name, and the PWA cache-name
+  format.
+- **Documented Go examples that could not compile.** Enabling the
+  compile gate on 83 more blocks surfaced ten of them, including
+  `new(0)` for a `*time.Duration`, `Post` given an `http.HandlerFunc`,
+  and `q.Nack(ctx, job.ID)`.
+
+### Added
+
+- **Every shipped blueprint is now booted, not just compiled.**
+  `TestExampleBlueprintsBoot` generates each `examples/*/gofastr.yml`,
+  compiles it, starts the binary, and fails if it exits or never
+  serves. The ladder stopped at compilation before, which is why a seed
+  that only fails at runtime survived. It caught the meridian strict-mode
+  panic above on its first run.
+- **`gofastr generate` reports every schema error at once.** Fixing a
+  blueprint was a serial guess-and-recompile loop because validation
+  stopped at the first bad key. Unknown top-level keys also get a
+  location hint — `auth:` at the root suggests `app.auth:`.
+- **The doc-example compile gate covers 85 blocks, up from 2.** Blocks
+  opt in with a `gofastr:compile` directive, using the same mechanism as
+  before.
+
 ## [0.65.0] - 2026-08-16
 
 ### Added
