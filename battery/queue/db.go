@@ -584,17 +584,32 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (stri
 }
 
 // Ack permanently removes the job — work is done, no replay needed. The
-// claim is deleted by identity; DBQueue has no per-claim fencing because a
-// stale worker's DELETE cannot strand the row (the work completed, and a
-// concurrent re-claimant's duplicate execution is within the at-least-once
-// contract).
+// DELETE is qualified with status='claimed' so it retires only a live claim:
+// a row the dead-letter sweep has already adjudicated ('failed' — lease
+// expired on the final attempt) survives a late Ack from the crashed worker.
+// The work may well have completed, but the sweep already logged the
+// dead-letter at ERROR and Stats counted a failure — deleting the record
+// afterwards would strand that signal with no way to reconcile it. The
+// operator reconciles explicitly via Replay, which makes the row claimable
+// again so a live claim's Ack deletes it through this same path. This
+// mirrors RedisQueue, where a stale claim's Ack is a fenced no-op.
+//
+// DBQueue has no per-claim fencing (no ClaimToken column), so a stale Ack
+// that lands while a re-claimant holds the row still deletes that claim —
+// within the at-least-once contract, as before.
 func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 	_, err := q.db.ExecContext(ctx,
-		fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, q.qt()), job.ID)
+		fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND status='claimed'`, q.qt()), job.ID)
 	return err
 }
 
 // Nack returns a claimed job to the queue (status=pending) when it still
+// has attempts left; on the final permitted attempt (attempts >=
+// max_attempts) it dead-letters the row to status='failed' instead, where
+// it stays visible to Stats, ListJobs("failed"), and Replay until replayed.
+// When backoff is enabled (see WithBackoff), a requeued job's scheduled_at
+// is pushed into the future so a flapping handler can't burn through every
+// attempt in a tight loop.
 func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 	if q.backoffBase <= 0 {
 		// No backoff: one round-trip. A CASE expression decides between

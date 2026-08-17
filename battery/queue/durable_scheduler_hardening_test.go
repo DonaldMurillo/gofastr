@@ -95,15 +95,26 @@ func TestDurableSchedulerRetentionPrunesOnlySafeOldOccurrences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, job := range []Job{
-		{ID: "live-job", Type: "test"},
-		{ID: "done-job", Type: "test"},
-	} {
-		if err := q.Enqueue(context.Background(), job); err != nil {
-			t.Fatal(err)
-		}
+	// done-job is completed by a worker the way production does it —
+	// claimed (Dequeue) then Acked — so its row is gone and retention may
+	// prune its occurrence. Ack alone must not remove a never-claimed
+	// pending row (parity with Redis/Memory, where Ack of nothing claimed
+	// is a no-op).
+	if err := q.Enqueue(context.Background(), Job{ID: "done-job", Type: "test"}); err != nil {
+		t.Fatal(err)
 	}
-	if err := q.Ack(context.Background(), Job{ID: "done-job"}); err != nil {
+	claimed, err := q.Dequeue(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != "done-job" {
+		t.Fatalf("claimed %q, want done-job", claimed.ID)
+	}
+	if err := q.Ack(context.Background(), claimed); err != nil {
+		t.Fatal(err)
+	}
+	// live-job stays enqueued and unclaimed.
+	if err := q.Enqueue(context.Background(), Job{ID: "live-job", Type: "test"}); err != nil {
 		t.Fatal(err)
 	}
 

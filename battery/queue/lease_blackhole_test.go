@@ -117,6 +117,86 @@ func TestDBFinalAttemptLeaseExpiryDeadLetters(t *testing.T) {
 }
 
 // ============================================================================
+// Property: a late Ack from a crashed worker must not erase the dead-letter
+// record the sweep just wrote.
+// Surface: DBQueue Ack × deadLetterExpiredFinalClaims interaction.
+// ============================================================================
+
+// TestLateAckKeepsDeadLetterRow pins Ack's contract against the sweep: Ack
+// retires a job only while its claim is live (status='claimed'). A worker
+// whose lease expired on the final attempt may wake long after the sweep
+// dead-lettered its job and report success — that Ack must be a no-op, not a
+// DELETE.
+//
+// Why no-op rather than delete, even though the work did finish: the sweep
+// already logged the dead-letter at ERROR and Stats counted a failure;
+// deleting the row afterwards leaves that signal unreconcilable. The
+// operator's sanctioned cleanup is Replay, which makes the row claimable so
+// a live worker Ack deletes it through the normal route. This also matches
+// RedisQueue, where a stale claim's Ack is a fenced no-op and the
+// dead-letter entry survives — the unfenced DB backend is the one that most
+// needs the conservative delete.
+func TestLateAckKeepsDeadLetterRow(t *testing.T) {
+	db, q, _ := openDBQueueWithLeaseLogging(t)
+	now := time.Now()
+	q.now = func() time.Time { return now }
+	ctx := context.Background()
+
+	if err := q.Enqueue(ctx, Job{ID: "lateacker", Type: "x", MaxAttempts: 1}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	job, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+
+	// Lease expires on the final attempt; the sweep dead-letters the row.
+	now = now.Add(time.Minute + time.Second)
+	if _, err := q.Dequeue(ctx); !errors.Is(err, ErrNoJob) {
+		t.Fatalf("post-expiry dequeue: %v", err)
+	}
+
+	// The crashed worker finally wakes and reports success. This must not
+	// erase the failure record.
+	if err := q.Ack(ctx, job); err != nil {
+		t.Fatalf("late ack: %v", err)
+	}
+	failed, err := q.ListJobs(ctx, "failed", 10)
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	if len(failed) != 1 || failed[0].ID != "lateacker" {
+		t.Fatalf("ListJobs(failed) = %+v, want the dead-lettered job to survive the late Ack", failed)
+	}
+	var status string
+	db.QueryRow("SELECT status FROM queue_jobs WHERE id='lateacker'").Scan(&status)
+	if status != "failed" {
+		t.Fatalf("status after late ack = %q, want failed", status)
+	}
+
+	// The operator reconciles explicitly: Replay makes the row claimable, and
+	// the OWNING claim's Ack still retires it — the predicate fences stale
+	// completions only, not live ones.
+	if err := q.Replay(ctx, "lateacker"); err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	replayed, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("dequeue after replay: %v", err)
+	}
+	if err := q.Ack(ctx, replayed); err != nil {
+		t.Fatalf("ack after replay: %v", err)
+	}
+	left, err := q.ListJobs(ctx, "", 10)
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("jobs after owning ack = %+v, want none", left)
+	}
+}
+
+// ============================================================================
 // Companion: a crash with attempts REMAINING still re-delivers (the reclaim
 // path itself is unchanged by the dead-letter sweep).
 // ============================================================================

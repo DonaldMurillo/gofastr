@@ -43,7 +43,17 @@ func TestDurableSchedulerSkipsTickWhilePriorOccurrenceIsActive(t *testing.T) {
 		t.Fatalf("skip reason = %q, want overlap", reason)
 	}
 
-	if err := q.Ack(context.Background(), first[0]); err != nil {
+	// A worker claims and completes the first occurrence's job, so the 3m
+	// tick enqueues fresh work instead of skipping as overlap. Claim first —
+	// Ack alone must not remove a never-claimed pending row.
+	claimed, err := q.Dequeue(context.Background())
+	if err != nil {
+		t.Fatalf("claim first tick's job: %v", err)
+	}
+	if claimed.OccurrenceID != first[0].OccurrenceID {
+		t.Fatalf("claimed occurrence %q, want the first tick's %q", claimed.OccurrenceID, first[0].OccurrenceID)
+	}
+	if err := q.Ack(context.Background(), claimed); err != nil {
 		t.Fatal(err)
 	}
 	if err := sched.RunOnce(context.Background(), base.Add(3*time.Minute)); err != nil {

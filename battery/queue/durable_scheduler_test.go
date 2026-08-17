@@ -237,8 +237,17 @@ func TestDurableSchedulerRestartResumesPersistedWatermark(t *testing.T) {
 		t.Fatalf("first process enqueued %d jobs, want 1", len(firstJobs))
 	}
 	firstOccurrenceID := firstJobs[0].OccurrenceID
-	// Complete the first occurrence so the next tick is not an overlap skip.
-	if err := q.Ack(context.Background(), firstJobs[0]); err != nil {
+	// Complete the first occurrence so the next tick is not an overlap skip:
+	// claim it (a worker's Dequeue) then Ack — Ack alone must not remove a
+	// never-claimed pending row.
+	claimed, err := q.Dequeue(context.Background())
+	if err != nil {
+		t.Fatalf("claim first occurrence's job: %v", err)
+	}
+	if claimed.OccurrenceID != firstOccurrenceID {
+		t.Fatalf("claimed occurrence %q, want %q", claimed.OccurrenceID, firstOccurrenceID)
+	}
+	if err := q.Ack(context.Background(), claimed); err != nil {
 		t.Fatal(err)
 	}
 

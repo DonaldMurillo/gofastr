@@ -21,11 +21,20 @@ type RedisClient interface {
 	// a missing hash or field MUST be reported as ErrRedisEmpty (map the
 	// driver's nil-sentinel, e.g. redis.Nil) — the queue relies on it to
 	// make Ack/Nack of a non-claimed job an idempotent no-op instead of a
+	// hard error: a missing claim is normal (already completed, or the
+	// lease expired and another worker took it) and must not be mistaken
+	// for a backend outage.
 	HGet(ctx context.Context, key, field string) (string, error)
 	HSet(ctx context.Context, key string, values ...interface{}) error
 	// HGetAll returns every field→value pair in the hash. Used by Reclaim to
+	// scan the processing hash for expired in-flight jobs.
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
 	HDel(ctx context.Context, key string, fields ...string) error
+	// Del removes one or more keys entirely. RedisQueue's own lease
+	// protocol never calls it — per-job bookkeeping uses HDel — but it
+	// stays in the adapter contract for callers that hold a RedisClient
+	// and need whole-key cleanup.
+	Del(ctx context.Context, keys ...string) error
 	// LRange returns the elements of the list at key in the inclusive range
 	// [start, stop]; negative indices count from the tail (-1 is the last
 	// element). Used by Replay to read the dead-letter list.
