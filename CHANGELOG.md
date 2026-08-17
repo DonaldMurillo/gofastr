@@ -11,6 +11,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Mixed-case `Content-Type` defeated the multipart body cap.**
+  `isMultipart` matched the `multipart/form-data` prefix case-sensitively
+  while the content-type gate parsed per RFC 9110, so
+  `Multipart/Form-Data` requests passed the gate but took the JSON path —
+  and its 1 MiB cap. Both checks now parse the media type the same way.
+- **`pagination.OffsetForPage` panicked on a zero page size.** The
+  overflow guard divided by `limit`; `limit == 0` is now clamped to
+  offset 0 alongside `page < 2`. No in-repo HTTP path could reach it, but
+  the function is exported.
+- **A comma bomb in `?field_in=` allocated the full list before the cap
+  check.** `filter.SplitINValuesBounded` counts entries first and never
+  materializes more than cap+1, while the over-cap 400 still reports the
+  exact entry count; both the top-level and nested (`?rel.f_in=`) paths
+  use it.
 - **BREAKING: a stale queue worker could delete another worker's job.**
   `Queue.Ack` and `Queue.Nack` now take a `Job` instead of a job ID
   string, and `RedisQueue` verifies `Job.ClaimToken` before acting. The
@@ -27,6 +41,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   crash on the last permitted attempt left the row `claimed` with
   nothing able to see it, including `Replay`. An expired lease on the
   final attempt is now dead-lettered and logged.
+- **`DBQueue.Ack` retires only a live claim.** The delete had no status
+  predicate, so the stale worker whose crash caused a dead-lettering
+  could wake, `Ack`, and erase the very row that made the failure visible
+  to `Stats`, `ListJobs("failed")`, and `Replay`. It now matches
+  `status='claimed'`. The route from `failed` to gone is `Replay`, claim,
+  `Ack` — the same path an operator already used. This also aligns the
+  three backends: `MemoryQueue` and `RedisQueue` already no-op an `Ack`
+  for a job they do not have claimed.
 - **Multipart uploads over 1 MiB always failed.** The CRUD write
   handlers wrapped every request body in a 1 MiB `MaxBytesReader` before
   deciding whether it was multipart, so `ParseMultipartForm` read

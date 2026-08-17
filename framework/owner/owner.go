@@ -6,7 +6,7 @@
 //
 // The default state is "no extractor" — owner.Get always returns
 // (nil, false). Hosts that never wire an extractor see no behavioural
-// change: EntityConfig.OwnerField stays inert and CRUD operates as
+// change: EntityConfig.Scope.OwnerField stays inert and CRUD operates as
 // before. Hosts that import battery/auth pick up the extractor
 // automatically.
 package owner

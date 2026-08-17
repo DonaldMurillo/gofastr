@@ -97,7 +97,7 @@ route, marks which need auth, and names the option that ungates them.
 Each of these is a declaration, and writing it by hand is the most common way
 an app ends up with a bug the framework would have prevented:
 
-- a `WHERE user_id = ?` filter → `OwnerField`
+- a `WHERE user_id = ?` filter → `Scope.OwnerField`
 - a pagination/sort/filter query string parser → `framework/filter`,
   `framework/pagination`, `framework/dsl`
 - a password hash and session cookie → `battery/auth`
@@ -108,7 +108,7 @@ an app ends up with a bug the framework would have prevented:
 
 - **Reading topic docs before this page.** They are references, not
   orientation. Land on the row first, then open the one link it points at.
-- **Hand-writing a filter for per-user data.** `OwnerField` is enforced on
+- **Hand-writing a filter for per-user data.** `Scope.OwnerField` is enforced on
   every generated surface — REST, batch, MCP, includes. A hand-written `WHERE`
   covers the one handler you remembered. `gofastr verify data` flags the gap.
 - **Trusting `paths` in a stale mental model of the spec.** Under

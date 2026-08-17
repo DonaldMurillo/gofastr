@@ -80,7 +80,7 @@ running app live:
 | `log_recent`    | Last N entries from the ring, optional level filter.                                                 |
 | `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level`. `historical=true` tails the file sink for entries evicted from the ring. |
 | `log_metrics`   | Current counter snapshot — same data as `Plugin.Metrics()`.                                          |
-| `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterwards). Only registered when `AllowMCPMutation` is set. |
+| `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterward). Only registered when `AllowMCPMutation` is set. |
 
 Opt-in because these tools reveal a lot about the running app —
 weigh the disclosure before enabling on a production MCP server
