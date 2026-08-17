@@ -76,6 +76,10 @@ a MIME part.
 
 ## Log sender (development)
 
+<!-- gofastr:compile
+stmt: _ = sender
+import "github.com/DonaldMurillo/gofastr/battery/email"
+-->
 ```go
 sender := email.NewLogSender() // writes to stdout
 ```

@@ -69,7 +69,7 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 5. Never add new `data-fui-*` attributes without updating
    `core-ui/ARCHITECTURE.md` and the runtime test suite.
 6. Never expose an entity holding per-user data via auto-CRUD without
-   setting `EntityConfig.OwnerField`. See
+   setting `EntityConfig.Scope.OwnerField`. See
    `framework/docs/content/entity-declarations.md` → "Per-user scoping".
 7. **One styling surface.** Generators and apps ship ZERO bespoke CSS and
    ZERO hand-rolled structural markup. ALL styling + layout lives in the

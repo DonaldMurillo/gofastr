@@ -409,6 +409,15 @@ func (q *DBQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
 // any lane) and the dedicated lane workers (lane != "", restricted to that
 // lane). Sharing one code path keeps the two dialects' claim logic in sync.
 func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job, error) {
+	// A lease that expired on the job's FINAL attempt is not reclaimable
+	// (eligibleWhere requires attempts < max_attempts for re-delivery) and
+	// never reaches Nack — without this sweep the row would sit in 'claimed'
+	// forever: invisible to Stats-as-failed, ListJobs("failed"), and Replay.
+	// Lease expiry on the final attempt is the crash equivalent of a terminal
+	// Nack, so route it to the same dead-letter state.
+	if err := q.deadLetterExpiredFinalClaims(ctx); err != nil {
+		return Job{}, err
+	}
 	switch q.dialect {
 	case dialectPostgres:
 		return q.dequeuePostgres(ctx, lane, types)
@@ -416,6 +425,63 @@ func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job
 		return q.dequeueSQLite(ctx, lane, types)
 	}
 }
+
+// deadLetterExpiredFinalClaims moves rows whose lease expired on their final
+// permitted attempt from 'claimed' to 'failed'. It runs before every claim
+// (the same "reclaim happens inside Dequeue" model as the eligibleWhere
+// lease-expiry clause), so a running worker loop sweeps stranded rows on its
+// next poll. Each swept job is logged at ERROR — a job that vanished because
+// its worker crashed must not disappear silently.
+func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
+	cutoff := q.now().UTC().Add(-q.leaseTimeout())
+	rows, err := q.db.QueryContext(ctx, fmt.Sprintf(
+		`SELECT id, type, attempts, max_attempts FROM %s
+		WHERE status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $1
+		AND attempts >= max_attempts`, q.qt()), cutoff)
+	if err != nil {
+		return err
+	}
+	type stranded struct {
+		id, jobType         string
+		attempts, maxAttspt int
+	}
+	var found []stranded
+	for rows.Next() {
+		var s stranded
+		if err := rows.Scan(&s.id, &s.jobType, &s.attempts, &s.maxAttspt); err != nil {
+			rows.Close()
+			return err
+		}
+		found = append(found, s)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, s := range found {
+		// Re-check the full predicate inside the UPDATE: between the SELECT
+		// and now another path (Ack, Nack, release) may have transitioned the
+		// row — the sweep must never dead-letter a claim that is no longer
+		// expired-and-final.
+		res, err := q.db.ExecContext(ctx, fmt.Sprintf(
+			`UPDATE %s SET status='failed'
+			WHERE id=$1 AND status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $2
+			AND attempts >= max_attempts`, q.qt()), s.id, cutoff)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			q.logger.Error("queue: lease expired on final attempt; job dead-lettered",
+				"job_id", s.id,
+				"job_type", s.jobType,
+				"attempt", s.attempts,
+				"max_attempts", s.maxAttspt)
+		}
+	}
+	return nil
+}
+
 func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []string) (Job, error) {
 	where, args := q.eligibleWhere(types, 2, lane)
 	// $1 is the claim timestamp (claimed_at = now); eligibleWhere starts its
@@ -517,26 +583,41 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (stri
 	return strings.Join(parts, " AND "), args
 }
 
-// Ack permanently removes the job — work is done, no replay needed.
-func (q *DBQueue) Ack(ctx context.Context, jobID string) error {
+// Ack permanently removes the job — work is done, no replay needed. The
+// DELETE is qualified with status='claimed' so it retires only a live claim:
+// a row the dead-letter sweep has already adjudicated ('failed' — lease
+// expired on the final attempt) survives a late Ack from the crashed worker.
+// The work may well have completed, but the sweep already logged the
+// dead-letter at ERROR and Stats counted a failure — deleting the record
+// afterwards would strand that signal with no way to reconcile it. The
+// operator reconciles explicitly via Replay, which makes the row claimable
+// again so a live claim's Ack deletes it through this same path. This
+// mirrors RedisQueue, where a stale claim's Ack is a fenced no-op.
+//
+// DBQueue has no per-claim fencing (no ClaimToken column), so a stale Ack
+// that lands while a re-claimant holds the row still deletes that claim —
+// within the at-least-once contract, as before.
+func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 	_, err := q.db.ExecContext(ctx,
-		fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, q.qt()), jobID)
+		fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND status='claimed'`, q.qt()), job.ID)
 	return err
 }
 
 // Nack returns a claimed job to the queue (status=pending) when it still
-// has retry attempts left; otherwise marks it 'failed' for later inspection.
-// When backoff is enabled (see WithBackoff), a requeued job's scheduled_at is
-// pushed into the future so a flapping handler can't burn through every
+// has attempts left; on the final permitted attempt (attempts >=
+// max_attempts) it dead-letters the row to status='failed' instead, where
+// it stays visible to Stats, ListJobs("failed"), and Replay until replayed.
+// When backoff is enabled (see WithBackoff), a requeued job's scheduled_at
+// is pushed into the future so a flapping handler can't burn through every
 // attempt in a tight loop.
-func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
+func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 	if q.backoffBase <= 0 {
 		// No backoff: one round-trip. A CASE expression decides between
 		// requeue and dead-letter based on attempts vs max_attempts.
 		stmt := fmt.Sprintf(`UPDATE %s
 			SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END
 			WHERE id = $1`, q.qt())
-		_, err := q.db.ExecContext(ctx, stmt, jobID)
+		_, err := q.db.ExecContext(ctx, stmt, job.ID)
 		return err
 	}
 
@@ -544,7 +625,7 @@ func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
 	// dead-letter and to compute the next scheduled_at.
 	var attempts, maxAttempts int
 	row := q.db.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT attempts, max_attempts FROM %s WHERE id = $1", q.qt()), jobID)
+		fmt.Sprintf("SELECT attempts, max_attempts FROM %s WHERE id = $1", q.qt()), job.ID)
 	if err := row.Scan(&attempts, &maxAttempts); err != nil {
 		if err == sql.ErrNoRows {
 			return nil // already acked/removed; nothing to do
@@ -553,12 +634,12 @@ func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
 	}
 	if attempts >= maxAttempts {
 		stmt := fmt.Sprintf("UPDATE %s SET status='failed' WHERE id = $1", q.qt())
-		_, err := q.db.ExecContext(ctx, stmt, jobID)
+		_, err := q.db.ExecContext(ctx, stmt, job.ID)
 		return err
 	}
 	next := q.now().UTC().Add(backoff.Exponential(q.backoffBase, q.backoffMax, attempts))
 	stmt := fmt.Sprintf("UPDATE %s SET status='pending', scheduled_at=$1 WHERE id = $2", q.qt())
-	_, err := q.db.ExecContext(ctx, stmt, next, jobID)
+	_, err := q.db.ExecContext(ctx, stmt, next, job.ID)
 	return err
 }
 
@@ -818,7 +899,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		h, ok := q.handlerFor(job.Type)
 		if !ok {
 			// No handler — drop the row so it doesn't loop forever.
-			_ = q.Ack(ctx, job.ID)
+			_ = q.Ack(ctx, job)
 			continue
 		}
 		// Gate race window: the gate may flip from allow to deny between
@@ -853,12 +934,12 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 					"max_attempts", job.MaxAttempts,
 					"err", err)
 			}
-			if err := q.Nack(ctx, job.ID); err != nil {
+			if err := q.Nack(ctx, job); err != nil {
 				q.logger.Warn("queue: nack failed", "job_id", job.ID, "err", err)
 			}
 			continue
 		}
-		if err := q.Ack(ctx, job.ID); err != nil {
+		if err := q.Ack(ctx, job); err != nil {
 			q.logger.Warn("queue: ack failed", "job_id", job.ID, "err", err)
 		}
 	}

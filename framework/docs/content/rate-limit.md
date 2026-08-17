@@ -115,6 +115,15 @@ PostgreSQL); one store instance backs many limiters, with keys namespaced by
 `Config.Scope` so a login limiter and a checkout limiter sharing one store never
 collide:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+import "database/sql"
+var db *sql.DB
+stmt: _ = loginLimit
+import "github.com/DonaldMurillo/gofastr/framework/ratelimit"
+import "time"
+stmt: _ = checkoutLimit
+-->
 ```go
 shared := auth.NewSQLRateLimitStore(db, "rate_limits")
 // One store, two independent budgets:

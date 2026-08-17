@@ -104,6 +104,11 @@ other shutdown code emits its final entries.
 listener is actually up — a startup banner, a "register with service
 discovery" call — use `App.OnReady`:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "fmt"
+-->
 ```go
 app.OnReady(func(addr string) {
     fmt.Printf("listening on http://%s\n", addr)
@@ -208,6 +213,14 @@ log.Fatal(app.Start(":8080"))
 
 ## Lookups
 
+<!-- gofastr:compile
+stmt: _ = p
+stmt: _ = err
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+stmt: _ = all
+stmt: _ = names
+-->
 ```go
 p, err := app.Plugins.Get("webhooks")
 all := app.Plugins.All()      // []Plugin, registration order

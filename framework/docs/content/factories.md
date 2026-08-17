@@ -77,6 +77,11 @@ caller, so a typo should fail loudly.
 `Sequence` is an atomic counter for unique base values inside
 `BaseFunc`. Concurrent-test safe — `Next()` never repeats.
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/factory"
+stmt: _ = base
+import "fmt"
+-->
 ```go
 seq := &factory.Sequence{}
 

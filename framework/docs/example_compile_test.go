@@ -11,6 +11,9 @@ import (
 	"testing"
 )
 
+// packageClause detects a snippet that is a complete Go file.
+var packageClause = regexp.MustCompile(`(?m)^package\s+\w+`)
+
 // Compiling the Go examples embedded in the guides, so a snippet cannot rot
 // into something that does not build. TestDocsAvoidKnownWrongAPIs is the cheap
 // denylist half of this; it cannot catch a scope or signature error, which is
@@ -79,6 +82,19 @@ func splitImports(src string) (imports, rest string) {
 }
 
 func assemble(directive, code string) string {
+	// A snippet that carries its own `package` clause is a complete Go
+	// file (docs sometimes show the whole file — package, imports, decls).
+	// It is emitted verbatim: the directive contributes nothing, because
+	// its imports and decls would have to merge inside the snippet's own
+	// declarations. A `package main` file with no main function (the doc
+	// shows only the interesting declarations) gets an empty main so the
+	// package links.
+	if packageClause.MatchString(code) {
+		if strings.Contains(code, "package main") && !strings.Contains(code, "func main(") {
+			return code + "\n\nfunc main() {}\n"
+		}
+		return code
+	}
 	var extraImports, decls, stmts []string
 	for _, l := range strings.Split(directive, "\n") {
 		t := strings.TrimSpace(l)

@@ -109,7 +109,7 @@ func TestRedisNackKeepsJobWhenPushFails(t *testing.T) {
 
 			fail := &pushFailingRedis{RedisClient: r, err: errors.New("redis down")}
 			failing := NewRedisQueue(fail, "test")
-			if err := failing.Nack(ctx, claimed.ID); err == nil {
+			if err := failing.Nack(ctx, claimed); err == nil {
 				t.Fatal("Nack must surface the failed push")
 			}
 

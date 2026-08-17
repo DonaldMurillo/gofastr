@@ -8,13 +8,24 @@ back instead of a duplicated side effect.
 ## Wiring
 
 The simplest form is `framework.WithIdempotency` — the middleware
-slots into the default chain between `Logging` and `SecurityHeaders`:
+slots into the default chain between `RequestID` and
+`SecurityHeaders`:
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/core/middleware"
+import "net/http"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+-->
 ```go
 app := framework.NewApp(framework.WithIdempotency(middleware.IdempotencyConfig{
     Principal: func(r *http.Request) string {
         // Extract the authenticated subject — user-id, tenant-id, or both.
-        return auth.UserID(r.Context())
+        if u, ok := auth.SessionFrom(r.Context()); ok {
+            return u.GetID()
+        }
+        return ""
     },
 }))
 ```
@@ -33,7 +44,12 @@ app.Use(router.Middleware(middleware.Idempotency(middleware.IdempotencyConfig{
     // Methods:          []string{POST, PUT, PATCH, DELETE},
     // Required:         false,
     // FailOpen:         false, // default: fail closed (503) on store error
-    Principal: func(r *http.Request) string { return auth.UserID(r.Context()) },
+    Principal: func(r *http.Request) string {
+        if u, ok := auth.SessionFrom(r.Context()); ok {
+            return u.GetID()
+        }
+        return ""
+    },
 })))
 ```
 

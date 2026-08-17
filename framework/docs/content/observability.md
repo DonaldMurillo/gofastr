@@ -8,6 +8,12 @@ produce them are wired. Tracing is opt-in via `WithTracing()`.
 
 ## Metrics (Prometheus)
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "database/sql"
+var db *sql.DB
+-->
 ```go
 app := framework.NewApp(
     framework.WithDB(db),
@@ -116,6 +122,10 @@ convenience.
 
 ## Tracing (OpenTelemetry)
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
 ```go
 app := framework.NewApp(framework.WithTracing())
 ```
@@ -187,6 +197,8 @@ The framework does not depend on an OTLP exporter (so your app stays free of
 the OpenTelemetry exporter modules until you want them). Add the exporter to
 **your own app** and wire it once at startup:
 
+<!-- gofastr:compile
+-->
 ```go
 import (
     "context"
@@ -210,7 +222,7 @@ func installTracer(ctx context.Context, endpoint string) (func(context.Context) 
     if err != nil {
         return nil, err
     }
-    res, err := sdkresource.New(ctx, semconv.ServiceName("myapp"))
+    res, err := sdkresource.New(ctx, sdkresource.WithAttributes(semconv.ServiceName("myapp")))
     if err != nil {
         return nil, err
     }

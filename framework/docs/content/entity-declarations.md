@@ -182,6 +182,13 @@ record the entity as seeded with empty data on first run.
 
 Attach a `*slog.Logger` so each seed emits structured lifecycle events:
 
+<!-- gofastr:compile
+stmt: _ = ctx
+import migrate "github.com/DonaldMurillo/gofastr/framework/migrate"
+import "context"
+import "log/slog"
+var logger = slog.Default()
+-->
 ```go
 ctx := migrate.WithSeedLogger(context.Background(), logger)
 // (the framework calls migrate.RunSeeds with the App's lifecycle ctx
@@ -549,6 +556,12 @@ declarative knob for that: name an RBAC permission, and when the request
 context holds it, owner scoping is lifted for List/Get/Count (HTTP and
 in-process) on that entity. Writes stay owner-scoped, always.
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/core/schema"
+-->
 ```go
 app.Entity("tickets", entity.EntityConfig{
     Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "subject", Type: schema.String}},
@@ -571,6 +584,12 @@ entities:
 
 Grant the permission to the role that should see across owners:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/access"
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "context"
+-->
 ```go
 policy := access.NewRolePolicy()
 policy.Grant("staff", "tickets:read:all")
@@ -652,6 +671,11 @@ you want for anything a user sees about *their own* data. Two hard rules:
 When you register the `users` / `sessions` entities for `battery/auth`,
 use the pre-built configs so they don't get exposed via REST or MCP:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+-->
 ```go
 app.Entity("users",    auth.UserEntityConfig())    // CRUD=false, MCP=false
 app.Entity("sessions", auth.SessionEntityConfig()) // CRUD=false, MCP=false
@@ -667,6 +691,12 @@ Set `SearchFields` to a slice of DB column names and List requests
 carrying `?q=<term>` perform a multi-field, case-insensitive free-text
 search across them:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/core/schema"
+-->
 ```go
 app.Entity("articles", entity.EntityConfig{
     Fields:       []schema.Field{{Name: "title", Type: schema.String}, {Name: "body", Type: schema.Text}},
@@ -738,6 +768,13 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 | `_like`  | literal `contains` (`LIKE '%value%'`)      |
 | `_in`    | `IN (…)` — comma-separated, capped at 1000 |
 
+**Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
+Every occurrence of the key contributes; the 1000-entry cap
+(`filter.MaxINListEntries`) counts the union, and the same cap applies to
+relation-scoped lists like `?author.name_in=`. A list over the cap is a
+**400** naming the field and both counts — never a silent truncation,
+for the same reason unknown filters fail closed below.
+
 **Unknown filters fail closed (strict).** A misspelled or unrecognized
 top-level filter — `?stauts=open`, or a suffixed op on a non-field like
 `?scor_gt=5` — returns a **400** naming the bad key (with a "did you
@@ -763,6 +800,11 @@ never silently swallowed.
 (e.g. a `BeforeList` hook scoping on `?region=eu`) declares them so strict
 parsing skips them without disabling typo protection for real fields:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+-->
 ```go
 app.Entity("things", entity.EntityConfig{
     AllowedFilterParams: []string{"region"}, // consumed by a BeforeList hook

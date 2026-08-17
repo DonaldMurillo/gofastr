@@ -52,6 +52,14 @@ tick after a restart is acceptable. See
 
 ## Quickstart
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+import "log"
+import "context"
+import "database/sql"
+var db *sql.DB
+var ctx = context.Background()
+-->
 ```go
 sched := framework.NewScheduler()
 sched.OnError = func(name string, err error) {

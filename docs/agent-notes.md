@@ -105,3 +105,11 @@
 - Evidence: `evals/backend-adoption/results/2026-08-16-codex.md` — cold-start 313,579 → 233,716 tokens against a control that rose 34%, ratio 4.35× → 2.42×; `framework/withconfig_order_test.go` and `TestInitScaffoldsWithConfigFirst` pin the fix.
 - Next time: When a run fails a probe, read the candidate's code before blaming the framework — run 1's isolation miss was a hand-rolled handler validating before the owner-scoped lookup, with the framework's contract warning suppressed.
 - Status: active
+
+## 2026-08-17 - Seed error hygiene: values never reach logs; refuted bigint alias claim
+- Scope: `cmd/gofastr` blueprint emitter/validator, `examples/ecommerce/app` regeneration
+- Trigger: CodeRabbit round — generated apps labeled failed seed rows by VALUE (title/email/body, falling back to the whole row map) in a log.Fatal path; boot-gate probe used unbounded http.Get; seed type validation returned on first map-iteration-ordered rejection.
+- Approach: `seedCreateError(entity, index, err)` now labels rows by one-based position only (seeds carry admin emails/passwords); `bootProbeClient = &http.Client{Timeout: 5s}` bounds the readiness probe; `validateBlueprintSeedTypes` accumulates every finding via schemaErrors over sortedMapKeys, rows reported one-based to match boot.
+- Evidence: `TestSeedErrorOmitsRowValues`, `TestBootProbeClientTimesOut` (fires at 5.00s against a hung server), `TestSeedErrorsReportEveryField`; `TestExampleBlueprintsBoot` and ecommerce byte-parity pass after regeneration.
+- Next time: The canonical field-type alias table is `parseFieldType` (framework/entity/declaration.go) — int is `int|integer`, float is `float|number`, nothing else. A claim that `bigint`/`money`/`double`/`numeric` "fall through seed validation and die at boot" is wrong: `decl.Config()` rejects those types at validate time (blueprint.go entity loop), so no generated app can carry them. `blueprintGenerateSeedRows`' extra case labels are dead aliases — align the VALIDATOR to parseFieldType, never to the generator's list.
+- Status: active

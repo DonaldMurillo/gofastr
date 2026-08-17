@@ -363,10 +363,13 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			field = col
 		}
 		if op == filter.OpIn {
-			vals := strings.Split(value, "|")
-			if len(vals) > maxScopedINEntries {
-				return nil, fmt.Errorf("include %q: scoped IN list on %q has %d entries (max %d)", pathForErrors, field, len(vals), maxScopedINEntries)
+			// Count separators before splitting, so an oversized list is
+			// rejected without materializing it. Same shape as the top-level
+			// ?field_in= path (filter.SplitINValuesBounded).
+			if n := strings.Count(value, "|") + 1; n > maxScopedINEntries {
+				return nil, fmt.Errorf("include %q: scoped IN list on %q has %d entries (max %d)", pathForErrors, field, n, maxScopedINEntries)
 			}
+			vals := strings.Split(value, "|")
 			for _, v := range vals {
 				out = append(out, filter.ParsedFilter{Field: field, Op: filter.OpIn, Value: v}.Coerced(colType[field]))
 			}

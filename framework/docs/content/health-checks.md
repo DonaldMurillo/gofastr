@@ -90,6 +90,10 @@ infrastructure detail useful only to an attacker doing recon.
 To turn on verbose reporting (e.g. behind an internal listener or with
 auth in front of `/readyz`), pass the option at app construction:
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
 ```go
 app := framework.NewApp(framework.WithVerboseReadiness())
 ```
@@ -108,6 +112,11 @@ under `recover()`, so a panicking check marks that row as
 `"timeout"` immediately — the response does not wait for the
 straggler.
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "time"
+-->
 ```go
 app := framework.NewApp(
     framework.WithReadinessTimeout(2*time.Second),

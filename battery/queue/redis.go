@@ -17,12 +17,23 @@ import (
 type RedisClient interface {
 	LPush(ctx context.Context, key string, values ...interface{}) error
 	RPop(ctx context.Context, key string) (string, error)
-	HSet(ctx context.Context, key string, values ...interface{}) error
+	// HGet returns the value stored at field in the hash at key. Like RPop,
+	// a missing hash or field MUST be reported as ErrRedisEmpty (map the
+	// driver's nil-sentinel, e.g. redis.Nil) — the queue relies on it to
+	// make Ack/Nack of a non-claimed job an idempotent no-op instead of a
+	// hard error: a missing claim is normal (already completed, or the
+	// lease expired and another worker took it) and must not be mistaken
+	// for a backend outage.
 	HGet(ctx context.Context, key, field string) (string, error)
+	HSet(ctx context.Context, key string, values ...interface{}) error
 	// HGetAll returns every field→value pair in the hash. Used by Reclaim to
-	// scan the processing set for expired in-flight jobs.
+	// scan the processing hash for expired in-flight jobs.
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
 	HDel(ctx context.Context, key string, fields ...string) error
+	// Del removes one or more keys entirely. RedisQueue's own lease
+	// protocol never calls it — per-job bookkeeping uses HDel — but it
+	// stays in the adapter contract for callers that hold a RedisClient
+	// and need whole-key cleanup.
 	Del(ctx context.Context, keys ...string) error
 	// LRange returns the elements of the list at key in the inclusive range
 	// [start, stop]; negative indices count from the tail (-1 is the last
@@ -34,11 +45,13 @@ type RedisClient interface {
 	LRem(ctx context.Context, key string, count int64, value interface{}) (int64, error)
 }
 
-// ErrRedisEmpty is the sentinel a RedisClient.RPop implementation returns (or
-// wraps) when the source list is empty. It is how RedisQueue distinguishes a
-// genuinely empty queue from a real backend failure: an empty list is a normal
-// "no work" signal (→ ErrNoJob), while any other error means the backend is
-// unreachable and MUST be surfaced so an outage is not masked as idle.
+// ErrRedisEmpty is the sentinel a RedisClient implementation returns (or
+// wraps) when a read finds nothing: RPop on an empty list, HGet on a missing
+// hash or field. It is how RedisQueue distinguishes a genuinely missing
+// value from a real backend failure: "nothing there" is a normal signal (an
+// empty poll → ErrNoJob; an Ack/Nack with nothing claimed → idempotent
+// no-op), while any other error means the backend is unreachable and MUST be
+// surfaced so an outage is not masked as idle.
 //
 // Adapter authors translating a real driver MUST map its own nil-sentinel
 // (e.g. go-redis's redis.Nil, redigo's redis.ErrNil) onto this via errors.Is.
@@ -63,6 +76,22 @@ type RedisQueue struct {
 	// Defaults to time.Now; tests substitute a fake clock so reclaim
 	// behaviour can be asserted without wall-clock sleeps.
 	now func() time.Time
+
+	// staleClaims counts completions (Ack/Nack) rejected because the claim
+	// token they presented no longer matches the processing entry — i.e. the
+	// job was re-claimed by another worker after this claimant's visibility
+	// timeout expired. Atomic: workers on different goroutines complete
+	// independently. Read via StaleClaimCount; a rising value means worker
+	// handlers are outliving their visibility timeout.
+	staleClaims atomic.Int64
+}
+
+// StaleClaimCount returns how many Ack/Nack calls were rejected as coming
+// from a stale claim (fenced out by Job.ClaimToken mismatch). Monitoring it
+// distinguishes "handlers routinely exceed the visibility timeout" from
+// silent double-delivery confusion.
+func (q *RedisQueue) StaleClaimCount() int64 {
+	return q.staleClaims.Load()
 }
 
 // NewRedisQueue creates a new Redis-backed queue.
@@ -218,6 +247,10 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			}
 			continue
 		}
+		// Mint a fresh claim token: it identifies THIS claim, so a stale
+		// worker whose visibility timeout expired (and whose job was
+		// re-claimed by someone else) cannot Ack/Nack the newer claim.
+		job.ClaimToken = redisRandomID()
 		bumped, _ := json.Marshal(job)
 
 		// Track in processing queue for visibility timeout. The job was
@@ -258,33 +291,82 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 // whole queue into process memory.
 const maxSkipDrain = 1024
 
-// Ack removes a single job from the processing queue after successful handling.
-func (q *RedisQueue) Ack(ctx context.Context, jobID string) error {
-	return q.client.HDel(ctx, q.processingQueue, jobID)
+// processingEntry is the per-claim record stored in the processing hash:
+// the claimed job (with its ClaimToken) plus the lease's expiry stamp.
+type processingEntry struct {
+	Job       string `json:"job"`
+	ExpiresAt int64  `json:"expiresAt"`
+}
+
+// currentClaim reads the processing entry for jobID and returns the job of
+// the CURRENT claim. found is false when nothing is claimed under that ID.
+func (q *RedisQueue) currentClaim(ctx context.Context, jobID string) (current Job, found bool, err error) {
+	data, err := q.client.HGet(ctx, q.processingQueue, jobID)
+	if err != nil {
+		if errors.Is(err, ErrRedisEmpty) {
+			return Job{}, false, nil
+		}
+		return Job{}, false, fmt.Errorf("read processing entry: %w", err)
+	}
+	var entry processingEntry
+	if err := json.Unmarshal([]byte(data), &entry); err != nil {
+		return Job{}, false, fmt.Errorf("unmarshal processing entry: %w", err)
+	}
+	var job Job
+	if err := json.Unmarshal([]byte(entry.Job), &job); err != nil {
+		return Job{}, false, fmt.Errorf("unmarshal job: %w", err)
+	}
+	return job, true, nil
+}
+
+// ownsClaim reports whether the completion being presented (job) matches the
+// current processing entry for that ID. A mismatch means the presenter's
+// visibility timeout expired and another worker re-claimed the job — their
+// completion must not touch the newer claim. Counts a rejected completion in
+// q.staleClaims so the fencing is observable, and returns false. A missing
+// entry surfaces as found=false for the caller to treat as an idempotent
+// no-op.
+func (q *RedisQueue) ownsClaim(job, current Job, found bool) bool {
+	if !found {
+		return false
+	}
+	if current.ClaimToken == job.ClaimToken {
+		return true
+	}
+	q.staleClaims.Add(1)
+	return false
+}
+
+// Ack removes the job's processing entry after successful handling. The
+// claim is fenced by Job.ClaimToken: an Ack from a worker whose visibility
+// timeout already expired (the job was re-claimed elsewhere) is a no-op —
+// deleting the newer claimant's entry would make the job unreclaimable
+// if that claimant then crashed. Acking an ID nothing is claimed
+// under (already acked) is an idempotent no-op.
+func (q *RedisQueue) Ack(ctx context.Context, job Job) error {
+	current, found, err := q.currentClaim(ctx, job.ID)
+	if err != nil {
+		return fmt.Errorf("ack: %w", err)
+	}
+	if !q.ownsClaim(job, current, found) {
+		return nil // stale claim (counted) or nothing claimed — no-op
+	}
+	return q.client.HDel(ctx, q.processingQueue, job.ID)
 }
 
 // Nack handles a failed job. If retries remain, it re-enqueues the job;
-// otherwise it moves it to the dead letter queue.
-func (q *RedisQueue) Nack(ctx context.Context, jobID string) error {
-	// Get the job from processing queue.
-	data, err := q.client.HGet(ctx, q.processingQueue, jobID)
+// otherwise it moves it to the dead letter queue. Like Ack it is fenced by
+// Job.ClaimToken: a stale claimant's Nack must neither re-enqueue the newer
+// claimant's in-flight job (concurrent double-run) nor delete its entry
+// (unreclaimable loss). Nacking an ID nothing is claimed under is an
+// idempotent no-op.
+func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
+	job, found, err := q.currentClaim(ctx, claimed.ID)
 	if err != nil {
-		return fmt.Errorf("nack: job not found in processing: %w", err)
+		return fmt.Errorf("nack: %w", err)
 	}
-
-	var entry map[string]interface{}
-	if err := json.Unmarshal([]byte(data), &entry); err != nil {
-		return fmt.Errorf("nack: unmarshal: %w", err)
-	}
-
-	// Extract original job — entry["job"] is a string containing the job JSON.
-	jobStr, ok := entry["job"].(string)
-	if !ok {
-		return fmt.Errorf("nack: job field has unexpected type")
-	}
-	var job Job
-	if err := json.Unmarshal([]byte(jobStr), &job); err != nil {
-		return fmt.Errorf("nack: unmarshal job: %w", err)
+	if !q.ownsClaim(claimed, job, found) {
+		return nil // stale claim (counted) or nothing claimed — no-op
 	}
 
 	// Attempts were bumped at claim (Dequeue), so the processing entry
@@ -310,7 +392,7 @@ func (q *RedisQueue) Nack(ctx context.Context, jobID string) error {
 		return fmt.Errorf("nack: push to %s: %w", dest, err)
 	}
 
-	return q.client.HDel(ctx, q.processingQueue, jobID)
+	return q.client.HDel(ctx, q.processingQueue, claimed.ID)
 }
 
 // Reclaim scans the processing set for in-flight jobs whose visibility
@@ -326,10 +408,7 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 	now := q.now().UnixNano()
 	reclaimed := 0
 	for jobID, raw := range entries {
-		var entry struct {
-			Job       string `json:"job"`
-			ExpiresAt int64  `json:"expiresAt"`
-		}
+		var entry processingEntry
 		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
 			// Corrupt processing entry: drop it so it can't wedge the sweep.
 			_ = q.client.HDel(ctx, q.processingQueue, jobID)
@@ -376,8 +455,11 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 			continue
 		}
 
-		// Reset for a fresh set of retries, then re-marshal.
+		// Reset for a fresh set of retries, then re-marshal. ClaimToken is
+		// cleared too — it identified a claim that is now terminal; the next
+		// Dequeue mints a fresh one.
 		job.Attempts = 0
+		job.ClaimToken = ""
 		requeued, err := json.Marshal(job)
 		if err != nil {
 			return fmt.Errorf("replay: marshal job: %w", err)

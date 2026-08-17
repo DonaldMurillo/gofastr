@@ -12,6 +12,13 @@ The UI equivalent is [ui-capability-map.md](ui-capability-map.md).
 
 Everything below assumes this shape. It is the whole spine.
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+import "database/sql"
+var db *sql.DB
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/core/schema"
+-->
 ```go
 app := framework.NewApp(
     framework.WithDB(db),              // any *sql.DB — sqlite3 or postgres
@@ -19,7 +26,7 @@ app := framework.NewApp(
 )
 app.Entity("tickets", entity.EntityConfig{
     Table:      "tickets",
-    OwnerField: "user_id",             // per-user scoping — see the table
+    Scope:      &framework.ScopeConfig{OwnerField: "user_id"}, // per-user scoping — see the table
     Fields: []schema.Field{
         {Name: "title", Type: schema.String, Required: true},
     },
@@ -62,7 +69,7 @@ route, marks which need auth, and names the option that ungates them.
 | Job to be done | Compose | Prove it | Docs |
 |---|---|---|---|
 | CRUD over a table | `framework.App.Entity` with `entity.EntityConfig` | `curl localhost:8080/api/tickets` | [Entity declarations](entity-declarations.md) |
-| Scope rows to the signed-in user | `EntityConfig.OwnerField` — **not** a hand-written filter | `gofastr verify data` fails when an entity with user data lacks it | [Entity declarations](entity-declarations.md), [Access control](access-control.md) |
+| Scope rows to the signed-in user | `EntityConfig.Scope.OwnerField` — **not** a hand-written filter | `gofastr verify data` fails when an entity with user data lacks it | [Entity declarations](entity-declarations.md), [Access control](access-control.md) |
 | Login, signup, sessions, password reset | `battery/auth`: `auth.New`, `auth.SessionMiddleware` | `curl -i -X POST localhost:8080/auth/login -d '{...}'` → `Set-Cookie` | [Auth](auth.md) |
 | Roles and permissions | `access.NewRolePolicy`, `access.Middleware`, `access.Wildcard` | `gofastr verify permissions` | [Access control](access-control.md) |
 | Signed sessions across replicas | `framework.WithSecret` / `GOFASTR_SECRET`, `framework.WithSecretRotation` | restart the process; an existing cookie still authenticates | [Scaling](scaling.md), [Auth](auth.md) |
@@ -90,7 +97,7 @@ route, marks which need auth, and names the option that ungates them.
 Each of these is a declaration, and writing it by hand is the most common way
 an app ends up with a bug the framework would have prevented:
 
-- a `WHERE user_id = ?` filter → `OwnerField`
+- a `WHERE user_id = ?` filter → `Scope.OwnerField`
 - a pagination/sort/filter query string parser → `framework/filter`,
   `framework/pagination`, `framework/dsl`
 - a password hash and session cookie → `battery/auth`
@@ -101,7 +108,7 @@ an app ends up with a bug the framework would have prevented:
 
 - **Reading topic docs before this page.** They are references, not
   orientation. Land on the row first, then open the one link it points at.
-- **Hand-writing a filter for per-user data.** `OwnerField` is enforced on
+- **Hand-writing a filter for per-user data.** `Scope.OwnerField` is enforced on
   every generated surface — REST, batch, MCP, includes. A hand-written `WHERE`
   covers the one handler you remembered. `gofastr verify data` flags the gap.
 - **Trusting `paths` in a stale mental model of the spec.** Under

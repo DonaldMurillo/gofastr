@@ -37,7 +37,7 @@ func TestDBQueue_NackBackoffDelaysRetry(t *testing.T) {
 	q.Enqueue(ctx, Job{Type: "x", MaxAttempts: 3})
 	job, _ := q.Dequeue(ctx) // attempts now = 1
 	before := time.Now().UTC()
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("nack: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func TestDBQueue_NackBackoffCapped(t *testing.T) {
 	q.Enqueue(ctx, Job{Type: "x", Attempts: 20, MaxAttempts: 100})
 	job, _ := q.Dequeue(ctx) // attempts now = 21
 	before := time.Now().UTC()
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("nack: %v", err)
 	}
 	var sched time.Time
@@ -85,7 +85,7 @@ func TestDBQueue_NackNoBackoffByDefault(t *testing.T) {
 
 	q.Enqueue(ctx, Job{Type: "x", MaxAttempts: 3})
 	job1, _ := q.Dequeue(ctx)
-	if err := q.Nack(ctx, job1.ID); err != nil {
+	if err := q.Nack(ctx, job1); err != nil {
 		t.Fatalf("nack: %v", err)
 	}
 	job2, err := q.Dequeue(ctx)
@@ -111,7 +111,7 @@ func TestMemoryQueue_NackReEnqueues(t *testing.T) {
 		t.Fatalf("dequeue: %v", err)
 	}
 
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("nack: %v", err)
 	}
 
@@ -141,7 +141,7 @@ func TestMemoryQueue_NackExhaustedDropsJob(t *testing.T) {
 		t.Fatalf("dequeue: %v", err)
 	}
 	// attempts will become 3 == max on nack → not re-enqueued.
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("nack: %v", err)
 	}
 	if _, err := q.Dequeue(ctx); !errors.Is(err, ErrNoJob) {

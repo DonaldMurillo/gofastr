@@ -308,6 +308,8 @@ sqlite3 notes.db "UPDATE auth_users SET roles='[\"admin\"]' WHERE email='ana@exa
 Add a hand-written screen in a new file at the root — same package, same
 `Screen` interface the generated ones implement:
 
+<!-- gofastr:compile
+-->
 ```go
 // about.go — your own file, package main, alongside the generated ones.
 package main

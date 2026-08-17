@@ -145,7 +145,7 @@ nav:
 screens:
   - name: home
     route: /
-    title: Blog — Home
+    title: Home
     description: Blog homepage
     body:
       - type: heading
@@ -275,8 +275,8 @@ seed:
   - entity: comments
     rows:
       - body: Great introduction! Really helpful for getting started.
-        post_id: 1
+        post_id: "@posts.title=Getting Started with GoFastr"
       - body: The YAML entity system is so clean. Love it!
-        post_id: 1
+        post_id: "@posts.title=Getting Started with GoFastr"
       - body: Can you add a tutorial on authentication next?
-        post_id: 2
+        post_id: "@posts.title=Building Your First Entity"

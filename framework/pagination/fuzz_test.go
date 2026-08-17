@@ -3,9 +3,12 @@ package pagination
 import "testing"
 
 // FuzzDecodeMultiCursor verifies the decoder never panics on a malformed
-// cursor and, on success, control-scrubs every decoded column name and
-// value — those names/values feed ORDER BY and the WHERE tuple, so a
-// surviving C0 control byte is a query-shaping primitive (#185 scrub).
+// cursor and, on success, control-scrubs every decoded column NAME —
+// names feed ORDER BY / allow-lists, so a surviving C0 control byte is a
+// query-shaping primitive (#185 scrub). VALUES are deliberately not
+// scrubbed: they are bound SQL args compared against stored data, and
+// scrubbing them breaks the keyset round-trip for any sort key that
+// legitimately contains a control byte (see DecodeCursor).
 func FuzzDecodeMultiCursor(f *testing.F) {
 	for _, s := range []string{
 		"", "not-base64!!", "eyJmaWVsZHMiOltdfQ==",
@@ -24,11 +27,6 @@ func FuzzDecodeMultiCursor(f *testing.F) {
 			for _, r := range fld.Name {
 				if r < 0x20 || r == 0x7f {
 					t.Fatalf("decoded name retains control %#x: %q", r, fld.Name)
-				}
-			}
-			for _, r := range fld.Value {
-				if r < 0x20 || r == 0x7f {
-					t.Fatalf("decoded value retains control %#x: %q", r, fld.Value)
 				}
 			}
 		}

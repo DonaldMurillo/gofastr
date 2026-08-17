@@ -59,6 +59,8 @@ Both consult the same evaluator.
 
 ## Flag rules
 
+<!-- gofastr:compile
+-->
 ```go
 type Flag struct {
     Key     string
@@ -79,10 +81,14 @@ Evaluation order:
 5. `Rollout` percentage of the stable hash → on or off.
 
 The hash is FNV-1a over `key + 0x00 + subjectID`. Subject id is the
-user id when present, otherwise the tenant id, otherwise empty (which
-hashes to a single deterministic bucket per flag key — anonymous traffic
-is therefore binary on-or-off per key at any rollout < 100%; choose
-allow-list gating for anonymous-sensitive flags).
+user id when present, otherwise the tenant id, otherwise empty. An
+empty subject is forced off at any partial rollout (1–99): anonymous
+traffic hashes to a single constant bucket per flag key, so a "50%
+rollout" would be 100% or 0% of anonymous traffic depending on the
+key. Apps that want anonymous traffic in a rollout derive a stable
+pseudo-subject (session, request signature) and put it in
+`EvalContext.UserID`; for anonymous-sensitive flags, use allow-list
+gating.
 
 The `Envs` filter is the **outermost** rule: even a user that appears
 in the `Users` allow list does not see the flag if their request's

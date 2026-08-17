@@ -93,9 +93,9 @@ for {
         continue
     }
     if err := handle(ctx, job); err != nil {
-        _ = q.Nack(ctx, job.ID)
+        _ = q.Nack(ctx, job)
     } else {
-        _ = q.Ack(ctx, job.ID)
+        _ = q.Ack(ctx, job)
     }
 }
 ```
@@ -106,6 +106,10 @@ Dequeue/Ack/Nack yourself, or integrate with a third-party pool. Call
 
 ## Job struct
 
+<!-- gofastr:compile
+import "encoding/json"
+import "time"
+-->
 ```go
 type Job struct {
     ID          string          // auto-filled by Enqueue if empty
@@ -179,6 +183,10 @@ eligible again (next `Dequeue` can pick it up).
 
 `WithBackoff(base, max)` turns on exponential backoff for `DBQueue`:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+import "time"
+-->
 ```go
 queue.WithBackoff(5*time.Second, 5*time.Minute)
 ```

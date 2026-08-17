@@ -192,8 +192,12 @@ Two stores are bundled:
   - `WithSQLSubscribersTable(name)` / `WithSQLDeliveriesTable(name)`
     — override table names.
   - `WithSQLSecretCodec(codec)` — encrypt subscriber secrets at rest
-    (see Secret encryption below). Default is `NoopSecretCodec`
-    (plaintext).
+    (see Secret encryption below).
+  - `WithSQLAllowPlaintext()` — opt into plaintext storage
+    (`NoopSecretCodec`).
+
+`NewSQLStore` fails closed: given neither option it returns an error
+rather than silently storing subscriber secrets in cleartext.
 
 Both bundled stores implement the optional `LeasedStore` interface:
 

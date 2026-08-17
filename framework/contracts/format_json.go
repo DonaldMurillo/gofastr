@@ -276,7 +276,7 @@ func FormatSARIF(r *Report, version string) ([]byte, error) {
 			Tool: sarifTool{Driver: sarifDriver{
 				Name:           "gofastr verify",
 				Version:        version,
-				InformationURI: "https://gofastr.dev/docs/contracts",
+				InformationURI: docBaseURL + "contracts",
 				Rules:          rules,
 			}},
 			OriginalUriBaseIds: map[string]sarifUriBase{

@@ -22,6 +22,15 @@ import (
 // through a temp file.
 const MaxMultipartMemory = 32 << 20 // 32 MiB
 
+// MaxMultipartBodyBytes caps the total wire size of a multipart request
+// accepted by the CRUD write handlers. MaxMultipartMemory above is the
+// in-RAM spill threshold, not a body cap — without a wire cap a hostile
+// client can stream an unbounded body into parser temp files (and, via
+// non-file form values, straight into memory). 64 MiB leaves headroom
+// over the 32 MiB per-file ProcessFileField cap for framing and form
+// fields. Requests over the cap are rejected 413.
+const MaxMultipartBodyBytes int64 = 64 << 20 // 64 MiB
+
 // MaxJSONBodyBytes caps the size of a JSON request body the CRUD handlers
 // will read. 1 MiB is large enough for any realistic single record or
 // batch envelope, while bounding the memory an unauthenticated caller can
@@ -41,9 +50,15 @@ var errUnsupportedMediaType = errors.New("unsupported media type")
 var errBodyTooLarge = errors.New("request body too large")
 
 // isMultipart reports whether the request carries a multipart/form-data body.
+// Parsed with mime.ParseMediaType — media types are case-insensitive
+// (RFC 9110 §8.3.1) and lowercased by the parser — so this agrees with
+// enforceJSONContentType for a header like `Multipart/Form-Data; …`. A
+// case-sensitive prefix check here let such a request through the gate
+// but not the multipart branch, so the JSON 1 MiB body cap applied and
+// >1 MiB uploads failed with a bogus 400.
 func isMultipart(r *http.Request) bool {
-	ct := r.Header.Get("Content-Type")
-	return strings.HasPrefix(ct, "multipart/form-data")
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mediaType == "multipart/form-data"
 }
 
 // enforceJSONContentType refuses requests whose Content-Type isn't either
@@ -66,6 +81,22 @@ func enforceJSONContentType(r *http.Request) error {
 		return nil
 	}
 	return errUnsupportedMediaType
+}
+
+// limitRequestBody wraps r.Body with the http.MaxBytesReader matching the
+// request's Content-Type: JSON bodies cap at MaxJSONBodyBytes, multipart
+// bodies at MaxMultipartBodyBytes. One cap for both would break whichever
+// side it doesn't fit — a JSON-sized cap rejects every multipart upload
+// above 1 MiB (multipart framing plus file parts dwarf a JSON record), and
+// a multipart-sized cap would let unauthenticated callers pin ~64 MiB of
+// parser memory with a JSON body. Callers map the resulting
+// errBodyTooLarge to 413.
+func limitRequestBody(w http.ResponseWriter, r *http.Request) {
+	if isMultipart(r) {
+		r.Body = http.MaxBytesReader(w, r.Body, MaxMultipartBodyBytes)
+		return
+	}
+	limitJSONBody(w, r)
 }
 
 // limitJSONBody wraps r.Body with http.MaxBytesReader so JSON decoding
@@ -103,7 +134,7 @@ func decodeJSONBody(r *http.Request, v any) error {
 // schema's field names regardless of the wire casing.
 //
 // Pre-condition: the caller has already validated Content-Type via
-// enforceJSONContentType and (for JSON) wrapped r.Body with limitJSONBody.
+// enforceJSONContentType and wrapped r.Body with limitRequestBody.
 func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, error) {
 	if isMultipart(r) {
 		return ch.parseMultipartBody(r)
@@ -122,9 +153,17 @@ func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, error) 
 // by name with type coercion driven by the schema (Int/Float/Bool).
 //
 // The handler must have Storage set; otherwise the function errors. Callers
-// should validate Content-Type with isMultipart first.
+// should validate Content-Type with isMultipart first and wrap r.Body with
+// limitRequestBody so the multipart wire cap applies.
 func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, error) {
 	if err := r.ParseMultipartForm(MaxMultipartMemory); err != nil {
+		// An over-cap body is a size problem, not a malformed request:
+		// map it to errBodyTooLarge so callers answer 413 (matching the
+		// JSON path) instead of a 400 the client would retry verbatim.
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) || strings.Contains(err.Error(), "request body too large") {
+			return nil, errBodyTooLarge
+		}
 		return nil, fmt.Errorf("parse multipart: %w", err)
 	}
 

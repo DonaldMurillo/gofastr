@@ -79,7 +79,7 @@ func TestRedisReplayMovesDLQJobToQueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dequeue: %v", err)
 	}
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("Nack: %v", err)
 	}
 

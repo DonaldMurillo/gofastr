@@ -21,6 +21,15 @@ type Job struct {
 	MaxAttempts  int             `json:"max_attempts"`
 	CreatedAt    time.Time       `json:"created_at"`
 	ScheduledAt  time.Time       `json:"scheduled_at"`
+
+	// ClaimToken is minted by Dequeue per claim and identifies THAT claim,
+	// not just the job. Backends that lease work to possibly-stale workers
+	// (RedisQueue) verify it on Ack/Nack: a completion presented for a claim
+	// that is no longer current — e.g. a worker whose visibility timeout
+	// expired and whose job was re-claimed by another worker — is a fenced
+	// no-op instead of mutating the current claimant's lease. Empty for jobs
+	// that have never been claimed (and on backends without lease fencing).
+	ClaimToken string `json:"claim_token,omitempty"`
 }
 
 // Handler processes a job. Return a non-nil error to trigger a retry.
@@ -32,10 +41,14 @@ type Queue interface {
 	Enqueue(ctx context.Context, job Job) error
 	// Dequeue retrieves and removes the next available job, optionally filtered by type.
 	Dequeue(ctx context.Context, types ...string) (Job, error)
-	// Ack confirms successful processing of a job.
-	Ack(ctx context.Context, jobID string) error
-	// Nack marks a job as failed and triggers retry logic.
-	Nack(ctx context.Context, jobID string) error
+	// Ack confirms successful processing of the claimed job. Backends with
+	// lease fencing (RedisQueue) verify Job.ClaimToken and treat a stale
+	// claim's Ack as a no-op.
+	Ack(ctx context.Context, job Job) error
+	// Nack marks a claimed job as failed and triggers retry logic. Backends
+	// with lease fencing (RedisQueue) verify Job.ClaimToken and treat a
+	// stale claim's Nack as a no-op.
+	Nack(ctx context.Context, job Job) error
 	// Close gracefully shuts down the queue, draining in-progress work.
 	Close() error
 }

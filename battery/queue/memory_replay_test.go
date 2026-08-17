@@ -20,7 +20,7 @@ func driveToFailure(t *testing.T, q *MemoryQueue) string {
 	if err != nil {
 		t.Fatalf("dequeue: %v", err)
 	}
-	if err := q.Nack(ctx, job.ID); err != nil { // attempts -> 1 >= max -> terminal
+	if err := q.Nack(ctx, job); err != nil { // attempts -> 1 >= max -> terminal
 		t.Fatalf("nack: %v", err)
 	}
 	return job.ID

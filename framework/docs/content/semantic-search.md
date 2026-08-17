@@ -253,6 +253,12 @@ Two are wired:
 
 For anything else (OpenAI Embeddings API, a private microservice, a CGO-bound model), implement the three-method `Embedder` interface and pass it via `Options.Embedder`. The rest of the package is embedder-agnostic.
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/semantic"
+import "context"
+var ctx = context.Background()
+import "log"
+-->
 ```go
 // Swap from stub to Ollama:
 embedder := semantic.NewOllamaEmbedder(semantic.OllamaConfig{

@@ -22,6 +22,10 @@ app := framework.NewApp(
 
 ## The Storage interface
 
+<!-- gofastr:compile
+import "context"
+import "io"
+-->
 ```go
 type Storage interface {
 	Save(ctx context.Context, key string, r io.Reader) error
@@ -39,6 +43,10 @@ rewrite the key.
 
 ## Local backend
 
+<!-- gofastr:compile
+stmt: _ = store
+import "github.com/DonaldMurillo/gofastr/battery/storage"
+-->
 ```go
 store := storage.NewLocalStorage("./uploads",
 	storage.WithPermissions(0o644),

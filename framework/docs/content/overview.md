@@ -25,6 +25,11 @@ GoFastr is two layers, and you can work at either one.
 query, schema, render, mcp, openapi (core); HTML primitives, signals, the
 runtime (core-ui). Each works on its own, no framework required:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core/router"
+import "github.com/DonaldMurillo/gofastr/core/render"
+import "net/http"
+-->
 ```go
 // core only — a router and a handler.
 r := router.New()
@@ -39,6 +44,12 @@ primitives. Declare an entity and the framework wires them together for you — 
 migrated table, a REST API with filtering/sorting/pagination, MCP tools, and an
 OpenAPI spec:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+import "database/sql"
+var db *sql.DB
+import "github.com/DonaldMurillo/gofastr/core/schema"
+-->
 ```go
 // framework — one entity, wired end to end.
 app := framework.NewApp(framework.WithDB(db))

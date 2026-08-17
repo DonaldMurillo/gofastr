@@ -38,7 +38,7 @@ func TestRedisBrowsable_ListJobsAndStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dequeue: %v", err)
 	}
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("Nack: %v", err)
 	}
 
@@ -73,7 +73,7 @@ func TestRedisBrowsable_ListJobsLimit(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		_ = q.Enqueue(ctx, Job{ID: "dead-lim-" + string(rune('a'+i)), Type: "x", MaxAttempts: 1})
 		job, _ := q.Dequeue(ctx)
-		_ = q.Nack(ctx, job.ID)
+		_ = q.Nack(ctx, job)
 	}
 
 	// Limit to 3.
@@ -94,7 +94,7 @@ func TestRedisBrowsable_ListJobsAllStatus(t *testing.T) {
 	// Drive a job to DLQ.
 	_ = q.Enqueue(ctx, Job{ID: "dead-all", Type: "x", MaxAttempts: 1})
 	job, _ := q.Dequeue(ctx)
-	_ = q.Nack(ctx, job.ID)
+	_ = q.Nack(ctx, job)
 
 	// Passing empty status should return same as "failed" for Redis (dead list).
 	jobs, err := q.ListJobs(ctx, "", 10)
@@ -115,8 +115,8 @@ func (f *failQueue) Enqueue(_ context.Context, _ Job) error {
 	return ErrQueueClosed
 }
 func (f *failQueue) Dequeue(_ context.Context, _ ...string) (Job, error) { return Job{}, ErrNoJob }
-func (f *failQueue) Ack(_ context.Context, _ string) error               { return nil }
-func (f *failQueue) Nack(_ context.Context, _ string) error              { return nil }
+func (f *failQueue) Ack(_ context.Context, _ Job) error                  { return nil }
+func (f *failQueue) Nack(_ context.Context, _ Job) error                 { return nil }
 func (f *failQueue) Close() error                                        { return nil }
 
 // slogCapture captures slog records for assertions.

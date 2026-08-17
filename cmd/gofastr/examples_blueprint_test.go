@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestExampleBlueprintsLoad validates every examples/<name>/gofastr.yml parses
@@ -84,9 +88,121 @@ func TestExampleBlueprintsGenerateAndCompile(t *testing.T) {
 	}
 }
 
+// TestExampleBlueprintsBoot is the top rung of the blueprint ladder:
+// load → generate → compile → START the binary and serve. Compile-only
+// was not enough: the blog blueprint rotted for a whole release while
+// passing all three lower rungs — its seed seeded `post_id: 1` into a
+// UUID relation column, an app that builds cleanly and dies at boot
+// ("seed hooks: seed comments: validation failed"). Nothing below the
+// boot rung can see a runtime failure, so this test is the gate that
+// would have caught it.
+//
+// Failure modes asserted: non-zero exit before serving (the seed-death
+// class), failure to bind/serve within the deadline, and error output on
+// the way down. The child runs in its own process group and is killed by
+// tree even when the test fails mid-flight, so no app leaks past the run
+// (CI-safe on Linux and macOS via configureTestProcessGroup).
+func TestExampleBlueprintsBoot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("generates, compiles, and boots every example blueprint; skipped under -short")
+	}
+	for _, path := range exampleBlueprints(t) {
+		path := path
+		name := filepath.Base(filepath.Dir(path))
+		t.Run(name, func(t *testing.T) {
+			bin, appDir := generateAndCompileBlueprint(t, path, name)
+			bootGeneratedApp(t, name, bin, appDir)
+		})
+	}
+}
+
+// bootProbeClient bounds every readiness probe in bootGeneratedApp. A raw
+// http.Get has no timeout: an app that accepts the connection but never
+// responds would block the probe forever and the 90s deadline below would
+// never fire. Five seconds is generous for a first response and well under
+// the deadline, so each hung attempt costs one bounded retry, not the gate.
+var bootProbeClient = &http.Client{Timeout: 5 * time.Second}
+
+// bootGeneratedApp starts a generated app binary on a free port and waits
+// for it to serve. A process that exits first (seed validation, failed
+// migration, refused bind) fails immediately with its captured output —
+// faster than burning the whole HTTP deadline, and the output is the
+// diagnostic that matters.
+func bootGeneratedApp(t *testing.T, name, bin, appDir string) {
+	t.Helper()
+	addr := freeAddr(t)
+	cmd := exec.Command(testExecutablePath(bin))
+	cmd.Dir = appDir
+	cmd.Env = append(os.Environ(),
+		"PORT="+addr,
+		// Scratch-scoped DB file: the scratch dir's cleanup removes it, so
+		// repeated runs never inherit a stale, already-seeded database.
+		"DATABASE_URL=file:"+filepath.Join(appDir, "boot-gate.db"),
+	)
+	configureTestProcessGroup(cmd)
+	output := &bytes.Buffer{}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start generated %s app: %v", name, err)
+	}
+	t.Cleanup(func() {
+		_ = killTestProcessTree(cmd)
+		_, _ = cmd.Process.Wait()
+	})
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+
+	baseURL := "http://" + addr
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-exited:
+			t.Fatalf("generated %s app exited before serving (err=%v):\n%s", name, err, output.String())
+		default:
+		}
+		resp, err := bootProbeClient.Get(baseURL + "/")
+		if err == nil {
+			resp.Body.Close()
+			// Any non-server-error answer proves the app is up and routing —
+			// auth-gated apps answer 302/401 on /, a screen-less one 404.
+			if resp.StatusCode < 500 {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("generated %s app did not serve at %s within 90s:\n%s", name, baseURL, output.String())
+}
+
+// TestBootProbeClientTimesOut pins the readiness probe's timeout: a
+// generated app that accepts the connection but never responds must fail
+// the probe (and let the 90s deadline fire) rather than hanging the test
+// forever on an unbounded http.Get.
+func TestBootProbeClientTimesOut(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release // accepts, never responds
+	}))
+	defer srv.Close()
+	defer close(release)
+	start := time.Now()
+	resp, err := bootProbeClient.Get(srv.URL)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("probe returned no error against a hung server — timeout is not bounded")
+	}
+	if elapsed := time.Since(start); elapsed >= 10*time.Second {
+		t.Fatalf("probe took %s against a hung server — the boot gate would never reach its deadline", elapsed)
+	}
+}
+
 // generateAndCompileBlueprint generates one blueprint into a scratch package
-// beside it and compiles every package it emitted.
-func generateAndCompileBlueprint(t *testing.T, blueprintPath, name string) {
+// beside it, compiles every package it emitted, and returns the built app
+// binary plus the directory it should run from (output_dir aware).
+func generateAndCompileBlueprint(t *testing.T, blueprintPath, name string) (string, string) {
 	t.Helper()
 
 	exampleDir := filepath.Dir(blueprintPath)
@@ -161,6 +277,7 @@ func generateAndCompileBlueprint(t *testing.T, blueprintPath, name string) {
 	if out, err := vet.CombinedOutput(); err != nil {
 		t.Fatalf("generated code fails go vet for %s:\n%s", blueprintPath, out)
 	}
+	return bin, appDir
 }
 
 // blueprintOutputDir extracts an uncommented `output_dir:` from a blueprint.

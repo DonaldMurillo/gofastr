@@ -2,12 +2,15 @@ package upload
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -24,6 +27,41 @@ const maxMultipartMemory = 1 << 20 // 1 MiB
 // other framing bytes don't push a legitimately-sized file part over
 // the body cap and trigger a spurious 413.
 const multipartFramingSlack = 4 << 10 // 4 KiB
+
+// UniqueFilename derives a collision-proof storage name from a client
+// filename: the sanitized base name, a UnixNano timestamp, and 16 hex
+// chars of crypto/rand. The random component is the real uniqueness
+// guarantee — the timestamp is retained only for human-readable
+// ordering, because two requests landing on the same clock tick must
+// still map to different objects (Storage.Save implementations open
+// with O_TRUNC, so a colliding key silently overwrites). This is the
+// single unique-key generator the framework's upload surfaces share —
+// framework/file.GenerateFilePath builds its entity/field-scoped paths
+// on top of it; do not grow a second scheme.
+//
+// There is no error return: crypto/rand.Read cannot fail (see
+// randomSuffix), so the random component is always present.
+func UniqueFilename(filename string) string {
+	safe := SanitizeFilename(filename)
+	ext := filepath.Ext(safe)
+	name := strings.TrimSuffix(safe, ext)
+	if name == "" {
+		name = "upload"
+	}
+	return fmt.Sprintf("%s_%d_%s%s", name, time.Now().UnixNano(), randomSuffix(), ext)
+}
+
+// randomSuffix returns a hex-encoded 8-byte crypto-random token. It has no
+// error path because crypto/rand.Read has none: it "never returns an
+// error, and always fills b entirely", crashing the program irrecoverably
+// if the OS source fails. So there is no reachable state where the suffix
+// is missing and two requests on the same clock tick could collide into an
+// O_TRUNC clobber — which is the whole reason the suffix exists.
+func randomSuffix() string {
+	var b [8]byte
+	rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
 
 // Storage defines the interface for file storage backends.
 type Storage interface {
@@ -127,12 +165,13 @@ func Handler(cfg Config) http.HandlerFunc {
 			return
 		}
 
-		// Sanitize filename for storage key
-		safeName := SanitizeFilename(header.Filename)
-		key := safeName
-		if key == "" {
-			key = fmt.Sprintf("upload_%d", time.Now().UnixNano())
-		}
+		// Storage key: the sanitized filename PLUS a unique timestamp/rand
+		// component. The bare sanitized filename keyed objects per-client-
+		// name, and Storage.Save implementations open O_TRUNC — two users
+		// uploading report.txt silently overwrote each other. UniqueFilename
+		// is the same generator the auto-CRUD path builds on
+		// (framework/file.GenerateFilePath).
+		key := UniqueFilename(header.Filename)
 
 		// Save via storage backend
 		if err := cfg.Storage.Save(r.Context(), key, file); err != nil {

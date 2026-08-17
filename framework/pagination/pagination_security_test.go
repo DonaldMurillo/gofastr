@@ -123,7 +123,16 @@ func TestDecodeMultiCursor_StripsNULFromFieldNames(t *testing.T) {
 	}
 }
 
-func TestDecodeCursor_StripsNewlinesFromValue(t *testing.T) {
+// TestDecodeCursor_ValueIsBoundDataNotSanitized: cursor values are
+// compared against the database as bound SQL args — never interpolated
+// into SQL, headers, or logs — so they are decoded verbatim. Stripping
+// control bytes there broke the keyset round-trip: a row whose sort key
+// contains a newline (or a zero-width codepoint) resumed paging BEFORE
+// itself and was served twice. Field names stay stripped; values are
+// data. Round-trip fidelity is pinned in cursor_fidelity_test.go; this
+// test pins that the newline specifically — the classic header/log
+// injection byte — survives because it is inert as a bind arg.
+func TestDecodeCursor_ValueIsBoundDataNotSanitized(t *testing.T) {
 	t.Parallel()
 	cursor := EncodeCursor("id", "42\nadmin")
 
@@ -131,12 +140,15 @@ func TestDecodeCursor_StripsNewlinesFromValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeCursor: %v", err)
 	}
-	if value != "42admin" {
-		t.Fatalf("SECURITY: [pagination] DecodeCursor retained newline-bearing value %q. Attack: cursor-value poisoning into downstream predicates or logs.", value)
+	if value != "42\nadmin" {
+		t.Fatalf("DecodeCursor mutated the value %q — keyset values are bound args and must round-trip verbatim", value)
 	}
 }
 
-func TestDecodeMultiCursor_StripsNewlinesFromValues(t *testing.T) {
+// TestDecodeMultiCursor_ValueIsBoundDataNotSanitized: same contract as
+// above for the composite encoding — the value half feeds a tuple
+// comparison as bind args, so it decodes verbatim.
+func TestDecodeMultiCursor_ValueIsBoundDataNotSanitized(t *testing.T) {
 	t.Parallel()
 	raw, err := json.Marshal(multiCursorToken{
 		Fields: []multiCursorField{{Name: "id", Value: "42\nadmin"}},
@@ -149,7 +161,7 @@ func TestDecodeMultiCursor_StripsNewlinesFromValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeMultiCursor: %v", err)
 	}
-	if fields[0].Value != "42admin" {
-		t.Fatalf("SECURITY: [pagination] DecodeMultiCursor retained newline-bearing value %q. Attack: multi-column cursor-value poisoning.", fields[0].Value)
+	if fields[0].Value != "42\nadmin" {
+		t.Fatalf("DecodeMultiCursor mutated the value %q — keyset values are bound args and must round-trip verbatim", fields[0].Value)
 	}
 }

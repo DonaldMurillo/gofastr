@@ -355,17 +355,16 @@ func (m *mockRedis) HSet(_ context.Context, key string, values ...interface{}) e
 	}
 	return nil
 }
-
 func (m *mockRedis) HGet(_ context.Context, key, field string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.hashes[key]
 	if !ok {
-		return "", fmt.Errorf("hash not found")
+		return "", ErrRedisEmpty
 	}
 	v, ok := h[field]
 	if !ok {
-		return "", fmt.Errorf("field not found")
+		return "", ErrRedisEmpty
 	}
 	return v, nil
 }
@@ -458,7 +457,7 @@ func TestRedisAckRemovesOneJob(t *testing.T) {
 	}
 
 	// Ack only job1.
-	if err := q.Ack(ctx, job1.ID); err != nil {
+	if err := q.Ack(ctx, job1); err != nil {
 		t.Fatalf("Ack job1: %v", err)
 	}
 
@@ -495,7 +494,7 @@ func TestRedisNackRetries(t *testing.T) {
 	}
 
 	// Nack — should re-enqueue with incremented attempts.
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("Nack: %v", err)
 	}
 
@@ -532,7 +531,7 @@ func TestRedisNackMovesToDLQ(t *testing.T) {
 	}
 
 	// Nack — MaxAttempts=1 so it should go to DLQ.
-	if err := q.Nack(ctx, job.ID); err != nil {
+	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("Nack: %v", err)
 	}
 

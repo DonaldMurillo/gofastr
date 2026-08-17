@@ -473,8 +473,8 @@ func randomID() string {
 // Ack confirms a manually-dequeued job is done, discarding any tracked
 // in-flight copy. For jobs processed by the automatic worker pool it is a
 // no-op (those are auto-acknowledged after successful handler execution).
-func (q *MemoryQueue) Ack(_ context.Context, jobID string) error {
-	q.takeInflight(jobID)
+func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
+	q.takeInflight(job.ID)
 	return nil
 }
 
@@ -483,20 +483,20 @@ func (q *MemoryQueue) Ack(_ context.Context, jobID string) error {
 // The job must have been handed out by Dequeue (the in-flight set is consulted
 // by ID). Jobs processed by the automatic worker pool retry internally and are
 // never in the in-flight set; calling Nack for one is a harmless no-op.
-func (q *MemoryQueue) Nack(ctx context.Context, jobID string) error {
-	job, ok := q.takeInflight(jobID)
+func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
+	stored, ok := q.takeInflight(job.ID)
 	if !ok {
 		// Unknown job (auto-pool retry, or already acked) — nothing to requeue.
 		return nil
 	}
-	job.Attempts++
-	if job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts {
+	stored.Attempts++
+	if stored.MaxAttempts > 0 && stored.Attempts >= stored.MaxAttempts {
 		// Retries exhausted — retain as terminally-failed (inspectable via
 		// ListJobs/Stats and re-queuable via Replay) rather than dropping it.
-		q.retainDead(job)
+		q.retainDead(stored)
 		return nil
 	}
-	return q.Enqueue(ctx, job)
+	return q.Enqueue(ctx, stored)
 }
 
 // retainDead stores a terminally-failed job in the bounded dead-letter set.

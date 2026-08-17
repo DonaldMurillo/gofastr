@@ -23,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
+	fwpagination "github.com/DonaldMurillo/gofastr/framework/pagination"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -363,7 +364,7 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 		total, _ = c.Crud.CountAll(ctx, crud.ListOptions{Filters: filters})
 	}
 	// WithReadHooks: these rows are rendered to an end user.
-	rows, err := c.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
+	rows, err := c.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: fwpagination.OffsetForPage(page, limit)})
 	if err != nil {
 		return ui.Callout(ui.CalloutConfig{Title: "Couldn't load " + c.Title, Variant: ui.StatusDanger}, render.Text("See server logs."))
 	}

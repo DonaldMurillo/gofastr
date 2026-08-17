@@ -39,8 +39,11 @@ curl -X POST http://localhost:8080/users \
 
 The framework:
 
-1. Parses the multipart form (up to `MaxMultipartMemory = 32 MiB` in
-   memory, spills the rest to temp files).
+1. Rejects the request `413` if the body exceeds
+   `crud.MaxMultipartBodyBytes = 64 MiB`, then parses the multipart form
+   (up to `MaxMultipartMemory = 32 MiB` in memory, spills the rest to
+   temp files). The two limits are different things: the first caps the
+   wire body, the second is only the in-RAM spill threshold.
 2. Coerces non-file values to the schema field's Go type
    (`Int` → `int64`, `Bool` → `bool`, etc.).
 3. Streams each file part matching an `Image`/`File` field through
@@ -66,12 +69,18 @@ Every key is **camelCase**, like the rest of the framework:
   "size": 11,
   "mimeType": "text/plain; charset=utf-8",
   "uploadedAt": "2026-07-30T18:04:07.567319Z",
-  "key": "report.txt" }
+  "key": "report_1786943913322678000_bcdc0d8ff1d03054.txt" }
 ```
 
 `mimeType` is the content type sniffed from the bytes (never the
-attacker-controlled multipart header), and `key` is the sanitized storage
-key the backend wrote the file under.
+attacker-controlled multipart header), and `key` is the storage key the
+backend wrote the file under.
+
+The key is not the client's filename. `upload.UniqueFilename` sanitizes
+the name and appends a nanosecond timestamp and 8 random bytes, so two
+users uploading `report.txt` get two objects instead of the second
+silently overwriting the first. Read `key` from the response — do not
+reconstruct it from `originalName`.
 
 ## Field-name casing
 
@@ -216,6 +225,11 @@ concrete type. `imagefield` is one implementation; implement the interface
 directly to crop to a focal point, watermark, push to a CDN, or name keys
 your own way:
 
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/core/upload"
+import "github.com/DonaldMurillo/gofastr/framework/file"
+-->
 ```go
 type ImageDeriver interface {
     DeriveImage(ctx context.Context, store upload.Storage,
@@ -363,6 +377,10 @@ filename can't force unbounded pre-truncation work (DoS).
 
 `upload.Storage` is the interface:
 
+<!-- gofastr:compile
+import "context"
+import "io"
+-->
 ```go
 type Storage interface {
     Save(ctx context.Context, key string, r io.Reader) error
@@ -412,6 +430,10 @@ echoes no filesystem path on any error.
 `http.ServeContent` needs an `io.ReadSeeker` to answer a `Range:` header.
 Backends that hold their bytes locally declare the capability instead:
 
+<!-- gofastr:compile
+import "context"
+import "io"
+-->
 ```go
 type RangeGetter interface {
     GetRange(ctx context.Context, key string) (io.ReadSeekCloser, error)

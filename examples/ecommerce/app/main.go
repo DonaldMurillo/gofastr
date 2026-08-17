@@ -3,16 +3,19 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -82,10 +85,10 @@ func main() {
 			if n > 0 {
 				continue
 			}
-			for _, row := range s.Rows {
+			for i, row := range s.Rows {
 				resolveSeedRefs(ctx, fwApp, row)
 				if _, err := ch.CreateOne(ctx, row); err != nil {
-					return fmt.Errorf("seed %s: %w", s.Entity, err)
+					return seedCreateError(s.Entity, i+1, err)
 				}
 			}
 		}
@@ -190,4 +193,33 @@ func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]a
 			row[k] = id
 		}
 	}
+}
+
+// seedCreateError renders a failed seed insert with the per-field detail
+// the CRUD validator already computed. ValidationError.Error() is the
+// bare string "validation failed" — the messages worth reading live in
+// Fields() — so a plain %w would abort the boot with zero actionable
+// information. Unwrap, print every field message (sorted, so the output
+// is stable), and name the row by its one-based position in the
+// blueprint's seed: block. The position — never a row value — is the
+// label: this error aborts boot through log.Fatal, so its text lands
+// in application logs, and seed rows carry admin emails and passwords.
+func seedCreateError(entity string, index int, err error) error {
+	var ve *crud.ValidationError
+	if !errors.As(err, &ve) || len(ve.Fields()) == 0 {
+		return fmt.Errorf("seed %s: %w", entity, err)
+	}
+	names := make([]string, 0, len(ve.Fields()))
+	for name := range ve.Fields() {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	fmt.Fprintf(&b, "seed %s row %d failed validation:", entity, index)
+	for _, name := range names {
+		for _, msg := range ve.Fields()[name] {
+			fmt.Fprintf(&b, "\n  - %s: %s", name, msg)
+		}
+	}
+	return fmt.Errorf("%s\ncause: %w", b.String(), err)
 }

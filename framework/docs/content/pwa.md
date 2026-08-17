@@ -98,15 +98,18 @@ The generated worker is deliberately conservative:
   with `DenyPaths` (blueprint-generated apps do this automatically for
   a custom `api_prefix` / auth `base_path`).
 - **Cache names are versioned deterministically.** The name is
-  `gofastr-pwa-<app-slug>-<fingerprint>` where the fingerprint hashes
+  `gofastr-pwa-<slug>.<name-hash>.<fingerprint>` — `<name-hash>` is
+  12 hex chars derived from the app name, and the fingerprint hashes
   the manifest, the precache URL list, the shell asset bodies, and the
   bytes of every precache entry served from the host's static
   storage — swapping an icon in place rotates the version. A new
   deployment installs a fresh cache; on activation the worker deletes
-  only obsolete caches carrying this app's `gofastr-pwa-<app-slug>-`
-  prefix. (An asset served from outside static storage — a reverse
-  proxy, say — contributes only its URL; give it a new path or query
-  when it changes.)
+  only obsolete caches carrying this app's
+  `gofastr-pwa-<slug>.<name-hash>.` prefix, and reaps leftover
+  `gofastr-pwa-<slug>-<hex>` caches from the older dashed naming.
+  (An asset served from outside static storage — a reverse proxy,
+  say — contributes only its URL; give it a new path or query when it
+  changes.)
 
 ## Static exports: the full-site worker
 

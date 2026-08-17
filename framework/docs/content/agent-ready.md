@@ -56,6 +56,9 @@ enables markdown content negotiation when `WithMarkdownNegotiation` is added.
 
 ### `/llms.txt` — curated markdown index  (llmstxt.org)
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/uihost"
+-->
 ```go
 uihost.WithLLMsTxt("Acme", "A billing console.",
 	[]uihost.LLMsTxtSection{
@@ -95,9 +98,10 @@ uihost.WithAgentReady(uihost.AgentReadyConfig{
 
 The content is served verbatim as `text/plain`. Nothing links it
 automatically — add a `Sections` entry pointing at `/llms-full.txt` so
-agents reading the index can find it. gofastr.dev does exactly this:
-its `/llms.txt` indexes every embedded framework doc as a raw markdown
-URL, and its `/llms-full.txt` is the whole corpus concatenated.
+agents reading the index can find it. The docs site in `examples/site`
+does exactly this: its `/llms.txt` indexes every embedded framework
+doc as a raw markdown URL, and its `/llms-full.txt` is the whole
+corpus concatenated.
 
 ### A2A agent card  (Agent2Agent v1.0)
 
@@ -234,6 +238,9 @@ app.MCP.RegisterTool("orders_refund", "…", schema, refundHandler,
 
 When the whole endpoint is private, close it in one place instead:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
 ```go
 framework.NewApp(
     framework.WithMCP(),
@@ -382,6 +389,9 @@ bearer API), `framework.WithOAuthProtectedResource` serves
 authorization servers mint accepted tokens, the supported scopes, and how to
 present a bearer token:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
 ```go
 framework.WithOAuthProtectedResource(framework.OAuthProtectedResourceConfig{
 	Resource:             "https://api.example.com",

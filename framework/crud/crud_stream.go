@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 // streamListThreshold is the limit beyond which the List handler
@@ -94,8 +95,8 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 		if o > 0 {
 			qb.Offset(o)
 		}
-	} else if page > 1 {
-		qb.Offset((page - 1) * limit)
+	} else if offset := pagination.OffsetForPage(page, limit); offset > 0 {
+		qb.Offset(offset)
 	}
 
 	dataSQL, dataArgs := qb.Build()

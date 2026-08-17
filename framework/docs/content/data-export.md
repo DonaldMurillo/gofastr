@@ -47,6 +47,8 @@ Batteries own physical tables the entity registry doesn't know about
 (`auth_sessions`, `queue_jobs`, …). A registry walk alone misses them, so a
 battery registers its tables into the `datexport` registry from `init()`:
 
+<!-- gofastr:compile
+-->
 ```go
 package mybattery
 
@@ -153,6 +155,9 @@ is commonly `users` or `auth_users`). The registered entries cover the
 canonical names. If you renamed a table, register the actual name from your
 app's `main.go` (or a `main`-owned `init`) so it is included:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/datexport"
+-->
 ```go
 datexport.Register(datexport.DataExporter{
     Name: "my_users", Source: "app", Table: "users",
@@ -289,6 +294,9 @@ the tombstone, a re-run's `WHERE` matches nothing.
 A battery or app registers a table for erasure the same way it registers one
 for export. Two modes:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/datexport"
+-->
 ```go
 // Hard-delete every row owned by the user.
 datexport.RegisterEraser(datexport.DataEraser{
@@ -324,6 +332,9 @@ at erase time (before the write transaction opens) through a registered
 `DataIdentityResolver` and binds the resolved value for `Column` instead of the
 user id:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/datexport"
+-->
 ```go
 // Resolve email from the user table: SELECT email FROM auth_users WHERE id = $1
 datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{

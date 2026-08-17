@@ -368,7 +368,7 @@ if !auth.HasScope(ctx, "posts:read") { /* 403 */ }
 
 // As route middleware: 403s token-authenticated requests lacking the scope;
 // non-token (session/JWT) requests pass unscoped.
-r.With(auth.RequireScope("posts:write")).Post("/posts", handler)
+r.Group("/posts", auth.RequireScope("posts:write")).Post("", handler)
 ```
 
 For the auto-CRUD tree there is a blanket gate: `RequireAPIScopes(prefix)`
@@ -501,6 +501,9 @@ Defaults applied when no failure option is passed:
 To suppress the auto-`?next=` on a redirect (e.g. anon "/" →
 "/marketing"), pass `auth.NoNext()`:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+-->
 ```go
 auth.SessionPolicy(auth.WithRedirect("/marketing", auth.NoNext()))
 ```
@@ -1167,6 +1170,12 @@ the auth audit gate before merge.
 `OAuth2Provider` interface as the built-in Google/GitHub providers — one
 config block, discovered endpoints, JWKS-verified id_tokens.
 
+<!-- gofastr:compile
+stmt: _ = err
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+import "os"
+stmt: _ = oauth
+-->
 ```go
 provider, err := auth.NewOIDCProvider(auth.OIDCConfig{
     Issuer:       "https://keycloak.example/realms/myrealm",

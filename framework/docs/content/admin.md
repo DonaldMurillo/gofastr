@@ -42,6 +42,9 @@ Exposure is **opt-in**. An empty `Entities` exposes nothing — a
 zero-value config must not silently turn every table into an editable
 back-office. Either name the entities:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+-->
 ```go
 admin.New(admin.Config{Entities: []string{"products", "orders"}})
 ```
@@ -109,6 +112,14 @@ admin and JSON API writes. The proxy also forwards the parent request's
 
 ## Ops dashboards (queue + audit)
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+import "database/sql"
+var db *sql.DB
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+-->
 ```go
 q, _ := queue.NewDBQueue(db)
 app.RegisterBattery(admin.New(admin.Config{

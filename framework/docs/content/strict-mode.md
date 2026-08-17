@@ -96,6 +96,9 @@ Absence and drift are treated differently, on purpose:
 every field is the strictest setting, so configuration only ever
 *relaxes*, and every relaxation is visible in review:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/uihost"
+-->
 ```go
 uihost.WithStrict(uihost.StrictConfig{
     ScreenDescriptions: uihost.StrictWarn,          // log, don't fail

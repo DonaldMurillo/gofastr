@@ -31,9 +31,8 @@ the whole transaction.
 - The first per-item failure populates `error` (and optionally
   `fields` for validation failures) on that index. Later indices are
   marked `"skipped": true`.
-- Earlier successes still show their `data` so you can see what
-  would have happened, but `committed: false` means none of it was
-  saved.
+- On `committed: false` no result carries `data` — errors and
+  `fields` remain.
 
 ## Limits
 

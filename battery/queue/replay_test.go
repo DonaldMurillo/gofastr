@@ -20,7 +20,7 @@ func TestDBQueue_ReplayFailedJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.Nack(ctx, job.ID); err != nil { // attempts >= max -> failed
+	if err := q.Nack(ctx, job); err != nil { // attempts >= max -> failed
 		t.Fatal(err)
 	}
 	// Failed jobs are not dequeuable.

@@ -11,8 +11,8 @@ import (
 )
 
 // TestTopLevelINListOverCapErrors pins that a top-level ?field_in= list
-// longer than maxINListEntries is REJECTED with an error, not silently
-// truncated. Silent truncation (parts[:maxINListEntries]) narrows the
+// longer than MaxINListEntries is REJECTED with an error, not silently
+// truncated. Silent truncation (parts[:MaxINListEntries]) narrows the
 // predicate — every row past entry N drops out of the result set without
 // the caller being told. The include-scoped sibling (parseScopedFilters)
 // errors on its cap for the same reason; the top-level path must match.
@@ -21,7 +21,7 @@ func TestTopLevelINListOverCapErrors(t *testing.T) {
 
 	var b strings.Builder
 	b.WriteString("/?tag_in=")
-	for i := range maxINListEntries + 1 { // maxINListEntries+1 entries
+	for i := range MaxINListEntries + 1 { // MaxINListEntries+1 entries
 		if i > 0 {
 			b.WriteString(",")
 		}
@@ -32,7 +32,7 @@ func TestTopLevelINListOverCapErrors(t *testing.T) {
 	filters, err := ParseFilters(req, fields)
 	if err == nil {
 		t.Fatalf("ParseFilters silently truncated an IN list of %d entries to %d (got %d filters); want a 400-shaped error",
-			maxINListEntries+1, maxINListEntries, len(filters))
+			MaxINListEntries+1, MaxINListEntries, len(filters))
 	}
 
 	// Message style mirrors parseScopedFilters' cap: names the field and
@@ -41,7 +41,7 @@ func TestTopLevelINListOverCapErrors(t *testing.T) {
 	if !strings.Contains(msg, "tag") {
 		t.Errorf("error does not name the field: %q", msg)
 	}
-	if !strings.Contains(msg, fmt.Sprintf("%d", maxINListEntries+1)) || !strings.Contains(msg, fmt.Sprintf("%d", maxINListEntries)) {
+	if !strings.Contains(msg, fmt.Sprintf("%d", MaxINListEntries+1)) || !strings.Contains(msg, fmt.Sprintf("%d", MaxINListEntries)) {
 		t.Errorf("error does not report actual+max counts: %q", msg)
 	}
 }
@@ -53,7 +53,7 @@ func TestTopLevelINListAtCapAccepted(t *testing.T) {
 
 	var b strings.Builder
 	b.WriteString("/?tag_in=")
-	for i := range maxINListEntries { // exactly maxINListEntries
+	for i := range MaxINListEntries { // exactly MaxINListEntries
 		if i > 0 {
 			b.WriteString(",")
 		}
@@ -63,9 +63,9 @@ func TestTopLevelINListAtCapAccepted(t *testing.T) {
 
 	filters, err := ParseFilters(req, fields)
 	if err != nil {
-		t.Fatalf("IN list at exactly the cap (%d) should parse, got: %v", maxINListEntries, err)
+		t.Fatalf("IN list at exactly the cap (%d) should parse, got: %v", MaxINListEntries, err)
 	}
-	if len(filters) != maxINListEntries {
-		t.Fatalf("expected %d filters, got %d", maxINListEntries, len(filters))
+	if len(filters) != MaxINListEntries {
+		t.Fatalf("expected %d filters, got %d", MaxINListEntries, len(filters))
 	}
 }

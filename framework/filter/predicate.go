@@ -200,13 +200,20 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 	if op == OpIn {
 		vals := rp.Values
 		if len(vals) == 0 && rp.Value != "" {
+			// Count separators before splitting. The where-body is size-bounded,
+			// so this is defence in depth rather than a live DoS, but the
+			// allocate-then-reject shape is the same one SplitINValuesBounded
+			// exists to avoid on the ?field_in= path — keep them consistent.
+			if strings.Count(rp.Value, ",")+1 > MaxINListEntries {
+				return Predicate{}, fmt.Errorf("where: in-list exceeds %d entries", MaxINListEntries)
+			}
 			vals = strings.Split(rp.Value, ",")
 		}
 		if len(vals) == 0 {
 			return Predicate{}, fmt.Errorf("where: %q with op in requires values", rp.Field)
 		}
-		if len(vals) > maxINListEntries {
-			return Predicate{}, fmt.Errorf("where: in-list exceeds %d entries", maxINListEntries)
+		if len(vals) > MaxINListEntries {
+			return Predicate{}, fmt.Errorf("where: in-list exceeds %d entries", MaxINListEntries)
 		}
 		leaf.Values = vals
 	} else {

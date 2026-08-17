@@ -601,7 +601,11 @@ func (h *HomeScreen) Render() render.HTML {
 	)
 }
 
-func (h *HomeScreen) ScreenTitle() string        { return "%[1]s" }
+// No ScreenTitle here on purpose: the page renderer composes
+// "<title>SCREEN — APP NAME</title>", so a home screen titled after the
+// app itself ships "myapp — myapp". Untitled, the tab reads exactly the
+// app name. Add ScreenTitle() (and ScreenDescription()) on inner pages,
+// where the screen name differs from the site's.
 func (h *HomeScreen) ScreenDescription() string  { return "" }
 func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 `, name, entityHint)

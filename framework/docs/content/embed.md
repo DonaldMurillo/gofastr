@@ -276,6 +276,9 @@ request names. That is the ordinary product shape this was built for: a SaaS
 customer's allowed domain lives in your own table, and each frame response
 carries only theirs.
 
+<!-- gofastr:compile
+import "context"
+-->
 ```go
 type OriginSource interface {
     // Origins returns the exact origins allowed to frame the named surface for
@@ -603,10 +606,23 @@ identity on the request.
 So tell it how to find the tenant, and multi-tenant entities work behind an
 embed:
 
+<!-- gofastr:compile
+import embed "github.com/DonaldMurillo/gofastr/framework/embed"
+import "context"
+import "database/sql"
+import "log"
+var db *sql.DB
+var reportsSurface embed.Surface
+type w4User struct{ TenantID string }
+var users = struct{ FindByID func(ctx context.Context, subject string) (*w4User, error) }{}
+stmt: _ = embeds
+-->
 ```go
+burn, err := embed.NewSQLBurnStore(db)
+if err != nil { log.Fatal(err) }
 embeds, _ := embed.New(embed.Config{
     Surfaces:  []embed.Surface{reportsSurface},
-    BurnStore: embed.NewSQLBurnStore(db),
+    BurnStore: burn,
     Resolve: func(ctx context.Context, subject string) (any, error) {
         return users.FindByID(ctx, subject)
     },

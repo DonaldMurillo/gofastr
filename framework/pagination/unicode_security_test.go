@@ -33,30 +33,37 @@ func TestDecodeCursor_StripsInvisibles(t *testing.T) {
 	for _, tc := range invisibleCodepoints {
 		t.Run("field/"+tc.name, func(t *testing.T) {
 			payload, _ := json.Marshal(cursorToken{Field: "na" + string(tc.r) + "me", Value: "v"})
-			field, value, err := DecodeCursor(base64.StdEncoding.EncodeToString(payload))
+			field, _, err := DecodeCursor(base64.StdEncoding.EncodeToString(payload))
 			if err != nil {
 				t.Fatalf("decode: %v", err)
 			}
-			if field != "name" || value != "v" {
-				t.Fatalf("invisible %U survived: field=%q value=%q", tc.r, field, value)
+			if field != "name" {
+				t.Fatalf("invisible %U survived in field: field=%q", tc.r, field)
 			}
 		})
+		// Values are bound SQL args, not identifiers — they decode
+		// verbatim so the keyset round-trip stays lossless. Stripping
+		// here made a row whose sort key contains the codepoint resume
+		// paging before itself and get served twice.
 		t.Run("value/"+tc.name, func(t *testing.T) {
-			payload, _ := json.Marshal(cursorToken{Field: "name", Value: "val" + string(tc.r) + "ue"})
-			field, value, err := DecodeCursor(base64.StdEncoding.EncodeToString(payload))
+			want := "val" + string(tc.r) + "ue"
+			payload, _ := json.Marshal(cursorToken{Field: "name", Value: want})
+			_, value, err := DecodeCursor(base64.StdEncoding.EncodeToString(payload))
 			if err != nil {
 				t.Fatalf("decode: %v", err)
 			}
-			if field != "name" || value != "value" {
-				t.Fatalf("invisible %U survived: field=%q value=%q", tc.r, field, value)
+			if value != want {
+				t.Fatalf("invisible %U was stripped from value: got %q want %q", tc.r, value, want)
 			}
 		})
 	}
 }
-
 func TestDecodeMultiCursor_StripsInvisibles(t *testing.T) {
 	for _, tc := range invisibleCodepoints {
 		t.Run(tc.name, func(t *testing.T) {
+			// Names are identifiers and stay scrubbed; values are
+			// bind args and round-trip verbatim (see the single-field
+			// test above for why).
 			payload, _ := json.Marshal(multiCursorToken{
 				Fields: []multiCursorField{
 					{Name: "na" + string(tc.r) + "me", Value: "val" + string(tc.r) + "ue"},
@@ -66,8 +73,8 @@ func TestDecodeMultiCursor_StripsInvisibles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decode: %v", err)
 			}
-			if len(fields) != 1 || fields[0].Name != "name" || fields[0].Value != "value" {
-				t.Fatalf("invisible %U survived: %#v", tc.r, fields)
+			if len(fields) != 1 || fields[0].Name != "name" || fields[0].Value != "val"+string(tc.r)+"ue" {
+				t.Fatalf("name not scrubbed or value not preserved: %#v", fields)
 			}
 		})
 	}

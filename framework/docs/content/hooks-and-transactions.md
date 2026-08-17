@@ -98,7 +98,7 @@ app.HookRegistry("users").RegisterHook(framework.AfterList,
 > `AfterList` is never bypassed.
 
 For the common case of per-user row scoping, use
-`EntityConfig.OwnerField` instead — it's a single line and covers
+`EntityConfig.Scope.OwnerField` instead — it's a single line and covers
 all four read/write operations. See
 [`framework/docs/content/entity-declarations.md`](entity-declarations.md#per-user-scoping-ownerfield).
 
