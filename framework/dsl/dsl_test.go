@@ -3,6 +3,9 @@ package dsl
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 func TestParseDSLEntity(t *testing.T) {
@@ -169,5 +172,29 @@ func TestParseDSLRejectsHugeInput(t *testing.T) {
 	huge := "Post.where(name=\"" + strings.Repeat("a", 2*1024*1024) + "\")"
 	if _, err := ParseDSL(huge); err == nil {
 		t.Fatal("expected ParseDSL to reject 2MB input")
+	}
+}
+
+// TestContainsUsesCanonicalLikeEscape pins the `contains` operator onto
+// the canonical framework/filter LIKE helpers (EscapeLikePattern +
+// LikeEscapeSuffix): the caller's LIKE wildcards (%, _) and the escape
+// char are escaped literally, the pattern is wrapped in %…%, and the
+// fragment carries the ESCAPE clause. dsl used to re-implement the
+// replacer privately; this test pins the exact emitted SQL + args so
+// the dedup onto filter's exported helpers cannot drift behavior.
+func TestContainsUsesCanonicalLikeEscape(t *testing.T) {
+	cond, args, err := dslCondition(schema.Field{Name: "title", Type: schema.String}, "contains", `50%_off\x`)
+	if err != nil {
+		t.Fatalf("dslCondition: %v", err)
+	}
+	wantSQL := `title LIKE $1` + filter.LikeEscapeSuffix
+	if cond != wantSQL {
+		t.Errorf("contains SQL = %q, want %q", cond, wantSQL)
+	}
+	if len(args) != 1 {
+		t.Fatalf("args = %v, want 1", args)
+	}
+	if got, ok := args[0].(string); !ok || got != `%50\%\_off\\x%` {
+		t.Errorf("contains arg = %#v, want %%50\\%%\\_off\\\\x%% (wildcards + escape char escaped, wrapped)", args[0])
 	}
 }

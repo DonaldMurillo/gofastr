@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // maxDSLLimit caps the value the parser will accept from `limit(N)`.
@@ -26,6 +27,12 @@ const maxDSLLimit = 10_000
 // at the parser so they can never reach the query builder or schema
 // lookup, where a missing-field error would still leak the unsafe
 // string into logs.
+//
+// Deliberately NOT core/query.identRe (already imported here): that
+// regex additionally allows dot-separated schema.table paths, while
+// DSL identifiers are single names — the tighter shape is
+// load-bearing. The two differ on purpose; unifying them would loosen
+// this allow-list.
 var dslIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // DSLQuery is the parsed representation of a GoFastr query DSL string.
@@ -430,10 +437,10 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 		return field.Name + " = $1", []any{value}, nil
 	case "!=":
 		return field.Name + " != $1", []any{value}, nil
+	case "contains":
+		return field.Name + " LIKE $1" + filter.LikeEscapeSuffix, []any{filter.EscapeLikePattern(raw)}, nil
 	case ">", "<", ">=", "<=":
 		return field.Name + " " + op + " $1", []any{value}, nil
-	case "contains":
-		return field.Name + " LIKE $1 ESCAPE '\\'", []any{"%" + escapeLikePattern(raw) + "%"}, nil
 	case "in":
 		values := splitDSLArgs(strings.Trim(raw, "[]"))
 		if len(values) == 0 {
@@ -449,14 +456,6 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 	default:
 		return "", nil, fmt.Errorf("dsl: unsupported operator %q", op)
 	}
-}
-
-// escapeLikePattern escapes the SQL LIKE wildcards (% _) and the escape char
-// itself so user-supplied input matches literally rather than as a pattern.
-// Used with `LIKE ... ESCAPE '\\'`.
-func escapeLikePattern(value string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	return replacer.Replace(value)
 }
 
 func dslTypedValue(field schema.Field, value string) any {

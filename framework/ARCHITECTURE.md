@@ -364,7 +364,9 @@ The rule is direction: a package may import packages in lower layers,
 never higher, and intra-layer edges should stay rare and deliberate.
 Today's intra-L3 edges: `slowquery → db`, `outbox → event + db`,
 `embed → db + migrate + tenant`, `imagefield → file + image`,
-`contracts → agentsinv`. Within L4: `openapi → crud`. In the UI stack:
+`contracts → agentsinv`, `dsl → filter` (the LIKE-escape helpers —
+one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package
+re-implementation). Within L4: `openapi → crud`. In the UI stack:
 `ui → i18nui + agentsinv`, `uihost → axecov + dev + embed + image +
 tenant`, `ui/resource → crud + filter + ui`, `static → ui + uihost`,
 `gallery → ui + image + agentsinv`, `sdkdocs → ui + sdk + entity +
