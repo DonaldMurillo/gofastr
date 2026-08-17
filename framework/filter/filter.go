@@ -12,15 +12,39 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// maxINListEntries bounds the number of values a single ?field_in=…
-// parameter can expand to. Generous for legitimate use (most DBs cap
-// IN-list at a few thousand parameters) but small enough that an
+// MaxINListEntries bounds the number of values a single ?field_in=…
+// parameter can expand to — counting repeated occurrences of the
+// parameter as one list. Generous for legitimate use (most DBs cap
+// IN-lists at a few thousand parameters) but small enough that an
 // adversarial 10K-element list can't drive memory or statement-cache
-// growth.
-const maxINListEntries = 1000
+// growth. Exposed so sibling surfaces (nested ?rel.field_in=) enforce
+// the same cap instead of growing a private one.
+const MaxINListEntries = 1000
+
+// SplitINValues expands every occurrence of a repeated _in parameter
+// into one flat, comma-split value list: ?tag_in=a&tag_in=b,c yields
+// [a b c]. Reading only values[0] silently narrowed the filter to the
+// first key's values — a client asking for a union got a subset with no
+// error. Repeated keys and comma-separated values are treated as the
+// same list, so the cap (MaxINListEntries) can't be bypassed by
+// splitting one huge list across several occurrences either.
+func SplitINValues(values []string) []string {
+	if len(values) == 1 {
+		return strings.Split(values[0], ",")
+	}
+	n := 0
+	for _, v := range values {
+		n += strings.Count(v, ",") + 1
+	}
+	parts := make([]string, 0, n)
+	for _, v := range values {
+		parts = append(parts, strings.Split(v, ",")...)
+	}
+	return parts
+}
 
 // maxSortFields bounds the number of ORDER BY clauses a single request
-// can generate. Mirrors maxINListEntries: without it, a repeated
+// can generate. Mirrors MaxINListEntries: without it, a repeated
 // allow-listed ?sort=title (N copies) produces N "ORDER BY title"
 // fragments, inflating SQL text, burning statement-parse CPU, and
 // polluting the statement cache from one small request. 16 is far more
@@ -325,7 +349,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	blocked := ""
 
 	// overCapField/overCapCount record the lexically-smallest ?field_in= list
-	// that exceeds maxINListEntries, surfaced as a single deterministic error
+	// that exceeds MaxINListEntries, surfaced as a single deterministic error
 	// after the loop for the same reason unknown/blocked are. Silent
 	// truncation (parts[:cap]) narrows the predicate — rows past entry N drop
 	// out of the result set without the caller knowing — so it fails closed,
@@ -376,8 +400,8 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			}
 			consumed[col] = true
 			if s.Op == OpIn {
-				parts := strings.Split(values[0], ",")
-				if len(parts) > maxINListEntries {
+				parts := SplitINValues(values)
+				if len(parts) > MaxINListEntries {
 					// Fail closed: a truncated list silently narrows the
 					// predicate (rows past entry N drop out of results)
 					// without telling the caller. Record the lexically-
@@ -450,7 +474,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// An over-cap ?field_in= list narrows results silently; fail closed
 	// with a message shaped like the include path's scoped-IN cap.
 	if overCapField != "" {
-		return nil, fmt.Errorf("in-list on %q has %d entries (max %d)", overCapField, overCapCount, maxINListEntries)
+		return nil, fmt.Errorf("in-list on %q has %d entries (max %d)", overCapField, overCapCount, MaxINListEntries)
 	}
 
 	return filters, nil

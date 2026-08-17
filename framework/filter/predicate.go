@@ -205,8 +205,8 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 		if len(vals) == 0 {
 			return Predicate{}, fmt.Errorf("where: %q with op in requires values", rp.Field)
 		}
-		if len(vals) > maxINListEntries {
-			return Predicate{}, fmt.Errorf("where: in-list exceeds %d entries", maxINListEntries)
+		if len(vals) > MaxINListEntries {
+			return Predicate{}, fmt.Errorf("where: in-list exceeds %d entries", MaxINListEntries)
 		}
 		leaf.Values = vals
 	} else {

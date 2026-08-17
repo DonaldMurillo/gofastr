@@ -3,6 +3,7 @@ package upload
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -60,13 +61,21 @@ func TestUploadValidFileSucceeds(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	// Verify file was saved
-	exists, err := storage.Exists(context.Background(), "hello.txt")
+	// Verify the file was saved under the key the response reports.
+	// The key is no longer the bare client filename: two uploads of the
+	// same name must not overwrite each other, so the handler appends a
+	// unique timestamp/rand component (see UniqueFilename). Clients read
+	// the key from this response — they never derive it themselves.
+	var meta Metadata
+	if err := json.Unmarshal(rr.Body.Bytes(), &meta); err != nil {
+		t.Fatalf("decode metadata: %v", err)
+	}
+	exists, err := storage.Exists(context.Background(), meta.Key)
 	if err != nil {
 		t.Fatalf("checking existence: %v", err)
 	}
 	if !exists {
-		t.Fatal("file should exist in storage after upload")
+		t.Fatalf("file should exist in storage after upload (key %q)", meta.Key)
 	}
 }
 

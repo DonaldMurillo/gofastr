@@ -3,15 +3,12 @@ package file
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
@@ -581,39 +578,14 @@ func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) e
 // whose clock does not advance every nanosecond) would resolve to the same
 // path and one upload would silently overwrite the other.
 func GenerateFilePath(entityName, fieldName, filename string) string {
-	// Sanitize the filename to prevent path traversal
-	safe := upload.SanitizeFilename(filename)
-
-	// Split into name and extension
-	ext := filepath.Ext(safe)
-	nameWithoutExt := strings.TrimSuffix(safe, ext)
-
-	// Generate a unique name from the timestamp plus a random suffix. The
-	// random suffix is the real uniqueness guarantee; the timestamp is
-	// retained only for human-readable ordering. crypto/rand.Read on a
-	// fixed-size buffer never returns a short read without an error, but
-	// if the platform RNG fails we fall back to the timestamp alone rather
-	// than panicking mid-upload.
-	uniqueName := fmt.Sprintf("%s_%d_%s%s", nameWithoutExt, time.Now().UnixNano(), randomSuffix(), ext)
-
-	// Build the path using filepath.Join for cross-platform safety
-	path := filepath.Join("uploads", entityName, fieldName, uniqueName)
+	// The unique-name component (sanitized base + timestamp + crypto/rand
+	// suffix) lives in core/upload.UniqueFilename so every upload surface
+	// shares one scheme; this helper just scopes it under the entity and
+	// field so auto-CRUD storage stays organised per field.
+	path := filepath.Join("uploads", entityName, fieldName, upload.UniqueFilename(filename))
 
 	// Normalize to forward slashes for storage consistency
 	return filepath.ToSlash(path)
-}
-
-// randomSuffix returns a hex-encoded 8-byte crypto-random token used to
-// guarantee storage-path uniqueness independent of clock resolution. If
-// the platform RNG fails it returns an empty string; the caller still has
-// the timestamp, so a failure degrades to the old behaviour rather than
-// aborting an upload.
-func randomSuffix() string {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(b[:])
 }
 
 // detectMIMEFromName attempts to detect MIME type from filename extension.

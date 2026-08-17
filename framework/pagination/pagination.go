@@ -15,8 +15,10 @@ import (
 // formatting codepoints. The bidi/zero-width chars are particularly
 // dangerous in cursor *field names*, because a parser that sees "name"
 // and a downstream allow-list that sees "na​me" will disagree.
-// Applied to any user-controlled cursor token field after decoding and
-// to cursor direction strings before they reach downstream consumers.
+// Applied to cursor FIELD names after decoding and to cursor direction
+// strings before they reach downstream consumers — never to cursor
+// VALUES, which are bound SQL args and must round-trip byte-for-byte
+// (see DecodeCursor).
 func stripControls(s string) string {
 	if s == "" {
 		return s
@@ -105,19 +107,31 @@ func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
 	if page < 1 {
 		page = 1
 	}
-	// Guard against integer overflow: a malicious caller can request a
-	// huge page number (e.g. math.MaxInt) which wraps to a negative
-	// offset when multiplied by limit. Negative offsets are undefined
-	// in most SQL dialects and can yield wraparound pagination bypass.
-	// page>=1 and limit>=1 here, so (page-1)*limit overflows iff
-	// (page-1) > math.MaxInt/limit. Compute the threshold without the
-	// `+1` that previously wrapped to math.MinInt when limit==1.
-	if page-1 > math.MaxInt/limit {
-		offset = 0
-	} else {
-		offset = (page - 1) * limit
-	}
+	offset = OffsetForPage(page, limit)
 	return cursor, limit, offset
+}
+
+// OffsetForPage returns the row offset for a 1-based page number and a
+// page size, with the integer-overflow guard applied. A caller can
+// request a huge page number (e.g. math.MaxInt) whose (page-1)*limit
+// product wraps: to a negative offset — undefined in most SQL dialects
+// (Postgres rejects it outright) and treated as 0 by SQLite — or, for
+// carefully chosen values, to a small POSITIVE offset that silently
+// serves the wrong window. page>=1 and limit>=1 required, so
+// (page-1)*limit overflows iff (page-1) > math.MaxInt/limit; compute
+// the threshold without the `+1` that previously wrapped to
+// math.MinInt when limit==1. Overflow clamps to 0 (the first window),
+// matching ParsePagination's historical behaviour. Every offset-math
+// call site (buffered list, streaming list, admin table) must go
+// through this — never multiply a client-supplied page by hand.
+func OffsetForPage(page, limit int) int {
+	if page < 2 {
+		return 0
+	}
+	if page-1 > math.MaxInt/limit {
+		return 0
+	}
+	return (page - 1) * limit
 }
 
 // ParseCursorPagination extracts cursor, limit, and direction from query parameters.
@@ -154,6 +168,15 @@ func EncodeCursor(field string, value any) string {
 }
 
 // DecodeCursor decodes a base64 cursor string into its field and value components.
+//
+// The field name is stripped of control / invisible codepoints: it flows
+// into SQL identifiers (ORDER BY) and allow-lists, where a smuggled
+// zero-width or bidi codepoint makes a parser and a downstream
+// allow-list disagree. The VALUE is returned verbatim — it is compared
+// against the database as a bound arg, never interpolated, so stripping
+// it would not harden anything while breaking the keyset contract: a
+// sort key containing e.g. U+200B must round-trip losslessly or paging
+// resumes before that row and re-serves it.
 func DecodeCursor(cursor string) (field string, value string, err error) {
 	b, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
@@ -163,11 +186,7 @@ func DecodeCursor(cursor string) (field string, value string, err error) {
 	if err := json.Unmarshal(b, &token); err != nil {
 		return "", "", err
 	}
-	// Cursors are opaque to the caller but their contents flow back into
-	// SQL identifiers (Field → ORDER BY column) and predicate values.
-	// Strip control bytes so a tampered cursor can't poison ORDER/WHERE
-	// clauses, log lines, or metrics labels.
-	return stripControls(token.Field), stripControls(token.Value), nil
+	return stripControls(token.Field), token.Value, nil
 }
 
 // multiCursorToken is the wire shape for cursors that keyset on multiple
@@ -211,11 +230,12 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	if err := json.Unmarshal(b, &tok); err != nil {
 		return nil, err
 	}
-	// Same control-byte scrub as DecodeCursor — multi-column cursors
-	// feed both column names (ORDER BY) and values (WHERE tuple comparison).
+	// Names reach ORDER BY / allow-lists, so they get the same
+	// control-byte scrub as DecodeCursor. Values are bound SQL args —
+	// kept verbatim so the tuple comparison resumes at the exact row
+	// (see DecodeCursor for the round-trip contract).
 	for i := range tok.Fields {
 		tok.Fields[i].Name = stripControls(tok.Fields[i].Name)
-		tok.Fields[i].Value = stripControls(tok.Fields[i].Value)
 	}
 	return tok.Fields, nil
 }
