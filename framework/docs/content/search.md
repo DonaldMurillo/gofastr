@@ -137,6 +137,12 @@ tsvector if they don't already exist, so it's safe to call on every startup.
 The document body (`Document.Text`) is always indexed at weight `'A'`. Promote
 structured fields so a hit in a title outranks one in the body:
 
+<!-- gofastr:compile
+stmt: _ = idx
+import "github.com/DonaldMurillo/gofastr/battery/search"
+import "database/sql"
+var db *sql.DB
+-->
 ```go
 idx, _ := search.NewPostgres(db, search.PostgresConfig{
     WeightedFields: map[string]byte{"title": 'A', "summary": 'B'},

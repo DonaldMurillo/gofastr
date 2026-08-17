@@ -168,7 +168,7 @@ const defaultShutdownTimeout = 15 * time.Second
 //
 //	app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
 //	    WriteTimeout: new(2 * time.Minute), // raise for slow handlers
-//	    ReadTimeout:  new(0),               // disable (e.g. huge uploads)
+//	    ReadTimeout:  new(time.Duration(0)), // disable (e.g. huge uploads)
 //	}))
 //
 // ReadHeaderTimeout bounds reading the request headers (slowloris defence)

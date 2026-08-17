@@ -147,6 +147,11 @@ If the images arrive as CRUD uploads on a `schema.Image` field, you do not
 need to call any of this by hand. One app option makes every upload produce
 renditions plus a BlurHash and writes them to sibling columns:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/imagefield"
+import "github.com/DonaldMurillo/gofastr/framework/image"
+-->
 ```go
 framework.WithImagePipeline(imagefield.MustNew(imagefield.Config{
     Variants:  []image.Variant{{Width: 960, Format: image.FormatWebP, Suffix: "md"}},

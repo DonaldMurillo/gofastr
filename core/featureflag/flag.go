@@ -218,10 +218,13 @@ func (e *Evaluator) BoolDefault(ctx context.Context, key string, fallback bool) 
 }
 
 // subjectID picks the stable identifier to hash for rollout.
-// Preference order: user → tenant → empty (yields a uniform 0 bucket).
-// "Empty" subjects always fall in bucket 0 so the rollout still gates
-// them — that matches the principle of "anonymous traffic sees the new
-// thing only at high rollout percentages."
+// Preference order: user → tenant → empty.
+//
+// An empty subject is NOT bucketed: the caller forces the flag OFF at
+// partial rollout rather than hashing every anonymous request into one
+// shared bucket, which would flip all of them together at the same
+// percentage. Callers who want anonymous traffic in a rollout derive a
+// stable pseudo-subject and put it in EvalContext.UserID themselves.
 func subjectID(ec EvalContext) string {
 	if ec.UserID != "" {
 		return ec.UserID

@@ -123,6 +123,11 @@ err = testkit.ValidateAdminDSN("mysql://...")
 Exposed for white-box testing of the DSN-rewrite logic. Not for production
 callers:
 
+<!-- gofastr:compile
+stmt: _ = out
+stmt: _ = err
+import "github.com/DonaldMurillo/gofastr/framework/testkit"
+-->
 ```go
 out, err := testkit.RewriteDBNameForTest("postgres://u:p@host/db", "new_db")
 ```

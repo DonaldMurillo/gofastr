@@ -65,9 +65,11 @@ type Rule struct {
 	Autofix bool `json:"autofix"`
 }
 
-// docBaseURL is where the embedded docs are published. Diagnostics carry
-// a resolvable link even when the reader is nowhere near a checkout.
-const docBaseURL = "https://gofastr.dev/docs/"
+// docBaseURL is where the embedded docs are published (the GitHub Pages
+// deployment of examples/site; see .github/workflows/pages.yml).
+// Diagnostics carry a resolvable link even when the reader is nowhere
+// near a checkout.
+const docBaseURL = "https://donaldmurillo.github.io/gofastr/docs/"
 
 // DocURL is the published location of the rule's doc topic.
 func (r Rule) DocURL() string {

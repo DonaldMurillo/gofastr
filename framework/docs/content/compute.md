@@ -73,6 +73,9 @@ complete host `main.go`.
 Add the load marker to the server-rendered screen. It declares no work and
 needs no worker-name companion attribute:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
+-->
 ```go
 html.Div(html.DivConfig{
 	ExtraAttrs: html.Attrs{"data-fui-compute": ""},
@@ -205,6 +208,8 @@ operations through `syscall/js` or add a worker adapter around its Go runtime.
 
 Go 1.24 and newer also support `//go:wasmexport` with a WASI reactor build:
 
+<!-- gofastr:compile
+-->
 ```go
 //go:wasmexport sum
 func sum(a, b int32) int32 { return a + b }

@@ -299,6 +299,9 @@ and reverts. The `error` shake animation respects `prefers-reduced-motion`.
 
 **Compose (the value-independent optimistic half):**
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+-->
 ```go
 ui.OptimisticAction(ui.OptimisticActionConfig{
     Endpoint:     "/api/rename/validate",
@@ -490,6 +493,15 @@ endpoint). Runtime: `sortablelist.js`.
 response triggers `ConflictRPC` (a GET), whose response body replaces the
 destination column's `innerHTML`.
 
+<!-- gofastr:compile
+import "fmt"
+import patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
+type w4Col struct{ Title, ID string }
+type w4Board struct{ Version int }
+var col = w4Col{Title: "todo", ID: "col-1"}
+var board = w4Board{Version: 2}
+var items []patternsSortablelist.Item
+-->
 ```go
 patternsSortablelist.Render(patternsSortablelist.Config{
     Label:       col.Title,

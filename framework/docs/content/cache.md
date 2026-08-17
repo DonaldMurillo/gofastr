@@ -25,6 +25,10 @@ _ = c.Get(ctx, "42", &u)
 
 ## The `Cache` interface
 
+<!-- gofastr:compile
+import "context"
+import "time"
+-->
 ```go
 type Cache interface {
     Get(ctx context.Context, key string, dest any) error

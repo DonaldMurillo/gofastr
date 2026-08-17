@@ -12,6 +12,10 @@ middleware to the chain — it does not replace or disable the defaults;
 use `WithoutDefaultMiddleware()` when you want to build the chain
 yourself.)
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core/middleware"
+import "time"
+-->
 ```go
 middleware.Recovery()
 middleware.RequestID()
@@ -34,6 +38,9 @@ both would double-log every request.
 
 ## SecurityHeaders
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core/middleware"
+-->
 ```go
 middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
     ContentSecurityPolicy: "default-src 'self'; img-src 'self' https://cdn.example.com",
@@ -101,6 +108,11 @@ single directive — e.g. allow `style-src 'unsafe-inline'` for a
 third-party CSS dependency — without shadowing the whole chain with your
 own `SecurityHeaders` middleware:
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/core/middleware"
+-->
 ```go
 app := framework.NewApp(framework.WithSecurityHeaders(middleware.SecurityHeadersConfig{
     ContentSecurityPolicy: "default-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:",
@@ -114,6 +126,10 @@ strict defaults exactly.
 
 ## CORS
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core/middleware"
+import "net/http"
+-->
 ```go
 middleware.CORS(middleware.CORSConfig{
     AllowedOrigins: []string{"https://app.example.com"},
@@ -211,6 +227,10 @@ a non-empty `JWTSecret`; a previous-only configuration is rejected at Init.
 
 ## Rate limiting
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core/middleware"
+import "time"
+-->
 ```go
 middleware.RateLimit(middleware.RateLimitConfig{
     Capacity:    100,         // peak burst

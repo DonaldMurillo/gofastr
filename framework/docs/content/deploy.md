@@ -173,10 +173,15 @@ or point at a value — including `0`, which **disables** that one deadline
 (matching `net/http`, where a zero duration means "no timeout"). Build the
 pointers with the Go 1.26 `new(expr)` builtin:
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "time"
+-->
 ```go
 app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
     WriteTimeout: new(2 * time.Minute), // slow report handler
-    ReadTimeout:  new(0),               // disable — accept arbitrarily large uploads
+    ReadTimeout:  new(time.Duration(0)), // disable — accept arbitrarily large uploads
 }))
 ```
 
@@ -192,6 +197,11 @@ A request that legitimately outlives the default `WriteTimeout` — a slow
 report, a large export, an AI completion — needs the deadline raised or
 removed for that path:
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "time"
+-->
 ```go
 // Raise the server write deadline app-wide for a report-heavy service.
 app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{

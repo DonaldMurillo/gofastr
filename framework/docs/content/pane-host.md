@@ -133,7 +133,7 @@ closed pane and then pops it open. Read the parameter with
 `ui.PaneDeepLink` and build the page from it:
 
 ```go
-slot, key, ok := ui.PaneDeepLink(app.QueryFromContext(ctx), "pane")
+slot, key, ok := ui.PaneDeepLink(r.URL.Query(), "pane")
 detail := emptyState
 open := false
 if ok && slot == "secondary" {

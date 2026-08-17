@@ -63,6 +63,10 @@ The first scaling step for a self-hosted app is one web process + one
 worker process, same binary — before replicas, before Redis. The role
 is picked at deploy time:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+-->
 ```go
 app.Start(":8080") // role from GOFASTR_ROLE: all | serve | worker
 ```

@@ -31,6 +31,9 @@ app.Entity("posts", entity.EntityConfig{ /* … */ })
 `/api/v1/posts/_batch`, and so on. The bare `/posts` path is **not**
 mounted. The prefix is also settable via config:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
 ```go
 framework.NewApp(framework.WithConfig(framework.AppConfig{APIPrefix: "/api/v1"}))
 ```

@@ -80,6 +80,15 @@ pass through the gates unchecked. Attribution is an Init-time concept.
 
 ## Runtime enable/disable
 
+<!-- gofastr:compile
+stmt: _ = err
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "context"
+var ctx = context.Background()
+stmt: _ = enabled
+stmt: _ = list
+-->
 ```go
 // Toggle at runtime — no restart:
 err := app.Modules().Disable(ctx, "feature")

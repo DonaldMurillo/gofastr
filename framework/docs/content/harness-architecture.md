@@ -2080,6 +2080,9 @@ call fails. Supervisor contract:
 
 ### MCP server supervision
 
+<!-- gofastr:compile
+import "time"
+-->
 ```go
 type MCPServerSupervisor struct {
     MaxRestarts          int           // default 3

@@ -69,16 +69,18 @@ or isn't a `*log.Plugin` — see [plugins](plugins.md) → Typed lookups.
 ## Real-time debugging via MCP
 
 When `Config.EnableMCP` is set, the plugin installs an in-memory
-RingSink (capacity `MCPRingSize`, default 1000) and registers four
-tools on the App's MCP server. Connected agents (Claude Code, Cursor,
-etc.) can call these to inspect the running app live:
+RingSink (capacity `MCPRingSize`, default 1000) and registers three
+tools on the App's MCP server; a fourth, `log_set_level`, is
+registered only when `Config.AllowMCPMutation` is also set. Connected
+agents (Claude Code, Cursor, etc.) can call these to inspect the
+running app live:
 
 | Tool            | Use                                                                                                  |
 |-----------------|------------------------------------------------------------------------------------------------------|
 | `log_recent`    | Last N entries from the ring, optional level filter.                                                 |
 | `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level`. `historical=true` tails the file sink for entries evicted from the ring. |
 | `log_metrics`   | Current counter snapshot — same data as `Plugin.Metrics()`.                                          |
-| `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterwards).     |
+| `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterwards). Only registered when `AllowMCPMutation` is set. |
 
 Opt-in because these tools reveal a lot about the running app —
 weigh the disclosure before enabling on a production MCP server
@@ -247,6 +249,9 @@ app.RegisterPlugin(log.New(log.Config{
 
 Implement the `Sink` interface:
 
+<!-- gofastr:compile
+import "io"
+-->
 ```go
 type Sink interface {
     io.Closer

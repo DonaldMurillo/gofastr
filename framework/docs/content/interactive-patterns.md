@@ -599,6 +599,9 @@ dot colors come from the status tokens, so a themed app recolors them
 for free. `StatusLabel` overrides the dot's accessible name (default:
 the status word).
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+-->
 ```go
 ui.AvatarGroup(ui.AvatarGroupConfig{
     Avatars: []ui.AvatarConfig{
@@ -701,6 +704,11 @@ byte-identical — prefer it over the `OnClick`/`OnSubmit` wrappers whenever the
 element already carries other attributes, since the wrappers splice at the
 tag's first `>` and can reorder attributes relative to a sorted map.
 
+<!-- gofastr:compile
+stmt: _ = del
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+import "github.com/DonaldMurillo/gofastr/core-ui/interactive"
+-->
 ```go
 del := ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger,
     ExtraAttrs: interactive.Delete("/api/items/42").
@@ -718,6 +726,10 @@ a widget only after a successful RPC (`data-fui-rpc-open`).
 `data-fui-toast` (compact JSON of the non-zero `Toast` fields: `variant`,
 `title`, `body`, `stack`, `ttl`).
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core-ui/interactive"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+-->
 ```go
 interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit"}), "edit-drawer")
 interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Saved!"}),

@@ -2,7 +2,8 @@
 
 Marking an entity multi-tenant adds a `tenant_id` column, auto-injects
 it on writes, filters reads by it, and scopes lifecycle events to it.
-The tenant ID is extracted from a request header by middleware.
+The tenant ID is resolved server-side from the authenticated context —
+never from a client-sent header.
 
 ## Quickstart
 
@@ -14,8 +15,9 @@ app.Entity("posts", framework.EntityConfig{
     },
 })
 
-// Default header is X-Tenant-ID. Add the middleware once on the app:
-app.Use(framework.TenantMiddleware("X-Tenant-ID"))
+// Add the middleware once on the app. The argument is ignored —
+// no header is ever read (see "How tenants get into the request"):
+app.Use(framework.TenantMiddleware(""))
 ```
 
 Once both are wired:
@@ -31,13 +33,26 @@ Once both are wired:
 func TenantMiddleware(header string) func(http.Handler) http.Handler
 ```
 
-The middleware reads the named header on every request and, if
-non-empty, attaches the value to the request context. Downstream
-handlers and hooks call `framework.GetTenantID(ctx)` to read it.
+The middleware never reads a request header. The `header` parameter
+is ignored — it is retained only so call sites from the era when the
+header was consulted keep compiling. Trusting a client-sent header
+would let any caller impersonate any tenant by setting one header, so
+the tenant is resolved exclusively from server-side authenticated
+state.
 
-If your tenants come from JWT claims, a subdomain, or anywhere else,
-write your own middleware that calls `framework.SetTenantID(ctx, id)`
-— the framework only cares that the context value is set.
+What the middleware does: when the authenticated context resolves a
+tenant (`handler.GetTenant`, a non-empty string), it copies that value
+to the tenant context that CRUD scoping reads. Framework auth paths
+that resolve a tenant set it via a server-side lookup keyed on the
+authenticated subject — grant-authenticated embeds do this through
+their tenant resolver; nothing the request carried chooses the tenant.
+Downstream handlers and hooks call `framework.GetTenantID(ctx)` to
+read it.
+
+If your tenants come from JWT claims, a subdomain, a session lookup,
+or anywhere else, write your own middleware that calls
+`framework.SetTenantID(ctx, id)` — the framework only cares that the
+context value is set.
 
 ## Custom tenant column
 
@@ -68,13 +83,15 @@ automatically.
 
 ## Configuration
 
-`TenantConfig` / `DefaultTenantConfig()` carry the header name and
-`AutoScope`. The defaults are:
+`TenantConfig` / `DefaultTenantConfig()` carry the tenant column and
+`AutoScope`. `Header` is a legacy field retained for API compatibility
+— it is not read anywhere, and setting it changes no behavior. The
+defaults are:
 
 | Field        | Default       |
 |--------------|---------------|
 | `Field`      | `tenant_id`   |
-| `Header`     | `X-Tenant-ID` |
+| `Header`     | `X-Tenant-ID` (legacy, ignored) |
 | `AutoScope`  | `true`        |
 
 `AutoScope=false` lets you read across tenants from admin routes
@@ -121,6 +138,11 @@ To read or write across tenants deliberately (admin tooling), mark the
 context with `tenant.AllowCrossTenant` — **server-side only**, never
 from a client-controlled header:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/tenant"
+import "net/http"
+var r *http.Request
+-->
 ```go
 // inside an admin-gated handler / middleware, AFTER your own role check:
 ctx := tenant.AllowCrossTenant(r.Context())
@@ -154,13 +176,15 @@ every read.
 - **Adding `MultiTenant: true` to an existing entity without
   backfilling `tenant_id`.** Existing rows have empty string and
   match every tenant. Backfill before flipping the flag.
-- **Setting the tenant from a request body field.** Trivially
-  spoofable. Use a signed header, JWT claim, or session lookup.
-- **Forgetting `TenantMiddleware`.** Auto-scope only fires when the
-  context has a tenant — without the middleware every request now gets a
-  `401` (secure by default), not silent cross-tenant access. Mount the
-  middleware, or set `tenant.AllowCrossTenant` deliberately on admin
-  routes.
+- **Setting the tenant from a client-controlled value.** A request
+  body field, a plain header, anything the caller sends is trivially
+  spoofable. Resolve the tenant server-side (a verified JWT claim, a
+  session lookup) and call `SetTenantID` from your own middleware.
+- **Forgetting tenant resolution.** Auto-scope only fires when the
+  context has a tenant — without one every request now gets a `401`
+  (secure by default), not silent cross-tenant access. Seed the tenant
+  from your auth layer or your own middleware, or set
+  `tenant.AllowCrossTenant` deliberately on admin routes.
 - **Cross-tenant joins via `?include=`.** If both parent and child
   are multi-tenant, includes scope on the parent's tenant only.
   Non-multi-tenant child entities are returned unfiltered — model

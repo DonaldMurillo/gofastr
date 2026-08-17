@@ -380,6 +380,12 @@ not to declare entities. `migrate.Table` is a raw schema declaration that
 migrates, diffs, and generates **alongside** entities in the same registry —
 including foreign keys that cross between an entity and a raw table.
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import migrate "github.com/DonaldMurillo/gofastr/framework/migrate"
+import "github.com/DonaldMurillo/gofastr/core/schema"
+-->
 ```go
 app.Table(migrate.Table{
     Name: "user_roles", // also the FK reference name
@@ -407,6 +413,11 @@ boot (idempotent `CREATE OR REPLACE`) after tables migrate, and `migrate
 generate` tracks it so a changed body produces a reversible versioned
 migration (its `Down` restores the previous definition).
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import migrate "github.com/DonaldMurillo/gofastr/framework/migrate"
+-->
 ```go
 app.Routine(migrate.Routine{
     Name: "double_it",
@@ -657,6 +668,12 @@ gofastr migrate up --create-db --driver=postgres --db-url=$DATABASE_URL
 
 Or programmatically before `App.Start` / `migrate up`:
 
+<!-- gofastr:compile
+import migrate "github.com/DonaldMurillo/gofastr/core/migrate"
+var dsn string
+stmt: _ = created
+stmt: _ = err
+-->
 ```go
 created, err := migrate.EnsureDatabase("postgres", dsn)
 ```
@@ -807,6 +824,12 @@ because both derive column types from the same entity schema.
 For deployments whose policy forbids **any** unattended schema change on
 boot, make migrations the single, explicit path:
 
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "database/sql"
+var db *sql.DB
+-->
 ```go
 app := framework.NewApp(
     framework.WithDB(db),

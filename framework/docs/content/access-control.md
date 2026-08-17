@@ -203,6 +203,12 @@ perms := framework.GetPermissions(ctx)
 To branch UI (or any logic) on the caller's roles rather than their
 resolved permissions, read the roles back with `GetRoles`:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+import "context"
+var ctx = context.Background()
+import "slices"
+-->
 ```go
 roles := framework.GetRoles(ctx)
 // [editor reader] — the same slice installed by WithRoles
@@ -333,6 +339,14 @@ For apps that need **runtime-editable** RBAC (an admin UI that grants and
 revokes without a redeploy), `access.GrantStore` persists grants to a
 database table and keeps the live `*RolePolicy` in sync.
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/access"
+import "database/sql"
+var db *sql.DB
+import "context"
+var ctx = context.Background()
+-->
 ```go
 policy := framework.NewRolePolicy()
 policy.Grant("admin", access.Wildcard) // code-defined baseline
@@ -367,10 +381,14 @@ Attaching a fanout closes that window. Register the store with the app
 fanout as `WithFanout`:
 
 ```go
+pg, err := fanout.NewPostgres(dsn, db)
+if err != nil {
+    log.Fatal(err)
+}
 app := framework.NewApp(
     framework.WithDB(db),
     framework.WithGrantStore(store),
-    framework.WithFanout(fanout.NewPostgres(dsn, db)),
+    framework.WithFanout(pg),
 )
 ```
 
@@ -607,6 +625,9 @@ RBAC for every caller, so it is untouched.
 separate, pure matcher for the richer `resource:verb` wildcard grammar used
 by **token scopes** and **module capability grants**:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/access"
+-->
 ```go
 // exact | resource wildcard | verb wildcard | grant-all
 access.ScopeMatch([]access.Permission{"posts:*"}, "posts:read")  // true

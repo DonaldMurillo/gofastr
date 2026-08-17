@@ -107,6 +107,8 @@ With `gofastr dev` running, visit <http://localhost:8080/__gofastr/app.css> to c
 
 A screen is just a Go type implementing `component.Component`. Add `screens/about.go`:
 
+<!-- gofastr:compile
+-->
 ```go
 package screens
 
@@ -362,6 +364,9 @@ A screen's `Render(ctx)` / `Load(ctx)` needs a way to reach the same `*sql.DB`
 the framework already holds. The current idiom is a **package-level handle
 captured at `main()` time**:
 
+<!-- gofastr:compile
+import "database/sql"
+-->
 ```go
 // in package screens (or wherever your screens live)
 var dbHandle *sql.DB

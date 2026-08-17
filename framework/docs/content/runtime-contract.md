@@ -341,6 +341,11 @@ SPA navigator (no hard refresh between same-app pages), falling back
 to `window.location.assign`. For the non-intercepted default path,
 redirect-following is the browser's own job — same result.
 
+<!-- gofastr:compile
+import "net/http"
+var w http.ResponseWriter
+var r *http.Request
+-->
 ```go
 http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 ```

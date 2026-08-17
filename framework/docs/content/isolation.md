@@ -48,6 +48,12 @@ explicit env overrides untouched.
 Use `framework/isolation` when app code opens resources before calling
 `App.Start`:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/isolation"
+import "log"
+stmt: _ = db
+import "database/sql"
+-->
 ```go
 runtimeIsolation, err := isolation.Resolve(".")
 if err != nil {

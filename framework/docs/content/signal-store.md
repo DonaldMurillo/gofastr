@@ -93,6 +93,10 @@ the JS reducer registered under its name. Register reducers as real functions â€
 derive the signal name and stamp the slice's declared default â€” one source of
 truth instead of a hardcoded initial value:
 
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+import "github.com/DonaldMurillo/gofastr/core-ui/store"
+-->
 ```go
 ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
 ```

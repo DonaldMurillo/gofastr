@@ -49,7 +49,7 @@ The fields:
   Digests are byte-compared against `module.tool.list` at handshake.
 - **RequestedGrants** — the verbatim `resource:verb` list the operator
   reviews at install. Effective grants = requested ∩ approved.
-- **TrustTier** — selects the runner: `TrustedTrusted` (crash isolation
+- **TrustTier** — selects the runner: `TrustTrusted` (crash isolation
   only, for dev or in-house modules) or `TrustUntrusted` (requires a
   probe-passing sandbox, fail-closed otherwise).
 - **MigrationGroup** — the `#33` migration group the module owns.
