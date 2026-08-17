@@ -267,11 +267,7 @@ bin/
 	fmt.Println("    agents/              — Auto-generated per-battery detail files linked from AGENTS.md")
 	fmt.Println("    .claude/skills/      — Claude Code skill (safe to delete if you only use Cursor/Aider)")
 	fmt.Println()
-	fmt.Printf("  %s:\n", bold("Next steps"))
-	fmt.Printf("    cd %s\n", name)
-	fmt.Println("    go mod tidy          — Resolve dependencies")
-	fmt.Println("    gofastr dev          — Start development server with hot-reload")
-	fmt.Println()
+	printInitNextSteps(name, noEntity)
 	info("Also try:")
 	info("    gofastr docs          — Browse/search framework docs (embedded in the binary)")
 	info("    gofastr theme init    — Scaffold a typed theme.go")
@@ -286,6 +282,22 @@ bin/
 		fmt.Println("  Release-installed CLIs pin their matching framework automatically.")
 	}
 	fmt.Println("  Only use a local `replace` directive while hacking on GoFastr itself.")
+	fmt.Println()
+}
+
+// printInitNextSteps prints the "Next steps" block at the end of
+// `gofastr init`. Kept as its own function so the guidance printed there
+// (secure-by-default CRUD and its escape hatches) is testable without
+// scaffolding a whole project.
+func printInitNextSteps(name string, noEntity bool) {
+	fmt.Printf("  %s:\n", bold("Next steps"))
+	fmt.Printf("    cd %s\n", name)
+	fmt.Println("    go mod tidy          — Resolve dependencies")
+	fmt.Println("    gofastr dev          — Start development server with hot-reload")
+	if !noEntity {
+		fmt.Println("    Note: /posts CRUD needs a session by default — add Public: true (see")
+		fmt.Println("    entities/entities.go) for anonymous access, or wire battery/auth.")
+	}
 	fmt.Println()
 }
 
@@ -618,6 +630,9 @@ func RegisterAll(app *framework.App) {
 			{Name: "body", Type: schema.Text},
 			{Name: "published", Type: schema.Bool},
 		},
+		// Secure by default: CRUD requires a signed-in session. Add
+		// Public: true for anonymous access, or wire battery/auth for a
+		// real login flow (gofastr docs auth).
 		Exposure: &entity.ExposureConfig{CRUD: boolPtr(true)},
 	})
 }

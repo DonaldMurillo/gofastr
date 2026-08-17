@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/migrate"
@@ -121,6 +122,33 @@ func TestMigratorFromArgsForceBaseline(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatal("Force baseline ran the Up SQL — it must only record state")
+	}
+}
+
+// TestMigratorFromArgsMissingDirExplainsBothSystems pins the error a
+// freshly scaffolded app sees: `gofastr init` registers migrations inline
+// in Go (entities.RegisterMigrations, applied at boot by main.go), so the
+// app has no migrations/ directory — and `gofastr migrate status` used to
+// answer "directory 'migrations/' not found", which reads as "wrong place"
+// for the exact app this CLI just generated. The error must name both
+// migration systems and a way forward.
+func TestMigratorFromArgsMissingDirExplainsBothSystems(t *testing.T) {
+	covT_chdir(t, t.TempDir())
+	_, _, err := migratorFromArgs(nil)
+	if err == nil {
+		t.Fatal("expected an error when the migrations/ directory is absent")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"inline",             // the system the scaffold actually uses
+		"RegisterMigrations", // where the scaffold's migrations live
+		"boot",               // when they run
+		"migrations/*.sql",   // the system this subcommand reads
+		"migrate generate",   // the way to adopt file-based migrations
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("missing-directory error omits %q:\n%s", want, msg)
+		}
 	}
 }
 
