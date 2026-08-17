@@ -39,10 +39,8 @@ const multipartFramingSlack = 4 << 10 // 4 KiB
 // framework/file.GenerateFilePath builds its entity/field-scoped paths
 // on top of it; do not grow a second scheme.
 //
-// The only error is a failed crypto/rand read. RNG failure means the
-// host's entropy source is broken; the caller must reject the upload
-// rather than store under a timestamp-only key, which would silently
-// re-enable the O_TRUNC clobber this scheme exists to prevent.
+// There is no error return: crypto/rand.Read cannot fail (see
+// randomSuffix), so the random component is always present.
 func UniqueFilename(filename string) string {
 	safe := SanitizeFilename(filename)
 	ext := filepath.Ext(safe)
