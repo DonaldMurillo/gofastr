@@ -2236,15 +2236,21 @@ func sortedMapKeys[V any](m map[string]V) []string {
 // "42" on an int column is fine, a fractional float is not) so it never
 // rejects a seed that would have booted.
 func validateBlueprintSeedTypes(bp Blueprint, entitiesByName map[string]framework.EntityDeclaration) error {
+	var errs schemaErrors
 	for _, seed := range bp.Seed {
 		decl, known := entitiesByName[seed.Entity]
 		if !known {
 			// A seed for an undeclared entity fails at boot with
 			// "no handler" — same fail-late shape, catch it here too.
-			return fmt.Errorf("blueprint: seed targets unknown entity %q — declare an entity named %q under entities: (or fix the seed's entity: value)", seed.Entity, seed.Entity)
+			errs.add(fmt.Errorf("blueprint: seed targets unknown entity %q — declare an entity named %q under entities: (or fix the seed's entity: value)", seed.Entity, seed.Entity))
+			continue
 		}
 		for i, row := range seed.Rows {
-			for name, value := range row {
+			// Rows are maps: iterate their keys sorted so a row with two
+			// bad values reports both, in a stable order, instead of one
+			// picked by map-iteration luck.
+			for _, name := range sortedMapKeys(row) {
+				value := row[name]
 				field, fieldKind := blueprintSeedFieldKind(decl, name)
 				if !fieldKind {
 					continue // not a declared column: not this check's business
@@ -2255,14 +2261,15 @@ func validateBlueprintSeedTypes(bp Blueprint, entitiesByName map[string]framewor
 				}
 				if strings.EqualFold(strings.TrimSpace(field.Type), "relation") && strings.TrimSpace(field.To) != "" {
 					if target, ok := entitiesByName[strings.TrimSpace(field.To)]; ok {
-						return fmt.Errorf("blueprint: seed row %d for entity %q sets %q to %v — a relation column holds the target row's id, and every generated entity's id is a UUID string, so a number can never satisfy it; reference a row seeded earlier in the same pass instead: %q", i, seed.Entity, name, value, "@"+strings.TrimSpace(field.To)+"."+blueprintDisplayField(target)+"=<value>")
+						errs.add(fmt.Errorf("blueprint: seed row %d for entity %q sets %q to %v — a relation column holds the target row's id, and every generated entity's id is a UUID string, so a number can never satisfy it; reference a row seeded earlier in the same pass instead: %q", i+1, seed.Entity, name, value, "@"+strings.TrimSpace(field.To)+"."+blueprintDisplayField(target)+"=<value>"))
+						continue
 					}
 				}
-				return fmt.Errorf("blueprint: seed row %d for entity %q sets %q (type %s) to %v — the generated app would reject it at boot: %s", i, seed.Entity, name, field.Type, value, reason)
+				errs.add(fmt.Errorf("blueprint: seed row %d for entity %q sets %q (type %s) to %v — the generated app would reject it at boot: %s", i+1, seed.Entity, name, field.Type, value, reason))
 			}
 		}
 	}
-	return nil
+	return errs.err()
 }
 
 // blueprintSeedFieldKind resolves a seed row key to the field declaration
@@ -4147,10 +4154,10 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t\t\tn, err := ch.CountAll(ctx, framework.ListOptions{})\n")
 		sb.WriteString("\t\t\tif err != nil {\n\t\t\t\treturn fmt.Errorf(\"seed %s: count: %w\", s.Entity, err)\n\t\t\t}\n")
 		sb.WriteString("\t\t\tif n > 0 {\n\t\t\t\tcontinue\n\t\t\t}\n")
-		sb.WriteString("\t\t\tfor _, row := range s.Rows {\n")
+		sb.WriteString("\t\t\tfor i, row := range s.Rows {\n")
 		sb.WriteString("\t\t\t\tresolveSeedRefs(ctx, fwApp, row)\n")
 		sb.WriteString("\t\t\t\tif _, err := ch.CreateOne(ctx, row); err != nil {\n")
-		sb.WriteString("\t\t\t\t\treturn seedCreateError(s.Entity, row, err)\n")
+		sb.WriteString("\t\t\t\t\treturn seedCreateError(s.Entity, i+1, err)\n")
 		sb.WriteString("\t\t\t\t}\n")
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t}\n")
@@ -4322,8 +4329,11 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("// bare string \"validation failed\" — the messages worth reading live in\n")
 		sb.WriteString("// Fields() — so a plain %w would abort the boot with zero actionable\n")
 		sb.WriteString("// information. Unwrap, print every field message (sorted, so the output\n")
-		sb.WriteString("// is stable), and name the row so it can be found in gofastr.yml.\n")
-		sb.WriteString("func seedCreateError(entity string, row map[string]any, err error) error {\n")
+		sb.WriteString("// is stable), and name the row by its one-based position in the\n")
+		sb.WriteString("// blueprint's seed: block. The position — never a row value — is the\n")
+		sb.WriteString("// label: this error aborts boot through log.Fatal, so its text lands\n")
+		sb.WriteString("// in application logs, and seed rows carry admin emails and passwords.\n")
+		sb.WriteString("func seedCreateError(entity string, index int, err error) error {\n")
 		sb.WriteString("\tvar ve *crud.ValidationError\n")
 		sb.WriteString("\tif !errors.As(err, &ve) || len(ve.Fields()) == 0 {\n")
 		sb.WriteString("\t\treturn fmt.Errorf(\"seed %s: %w\", entity, err)\n")
@@ -4334,24 +4344,13 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t}\n")
 		sb.WriteString("\tsort.Strings(names)\n")
 		sb.WriteString("\tvar b strings.Builder\n")
-		sb.WriteString("\tfmt.Fprintf(&b, \"seed %s row %s failed validation:\", entity, seedRowLabel(row))\n")
+		sb.WriteString("\tfmt.Fprintf(&b, \"seed %s row %d failed validation:\", entity, index)\n")
 		sb.WriteString("\tfor _, name := range names {\n")
 		sb.WriteString("\t\tfor _, msg := range ve.Fields()[name] {\n")
 		sb.WriteString("\t\t\tfmt.Fprintf(&b, \"\\n  - %s: %s\", name, msg)\n")
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t}\n")
 		sb.WriteString("\treturn fmt.Errorf(\"%s\\ncause: %w\", b.String(), err)\n")
-		sb.WriteString("}\n")
-		sb.WriteString("\n// seedRowLabel picks the scalar that identifies a seed row against the\n")
-		sb.WriteString("// blueprint's seed: block (the title/name/email it was authored under),\n")
-		sb.WriteString("// falling back to the whole row.\n")
-		sb.WriteString("func seedRowLabel(row map[string]any) string {\n")
-		sb.WriteString("\tfor _, k := range []string{\"title\", \"name\", \"email\", \"label\", \"slug\", \"body\", \"key\"} {\n")
-		sb.WriteString("\t\tif s, ok := row[k].(string); ok && s != \"\" {\n")
-		sb.WriteString("\t\t\treturn fmt.Sprintf(\"%q\", s)\n")
-		sb.WriteString("\t\t}\n")
-		sb.WriteString("\t}\n")
-		sb.WriteString("\treturn fmt.Sprintf(\"%v\", row)\n")
 		sb.WriteString("}\n")
 	}
 	return sb.String()

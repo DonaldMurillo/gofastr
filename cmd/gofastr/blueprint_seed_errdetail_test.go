@@ -25,7 +25,9 @@ func TestSeedCreateErrorCarriesFieldDetail(t *testing.T) {
 		}
 	}
 	// The failure path must route through the detail helper, not wrap bare.
-	if !strings.Contains(main, "return seedCreateError(s.Entity, row, err)") {
+	// The row is identified by its one-based position in the blueprint's
+	// seed: block — i+1, matching how a human counts YAML list entries.
+	if !strings.Contains(main, "return seedCreateError(s.Entity, i+1, err)") {
 		t.Errorf("CreateOne error path does not route through seedCreateError:\n%s", main)
 	}
 	// Field messages must be ordered deterministically (sorted), so the
@@ -33,10 +35,25 @@ func TestSeedCreateErrorCarriesFieldDetail(t *testing.T) {
 	if !strings.Contains(main, "sort.Strings(") {
 		t.Errorf("field detail is not sorted — nondeterministic boot messages:\n%s", main)
 	}
-	// The row identity must come from the row's own fields, not its map
-	// repr alone.
-	if !strings.Contains(main, "seedRowLabel") {
-		t.Errorf("emitted helper does not identify the failing row:\n%s", main)
+	// The row identity must be its one-based index, not any row value.
+	if !strings.Contains(main, "func seedCreateError(entity string, index int, err error) error") {
+		t.Errorf("emitted helper does not take a row index:\n%s", main)
+	}
+}
+
+// A failed seed aborts boot through log.Fatal, so anything in the message
+// lands in application logs. Seed rows carry admin emails and seed
+// passwords — the row's VALUES must never appear; only its position.
+func TestSeedErrorOmitsRowValues(t *testing.T) {
+	main := renderBlueprintMain(seedDetailBlueprint())
+	if strings.Contains(main, "seedRowLabel") {
+		t.Errorf("emitted main.go labels failing rows by value (seedRowLabel):\n%s", main)
+	}
+	if strings.Contains(main, `fmt.Sprintf("%v", row)`) {
+		t.Errorf("emitted main.go formats the row map — values would reach the logs:\n%s", main)
+	}
+	if !strings.Contains(main, `"seed %s row %d failed validation:"`) {
+		t.Errorf("emitted main.go does not label the failing row by index:\n%s", main)
 	}
 }
 

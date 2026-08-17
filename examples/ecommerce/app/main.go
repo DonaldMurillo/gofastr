@@ -85,10 +85,10 @@ func main() {
 			if n > 0 {
 				continue
 			}
-			for _, row := range s.Rows {
+			for i, row := range s.Rows {
 				resolveSeedRefs(ctx, fwApp, row)
 				if _, err := ch.CreateOne(ctx, row); err != nil {
-					return seedCreateError(s.Entity, row, err)
+					return seedCreateError(s.Entity, i+1, err)
 				}
 			}
 		}
@@ -200,8 +200,11 @@ func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]a
 // bare string "validation failed" — the messages worth reading live in
 // Fields() — so a plain %w would abort the boot with zero actionable
 // information. Unwrap, print every field message (sorted, so the output
-// is stable), and name the row so it can be found in gofastr.yml.
-func seedCreateError(entity string, row map[string]any, err error) error {
+// is stable), and name the row by its one-based position in the
+// blueprint's seed: block. The position — never a row value — is the
+// label: this error aborts boot through log.Fatal, so its text lands
+// in application logs, and seed rows carry admin emails and passwords.
+func seedCreateError(entity string, index int, err error) error {
 	var ve *crud.ValidationError
 	if !errors.As(err, &ve) || len(ve.Fields()) == 0 {
 		return fmt.Errorf("seed %s: %w", entity, err)
@@ -212,23 +215,11 @@ func seedCreateError(entity string, row map[string]any, err error) error {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	fmt.Fprintf(&b, "seed %s row %s failed validation:", entity, seedRowLabel(row))
+	fmt.Fprintf(&b, "seed %s row %d failed validation:", entity, index)
 	for _, name := range names {
 		for _, msg := range ve.Fields()[name] {
 			fmt.Fprintf(&b, "\n  - %s: %s", name, msg)
 		}
 	}
 	return fmt.Errorf("%s\ncause: %w", b.String(), err)
-}
-
-// seedRowLabel picks the scalar that identifies a seed row against the
-// blueprint's seed: block (the title/name/email it was authored under),
-// falling back to the whole row.
-func seedRowLabel(row map[string]any) string {
-	for _, k := range []string{"title", "name", "email", "label", "slug", "body", "key"} {
-		if s, ok := row[k].(string); ok && s != "" {
-			return fmt.Sprintf("%q", s)
-		}
-	}
-	return fmt.Sprintf("%v", row)
 }

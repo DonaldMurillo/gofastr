@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,6 +116,13 @@ func TestExampleBlueprintsBoot(t *testing.T) {
 	}
 }
 
+// bootProbeClient bounds every readiness probe in bootGeneratedApp. A raw
+// http.Get has no timeout: an app that accepts the connection but never
+// responds would block the probe forever and the 90s deadline below would
+// never fire. Five seconds is generous for a first response and well under
+// the deadline, so each hung attempt costs one bounded retry, not the gate.
+var bootProbeClient = &http.Client{Timeout: 5 * time.Second}
+
 // bootGeneratedApp starts a generated app binary on a free port and waits
 // for it to serve. A process that exits first (seed validation, failed
 // migration, refused bind) fails immediately with its captured output —
@@ -153,7 +161,7 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) {
 			t.Fatalf("generated %s app exited before serving (err=%v):\n%s", name, err, output.String())
 		default:
 		}
-		resp, err := http.Get(baseURL + "/")
+		resp, err := bootProbeClient.Get(baseURL + "/")
 		if err == nil {
 			resp.Body.Close()
 			// Any non-server-error answer proves the app is up and routing —
@@ -165,6 +173,30 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("generated %s app did not serve at %s within 90s:\n%s", name, baseURL, output.String())
+}
+
+// TestBootProbeClientTimesOut pins the readiness probe's timeout: a
+// generated app that accepts the connection but never responds must fail
+// the probe (and let the 90s deadline fire) rather than hanging the test
+// forever on an unbounded http.Get.
+func TestBootProbeClientTimesOut(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release // accepts, never responds
+	}))
+	defer srv.Close()
+	defer close(release)
+	start := time.Now()
+	resp, err := bootProbeClient.Get(srv.URL)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("probe returned no error against a hung server — timeout is not bounded")
+	}
+	if elapsed := time.Since(start); elapsed >= 10*time.Second {
+		t.Fatalf("probe took %s against a hung server — the boot gate would never reach its deadline", elapsed)
+	}
 }
 
 // generateAndCompileBlueprint generates one blueprint into a scratch package

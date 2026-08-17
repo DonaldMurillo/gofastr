@@ -129,3 +129,26 @@ func TestSeedAcceptsSatisfiableValueTypes(t *testing.T) {
 		t.Fatalf("valid seed rows rejected:\n%v", err)
 	}
 }
+
+// One pass must report every unsatisfiable seed value, not just the first
+// — and in a stable order: the rows are maps, so iterating them raw makes
+// the reported field change between runs when a row has two bad values.
+// Both findings in one row, and bad values across two rows, must all
+// appear, sorted by field name within each row.
+func TestSeedErrorsReportEveryField(t *testing.T) {
+	rows := "      - body: hi\n        author: 42\n        rating: true\n" +
+		"      - body: also hi\n        published: maybe\n"
+	err := loadSeedTypesBlueprint(t, rows)
+	if err == nil {
+		t.Fatal("blueprint with three unsatisfiable seed values must be rejected")
+	}
+	got := err.Error()
+	for _, want := range []string{"author", "rating", "published"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("error does not name %q — first-rejection reporting:\n%s", want, got)
+		}
+	}
+	if i, j := strings.Index(got, "author"), strings.Index(got, "rating"); i > j || j < 0 || i < 0 {
+		t.Errorf("findings are not in sorted field order (author before rating):\n%s", got)
+	}
+}
