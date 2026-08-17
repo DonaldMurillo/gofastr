@@ -42,7 +42,7 @@ func HighlightLines(code, lang string) []render.HTML {
 		b.Reset()
 	}
 	emit := func(class, text string) {
-		esc := escapeHTML(text)
+		esc := render.Escape(text)
 		if class == "" {
 			b.WriteString(esc)
 			return

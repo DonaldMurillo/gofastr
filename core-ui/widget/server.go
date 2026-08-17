@@ -401,9 +401,9 @@ func (s *server) renderSkeletonCtx(ctx context.Context) render.HTML {
 // their own Skeleton func.
 func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	var b strings.Builder
-	b.WriteString(`<div class="fui-widget fui-pos-` + string(def.Position) + `" data-fui-widget="` + escAttr(def.Name) + `"`)
+	b.WriteString(`<div class="fui-widget fui-pos-` + string(def.Position) + `" data-fui-widget="` + render.Escape(def.Name) + `"`)
 	if def.Role != "" {
-		b.WriteString(` role="` + escAttr(def.Role) + `"`)
+		b.WriteString(` role="` + render.Escape(def.Role) + `"`)
 	}
 	if def.Backdrop {
 		// aria-modal=true tells assistive tech the rest of the page is
@@ -412,10 +412,10 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		b.WriteString(` aria-modal="true"`)
 	}
 	if def.LabelledBy != "" {
-		b.WriteString(` aria-labelledby="` + escAttr(def.LabelledBy) + `"`)
+		b.WriteString(` aria-labelledby="` + render.Escape(def.LabelledBy) + `"`)
 	}
 	if def.DescribedBy != "" {
-		b.WriteString(` aria-describedby="` + escAttr(def.DescribedBy) + `"`)
+		b.WriteString(` aria-describedby="` + render.Escape(def.DescribedBy) + `"`)
 	}
 	if def.DragDismiss {
 		// data-fui-drag-dismiss is the runtime delegator hook; the
@@ -456,7 +456,7 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		if canonical[name] {
 			continue
 		}
-		b.WriteString(`<div class="fui-slot fui-slot-` + escAttr(name) + `">`)
+		b.WriteString(`<div class="fui-slot fui-slot-` + render.Escape(name) + `">`)
 		b.WriteString(string(html))
 		b.WriteString(`</div>`)
 	}
@@ -819,13 +819,4 @@ func widgetCSS(def Definition) string {
 	// supply token VALUES to the token-substituting StyleSheet DSL
 	// during build, never as an emitted :root override.
 	return ss.CSS() + animationCSS
-}
-
-// escAttr does the minimum escaping needed for a value rendered into
-// double-quoted HTML attribute. Sufficient for widget names + slot
-// names which we control; the host's slot HTML is already escaped by
-// component.RenderComponent.
-func escAttr(s string) string {
-	r := strings.NewReplacer(`"`, `&quot;`, `&`, `&amp;`, `<`, `&lt;`, `>`, `&gt;`)
-	return r.Replace(s)
 }

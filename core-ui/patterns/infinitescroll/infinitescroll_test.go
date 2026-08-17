@@ -149,3 +149,24 @@ func TestNoscriptFallsBackToGetForCSRF(t *testing.T) {
 		t.Errorf("noscript fallback must not POST — it cannot carry a CSRF token:\n%s", h)
 	}
 }
+
+// TestRenderEscapesApostrophes pins the 5-char escaper contract on the
+// noscript-fallback interpolations (RPCPath, Cursor). The component
+// delegates to core/render.Escape; a future "simplification" back to a
+// reduced-shape local escaper must fail here.
+func TestRenderEscapesApostrophes(t *testing.T) {
+	out := string(Render(Config{
+		RPCPath: "/f'eed",
+		Items:   []render.HTML{render.HTML("x")},
+		Cursor:  `cur'sor`,
+	}))
+	if !strings.Contains(out, `/f&#39;eed`) {
+		t.Errorf("RPCPath apostrophe must be entity-escaped, got: %s", out)
+	}
+	if !strings.Contains(out, `cur&#39;sor`) {
+		t.Errorf("cursor apostrophe must be entity-escaped, got: %s", out)
+	}
+	if strings.Contains(out, `/f'eed`) || strings.Contains(out, `cur'sor`) {
+		t.Errorf("raw apostrophe leaked into output: %s", out)
+	}
+}

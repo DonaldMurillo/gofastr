@@ -78,7 +78,7 @@ func TestMenuCustomTriggerHTML(t *testing.T) {
 }
 
 func TestMenuBlocksSmuggledAttrKeys(t *testing.T) {
-	// ExtraAttrs values are escaped, but escAttr does not touch spaces
+	// ExtraAttrs values are escaped, but render.Escape does not touch spaces
 	// — a key like `x onclick` must not render a live onclick attribute.
 	// Keys go through the same allow-list as every other ExtraAttrs
 	// consumer (core/render.Attr): on* handlers and syntactically
@@ -109,4 +109,37 @@ func TestMenuPanicsOnEmpty(t *testing.T) {
 		}
 	}()
 	_ = ui.Menu(ui.MenuConfig{Label: "x"})
+}
+
+// TestMenuEscapesApostrophes pins the 5-char escaper contract on every
+// Menu interpolation site (trigger label, panel/trigger classes, item
+// labels, data-fui-rpc attributes). menu.go used to ship a 4-char
+// attribute escaper (no ') — the same reduced shape kiln/chat documents
+// as a real attribute-breakout XSS — so an apostrophe must come out
+// entity-escaped everywhere, and the raw value must never survive.
+func TestMenuEscapesApostrophes(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{
+		Label:        `it's here`,
+		PanelClass:   `pan'el`,
+		TriggerClass: `trig'ger`,
+		Items: []ui.MenuItem{
+			{Label: `don't`, RPC: "/api/x'y"},
+		},
+	}))
+	for _, want := range []string{
+		`it&#39;s here`,
+		`pan&#39;el`,
+		`trig&#39;ger`,
+		`don&#39;t`,
+		`/api/x&#39;y`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Menu output missing escaped %q:\n%s", want, out)
+		}
+	}
+	for _, raw := range []string{`it's`, `pan'el`, `trig'ger`, `don't`, `/api/x'y`} {
+		if strings.Contains(out, raw) {
+			t.Errorf("Menu output leaked raw %q:\n%s", raw, out)
+		}
+	}
 }

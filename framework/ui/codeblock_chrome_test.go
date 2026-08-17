@@ -100,3 +100,17 @@ func TestCodeBlockScrollAddsModifierAndFrames(t *testing.T) {
 		t.Errorf("Scroll should force the framed container:\n%s", h)
 	}
 }
+
+// TestCodeBlockEscapesApostrophes pins the canonical 5-char escaper on
+// the Code body: escapeHTML here was 3-char (no quotes at all), and
+// one shared correct helper must cover both text and attribute
+// contexts so a context switch can't silently drop a quote class.
+func TestCodeBlockEscapesApostrophes(t *testing.T) {
+	h := string(CodeBlock(CodeBlockConfig{Code: "msg := \"it's quoted\""}))
+	if !strings.Contains(h, "it&#39;s quoted") {
+		t.Errorf("CodeBlock did not entity-escape the apostrophe:\n%s", h)
+	}
+	if strings.Contains(h, "it's quoted") {
+		t.Errorf("CodeBlock leaked a raw apostrophe:\n%s", h)
+	}
+}

@@ -150,7 +150,7 @@ func (pe *panelEnv) helpHTML() string {
 	b.WriteString(`<h2 class="kiln-modal-title">Keyboard shortcuts</h2>`)
 	b.WriteString(`<dl class="kiln-help-list">`)
 	for _, r := range rows {
-		fmt.Fprintf(&b, `<dt><kbd class="kiln-kbd">%s</kbd></dt><dd>%s</dd>`, escHTML(r.key), escHTML(r.what))
+		fmt.Fprintf(&b, `<dt><kbd class="kiln-kbd">%s</kbd></dt><dd>%s</dd>`, render.Escape(r.key), render.Escape(r.what))
 	}
 	b.WriteString(`</dl>`)
 	b.WriteString(`<div class="kiln-modal-actions">`)
@@ -165,7 +165,7 @@ func (pe *panelEnv) resetConfirmHTML() string {
 		`<h2 class="kiln-modal-title">Reset session?</h2>` +
 		// Live count updates via the world_snapshot signal which
 		// refreshes on every world_edit / session_reset.
-		`<p class="kiln-modal-sub">Currently live: <strong data-fui-signal="world_snapshot">` + escHTML(pe.worldSnapshotText()) + `</strong>. Reset wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen is gone.</p>` +
+		`<p class="kiln-modal-sub">Currently live: <strong data-fui-signal="world_snapshot">` + render.Escape(pe.worldSnapshotText()) + `</strong>. Reset wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen is gone.</p>` +
 		`<p class="kiln-modal-tip">Snapshot first with <code>kiln freeze --diff</code> in your terminal — emits a review summary you can paste into a commit message before resetting.</p>` +
 		`<div class="kiln-modal-actions">` +
 		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Cancel <kbd class="kiln-kbd">Esc</kbd></button>` +
@@ -270,7 +270,7 @@ func writeAdapterRow(b *strings.Builder, name, display string, installed, isCurr
 	}
 	fmt.Fprintf(b,
 		`<input type="radio" name="name" value="%s" class="kiln-adapter-radio"%s%s>`,
-		escAttr(name), checked, disabled,
+		render.Escape(name), checked, disabled,
 	)
 	suffix := ""
 	if !installed {
@@ -278,7 +278,7 @@ func writeAdapterRow(b *strings.Builder, name, display string, installed, isCurr
 	}
 	fmt.Fprintf(b,
 		`<div class="kiln-adapter-label"><div class="kiln-adapter-name">%s</div><div class="kiln-adapter-display">%s%s</div></div>`,
-		escHTML(name), escHTML(display), escHTML(suffix),
+		render.Escape(name), render.Escape(display), render.Escape(suffix),
 	)
 	b.WriteString(`</label>`)
 }
@@ -342,11 +342,11 @@ func (pe *panelEnv) headerHTML() string {
 		(func() string {
 			label := pe.agentLabel()
 			if label == "no agent" {
-				return `<button type="button" class="kiln-panel-agent kiln-panel-agent-none" data-fui-signal="agent" data-fui-flash-on-update data-fui-open="kiln-agent-settings" title="Pick an agent">` + escHTML(label) + `</button>`
+				return `<button type="button" class="kiln-panel-agent kiln-panel-agent-none" data-fui-signal="agent" data-fui-flash-on-update data-fui-open="kiln-agent-settings" title="Pick an agent">` + render.Escape(label) + `</button>`
 			}
-			return `<span class="kiln-panel-agent" data-fui-signal="agent" data-fui-flash-on-update>` + escHTML(label) + `</span>`
+			return `<span class="kiln-panel-agent" data-fui-signal="agent" data-fui-flash-on-update>` + render.Escape(label) + `</span>`
 		})() +
-		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="` + escAttr(pe.worldSnapshotTooltip()) + `">` + escHTML(pe.worldSnapshotText()) + `</a>` +
+		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="` + render.Escape(pe.worldSnapshotTooltip()) + `">` + render.Escape(pe.worldSnapshotText()) + `</a>` +
 		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts (?)" data-fui-open="kiln-help" data-fui-shortcut-click="?" aria-keyshortcuts="?">?</button>` +
 		`<button type="button" class="kiln-panel-copy" title="Copy transcript to clipboard" data-fui-copy-text-from=".kiln-log">⎘</button>` +
 		`<button type="button" class="kiln-panel-stop" title="Cancel running turn" data-fui-rpc="/kiln/agent/cancel" data-fui-rpc-method="POST">■</button>` +
@@ -377,9 +377,9 @@ func (pe *panelEnv) buildStatusHTML() string {
 	}
 	for i := len(entries) - 1; i >= 0; i-- {
 		if entries[i].Kind == journal.KindWorldEdit {
-			return "applying " + escHTML(string(entries[i].Op)) + "…" +
+			return "applying " + render.Escape(string(entries[i].Op)) + "…" +
 				`<span class="kiln-build-revision" aria-hidden="true">` +
-				escHTML(entries[i].Timestamp.Format(time.RFC3339Nano)) + `</span>`
+				render.Escape(entries[i].Timestamp.Format(time.RFC3339Nano)) + `</span>`
 		}
 	}
 	return "agent is building…"
@@ -626,7 +626,7 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 			b.WriteString(`<div class="kiln-quickstart">`)
 			b.WriteString(`<div class="kiln-quickstart-label">try one of these:</div>`)
 			for _, ex := range examples {
-				fmt.Fprintf(&b, `<button type="button" class="kiln-quickstart-btn" data-fui-fill-input=".kiln-input">%s</button>`, escHTML(ex))
+				fmt.Fprintf(&b, `<button type="button" class="kiln-quickstart-btn" data-fui-fill-input=".kiln-input">%s</button>`, render.Escape(ex))
 			}
 			b.WriteString(`</div>`)
 		}
@@ -707,7 +707,7 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 			renderPlanCard(&b, it.plan, it.plan.PlanID == latestUnresolvedID)
 		case "world_edit":
 			fmt.Fprintf(&b, `<li class="kiln-msg kiln-msg-tool" data-tool="%s">✦ %s %s</li>`,
-				escAttr(string(it.op)), escHTML(string(it.op)), escHTML(summarizeWorldEdit(it.payload)))
+				render.Escape(string(it.op)), render.Escape(string(it.op)), render.Escape(summarizeWorldEdit(it.payload)))
 		}
 		prevWasUser = it.kind == "chat" && it.chat != nil && it.chat.Kind == journal.KindChatUser
 	}
@@ -778,10 +778,10 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 		page, body := splitPagePrefix(e.Message.Text)
 		var pageChip string
 		if page != "" {
-			pageChip = fmt.Sprintf(`<span class="kiln-msg-page">%s</span>`, escHTML(page))
+			pageChip = fmt.Sprintf(`<span class="kiln-msg-page">%s</span>`, render.Escape(page))
 		}
 		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-%s" title="%s">%s%s</li>`,
-			role, escAttr(formatRowTime(e.Timestamp)), pageChip, escHTML(body))
+			role, render.Escape(formatRowTime(e.Timestamp)), pageChip, render.Escape(body))
 		return
 	}
 	if e.Call != nil {
@@ -791,7 +791,7 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 		var suffix string
 		if r, ok := resultByCall[e.Call.CallID]; ok {
 			d := r.Timestamp.Sub(e.Timestamp)
-			suffix = ` <span class="kiln-msg-tool-elapsed">(` + escHTML(formatElapsed(d)) + `)</span>`
+			suffix = ` <span class="kiln-msg-tool-elapsed">(` + render.Escape(formatElapsed(d)) + `)</span>`
 		} else {
 			// Live ticker — runtime rewrites text every 200ms relative
 			// to the call timestamp so pending tools surface their age.
@@ -799,9 +799,9 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 				e.Timestamp.UnixMilli())
 		}
 		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool" data-call-id="%s" data-tool="%s" title="%s">%s %s %s%s</li>`,
-			escAttr(e.Call.CallID), escAttr(e.Call.Name), escAttr(formatRowTime(e.Timestamp)),
-			escHTML(toolIcon(e.Call.Name)), escHTML(e.Call.Name),
-			escHTML(summarizeArgs(e.Call.Args)), suffix)
+			render.Escape(e.Call.CallID), render.Escape(e.Call.Name), render.Escape(formatRowTime(e.Timestamp)),
+			render.Escape(toolIcon(e.Call.Name)), render.Escape(e.Call.Name),
+			render.Escape(summarizeArgs(e.Call.Args)), suffix)
 		return
 	}
 	if e.Result != nil {
@@ -844,11 +844,11 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 			if c, ok := callByID[e.Result.CallID]; ok && c.Call != nil {
 				prompt := "retry the failed " + c.Call.Name + " call (" + summarizeArgs(c.Call.Args) + "): "
 				retryBtn = fmt.Sprintf(` <button type="button" class="kiln-msg-retry" data-fui-fill-input=".kiln-input" data-fui-fill-text="%s" title="Retry this tool with edits">↻ retry</button>`,
-					escAttr(prompt))
+					render.Escape(prompt))
 			}
 		}
 		fmt.Fprintf(b, `<li class="kiln-msg %s" data-call-id="%s" title="%s">%s%s</li>`,
-			cls, escAttr(e.Result.CallID), escAttr(formatRowTime(e.Timestamp)), escHTML(txt), retryBtn)
+			cls, render.Escape(e.Result.CallID), render.Escape(formatRowTime(e.Timestamp)), render.Escape(txt), retryBtn)
 		return
 	}
 }
@@ -931,21 +931,21 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 	if collapsed {
 		cls += " kiln-msg-plan-collapsed"
 	}
-	b.WriteString(`<li class="` + cls + `" data-plan-id="` + escAttr(p.PlanID) + `">`)
-	fmt.Fprintf(b, `<div class="kiln-plan-head"><span class="kiln-plan-title">Plan: %s</span>`, escHTML(p.PlanID))
+	b.WriteString(`<li class="` + cls + `" data-plan-id="` + render.Escape(p.PlanID) + `">`)
+	fmt.Fprintf(b, `<div class="kiln-plan-head"><span class="kiln-plan-title">Plan: %s</span>`, render.Escape(p.PlanID))
 	fmt.Fprintf(b, `<span class="kiln-plan-when" title="%s">proposed %s</span>`,
-		escAttr(formatRowTime(p.ProposedAt)), escHTML(formatRelTime(p.ProposedAt)))
+		render.Escape(formatRowTime(p.ProposedAt)), render.Escape(formatRelTime(p.ProposedAt)))
 	if collapsed && len(p.Steps) > 0 {
-		fmt.Fprintf(b, `<span class="kiln-plan-stepcount">(%s)</span>`, escHTML(pluralize(len(p.Steps), "step", "steps")))
+		fmt.Fprintf(b, `<span class="kiln-plan-stepcount">(%s)</span>`, render.Escape(pluralize(len(p.Steps), "step", "steps")))
 	}
 	if p.Reason != "" {
-		fmt.Fprintf(b, `<span class="kiln-plan-reason">%s</span>`, escHTML(p.Reason))
+		fmt.Fprintf(b, `<span class="kiln-plan-reason">%s</span>`, render.Escape(p.Reason))
 	}
 	b.WriteString(`</div>`)
 	if !collapsed && len(p.Steps) > 0 {
 		b.WriteString(`<ol class="kiln-plan-steps">`)
 		for _, s := range p.Steps {
-			fmt.Fprintf(b, `<li>%s</li>`, escHTML(s))
+			fmt.Fprintf(b, `<li>%s</li>`, render.Escape(s))
 		}
 		b.WriteString(`</ol>`)
 	}
@@ -959,7 +959,7 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 			if strings.HasPrefix(t.Op, "delete_") {
 				cls += " kiln-plan-target-destructive"
 			}
-			fmt.Fprintf(b, `<span class="%s">%s %s</span>`, cls, escHTML(t.Op), escHTML(t.Name))
+			fmt.Fprintf(b, `<span class="%s">%s %s</span>`, cls, render.Escape(t.Op), render.Escape(t.Name))
 		}
 		b.WriteString(`</div>`)
 	}
@@ -969,7 +969,7 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 	case p.Rejected:
 		b.WriteString(`<div class="kiln-plan-status kiln-plan-status-rejected">✕ Rejected`)
 		if p.RejectReason != "" {
-			b.WriteString(`: ` + escHTML(p.RejectReason))
+			b.WriteString(`: ` + render.Escape(p.RejectReason))
 		}
 		b.WriteString(`</div>`)
 	default:
@@ -1006,9 +1006,9 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 				`data-fui-fill-input=".kiln-input" `+
 				`data-fui-fill-text="Refine plan %s: "%s>%s</button>`+
 				`</div>`,
-			escAttr(p.PlanID), attrJSON(map[string]string{"plan_id": p.PlanID}), approveExtra, approveLabel,
-			escAttr(p.PlanID), attrJSON(map[string]string{"plan_id": p.PlanID}), rejectExtra, rejectLabel,
-			escAttr(p.PlanID), modifyExtra, modifyLabel)
+			render.Escape(p.PlanID), attrJSON(map[string]string{"plan_id": p.PlanID}), approveExtra, approveLabel,
+			render.Escape(p.PlanID), attrJSON(map[string]string{"plan_id": p.PlanID}), rejectExtra, rejectLabel,
+			render.Escape(p.PlanID), modifyExtra, modifyLabel)
 	}
 	b.WriteString(`</li>`)
 }
@@ -1150,28 +1150,9 @@ func splitPagePrefix(s string) (page, rest string) {
 	return body, s[end+2:]
 }
 
-func escHTML(s string) string {
-	r := strings.NewReplacer(`&`, `&amp;`, `<`, `&lt;`, `>`, `&gt;`)
-	return r.Replace(s)
-}
-
-// escAttr escapes a value for an HTML attribute.
-//
-// The single quote is NOT optional here: this panel emits
-// single-quoted attributes (the data-fui-rpc-body payloads in
-// renderPlanCard), so omitting `'` let a model-chosen plan_id close the
-// attribute and plant a live event handler on the operator's own
-// Approve button — the control that gates destructive world mutations.
-// Escape both quote characters and this function is correct for either
-// delimiter.
-func escAttr(s string) string {
-	r := strings.NewReplacer(`&`, `&amp;`, `"`, `&quot;`, `'`, `&#39;`, `<`, `&lt;`, `>`, `&gt;`)
-	return r.Replace(s)
-}
-
 // attrJSON renders v as JSON for embedding in an HTML attribute.
 //
-// Hand-building the JSON and escaping the pieces cannot work: escAttr
+// Hand-building the JSON and escaping the pieces cannot work: render.Escape
 // turns a `"` inside a value into &quot;, which the browser decodes
 // back to a bare quote INSIDE the JSON string, corrupting the document
 // the runtime then parses. Encoding first and escaping the whole
@@ -1181,7 +1162,7 @@ func attrJSON(v any) string {
 	if err != nil {
 		return "{}"
 	}
-	return escAttr(string(b))
+	return render.Escape(string(b))
 }
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }

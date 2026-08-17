@@ -792,27 +792,12 @@ func servePaletteSearch(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// htmlEscape is a tiny inline escape for the palette options. We can
-// trust the catalog values (compile-time constants); the function is
-// defensive only.
+// htmlEscape escapes the palette options. The catalog values are
+// compile-time constants, so this is defensive only — it delegates to
+// the canonical 5-char escaper so no reduced-shape escaper survives in
+// the tree.
 func htmlEscape(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		switch r {
-		case '&':
-			b.WriteString("&amp;")
-		case '<':
-			b.WriteString("&lt;")
-		case '>':
-			b.WriteString("&gt;")
-		case '"':
-			b.WriteString("&quot;")
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
+	return render.Escape(s)
 }
 
 // registerScreens wires every route — the main pages plus the per-

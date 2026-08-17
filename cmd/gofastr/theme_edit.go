@@ -734,12 +734,10 @@ var previewChromeCSS = `
 `
 
 // htmlEscape escapes a string for safe inclusion in HTML text content.
+// Delegates to the canonical 5-char escaper so no reduced-shape escaper
+// (the documented past-XSS shape) survives in the tree.
 func htmlEscape(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, `"`, "&quot;")
-	return s
+	return render.Escape(s)
 }
 
 func sortStrings(s []string) {

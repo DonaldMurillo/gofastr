@@ -1072,7 +1072,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 		}
 		body = render.Join(wrapped...)
 	} else {
-		body = render.Tag("code", nil, render.HTML(escapeHTML(cfg.Code)))
+		body = render.Tag("code", nil, render.Text(cfg.Code))
 	}
 
 	if !framed {
@@ -1188,15 +1188,4 @@ func SkipLink(cfg SkipLinkConfig) render.HTML {
 			ID:    cfg.ID,
 		}),
 	)
-}
-
-// escapeHTML is the minimal entity-escape sufficient for code
-// content (we only emit text + tag context — no attribute use here).
-func escapeHTML(s string) string {
-	r := strings.NewReplacer(
-		"&", "&amp;",
-		"<", "&lt;",
-		">", "&gt;",
-	)
-	return r.Replace(s)
 }

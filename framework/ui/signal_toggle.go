@@ -71,9 +71,9 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	// Attribute-escape every config-derived string interpolated below —
 	// this component builds its markup with Sprintf, so escaping is on
 	// us, not render.Tag.
-	escName := escAttr(name)
-	escLabel := escAttr(label)
-	escCls := escAttr(cls)
+	escName := render.Escape(name)
+	escLabel := render.Escape(label)
+	escCls := render.Escape(cls)
 
 	// Build inner children as a single HTML string — static structure.
 	inner := fmt.Sprintf(
