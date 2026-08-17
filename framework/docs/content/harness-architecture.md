@@ -1038,17 +1038,14 @@ HTTP in v0.3.
   listener as `rest`/`ws`. Bearer token in `Authorization`; auth
   and TLS rules identical to `ws`.
 
-#### Tools exposed (every Command verb has an MCP tool)
+#### Tools exposed
 
 The tool that runs the agent is named honestly to make the
 capability visible in MCP UI:
 
 | Tool name | Maps to Command |
 |---|---|
-| `harness.create_session` | `CreateSession` |
 | `harness.list_sessions` | (read) |
-| `harness.attach_session` | `AttachSession` |
-| `harness.detach_session` | `DetachSession` |
 | **`harness.run_agent_with_shell_access`** | `SendInput` — runs the inner agent which can invoke Bash, Read, Write, WebFetch. Outer agent allowlisting this tool is allowlisting RCE-via-LLM. |
 | `harness.cancel_turn` | `CancelTurn` |
 | `harness.answer_permission` | `AnswerPermission` (rejected if originator's `ID()` matches; agents cannot self-approve) |
@@ -1056,6 +1053,13 @@ capability visible in MCP UI:
 | `harness.enter_plan_mode` / `harness.exit_plan_mode` | `EnterPlanMode` / `ExitPlanMode` |
 | `harness.end_session` | (DELETE /sessions/{id}) |
 | `harness.wait_for_turn` | synchronous helper — sends input + blocks until `TurnEnded` |
+
+Session lifecycle verbs (`CreateSession`, `AttachSession`,
+`DetachSession`) have no MCP tools: session construction lives in the
+harness composition layer above the mux, out of the transport's reach,
+and MCP clients are per-call ephemeral so attach/detach have no durable
+identity to act on. A tools/list↔dispatch parity test in `mcpserver`
+keeps the advertised list honest.
 
 A startup banner emitted on every `mcpserver` attach reminds the
 outer agent (and the user reading their tool log) that this tool

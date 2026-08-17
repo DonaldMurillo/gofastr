@@ -175,15 +175,15 @@ func (s *Server) handleInitialize(req rpcRequest) {
 
 // tools/list returns the Command-verb tools the harness exposes.
 func (s *Server) handleToolsList(req rpcRequest) {
+	// Session-lifecycle verbs (create/attach/detach) are intentionally
+	// NOT advertised: the mux only arbitrates per-turn commands and the
+	// harness composition layer owns session creation — this server has
+	// no path to them, and MCP clients are per-call ephemeral, so there
+	// is nothing durable to attach/detach. tools/list must equal what
+	// tools/call actually dispatches (see TestMCPToolsListDispatchParity).
 	tools := []map[string]any{
-		mkTool("harness.create_session", "Create a new harness session.",
-			`{"type":"object","properties":{"profile":{"type":"string"}},"required":["profile"]}`),
 		mkTool("harness.list_sessions", "List active and stored harness sessions.",
 			`{"type":"object","properties":{}}`),
-		mkTool("harness.attach_session", "Attach to an existing session by ID.",
-			`{"type":"object","properties":{"sessionId":{"type":"string"}},"required":["sessionId"]}`),
-		mkTool("harness.detach_session", "Detach (non-destructive).",
-			`{"type":"object","properties":{"sessionId":{"type":"string"}},"required":["sessionId"]}`),
 		mkTool("harness.run_agent_with_shell_access",
 			"Run the inner harness agent. The agent has access to Bash, Read, Write, WebFetch tools — allowlisting this is allowlisting LLM-mediated RCE.",
 			`{"type":"object","properties":{"sessionId":{"type":"string"},"prompt":{"type":"string"},"wait":{"type":"string","enum":["turn","none"]}},"required":["sessionId","prompt"]}`),

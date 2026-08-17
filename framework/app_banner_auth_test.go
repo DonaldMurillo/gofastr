@@ -53,7 +53,7 @@ func TestBannerPublicOpenAPIUnmarked(t *testing.T) {
 	app.printStartupBanner("127.0.0.1:8080", "test", true, true, "")
 
 	for _, line := range strings.Split(out.String(), "\n") {
-		if strings.Contains(line, "/openapi.json") || strings.Contains(line, "/api/docs/") {
+		if strings.Contains(line, "/openapi.json") || strings.Contains(line, "/api/docs/") || strings.Contains(line, "/api/llm.md") {
 			if strings.Contains(line, "requires auth") {
 				t.Errorf("public API surface wrongly marked auth-gated: %q", line)
 			}
