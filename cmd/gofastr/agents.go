@@ -377,6 +377,12 @@ points you at one.
 - ` + "`" + `gofastr docs ui-capability-map` + "`" + ` — screens, state ownership, and
   delivery.
 
+## Secure by default
+
+Entity CRUD requires a signed-in session until you opt out: ` + "`" + `Public: true` + "`" + `
+on the entity's Exposure opens it to anonymous requests; wire battery/auth
+for a real login flow (` + "`" + `gofastr docs auth` + "`" + `).
+
 ## UI starts with product direction
 
 Before selecting UI components, complete or refresh ` + "`" + `DESIGN.md` + "`" + `: primary

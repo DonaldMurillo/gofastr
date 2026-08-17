@@ -167,7 +167,7 @@ func TestMCPUnknownMethod(t *testing.T) {
 
 func TestMCPRequiredTokenRejected(t *testing.T) {
 	s, _, _ := newTestServer(t)
-	s.RequiredToken = "expected-tok"
+	s.RequiredToken = "expected-tok" // not-a-secret: test fixture token for the rejection path
 	// Don't set GOFASTR_HARNESS_TOKEN.
 	var out bytes.Buffer
 	s.WithIO(bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`+"\n"), &out)
@@ -176,4 +176,67 @@ func TestMCPRequiredTokenRejected(t *testing.T) {
 		t.Fatal("expected error when token mismatched")
 	}
 	_ = time.Second // keep time import (race-tolerance)
+}
+
+// TestMCPToolsListDispatchParity pins the truthfulness contract of
+// tools/list: every advertised tool must be dispatchable through
+// tools/call. A tool that only exists in the advertisement answers
+// JSON-RPC -32601 ("unknown tool") — a capability that does not exist.
+func TestMCPToolsListDispatchParity(t *testing.T) {
+	s, session, _ := newTestServer(t)
+
+	list := runMCPRequest(t, s, map[string]any{
+		"jsonrpc": "2.0", "id": 1,
+		"method": "tools/list",
+	})
+	result, _ := list["result"].(map[string]any)
+	if result == nil {
+		t.Fatalf("tools/list returned no result: %v", list)
+	}
+	tools, _ := result["tools"].([]any)
+	if len(tools) == 0 {
+		t.Fatal("tools/list returned no tools")
+	}
+
+	// Valid arguments for every advertised tool so a -32602 (bad args)
+	// never masks a -32601 (unknown tool). run_agent uses wait=none so
+	// the sweep never blocks on a turn.
+	args := map[string]map[string]any{
+		"harness.create_session":              {"profile": "default"},
+		"harness.list_sessions":               {},
+		"harness.attach_session":              {"sessionId": string(session)},
+		"harness.detach_session":              {"sessionId": string(session)},
+		"harness.run_agent_with_shell_access": {"sessionId": string(session), "prompt": "hi", "wait": "none"},
+		"harness.cancel_turn":                 {"sessionId": string(session)},
+		"harness.answer_permission":           {"sessionId": string(session), "callId": "call_1", "decision": "allow"},
+		"harness.set_model":                   {"sessionId": string(session), "model": "fake"},
+		"harness.enter_plan_mode":             {"sessionId": string(session)},
+		"harness.exit_plan_mode":              {"sessionId": string(session), "approve": true},
+	}
+
+	for _, raw := range tools {
+		name, _ := raw.(map[string]any)["name"].(string)
+		callArgs, ok := args[name]
+		if !ok {
+			// A tool was added to tools/list without updating the sweep:
+			// fail loudly so this test stays exhaustive.
+			t.Errorf("tools/list advertises %q but the parity sweep has no arguments for it — add them", name)
+			continue
+		}
+		resp := runMCPRequest(t, s, map[string]any{
+			"jsonrpc": "2.0", "id": 2,
+			"method": "tools/call",
+			"params": map[string]any{
+				"name":      name,
+				"arguments": callArgs,
+			},
+		})
+		errObj, _ := resp["error"].(map[string]any)
+		if errObj == nil {
+			continue
+		}
+		if code, _ := errObj["code"].(float64); code == -32601 {
+			t.Errorf("tools/list advertises %q but tools/call rejects it as unknown (-32601) — the advertised surface must match the dispatchable surface", name)
+		}
+	}
 }

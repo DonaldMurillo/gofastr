@@ -176,6 +176,7 @@ var docIntents = []docIntent{
 			{"log", "Logging", "Structured JSON logs with MCP query tools."},
 			{"observability", "Observability", "Metrics and tracing for the hot paths."},
 			{"deploy", "Deployment", "Ship it: build, configure, and run GoFastr in production."},
+			{"backups", "Backups and restore", "Database backup commands for SQLite and Postgres, and how to prove a restore works."},
 			{"first-run", "First-run setup", "A setup wizard (or headless env bootstrap) gates the app until first-boot state exists."},
 			{"scaling", "Horizontal scaling", "What's process-local by default and the replica-safe alternative for each."},
 			{"queue", "Job queue", "Durable background jobs via battery/queue."},

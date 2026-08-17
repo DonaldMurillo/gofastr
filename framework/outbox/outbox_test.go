@@ -519,32 +519,6 @@ func findRowMaybe(rows []Row, id string) *Row {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// backoffFor: exponential growth capped at max.
-// ---------------------------------------------------------------------------
-
-func TestBackoffFor(t *testing.T) {
-	_, o := openOutbox(t)
-	o.backoffBase = 10 * time.Millisecond
-	o.backoffMax = 100 * time.Millisecond
-	cases := []struct {
-		att  int
-		want time.Duration
-	}{
-		{1, 10 * time.Millisecond},
-		{2, 20 * time.Millisecond},
-		{3, 40 * time.Millisecond},
-		{4, 80 * time.Millisecond},
-		{5, 100 * time.Millisecond}, // capped
-		{9, 100 * time.Millisecond}, // still capped
-	}
-	for _, c := range cases {
-		if got := o.backoffFor(c.att); got != c.want {
-			t.Errorf("backoffFor(%d) = %v, want %v", c.att, got, c.want)
-		}
-	}
-}
-
 // exec runs a one-shot SQL statement against the outbox table from a test.
 func exec(t *testing.T, db *sql.DB, o *Outbox, tmpl, id string) {
 	t.Helper()

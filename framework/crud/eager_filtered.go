@@ -419,12 +419,12 @@ func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx in
 		if f.Op == filter.OpIn {
 			// Greedily absorb the run of same-field OpIn filters.
 			phs := []string{fmt.Sprintf("$%d", idx)}
-			args = append(args, f.Value)
+			args = append(args, f.BindValue())
 			idx++
 			for i+1 < len(filters) && filters[i+1].Op == filter.OpIn && filters[i+1].Field == f.Field {
 				i++
 				phs = append(phs, fmt.Sprintf("$%d", idx))
-				args = append(args, filters[i].Value)
+				args = append(args, filters[i].BindValue())
 				idx++
 			}
 			parts = append(parts, fmt.Sprintf("%s IN (%s)", col(f.Field), strings.Join(phs, ", ")))
@@ -440,7 +440,7 @@ func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx in
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%s %s $%d", col(f.Field), opToSQL(f.Op), idx))
-		args = append(args, f.Value)
+		args = append(args, f.BindValue())
 		idx++
 	}
 	return " AND " + strings.Join(parts, " AND "), args

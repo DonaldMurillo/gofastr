@@ -2878,7 +2878,27 @@ func (a *App) Start(addr string) error {
 		// API entity index under /api/ alongside /api/docs/.
 		// Root /llm.md is free for the homepage screen doc.
 		if !a.Config.NoLLMMD {
-			a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName))
+			// PublicOpenAPI serves the index without the auth gate — the
+			// same opt-in and exposure class as the public /openapi.json
+			// above (llm.md derives from the same schema information, and
+			// the startup banner already advertises both URLs behind this
+			// single switch). The public route serves the full
+			// construction-time document: the operator just opted into
+			// publishing the complete spec, which discloses strictly more
+			// than this index. The default route stays the session-gated,
+			// per-request-filtered crud handler, and per-entity
+			// /{table}/llm.md routes keep their own scope gate either way.
+			if a.Config.PublicOpenAPI {
+				doc := []byte(crud.RegistryLLMMD(a.Registry, appName))
+				a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Cache-Control", "no-store")
+					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+					w.Header().Set("Content-Length", fmt.Sprintf("%d", len(doc)))
+					w.Write(doc)
+				}))
+			} else {
+				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName))
+			}
 			hasLLMMD = true
 		}
 	}
@@ -2918,6 +2938,19 @@ func (a *App) Start(addr string) error {
 	// works under the dev auto-mount and disappears in production.
 	if len(a.mcpApps) > 0 && !a.mcpAutoMount && !a.routerHasMCPRoute() {
 		a.Logger().Warn("WithMCPApp registered but /mcp is not mounted — the widget and its tool will be unreachable; add framework.WithMCP()")
+	}
+	// Entity MCP tools (Exposure.MCP: true) have the same prod-only 404
+	// failure mode: dev auto-mounts /mcp so the tools work locally, a
+	// production binary without WithMCP() registers them onto a dispatcher
+	// nothing can reach. Warn when at least one entity opted in and its
+	// tools were actually registered (DB present).
+	if a.DB != nil && !a.mcpAutoMount && !a.routerHasMCPRoute() {
+		for _, e := range a.Registry.All() {
+			if e.Config.Exposure != nil && e.Config.Exposure.MCP {
+				a.Logger().Warn("entity MCP tools are registered but /mcp is not mounted — they will be unreachable; add framework.WithMCP()")
+				break
+			}
+		}
 	}
 	if a.mcpAutoMount {
 		a.router.Get("/mcp/server-card", http.HandlerFunc(a.handleMCPServerCard))

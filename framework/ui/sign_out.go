@@ -54,9 +54,9 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	var b strings.Builder
 	// csrf-exempt: battery/auth's logout handler enforces same-origin requests,
 	// and auth.WithBFFPosture exempts only this route from its global CSRF gate.
-	b.WriteString(`<form data-fui-comp="ui-sign-out" class="` + escAttr(cls) + `" method="post" action="` + escAttr(action) + `">`)
+	b.WriteString(`<form data-fui-comp="ui-sign-out" class="` + render.Escape(cls) + `" method="post" action="` + render.Escape(action) + `">`)
 	if cfg.Next != "" {
-		b.WriteString(`<input type="hidden" name="next" value="` + escAttr(cfg.Next) + `">`)
+		b.WriteString(`<input type="hidden" name="next" value="` + render.Escape(cfg.Next) + `">`)
 	}
 	b.WriteString(string(Button(ButtonConfig{Label: label, Variant: variant, Type: "submit", Size: ButtonSizeSmall})))
 	b.WriteString(`</form>`)

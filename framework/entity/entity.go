@@ -273,8 +273,9 @@ type Entity struct {
 
 // Define creates a new Entity with the given name and configuration.
 // It applies defaults (Table, Timestamps=true) and stores the name.
-// It also injects system fields (id, timestamps) with AutoGenerate flags
-// unless the user has already defined them.
+// It also injects system fields (id, timestamps, and the scope-driven
+// tenant/owner/soft-delete columns) with AutoGenerate flags unless the
+// user has already defined them.
 func Define(name string, config EntityConfig) *Entity {
 	config = config.normalizeSubConfigs()
 	config.Name = name
@@ -378,6 +379,41 @@ func Define(name string, config EntityConfig) *Entity {
 			config.Fields = append(config.Fields, schema.Field{
 				Name:         "deleted_at",
 				Type:         schema.Timestamp,
+				AutoGenerate: schema.AutoNone,
+				ReadOnly:     true,
+				Hidden:       true,
+			})
+		}
+	}
+
+	// Inject the owner column when an owner scope is configured and no
+	// field with that name is declared — symmetric with tenant_id above
+	// and matching the blueprint generator's owner_field semantics. The
+	// crud layer stamps the owner on writes (InjectOwner) and scopes
+	// reads by it (ApplyOwnerScope), so the column MUST exist in the
+	// table; without this, AutoMigrate would create a table with no
+	// owner column — a create would silently persist an unowned row (the
+	// INSERT column list comes from GetFields) and the first scoped read
+	// would fail with "no such column". A field the caller DID declare
+	// with that name is left untouched.
+	if config.Scope.OwnerField != "" {
+		// Validate the owner column name once, here, matching the
+		// TenantField check above: it is interpolated into owner-scope
+		// WHERE clauses, so a bad name should fail loud at definition,
+		// not as an opaque panic on the first scoped request.
+		if _, err := query.SafeIdent(config.Scope.OwnerField); err != nil {
+			panic(fmt.Sprintf("entity %q: OwnerField %q is not a valid SQL identifier: %v", name, config.Scope.OwnerField, err))
+		}
+		hasOwner := false
+		for _, f := range config.Fields {
+			if f.Name == config.Scope.OwnerField {
+				hasOwner = true
+			}
+		}
+		if !hasOwner {
+			config.Fields = append(config.Fields, schema.Field{
+				Name:         config.Scope.OwnerField,
+				Type:         schema.String,
 				AutoGenerate: schema.AutoNone,
 				ReadOnly:     true,
 				Hidden:       true,
@@ -707,19 +743,12 @@ func defaultAsWireValue(f schema.Field) any {
 	return f.Default
 }
 
-// toSnake converts CamelCase or kebab-case to snake_case.
+// toSnake converts CamelCase or kebab-case to snake_case. The camelCase
+// conversion is framework/internal/casing's (cached) — only the kebab/space
+// normalization is local: casing.ToSnake leaves those bytes untouched, but a
+// default table name must be a bare SQL identifier.
 func toSnake(s string) string {
 	s = strings.ReplaceAll(s, "-", "_")
 	s = strings.ReplaceAll(s, " ", "_")
-	if strings.ToLower(s) == s {
-		return s
-	}
-	var b strings.Builder
-	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			b.WriteByte('_')
-		}
-		b.WriteRune(r)
-	}
-	return strings.ToLower(b.String())
+	return casing.ToSnake(s)
 }

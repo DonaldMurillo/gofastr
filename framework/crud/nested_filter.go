@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
@@ -17,6 +18,13 @@ import (
 // parentheses, comment markers, or operators is rejected outright.
 // Field names come from query-string keys (?author.name OR 1=1 -- = foo)
 // and must NEVER be embedded into SQL verbatim.
+//
+// Deliberately NOT core/query.identRe: that regex additionally allows
+// dot-separated schema.table paths, while a nested-filter FIELD half
+// must be a single segment (multi-level paths are rejected by design
+// above), so the tighter single-segment shape is load-bearing here.
+// The two regexes differ on purpose; unifying them would loosen this
+// allow-list.
 var safeIdentifierRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // isSafeIdentifier reports whether s is a plain SQL identifier (letters,
@@ -32,6 +40,11 @@ type nestedFilter struct {
 	Op       filter.FilterOp
 	Value    string   // single-value ops (eq/gt/like/…)
 	Values   []string // OpIn: the full value set, emitted as one IN (...)
+	// isBool marks a filter on a Bool-typed target column so
+	// buildExistsSubquery binds a Go bool for true/false spellings —
+	// a raw string binds TEXT against SQLite's INTEGER storage and
+	// matches nothing (same coercion as filter.ParseFiltersValues).
+	isBool bool
 }
 
 // parseNestedFilters extracts dotted-path query params and resolves their
@@ -122,13 +135,14 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		// reason ?content=x does on the flat path. Hidden and NoQuery both win
 		// under BOTH names — resolving an alias past a refusal would make the
 		// wire key a way around the guard.
-		known, blocked := false, false
+		known, blocked, isBool := false, false, false
 		for _, f := range target.GetFields() {
 			if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) {
 				known = !f.Hidden
 				blocked = known && f.NoQuery
 				if known {
 					fieldName = f.Name // rewrite to the column: this reaches SQL
+					isBool = f.Type == schema.Bool
 				}
 				break
 			}
@@ -148,9 +162,9 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			// unmatchable — a single related row can't equal every value — so
 			// `?author.name_in=a,b` silently returned nothing. One IN matches
 			// the top-level _in semantics.
-			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Values: strings.Split(values[0], ",")})
+			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Values: strings.Split(values[0], ","), isBool: isBool})
 		} else {
-			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Value: values[0]})
+			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Value: values[0], isBool: isBool})
 		}
 	}
 	return out, nil
@@ -204,7 +218,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 				spec.Relation, spec.Field, rel.Entity, err)
 		}
 		field := spec.Field
-		known, blocked := false, false
+		known, blocked, isBool := false, false, false
 		for _, f := range target.GetFields() {
 			if f.Name == field || (f.WireName != "" && f.WireName == field) {
 				// A Hidden target column is treated as not-declared —
@@ -218,6 +232,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 				blocked = known && f.NoQuery
 				if known {
 					field = f.Name // rewrite to the column: this reaches SQL
+					isBool = f.Type == schema.Bool
 				}
 				break
 			}
@@ -228,7 +243,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 		if !known {
 			return nil, fmt.Errorf("nested filter %q.%q: field not declared on %q", spec.Relation, spec.Field, rel.Entity)
 		}
-		nf := nestedFilter{Relation: rel, Field: field, Op: spec.Op}
+		nf := nestedFilter{Relation: rel, Field: field, Op: spec.Op, isBool: isBool}
 		if spec.Op == filter.OpIn {
 			nf.Values = spec.Values
 		} else {
@@ -292,7 +307,7 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		ph := make([]string, len(nf.Values))
 		for i, v := range nf.Values {
 			ph[i] = fmt.Sprintf("$%d", i+1)
-			args = append(args, v)
+			args = append(args, filter.BoolBind(nf.isBool, v))
 		}
 		predicate = fmt.Sprintf("%s.%s IN (%s)", rel.Entity, col, strings.Join(ph, ","))
 	} else if nf.Op == filter.OpLike {
@@ -305,7 +320,7 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		args = []any{filter.EscapeLikePattern(nf.Value)}
 	} else {
 		predicate = fmt.Sprintf("%s.%s %s $1", rel.Entity, col, opToSQL(nf.Op))
-		args = []any{nf.Value}
+		args = []any{filter.BoolBind(nf.isBool, nf.Value)}
 	}
 
 	switch rel.Type {

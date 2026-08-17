@@ -106,7 +106,7 @@ type toastSlot struct{ name string }
 func (t toastSlot) Render() render.HTML {
 	return render.HTML(
 		`<div class="ui-toast-stack" data-fui-comp="ui-toast-stack" data-fui-toast-stack="` +
-			escAttr(t.name) + `"></div>`,
+			render.Escape(t.name) + `"></div>`,
 	)
 }
 

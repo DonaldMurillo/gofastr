@@ -38,7 +38,8 @@ app.RegisterPlugin(log.New(log.Config{
 - Panic-recovery middleware that converts panics into 500s and logs
   the stack trace through the same sinks.
 - App lifecycle events (`app.start` / `app.stop`).
-- Sink fan-out: file + webhook + console + any custom Sink, ordered by
+- Sink fan-out: file + webhook + console + JSON-to-stdout + any custom
+  Sink, ordered by
   `Sinks` slice on shutdown so fast/local sinks outlive slow/remote
   ones.
 - Logger swapped on `App.Logger` so framework middleware (Logging,

@@ -166,6 +166,20 @@ jobs:
 
       - name: Build
         run: go build ./...
+      # The three gates `make build` runs locally (see Makefile + cmd/check-csp,
+      # cmd/check-embed, cmd/repolint). The Build step above uses plain
+      # `go build`, so until now these were local-only: a tree that fails them
+      # still merged green. Each is a `go run` of a cmd/ gate binary over the
+      # checkout — seconds, no services, no Chrome (verified 3-5s each,
+      # 2026-08-16).
+      - name: csp-check (no inline <script> / style emission)
+        run: make csp-check
+
+      - name: embed-check (no server actions in embeddable surfaces)
+        run: make embed-check
+
+      - name: repo-lint
+        run: make repo-lint
 
       - name: Cross-compile smoke (windows, darwin)
         # The runner is ubuntu-only, so windows-tagged files never compile
@@ -406,11 +420,12 @@ jobs:
     # HTTP — SSR, auth, owner isolation, CRUD, OpenAPI, island round-trips.
     # See evals/upgrade-fixtures/README.md.
     #
-    # NON-BLOCKING for the v0.63 release: the name intentionally omits
-    # "(blocking)" so release.yml's gate (which counts checks containing that
-    # suffix) does not gate a release on it. Promote to blocking by appending
-    # " (blocking)" to `name` once it has a stretch of green runs.
-    name: "historical upgrade fixtures"
+    # BLOCKING since 2026-08-16: promoted from advisory (the v0.63 changelog
+    # deferred promotion) after a stretch of green runs — 4/4 success on the
+    # main runs checked at promotion time. The "(blocking)" suffix puts the
+    # check in scripts/release-required-checks.txt's scope; the gate matches
+    # names exactly and TestReleaseManifestMatchesCI pins the sync.
+    name: "historical upgrade fixtures (blocking)"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

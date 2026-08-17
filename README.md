@@ -398,7 +398,7 @@ GoFastr is pre-1.0 and explicitly not stable:
 
 - The `core/` primitives are usable and tested in isolation.
 - The `framework/` entity layer handles SQLite + Postgres CRUD apps today.
-- `core-ui/` changes fastest — APIs may break between commits.
+- `core-ui/` changes fastest. Its exported APIs follow the same [deprecation policy](framework/docs/content/stability.md) as the rest of the tree — deprecate first, keep the old shape for at least one minor release — but expect that window to be exercised more often here than anywhere else before v1.
 - The CLI binary bundles a pure-Go SQLite driver (`modernc.org/sqlite`, registered as `sqlite3` by `gofastr/sqlite/stdlib`), so it builds with `CGO_ENABLED=0`. To run migrations against Postgres, build a custom binary that imports your driver of choice.
 
 ## Why this exists

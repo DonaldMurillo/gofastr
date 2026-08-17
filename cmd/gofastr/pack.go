@@ -1507,7 +1507,7 @@ func packReadTheme(file *ast.File) (map[string]string, map[string]string) {
 			if light == nil {
 				light = map[string]string{}
 			}
-			light[camelToKebab(path[2])] = astString(asn.Rhs[0])
+			light[toKebabCase(path[2])] = astString(asn.Rhs[0])
 		case len(path) == 4 && path[1] == "Fonts" && path[3] == "Value":
 			if light == nil {
 				light = map[string]string{}
@@ -1536,20 +1536,6 @@ func selectorPath(e ast.Expr) []string {
 		return append(selectorPath(t.X), t.Sel.Name)
 	}
 	return nil
-}
-
-func camelToKebab(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			b.WriteByte('-')
-		}
-		if r >= 'A' && r <= 'Z' {
-			r += 'a' - 'A'
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
 }
 
 // firstFontFamily extracts the authored family from a generated font stack:
@@ -2023,21 +2009,7 @@ func returnString(fn *ast.FuncDecl) string {
 
 func typeNameToScreenName(tn string) string {
 	tn = strings.TrimSuffix(tn, "Screen")
-	return camelToSnake(tn)
-}
-
-func camelToSnake(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			b.WriteByte('_')
-		}
-		if r >= 'A' && r <= 'Z' {
-			r += 'a' - 'A'
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return toSnakeCase(tn)
 }
 
 func paramToBrace(route string) string {

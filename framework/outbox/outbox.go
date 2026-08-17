@@ -410,34 +410,6 @@ func scanOutboxRow(row interface {
 	return r, nil
 }
 
-// backoffFor returns the delay before the next retry for the attempt
-// that just failed (attempts >= 1): base*2^(attempts-1), capped at
-// backoffMax when positive. Mirrors battery/queue's backoffFor so the
-// two behave consistently.
-func (o *Outbox) backoffFor(attempts int) time.Duration {
-	exp := attempts - 1
-	if exp < 0 {
-		exp = 0
-	}
-	d := o.backoffBase
-	for i := 0; i < exp; i++ {
-		if o.backoffMax > 0 && d >= o.backoffMax {
-			return o.backoffMax
-		}
-		if d > (1<<62)/2 {
-			if o.backoffMax > 0 {
-				return o.backoffMax
-			}
-			return d
-		}
-		d *= 2
-	}
-	if o.backoffMax > 0 && d > o.backoffMax {
-		d = o.backoffMax
-	}
-	return d
-}
-
 // truncateError caps last_error so a pathological handler error can't
 // bloat the row.
 func truncateError(err error) string {

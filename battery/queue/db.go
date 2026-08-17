@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/backoff"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
@@ -151,8 +152,8 @@ func WithLeaseTimeout(d time.Duration) DBQueueOption {
 // remaining, scheduled_at is advanced by base*2^(attempts-1) — so the first
 // retry waits ~base, the second ~2*base, and so on — capped at max. A
 // non-positive base disables backoff (jobs retry immediately, the default).
-// A non-positive max means uncapped. Mirrors the webhook battery's retry
-// backoff so the two batteries behave consistently.
+// A non-positive max means uncapped. The delay computation is
+// [core/backoff].Exponential, shared with the outbox relay.
 func WithBackoff(base, max time.Duration) DBQueueOption {
 	return func(q *DBQueue) {
 		q.backoffBase = base
@@ -555,40 +556,10 @@ func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
 		_, err := q.db.ExecContext(ctx, stmt, jobID)
 		return err
 	}
-	next := q.now().UTC().Add(q.backoffFor(attempts))
+	next := q.now().UTC().Add(backoff.Exponential(q.backoffBase, q.backoffMax, attempts))
 	stmt := fmt.Sprintf("UPDATE %s SET status='pending', scheduled_at=$1 WHERE id = $2", q.qt())
 	_, err := q.db.ExecContext(ctx, stmt, next, jobID)
 	return err
-}
-
-// backoffFor returns the delay before the next retry given the number of
-// attempts already made: base*2^(attempts-1), capped at backoffMax (when
-// positive). attempts is expected to be >= 1 (Dequeue increments it before
-// the handler runs).
-func (q *DBQueue) backoffFor(attempts int) time.Duration {
-	exp := attempts - 1
-	if exp < 0 {
-		exp = 0
-	}
-	d := q.backoffBase
-	for i := 0; i < exp; i++ {
-		// Stop doubling once we hit the cap or risk int64 overflow.
-		if q.backoffMax > 0 && d >= q.backoffMax {
-			return q.backoffMax
-		}
-		if d > (1<<62)/2 {
-			// Next double would overflow; clamp to cap (or this value if uncapped).
-			if q.backoffMax > 0 {
-				return q.backoffMax
-			}
-			return d
-		}
-		d *= 2
-	}
-	if q.backoffMax > 0 && d > q.backoffMax {
-		d = q.backoffMax
-	}
-	return d
 }
 
 // Replay implements [Replayable]: it resets a terminally-failed job to pending

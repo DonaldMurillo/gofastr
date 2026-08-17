@@ -189,8 +189,8 @@ func TestFormatHelpers(t *testing.T) {
 	if got := title("past_due"); got != "Past Due" {
 		t.Fatalf("title = %q", got)
 	}
-	if got := camel("generic_name"); got != "genericName" {
-		t.Fatalf("camel = %q", got)
+	if got := rowValue(map[string]any{"genericName": "x"}, "generic_name"); got != "x" {
+		t.Fatalf("rowValue snake→camel fallback = %v, want x", got)
 	}
 	h := format(Field{Key: "status", Type: "enum"}, "past_due", nil)
 	if !strings.Contains(string(h), "Past Due") {

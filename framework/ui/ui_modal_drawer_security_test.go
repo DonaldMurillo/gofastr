@@ -153,7 +153,7 @@ func TestModal_IDInjection(t *testing.T) {
 // ===========================================================================
 
 // TestDrawer_TitleXSS verifies that a sidebar title (rendered inside the
-// drawer body) containing <script> tags is escaped via escText().
+// drawer body) containing <script> tags is escaped via render.Escape().
 func TestDrawer_TitleXSS(t *testing.T) {
 	t.Parallel()
 	h := string(sidebarBody(SidebarConfig{
@@ -208,10 +208,9 @@ func TestDrawer_ClassInjection(t *testing.T) {
 			{Label: `" onclick="alert(1)" data-x="`, Href: "/safe"},
 		},
 	}))
-	// The label is text-escaped (escText escapes <>& only).
-	// " is not special in text node context, so the payload passes
-	// through as text content inside <span class="ui-sidebar__label">.
-	// This is safe — " inside a text node has no HTML significance.
+	// The label is text-escaped via render.Escape (5-char: <>&"').
+	// " and ' become &quot;/&#39; in the text node — inert there, and
+	// the payload cannot leave the <span class="ui-sidebar__label">.
 	if !strings.Contains(h, `ui-sidebar__label`) {
 		t.Errorf("SECURITY: [drawer-class-injection] expected label span, got: %s", h)
 	}
@@ -259,7 +258,7 @@ func TestDropdown_ItemsXSS(t *testing.T) {
 }
 
 // TestDropdown_ItemValueXSS verifies that href values containing
-// javascript: are attr-escaped. NOTE: escAttr escapes <>&" but NOT
+// javascript: are attr-escaped. NOTE: render.Escape escapes <>&"' but NOT
 // URL schemes — javascript: contains no escapable chars so it passes
 // through. This is a FINDING: the framework doesn't sanitize URI schemes.
 func TestDropdown_ItemValueXSS(t *testing.T) {
@@ -270,18 +269,18 @@ func TestDropdown_ItemValueXSS(t *testing.T) {
 			{Label: "Click", Href: `javascript:alert(1)`},
 		},
 	}))
-	// escAttr escapes " but not URL schemes. javascript: has no chars
-	// that get HTML-escaped, so it passes through into the href.
-	// This is a FINDING — hosts must validate Href before passing it.
+	// URL-scheme sanitization is urlsafe.CleanAnchor's job (menu.go runs
+	// every Href through it); render.Escape only HTML-escapes, and
+	// javascript: has no chars that get HTML-escaped.
 	if strings.Contains(h, `javascript:`) {
-		t.Errorf("SECURITY: [dropdown-item-value-xss] javascript: URI in menu href not sanitized by escAttr")
+		t.Errorf("SECURITY: [dropdown-item-value-xss] javascript: URI in menu href not sanitized by urlsafe.CleanAnchor")
 	} else {
 		t.Logf("NOTE: [dropdown-item-value-xss] href value is attr-escaped")
 	}
 }
 
 // TestDropdown_ClassInjection verifies that menu PanelClass cannot
-// break out of the class attribute — escAttr escapes " to &quot;.
+// break out of the class attribute — render.Escape escapes " to &quot;.
 func TestDropdown_ClassInjection(t *testing.T) {
 	t.Parallel()
 	h := string(Menu(MenuConfig{
@@ -328,7 +327,7 @@ func TestMenu_ItemsHrefXSS(t *testing.T) {
 			{Label: "Data", Href: `data:text/html,<script>alert(1)</script>`},
 		},
 	}))
-	// javascript: passes through escAttr — FINDING
+	// javascript: passes through render.Escape — FINDING
 	if strings.Contains(h, `javascript:alert`) {
 		t.Errorf("SECURITY: [menu-href-xss] javascript: URI in menu href not sanitized")
 	}

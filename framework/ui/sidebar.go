@@ -214,21 +214,21 @@ func (s sidebarComponent) render() render.HTML {
 		if key == "" {
 			key = "gofastr.sidebar." + cfg.DrawerName + ".collapsed"
 		}
-		b.WriteString(` data-fui-sidebar-storage="` + escAttr(key) + `"`)
+		b.WriteString(` data-fui-sidebar-storage="` + render.Escape(key) + `"`)
 	}
 	b.WriteString(`>`)
 
 	if !cfg.SuppressDrawerTrigger {
 		b.WriteString(`<button class="ui-sidebar__hamburger" type="button" ` +
-			`data-fui-open="` + escAttr(cfg.DrawerName) + `" aria-label="Open navigation">` +
+			`data-fui-open="` + render.Escape(cfg.DrawerName) + `" aria-label="Open navigation">` +
 			`<span aria-hidden="true">☰</span></button>`)
 	}
 
 	inlineID := cfg.DrawerName + "-inline"
-	b.WriteString(`<div class="ui-sidebar__inline" id="` + escAttr(inlineID) + `">`)
+	b.WriteString(`<div class="ui-sidebar__inline" id="` + render.Escape(inlineID) + `">`)
 	if cfg.Variant == SidebarCollapsible {
 		b.WriteString(`<button type="button" class="ui-sidebar__collapse" data-fui-sidebar-collapse ` +
-			`aria-controls="` + escAttr(inlineID) + `" aria-expanded="true" aria-label="Collapse navigation">` +
+			`aria-controls="` + render.Escape(inlineID) + `" aria-expanded="true" aria-label="Collapse navigation">` +
 			`<span aria-hidden="true">‹</span></button>`)
 	}
 	b.WriteString(string(sidebarBody(cfg)))
@@ -249,13 +249,13 @@ func SidebarBody(cfg SidebarConfig) render.HTML {
 func sidebarBody(cfg SidebarConfig) render.HTML {
 	var b strings.Builder
 	if cfg.Title != "" {
-		b.WriteString(`<h2 class="ui-sidebar__title">` + escText(cfg.Title) + `</h2>`)
+		b.WriteString(`<h2 class="ui-sidebar__title">` + render.Escape(cfg.Title) + `</h2>`)
 	}
 	label := cfg.NavLabel
 	if label == "" {
 		label = "Primary"
 	}
-	b.WriteString(`<nav class="ui-sidebar__nav" aria-label="` + escAttr(label) + `">`)
+	b.WriteString(`<nav class="ui-sidebar__nav" aria-label="` + render.Escape(label) + `">`)
 	b.WriteString(`<ul class="ui-sidebar__list">`)
 	for _, it := range cfg.Items {
 		writeSidebarItem(&b, it, cfg.CurrentPath, 0)
@@ -300,7 +300,7 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		} else {
 			b.WriteString(sidebarFallbackIcon(it.Label))
 		}
-		b.WriteString(`<span class="ui-sidebar__label">` + escText(it.Label) + `</span></summary>`)
+		b.WriteString(`<span class="ui-sidebar__label">` + render.Escape(it.Label) + `</span></summary>`)
 		b.WriteString(`<ul class="ui-sidebar__sublist">`)
 		for _, child := range it.Children {
 			writeSidebarItem(b, child, currentPath, depth+1)
@@ -320,13 +320,13 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		if href == "" {
 			href = "#"
 		}
-		b.WriteString(`<a href="` + escAttr(href) + `"` + linkAttrs + `>`)
+		b.WriteString(`<a href="` + render.Escape(href) + `"` + linkAttrs + `>`)
 		if it.Icon != "" {
 			b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
 		} else {
 			b.WriteString(sidebarFallbackIcon(it.Label))
 		}
-		b.WriteString(`<span class="ui-sidebar__label">` + escText(it.Label) + `</span></a>`)
+		b.WriteString(`<span class="ui-sidebar__label">` + render.Escape(it.Label) + `</span></a>`)
 	}
 	b.WriteString(`</li>`)
 }
@@ -338,7 +338,7 @@ func sidebarFallbackIcon(label string) string {
 		initial = strings.ToUpper(string(runes[0]))
 	}
 	return `<span class="ui-sidebar__icon ui-sidebar__icon--fallback" aria-hidden="true">` +
-		escText(initial) + `</span>`
+		render.Escape(initial) + `</span>`
 }
 
 // sidebarDrawerSlot renders the drawer's body — same content as the

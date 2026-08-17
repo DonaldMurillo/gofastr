@@ -2,11 +2,12 @@
 
 The `battery/log` plugin wires structured JSON-line server logs into the
 app. A single `*slog.Logger` writes to one or more **sinks**; built-in
-sinks cover three destinations:
+sinks cover four destinations:
 
 1. A **default file** under the OS state dir (`$XDG_STATE_HOME/<app>/server.log`).
 2. A **chosen file** at an explicit path, with size+count rotation.
 3. A **webhook** URL that receives batched JSON.
+4. A **JSON stream** on stdout (or any `io.Writer`) for container deploys.
 
 The plugin also installs:
 
@@ -214,6 +215,33 @@ POSTs a JSON envelope `{"entries":[<entry>, <entry>, ...]}` to `url`.
 - `Headers` lets you inject auth (`Authorization: Bearer …`) or routing
   hints. `Content-Type` is forced to `application/json`.
 - `Close` flushes pending entries before returning (App.Stop awaits it).
+
+### `JSONSink(opts)`
+
+Writes each entry as one JSON object per line to `opts.Writer`
+(`os.Stdout` when nil). This is the pattern container platforms expect:
+the app logs to stdout, Docker / Kubernetes / Cloud Run captures the
+stream and ships it. No log file to mount, no rotation to configure —
+the platform owns retention.
+
+- Entries pass through byte-for-byte: the fanout already encoded them
+  with slog's JSON handler (`time`, `level`, `msg`, attrs), so key
+  order and formatting are exactly what slog emitted. No re-encoding.
+- Each entry is a single `Write`, so a collector draining the stream
+  never observes a torn line under load. Writes are mutex-serialized,
+  consistent with the other sinks.
+- `Close` marks the sink closed (later writes return `ErrSinkClosed`)
+  but never closes the writer — stdout is process-owned.
+
+Container wiring:
+
+```go
+app.RegisterPlugin(log.New(log.Config{
+    Sinks: []log.Sink{
+        log.JSONSink(log.JSONOpts{}), // stdout — the platform ships it
+    },
+}))
+```
 
 ### Custom sinks
 

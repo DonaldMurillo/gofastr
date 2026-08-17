@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/fuzzy"
@@ -71,6 +72,63 @@ type ParsedFilter struct {
 	Field string
 	Op    FilterOp
 	Value string
+
+	// typed holds the schema-coerced form of Value (booleans today) so
+	// the query binder binds a real bool instead of its raw string.
+	// SQLite stores Bool columns as INTEGER and its affinity rules
+	// never match the TEXT 'true'/'false' spellings (only "1"/"0"
+	// happened to work), while every dialect binds a Go bool correctly
+	// (PG native boolean, SQLite 1/0). nil means "bind Value".
+	// Unexported on purpose: callers that construct ParsedFilter
+	// directly keep the legacy string-binding behavior — only
+	// ParseFiltersValues knows the field's schema type.
+	typed any
+}
+
+// BindValue returns what a query binder should bind for this filter:
+// the schema-coerced value when the filter carries one (set by
+// ParseFiltersValues or Coerced), the raw string otherwise. Every
+// binder that applies a ParsedFilter to SQL must bind this, not Value —
+// binding the raw string re-opens the SQLite Bool/TEXT affinity bug.
+func (f ParsedFilter) BindValue() any {
+	if f.typed != nil {
+		return f.typed
+	}
+	return f.Value
+}
+
+// boolTyped coerces raw for a Bool-typed column, returning nil when the
+// column is not Bool or raw is not a strconv.ParseBool spelling (the
+// binder then keeps the raw string — the pre-coercion behavior).
+func boolTyped(isBool bool, raw string) any {
+	if !isBool {
+		return nil
+	}
+	if b, err := strconv.ParseBool(raw); err == nil {
+		return b
+	}
+	return nil
+}
+
+// BoolBind returns the dialect-correct bind value for raw against a
+// column that may be Bool: a Go bool when isBool holds and raw parses
+// as one, the raw string otherwise. For binders that carry their own
+// filter shape (nested relation filters, ?where= predicates) instead of
+// a ParsedFilter.
+func BoolBind(isBool bool, raw string) any {
+	if t := boolTyped(isBool, raw); t != nil {
+		return t
+	}
+	return raw
+}
+
+// Coerced returns a copy of f whose bind value is schema-coerced for
+// the field's type (booleans today). Callers that construct
+// ParsedFilter directly — facet UIs, scoped include filters — use this
+// so BindValue matches what ParseFiltersValues would have produced.
+func (f ParsedFilter) Coerced(t schema.FieldType) ParsedFilter {
+	f.typed = boolTyped(t == schema.Bool, f.Value)
+	return f
 }
 
 // ParsedSort represents sort direction for a field.
@@ -216,6 +274,9 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// nothing they can't already read — unlike a Hidden field, whose very
 	// existence has to stay indistinguishable from "no such column".
 	var noQuery map[string]bool
+	// boolField records Bool-typed columns so value coercion (true/false
+	// → bool) happens once, here, instead of per-dialect in SQL.
+	boolField := make(map[string]bool, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
 			continue
@@ -237,6 +298,9 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 		fieldSet[f.Name] = true
 		names = append(names, f.Name)
+		if f.Type == schema.Bool {
+			boolField[f.Name] = true
+		}
 		if f.WireName != "" {
 			wireAlias[f.WireName] = f.Name
 		}
@@ -325,11 +389,11 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 					}
 				} else {
 					for _, p := range parts {
-						filters = append(filters, ParsedFilter{Field: col, Op: OpIn, Value: p})
+						filters = append(filters, ParsedFilter{Field: col, Op: OpIn, Value: p, typed: boolTyped(boolField[col], p)})
 					}
 				}
 			} else {
-				filters = append(filters, ParsedFilter{Field: col, Op: s.Op, Value: values[0]})
+				filters = append(filters, ParsedFilter{Field: col, Op: s.Op, Value: values[0], typed: boolTyped(boolField[col], values[0])})
 			}
 			matched = true
 			break
@@ -347,17 +411,16 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			}
 			continue
 		}
-
 		if fieldSet[key] {
 			if !consumed[key] {
-				filters = append(filters, ParsedFilter{Field: key, Op: OpEq, Value: values[0]})
+				filters = append(filters, ParsedFilter{Field: key, Op: OpEq, Value: values[0], typed: boolTyped(boolField[key], values[0])})
 			}
 			continue
 		}
 		// WireName override on a plain key (no suffix): resolve to column.
 		if col, ok := wireAlias[key]; ok {
 			if !consumed[col] {
-				filters = append(filters, ParsedFilter{Field: col, Op: OpEq, Value: values[0]})
+				filters = append(filters, ParsedFilter{Field: col, Op: OpEq, Value: values[0], typed: boolTyped(boolField[col], values[0])})
 			}
 			continue
 		}
@@ -569,7 +632,7 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 // real set-membership predicate is what makes ?status_in=active,pending
 // match the union of values instead of ANDing one equality per value
 // (status = $1 AND status = $2), which no single row can satisfy.
-func inClause(field string, values []string) (string, []any) {
+func inClause(field string, values []any) (string, []any) {
 	var sb strings.Builder
 	sb.WriteString(field)
 	sb.WriteString(" IN (")
@@ -594,15 +657,15 @@ func ApplyToCountQuery(cb *query.CountBuilder, filters []ParsedFilter) {
 		f := filters[i]
 		switch f.Op {
 		case OpEq:
-			cb.Where(f.Field+" = $1", f.Value)
+			cb.Where(f.Field+" = $1", f.BindValue())
 		case OpGt:
-			cb.Where(f.Field+" > $1", f.Value)
+			cb.Where(f.Field+" > $1", f.BindValue())
 		case OpLt:
-			cb.Where(f.Field+" < $1", f.Value)
+			cb.Where(f.Field+" < $1", f.BindValue())
 		case OpGte:
-			cb.Where(f.Field+" >= $1", f.Value)
+			cb.Where(f.Field+" >= $1", f.BindValue())
 		case OpLte:
-			cb.Where(f.Field+" <= $1", f.Value)
+			cb.Where(f.Field+" <= $1", f.BindValue())
 		case OpLike:
 			cb.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
 		case OpIn:
@@ -620,15 +683,15 @@ func ApplyToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
 		f := filters[i]
 		switch f.Op {
 		case OpEq:
-			qb.Where(f.Field+" = $1", f.Value)
+			qb.Where(f.Field+" = $1", f.BindValue())
 		case OpGt:
-			qb.Where(f.Field+" > $1", f.Value)
+			qb.Where(f.Field+" > $1", f.BindValue())
 		case OpLt:
-			qb.Where(f.Field+" < $1", f.Value)
+			qb.Where(f.Field+" < $1", f.BindValue())
 		case OpGte:
-			qb.Where(f.Field+" >= $1", f.Value)
+			qb.Where(f.Field+" >= $1", f.BindValue())
 		case OpLte:
-			qb.Where(f.Field+" <= $1", f.Value)
+			qb.Where(f.Field+" <= $1", f.BindValue())
 		case OpLike:
 			qb.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
 		case OpIn:
@@ -645,13 +708,13 @@ func ApplyToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
 // comma-separated value, all adjacent). It returns the collected values
 // and the run length so the caller can advance past them and emit a
 // single IN clause.
-func collectInRun(filters []ParsedFilter, start int) (values []string, n int) {
+func collectInRun(filters []ParsedFilter, start int) (values []any, n int) {
 	field := filters[start].Field
 	for j := start; j < len(filters); j++ {
 		if filters[j].Op != OpIn || filters[j].Field != field {
 			break
 		}
-		values = append(values, filters[j].Value)
+		values = append(values, filters[j].BindValue())
 		n++
 	}
 	return values, n

@@ -35,6 +35,13 @@
 # a bucket's coverage profile, re-measure and update the floor here in the
 # same commit.
 #
+# 2026-08-16 extension sweep: every remaining package the blocking CI job
+# runs (i.e. not the chromedp-isolated packages ci.yml's Test step excludes,
+# not cmd/gofastr per below) was measured with `go test -cover`; every one
+# at ≥70% got a floor at measured − 1.5. Packages below 70% were left
+# unfloored deliberately: a floor under weak coverage pins the weakness
+# instead of catching drift.
+#
 # Exclusions:
 #   cmd/gofastr (claimed 84% full-suite) is NOT gated here: its suite is
 #   dominated by slow, environment-sensitive e2e tests (subprocess hot-reload
@@ -56,22 +63,148 @@ cd "$(dirname "$0")/.."
 #   filter "nomatch:REGEX"  → only statements in files whose path does NOT match.
 # Buckets sharing a pkg reuse a single cached coverprofile (the suite runs once).
 FLOORS="
+./battery/admin/ 79.4
+./battery/auth/ 77.5
+./battery/cache/ 80.1
+./battery/log/ 78.1
+./battery/notify/ 81.7
+./battery/print/ 87.6
+./battery/queue/ 78.9
+./battery/setup/ 81.2
+./battery/storage/ 79.8
+./battery/webhook/ 82.9
+./cmd/check-embed/embedcheck/ 78.0
+./cmd/repolint/ 76.7
+./codegen/ 77.4
+./core-ui/app/ 87.1
+./core-ui/check/ 84.6
+./core-ui/component/ 88.2
+./core-ui/compute/ 95.2
+./core-ui/di/ 95.6
+./core-ui/html/ 90.6
+./core-ui/interactive/ 93.5
+./core-ui/island/ 85.4
+./core-ui/node/ 91.0
+./core-ui/patterns/accordion/ 93.4
+./core-ui/patterns/breadcrumbs/ 85.5
+./core-ui/patterns/combobox/ 96.9
+./core-ui/patterns/disclosure/ 69.9
+./core-ui/patterns/multiselect/ 85.0
+./core-ui/patterns/nestedlist/ 89.1
+./core-ui/patterns/pagination/ 70.4
+./core-ui/patterns/progress/ 88.0
+./core-ui/patterns/scrollspy/ 81.8
+./core-ui/patterns/skeleton/ 90.2
+./core-ui/patterns/sortablelist/ 87.4
+./core-ui/patterns/tabs/ 90.2
+./core-ui/patterns/tree/ 92.5
+./core-ui/registry/ 84.8
+./core-ui/runtime/minify/ 85.5
+./core-ui/seo/ 92.3
+./core-ui/store/ 79.3
+./core-ui/style/ 82.8
+./core-ui/uinodev1/ 80.8
+./core-ui/urlsafe/ 94.1
+./core-ui/widget/preset/ 93.5
+./core-ui/widget/theme/ 98.5
+./core/config/ 82.0
+./core/dotenv/ 93.3
+./core/fanout/ 93.8
+./core/featureflag/ 78.6
+./core/fuzzy/ 98.5
+./core/handler/ 85.9
+./core/i18n/ 86.3
+./core/markdown/ 90.8
+./core/mcp/ 82.1
+./core/middleware/ 80.7
 ./core/migrate/ 98.0
+./core/moduleproto/ 81.2
+./core/netguard/ 94.2
+./core/openapi/ 85.8
+./core/query/ 94.3
+./core/render/ 92.8
+./core/router/ 90.7
 ./core/schema/ 97.0
-./framework/ 95.5 nomatch:/processmodule
+./core/static/ 80.1
+./core/stream/ 89.5
+./core/upload/ 78.2
+./core/yaml/ 84.1
+./examples/backoffice/ 73.5
 ./framework/ 84.0 match:/processmodule
+./framework/ 95.5 nomatch:/processmodule
+./framework/access/ 80.5
+./framework/agentsinv/ 98.5
+./framework/axecov/ 84.5
 ./framework/contracts/ 72.0
 ./framework/contracts/analyzers/ 70.5
+./framework/cron/ 84.0
 ./framework/crud/ 96.9
 ./framework/datexport/ 98.0
+./framework/dev/ 81.3
+./framework/docs/ 81.8
+./framework/dsl/ 72.7
+./framework/embed/ 87.0
 ./framework/entity/ 86.5
+./framework/event/ 80.5
+./framework/experimental/harness/ 79.5
+./framework/experimental/harness/client/tui/ 78.5
+./framework/experimental/harness/context/ 78.2
+./framework/experimental/harness/control/auth/ 72.3
+./framework/experimental/harness/engine/ 75.9
+./framework/experimental/harness/hook/ 75.0
+./framework/experimental/harness/internal/ulid/ 83.5
+./framework/experimental/harness/logging/ 82.5
+./framework/experimental/harness/memory/ 86.7
+./framework/experimental/harness/profile/ 75.3
+./framework/experimental/harness/provider/ 79.7
+./framework/experimental/harness/provider/credstore/ 77.5
+./framework/experimental/harness/provider/helper/ 90.8
+./framework/experimental/harness/provider/internal/openai/ 74.5
+./framework/experimental/harness/secrets/ 84.5
+./framework/experimental/harness/session/ 75.3
+./framework/experimental/harness/session/sqlite/ 74.6
+./framework/experimental/harness/skill/ 78.3
+./framework/experimental/harness/skill/skillmd/ 75.6
+./framework/experimental/harness/slash/ 88.9
+./framework/experimental/harness/tool/ 73.5
+./framework/experimental/harness/tool/builtins/ 76.2
+./framework/experimental/harness/tool/permission/ 79.3
+./framework/experimental/harness/tracing/ 84.2
+./framework/factory/ 81.0
+./framework/file/ 73.7
+./framework/filter/ 88.9
+./framework/hook/ 82.2
+./framework/i18nui/ 90.5
+./framework/image/ 81.8
+./framework/image/internal/vp8l/ 89.5
+./framework/imagefield/ 83.9
+./framework/isolation/ 74.6
+./framework/lifecycle/ 79.9
 ./framework/migrate/ 73.5
+./framework/openapi/ 93.4
+./framework/outbox/ 76.2
+./framework/owner/ 92.9
+./framework/pagination/ 68.7
+./framework/pluginhost/ 94.0
+./framework/ratelimit/ 91.0
+./framework/routegroup/ 85.4
+./framework/sdk/ 87.3
+./framework/sdkdocs/ 77.1
 ./framework/semcov/ 87.0
 ./framework/tenant/ 85.5
 ./framework/ui/ 84.0
+./framework/ui/theme/ 90.7
 ./framework/uihost/ 85.5
-./framework/access/ 80.5
-./battery/auth/ 77.5
+./framework/uihost/internal/sessiontoken/ 93.7
+./framework/uihost/uinoderender/ 87.7
+./internal/fileperm/ 98.5
+./kiln/agent/acp/ 78.1
+./kiln/agent/mcp/ 73.5
+./kiln/effect/ 75.1
+./kiln/expr/ 71.7
+./sqlite/ 73.8
+./sqlite/stdlib/ 81.8
+./stability/ 91.4
 "
 
 profdir=$(mktemp -d)

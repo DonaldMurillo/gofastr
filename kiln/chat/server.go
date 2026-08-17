@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
@@ -114,7 +115,7 @@ func HostHTML() string {
 func HostHTMLForRequest(r *http.Request) string {
 	return strings.NewReplacer(
 		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag()+`<script src="/.kiln/reload.js"></script>`,
-		`__KILN_BASE__`, escHTML(baseFromRequest(r)),
+		`__KILN_BASE__`, render.Escape(baseFromRequest(r)),
 		`__KILN_LEAD__`, defaultEmptyLead,
 	).Replace(hostHTML)
 }
@@ -131,7 +132,7 @@ func HostHTMLForLive(l *live.Live) func(*http.Request) string {
 		l.ReadSession(func(sess *journal.Session) { lead = leadForWorld(sess.World) })
 		return strings.NewReplacer(
 			`<script src="/__gofastr/runtime.js"></script>`, WidgetTag()+`<script src="/.kiln/reload.js"></script>`,
-			`__KILN_BASE__`, escHTML(baseFromRequest(r)),
+			`__KILN_BASE__`, render.Escape(baseFromRequest(r)),
 			`__KILN_LEAD__`, lead,
 		).Replace(hostHTML)
 	}

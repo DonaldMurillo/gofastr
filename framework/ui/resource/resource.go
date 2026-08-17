@@ -19,8 +19,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -268,7 +270,13 @@ func (c Config) queryFilters(q url.Values, search string) []filter.ParsedFilter 
 	}
 	for _, ff := range c.Filters {
 		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
-			filters = append(filters, filter.ParsedFilter{Field: ff.Key, Op: filter.OpEq, Value: v})
+			pf := filter.ParsedFilter{Field: ff.Key, Op: filter.OpEq, Value: v}
+			if ff.Type == "bool" {
+				// The facet renders Yes/No as "true"/"false"; bind a real
+				// bool or SQLite's INTEGER storage matches nothing.
+				pf = pf.Coerced(schema.Bool)
+			}
+			filters = append(filters, pf)
 		}
 	}
 	return filters
@@ -798,26 +806,7 @@ func rowValue(row map[string]any, key string) any {
 	if v, ok := row[key]; ok {
 		return v
 	}
-	return row[camel(key)]
-}
-
-func camel(s string) string {
-	var b strings.Builder
-	up := false
-	for _, r := range s {
-		if r == '_' {
-			up = true
-			continue
-		}
-		if up {
-			if r >= 'a' && r <= 'z' {
-				r = r - 32
-			}
-			up = false
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return row[casing.ToCamel(key)]
 }
 
 func muted() render.HTML {

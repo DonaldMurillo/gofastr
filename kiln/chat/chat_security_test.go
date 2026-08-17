@@ -245,3 +245,24 @@ func TestHostBaseEscapesHost(t *testing.T) {
 		t.Errorf("SECURITY: Host reflected unescaped into host page:\n%.600s", html)
 	}
 }
+
+// Property 5: chat-log text interpolates model- and user-authored
+// strings through escHTML, which was a 3-char escaper (no quotes).
+// A text node can't break out with ' alone, but maintaining two escaper
+// shapes in one file is exactly the drift that produced the plan-card
+// bug above — pin the 5-char contract on the text path too.
+func TestChatTextEscapesApostrophes(t *testing.T) {
+	var b strings.Builder
+	renderChatEvent(&b, &journal.ChatEvent{
+		Timestamp: time.Now(),
+		Kind:      journal.KindChatUser,
+		Message:   &journal.ChatMessagePayload{Text: "it's alive"},
+	}, nil, nil)
+	out := b.String()
+	if !strings.Contains(out, "it&#39;s alive") {
+		t.Errorf("chat message text must entity-escape the apostrophe:\n%s", out)
+	}
+	if strings.Contains(out, "it's alive") {
+		t.Errorf("chat message text leaked a raw apostrophe:\n%s", out)
+	}
+}

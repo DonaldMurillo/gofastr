@@ -1611,13 +1611,6 @@ func run%s%s(args []string) int {
 `, ent.Struct, funcSuffix, ent.Struct, funcSuffix, ent.Command+" "+verb, methods[httpMethod], ent.Table, key)
 }
 
-func lowerFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToLower(s[:1]) + s[1:]
-}
-
 func quoteList(items []string) string {
 	quoted := make([]string, len(items))
 	for i, s := range items {

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/backoff"
 )
 
 // WebhookOpts configures a webhook sink. All fields have sensible defaults.
@@ -198,7 +200,6 @@ func (s *webhookSink) drainAndSend() {
 
 func (s *webhookSink) send(batch [][]byte) {
 	body := buildEnvelope(batch)
-	delay := 250 * time.Millisecond
 	for attempt := 0; attempt <= s.opts.MaxRetries; attempt++ {
 		err := s.postOnce(body)
 		if err == nil {
@@ -224,9 +225,8 @@ func (s *webhookSink) send(batch [][]byte) {
 		case <-s.closed:
 			s.gaveUp.Add(1)
 			return
-		case <-time.After(delay):
+		case <-time.After(backoff.Exponential(250*time.Millisecond, 0, attempt+1)):
 		}
-		delay *= 2
 	}
 }
 

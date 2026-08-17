@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-08-16
+
 ### Added
 
 - **The release gate now checks SECURITY.md.** `scripts/release-gate.sh`
@@ -24,6 +26,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - Direct tests and a 98.0 coverage floor for `framework/datexport`, the
   registry behind `ExportData` / `ImportData` / `EraseUserData` —
   previously covered only from the consumer side.
+- **`battery/log` grew a JSON sink.** `log.JSONSink` writes one JSON
+  object per line to stdout (or any writer) — the container pattern where
+  the platform ships the stream. It reuses the fanout's slog encoding
+  byte-for-byte and emits each entry in a single `Write`, so a collector
+  never sees a torn line.
+- **Backups have a doc page.** `backups.md` covers SQLite
+  `.backup`/`VACUUM INTO`, `pg_dump` and point-in-time recovery, a
+  restore drill, and why `ExportData` is not a backup. The deploy
+  checklist gained the missing backup line.
+- **CI now runs `make build`'s own checks.** csp-check, embed-check, and
+  repo-lint run in the blocking job; they were previously local-only.
+- **`historical upgrade fixtures` is a blocking check.** The job joined
+  `scripts/release-required-checks.txt`, so a `gofastr upgrade`
+  regression now blocks the release instead of shipping.
+- **126 new coverage floors.** Every package the blocking CI job runs
+  that measures ≥70% coverage now has a floor 1.5 points under its
+  measured value; previously 14 packages were floored.
 
 ### Fixed
 
@@ -48,6 +67,67 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - README's documentation list now links the auth reference, access
   control, the runtime contract, and the browsable docs index — the
   most-asked topics were previously unreachable from the front door.
+- **`OwnerField` without a declared field no longer loses the owner.**
+  `entity.Define` now injects the owner column (hidden, read-only) when
+  the declaration omits it — symmetric with the `tenant_id` injection and
+  matching what the blueprint generator always did. Before, AutoMigrate
+  never created the column: an authenticated create returned 201 while
+  silently persisting a row no owner scope could ever reclaim, and the
+  first scoped read failed with "no such column". The README's
+  owner-scoping example now works as printed.
+- **`MCP: true` without `WithMCP()` warns at boot.** Dev auto-mounts
+  `/mcp`, so the miss only surfaced as a production 404. `Start` now
+  logs the unreachable entity tools and names the fix, the same way the
+  `WithMCPApp` warning does.
+- **`WithPublicOpenAPI()` exposes `/api/llm.md`, as the banner already
+  claimed.** The route stayed session-gated while the startup banner and
+  capability map said otherwise. It now serves the full entity index
+  under the same opt-in as the public spec; without the option it still
+  401s, and per-entity `llm.md` routes keep their own scope gate.
+- **The harness MCP server stopped advertising tools it cannot
+  dispatch.** `harness.create_session` / `attach_session` /
+  `detach_session` appeared in `tools/list` but every call returned
+  "unknown tool"; they are de-listed, and a parity test now sweeps every
+  advertised tool through dispatch.
+- **Bool filters accept `true`/`false` on every read path.**
+  `?published=true` silently matched nothing on SQLite while
+  `?published=1` worked. Bool-column values now bind as real booleans on
+  both dialects across the whole filter surface: flat filters, `?where=`
+  predicate trees, nested relation filters (`?author.active=true`),
+  scoped includes (`?include=posts(published=true)`), and the admin/
+  resource bool facet — the last one is the Yes/No filter every
+  blueprint-generated app ships.
+- **A fresh scaffold explains its 401s.** The generated entity carries a
+  comment naming the two ways out of secure-by-default (`Public: true`
+  or `battery/auth`), and `gofastr init`'s next steps plus the generated
+  AGENTS.md say the same — the unblock was previously README-only
+  knowledge.
+- **`gofastr migrate status` explains inline migrations.** On apps the
+  CLI itself scaffolds (which register migrations in Go and apply them at
+  boot), the missing-`migrations/` error now describes both systems and
+  what to do, instead of a bare "directory not found".
+- **One HTML escaper.** Seven hand-rolled escapers — two shipping the
+  no-apostrophe shape documented as a past attribute-breakout XSS — now
+  delegate to `core/render.Escape`, with per-package tests pinning that
+  apostrophes are escaped. No live vulnerability existed; the class is
+  gone.
+- **README and the stability policy agree about `core-ui`.** README said
+  core-ui "may break between commits" while `stability.md` put it under
+  the one-minor deprecation window; README now states the policy applies,
+  with the window simply exercised most often there.
+- `harness-architecture.md`'s MCP tool table matches the shipped server
+  and explains why session-lifecycle verbs have no tools.
+
+### Changed
+
+- **One backoff implementation.** New `core/backoff` (`Exponential`,
+  `At`) replaces four copies across `framework/outbox`, `battery/queue`,
+  `battery/webhook`, and `battery/log` — the log sink's uncapped inline
+  doubling converged to the capped canonical curve.
+- **One casing table in the CLI.** `cmd/gofastr`'s five converters merged
+  into one file with correct acronym handling: `HTTPServer` snake-cases
+  as `http_server` (generate previously produced `httpserver`, pack
+  `h_t_t_p_server`). No golden output changed.
 
 ## [0.64.0] - 2026-08-16
 

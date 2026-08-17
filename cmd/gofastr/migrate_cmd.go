@@ -224,7 +224,9 @@ func runMigrateStatus(args []string) {
 
 func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
 	if _, err := os.Stat("migrations"); os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("directory 'migrations/' not found")
+		return nil, nil, fmt.Errorf("directory 'migrations/' not found.\n" +
+			"This subcommand reads file-based migrations (migrations/*.sql), but apps scaffolded by `gofastr init` register migrations inline in Go (entities/entities.go → RegisterMigrations) and apply them at boot — there may be nothing on disk to read.\n" +
+			"Review inline migrations in your entities package; to adopt file-based migrations, generate one with `gofastr migrate generate <name> --from=<blueprint.yml>` (see `gofastr docs migrations`).")
 	}
 	dbURL := getMigrateDBURL(args)
 	if dbURL == "" {
