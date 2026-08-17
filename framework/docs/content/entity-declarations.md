@@ -509,6 +509,12 @@ id, and auto-CRUD becomes per-user automatically:
 | `PUT /api/<entity>/{id}` / `PATCH /api/<entity>/{id}` (Update) | UPDATE is scoped by owner. Cross-user requests return 404. |
 | `DELETE /api/<entity>/{id}` (Delete) | DELETE is scoped by owner. Cross-user requests return 404. |
 
+The owner column is created for you: when no field named like the
+`OwnerField` column is declared, `entity.Define` injects it as a hidden
+string column — AutoMigrate creates it, Create stamps it, and it stays
+out of responses, forms, and the OpenAPI spec. A field you *do* declare
+with that name always wins and is left untouched.
+
 The owner id comes from `framework/owner.Get(ctx)`. Any battery that
 registers an extractor wires this up — `battery/auth` does so in
 `init()`, pulling from `auth.GetCurrentUser(ctx).GetID()`. If no
