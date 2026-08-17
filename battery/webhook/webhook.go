@@ -15,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/backoff"
 )
 
 // MaxPayloadBytes caps webhook payload size. Larger payloads are
@@ -566,10 +568,7 @@ func (m *Manager) schedule(d *Delivery) {
 		d.NextAttemptAt = time.Time{}
 		return
 	}
-	wait := m.opts.Backoff[len(m.opts.Backoff)-1]
-	if d.Attempts-1 >= 0 && d.Attempts-1 < len(m.opts.Backoff) {
-		wait = m.opts.Backoff[d.Attempts-1]
-	}
+	wait := backoff.At(m.opts.Backoff, d.Attempts)
 	d.NextAttemptAt = m.nowFn().Add(wait)
 	d.Status = StatusPending
 }

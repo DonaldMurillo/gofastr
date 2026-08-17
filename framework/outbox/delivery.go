@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/backoff"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
@@ -521,7 +522,7 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 		}
 		return
 	}
-	next := o.now().UTC().Add(o.backoffFor(newAttempts))
+	next := o.now().UTC().Add(backoff.Exponential(o.backoffBase, o.backoffMax, newAttempts))
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='pending', attempts=$1, last_error=$2, next_attempt_at=$3, claimed_until=NULL

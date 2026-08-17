@@ -1597,14 +1597,6 @@ func goTypeForField(value string) string {
 	}
 }
 
-func toCamelJSON(value string) string {
-	camel := toCamelCase(value)
-	if camel == "" {
-		return ""
-	}
-	return strings.ToLower(camel[:1]) + camel[1:]
-}
-
 // validateOutputDir rejects paths that would be unsafe to clean (the cwd, the
 // FS root, absolute paths, parent traversals, or empty input).
 func validateOutputDir(dir string) error {
@@ -1742,49 +1734,6 @@ func printGeneratedErrorsJSON(errs ...error) {
 		fmt.Printf("  {\"message\":%q}%s\n", err.Error(), comma)
 	}
 	fmt.Println(`]}`)
-}
-
-func toCamelCase(s string) string {
-	parts := strings.FieldsFunc(s, func(r rune) bool {
-		return r == '_' || r == '-' || r == ' '
-	})
-	var result string
-	for _, p := range parts {
-		if len(p) > 0 {
-			result += strings.ToUpper(p[:1]) + p[1:]
-		}
-	}
-	return result
-}
-
-// toSnakeCase converts an entity name to snake_case for generated file names.
-// It handles already-snake input ("blog_posts"), CamelCase ("BlogPost"), and
-// hyphenated or spaced input, collapsing repeated separators.
-func toSnakeCase(s string) string {
-	var b strings.Builder
-	runes := []rune(s)
-	for i, r := range runes {
-		isUpper := r >= 'A' && r <= 'Z'
-		if i > 0 && isUpper {
-			prev := runes[i-1]
-			if (prev >= 'a' && prev <= 'z') || (prev >= '0' && prev <= '9') {
-				b.WriteByte('_')
-			}
-		}
-		switch {
-		case r == '-' || r == ' ':
-			b.WriteByte('_')
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r + 'a' - 'A')
-		default:
-			b.WriteRune(r)
-		}
-	}
-	out := b.String()
-	for strings.Contains(out, "__") {
-		out = strings.ReplaceAll(out, "__", "_")
-	}
-	return strings.Trim(out, "_")
 }
 
 // entityFileName maps an entity name to its generated file name, guarding
