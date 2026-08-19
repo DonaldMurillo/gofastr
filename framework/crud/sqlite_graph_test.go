@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,13 +11,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-func TestPureSQLiteRelatedCRUDGraph(t *testing.T) {
-	db, err := gosqlite.Open()
+func TestSQLiteRelatedCRUDGraph(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	for _, ddl := range []string{

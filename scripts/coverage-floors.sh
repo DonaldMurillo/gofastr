@@ -203,7 +203,6 @@ FLOORS="
 ./kiln/agent/mcp/ 73.5
 ./kiln/effect/ 75.1
 ./kiln/expr/ 71.7
-./sqlite/ 73.8
 ./sqlite/stdlib/ 81.8
 ./stability/ 91.4
 "

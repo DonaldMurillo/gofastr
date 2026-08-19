@@ -1,10 +1,11 @@
 package outbox
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // Normalization's idempotency check must be driver-aware: on a host whose
@@ -47,9 +48,21 @@ func TestLegacyTimeSetsDriverAwareIdempotency(t *testing.T) {
 }
 
 // probeBindLayout detects which text layout the connected driver uses for
-// time.Time binds; the pure driver must probe as RFC3339Nano.
-func TestProbeBindLayoutPureDriver(t *testing.T) {
-	db, err := gosqlite.Open()
+// time.Time binds, and this pins it against the driver applications actually
+// ship. That driver binds the space-separated SQLite layout, because
+// sqlite/stdlib sets `_time_format=sqlite` on every DSN — mattn wrote that
+// format, and battery/auth's parseTimeFlex and this package's own layout probe
+// were written to read it.
+//
+// The assertion used to be RFC3339Nano, which was the in-house engine's
+// binding and no shipped driver's. The probe's whole job is to answer "what
+// does the connected driver do", so pinning it against an engine nothing runs
+// was asserting the wrong half of the question. The RFC3339Nano branch is
+// still covered by TestLegacyTimeSetsDriverAwareIdempotency, which exercises
+// both layouts as pure logic.
+func TestProbeBindLayoutOnShippedDriver(t *testing.T) {
+	const sqliteLayout = "2006-01-02 15:04:05.999999999-07:00"
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +73,7 @@ func TestProbeBindLayoutPureDriver(t *testing.T) {
 		t.Fatal(err)
 	}
 	layout := o.probeBindLayout(t.Context())
-	if layout != time.RFC3339Nano {
-		t.Fatalf("pure driver probed layout %q, want RFC3339Nano", layout)
+	if layout != sqliteLayout {
+		t.Fatalf("shipped driver probed layout %q, want the SQLite layout %q", layout, sqliteLayout)
 	}
 }

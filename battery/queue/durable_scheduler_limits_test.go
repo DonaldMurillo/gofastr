@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func TestDurableSchedulerBoundsCatchUp(t *testing.T) {
@@ -26,7 +26,7 @@ func TestDurableSchedulerBoundsCatchUp(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			db, err := gosqlite.Open()
+			db, err := sql.Open("sqlite3", ":memory:")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -62,7 +62,7 @@ func TestDurableSchedulerBoundsCatchUp(t *testing.T) {
 }
 
 func TestOccurrenceRetentionDisableAndCadence(t *testing.T) {
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

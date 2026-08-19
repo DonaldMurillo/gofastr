@@ -2,13 +2,14 @@ package outbox
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func TestOutboxReadsPropagateInvalidTime(t *testing.T) {
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

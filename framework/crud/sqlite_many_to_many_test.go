@@ -2,18 +2,19 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-func TestPureSQLiteManyToManyNestedPredicate(t *testing.T) {
-	db, err := gosqlite.Open()
+func TestSQLiteManyToManyNestedPredicate(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	for _, ddl := range []string{

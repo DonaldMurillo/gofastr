@@ -2,14 +2,15 @@ package access_test
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-func TestGrantStorePureSQLiteLifecycle(t *testing.T) {
-	db, err := gosqlite.Open()
+func TestGrantStoreSQLiteLifecycle(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

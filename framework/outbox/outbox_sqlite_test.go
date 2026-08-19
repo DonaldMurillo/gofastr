@@ -2,17 +2,18 @@ package outbox
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-func TestPureSQLiteTypedEventRelay(t *testing.T) {
-	db, err := gosqlite.Open()
+func TestSQLiteTypedEventRelay(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
@@ -64,7 +65,7 @@ func TestPureSQLiteTypedEventRelay(t *testing.T) {
 			t.Fatalf("invoice_id = %v, want inv-42", data["invoice_id"])
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for pure-SQLite relay delivery")
+		t.Fatal("timed out waiting for SQLite relay delivery")
 	}
 
 	waitForParent(t, o, id, "dispatched")

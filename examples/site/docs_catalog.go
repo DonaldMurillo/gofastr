@@ -152,7 +152,7 @@ var docIntents = []docIntent{
 			{"email", "Email", "SMTP sending, a dev log sender, and template rendering."},
 			{"dotenv", "Env / .env", "core/dotenv auto-loaded by NewApp."},
 			{"core-packages", "Core packages", "A map of the exported core/* packages and when to reach for each directly."},
-			{"sqlite-engine", "The in-house SQLite engine", "Why the repo carries a second, from-scratch SQLite for testing — and why an application never imports it."},
+			{"sqlite-driver", "The SQLite driver GoFastr ships", "modernc.org/sqlite registered as sqlite3, the three DSN defaults every connection gets, and why an in-memory database needs one connection."},
 		},
 	},
 	{

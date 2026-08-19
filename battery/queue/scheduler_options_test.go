@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // capturedJobs returns a snapshot of the jobs a recordQueue has enqueued.
@@ -88,9 +88,9 @@ func TestInMemorySchedulerOmittedOptionsDefault(t *testing.T) {
 // ============================================================================
 
 func TestDurableSchedulerCarriesOptionsToJob(t *testing.T) {
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
@@ -142,9 +142,9 @@ func TestDurableSchedulerCarriesOptionsToJob(t *testing.T) {
 }
 
 func TestDurableSchedulerOmittedOptionsDefault(t *testing.T) {
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
@@ -189,9 +189,9 @@ func TestDurableSchedulerOmittedOptionsDefault(t *testing.T) {
 // WITHOUT resetting the persisted next_run watermark. Existing behaviour
 // (watermark preserved across re-registration) is unchanged.
 func TestDurableSchedulerReregisterUpdatesOptionsKeepsWatermark(t *testing.T) {
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)

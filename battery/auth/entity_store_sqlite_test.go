@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,20 +11,20 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-func TestEntityStoresPureSQLiteLoginLogoutLifecycle(t *testing.T) {
-	db, err := gosqlite.Open()
+func TestEntityStoresSQLiteLoginLogoutLifecycle(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
 	users := NewEntityUserStore(db, "users")
 	sessions := NewEntitySessionStore(db, "sessions")
 	mgr := New(AuthConfig{
-		JWTSecret:     "pure-sqlite-test-secret",
+		JWTSecret:     "sqlite-test-secret",
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     users,

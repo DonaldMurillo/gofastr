@@ -224,9 +224,9 @@ repo-lint:
 # before this existed.
 #
 # Costs one full test run per mutant, so it is aimed at a package, not the repo:
-#     make mutate PKG=./sqlite/
-#     go run ./cmd/mutate -file engine.go -run TestForeignKey ./sqlite/
-PKG ?= ./sqlite/
+#     make mutate PKG=./framework/crud/
+#     go run ./cmd/mutate -file include.go -run TestInclude ./framework/crud/
+PKG ?= ./framework/crud/
 mutate:
 	go run ./cmd/mutate $(PKG)
 

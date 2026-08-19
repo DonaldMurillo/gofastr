@@ -2,15 +2,16 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func dstScheduler(t *testing.T, owner string) *DurableScheduler {
 	t.Helper()
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

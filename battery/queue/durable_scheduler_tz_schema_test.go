@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // TestDurableSchedulerMigratesExistingSchedulesTableTZ proves the tz column
@@ -103,7 +103,7 @@ func scanForTZColumn(t *testing.T, db *sql.DB, table string) bool {
 // through SQLite: a schedule registered in America/New_York re-emerges with
 // the same location and fires at the local wall-clock time after reload.
 func TestDurableSchedulerPersistsTZOnRegistration(t *testing.T) {
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

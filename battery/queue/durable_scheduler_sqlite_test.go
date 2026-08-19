@@ -2,17 +2,18 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-func TestDurableSchedulerPureSQLiteVersionAndRetention(t *testing.T) {
-	db, err := gosqlite.Open()
+func TestDurableSchedulerSQLiteVersionAndRetention(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
@@ -23,7 +24,7 @@ func TestDurableSchedulerPureSQLiteVersionAndRetention(t *testing.T) {
 	}
 	now := time.Date(2026, 7, 18, 12, 0, 0, 123456789, time.UTC)
 	scheduler, err := NewDurableScheduler(q, DurableSchedulerConfig{
-		OwnerID:             "pure-sqlite",
+		OwnerID:             "sqlite-owner",
 		LeaseDuration:       time.Minute,
 		OccurrenceRetention: 24 * time.Hour,
 	})
@@ -64,7 +65,7 @@ func TestDurableSchedulerPureSQLiteVersionAndRetention(t *testing.T) {
 		 claim_owner, claim_fence, created_at, enqueued_job_id)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, q.schedulerOccurrencesTable()),
 		"old-skipped", "digest", old, "skipped", "catch-up-cap",
-		"pure-sqlite", 1, old, ""); err != nil {
+		"sqlite-owner", 1, old, ""); err != nil {
 		t.Fatalf("seed old occurrence: %v", err)
 	}
 	if err := scheduler.RunOnce(context.Background(), now.Add(time.Minute+defaultRetentionSweepPeriod)); err != nil {

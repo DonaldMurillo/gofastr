@@ -99,136 +99,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   This does not close the *permission* half of the same gap: nothing yet checks
   that the caller may read the row a relation column points at — see
   [security](framework/docs/content/security.md).
-- **BREAKING: the in-house SQL engine read `FOREIGN KEY` clauses as a column.**
-  `sqlite/`'s parser handled only the inline `col REFERENCES target(id)`
-  spelling. The table-constraint form — `FOREIGN KEY (col) REFERENCES
-  target(id)`, which is the only form `AutoMigrate` emits — fell through to
-  the column parser and was read as a column literally named `FOREIGN` of type
-  `KEY(col)`. That phantom column shifted `SELECT *` and positional `INSERT`,
-  and it carried the `REFERENCES` constraint, so the engine registered a
-  foreign key against a column no row ever fills — one that therefore could
-  never be violated. Table-constraint foreign keys now parse and are enforced.
-  Three enforcement bugs behind that claim are fixed with it: the parent-delete
-  check collected rows from a cursor that reuses one buffer, so it validated
-  the last row scanned instead of the row being deleted (invisible while a test
-  table held one row); `DELETE` with no `WHERE` took a fast path that consulted
-  no foreign keys at all; and comparisons were type-strict, rejecting a TEXT
-  child value against an INTEGER parent key that real SQLite matches by
-  applying the parent's affinity. `UPDATE`, `INSERT … ON CONFLICT DO UPDATE`, and
-  `INSERT OR REPLACE` now also refuse to move or delete a row other rows still
-  reference. `UPDATE` and `ON CONFLICT DO UPDATE` move a referenced key;
-  `INSERT OR REPLACE` is checked as a parent-side update rather than a delete,
-  since it deletes and rewrites the row in one statement and SQLite evaluates
-  immediate foreign keys at statement end — it is refused only when the
-  replacement MOVES the referenced key, which happens when the conflict is on a
-  secondary `UNIQUE` column. A foreign key SQLite cannot evaluate at all now
-  fails closed with a foreign key mismatch on both sides, instead of being
-  enforced against whichever column the declaration happened to name: a
-  `REFERENCES` naming a column the parent does not have, a bare `REFERENCES p`
-  where the parent has no single-column primary key, and — the case that made
-  malformed schemas look enforced — a parent column that is not unique. SQLite
-  requires the parent key to be a primary key or carry its own `UNIQUE`
-  constraint, because a key that can repeat cannot identify the row a child
-  points at; every statement that would have to evaluate such a key is
-  refused, including the ones that would satisfy it and including a NULL child
-  value. A partial `UNIQUE` index does not qualify, since keys outside its
-  predicate can still repeat. A bare `REFERENCES p` resolves the parent's
-  primary key even when it is not the rowid alias, so a `TEXT PRIMARY KEY`
-  parent is a legal target. Comparisons follow SQLite's affinity rules more closely: an `INTEGER`
-  parent key matches a child value of `' 7'`, `'+7'`, `'7.0'`, or `7.0`, while a
-  TEXT parent key still compares as text so `'007'` and `7` stay distinct keys.
-  `BLOB` affinity — SQLite calls it NONE — no longer coerces text, matching the
-  documented "no attempt is made to coerce data". A bare `DELETE` of a
-  self-referencing table is allowed whether or not it carries a `WHERE`, since
-  every referencing row goes with the same statement and SQLite checks
-  immediate foreign keys at statement end — previously the bare form was
-  allowed and `WHERE 1=1` was refused, so the same operation gave two answers.
-  References from other tables are still refused, and the escape is scoped by
-  rowid to the table being deleted from. `DROP TABLE` of a parent whose
-  rows are still referenced is refused rather than silently leaving every child
-  dangling, and `ALTER TABLE ADD COLUMN … REFERENCES` now carries its foreign
-  key instead of parsing it and discarding it. `ALTER TABLE … RENAME` rewrites
-  the foreign keys of every child naming the renamed table or referenced
-  column, so a rename no longer makes the child direction permanently
-  unwritable. `PRAGMA foreign_keys` reports the real state and its
-  `= ON`/`= OFF` form now takes effect; it previously reported 0 on a
-  connection that refused every dangling write and ignored the setter entirely.
-  The setter is a no-op inside a transaction, as it is in SQLite — without that
-  rule an `OFF` inside a transaction took effect and survived `ROLLBACK`,
-  leaving enforcement disabled with no error anywhere. Through a pooled
-  `sql.DB` the `OFF` direction is **refused** outright: the driver builds one
-  engine per `sql.Open` and shares it across every connection, so honouring
-  `OFF` would silently stop checking foreign keys for connections that never
-  asked. `= ON` is accepted, and code that genuinely needs enforcement off
-  drives the `Engine` directly.
-  The engine enforces by default, differing from SQLite deliberately: the
-  driver this framework ships turns enforcement on for every application DSN.
-  Referential actions
-  (`ON DELETE CASCADE`), `MATCH`, `DEFERRABLE`, the `CONSTRAINT <name>` prefix,
-  table-level `CHECK (…)`, and a bare `NULL` column constraint now parse — the
-  actions are ignored, but refusing them meant an ORM-generated or
-  `sqlite3 .dump` schema could not be opened at all. Ignoring an action fails safe: with no
-  cascade machinery the engine refuses a delete that would orphan rows.
-  **Upgrade:** a composite `FOREIGN KEY (a, b)` is refused at parse time
-  rather than silently dropped; `ForeignKeyInfo` holds a single column and
-  cannot represent one. A `FOREIGN KEY` naming a column the table does not
-  declare is likewise refused instead of being dropped in silence. Existing
-  `gofastr-sqlite` database files are not healed: their schema is stored
-  serialized and never re-parsed, so a table created before this fix keeps its
-  phantom column.
-- **The in-house engine dropped index predicates it could not render, turning
-  partial unique indexes into full ones.** `FormatExpr` renders an expression
-  back to source so partial-index `WHERE` predicates and non-constant column
-  defaults survive a close and reopen, and it returned `""` for any form it did
-  not handle — `IS NULL`, `IS NOT NULL`, `IN`, `BETWEEN`, `LIKE`/`GLOB`,
-  `CASE`, `CAST`, `rowid`. `IS NOT NULL` is the most common partial-index
-  predicate there is. An empty predicate is how the schema spells a *full*
-  unique index, so such an index reopened as a stronger constraint than the one
-  written, and a foreign key pointing at its column was accepted as if the
-  column were unique. All of those forms now render and re-parse, and a
-  predicate that still cannot be rendered fails closed: `CREATE INDEX` refuses
-  it rather than storing an index that means something else, and saving a
-  schema that contains one is an error rather than a silent downgrade. The same
-  applies to a column `DEFAULT` expression, which previously reopened as no
-  default at all.
-- **The in-house engine reported success for DDL whose schema was never
-  written.** Every schema-mutating statement — `CREATE TABLE`, `CREATE INDEX`,
-  `DROP TABLE`, `DROP INDEX`, all three `ALTER TABLE` forms, `CREATE VIEW`,
-  `DROP VIEW` — called `SaveSchema()` and discarded its error, ten times over.
-  A file-backed database whose schema write failed therefore reopened without
-  the table the caller had just been told it created. The write's error is now
-  returned, through one helper rather than ten copies of the same three lines.
-- **The in-house engine got five query-semantics fixes, all found by running
-  both engines side by side.** `COUNT(v)` counted NULLs — the per-row
-  projection for an aggregate is supposed to be its argument's value, and
-  COUNT projected a constant 1, so by aggregation time there were no NULLs
-  left to skip and `COUNT(v)` was `COUNT(*)` under another name.
-  `COUNT(DISTINCT v)` parsed `DISTINCT` and ignored it. `MIN`/`MAX` compared
-  NULLs instead of skipping them, and since NULL sorts before every value, a
-  single NULL made `MIN(v)` return NULL for any nullable column. `SUM` over no
-  values returned 0 rather than NULL, making "no rows" indistinguishable from
-  "rows that sum to zero", and returned a float for integer input. `LIKE`
-  compared bytes: it was case-sensitive where SQLite folds ASCII, and it
-  dropped the `ESCAPE` clause entirely — which the framework's own filter
-  layer appends to every `?field_like=` query, so escaped search matched
-  nothing on this engine while working in production. `_` now steps over a
-  whole UTF-8 character rather than one byte.
-- Foreign-key behaviour is now pinned by a differential harness
-  (`sqlite/differential_test.go`) that runs the same SQL script through both
-  engines statement for statement and compares every accept/refuse outcome and
-  every probe's rows. Scenarios must agree unless they carry a documented
-  `wantDiff` reason — and a `wantDiff` scenario must *disagree*, so a
-  divergence that gets fixed cannot stay on the list as an excuse. Adding a
-  case costs one table entry. A companion table
-  (`sqlite/differential_sql_test.go`) does the same for ordinary query
-  semantics — ORDER BY, aggregates, joins, LIKE, three-valued logic — which is
-  where a divergence hides longest, since nobody writes a test for whether
-  ORDER BY puts NULLs first. Four divergences there are documented rather than
-  fixed, and every one of them is the engine being STRICTER: a double-quoted
-  unknown identifier is an error instead of SQLite's silent string literal;
-  comparison affinity is not applied to a literal, so a text literal matches
-  no numeric column rather than risking matching too much; and rowids are
-  never reused after a delete.
+- **BREAKING: the in-house SQLite engine is removed.** `gofastr/sqlite` held a
+  second, from-scratch SQLite that six `*_pure_sqlite_test.go` suites ran
+  against as a cross check, on the theory that validating the framework's SQL
+  against one engine lets an assumption baked into both look like correctness.
+  The theory does not hold here, because modernc.org/sqlite is not a second
+  reading of the SQL spec. It is the SQLite C source translated to Go. Whenever
+  the two disagreed the answer was always that the local engine was wrong, and
+  the changelog records no case of the cross check finding a bug in the
+  framework's SQL against twelve entries fixing the engine itself. It was
+  16,000 lines of engine and 21,000 lines of tests that only ever generated
+  work. The suites that used it now open `sqlite3`, which is a stronger test
+  than they had. `gofastr/sqlite/stdlib` is untouched and is what every app
+  imports; only the `gofastr-sqlite` driver name and the `gofastr/sqlite`
+  package are gone. **Upgrade:** if you opened `gofastr-sqlite` directly, open
+  `sqlite3` instead. Nothing outside this repository's own tests did. The
+  `sqlite-engine` doc topic is replaced by `sqlite-driver`, which documents
+  what `sqlite/stdlib` actually does: the three DSN parameters it adds to every
+  connection (`foreign_keys(1)`, `_time_format=sqlite`,
+  `busy_timeout(5000)`), why each one is there, and why an in-memory database
+  needs `SetMaxOpenConns(1)`. Those defaults were previously described only in
+  code comments.
 - **BREAKING: server-rendered screens bypassed entity read permissions.**
   `framework/ui/resource`'s `List`, `Table`, `Detail`, and pre-filled edit
   `Form` read rows directly, so they never entered the route middleware that
