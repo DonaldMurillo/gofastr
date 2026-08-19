@@ -98,6 +98,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   or percent-encoding). A DSN that names the pragma without assigning it — a
   bare `_pragma=foreign_keys`, which reads rather than sets — still receives
   the default.
+  **One upgrade case is worth checking before you flip this on.** If an entity
+  declares the same column as both `Scope.OwnerField` and a relation, older
+  `AutoMigrate` wrote a `FOREIGN KEY` for it — and the framework stamps that
+  column from the session identity, which lives in the auth battery's table
+  rather than in the related entity. The constraint was one the framework
+  violated on every create, and SQLite tolerated it only because nothing was
+  checking. This release stops emitting it, but it cannot remove one already
+  written into a table: SQLite has no `DROP CONSTRAINT` and `AutoMigrate` has
+  no table-rebuild path. Such a database needs `_pragma=foreign_keys(0)` until
+  the table is rebuilt without the key. `evals/upgrade-fixtures` carries a real
+  v0.53.0 app in exactly this shape and proves that upgrade path.
   This does not close the *permission* half of the same gap: nothing yet checks
   that the caller may read the row a relation column points at — see
   [security](framework/docs/content/security.md).
