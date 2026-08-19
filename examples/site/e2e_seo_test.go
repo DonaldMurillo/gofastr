@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -39,9 +40,9 @@ func TestE2ESitemapXML(t *testing.T) {
 	for _, want := range []string{
 		`<?xml version="1.0"`,
 		`xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"`,
-		`<loc>https://gofastr.dev/</loc>`,
+		fmt.Sprintf("<loc>%s/</loc>", siteOrigin),
 		// Site has /seo not /components/seo.
-		`<loc>https://gofastr.dev/seo</loc>`,
+		fmt.Sprintf("<loc>%s/seo</loc>", siteOrigin),
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("sitemap missing %s\n%s", want, body)
@@ -64,7 +65,7 @@ func TestE2ERobotsTxt(t *testing.T) {
 	for _, want := range []string{
 		"User-agent: *",
 		"Disallow: /__gofastr/",
-		"Sitemap: https://gofastr.dev/sitemap.xml",
+		"Sitemap: " + siteOrigin + "/sitemap.xml",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("robots.txt missing %q\n%s", want, body)
@@ -93,9 +94,9 @@ func TestE2ECanonicalLink(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := startE2EServer(t)
-	// Site route is /seo; site canonical is https://gofastr.dev/seo.
+	// Site route is /seo; the canonical uses siteOrigin.
 	_, _, body := fetchE2E(t, base, "/seo")
-	want := `<link rel="canonical" href="https://gofastr.dev/seo">`
+	want := `<link rel="canonical" href="` + siteOrigin + `/seo">`
 	if !strings.Contains(body, want) {
 		t.Errorf("expected per-page canonical, got:\n%s", snippet(body, "rel=\"canonical\""))
 	}
@@ -197,11 +198,11 @@ func TestE2ESEOBundleEmitsHead(t *testing.T) {
 	}
 	base := startE2EServer(t)
 	// Site route is /seo-bundle, not /components/seo-bundle.
-	// Canonical is https://gofastr.dev/seo-bundle.
+	// Canonical is siteOrigin + /seo-bundle.
 	_, _, body := fetchE2E(t, base, "/seo-bundle")
 	for _, want := range []string{
 		`content="Bundle-style SEO declaration in one method."`,
-		`href="https://gofastr.dev/seo-bundle"`,
+		`href="` + siteOrigin + `/seo-bundle"`,
 		`<link rel="alternate" hreflang="en"`,
 		`<link rel="alternate" hreflang="es"`,
 		`<meta name="robots" content="index,follow">`,

@@ -313,8 +313,9 @@ func registerProducts(app *framework.App) {
 			SoftDelete: true,
 		},
 		Exposure: &framework.ExposureConfig{
-			CRUD: boolPtr(true),
-			MCP:  true,
+			CRUD:   boolPtr(true),
+			MCP:    true,
+			Access: framework.AccessControl{Create: "catalog:write", Update: "catalog:write", Delete: "catalog:admin"},
 		},
 		Pagination: &framework.PaginationConfig{
 			CursorField:  "id",

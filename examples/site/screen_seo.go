@@ -26,14 +26,14 @@ func (*SEOScreen) ScreenDescription() string {
 func (*SEOScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 // ScreenCanonical → <link rel="canonical">.
-func (*SEOScreen) ScreenCanonical() string { return "https://gofastr.dev/seo" }
+func (*SEOScreen) ScreenCanonical() string { return siteOrigin + "/seo" }
 
 // ScreenHreflangs → one <link rel="alternate" hreflang> per locale.
 func (*SEOScreen) ScreenHreflangs() []uihost.HreflangLink {
 	return []uihost.HreflangLink{
-		{Lang: "en", URL: "https://gofastr.dev/seo"},
-		{Lang: "es", URL: "https://gofastr.dev/es/seo"},
-		{Lang: "x-default", URL: "https://gofastr.dev/seo"},
+		{Lang: "en", URL: siteOrigin + "/seo"},
+		{Lang: "es", URL: siteOrigin + "/es/seo"},
+		{Lang: "x-default", URL: siteOrigin + "/seo"},
 	}
 }
 
@@ -42,12 +42,12 @@ func (*SEOScreen) ScreenSchema() []seo.Thing {
 	article := seo.NewArticle()
 	article.Headline = "GoFastr SEO module"
 	article.Description = "How per-page SEO tags compose in GoFastr."
-	article.URL = "https://gofastr.dev/seo"
+	article.URL = siteOrigin + "/seo"
 	article.DatePublished = "2026-06-01"
 
 	bc := seo.NewBreadcrumbList(
-		seo.BreadcrumbItem{Name: "Home", URL: "https://gofastr.dev/"},
-		seo.BreadcrumbItem{Name: "SEO", URL: "https://gofastr.dev/seo"},
+		seo.BreadcrumbItem{Name: "Home", URL: siteOrigin + "/"},
+		seo.BreadcrumbItem{Name: "SEO", URL: siteOrigin + "/seo"},
 	)
 	return []seo.Thing{article, bc}
 }
@@ -101,16 +101,16 @@ func (*SEOBundleScreen) ScreenSEO() uihost.SEO {
 
 	return uihost.SEO{
 		Description: "Bundle-style SEO declaration in one method.",
-		Canonical:   "https://gofastr.dev/seo-bundle",
+		Canonical:   siteOrigin + "/seo-bundle",
 		Hreflangs: []uihost.HreflangLink{
-			{Lang: "en", URL: "https://gofastr.dev/seo-bundle"},
-			{Lang: "es", URL: "https://gofastr.dev/es/seo-bundle"},
+			{Lang: "en", URL: siteOrigin + "/seo-bundle"},
+			{Lang: "es", URL: siteOrigin + "/es/seo-bundle"},
 		},
 		Robots: "index,follow",
 		OG: &uihost.OG{
 			Title:       "GoFastr SEO bundle",
 			Description: "Per-page SEO from one method.",
-			URL:         "https://gofastr.dev/seo-bundle",
+			URL:         siteOrigin + "/seo-bundle",
 			Type:        "article",
 		},
 		Twitter: &uihost.TwitterCard{

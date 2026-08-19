@@ -25,6 +25,14 @@ app:
 entities:
   - name: posts
     crud: true
+    # Public portfolio content. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: content:write
+      update: content:write
+      delete: content:admin
     mcp: true
     soft_delete: true
     cursor_field: id
@@ -83,6 +91,14 @@ entities:
 
   - name: tags
     crud: true
+    # Public portfolio content. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: content:write
+      update: content:write
+      delete: content:admin
     mcp: true
     fields:
       - name: name
@@ -107,6 +123,14 @@ entities:
 
   - name: post_tags
     crud: true
+    # Public portfolio content. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: content:write
+      update: content:write
+      delete: content:admin
     indices:
       - name: idx_post_tags_unique
         columns: [post_id, tag_id]
@@ -132,6 +156,14 @@ entities:
 
   - name: projects
     crud: true
+    # Public portfolio content. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: content:write
+      update: content:write
+      delete: content:admin
     mcp: true
     soft_delete: true
     indices:
@@ -191,6 +223,14 @@ entities:
 
   - name: testimonials
     crud: true
+    # Public portfolio content. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: content:write
+      update: content:write
+      delete: content:admin
     mcp: true
     fields:
       - name: author_name

@@ -74,6 +74,14 @@ entities:
 
   - name: courses
     crud: true
+    # Course catalog — the public marketing pages list these. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: catalog:write
+      update: catalog:write
+      delete: catalog:admin
     mcp: true
     soft_delete: true
     cursor_field: id
@@ -176,6 +184,14 @@ entities:
 
   - name: modules
     crud: true
+    # Part of the public course outline. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: catalog:write
+      update: catalog:write
+      delete: catalog:admin
     mcp: true
     indices:
       - name: idx_modules_course
@@ -212,6 +228,14 @@ entities:
 
   - name: lessons
     crud: true
+    # Part of the public course outline. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: catalog:write
+      update: catalog:write
+      delete: catalog:admin
     mcp: true
     indices:
       - name: idx_lessons_module

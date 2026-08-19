@@ -26,6 +26,14 @@ app:
 entities:
   - name: projects
     crud: true
+    # Listed on the app home screen. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: projects:write
+      update: projects:write
+      delete: projects:admin
     mcp: true
     soft_delete: true
     properties:
@@ -106,6 +114,14 @@ entities:
 
   - name: boards
     crud: true
+    # Listed on the boards screen. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: projects:write
+      update: projects:write
+      delete: projects:admin
     mcp: true
     properties:
       label: Boards
@@ -141,6 +157,14 @@ entities:
 
   - name: columns
     crud: true
+    # Board structure, read with the board. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: projects:write
+      update: projects:write
+      delete: projects:admin
     fields:
       - name: name
         type: string
@@ -261,6 +285,14 @@ entities:
 
   - name: labels
     crud: true
+    # Read alongside tasks. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: projects:write
+      update: projects:write
+      delete: projects:admin
     mcp: true
     fields:
       - name: name
@@ -282,6 +314,14 @@ entities:
 
   - name: task_labels
     crud: true
+    # Read alongside tasks. Reads are opened with a blank `read:`; every write still
+    # requires the permission below, because auto-CRUD is secure by
+    # default and a screen may not render rows the API refuses.
+    access:
+      read:
+      create: projects:write
+      update: projects:write
+      delete: projects:admin
     indices:
       - name: idx_task_labels_unique
         columns: [task_id, label_id]

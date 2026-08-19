@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -244,14 +245,25 @@ var fontFaceCSS = style.FontFaceCSS("",
 )
 
 // sidebarConfig returns the navigation sidebar configuration.
-func sidebarConfig() ui.SidebarConfig {
-	return ui.SidebarConfig{Title: "Meridian", Items: []ui.SidebarItem{
+//
+// Takes a context because the footer's auth action depends on the live
+// session: built once at registration, every visitor got a "Sign out" button
+// whether or not anyone was signed in. Same shape the blueprint generator
+// emits — meridian is hand-maintained, so it does not inherit that fix.
+func sidebarConfig(ctx context.Context) ui.SidebarConfig {
+	cfg := ui.SidebarConfig{Title: "Meridian", Items: []ui.SidebarItem{
 		{Label: "Overview", Href: "/app"},
 		{Label: "Customers", Href: "/app/customers"},
 		{Label: "Subscriptions", Href: "/app/subscriptions"},
 		{Label: "Invoices", Href: "/app/invoices"},
 		{Label: "Admin", Href: "/admin", Roles: []string{"admin"}},
-	}, Footer: ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel}), ui.SignOut(ui.SignOutConfig{Next: "/"}))}
+	}}
+	footer := []render.HTML{ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel})}
+	if u, ok := handler.GetUser(ctx); ok && u != nil {
+		footer = append(footer, ui.SignOut(ui.SignOutConfig{Next: "/"}))
+	}
+	cfg.Footer = ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, footer...)
+	return cfg
 }
 
 // appLayout / marketingLayout are package-level so the per-screen mount funcs
@@ -267,8 +279,16 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		site = app.NewApp("Meridian")
 	}
 	site.WithTheme(appTheme())
-	sbCfg := sidebarConfig()
-	sb := ui.Sidebar(sbCfg)
+	// MountSidebar only reads Items (drawer + active-route wiring), so it
+	// takes a session-free config; the layout slot gets the ctx-aware one.
+	sbCfg := sidebarConfig(context.Background())
+	sb := app.NewContextComponent(func(ctx context.Context) render.HTML {
+		// SafeRenderCtx, never Render(): the ctx-aware path is what filters
+		// the role-gated "Admin" item, and it renders an error boundary on
+		// panic rather than collapsing to an empty sidebar.
+		html, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarConfig(ctx)))
+		return html
+	})
 	appLayout = app.NewLayout("app").WithSidebar(sb)
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)

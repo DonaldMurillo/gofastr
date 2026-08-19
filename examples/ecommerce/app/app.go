@@ -1,17 +1,23 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"os"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -54,14 +60,20 @@ func appTheme() style.Theme {
 var fontFaceCSS = style.FontFaceCSS("")
 
 // sidebarConfig returns the navigation sidebar configuration.
-func sidebarConfig() ui.SidebarConfig {
-	return ui.SidebarConfig{Title: "ShopFront", Items: []ui.SidebarItem{
+func sidebarConfig(ctx context.Context) ui.SidebarConfig {
+	cfg := ui.SidebarConfig{Title: "ShopFront", Items: []ui.SidebarItem{
 		{Label: "Home", Href: "/"},
 		{Label: "Products", Href: "/products"},
 		{Label: "Categories", Href: "/categories"},
 		{Label: "Orders", Href: "/orders"},
 		{Label: "Reviews", Href: "/reviews"},
-	}, Footer: ui.SignOut(ui.SignOutConfig{Next: "/"})}
+	}}
+	var authAction render.HTML
+	if u, ok := handler.GetUser(ctx); ok && u != nil {
+		authAction = ui.SignOut(ui.SignOutConfig{Next: "/"})
+	}
+	cfg.Footer = authAction
+	return cfg
 }
 
 var (
@@ -72,6 +84,10 @@ var (
 	// authMgr is the app's auth manager, set by RegisterGenerated when
 	// auth is enabled. Read it from a new file (e.g. to wire admin.Config.Auth).
 	authMgr *auth.AuthManager
+	// rolePolicy is the app's RBAC policy, set by RegisterGenerated when an
+	// entity declares access: permissions. Read it from a new file (e.g. to
+	// wire admin.Config.Policy or append finer-grained grants).
+	rolePolicy *access.RolePolicy
 )
 
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
@@ -80,9 +96,12 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		site = app.NewApp("ShopFront")
 	}
 	site.WithTheme(appTheme())
-	sbCfg := sidebarConfig()
-	sb := ui.Sidebar(sbCfg)
-	appLayout = app.NewLayout("app").WithSidebar(sb)
+	sbCfg := sidebarConfig(context.Background())
+	sbComponent := app.NewContextComponent(func(ctx context.Context) render.HTML {
+		html, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarConfig(ctx)))
+		return html
+	})
+	appLayout = app.NewLayout("app").WithSidebar(sbComponent)
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
 	{
@@ -102,11 +121,53 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authMgr.Use(auth.NewCorePlugin())
 		authMgr.Init(fwApp)
 		auth.SetDefaultLoginErrorPath("/login")
+		// Bootstrap the admin account after auto-migration. The hook runs
+		// before the server accepts traffic and returns errors to Start,
+		// so a fresh database can never fail silently.
+		fwApp.WithSeed(func(ctx context.Context) error {
+			_, _, err := authCfg.UserStore.FindByEmail(ctx, "admin@shop.example")
+			if err == nil {
+				return nil
+			}
+			if err != auth.ErrUserNotFound {
+				return fmt.Errorf("find bootstrap admin: %w", err)
+			}
+			// Only a genuinely fresh database (admin absent) needs the seed
+			// password; an already-seeded deployment boots without it.
+			seedPw := os.Getenv("ADMIN_SEED_PASSWORD")
+			if seedPw == "" {
+				return fmt.Errorf("ADMIN_SEED_PASSWORD is not set — admin %q cannot be seeded on a fresh database", "admin@shop.example")
+			}
+			h, err := auth.HashPassword(seedPw)
+			if err != nil {
+				return fmt.Errorf("hash bootstrap admin password: %w", err)
+			}
+			if _, err := authCfg.UserStore.CreateUser(ctx, "admin@shop.example", h, []string{"admin", "user"}); err != nil && err != auth.ErrEmailTaken {
+				return fmt.Errorf("create bootstrap admin: %w", err)
+			}
+			return nil
+		})
 		// Resolve the session cookie to a user on every request so
 		// owner/access-scoped CRUD sees the logged-in user. Without
 		// this, authorized requests fail closed (401) just like
 		// anonymous ones.
 		fwApp.Use(auth.SessionMiddleware(authMgr))
+		// Entities declare `access:` permissions; install a RolePolicy so the
+		// signed-in user's roles resolve to those permissions on the gated
+		// CRUD API. The admin role holds the wildcard (full access, the same
+		// surface the back-office manages). Add finer per-role Grants here,
+		// OR from a new file that appends to rolePolicy — both are additive
+		// now that rolePolicy is package-level. Without this, every write 403s.
+		rolePolicy = access.NewRolePolicy()
+		rolePolicy.Grant("admin", access.Wildcard)
+		fwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {
+			if u, ok := handler.GetUser(ctx); ok && u != nil {
+				if rh, ok := u.(interface{ GetRoles() []string }); ok {
+					return rh.GetRoles()
+				}
+			}
+			return nil
+		}))
 		// auth.CSRF is intentionally NOT mounted: this generated surface
 		// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s
 		// any unsafe-method request that doesn't echo the csrf cookie as

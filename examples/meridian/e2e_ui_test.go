@@ -23,13 +23,14 @@ import (
 	"github.com/chromedp/chromedp/kb"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // e2eBootApp builds and boots the app on a free port with a throwaway
 // database, mirroring TestE2E's boot, and returns the base URL.
 func e2eBootApp(t *testing.T) string {
 	t.Helper()
-	_ = dotenv.LoadAndApply(".env.local", ".env")
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
 	if os.Getenv("ADMIN_SEED_PASSWORD") == "" {
 		t.Setenv("ADMIN_SEED_PASSWORD", "e2e-seed-admin-pw")
 	}
