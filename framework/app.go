@@ -3252,7 +3252,10 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 	// introspection tools (app_routes, app_config, …) are a separate, ungated
 	// surface — see `gofastr docs blueprints` — so the wording says "your app's
 	// permissions" rather than claiming every tool is gated.
-	if a.mcpAutoMount {
+	// a.MCP is optional and nil-checked elsewhere in this file, and this line
+	// runs AFTER the listener has bound — a panic here kills a server that is
+	// already accepting connections, to print a banner.
+	if a.mcpAutoMount && a.MCP != nil {
 		mcpNote := ""
 		if n := len(a.MCP.ListTools()); n > 0 {
 			mcpNote = fmt.Sprintf("  (%d tools, your app's permissions)", n)
