@@ -471,15 +471,24 @@ func (ch *CrudHandler) checkNestedFiltersReadable(ctx context.Context, filters [
 		// through a parent they may legitimately read. Refuse what this shape
 		// cannot answer safely; the entity's own list route remains the way to
 		// filter rows the caller owns.
-		if cfg := target.Config; cfg.Scope.OwnerField != "" || cfg.Scope.MultiTenant {
-			// Except for a caller who may already read EVERY row of the
-			// target. A hit/miss count teaches them nothing they cannot get
-			// from that entity's own list route, which honours the same
-			// grants — so refusing them removes a capability without
-			// protecting anything.
-			if !(owner.IsCrossOwner(ctx) || probe.crossOwnerReadGranted(ctx) || tenant.IsCrossTenant(ctx)) {
-				return &includeForbiddenError{Entity: target.GetName()}
-			}
+		// Except for a caller who may already read EVERY row of the target. A
+		// hit/miss count teaches them nothing they cannot get from that
+		// entity's own list route, which honours the same grants.
+		//
+		// The exemption is PER SCOPE. ORing the three markers together meant a
+		// caller holding only a cross-OWNER grant cleared the refusal for a
+		// target that is multi-tenant and not owner-scoped, restoring the
+		// count oracle across tenants — and the reverse for a cross-tenant
+		// caller against an owner-scoped target. A grant on one axis says
+		// nothing about the other. eagerScopeFilters keeps them separate and
+		// TestEagerScopeFiltersExemptCrossScopeCallers pins it there; this is
+		// the same rule, and it had drifted.
+		cfg := target.Config
+		if cfg.Scope.OwnerField != "" && !(owner.IsCrossOwner(ctx) || probe.crossOwnerReadGranted(ctx)) {
+			return &includeForbiddenError{Entity: target.GetName()}
+		}
+		if cfg.Scope.MultiTenant && !tenant.IsCrossTenant(ctx) {
+			return &includeForbiddenError{Entity: target.GetName()}
 		}
 	}
 	return nil

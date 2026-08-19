@@ -84,6 +84,18 @@ func TestCheckNestedFiltersReadable_ScopedTargets(t *testing.T) {
 		t.Errorf("a cross-tenant caller was refused: %v", err)
 	}
 
+	// The two axes are independent, and this is the case that was missing: a
+	// grant on ONE axis must not clear the other's refusal. With the exemption
+	// written as a single OR across all three markers, a caller holding only
+	// AllowCrossOwner cleared the refusal for a multi-tenant target and the
+	// count oracle came back across tenants.
+	if err := ch.checkNestedFiltersReadable(owner.AllowCrossOwner(context.Background()), filterOn("tnotes")); err == nil {
+		t.Error("a cross-OWNER grant cleared the refusal for a MULTI-TENANT target — reading every owner's rows says nothing about reading another tenant's")
+	}
+	if err := ch.checkNestedFiltersReadable(tenant.AllowCrossTenant(context.Background()), filterOn("notes")); err == nil {
+		t.Error("a cross-TENANT grant cleared the refusal for an OWNER-SCOPED target — the grants are on different axes")
+	}
+
 	// An unscoped, readable target is unaffected.
 	if err := ch.checkNestedFiltersReadable(context.Background(), filterOn("pnotes")); err != nil {
 		t.Errorf("an unscoped public target was refused: %v", err)
