@@ -2,6 +2,10 @@
 
 > The full-stack Go framework that doesn't get in the way of you or your agents.
 
+**[Docs, component gallery, and live demos →](https://donaldmurillo.github.io/gofastr/)**
+&nbsp;·&nbsp; [Quickstart](#quickstart)
+&nbsp;·&nbsp; [A GoFastr app in production](https://barcode.donaldmurillo.com/)
+
 GoFastr is a pre-v1 full-stack Go framework — the API can still change between releases, under the [deprecation policy](framework/docs/content/stability.md). Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder — plain Go you can read, edit, and own. No reflection discovers your entities, no generated code you can't open. Auth, background jobs, search, and storage are opt-in packages, and you can drop to `net/http` or `database/sql` at any point.
 
 It is built for both the agentic web and AI-assisted development. The app you ship joins the agentic web: the agents your users bring call your data over MCP, with the same login and permissions your users have. While you build, `gofastr dev` hands your coding agent — Claude Code or Codex — the app's routes, config, and logs over MCP, to help build and debug it.

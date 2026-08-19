@@ -7,6 +7,386 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **`make mutate` finds guards no test distinguishes.** It breaks each
+  conditional in a package one at a time — once so it can never fire, once so
+  it always fires — and reports the ones the suite does not notice. A survivor
+  is usually a test whose fixture trips several refusal conditions at once, so
+  removing any one of them changes nothing; seven such tests were found by hand
+  in a single review cycle, and this reproduces those findings mechanically.
+  The mutation annotates the original condition (`if (cond) && false`) rather
+  than replacing it, so every identifier stays referenced and the mutant
+  compiles whenever the original did. The unmutated suite runs first, because
+  an already-red package reports every mutant as caught; a mutant that fails to
+  compile is reported as BROKEN, never as caught; and a mutation that does not
+  change the file or reach disk is a hard error, not a verdict. Because it
+  writes into real source files it takes a per-package lock, bounds each run
+  with `-timeout`, and restores every file on interrupt. One full test run per
+  mutant, so it takes a package argument rather than the repo.
+
+- **The `gofastr init` scaffold now serves MCP.** A fresh app wires
+  `framework.WithMCP()` and sets `Exposure.MCP` on the sample entity, so
+  `/mcp` answers `tools/list` with the entity's five CRUD tools on first boot,
+  and an unauthenticated `tools/call` returns the same 401 the REST route does.
+  The boot banner names the endpoint and its tool count. MCP is the one mounted
+  surface a user cannot discover by guessing a URL, and it was the only one of
+  the advertised surfaces the banner left out.
+- **`framework.DefaultDotEnvPaths()`** exposes the dotenv files `NewApp` loads,
+  in precedence order, so code that must read an environment variable before
+  `NewApp` can load exactly the same set. Loading a shorter list first pins the
+  lower-precedence file's value, because `dotenv.Apply` never overwrites an
+  existing variable.
+- **`CrudHandler.CanReadRecordScoped(ctx, id)`** answers the read posture for
+  ONE record. It matters when a resource-aware `Decider` allows the listing and
+  denies a row: the collection-level predicate would let a detail screen render
+  a record the read-one route refuses.
+- **`CrudHandler.CanReadScoped(ctx)`** answers an entity's whole read posture —
+  owner scoping, tenant scoping, the baseline session requirement, and RBAC —
+  as a boolean with no HTTP response. It is what any surface reading the same
+  rows outside the CRUD routes should call. See
+  [access control](framework/docs/content/access-control.md).
+- **CI runs the race detector** over the packages that coordinate goroutines
+  (queue, outbox, fanout, cron, event, hook, ratelimit, lifecycle, slowquery,
+  cache, stream, uihost). `-race` was previously a local `RACE=1` opt-in and
+  appeared in no gate. The `framework` root package is deliberately excluded:
+  its chromedp and process-supervisor suites flake under race instrumentation
+  for timing reasons, so the goroutine-heaviest code in the repo still has no
+  race gate until those suites are split out. The workflow comment records why.
+- **The generated-app gate exercises more than the homepage.** Every example
+  blueprint is now driven past `GET /`: for each entity it compares the REST
+  list route's authorization posture against the same entity's MCP tool, and
+  requires that a screen for an entity whose REST list is refused renders the
+  refusal rather than rows — checked positively, so a leak through any
+  renderer fails it, not only one shaped like a data table.
+- **Three repo lint rules.** `cmd-binary-not-ignored` fails when a `cmd/<name>`
+  has no root-level `.gitignore` entry — `go build ./cmd/<name>` from the root
+  drops the binary at `/<name>`, and the hand-written list of names had already
+  rotted twice, most recently letting this change set's own 3.4 MB `/mutate`
+  sit untracked. `front-door-missing` keeps the README linking the
+  deployed docs site; `example-dead-origin` fails an example that advertises a
+  hostname which is neither reserved for documentation nor actually served.
+- **`gofastr validate` reports a colliding `app.module`.** A module path inside
+  the framework's own module produces code that cannot build outside this
+  repository. Nothing surfaced it before — `generate` even printed that same
+  colliding path in its "Next steps" as the remedy.
+
+### Fixed
+
+- **BREAKING: foreign keys were never enforced on SQLite.** SQLite ignores
+  `FOREIGN KEY` constraints unless `foreign_keys` is enabled per connection,
+  and it is off by default — in the driver GoFastr ships, in
+  `mattn/go-sqlite3`, and in SQLite itself. `AutoMigrate` emits a
+  `FOREIGN KEY` clause for every declared relation, so an app read as though
+  referential integrity held while a create that set `author_id` to an id
+  naming no row inserted cleanly and left a permanent dangling reference.
+  PostgreSQL enforced the same constraints all along, so identical
+  application code got different guarantees per database. Every DSN opened
+  through the `sqlite3` driver name now defaults to
+  `_pragma=foreign_keys(1)`.
+  **Upgrade:** a write that references a row which does not exist now fails
+  instead of succeeding, and so does deleting a row that other rows still
+  reference — `AutoMigrate` declares no `ON DELETE` action and
+  `entity.Relation` cannot express one, so children must be deleted before
+  their parent. Any app already holding dangling references will see errors on
+  writes that touch them. Setting `_pragma=foreign_keys(0)` in the DSN restores
+  the old behavior while the data is cleaned up; `_foreign_keys=0` and `_fk=0`
+  work too, as does any spelling SQLite's PRAGMA grammar accepts
+  (`foreign_keys(0)`, `foreign_keys = 0`, `foreign_keys=0`, with any whitespace
+  or percent-encoding). A DSN that names the pragma without assigning it — a
+  bare `_pragma=foreign_keys`, which reads rather than sets — still receives
+  the default.
+  This does not close the *permission* half of the same gap: nothing yet checks
+  that the caller may read the row a relation column points at — see
+  [security](framework/docs/content/security.md).
+- **BREAKING: the in-house SQL engine read `FOREIGN KEY` clauses as a column.**
+  `sqlite/`'s parser handled only the inline `col REFERENCES target(id)`
+  spelling. The table-constraint form — `FOREIGN KEY (col) REFERENCES
+  target(id)`, which is the only form `AutoMigrate` emits — fell through to
+  the column parser and was read as a column literally named `FOREIGN` of type
+  `KEY(col)`. That phantom column shifted `SELECT *` and positional `INSERT`,
+  and it carried the `REFERENCES` constraint, so the engine registered a
+  foreign key against a column no row ever fills — one that therefore could
+  never be violated. Table-constraint foreign keys now parse and are enforced.
+  Three enforcement bugs behind that claim are fixed with it: the parent-delete
+  check collected rows from a cursor that reuses one buffer, so it validated
+  the last row scanned instead of the row being deleted (invisible while a test
+  table held one row); `DELETE` with no `WHERE` took a fast path that consulted
+  no foreign keys at all; and comparisons were type-strict, rejecting a TEXT
+  child value against an INTEGER parent key that real SQLite matches by
+  applying the parent's affinity. `UPDATE`, `INSERT … ON CONFLICT DO UPDATE`, and
+  `INSERT OR REPLACE` now also refuse to move or delete a row other rows still
+  reference. `UPDATE` and `ON CONFLICT DO UPDATE` move a referenced key;
+  `INSERT OR REPLACE` is checked as a parent-side update rather than a delete,
+  since it deletes and rewrites the row in one statement and SQLite evaluates
+  immediate foreign keys at statement end — it is refused only when the
+  replacement MOVES the referenced key, which happens when the conflict is on a
+  secondary `UNIQUE` column. A foreign key SQLite cannot evaluate at all now
+  fails closed with a foreign key mismatch on both sides, instead of being
+  enforced against whichever column the declaration happened to name: a
+  `REFERENCES` naming a column the parent does not have, a bare `REFERENCES p`
+  where the parent has no single-column primary key, and — the case that made
+  malformed schemas look enforced — a parent column that is not unique. SQLite
+  requires the parent key to be a primary key or carry its own `UNIQUE`
+  constraint, because a key that can repeat cannot identify the row a child
+  points at; every statement that would have to evaluate such a key is
+  refused, including the ones that would satisfy it and including a NULL child
+  value. A partial `UNIQUE` index does not qualify, since keys outside its
+  predicate can still repeat. A bare `REFERENCES p` resolves the parent's
+  primary key even when it is not the rowid alias, so a `TEXT PRIMARY KEY`
+  parent is a legal target. Comparisons follow SQLite's affinity rules more closely: an `INTEGER`
+  parent key matches a child value of `' 7'`, `'+7'`, `'7.0'`, or `7.0`, while a
+  TEXT parent key still compares as text so `'007'` and `7` stay distinct keys.
+  `BLOB` affinity — SQLite calls it NONE — no longer coerces text, matching the
+  documented "no attempt is made to coerce data". A bare `DELETE` of a
+  self-referencing table is allowed whether or not it carries a `WHERE`, since
+  every referencing row goes with the same statement and SQLite checks
+  immediate foreign keys at statement end — previously the bare form was
+  allowed and `WHERE 1=1` was refused, so the same operation gave two answers.
+  References from other tables are still refused, and the escape is scoped by
+  rowid to the table being deleted from. `DROP TABLE` of a parent whose
+  rows are still referenced is refused rather than silently leaving every child
+  dangling, and `ALTER TABLE ADD COLUMN … REFERENCES` now carries its foreign
+  key instead of parsing it and discarding it. `ALTER TABLE … RENAME` rewrites
+  the foreign keys of every child naming the renamed table or referenced
+  column, so a rename no longer makes the child direction permanently
+  unwritable. `PRAGMA foreign_keys` reports the real state and its
+  `= ON`/`= OFF` form now takes effect; it previously reported 0 on a
+  connection that refused every dangling write and ignored the setter entirely.
+  The setter is a no-op inside a transaction, as it is in SQLite — without that
+  rule an `OFF` inside a transaction took effect and survived `ROLLBACK`,
+  leaving enforcement disabled with no error anywhere. Through a pooled
+  `sql.DB` the `OFF` direction is **refused** outright: the driver builds one
+  engine per `sql.Open` and shares it across every connection, so honouring
+  `OFF` would silently stop checking foreign keys for connections that never
+  asked. `= ON` is accepted, and code that genuinely needs enforcement off
+  drives the `Engine` directly.
+  The engine enforces by default, differing from SQLite deliberately: the
+  driver this framework ships turns enforcement on for every application DSN.
+  Referential actions
+  (`ON DELETE CASCADE`), `MATCH`, `DEFERRABLE`, the `CONSTRAINT <name>` prefix,
+  table-level `CHECK (…)`, and a bare `NULL` column constraint now parse — the
+  actions are ignored, but refusing them meant an ORM-generated or
+  `sqlite3 .dump` schema could not be opened at all. Ignoring an action fails safe: with no
+  cascade machinery the engine refuses a delete that would orphan rows.
+  **Upgrade:** a composite `FOREIGN KEY (a, b)` is refused at parse time
+  rather than silently dropped; `ForeignKeyInfo` holds a single column and
+  cannot represent one. A `FOREIGN KEY` naming a column the table does not
+  declare is likewise refused instead of being dropped in silence. Existing
+  `gofastr-sqlite` database files are not healed: their schema is stored
+  serialized and never re-parsed, so a table created before this fix keeps its
+  phantom column.
+- **The in-house engine dropped index predicates it could not render, turning
+  partial unique indexes into full ones.** `FormatExpr` renders an expression
+  back to source so partial-index `WHERE` predicates and non-constant column
+  defaults survive a close and reopen, and it returned `""` for any form it did
+  not handle — `IS NULL`, `IS NOT NULL`, `IN`, `BETWEEN`, `LIKE`/`GLOB`,
+  `CASE`, `CAST`, `rowid`. `IS NOT NULL` is the most common partial-index
+  predicate there is. An empty predicate is how the schema spells a *full*
+  unique index, so such an index reopened as a stronger constraint than the one
+  written, and a foreign key pointing at its column was accepted as if the
+  column were unique. All of those forms now render and re-parse, and a
+  predicate that still cannot be rendered fails closed: `CREATE INDEX` refuses
+  it rather than storing an index that means something else, and saving a
+  schema that contains one is an error rather than a silent downgrade. The same
+  applies to a column `DEFAULT` expression, which previously reopened as no
+  default at all.
+- **The in-house engine reported success for DDL whose schema was never
+  written.** Every schema-mutating statement — `CREATE TABLE`, `CREATE INDEX`,
+  `DROP TABLE`, `DROP INDEX`, all three `ALTER TABLE` forms, `CREATE VIEW`,
+  `DROP VIEW` — called `SaveSchema()` and discarded its error, ten times over.
+  A file-backed database whose schema write failed therefore reopened without
+  the table the caller had just been told it created. The write's error is now
+  returned, through one helper rather than ten copies of the same three lines.
+- **The in-house engine got five query-semantics fixes, all found by running
+  both engines side by side.** `COUNT(v)` counted NULLs — the per-row
+  projection for an aggregate is supposed to be its argument's value, and
+  COUNT projected a constant 1, so by aggregation time there were no NULLs
+  left to skip and `COUNT(v)` was `COUNT(*)` under another name.
+  `COUNT(DISTINCT v)` parsed `DISTINCT` and ignored it. `MIN`/`MAX` compared
+  NULLs instead of skipping them, and since NULL sorts before every value, a
+  single NULL made `MIN(v)` return NULL for any nullable column. `SUM` over no
+  values returned 0 rather than NULL, making "no rows" indistinguishable from
+  "rows that sum to zero", and returned a float for integer input. `LIKE`
+  compared bytes: it was case-sensitive where SQLite folds ASCII, and it
+  dropped the `ESCAPE` clause entirely — which the framework's own filter
+  layer appends to every `?field_like=` query, so escaped search matched
+  nothing on this engine while working in production. `_` now steps over a
+  whole UTF-8 character rather than one byte.
+- Foreign-key behaviour is now pinned by a differential harness
+  (`sqlite/differential_test.go`) that runs the same SQL script through both
+  engines statement for statement and compares every accept/refuse outcome and
+  every probe's rows. Scenarios must agree unless they carry a documented
+  `wantDiff` reason — and a `wantDiff` scenario must *disagree*, so a
+  divergence that gets fixed cannot stay on the list as an excuse. Adding a
+  case costs one table entry. A companion table
+  (`sqlite/differential_sql_test.go`) does the same for ordinary query
+  semantics — ORDER BY, aggregates, joins, LIKE, three-valued logic — which is
+  where a divergence hides longest, since nobody writes a test for whether
+  ORDER BY puts NULLs first. Four divergences there are documented rather than
+  fixed, and every one of them is the engine being STRICTER: a double-quoted
+  unknown identifier is an error instead of SQLite's silent string literal;
+  comparison affinity is not applied to a literal, so a text literal matches
+  no numeric column rather than risking matching too much; and rowids are
+  never reused after a delete.
+- **BREAKING: server-rendered screens bypassed entity read permissions.**
+  `framework/ui/resource`'s `List`, `Table`, `Detail`, and pre-filled edit
+  `Form` read rows directly, so they never entered the route middleware that
+  enforces an entity's posture. A generated app whose `users` entity declared
+  `read: users:read` answered 403 on `GET /api/users` and 200 — with every
+  row's email in the HTML — on the `GET /users` screen the same blueprint
+  generated. The same gap served every row of a default-posture entity, whose
+  JSON route answers 401. All four now check the read posture — `CanReadScoped` for
+  `List`/`Table`, `CanReadRecordScoped` for `Detail` and the edit `Form` — and
+  render an access notice instead of the rows. **An app whose screens rendered entity
+  rows without a session will now show that notice.** To render for a
+  sessionless visitor the entity has to be readable by one: `Public`, or
+  `Access` with a blank `read:`. `Scope.OwnerField` does not help here — a
+  caller with no owner in context still fails the check, so the notice stays
+  and only owners see rows.
+- **`?rel.field=` filtered the wrong table when an entity's name and table
+  differ.** The `EXISTS` clause named the relation's registry KEY as its table,
+  while every check the filter performs — declared fields, hidden columns, soft
+  delete, the owner/tenant refusal — is made against the RESOLVED target. An
+  entity declaring `Table` different from its name (or a versioned
+  registration) therefore validated one table and queried another: silently
+  wrong rows where a same-named table existed, a 500 where it did not. The
+  subquery now reads the resolved target's table, as the eager-load path
+  already did.
+- **A cross-owner include returned almost nothing instead of everything.**
+  `applyRelatedOwnerScope` unconditionally pinned the owner column to the
+  request's owner, with no branch for the cross-owner postures that
+  `ApplyOwnerScope` honours — `owner.AllowCrossOwner` and the entity's
+  `CrossOwnerRead` permission. A caller holding either saw every row on the
+  routes and only their own through `?include=`. Same defect as the tenant one
+  below, in the sibling helper.
+- **A cross-tenant include returned nothing instead of everything.**
+  `applyRelatedTenantScope` unconditionally pinned `tenant_id` to the request's
+  tenant, with no branch for the cross-tenant posture that `RequireTenant` and
+  `ApplyTenantScope` both honour. An admin reading across tenants got an empty
+  relation rather than the rows they are entitled to — fail-closed, but
+  contradicting the documented contract.
+- **An include's authorization answer depended on whether the parent table had
+  rows.** The posture check sat below an early return for an empty parent, so
+  the same request answered 200 while the table was empty and 403 once a row
+  existed — a table-emptiness oracle, and inconsistent with the nested-filter
+  check, which refuses before it queries anything. The check now runs first.
+- **BREAKING: `?include=` and `?rel.field=` reached past an entity's read gate.** An
+  eager-load is a read of the RELATED entity, and the CRUD route applied every
+  other guard that hangs off the include target — the hidden-column scrub,
+  owner scope, tenant scope, soft delete — but never its `Exposure.Access`. So
+  `GET /api/posts?include=author` returned whole rows of an entity whose own
+  route answers 403, `?include=comments.author` dumped the table in one
+  request, and the same held through `?fields=` and cursor pagination. Nested filters were the quieter half: `?author.email=…` did not
+  return the row but changed the result count with the guess, making it an
+  oracle over a column the entity refuses to serve. Includes now answer 403
+  naming the entity, at every depth. Nested filters answer 403 for an
+  unreadable target, and are also refused outright when the target is
+  owner-scoped or multi-tenant: the `EXISTS` clause counts rows without
+  selecting them, so it cannot narrow them to the caller, and a signed-in owner
+  or a wrong-tenant caller could otherwise enumerate everyone else's rows one
+  guess at a time — except for a caller who may already read every row of that
+  target (`owner.AllowCrossOwner`, `CrossOwnerRead`, `tenant.AllowCrossTenant`),
+  for whom the count reveals nothing new. To filter by a scoped entity's field,
+  query that entity's own list route and filter the parent by the ids it
+  returns. The subquery now also hides soft-deleted rows, which every other read
+  surface already hid — trashed values were enumerable the same way. An *include* targeting an entity you can read is
+  unaffected. A nested *filter* additionally requires the target to be neither
+  owner-scoped nor multi-tenant: an ordinary owner filtering their own rows
+  gets 403 and must use the target's own list route, while a caller holding a
+  cross-owner or cross-tenant grant is exempt.
+  **Upgrade:** a request that previously returned 200 now returns 403 when it
+  includes or filters across an entity the caller may not read — most often a
+  default-posture entity reached from a `Public` one. Declare the related
+  entity as readable by that caller: `Public`, or a blank `read:` beside real
+  write permissions. `Scope.OwnerField` does NOT restore the old answer for an
+  anonymous caller — the nested-filter gate still refuses, and an include
+  returns 200 with zero related rows because the owner scope matches nothing.
+- **The same screens served RELATED entities' rows.** Gating a screen on its
+  own entity was not enough. Relation columns resolve the related entity's rows
+  to display labels, reverse-relation sections list them outright, and
+  dashboard `StatValue`/`groupCounts` aggregate over them — none checked the
+  related entity's posture, so a public screen with a relation to a gated
+  entity served that entity's display values, on the full page and the island
+  fragment alike. `groupCounts` was the sharpest: it returns the grouped
+  column's distinct values, so grouping a gated entity by `email` published the
+  addresses. Each related read is now gated on the related entity: a relation
+  the caller may not read renders muted — never the raw foreign key, which
+  would be useless to a reader and disclose an internal id — a
+  reverse-relation section is omitted rather than announced (a notice on a
+  public page tells every visitor which entities exist), and an aggregate
+  reports no data.
+- **Generated apps showed "Sign out" to anonymous visitors.** The app shell's
+  sidebar footer was built once at registration, so it could not see the
+  session. It now resolves per request, and offers "Sign in" only when a screen
+  actually hosts the login form — six of the seven shipped blueprints never
+  route `/login`.
+- **Four example blueprints declare their public content read-open.**
+  `examples/{portfolio,project-manager,lms}` moved their content entities
+  (posts, projects, tags, testimonials, courses, modules, lessons, boards,
+  columns, labels) from the default session-required posture to a blank `read:`
+  beside real write permissions, and `examples/blog` tightened its posts and
+  comments from `public: true` to the same shape. Their public screens
+  previously rendered only because server-rendered screens bypassed the read
+  gate; with that closed, each entity had to say what it actually is.
+  Anonymous REST reads on those entities are now open by declaration, and every
+  write stays gated.
+- **The `examples/ecommerce` storefront reads open and gates every write.** Its
+  catalog screens are public and previously rendered only because
+  server-rendered screens bypassed the read gate; with that closed, the
+  entities had to declare a posture. They now use a blank `read:` with named
+  write permissions, the same shape as `examples/blog`, on both the blueprint
+  and its runnable Go twin. `public: true` would have opened anonymous
+  `DELETE` on the catalog and on user-submitted reviews — the exposure
+  `gofastr generate` warns about on every run — which is not a tradeoff a
+  storefront example should be teaching in a release whose subject is closing
+  read holes. The shape the example actually wants — anonymous read, any
+  signed-in user writes — still cannot be expressed: a blank `read:` alone
+  leaves `AccessControl` empty (so `Declared()` is false and the session
+  requirement still applies), and naming a permission does not help because a
+  generated app grants permissions only to the admin role. Admin-gated writes
+  are the closest expressible posture; the blueprint comment records the gap
+  rather than papering over it.
+- **Documented that a blueprint's `nav: role:` is visibility, not access
+  control.** It hides the sidebar link; it does not gate the route. A blueprint
+  screen cannot declare a role of its own, so a plain generated screen at a
+  role-gated href answers 200 to anyone who types the URL — and every screen
+  path appears in the route manifest embedded in each page. The docs previously
+  said "the route stays protected regardless", which is only true when the
+  destination has its own gate (entity `access:`, or the admin battery).
+- **The docs site advertised a hostname with no DNS record.** `og:url`, the
+  sitemap, `robots.txt`'s `Sitemap:` line, every per-page canonical, and the
+  agent-ready discovery URLs pointed at a domain that resolves to nothing.
+  Both the site and the Meridian example now derive their public origin from a
+  single build-time variable.
+- **`DATABASE_URL` in the scaffolded `.env` was ignored.** The scaffold read it
+  before `.env` was loaded, so `PORT` applied and the database silently did
+  not — the app opened a different database than the file named.
+- **Three more places loaded a shorter dotenv list than `NewApp` does.**
+  `dotenv.Apply` never overwrites a variable that is already set, so anything
+  reading a shorter list first pins the lower-precedence file's value and
+  `NewApp`'s higher-precedence `.env.<APP_ENV>` can no longer win. Blueprint-
+  generated `main.go` and the two generated test files loaded
+  `.env.local, .env`; `gofastr migrate` resolved `DATABASE_URL` from `.env`
+  alone, ignoring `.env.local` — the *highest*-precedence file and the
+  documented place to point a checkout at a local database — so the CLI
+  migrated one database while the app it was migrating for opened another.
+  All four now load `framework.DefaultDotEnvPaths()`.
+- **`gofastr pack` silently lost the sidebar nav of every auth-enabled app.**
+  It reconstructs nav by reading `sidebarConfig`'s AST and required the
+  function to be a single `return ui.SidebarConfig{…}`. Once that builder
+  resolved its auth control per request it became `cfg := ui.SidebarConfig{…}`
+  … `return cfg`, the reader's type assertion failed, and pack reported no nav
+  — indistinguishable from an app that declares none. It now follows a
+  returned identifier back to the literal assigned to it.
+- **Meridian's sidebar showed "Sign out" to everyone.** The app shell built
+  its sidebar footer once at registration with a hardcoded sign-out control,
+  the same bug fixed in the generator; meridian is hand-maintained, so it did
+  not inherit the fix. Its footer now resolves per request, and the role-gated
+  "Admin" item is filtered through the context-aware path rather than rendered
+  for every visitor.
+
+
 ## [0.66.0] - 2026-08-17
 
 ### Fixed
