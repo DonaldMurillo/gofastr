@@ -29,6 +29,14 @@ entities:
     # Listed on the app home screen. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
+    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
+    # caller, and a posture is all-rows or no-rows — the framework has no
+    # row-level read filter, so an entity cannot say "anonymous sees
+    # published rows only". Where the entity below carries a draft, approved
+    # or is_public flag, those rows are served anonymously too, through both
+    # the API and any screen. That is tolerable in a demo whose data is
+    # fixtures; do NOT copy it for real content. Gate reads behind a
+    # permission and serve a separate public projection instead.
     access:
       read:
       create: projects:write
@@ -117,6 +125,14 @@ entities:
     # Listed on the boards screen. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
+    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
+    # caller, and a posture is all-rows or no-rows — the framework has no
+    # row-level read filter, so an entity cannot say "anonymous sees
+    # published rows only". Where the entity below carries a draft, approved
+    # or is_public flag, those rows are served anonymously too, through both
+    # the API and any screen. That is tolerable in a demo whose data is
+    # fixtures; do NOT copy it for real content. Gate reads behind a
+    # permission and serve a separate public projection instead.
     access:
       read:
       create: projects:write
@@ -160,6 +176,14 @@ entities:
     # Board structure, read with the board. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
+    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
+    # caller, and a posture is all-rows or no-rows — the framework has no
+    # row-level read filter, so an entity cannot say "anonymous sees
+    # published rows only". Where the entity below carries a draft, approved
+    # or is_public flag, those rows are served anonymously too, through both
+    # the API and any screen. That is tolerable in a demo whose data is
+    # fixtures; do NOT copy it for real content. Gate reads behind a
+    # permission and serve a separate public projection instead.
     access:
       read:
       create: projects:write
@@ -288,6 +312,14 @@ entities:
     # Read alongside tasks. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
+    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
+    # caller, and a posture is all-rows or no-rows — the framework has no
+    # row-level read filter, so an entity cannot say "anonymous sees
+    # published rows only". Where the entity below carries a draft, approved
+    # or is_public flag, those rows are served anonymously too, through both
+    # the API and any screen. That is tolerable in a demo whose data is
+    # fixtures; do NOT copy it for real content. Gate reads behind a
+    # permission and serve a separate public projection instead.
     access:
       read:
       create: projects:write
@@ -317,6 +349,14 @@ entities:
     # Read alongside tasks. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
+    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
+    # caller, and a posture is all-rows or no-rows — the framework has no
+    # row-level read filter, so an entity cannot say "anonymous sees
+    # published rows only". Where the entity below carries a draft, approved
+    # or is_public flag, those rows are served anonymously too, through both
+    # the API and any screen. That is tolerable in a demo whose data is
+    # fixtures; do NOT copy it for real content. Gate reads behind a
+    # permission and serve a separate public projection instead.
     access:
       read:
       create: projects:write

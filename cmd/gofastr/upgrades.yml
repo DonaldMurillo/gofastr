@@ -755,7 +755,7 @@ releases:
       - change: "BREAKING: server-rendered screens check the entity read gate"
         breaking: true
         guidance: "framework/ui/resource's List, Table, Detail and the pre-filled edit Form read rows directly and never entered the route middleware, so a screen served rows the same entity's REST route answered 401 or 403 for. They now render an access notice instead. A screen that rendered for anonymous visitors because of this gap goes blank until its entity declares the posture you want: a blank read: in the access block opens reads while keeping writes gated."
-        detect: "resource\\.(List|Table|Detail|Form)\\("
+        detect: "framework/ui/resource"
       - change: "BREAKING: ?include= and ?rel.field= honour the target's read posture"
         breaking: true
         guidance: "Both read another entity's rows through the parent's route and neither consulted that entity's own posture, so an include returned rows the target refuses to serve and a nested filter changed the row count with a guessed value. Both now resolve the target and refuse with 403 when the caller may not read it. Owner- and tenant-scoped targets are refused on the nested-filter path outright, because an EXISTS clause counts rows without selecting them and cannot narrow them to the caller's own; filter on that entity's own list route instead. The detector points at your relation declarations: every one of them is reachable by ?include= and ?rel.field=, so check that each target entity declares the read posture you actually want."

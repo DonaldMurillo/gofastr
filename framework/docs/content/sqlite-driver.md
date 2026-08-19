@@ -116,8 +116,12 @@ added while cleaning up.
 `ON DELETE` action and `entity.Relation` cannot express one, so nothing
 cascades. Delete the children first.
 
-**Writing timestamps with your own layout.** The driver binds
-`time.Time` in SQLite's text layout and the framework reads that layout
-back. A column written by hand in RFC3339 parses as the zero time, so a
-session looks expired and a scheduled job looks overdue. Bind a
-`time.Time` and let the driver format it.
+**Removing `_time_format=sqlite` from a DSN you build yourself.** The
+readers in `battery/auth` and `framework/outbox` accept either RFC3339 or
+SQLite's space-separated layout, so a hand-written timestamp in either
+form reads back fine. What they cannot read is modernc's own default,
+Go's `time.Time` `String()` output (`2026-07-20 23:59:59.123456789 +0000
+UTC`); a value stored that way parses as the zero time, so a session
+looks expired and a scheduled job looks overdue. That is the whole reason
+the parameter is added. If you assemble a DSN by hand rather than letting
+`sqlite/stdlib` rewrite it, carry the parameter across.

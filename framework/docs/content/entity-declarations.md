@@ -771,8 +771,9 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 **Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
 Every occurrence of the key contributes; the 1000-entry cap
 (`filter.MaxINListEntries`) counts the union, and the same cap applies to
-relation-scoped lists like `?author.name_in=` (which are refused outright when
-the related entity is owner-scoped or multi-tenant — see
+relation-scoped lists like `?author.name_in=` (which are refused when the
+related entity is owner-scoped or multi-tenant, unless the caller already holds
+cross-owner or cross-tenant access for that axis — see
 [access control](access-control.md)). A list over the cap is a
 **400** naming the field and both counts — never a silent truncation,
 for the same reason unknown filters fail closed below.

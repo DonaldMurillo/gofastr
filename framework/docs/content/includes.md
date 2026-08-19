@@ -193,7 +193,13 @@ row — the same postures the JSON routes honour. Soft-deleted rows are hidden.
 
 This applies to requests arriving over HTTP. In-process callers — the
 programmatic API, typed repos, seeds, jobs — are trusted server-side code and
-are not gated, exactly as the baseline session requirement is an HTTP concern.
+skip these AUTHORIZATION checks, exactly as the baseline session requirement is
+an HTTP concern.
+
+What they do not skip is data-layer scoping. `EagerLoad(..., registry)` still
+applies the soft-delete, owner and tenant predicates described above, so an
+in-process eager load is scoped even though no posture was consulted. Only
+`Exposure.Access` and the relation-disclosure refusal are HTTP-only.
 
 ## Filtering across a relation (`?rel.field=`)
 
