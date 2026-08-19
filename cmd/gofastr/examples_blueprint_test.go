@@ -188,14 +188,15 @@ func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *syncBuffer
 		// Any JSON-RPC failure — a missing required argument, a 500 — used to
 		// read as "refused", so a tool that was merely broken counted as
 		// correctly gated and the assertion passed vacuously.
-		mcpRefused := strings.Contains(callBody, "status 401") ||
-			strings.Contains(callBody, "status 403") ||
-			strings.Contains(callBody, "authentication required") ||
-			strings.Contains(callBody, "missing permission") ||
-			strings.Contains(callBody, "access denied")
+		mcpErr, mcpFailed := mcpErrorMessage(callBody)
+		mcpRefused := strings.Contains(mcpErr, "status 401") ||
+			strings.Contains(mcpErr, "status 403") ||
+			strings.Contains(mcpErr, "authentication required") ||
+			strings.Contains(mcpErr, "missing permission") ||
+			strings.Contains(mcpErr, "access denied")
 		restRefused := restStatus == http.StatusUnauthorized || restStatus == http.StatusForbidden
 
-		if !restRefused && strings.Contains(callBody, `"error"`) {
+		if !restRefused && mcpFailed {
 			t.Fatalf("%s: REST %s is open (%d) but the MCP tool %s failed: a tool that errors for a NON-auth reason compares equal to a refusal and makes this parity check pass vacuously.\n%s",
 				name, restPath, restStatus, tool.Name, callBody)
 		}
@@ -338,8 +339,7 @@ func assertScreenServesRows(t *testing.T, name, baseURL, table, restPath string)
 	// Whatever the API serves anonymously, the screen must show. Values come
 	// from the live response rather than a hardcoded fixture, so this works
 	// across every blueprint without knowing what any of them seeded.
-	want := firstRowDisplayValues(t, baseURL, restPath)
-	restHadRows := len(want) > 0
+	restHadRows, want := firstRowDisplayValues(t, baseURL, restPath)
 
 	resp, err := bootProbeClient.Get(baseURL + "/" + table)
 	if err != nil {
@@ -365,6 +365,14 @@ func assertScreenServesRows(t *testing.T, name, baseURL, table, restPath string)
 	if !restHadRows {
 		return false, false // the table is empty; there is nothing the screen could show
 	}
+	if len(want) == 0 {
+		// Rows exist, but the first one carries no comparable display value:
+		// every field is numeric, boolean, null, or an id/timestamp this gate
+		// skips on purpose. Row presence is still true and the caller's
+		// counters still diverge if the screen showed nothing, but there is no
+		// value assertion to make here.
+		return true, false
+	}
 	for _, v := range want {
 		if strings.Contains(string(body), v) || strings.Contains(string(body), html.EscapeString(v)) {
 			return true, true
@@ -384,10 +392,17 @@ func truncateForLog(b []byte) string {
 	return string(b)
 }
 
-// firstRowDisplayValues returns the non-empty string values of the first row a
-// list route serves, skipping ids and timestamps: those are either hidden on a
-// screen or formatted differently, so matching on them would be noise.
-func firstRowDisplayValues(t *testing.T, baseURL, restPath string) []string {
+// firstRowDisplayValues reports whether the list route served any row, and the
+// non-empty string values of the first one. Ids and timestamps are skipped:
+// those are either hidden on a screen or formatted differently, so matching on
+// them would be noise.
+//
+// The two returns are separate because they answer different questions, and
+// deriving presence from the values conflated them. A first row whose fields
+// are all numeric, boolean, or null yields no values, and the caller then read
+// that as "the table is empty" and skipped the screen assertion entirely — a
+// populated table silently opting out of the check.
+func firstRowDisplayValues(t *testing.T, baseURL, restPath string) (bool, []string) {
 	t.Helper()
 	resp, err := bootProbeClient.Get(baseURL + restPath)
 	if err != nil {
@@ -417,19 +432,72 @@ func firstRowDisplayValues(t *testing.T, baseURL, restPath string) []string {
 		t.Fatalf("GET %s: \"data\" is not a list of rows (%v):\n%s", restPath, err, truncateForLog(raw))
 	}
 	if len(rows) == 0 {
-		return nil // genuinely empty table
+		return false, nil // genuinely empty table
 	}
-	payload := struct{ Data []map[string]any }{Data: rows}
 	var out []string
-	for k, v := range payload.Data[0] {
-		if k == "id" || strings.HasSuffix(k, "Id") || strings.HasSuffix(k, "At") {
+	for k, v := range rows[0] {
+		if isIDOrTimestampKey(k) {
 			continue
 		}
 		if sv, ok := v.(string); ok && sv != "" {
 			out = append(out, sv)
 		}
 	}
-	return out
+	return true, out
+}
+
+// isIDOrTimestampKey matches both key conventions a blueprint can serve. The
+// framework emits camelCase, but the filter has to hold for a snake_case
+// payload too, and checking only `Id`/`At` let `user_id` and `created_at`
+// through as display values — matching a screen on a raw id is noise at best
+// and a false pass at worst.
+//
+// The suffixes are matched with their separator rather than case-folded, so
+// "valid", "format" and "seat" stay display values.
+func isIDOrTimestampKey(k string) bool {
+	return k == "id" ||
+		strings.HasSuffix(k, "Id") || strings.HasSuffix(k, "At") ||
+		strings.HasSuffix(k, "_id") || strings.HasSuffix(k, "_at")
+}
+
+// mcpErrorMessage returns the top-level JSON-RPC error message and whether the
+// call failed at all.
+//
+// Scanning the whole response for phrases like "access denied" classified row
+// CONTENT as an authorization refusal: a seeded row whose text happens to
+// contain the phrase made a successful call read as refused, which is exactly
+// the direction that hides a real MCP bypass — the REST route refuses, the MCP
+// tool serves the rows, and the parity check calls them equal.
+//
+// The transport may frame the response as SSE because the request accepts
+// text/event-stream, so a body that is not plain JSON is scanned for its data
+// frames before giving up.
+func mcpErrorMessage(body string) (string, bool) {
+	var env struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &env); err == nil {
+		if env.Error == nil {
+			return "", false
+		}
+		return env.Error.Message, true
+	}
+	for _, line := range strings.Split(body, "\n") {
+		data, ok := strings.CutPrefix(strings.TrimSpace(line), "data:")
+		if !ok {
+			continue
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &env); err != nil {
+			continue
+		}
+		if env.Error == nil {
+			return "", false
+		}
+		return env.Error.Message, true
+	}
+	return "", false
 }
 
 func postMCP(t *testing.T, baseURL, payload string) (int, string) {

@@ -271,14 +271,30 @@ func writeVerified(path string, original, mutated []byte) error {
 
 // checkBaseline runs the unmutated suite once. Everything after it is only
 // meaningful against a green starting point.
+// baselineBuildGrace is the head-room the baseline gets on top of -timeout for
+// the work that happens before the test binary exists: loading packages,
+// compiling, vetting.
+const baselineBuildGrace = 5 * time.Minute
+
 func checkBaseline(pkg, run, moduleRoot string, timeout time.Duration) error {
 	args := []string{"test", pkg, "-count=1", fmt.Sprintf("-timeout=%s", timeout)}
 	if run != "" {
 		args = append(args, "-run", run)
 	}
-	cmd := exec.Command("go", args...)
+	// A wall-clock deadline, because -timeout bounds the TEST BINARY and not
+	// the `go` process around it. Package loading, building and vetting all
+	// happen before the binary exists, so a build that hangs is not covered by
+	// the flag at all and the baseline check would wait forever before a
+	// single mutant ran.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+baselineBuildGrace)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = moduleRoot
 	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return fmt.Errorf("the baseline suite did not finish within %s (build plus -timeout=%s), so no verdict below would mean anything:\n%s",
+			timeout+baselineBuildGrace, timeout, truncate(string(out)))
+	}
 	if err != nil {
 		// Including the timeout case: a suite that cannot finish inside
 		// -timeout must refuse here, not proceed. Without this, every mutant

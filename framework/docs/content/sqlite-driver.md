@@ -34,8 +34,12 @@ value wins.
 
 SQLite ignores `FOREIGN KEY` clauses unless a connection turns them on,
 and every SQLite driver leaves them off. `AutoMigrate` writes a
-`FOREIGN KEY` clause for each declared relation, so without this an app
-read as though its relations were enforced while nothing enforced them.
+`FOREIGN KEY` clause for each `belongs_to` relation, except where the
+relation's column is the entity's `Scope.OwnerField` — that column holds
+the session identity, which lives in the auth battery's table rather than
+in the related entity, so a key on it is one the framework would violate
+on every create. Without this parameter an app read as though the
+remaining relations were enforced while nothing enforced them.
 The same entity declarations on Postgres did enforce them, which meant
 one schema had two different guarantees depending on the database.
 

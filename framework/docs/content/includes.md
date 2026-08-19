@@ -187,9 +187,14 @@ depends on whether the parent table happens to have rows.
 
 Owner and tenant scoping are applied differently: the eager loaders scope the
 related rows per node, so an include of an owner-scoped entity returns the rows
-the caller owns rather than a refusal. A caller marked cross-owner or
-cross-tenant, or holding the entity's `CrossOwnerRead` permission, sees every
-row — the same postures the JSON routes honour. Soft-deleted rows are hidden.
+the caller owns rather than a refusal. An anonymous caller owns nothing, so the
+same include returns an EMPTY relation rather than an error.
+
+The two predicates lift independently, each by its own grant. A caller marked
+cross-owner, or holding the entity's `CrossOwnerRead` permission, sees every
+owner's rows; a caller marked cross-tenant sees every tenant's. Neither lifts
+the other, so a target carrying both scopes needs both grants to see every row.
+Soft-deleted rows are hidden regardless.
 
 This applies to requests arriving over HTTP. In-process callers — the
 programmatic API, typed repos, seeds, jobs — are trusted server-side code and
