@@ -130,4 +130,48 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 			t.Fatalf("anonymous %s %s = %d, want 401 — the scaffold must stay secure by default\n%s", probe.method, probe.path, resp.StatusCode, output.String())
 		}
 	}
+
+	// The agent surface is the one thing a first-run user cannot discover by
+	// guessing a URL, and for a long while `gofastr init` shipped without it:
+	// the scaffold wired no WithMCP, /mcp 404'd, and the banner never named it.
+	// A stranger's first app therefore demonstrated everything the framework
+	// has in common with other stacks and nothing that is only here.
+	mcpCall := func(t *testing.T, body string) (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", baseURL+"/mcp", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST /mcp: %v", err)
+		}
+		defer resp.Body.Close()
+		out, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(out)
+	}
+
+	status, listBody := mcpCall(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if status != http.StatusOK {
+		t.Fatalf("POST /mcp tools/list = %d, want 200 — the scaffold must mount the MCP endpoint\n%s", status, output.String())
+	}
+	for _, tool := range []string{"posts_list", "posts_get", "posts_create", "posts_update", "posts_delete"} {
+		if !strings.Contains(listBody, `"`+tool+`"`) {
+			t.Fatalf("tools/list is missing %q — the sample entity must expose CRUD tools (Exposure.MCP):\n%s", tool, listBody)
+		}
+	}
+
+	// Auth parity is the actual claim, not merely "MCP exists": tool calls run
+	// through the same router and Exposure as the REST routes, so anonymous
+	// access must fail here exactly as it failed above. A tools/call that
+	// succeeded while GET /posts returned 401 would mean a second, unguarded
+	// authorization path — the failure this assertion exists to catch.
+	_, callBody := mcpCall(t, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"posts_list","arguments":{}}}`)
+	if !strings.Contains(callBody, "401") || !strings.Contains(callBody, "authentication required") {
+		t.Fatalf("anonymous MCP posts_list did not answer the REST route's 401 — MCP must not bypass entity auth:\n%s", callBody)
+	}
+
+	// The banner is how the endpoint gets discovered at all.
+	if !strings.Contains(output.String(), "/mcp") {
+		t.Fatalf("boot banner never mentions /mcp — a mounted surface nobody is told about is unreachable:\n%s", output.String())
+	}
 }

@@ -682,9 +682,22 @@ nav:
 Role-gated items are filtered by the signed-in user's roles at render time, on
 **both** the desktop sidebar and the mobile drawer — a link a user can't use
 never appears (and is never a dead end into a 403). Items without `role:` are
-visible to everyone. This is the nav-visibility complement to the server-side
-gate on the destination itself (`access:` / the admin battery's `role`); the
-route stays protected regardless.
+visible to everyone.
+
+**`role:` here is visibility, not access control.** It hides the link; it does
+not gate the route. Whether the destination is protected depends entirely on
+what guards the destination: entity `access:` permissions gate the DATA a
+screen renders (a caller without them sees the "Not available" notice in place
+of rows), and the admin battery gates its own console. A blueprint screen
+cannot declare a role of its own — `screens: role:` is not a key — so a plain
+generated screen sitting at a role-gated href answers 200 to anyone who types
+the URL, with whatever ungated content it holds. Every screen path also appears
+in the route manifest embedded in each page, so the href is discoverable
+regardless of whether its nav link renders.
+
+Put anything that must not be reached behind a gate on the destination: give
+the entities it reads an `access:` permission, or mount it under the admin
+battery.
 
 ### Seed data
 

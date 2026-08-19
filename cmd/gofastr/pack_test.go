@@ -406,3 +406,48 @@ func TestPack_ScreenlessAppRoundTrips(t *testing.T) {
 		t.Errorf("recovered %d entities, want 1", len(packed.Entities))
 	}
 }
+
+// packReadNav reads sidebarConfig's AST, so it depends on the SHAPE the
+// generator emits. When the sidebar started resolving its auth control per
+// request, that builder changed from a single `return ui.SidebarConfig{…}` to
+// `cfg := ui.SidebarConfig{…}` … `return cfg`, and the reader — which asserted
+// the returned expression was a composite literal — began reporting no nav at
+// all. It reported it silently: "no nav" and "nav could not be read" are the
+// same answer.
+//
+// Meridian is hand-maintained, so its own round-trip test only caught this
+// once meridian was edited to match. This drives the GENERATOR's output
+// directly, which is the shape every blueprint actually ships.
+func TestPackReadsNavFromAGeneratedAuthApp(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{
+			Name: "Navy", Module: "example.com/navy",
+			DBDriver: "sqlite", DBURL: "file:navy.db",
+			// Auth on is what makes the generator emit the per-request
+			// builder — the shape that broke the reader.
+			Auth: BlueprintAuth{Enabled: true},
+		},
+		Entities: []framework.EntityDeclaration{{
+			Name:   "notes",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		}},
+		Nav: []BlueprintNavItem{
+			{Label: "Notes", Href: "/notes"},
+			{Label: "Admin Console", Href: "/admin", Role: "admin"},
+		},
+	}
+	dir := materializeBlueprint(t, bp)
+
+	nav, err := packReadNav(dir)
+	if err != nil {
+		t.Fatalf("packReadNav: %v", err)
+	}
+	if len(nav) != len(bp.Nav) {
+		t.Fatalf("packReadNav returned %d items, want %d — the reader lost the generator's sidebar shape:\n%#v", len(nav), len(bp.Nav), nav)
+	}
+	for i, want := range bp.Nav {
+		if nav[i].Label != want.Label || nav[i].Href != want.Href || nav[i].Role != want.Role {
+			t.Errorf("nav[%d] = %+v, want %+v", i, nav[i], want)
+		}
+	}
+}

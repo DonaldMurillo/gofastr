@@ -57,6 +57,15 @@ func runValidate(args []string) {
 		osExit(1)
 		return
 	}
+	// A module path that collides with the framework's own produces code that
+	// cannot build anywhere outside this repo. Warned (not failed) for the same
+	// reason `generate` warns: the in-repo examples legitimately declare such
+	// paths. Surfaced here because validate → fix → generate is the loop the
+	// CLI documents, and a finding that only appears at the last step is a
+	// finding the loop is designed to skip past.
+	for _, f := range lintModuleCollision(bp) {
+		warn("%s: %s", path, f.Message())
+	}
 	success("Blueprint %s is valid: %d entity(ies), %d screen(s), %d endpoint(s)", path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints))
 }
 

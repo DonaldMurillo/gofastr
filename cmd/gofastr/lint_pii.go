@@ -132,6 +132,49 @@ func (f publicFinding) Message() string {
 		f.Entity)
 }
 
+// frameworkModulePath is the module every generated app imports. A blueprint
+// whose own app.module sits UNDER this path claims a package namespace the
+// framework module also provides, and the Go toolchain refuses the ambiguity:
+//
+//	ambiguous import: found package <path> in multiple modules
+//
+// The in-repo example blueprints legitimately declare such paths — they are
+// generated inside this module, where the local package wins. Copying one out
+// to learn from it (the documented way to start from an example) produces a
+// build that cannot be repaired by any go.mod edit, and the generator used to
+// print `go mod init <that same colliding path>` as the remedy, steering the
+// reader further in.
+const frameworkModulePath = "github.com/DonaldMurillo/gofastr"
+
+// moduleCollisionFinding is a blueprint whose app.module collides with the
+// framework's own module path.
+type moduleCollisionFinding struct {
+	Module string
+}
+
+func (f moduleCollisionFinding) Message() string {
+	return fmt.Sprintf(
+		"app.module %q sits inside the framework's own module (%s), so the generated code and the framework both claim that package path — `go build` fails with \"ambiguous import\" and no go.mod edit fixes it. This works only inside the GoFastr repo itself. Set app.module to a path you own (for example \"local/%s\" while experimenting, or your repo's path).",
+		f.Module, frameworkModulePath, lastPathSegment(f.Module))
+}
+
+// lintModuleCollision reports a blueprint whose app.module is the framework
+// module or a subpath of it. Returns nil for every other module path.
+func lintModuleCollision(bp Blueprint) []moduleCollisionFinding {
+	m := strings.TrimSpace(bp.App.Module)
+	if m != frameworkModulePath && !strings.HasPrefix(m, frameworkModulePath+"/") {
+		return nil
+	}
+	return []moduleCollisionFinding{{Module: m}}
+}
+
+func lastPathSegment(module string) string {
+	if i := strings.LastIndex(module, "/"); i >= 0 && i+1 < len(module) {
+		return module[i+1:]
+	}
+	return module
+}
+
 // lintPublicEntities returns one finding per blueprint entity declaring
 // `public: true` — the full, deliberate opt-out from auto-CRUD's
 // secure-by-default session requirement. Every one of these is genuinely

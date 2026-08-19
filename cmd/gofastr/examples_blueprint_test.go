@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"html"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
 // TestExampleBlueprintsLoad validates every examples/<name>/gofastr.yml parses
@@ -111,9 +116,338 @@ func TestExampleBlueprintsBoot(t *testing.T) {
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
 			bin, appDir := generateAndCompileBlueprint(t, path, name)
-			bootGeneratedApp(t, name, bin, appDir)
+			baseURL, output := bootGeneratedApp(t, name, bin, appDir)
+			exerciseGeneratedApp(t, name, baseURL, output)
 		})
 	}
+}
+
+// exerciseGeneratedApp is the rung above "it booted". The boot probe accepts
+// any non-5xx answer to GET / — which proves the process is alive and routing,
+// and nothing else. Every generated surface past the homepage (the REST list
+// routes, the MCP tools, the authorization posture shared by both) was
+// unexercised by any gate, so a generated app could serve a homepage and be
+// wrong about everything a user would actually call.
+//
+// The check is derived from the app rather than hardcoded per blueprint: ask
+// /mcp which tools exist, and for every "<table>_list" tool compare the MCP
+// answer's posture against the REST list route's. The invariant is parity —
+// tool calls re-enter the same router and Exposure as the REST handlers, so
+// the two must agree about whether the caller may read. A tools/call that
+// succeeds where REST answers 401/403 is an unguarded second authorization
+// path, which is the failure this exists to catch; the reverse (REST open,
+// tool refused) is a silently broken agent surface.
+func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *bytes.Buffer) {
+	t.Helper()
+
+	status, body := postMCP(t, baseURL, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if status == http.StatusNotFound {
+		t.Logf("%s: no /mcp endpoint (blueprint does not enable MCP) — skipping the parity exercise", name)
+		return
+	}
+	if status != http.StatusOK {
+		t.Fatalf("%s: POST /mcp tools/list = %d, want 200:\n%s\n%s", name, status, body, output.String())
+	}
+
+	var listResp struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(body), &listResp); err != nil {
+		t.Fatalf("%s: tools/list is not JSON: %v\n%s", name, err, body)
+	}
+	if len(listResp.Result.Tools) == 0 {
+		t.Fatalf("%s: /mcp is mounted but exposes no tools — every generated entity should carry its CRUD tools:\n%s", name, body)
+	}
+
+	checked := 0
+	// servedRows / valuesCompared track the value-level half of the screen
+	// gate, which returns early when a table is empty. Without them, "every
+	// table looked empty" is indistinguishable from "every screen was checked".
+	servedRows, valuesCompared := 0, 0
+	for _, tool := range listResp.Result.Tools {
+		table, ok := strings.CutSuffix(tool.Name, "_list")
+		if !ok {
+			continue
+		}
+		restStatus, restPath := restListStatus(t, baseURL, table)
+		if restStatus == 0 {
+			// No REST list route for this tool's table (introspection tools,
+			// or an entity exposed to MCP only) — nothing to compare against.
+			continue
+		}
+		callStatus, callBody := postMCP(t, baseURL,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"`+tool.Name+`","arguments":{}}}`)
+		if callStatus != http.StatusOK {
+			t.Fatalf("%s: POST /mcp tools/call %s = HTTP %d, want 200 (JSON-RPC reports its own errors in the body): %s",
+				name, tool.Name, callStatus, callBody)
+		}
+		// Classify on the authorization signal, not on "an error happened".
+		// Any JSON-RPC failure — a missing required argument, a 500 — used to
+		// read as "refused", so a tool that was merely broken counted as
+		// correctly gated and the assertion passed vacuously.
+		mcpRefused := strings.Contains(callBody, "status 401") ||
+			strings.Contains(callBody, "status 403") ||
+			strings.Contains(callBody, "authentication required") ||
+			strings.Contains(callBody, "missing permission") ||
+			strings.Contains(callBody, "access denied")
+		restRefused := restStatus == http.StatusUnauthorized || restStatus == http.StatusForbidden
+
+		if !restRefused && strings.Contains(callBody, `"error"`) {
+			t.Fatalf("%s: REST %s is open (%d) but the MCP tool %s failed: a tool that errors for a NON-auth reason compares equal to a refusal and makes this parity check pass vacuously.\n%s",
+				name, restPath, restStatus, tool.Name, callBody)
+		}
+		if restRefused != mcpRefused {
+			t.Fatalf("%s: authorization parity broken for %q — REST %s = %d (refused=%v) but MCP tools/call refused=%v.\n"+
+				"MCP tool calls must inherit the entity's Exposure exactly; a divergence here is a second, unguarded auth path.\nMCP response: %s",
+				name, table, restPath, restStatus, restRefused, mcpRefused, callBody)
+		}
+		// The third surface. REST and MCP share the route middleware; a
+		// server-rendered screen does not enter it at all, so an entity could
+		// answer 403 on /api/<table> and 200 — with every row in the HTML — on
+		// the /<table> screen the same blueprint generated. That was live on
+		// the flagship blog blueprint: GET /api/users refused while GET /users
+		// served three user emails.
+		if restRefused {
+			assertScreenServesNoRows(t, name, baseURL, table)
+		} else {
+			served, compared := assertScreenServesRows(t, name, baseURL, table, restPath)
+			if served {
+				servedRows++
+			}
+			if compared {
+				valuesCompared++
+			}
+		}
+		checked++
+	}
+	// Fatal, not Logf. Every assertion above lives inside the loop, so a
+	// `checked` of zero means this whole gate — REST/MCP parity AND both
+	// screen directions — silently exercised nothing while the test reported
+	// a pass. Tool-name drift or an API-prefix change would do it: the
+	// `_list` suffix stops matching, or restListStatus stops finding a route,
+	// and every iteration `continue`s. The blueprint reached here with tools
+	// mounted, so at least one of them must pair with a REST route.
+	if checked == 0 {
+		t.Fatalf("%s: /mcp exposes %d tools but not one paired with a REST list route — "+
+			"the parity and screen assertions ran zero times and this gate proved nothing",
+			name, len(listResp.Result.Tools))
+	}
+	// `checked` counts entities that reached the screen assertions, but the
+	// value-level half only runs when the REST route actually served rows AND
+	// the screen answered 200. If rows existed everywhere and nothing was ever
+	// compared, that half verified nothing while the count still looked
+	// healthy — a seed that stopped running, a list envelope this gate can no
+	// longer read, or every screen quietly redirecting all present that way.
+	if servedRows > 0 && valuesCompared == 0 {
+		t.Fatalf("%s: %d entities served rows over REST but not one screen was checked against an actual value — "+
+			"the too-tight-gate direction verified nothing", name, servedRows)
+	}
+	t.Logf("%s: REST/MCP authorization parity verified for %d entities (%d value-compared)", name, checked, valuesCompared)
+}
+
+// restListStatus finds the generated REST list route for a table and returns
+// its status. Generated apps mount entities under an API prefix that the
+// blueprint chooses (/api/<table> by default, /<table> when the app declares no
+// prefix), so both shapes are probed and the first that is not a 404 wins. A
+// zero status means the table has no REST list route at all.
+func restListStatus(t *testing.T, baseURL, table string) (int, string) {
+	t.Helper()
+	for _, path := range []string{"/api/" + table, "/" + table} {
+		resp, err := bootProbeClient.Get(baseURL + path)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			return resp.StatusCode, path
+		}
+	}
+	return 0, ""
+}
+
+// assertScreenServesNoRows fails when a generated SSR screen renders a data
+// table for an entity whose REST list route refused the same anonymous caller.
+// The screen may answer 200 — it renders an access notice — but it must not
+// contain the rows.
+func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
+	t.Helper()
+	resp, err := bootProbeClient.Get(baseURL + "/" + table)
+	if err != nil {
+		t.Fatalf("%s: GET /%s failed: %v — a screen that cannot be reached is not evidence that it is safe", name, table, err)
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		// No screen for this entity at all, so there is nothing that could
+		// leak. This is a silent pass by design — unlike the zero-`checked`
+		// case above, "no screen exists" is itself the safe answer.
+		return
+	case resp.StatusCode == http.StatusUnauthorized,
+		resp.StatusCode == http.StatusForbidden,
+		resp.StatusCode == http.StatusFound,
+		resp.StatusCode == http.StatusSeeOther:
+		return // refused or redirected to sign in, which is also correct
+	case resp.StatusCode >= 500:
+		t.Fatalf("%s: GET /%s = %d — a crashing screen is not a passing gate", name, table, resp.StatusCode)
+	case resp.StatusCode != http.StatusOK:
+		t.Fatalf("%s: GET /%s = %d — unexpected status, decide deliberately whether it is a refusal", name, table, resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), `data-fui-comp="ui-data-table"`) {
+		t.Fatalf("%s: GET /%s renders a data table while GET /api/%s refuses the same anonymous caller — "+
+			"a server-rendered screen is a second door to rows the API declines to serve", name, table, table)
+	}
+	// The check above names one renderer, so it only catches a leak shaped
+	// like a data table; a screen that listed the same rows as cards would
+	// pass it. Require the refusal POSITIVELY instead — the screen has to say
+	// it declined, which no renderer of actual rows does.
+	if !strings.Contains(string(body), resource.AccessDeniedTitle) {
+		t.Fatalf("%s: GET /%s returned 200 without the access notice while GET /api/%s refuses the same "+
+			"anonymous caller — a screen for refused rows must render the refusal, not merely omit a table",
+			name, table, table)
+	}
+}
+
+// assertScreenServesRows is the other direction, and the one that was missing.
+// The gate only ever checked that a refused entity's screen renders no table,
+// so a read guard that was too TIGHT was invisible to CI: four shipped
+// blueprints began rendering nothing but access notices on their public pages
+// and every test stayed green.
+//
+// If the REST list route serves an anonymous caller, the screen for the same
+// entity must serve them too — and must show the same rows. Asserting only
+// that the refusal notice is ABSENT would pass for a screen that renders an
+// empty table because its query broke, which looks identical to a correctly
+// permitted screen with nothing to show. restPath is the route that already
+// answered 200, so its own payload supplies the expected values.
+// Returns (restHadRows, valueCompared): whether the REST route served any rows
+// at all, and whether one of their values was matched against the screen.
+//
+// The two must be able to DIVERGE, or the caller's accounting is dead code.
+// An earlier version derived both from the same return points, so they were
+// always equal and the guard that watches for "rows existed but nothing was
+// compared" could never fire — an anti-vacuity check that was itself vacuous.
+// The REST payload is therefore read FIRST, independently of what the screen
+// does: a screen that 404s or redirects returns (restHadRows, false), which is
+// exactly the divergence the caller needs to see.
+func assertScreenServesRows(t *testing.T, name, baseURL, table, restPath string) (bool, bool) {
+	t.Helper()
+	// Whatever the API serves anonymously, the screen must show. Values come
+	// from the live response rather than a hardcoded fixture, so this works
+	// across every blueprint without knowing what any of them seeded.
+	want := firstRowDisplayValues(t, baseURL, restPath)
+	restHadRows := len(want) > 0
+
+	resp, err := bootProbeClient.Get(baseURL + "/" + table)
+	if err != nil {
+		// Matching assertScreenServesNoRows: a screen we could not reach is
+		// not evidence either way, and swallowing the error would let a
+		// half-dead app pass both directions of the gate silently.
+		t.Fatalf("%s: GET /%s failed: %v — an unreachable screen is not evidence that the gate is right", name, table, err)
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode >= 500:
+		t.Fatalf("%s: GET /%s = %d — a crashing screen is not a passing gate", name, table, resp.StatusCode)
+	case resp.StatusCode != http.StatusOK:
+		// 404 (no screen for this entity) and a sign-in redirect are both
+		// legitimate shapes this check has no opinion on.
+		return restHadRows, false
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), resource.AccessDeniedTitle) {
+		t.Fatalf("%s: GET /%s renders a permission notice while GET /api/%s serves the same anonymous caller — "+
+			"the read gate is tighter than the entity's declared posture", name, table, table)
+	}
+	if !restHadRows {
+		return false, false // the table is empty; there is nothing the screen could show
+	}
+	for _, v := range want {
+		if strings.Contains(string(body), v) || strings.Contains(string(body), html.EscapeString(v)) {
+			return true, true
+		}
+	}
+	t.Fatalf("%s: GET /%s renders no value from the first row %s serves (%q) — the screen is permitted but shows no data",
+		name, table, restPath, want)
+	return true, false
+}
+
+// truncateForLog bounds a response body in a failure message.
+func truncateForLog(b []byte) string {
+	const max = 400
+	if len(b) > max {
+		return string(b[:max]) + "…"
+	}
+	return string(b)
+}
+
+// firstRowDisplayValues returns the non-empty string values of the first row a
+// list route serves, skipping ids and timestamps: those are either hidden on a
+// screen or formatted differently, so matching on them would be noise.
+func firstRowDisplayValues(t *testing.T, baseURL, restPath string) []string {
+	t.Helper()
+	resp, err := bootProbeClient.Get(baseURL + restPath)
+	if err != nil {
+		// The caller already reached this route once; failing now is a real
+		// fault, not a reason to skip the value check. Returning nil here made
+		// the whole "screen serves rows" direction evaporate silently.
+		t.Fatalf("GET %s failed on the second read: %v", restPath, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	// Decode loosely first: a renamed or restructured envelope unmarshals
+	// cleanly into a typed struct and leaves Data empty, which is
+	// indistinguishable from an empty table — and that is exactly how this
+	// gate's value-level half can silently stop verifying anything. Require
+	// the `data` key to exist.
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("GET %s returned a body this gate cannot parse (%v):\n%s", restPath, err, truncateForLog(raw))
+	}
+	rawData, ok := envelope["data"]
+	if !ok {
+		t.Fatalf("GET %s returned an envelope with no \"data\" key — the list response shape changed and this gate can no longer read it:\n%s",
+			restPath, truncateForLog(raw))
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(rawData, &rows); err != nil {
+		t.Fatalf("GET %s: \"data\" is not a list of rows (%v):\n%s", restPath, err, truncateForLog(raw))
+	}
+	if len(rows) == 0 {
+		return nil // genuinely empty table
+	}
+	payload := struct{ Data []map[string]any }{Data: rows}
+	var out []string
+	for k, v := range payload.Data[0] {
+		if k == "id" || strings.HasSuffix(k, "Id") || strings.HasSuffix(k, "At") {
+			continue
+		}
+		if sv, ok := v.(string); ok && sv != "" {
+			out = append(out, sv)
+		}
+	}
+	return out
+}
+
+func postMCP(t *testing.T, baseURL, payload string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest("POST", baseURL+"/mcp", strings.NewReader(payload))
+	if err != nil {
+		t.Fatalf("build /mcp request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := bootProbeClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /mcp: %v", err)
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(out)
 }
 
 // bootProbeClient bounds every readiness probe in bootGeneratedApp. A raw
@@ -128,7 +462,7 @@ var bootProbeClient = &http.Client{Timeout: 5 * time.Second}
 // migration, refused bind) fails immediately with its captured output —
 // faster than burning the whole HTTP deadline, and the output is the
 // diagnostic that matters.
-func bootGeneratedApp(t *testing.T, name, bin, appDir string) {
+func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *bytes.Buffer) {
 	t.Helper()
 	addr := freeAddr(t)
 	cmd := exec.Command(testExecutablePath(bin))
@@ -167,12 +501,13 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) {
 			// Any non-server-error answer proves the app is up and routing —
 			// auth-gated apps answer 302/401 on /, a screen-less one 404.
 			if resp.StatusCode < 500 {
-				return
+				return baseURL, output
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("generated %s app did not serve at %s within 90s:\n%s", name, baseURL, output.String())
+	return "", nil
 }
 
 // TestBootProbeClientTimesOut pins the readiness probe's timeout: a

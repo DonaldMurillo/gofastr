@@ -1416,6 +1416,16 @@ func (a *App) Use(mw ...router.Middleware) *App {
 // the process CWD; callers running gofastr from a non-project dir
 // should set GOFASTR_DOTENV=off and call dotenv.LoadAndApply with
 // explicit absolute paths.
+// DefaultDotEnvPaths returns the dotenv files App.NewApp loads, in precedence
+// order: .env.local, then .env.<APP_ENV> when APP_ENV is set, then .env.
+//
+// Exported so code that must read an environment variable BEFORE NewApp — a
+// scaffolded main.go opening its database, for instance — can load exactly the
+// same set in the same order. dotenv.Apply never overwrites an existing
+// variable, so loading a shorter list first silently pins the lower-precedence
+// file's value and NewApp's later load cannot correct it.
+func DefaultDotEnvPaths() []string { return defaultDotEnvPaths() }
+
 func defaultDotEnvPaths() []string {
 	paths := []string{".env.local"}
 	if appEnv := os.Getenv("APP_ENV"); appEnv != "" {
@@ -3230,6 +3240,24 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		if hasLLMMD {
 			fmt.Fprintf(w, "  %s LLM Docs:    http://%s/api/llm.md%s\n", arrow(), boundAddr, apiGate)
 		}
+	}
+
+	// The MCP endpoint is the one surface a first-run user cannot discover by
+	// guessing a URL, and it was the only mounted surface the banner never
+	// named — an app could serve a full tool set at /mcp and say nothing about
+	// it.
+	//
+	// The note covers ENTITY tools, which re-enter the app router and so answer
+	// an anonymous call with the same error their REST route would. The
+	// introspection tools (app_routes, app_config, …) are a separate, ungated
+	// surface — see `gofastr docs blueprints` — so the wording says "your app's
+	// permissions" rather than claiming every tool is gated.
+	if a.mcpAutoMount {
+		mcpNote := ""
+		if n := len(a.MCP.ListTools()); n > 0 {
+			mcpNote = fmt.Sprintf("  (%d tools, your app's permissions)", n)
+		}
+		fmt.Fprintf(w, "  %s MCP:         http://%s/mcp%s\n", arrow(), boundAddr, mcpNote)
 	}
 	_, _ = fmt.Fprintln(w)
 }

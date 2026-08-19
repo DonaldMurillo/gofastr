@@ -133,11 +133,27 @@ func runInit(args []string) {
 	var envContent string
 	if noEntity {
 		envContent = `# GoFastr Environment Configuration
+
+# PORT is the listen address, not only a port number. The default below is
+# loopback-only, so nothing outside this machine can reach the dev server.
+#
+# A bare port ("8080") is also accepted — the shape platforms like Fly,
+# Render, and Heroku inject — but it binds ALL interfaces, which on a laptop
+# means everyone on your network can reach the app. Keep the host prefix
+# locally; use the bare form only where you intend to serve publicly.
 PORT=localhost:8080
 `
 	} else {
 		envContent = fmt.Sprintf(`# GoFastr Environment Configuration
 DATABASE_URL=%s
+
+# PORT is the listen address, not only a port number. The default below is
+# loopback-only, so nothing outside this machine can reach the dev server.
+#
+# A bare port ("8080") is also accepted — the shape platforms like Fly,
+# Render, and Heroku inject — but it binds ALL interfaces, which on a laptop
+# means everyone on your network can reach the app. Keep the host prefix
+# locally; use the bare form only where you intend to serve publicly.
 PORT=localhost:8080
 `, dbURL)
 	}
@@ -432,6 +448,7 @@ import (
 	"os"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -443,6 +460,17 @@ import (
 )
 
 func main() {
+	// Load .env BEFORE any getEnv read. framework.NewApp also loads it, but
+	// DATABASE_URL is consumed here — above NewApp — so without this the
+	// scaffolded .env was half-live: PORT applied, DATABASE_URL silently did
+	// not, and the app opened a different database than the file said.
+	//
+	// framework.DefaultDotEnvPaths(), not a hardcoded list: dotenv.Apply never
+	// overwrites an existing variable, so loading a SHORTER list here would pin
+	// .env's value and NewApp's higher-precedence .env.<APP_ENV> could no
+	// longer win.
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		log.Fatal(err)
@@ -464,6 +492,16 @@ func main() {
 		// discard it (the framework warns at boot if that happens).
 		framework.WithConfig(framework.AppConfig{Name: "%[2]s"}),
 		framework.WithDB(db),
+		// Mounts /mcp (POST JSON-RPC + GET SSE). Every entity with
+		// Exposure.MCP gets list/get/create/update/delete tools, and each tool
+		// call runs through this app's router — so an agent gets exactly the
+		// permissions the calling session has, and an anonymous call answers
+		// with the same error the REST route would. That parity is the point:
+		// there is no second authorization path to keep in sync.
+		//
+		// Turn this off before exposing the app to untrusted callers if you
+		// have not reviewed which entities set Exposure.MCP.
+		framework.WithMCP(),
 	)
 
 	// Register entities from the entities package.
@@ -634,14 +672,32 @@ func RegisterAll(app *framework.App) {
 			{Name: "body", Type: schema.Text},
 			{Name: "published", Type: schema.Bool},
 		},
+		// MCP: true registers posts_list/get/create/update/delete as MCP tools
+		// at /mcp (see framework.WithMCP in main.go). The tools reuse the CRUD
+		// handlers and this same Exposure, so they are gated exactly like the
+		// REST routes — an unauthenticated tools/call gets the same 401, never
+		// a bypass.
+		//
 		// Secure by default: CRUD requires a signed-in session. Add
 		// Public: true for anonymous access, or wire battery/auth for a
 		// real login flow (gofastr docs auth).
-		Exposure: &entity.ExposureConfig{CRUD: boolPtr(true)},
+		Exposure: &entity.ExposureConfig{CRUD: boolPtr(true), MCP: true},
 	})
 }
 
 // RegisterMigrations registers all entity migrations.
+//
+// This migration is deliberately redundant with the entity declaration above:
+// App.Start auto-migrates from EntityConfig, so adding a field to Fields is
+// enough for the column to appear on the next boot — you do NOT have to edit
+// this file to change the schema.
+//
+// It is scaffolded anyway because versioned migrations are what a real
+// deployment reviews and rolls back, and auto-migrate only applies additive
+// changes. Keep both and let auto-migrate handle development, run
+// "gofastr migrate generate" to turn the current declaration into an explicit
+// migration before a deploy, or delete this function and pass
+// framework.WithoutAutoMigrate() to require explicit migrations for everything.
 func RegisterMigrations(m *migrate.Migrator) {
 	if err := m.Register(migrate.Migration{
 		Version: 1,
