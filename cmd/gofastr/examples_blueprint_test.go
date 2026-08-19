@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"html"
 	"io"
@@ -137,7 +136,7 @@ func TestExampleBlueprintsBoot(t *testing.T) {
 // succeeds where REST answers 401/403 is an unguarded second authorization
 // path, which is the failure this exists to catch; the reverse (REST open,
 // tool refused) is a silently broken agent surface.
-func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *bytes.Buffer) {
+func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *syncBuffer) {
 	t.Helper()
 
 	status, body := postMCP(t, baseURL, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
@@ -462,7 +461,7 @@ var bootProbeClient = &http.Client{Timeout: 5 * time.Second}
 // migration, refused bind) fails immediately with its captured output —
 // faster than burning the whole HTTP deadline, and the output is the
 // diagnostic that matters.
-func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *bytes.Buffer) {
+func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuffer) {
 	t.Helper()
 	addr := freeAddr(t)
 	cmd := exec.Command(testExecutablePath(bin))
@@ -474,7 +473,9 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *bytes.Bu
 		"DATABASE_URL=file:"+filepath.Join(appDir, "boot-gate.db"),
 	)
 	configureTestProcessGroup(cmd)
-	output := &bytes.Buffer{}
+	// syncBuffer: exerciseGeneratedApp reads this while the app is running,
+	// and os/exec copies a child's output from its own goroutines until Wait.
+	output := &syncBuffer{}
 	cmd.Stdout = output
 	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {

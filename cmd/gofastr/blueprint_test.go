@@ -1108,7 +1108,10 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 		"PORT="+addr,
 		"DATABASE_URL=file:"+filepath.Join(dir, "blueprint-e2e.db"),
 	)
-	var output bytes.Buffer
+	// syncBuffer: os/exec copies the child's output from its own goroutines
+	// until Wait returns, so reading a plain bytes.Buffer while the app runs
+	// races the copier.
+	var output syncBuffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	if err := cmd.Start(); err != nil {
