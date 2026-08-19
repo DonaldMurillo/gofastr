@@ -107,15 +107,22 @@ func hasForeignKeysChoice(query string) bool {
 			return true
 		}
 	}
-	// The mattn-compatible shorthands. The driver applies these AFTER the
-	// pragma list, so they already beat any appended default — which means
-	// this arm changes no observable behavior today and no test can pin it.
-	// It stays as a guard against that ordering changing: if the shorthands
-	// ever applied first, skipping the default here is what keeps the caller's
-	// choice. Matched by key so an encoded value cannot hide them.
+	// The mattn-compatible shorthands. A NON-EMPTY value is a choice and wins.
+	// An empty one is not: modernc suppresses the shorthand's pragma when the
+	// value is empty, so `?_foreign_keys=` selects nothing at all. Reading the
+	// bare key as a choice meant the default was skipped for a DSN that had
+	// merely mentioned the parameter, and enforcement came back off with
+	// nobody having asked for it. Executed against the shipped driver:
+	// `?_foreign_keys=` and `?_fk=` both reported foreign_keys=0.
+	//
+	// The comment that stood here claimed this arm changed no observable
+	// behavior and that no test could pin it. Both halves were wrong, which is
+	// the argument for pinning a guard rather than reasoning about it.
 	for _, k := range []string{"_foreign_keys", "_fk"} {
-		if _, ok := vals[k]; ok {
-			return true
+		for _, v := range vals[k] {
+			if strings.TrimSpace(v) != "" {
+				return true
+			}
 		}
 	}
 	return false

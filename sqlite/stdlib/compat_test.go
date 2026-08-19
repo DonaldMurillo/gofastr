@@ -213,6 +213,14 @@ func TestForeignKeysUnknownSpellingStillGetsTheDefault(t *testing.T) {
 		// the mattn parameter. Skipping the default for it left FKs off.
 		{":memory:?foreign_keys=1", 1, "unknown spelling must not suppress the default"},
 		{":memory:?_pragma=foreign_keys", 1, "valueless _pragma sets nothing"},
+		// An empty shorthand is not a choice. modernc suppresses the
+		// shorthand's own pragma when the value is empty, so reading the bare
+		// KEY as an opt-out turned enforcement off for a DSN that merely
+		// mentioned the parameter. Executed against the shipped driver before
+		// the fix: both of these reported 0.
+		{":memory:?_foreign_keys=", 1, "empty mattn shorthand selects nothing"},
+		{":memory:?_fk=", 1, "empty _fk shorthand selects nothing"},
+		{":memory:?_fk=0", 0, "a non-empty _fk IS a choice"},
 	}
 	for _, c := range cases {
 		db, err := sql.Open("sqlite3", c.dsn)
