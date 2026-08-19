@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -112,8 +111,12 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	cmd := exec.Command(appBin)
 	cmd.Dir = work
 	cmd.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(work, "gate.db"))
-	output := &bytes.Buffer{}
-	cmd.Stdout, cmd.Stderr = output, output
+	// syncBuffer, not bytes.Buffer: os/exec copies the child's output from its
+	// own goroutines until Wait returns, and Wait runs in t.Cleanup — so every
+	// read of this below races the copier. The package already has the
+	// mutex-guarded writer for exactly this.
+	var output syncBuffer
+	cmd.Stdout, cmd.Stderr = &output, &output
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start app: %v", err)
 	}
@@ -123,7 +126,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	})
 
 	baseURL := "http://" + addr
-	waitForHTTP(t, baseURL+"/notes", output)
+	waitForHTTP(t, baseURL+"/notes", &output)
 
 	resp, err := http.Get(baseURL + "/notes")
 	if err != nil {

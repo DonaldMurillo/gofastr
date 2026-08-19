@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io"
@@ -1284,7 +1285,11 @@ func freeAddr(t *testing.T) string {
 	return addr
 }
 
-func waitForHTTP(t *testing.T, url string, output *bytes.Buffer) {
+// output is any Stringer so callers can pass the mutex-guarded syncBuffer.
+// os/exec copies a child's output from its own goroutines until Wait returns,
+// so reading a plain bytes.Buffer here races the copier; taking the interface
+// lets a caller hand over a writer that is safe to read mid-run.
+func waitForHTTP(t *testing.T, url string, output fmt.Stringer) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {

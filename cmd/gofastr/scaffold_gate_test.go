@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"io"
 	"net/http"
 	"os"
@@ -77,9 +76,13 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 		"PORT="+addr,
 		"DATABASE_URL=file:"+filepath.Join(appDir, "gate.db"),
 	)
-	output := &bytes.Buffer{}
-	cmd.Stdout = output
-	cmd.Stderr = output
+	// syncBuffer, not bytes.Buffer: os/exec copies the child's output from its
+	// own goroutines until Wait returns, and Wait runs in t.Cleanup — so every
+	// read of this below races the copier. The package already has the
+	// mutex-guarded writer for exactly this.
+	var output syncBuffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start scaffolded app: %v", err)
 	}
@@ -89,7 +92,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	})
 
 	baseURL := "http://" + addr
-	waitForHTTP(t, baseURL+"/", output)
+	waitForHTTP(t, baseURL+"/", &output)
 
 	// The scaffolded home screen renders (PageHeader carries the app name).
 	homeResp, err := http.Get(baseURL + "/")
