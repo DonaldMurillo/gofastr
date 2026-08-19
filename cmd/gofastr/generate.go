@@ -519,6 +519,12 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		for _, f := range lintPublicEntities(bp) {
 			warn("%s", f.Message())
 		}
+		// Surfaced before the "Next steps" block below, which would otherwise
+		// print `go mod init <colliding path>` as the remedy for a build that
+		// the collision makes impossible.
+		for _, f := range lintModuleCollision(bp) {
+			warn("%s", f.Message())
+		}
 		// dev_mode defaults to true (plain-HTTP cookies + per-process JWT
 		// secret) because a fresh generated app has no HTTPS. Loudly say
 		// so on every generate until the blueprint opts out.
@@ -874,7 +880,16 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			"    by module path, so it cannot build until this directory is a Go module.")
 		fmt.Println()
 		fmt.Println("  Next steps:")
-		fmt.Printf("    go mod init %s\n", bp.App.Module)
+		// Never echo a module path that cannot build. When app.module collides
+		// with the framework's own module, `go mod init <that path>` is the one
+		// command guaranteed to fail with "ambiguous import" — printing it as
+		// the remedy sent readers further into the trap the warning above just
+		// described.
+		if len(lintModuleCollision(bp)) > 0 {
+			fmt.Println("    (set app.module to a path you own first — see the warning above)")
+		} else {
+			fmt.Printf("    go mod init %s\n", bp.App.Module)
+		}
 		fmt.Println("    go mod tidy          — the generated code pulls new imports")
 		fmt.Printf("    %-20s — dev server with hot-reload\n", devCmd)
 		return

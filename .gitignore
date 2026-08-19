@@ -140,6 +140,29 @@ kiln-*
 # this way. Ignore the shape instead.
 /*-demo
 /*-demo-*
+# The -demo shape above covers only the examples named that way. Every other
+# examples/<name> builds to /<name> too, and naming them one at a time is the
+# race that comment warns about — a stray /meridian reached a review this way.
+# Regenerate with: ls examples/ | while read d; do [ -d examples/$d ] && echo "/$d"; done
+/api-tour
+/backoffice
+/ecommerce
+/lms
+/meridian
+/portfolio
+/project-manager
+/real-estate
+/spa
+/static-site
+# Same race for cmd/<name>: `go build ./cmd/repolint` from the root drops a
+# 3.5MB binary at /repolint, which is neither a *-demo nor named above. A
+# review caught one sitting untracked. Enumerate the package dir, not the
+# names — a new cmd/ lands without touching this file.
+/bench-resources
+/check-csp
+/check-embed
+/mutate
+/repolint
 *.png
 !assets/brand/*.png
 .playwright-mcp/

@@ -116,3 +116,28 @@ loading a non-`.env` config and wanting consistent expansion rules).
 - **Appending `# comment` after an unquoted value.** Inline comments
   after an UNQUOTED value are preserved as part of the value. Quote
   the value if the comment (or a literal `#`) shouldn't be in it.
+
+
+## Reading a variable before `NewApp`
+
+`framework.NewApp` loads the dotenv files itself, so most code never has to.
+Code that must read a variable *earlier* — a `main.go` opening its database
+before constructing the app — has to load them first, and must load the **same
+set in the same order**:
+
+```go
+_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+
+db, err := sql.Open(driver, getEnv("DATABASE_URL", "file:app.db"))
+```
+
+`DefaultDotEnvPaths()` returns `.env.local`, then `.env.<APP_ENV>` when
+`APP_ENV` is set, then `.env`.
+
+Use it rather than a hand-written list. `dotenv.Apply` never overwrites a
+variable that is already set, so loading a **shorter** list first pins the
+lower-precedence file's value, and `NewApp`'s later load of
+`.env.<APP_ENV>` can no longer win — a deployment using tiered env files
+silently gets its base `.env` value.
+
+The scaffold `gofastr init` emits does exactly this.

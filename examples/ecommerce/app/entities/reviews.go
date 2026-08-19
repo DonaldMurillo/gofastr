@@ -280,8 +280,9 @@ func registerReviews(app *framework.App) {
 			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: "product_id"},
 		},
 		Exposure: &framework.ExposureConfig{
-			CRUD: boolPtr(true),
-			MCP:  true,
+			CRUD:   boolPtr(true),
+			MCP:    true,
+			Access: framework.AccessControl{Create: "reviews:write", Update: "reviews:write", Delete: "reviews:admin"},
 		},
 		Indices: []framework.Index{
 			{Name: "idx_reviews_product", Columns: []string{"product_id"}},

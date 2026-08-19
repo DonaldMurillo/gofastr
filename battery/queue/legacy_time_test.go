@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 const legacyTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
@@ -18,7 +18,7 @@ const legacyTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
 // the upgrade scenario a new binary sees at startup.
 func legacyQueueDB(t *testing.T, rawInsert func(t *testing.T, db *sql.DB)) *DBQueue {
 	t.Helper()
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

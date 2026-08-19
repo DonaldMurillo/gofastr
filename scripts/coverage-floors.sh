@@ -74,6 +74,8 @@ FLOORS="
 ./battery/storage/ 79.8
 ./battery/webhook/ 82.9
 ./cmd/check-embed/embedcheck/ 78.0
+./cmd/mutate/ 28.8
+./cmd/mutate/guardmut/ 96.3
 ./cmd/repolint/ 76.7
 ./codegen/ 77.4
 ./core-ui/app/ 87.1
@@ -202,7 +204,6 @@ FLOORS="
 ./kiln/agent/mcp/ 73.5
 ./kiln/effect/ 75.1
 ./kiln/expr/ 71.7
-./sqlite/ 73.8
 ./sqlite/stdlib/ 81.8
 ./stability/ 91.4
 "

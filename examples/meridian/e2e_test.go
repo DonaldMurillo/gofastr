@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func TestE2E(t *testing.T) {
@@ -25,7 +26,7 @@ func TestE2E(t *testing.T) {
 	// The seeded admin's password lives in the generated .env, not in
 	// committed source. Load it before the server child inherits the
 	// environment (it needs ADMIN_SEED_PASSWORD to seed the account).
-	_ = dotenv.LoadAndApply(".env.local", ".env")
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
 	adminPass := os.Getenv("ADMIN_SEED_PASSWORD")
 	if adminPass == "" {
 		// Fresh checkout: the gitignored .env is absent. The child seeds

@@ -57,7 +57,7 @@ func TestE2E_HeadInjection_AllGlobalTagsPresent(t *testing.T) {
 	}{
 		// WithOpenGraph (3 fields set)
 		{"og:title", `<meta property="og:title" content="GoFastr">`},
-		{"og:url", `<meta property="og:url" content="https://gofastr.dev">`},
+		{"og:url", `<meta property="og:url" content="` + siteOrigin + `">`},
 		{"og:type", `<meta property="og:type" content="website">`},
 		// WithDescription
 		{"description", `<meta name="description"`},

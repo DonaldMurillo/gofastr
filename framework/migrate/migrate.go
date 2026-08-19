@@ -686,6 +686,22 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		if seen[rel.ForeignKey] {
 			continue
 		}
+		// The owner column is stamped by the framework from the session's
+		// identity, and that identity lives in the auth battery's own table
+		// (auth_users), not in any entity the app declares. Emitting a foreign
+		// key on it produces a constraint the framework itself violates on
+		// every create: crud stamps an auth id into a column declared to
+		// reference an app entity, and no row there has that id.
+		//
+		// SQLite never checked, so the contradiction was invisible until
+		// foreign keys were turned on. Postgres has always rejected it. Skip
+		// the clause rather than emit a constraint we guarantee to break; the
+		// relation still resolves for reads if the app does keep the two
+		// tables in sync.
+		if ent.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, ent.Config.Scope.OwnerField) {
+			seen[rel.ForeignKey] = true
+			continue
+		}
 		seen[rel.ForeignKey] = true
 		target, ok := all[rel.Entity]
 		if !ok {

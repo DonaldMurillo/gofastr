@@ -2,16 +2,17 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func TestDurableSchedulerReregisterFencesStaleDefinition(t *testing.T) {
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
@@ -22,7 +23,7 @@ func TestDurableSchedulerReregisterFencesStaleDefinition(t *testing.T) {
 	}
 	base := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
 	scheduler, err := NewDurableScheduler(q, DurableSchedulerConfig{
-		OwnerID: "pure-sqlite", LeaseDuration: time.Minute,
+		OwnerID: "sqlite-owner", LeaseDuration: time.Minute,
 	})
 	if err != nil {
 		t.Fatalf("new scheduler: %v", err)

@@ -244,3 +244,40 @@ func TestGetMigrateDBURLFromProcessEnv(t *testing.T) {
 		t.Fatalf("flag must beat everything, got %q", got)
 	}
 }
+
+// `gofastr migrate` used to read ".env" alone, ignoring .env.local — the
+// HIGHEST-precedence file and the documented place to point a checkout at a
+// local database. The CLI then migrated one database while the app it was
+// migrating for opened another, with both files sitting in the same directory
+// saying different things.
+func TestGetMigrateDBURLPrefersEnvLocal(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DATABASE_URL=from-dot-env\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DATABASE_URL=from-dot-env-local\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := getMigrateDBURL(nil); got != "from-dot-env-local" {
+		t.Fatalf("getMigrateDBURL() = %q, want from-dot-env-local — .env.local outranks .env, "+
+			"so the CLI would migrate a different database than the app opens", got)
+	}
+}
+
+// APP_ENV selects a middle-precedence file that NewApp loads and the CLI did
+// not, so `APP_ENV=staging gofastr migrate` migrated the dev database.
+func TestGetMigrateDBURLHonoursAppEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	t.Setenv("APP_ENV", "staging")
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DATABASE_URL=from-dot-env\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env.staging"), []byte("DATABASE_URL=from-staging\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := getMigrateDBURL(nil); got != "from-staging" {
+		t.Fatalf("getMigrateDBURL() = %q, want from-staging — .env.<APP_ENV> outranks .env", got)
+	}
+}

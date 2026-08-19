@@ -2,20 +2,21 @@ package outbox
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 const legacyLayout = "2006-01-02 15:04:05.999999999-07:00"
 
 func legacyLeaseOutbox(t *testing.T, claimedUntil time.Time) (*Outbox, chan struct{}) {
 	t.Helper()
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)

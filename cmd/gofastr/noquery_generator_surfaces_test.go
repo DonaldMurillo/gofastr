@@ -176,10 +176,18 @@ func TestGeneratedNoQueryResourceBehavior(t *testing.T) {
 	if _, err := db.Exec("CREATE TABLE cards (id TEXT PRIMARY KEY, label TEXT, number TEXT); INSERT INTO cards VALUES ('c1','gold','4111')"); err != nil {
 		t.Fatal(err)
 	}
-	ent := entity.Define("cards", entity.EntityConfig{Fields: []schema.Field{
-		{Name: "label", Type: schema.String},
-		{Name: "number", Type: schema.String, NoQuery: true},
-	}}.WithTimestamps(false))
+	// Public: this fixture is about column rendering, not authorization. Screen
+	// renders now run the entity's full read posture (resource.Config.canRead),
+	// and auto-CRUD requires a session for an entity declaring no
+	// OwnerField/Access/Public — so a background context would be refused, and
+	// the table under test would never render.
+	ent := entity.Define("cards", entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "label", Type: schema.String},
+			{Name: "number", Type: schema.String, NoQuery: true},
+		},
+		Exposure: &entity.ExposureConfig{Public: true},
+	}.WithTimestamps(false))
 	ent.SetDB(db)
 	cfg := resource.Config{
 		Entity: "cards", Title: "Cards", Singular: "Card", BasePath: "/cards",

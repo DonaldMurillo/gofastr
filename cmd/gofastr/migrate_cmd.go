@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/framework"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -303,10 +304,17 @@ func getMigrateDBURL(args []string) string {
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		return v
 	}
-	// Check .env file via the shared parser — handles quoted values,
+	// Check the .env files via the shared parser — handles quoted values,
 	// escapes, and the `export` prefix that the prior ad-hoc 1-key
 	// scanner mishandled.
-	if vals, err := dotenv.Load(".env"); err == nil {
+	//
+	// framework.DefaultDotEnvPaths(), not just ".env": that is the same set
+	// and order NewApp loads, and Load resolves conflicts earliest-file-wins.
+	// Reading ".env" alone ignored .env.local — the HIGHEST-precedence file,
+	// and the documented place to override a local database — so `gofastr
+	// migrate` migrated a different database than the app it was migrating
+	// for would open.
+	if vals, err := dotenv.Load(framework.DefaultDotEnvPaths()...); err == nil {
 		if v, ok := vals["DATABASE_URL"]; ok {
 			return v
 		}

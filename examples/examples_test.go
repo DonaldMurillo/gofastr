@@ -676,6 +676,15 @@ func TestApiTourSmoke(t *testing.T) {
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "bio", Type: schema.Text},
 		},
+		// Mirrors examples/api-tour/main.go: public read so the
+		// ?include=author.profile flow stays anonymous, writes gated. This
+		// fixture had drifted from the app it claims to mirror, leaving the
+		// entity in the default session-required posture.
+		Exposure: &framework.ExposureConfig{Access: framework.AccessControl{
+			Create: "profiles:write",
+			Update: "profiles:write",
+			Delete: "profiles:write",
+		}},
 	})
 	app.Entity("posts", framework.EntityConfig{Scope:
 	// public demo content — see "Default CRUD authentication" in the security docs

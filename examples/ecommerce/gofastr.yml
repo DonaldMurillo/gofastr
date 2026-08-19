@@ -12,6 +12,17 @@ app:
     url: file:shop.db
   auth:
     enabled: true
+  # A seeded admin, because the storefront's write permissions have to be
+  # grantable to somebody. A generated app grants declared permissions to the
+  # admin role and to nothing else, so an entity with `create: catalog:write`
+  # and no admin is an entity nobody can write to. The back-office UI stays
+  # off — this block exists for the role, not for /admin.
+  #
+  # The password is read from ADMIN_SEED_PASSWORD at boot and only on a fresh
+  # database; the value here lands in the generated (gitignored) .env.
+  admin:
+    seed_email: admin@shop.example
+    seed_password: change-me-now-123
   theme:
     primary: "#2563EB"
     primary-fg: "#FFFFFF"
@@ -28,6 +39,23 @@ app:
 entities:
   - name: categories
     crud: true
+    # Open demo storefront: the catalog is anonymously readable, which is
+    # what a shop front is. Reads open with a blank `read:`; every write stays
+    # behind a real permission. `public: true` would open the writes too —
+    # anonymous DELETE on the catalog, which is not a tradeoff a storefront
+    # example should be teaching.
+    #
+    # The shape this example actually wants is "anonymous read, any signed-in
+    # user writes", and the blueprint still cannot express it: an `access:`
+    # block needs a named permission, and a generated app grants permissions
+    # only to the admin role, so a self-registered user could never satisfy
+    # one. Admin-gated writes are the closest expressible posture, and the
+    # gap is named here rather than papered over with `public: true`.
+    access:
+      read:
+      create: catalog:write
+      update: catalog:write
+      delete: catalog:admin
     mcp: true
     properties:
       label: Categories
@@ -61,6 +89,12 @@ entities:
 
   - name: products
     crud: true
+    # Open demo storefront — see the note on `categories` above.
+    access:
+      read:
+      create: catalog:write
+      update: catalog:write
+      delete: catalog:admin
     mcp: true
     soft_delete: true
     cursor_field: id
@@ -256,6 +290,13 @@ entities:
 
   - name: reviews
     crud: true
+    # Shown to every shopper — see the note on `categories` above. A review is
+    # user-submitted content, so its delete is the admin permission too.
+    access:
+      read:
+      create: reviews:write
+      update: reviews:write
+      delete: reviews:admin
     mcp: true
     indices:
       - name: idx_reviews_product

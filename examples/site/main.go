@@ -170,14 +170,14 @@ func setupServer() *framework.App {
 		uihost.WithDescription("The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder — plain Go you own. Early (v0.x)."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
-			URL:   "https://gofastr.dev",
+			URL:   siteOrigin,
 			Type:  "website",
 		}),
 		// No global WithCanonicalURL — a fixed canonical on every page would
 		// declare the homepage canonical site-wide. Pages that need one
 		// implement ScreenCanonical (see /seo); the rest omit it.
 		// Sitewide SEO endpoints backing the /seo demo page.
-		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://gofastr.dev"}),
+		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: siteOrigin}),
 		// Open to crawlers but keep internal runtime endpoints out of the index.
 		uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}),
 		// Agent-readiness bundle: /llms.txt + A2A agent card + AI-bot
@@ -198,7 +198,7 @@ func setupServer() *framework.App {
 			ContentSignals:     "ai-train=no, search=yes, ai-input=yes",
 			AgentCard: &uihost.AgentCardConfig{
 				Name:        "GoFastr",
-				Description: "Framework docs and tools for gofastr.dev, served over MCP.",
+				Description: "Framework docs and tools for the GoFastr docs site, served over MCP.",
 				MCPEndpoint: "/mcp",
 			},
 		}),
@@ -228,7 +228,7 @@ func setupServer() *framework.App {
 	fwApp := framework.NewUIHostApp(host,
 		framework.WithConfig(framework.AppConfig{Name: "site"}),
 		// Expose the framework's own docs + app introspection as MCP tools
-		// (the site is gofastr.dev), and auto-mount /mcp so the agent card
+		// (the site is its own origin), and auto-mount /mcp so the agent card
 		// above advertises a live endpoint. Under `gofastr dev` /
 		// dev-watch the framework auto-adds the mutating control tools;
 		// the deployed site never sets GOFASTR_DEV, so its public /mcp

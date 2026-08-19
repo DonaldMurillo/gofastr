@@ -27,14 +27,14 @@ func (s *PricingScreen) ScreenSEO() uihost.SEO {
 	offer := seo.NewOffer()
 	offer.Price = "99"
 	offer.PriceCurrency = "USD"
-	offer.URL = "https://meridian.gofastr.dev/pricing"
+	offer.URL = siteOrigin + "/pricing"
 	pro.Offers = &offer
 	return uihost.SEO{
-		Canonical: "https://meridian.gofastr.dev/pricing",
+		Canonical: siteOrigin + "/pricing",
 		OG: &uihost.OG{
 			Title:       "Meridian pricing — start free",
 			Description: "Plans for teams of every size. Upgrade when revenue does.",
-			URL:         "https://meridian.gofastr.dev/pricing",
+			URL:         siteOrigin + "/pricing",
 			Type:        "website",
 		},
 		Schema: []seo.Thing{pro},

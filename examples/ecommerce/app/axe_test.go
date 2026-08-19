@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"os/exec"
@@ -15,8 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 )
 
@@ -46,6 +50,12 @@ func TestAxeEveryScreen(t *testing.T) {
 	// allow-skip: chromedp suite — boots the app + headless Chrome; runs in the full (non-short) pass.
 	if testing.Short() {
 		t.Skip("boots the app + headless Chrome")
+	}
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+	adminPass := os.Getenv("ADMIN_SEED_PASSWORD")
+	if adminPass == "" {
+		adminPass = "axe-seed-admin-pw"
+		t.Setenv("ADMIN_SEED_PASSWORD", adminPass)
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "app")
@@ -89,13 +99,24 @@ func TestAxeEveryScreen(t *testing.T) {
 		}
 	}
 
-	needsAuth = append(needsAuth, axeGatedPages...)
-	if len(needsAuth) > 0 {
-		t.Errorf("gated screens %v cannot be scanned: no seeded admin — set app.admin.seed_email/seed_password (or extend this test with your own login) so the gate can cover them; unscanned gated screens fail strict dev boot", needsAuth)
+	// Authenticated pass: gated screens + owned extras, in a SEPARATE
+	// browser so the anonymous pass above stays honest.
+	for _, p := range axeGatedPages {
+		needsAuth = append(needsAuth, p) // belt & braces when excluded from the sitemap
 	}
-	for _, page := range axeExtraPages {
-		for _, scheme := range axetest.Schemes {
-			axeScanOne(t, anon, base, page, scheme)
+	needsAuth = append(needsAuth, axeExtraPages...)
+	if len(needsAuth) > 0 {
+		authed := axetest.NewBrowser(t)
+		axeLogin(t, authed, base, "admin@shop.example", adminPass)
+		seen := map[string]bool{}
+		for _, page := range needsAuth {
+			if seen[page] {
+				continue
+			}
+			seen[page] = true
+			for _, scheme := range axetest.Schemes {
+				axeScanOne(t, authed, base, page, scheme)
+			}
 		}
 	}
 }
@@ -194,4 +215,52 @@ func axePagesFromSitemap(t *testing.T, base string) []string {
 		t.Fatal("sitemap listed no pages — is uihost.WithSitemap configured?")
 	}
 	return pages
+}
+
+// axeLogin authenticates the given browser as the seeded admin so
+// access-gated screens render their real content instead of bouncing
+// (a bounced scan would cover the wrong page). Login goes through the
+// auth battery's HTTP endpoint — it exists whether or not the app has
+// a login screen — and the session cookies are transplanted into the
+// browser. Prefixed cookies (__Host-/__Secure-) must stay host-only
+// and Secure or Chrome silently rejects them, so the transplant sets
+// them by URL, never by Domain.
+func axeLogin(t *testing.T, browser context.Context, base, email, password string) {
+	t.Helper()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	resp, err := client.PostForm(base+"/auth/login", url.Values{"email": {email}, "password": {password}})
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	resp.Body.Close()
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Fatalf("login: parse base: %v", err)
+	}
+	cookies := jar.Cookies(u)
+	if len(cookies) == 0 {
+		t.Fatal("login set no cookies — wrong seeded credentials, or the auth battery is not mounted")
+	}
+	tab, done := axetest.NewTab(t, browser)
+	defer done()
+	// Cookies attach to an origin; open it once before setting them.
+	if err := chromedp.Run(tab, chromedp.Navigate(base+"/")); err != nil {
+		t.Fatalf("login: open origin: %v", err)
+	}
+	for _, c := range cookies {
+		ck := c
+		action := network.SetCookie(ck.Name, ck.Value).WithURL(base).WithPath("/")
+		if strings.HasPrefix(ck.Name, "__Host-") || strings.HasPrefix(ck.Name, "__Secure-") {
+			// The cookie jar strips attributes; the prefix itself is the
+			// contract (Secure + host-only + Path=/). localhost counts as
+			// a secure context, so Secure cookies work over http there.
+			action = action.WithSecure(true)
+		}
+		if err := chromedp.Run(tab, chromedp.ActionFunc(func(ctx context.Context) error {
+			return action.Do(ctx)
+		})); err != nil {
+			t.Fatalf("login: set cookie %s: %v", ck.Name, err)
+		}
+	}
 }

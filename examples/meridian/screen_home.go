@@ -22,10 +22,10 @@ func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *HomeScreen) ScreenSchema() []seo.Thing {
 	org := seo.NewOrganization()
 	org.Name = "Meridian"
-	org.URL = "https://meridian.gofastr.dev"
+	org.URL = siteOrigin
 	site := seo.NewWebSite()
 	site.Name = "Meridian"
-	site.URL = "https://meridian.gofastr.dev"
+	site.URL = siteOrigin
 	return []seo.Thing{org, site}
 }
 

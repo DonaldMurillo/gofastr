@@ -28,9 +28,18 @@ func main() {
 	)
 
 	// --- Entities ---
-	// Declared in Go so `go run ./examples/blog` works from any directory
-	// (no external entity files to locate). The same schema is mirrored in
-	// gofastr.yml for the no-code / codegen path.
+	// Declared in Go so `go run ./examples/blog` works from any directory (no
+	// external entity files to locate). gofastr.yml describes the same app for
+	// the no-code / codegen path.
+	//
+	// The two are NOT byte-for-byte equivalent and nothing enforces that they
+	// are: the yml additionally declares mcp, indices, cursor pagination, a
+	// users.avatar field, and display properties this file omits, because those
+	// drive generated surfaces that `go run` does not build. What DOES have to
+	// match is the EXPOSURE — which entity is readable and writable by whom.
+	// That is the half that drifted once, leaving this runnable twin accepting
+	// anonymous deletes the blueprint had already closed, so keep the
+	// Exposure blocks below in step with gofastr.yml.
 	registerEntities(app)
 
 	// --- Custom endpoints ---
@@ -79,7 +88,11 @@ func registerEntities(app *framework.App) {
 	})
 	app.Entity("posts", framework.EntityConfig{Pagination:
 	// public demo content — see "Default CRUD authentication" in the security docs
-	&framework.PaginationConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Scope: &framework.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+	&framework.PaginationConfig{}, Exposure: &framework.ExposureConfig{Access: framework.AccessControl{
+		// Mirrors gofastr.yml: readable by anyone, every write gated.
+		// Public: true would also grant anonymous create/update/delete.
+		Read: "", Create: "posts:write", Update: "posts:write", Delete: "posts:admin",
+	}}, Scope: &framework.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true, Max: ptr(300.0)},
 		{Name: "body", Type: schema.Text},
 		{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
@@ -93,7 +106,10 @@ func registerEntities(app *framework.App) {
 	})
 	app.Entity("comments", framework.EntityConfig{Scope:
 	// public demo content — see "Default CRUD authentication" in the security docs
-	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Access: framework.AccessControl{
+		// Mirrors gofastr.yml — see the posts entity above.
+		Read: "", Create: "comments:write", Update: "comments:write", Delete: "comments:admin",
+	}}, Fields: []schema.Field{
 		{Name: "body", Type: schema.Text, Required: true},
 		{Name: "post_id", Type: schema.String, Required: true},
 		{Name: "author_id", Type: schema.String},

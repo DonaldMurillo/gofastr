@@ -44,6 +44,20 @@ type HeaderComponent struct{}
 // hand-bumped constant drifting behind releases.
 var siteVersion = "dev"
 
+// siteOrigin is the public origin the site declares to crawlers and agents:
+// og:url, the sitemap's BaseURL, and (via resolveBaseURL) every agent-ready
+// discovery URL. It is a variable, not a constant, so a deployment can point
+// it at its own hostname at build time via
+//
+//	-ldflags "-X 'main.siteOrigin=https://example.com'"
+//
+// The default is the origin the site is actually served from today. It used to
+// be hardcoded to a domain that resolves to nothing, which pointed every link
+// preview, sitemap entry, and agent card at a dead host — the one class of SEO
+// bug that no page-level test catches, because each page was internally
+// consistent with the wrong origin.
+var siteOrigin = "https://donaldmurillo.github.io/gofastr"
+
 // versionLabel renders siteVersion for display: bare for the local "dev"
 // fallback, "v"-prefixed for a real injected release (e.g. "v0.8.0"). Keeps the
 // brand badge + aria-label from ever reading the malformed "vdev".

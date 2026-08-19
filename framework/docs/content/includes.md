@@ -166,3 +166,59 @@ the buffered path so includes still resolve — only the explicit
 - **Expecting `?include=` to control SELECT projection.** It does
   not — use field projections separately. Includes only attach
   related data.
+
+
+## Authorization
+
+An include is a read of the RELATED entity's rows, so that entity's own posture
+governs it — not the entity in the path.
+
+`?include=rel` answers **403** when the caller may not read the target, naming
+the entity that failed:
+
+```json
+{"code":403,"error":"access denied: include targets entity users, which you may not read","success":false}
+```
+
+The check runs at every depth, so `?include=comments.author` cannot reach a
+gated `author` through a readable `comments`, and it runs before any rows are
+loaded — including before the shortcut for an empty parent, so the answer never
+depends on whether the parent table happens to have rows.
+
+Owner and tenant scoping are applied differently: the eager loaders scope the
+related rows per node, so an include of an owner-scoped entity returns the rows
+the caller owns rather than a refusal. An anonymous caller owns nothing, so the
+same include returns an EMPTY relation rather than an error.
+
+The two predicates lift independently, each by its own grant. A caller marked
+cross-owner, or holding the entity's `CrossOwnerRead` permission, sees every
+owner's rows; a caller marked cross-tenant sees every tenant's. Neither lifts
+the other, so a target carrying both scopes needs both grants to see every row.
+Soft-deleted rows are hidden regardless.
+
+This applies to requests arriving over HTTP. In-process callers — the
+programmatic API, typed repos, seeds, jobs — are trusted server-side code and
+skip these AUTHORIZATION checks, exactly as the baseline session requirement is
+an HTTP concern.
+
+What they do not skip is data-layer scoping. `EagerLoad(..., registry)` still
+applies the soft-delete, owner and tenant predicates described above, so an
+in-process eager load is scoped even though no posture was consulted. Only
+`Exposure.Access` and the relation-disclosure refusal are HTTP-only.
+
+## Filtering across a relation (`?rel.field=`)
+
+`?author.email=someone@example.com` filters the parent by a field on a related
+entity. It is subject to the same posture check, and to one additional rule.
+
+Filtering across a relation whose target declares `Scope.OwnerField` or
+`Scope.MultiTenant` is **refused with 403**, for every caller except one that
+may already read every row of that target. The filter compiles to an `EXISTS`
+clause that counts rows without selecting them, so it cannot narrow them to the
+caller — and the resulting row count would otherwise confirm values in other
+owners' or other tenants' rows, one guess at a time. To filter by a scoped
+entity's field, query that entity's own list route (which scopes correctly) and
+filter the parent by the ids it returns.
+
+Soft-deleted rows never match a nested filter, matching every other read
+surface.

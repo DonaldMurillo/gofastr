@@ -14,7 +14,6 @@ package main
 // way around).
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -282,7 +281,10 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 		"PORT="+addr,
 		"DATABASE_URL=file:"+filepath.Join(dir, "readme-quickstart.db"),
 	)
-	var output bytes.Buffer
+	// syncBuffer: os/exec copies the child's output from its own goroutines
+	// until Wait returns, so reading a plain bytes.Buffer while the app runs
+	// races the copier.
+	var output syncBuffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	if err := cmd.Start(); err != nil {
@@ -357,7 +359,7 @@ func readmeProgram(t *testing.T, heading string) string {
 // the working tree (the one transform: the hard-coded :8080 becomes a
 // free port), boots it, and waits until readyPath responds. The process
 // is killed via t.Cleanup.
-func buildAndBootReadmeProgram(t *testing.T, src, module, binName, readyPath string) (string, *bytes.Buffer) {
+func buildAndBootReadmeProgram(t *testing.T, src, module, binName, readyPath string) (string, *syncBuffer) {
 	t.Helper()
 	repoRoot := repoRootDir(t)
 	dir := t.TempDir()
@@ -385,7 +387,10 @@ func buildAndBootReadmeProgram(t *testing.T, src, module, binName, readyPath str
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, appBin)
 	cmd.Dir = dir
-	output := &bytes.Buffer{}
+	// syncBuffer: os/exec copies the child's output from its own goroutines
+	// until Wait returns, so reading a plain bytes.Buffer while the app runs
+	// races the copier.
+	output := &syncBuffer{}
 	cmd.Stdout = output
 	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {

@@ -522,6 +522,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		// Filtering across a relation reads that relation's rows, so its
+		// entity's posture applies — without this the row count is an oracle
+		// for values in a column the related entity refuses to serve.
+		if err := ch.checkNestedFiltersReadable(r.Context(), nested); err != nil {
+			writeIncludeError(w, "list", err)
+			return
+		}
 
 		// ?q= free-text search: when the entity declares SearchFields and
 		// the request carries a non-blank ?q=, build filter.SearchConditions

@@ -33,12 +33,13 @@ import (
 //     ANDed in, exactly like applyRelatedTenantScope. With no tenant in
 //     context it likewise matches nothing.
 //
-// Owner and tenant scopes are ALWAYS ANDed: CrossOwnerRead and the
-// owner.AllowCrossOwner / tenant.AllowCrossTenant escapes are NOT consulted
-// here, mirroring the include path's related-row scoping. The cross-table
-// predicate is the IDOR back-door control — lifting it would let an
-// ?include= (or an EagerLoad caller) reach across tenants/owners, so it is
-// unconditional on the read path just as it is on the include path.
+// Owner and tenant scopes are ANDed for every caller except one holding an
+// explicit cross-scope grant (owner.AllowCrossOwner, the target's
+// CrossOwnerRead, tenant.AllowCrossTenant) — the same exemption
+// applyRelatedOwnerScope and applyRelatedTenantScope make on the include path.
+// For everyone else the cross-table predicate is the IDOR back-door control
+// and is unconditional: lifting it would let an ?include= or an EagerLoad
+// caller reach across tenants and owners.
 //
 // Resolution is version-aware (entity.ResolveTarget against the source
 // entity) and fails closed: a target that cannot be resolved is an ERROR,
@@ -435,10 +436,13 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 //   - MultiTenant ⇒ `tenant_id = <ctx tenant>` (OpEq), likewise fail-closed
 //     on an empty ctx tenant.
 //
-// Both scopes are ALWAYS emitted; CrossOwnerRead and the
-// owner.AllowCrossOwner / tenant.AllowCrossTenant escapes are deliberately
-// NOT consulted — this is the cross-table IDOR back-door control, so it is
-// unconditional here just as it is in the include path's related-row scoping.
+// The scopes are emitted for every caller EXCEPT one holding an explicit
+// cross-scope grant: owner.AllowCrossOwner, the target's own CrossOwnerRead
+// permission, or tenant.AllowCrossTenant. Those callers see every row on the
+// entity's own routes, so narrowing a relation for them removes a capability
+// without protecting anything — and did: EagerLoad returned an empty relation
+// where the routes returned everything. For every other caller the predicate
+// is unconditional, and it is the cross-table IDOR control.
 // A nil target (no registry) yields no filters.
 func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.ParsedFilter {
 	if target == nil {
@@ -446,17 +450,29 @@ func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.Pars
 	}
 	var out []filter.ParsedFilter
 	if ownerField := target.Config.Scope.OwnerField; ownerField != "" {
-		var val string
-		if id, ok := owner.Get(ctx); ok && id != nil {
-			val = fmt.Sprintf("%v", id)
+		// Cross-owner callers are exempt, exactly as they are on the include
+		// path and on the routes themselves. Omitting the branch here made
+		// EagerLoad answer with an empty relation for a caller every route
+		// serves in full — the same defect the include path had, left behind
+		// when that one was fixed while this comment still claimed parity.
+		crossOwner := owner.IsCrossOwner(ctx)
+		if !crossOwner {
+			probe := &CrudHandler{Entity: target}
+			crossOwner = probe.crossOwnerReadGranted(ctx)
 		}
-		out = append(out, filter.ParsedFilter{
-			Field: ownerField,
-			Op:    filter.OpEq,
-			Value: val,
-		})
+		if !crossOwner {
+			var val string
+			if id, ok := owner.Get(ctx); ok && id != nil {
+				val = fmt.Sprintf("%v", id)
+			}
+			out = append(out, filter.ParsedFilter{
+				Field: ownerField,
+				Op:    filter.OpEq,
+				Value: val,
+			})
+		}
 	}
-	if target.Config.Scope.MultiTenant {
+	if target.Config.Scope.MultiTenant && !tenant.IsCrossTenant(ctx) {
 		out = append(out, filter.ParsedFilter{
 			Field: target.Config.TenantColumn(),
 			Op:    filter.OpEq,

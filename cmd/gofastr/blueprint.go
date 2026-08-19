@@ -3397,6 +3397,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\t\"github.com/chromedp/chromedp\"\n\n")
 	if login {
 		b.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/dotenv\"\n")
+		b.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 	}
 	b.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/testkit/axetest\"\n")
 	b.WriteString(")\n\n")
@@ -3425,7 +3426,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\t// allow-skip: chromedp suite — boots the app + headless Chrome; runs in the full (non-short) pass.\n")
 	b.WriteString("\tif testing.Short() { t.Skip(\"boots the app + headless Chrome\") }\n")
 	if login {
-		b.WriteString("\t_ = dotenv.LoadAndApply(\".env.local\", \".env\")\n")
+		b.WriteString("\t_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)\n")
 		b.WriteString("\tadminPass := os.Getenv(\"ADMIN_SEED_PASSWORD\")\n")
 		b.WriteString("\tif adminPass == \"\" {\n")
 		b.WriteString("\t\tadminPass = \"axe-seed-admin-pw\"\n")
@@ -3634,6 +3635,15 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	// The cookie-jar login client (and its net/url + net/http/cookiejar imports)
 	// is only emitted when there's a gated screen AND a seeded admin to log in as.
 	needsAuthClient := len(gated) > 0 && adminEmail != "" && adminPass != ""
+	// Whether the APP seeds an admin at boot, which is a different question
+	// from whether this TEST logs in. An app with a seeded admin refuses to
+	// start on a fresh database without ADMIN_SEED_PASSWORD, so the test has to
+	// supply one even when it never authenticates. Gating the environment
+	// preamble on needsAuthClient meant a blueprint with a seeded admin and no
+	// gated screen generated a test that could not boot its own app: it passed
+	// wherever the gitignored .env happened to exist and failed on every fresh
+	// checkout, which is the worst place for the difference to show up.
+	adminSeeded := bp.App.Auth.Enabled && adminEmail != "" && adminPass != ""
 	target, hasTarget := blueprintE2EWritableTarget(bp)
 	crud := hasTarget && needsAuthClient // the lifecycle needs an authed client
 	// The generated e2e test boots against the blueprint's declared driver.
@@ -3673,25 +3683,34 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 		seen[imp] = true
 		b.WriteString("\t\"" + imp + "\"\n")
 	}
-	if needsAuthClient {
+	if adminSeeded {
 		b.WriteString("\n\t\"github.com/DonaldMurillo/gofastr/core/dotenv\"\n")
+		b.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 	}
 	b.WriteString(")\n\n")
 	b.WriteString("func TestE2E(t *testing.T) {\n")
 	b.WriteString("\tif testing.Short() { t.Skip(\"builds + boots the binary\") }\n")
-	if needsAuthClient {
+	if adminSeeded {
 		b.WriteString("\t// The seeded admin's password lives in the generated .env, not in\n")
 		b.WriteString("\t// committed source. Load it before the server child inherits the\n")
-		b.WriteString("\t// environment (it needs ADMIN_SEED_PASSWORD to seed the account).\n")
-		b.WriteString("\t_ = dotenv.LoadAndApply(\".env.local\", \".env\")\n")
-		b.WriteString("\tadminPass := os.Getenv(\"ADMIN_SEED_PASSWORD\")\n")
-		b.WriteString("\tif adminPass == \"\" {\n")
-		b.WriteString("\t\t// Fresh checkout: the gitignored .env is absent. The child seeds\n")
-		b.WriteString("\t\t// the admin from whatever ADMIN_SEED_PASSWORD it inherits, so a\n")
-		b.WriteString("\t\t// test-local value keeps the suite self-contained.\n")
-		b.WriteString("\t\tadminPass = \"e2e-seed-admin-pw\"\n")
-		b.WriteString("\t\tt.Setenv(\"ADMIN_SEED_PASSWORD\", adminPass)\n")
-		b.WriteString("\t}\n")
+		b.WriteString("\t// environment: the app refuses to boot on a fresh database when\n")
+		b.WriteString("\t// ADMIN_SEED_PASSWORD is missing, whether or not this test logs in.\n")
+		b.WriteString("\t_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)\n")
+		if needsAuthClient {
+			b.WriteString("\tadminPass := os.Getenv(\"ADMIN_SEED_PASSWORD\")\n")
+			b.WriteString("\tif adminPass == \"\" {\n")
+			b.WriteString("\t\t// Fresh checkout: the gitignored .env is absent. The child seeds\n")
+			b.WriteString("\t\t// the admin from whatever ADMIN_SEED_PASSWORD it inherits, so a\n")
+			b.WriteString("\t\t// test-local value keeps the suite self-contained.\n")
+			b.WriteString("\t\tadminPass = \"e2e-seed-admin-pw\"\n")
+			b.WriteString("\t\tt.Setenv(\"ADMIN_SEED_PASSWORD\", adminPass)\n")
+			b.WriteString("\t}\n")
+		} else {
+			// No login here, so no adminPass variable to declare and leave unused.
+			b.WriteString("\tif os.Getenv(\"ADMIN_SEED_PASSWORD\") == \"\" {\n")
+			b.WriteString("\t\tt.Setenv(\"ADMIN_SEED_PASSWORD\", \"e2e-seed-admin-pw\")\n")
+			b.WriteString("\t}\n")
+		}
 	}
 	b.WriteString("\tdir := t.TempDir()\n")
 	b.WriteString("\tbin := filepath.Join(dir, \"app\")\n")
@@ -4074,7 +4093,12 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\t// Load .env before anything reads the environment — the DB (and\n")
 	sb.WriteString("\t// its DATABASE_URL) opens before NewApp's own dotenv auto-load\n")
 	sb.WriteString("\t// would run. Existing process env always wins over the files.\n")
-	sb.WriteString("\t_ = dotenv.LoadAndApply(\".env.local\", \".env\")\n")
+	sb.WriteString("\t//\n")
+	sb.WriteString("\t// framework.DefaultDotEnvPaths(), not a hardcoded pair: dotenv.Apply\n")
+	sb.WriteString("\t// never overwrites an existing variable, so loading a SHORTER list\n")
+	sb.WriteString("\t// here would pin .env's DATABASE_URL and NewApp's higher-precedence\n")
+	sb.WriteString("\t// .env.<APP_ENV> could no longer win.\n")
+	sb.WriteString("\t_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)\n")
 	sb.WriteString("\truntimeIsolation, err := isolation.Resolve(\".\")\n")
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("\tdb, err := openDB(runtimeIsolation)\n")
@@ -6705,9 +6729,15 @@ func renderBlueprintApp(bp Blueprint) string {
 	// context.Context without importing context. Every blueprint that reached
 	// that path shipped an app.go that did not compile.
 	rbac := bp.App.Auth.Enabled && blueprintHasEntityAccess(bp)
+	// authSidebar gates the per-request app-shell sidebar: with auth on, the
+	// sidebar footer resolves Sign out vs Sign in from the live session, so the
+	// generated app.go needs context/render/handler exactly like the auth-aware
+	// marketing header does. Computed here, above the import block, for the same
+	// reason rbac is — a condition declared below it cannot be seen by it.
+	authSidebar := bp.App.Auth.Enabled && len(bp.Nav) > 0
 	sb.WriteString("package main\n\n")
 	sb.WriteString("import (\n")
-	if adminSeed || hasAccess || roleNav || authHeader || guestRedirect || rbac {
+	if adminSeed || hasAccess || roleNav || authHeader || guestRedirect || rbac || authSidebar {
 		sb.WriteString("\t\"context\"\n")
 	}
 	sb.WriteString("\t\"database/sql\"\n")
@@ -6729,7 +6759,10 @@ func renderBlueprintApp(bp Blueprint) string {
 	if hasAccess || guestRedirect {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app/decide\"\n")
 	}
-	if hasMarketing {
+	if authSidebar {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/component\"\n")
+	}
+	if hasMarketing || authSidebar {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/render\"\n")
 	}
 	// Always imported: app.go now declares fontFaceCSS by CALLING
@@ -6745,7 +6778,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/router\"\n")
 	}
-	if hasAccess || rbac || roleNav || authHeader || guestRedirect {
+	if hasAccess || rbac || roleNav || authHeader || guestRedirect || authSidebar {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
 	if needUI {
@@ -6825,7 +6858,13 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString(fmt.Sprintf("\t\tnav = append(nav, ui.SiteHeaderLink{Label: \"Dashboard\", Href: %q})\n", appHome))
 			sb.WriteString(fmt.Sprintf("\t\tactions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.SignOut(ui.SignOutConfig{Next: \"/\"})%s)\n", toggleArg))
 			sb.WriteString("\t} else {\n")
-			sb.WriteString(fmt.Sprintf("\t\tactions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: \"/login\", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})%s)\n", toggleArg))
+			// blueprintLoginRoute, not a hardcoded "/login": the app-shell
+			// sidebar had the same literal and it pointed at a route six of
+			// the seven shipped blueprints never register. Dormant here today
+			// only because meridian is the sole blueprint with both marketing
+			// screens and auth, and it happens to route /login — which is luck,
+			// not design.
+			sb.WriteString(fmt.Sprintf("\t\tactions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})%s)\n", blueprintLoginRoute(bp), toggleArg))
 			sb.WriteString("\t}\n")
 			sb.WriteString("\treturn ui.SiteHeader(ui.SiteHeaderConfig{\n")
 			sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: appName}),\n")
@@ -6897,30 +6936,56 @@ func renderBlueprintApp(bp Blueprint) string {
 	sb.WriteString(blueprintFontFaceDecl(bp.App.Theme))
 	if len(bp.Nav) > 0 {
 		sb.WriteString("// sidebarConfig returns the navigation sidebar configuration.\n")
-		sb.WriteString("func sidebarConfig() ui.SidebarConfig {\n")
-		sb.WriteString(fmt.Sprintf("\treturn ui.SidebarConfig{Title: %q, Items: []ui.SidebarItem{\n", name))
+		// The sidebar footer's auth control has to be resolved per request. A
+		// static sidebar showed "Sign out" to anonymous visitors — the control
+		// was emitted whenever auth was *enabled*, never asked whether anyone
+		// was signed *in* — so the app shell told every first-time visitor they
+		// had a session to end. The marketing header already resolved this
+		// correctly from handler.GetUser(ctx); the app shell now does too.
+		if bp.App.Auth.Enabled {
+			sb.WriteString("func sidebarConfig(ctx context.Context) ui.SidebarConfig {\n")
+		} else {
+			sb.WriteString("func sidebarConfig() ui.SidebarConfig {\n")
+		}
+		sb.WriteString(fmt.Sprintf("\tcfg := ui.SidebarConfig{Title: %q, Items: []ui.SidebarItem{\n", name))
 		for _, item := range bp.Nav {
 			renderNavItemGo(&sb, item, "\t\t")
 		}
-		sb.WriteString("\t}")
+		sb.WriteString("\t}}\n")
 		// The app shell has no top bar, so account/appearance controls live in
 		// the sidebar footer (visible on desktop, in the drawer on mobile) — the
-		// theme toggle and, when auth is on, a Sign out. Kept inside the returned
-		// literal so pack's AST nav reader stays simple.
-		var footerParts []string
+		// theme toggle always, and the auth action only for the session that has
+		// one. Assigned after the literal so pack's AST nav reader still sees a
+		// plain Items slice.
+		themeToggle := ""
 		if len(bp.App.ThemeDark) > 0 {
-			footerParts = append(footerParts, "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel})")
+			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel})"
 		}
-		if bp.App.Auth.Enabled {
-			footerParts = append(footerParts, `ui.SignOut(ui.SignOutConfig{Next: "/"})`)
+		switch {
+		case bp.App.Auth.Enabled:
+			sb.WriteString("\tvar authAction render.HTML\n")
+			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
+			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Next: \"/\"})\n")
+			// Only offer Sign in when a screen actually hosts the login form.
+			// Six of the seven shipped blueprints never route /login, so an
+			// unconditional button would make the app shell's only auth
+			// affordance lead a first-time visitor to a 404. With no login
+			// screen there is nothing to emit, so the else arm is omitted
+			// rather than emitted empty.
+			if blueprintHasAuthFormScreen(bp) {
+				sb.WriteString("\t} else {\n")
+				sb.WriteString(fmt.Sprintf("\t\tauthAction = ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})\n", blueprintLoginRoute(bp)))
+			}
+			sb.WriteString("\t}\n")
+			if themeToggle != "" {
+				sb.WriteString("\tcfg.Footer = ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, " + themeToggle + ", authAction)\n")
+			} else {
+				sb.WriteString("\tcfg.Footer = authAction\n")
+			}
+		case themeToggle != "":
+			sb.WriteString("\tcfg.Footer = " + themeToggle + "\n")
 		}
-		switch len(footerParts) {
-		case 1:
-			sb.WriteString(", Footer: " + footerParts[0])
-		case 2:
-			sb.WriteString(", Footer: ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, " + strings.Join(footerParts, ", ") + ")")
-		}
-		sb.WriteString("}\n}\n\n")
+		sb.WriteString("\treturn cfg\n}\n\n")
 	}
 	// Layouts are package-level so per-screen mount funcs (screen_<name>.go) can
 	// reference them without app.go naming any screen. RegisterGenerated assigns
@@ -6963,12 +7028,31 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\tsite.WithTheme(appTheme())\n")
 	}
 	if len(bp.Nav) > 0 {
-		sb.WriteString("\tsbCfg := sidebarConfig()\n")
-		sb.WriteString("\tsb := ui.Sidebar(sbCfg)\n")
+		if bp.App.Auth.Enabled {
+			// Per-request sidebar: the footer's auth action depends on the live
+			// session, so the shell resolves it the same way the marketing
+			// header does. MountSidebar only reads Items (drawer + active-route
+			// wiring), so it takes a session-free config.
+			sb.WriteString("\tsbCfg := sidebarConfig(context.Background())\n")
+			sb.WriteString("\tsbComponent := app.NewContextComponent(func(ctx context.Context) render.HTML {\n")
+			// SafeRenderCtx, never Render(): the sidebar component's
+			// ctx-aware path is what filters role-gated nav items, and the
+			// layout used to invoke it for us. Calling Render() here rendered
+			// an admin-only entry for every visitor, including anonymous ones.
+			// Mirrors core-ui/app.Layout's own sidebar slot: keep whatever
+			// SafeRenderCtx produced (it renders an error boundary on panic)
+			// and never swallow it into an empty sidebar.
+			sb.WriteString("\t\thtml, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarConfig(ctx)))\n")
+			sb.WriteString("\t\treturn html\n")
+			sb.WriteString("\t})\n")
+		} else {
+			sb.WriteString("\tsbCfg := sidebarConfig()\n")
+			sb.WriteString("\tsbComponent := ui.Sidebar(sbCfg)\n")
+		}
 		// No standalone app top bar: the sidebar owns brand + nav + the theme
 		// toggle (in its footer), so content fills from the top with no empty
 		// header band — the way real app shells (Linear/Notion/Stripe) read.
-		sb.WriteString("\tappLayout = app.NewLayout(\"app\").WithSidebar(sb)\n")
+		sb.WriteString("\tappLayout = app.NewLayout(\"app\").WithSidebar(sbComponent)\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
 		sb.WriteString("\tui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)\n")
 	}

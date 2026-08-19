@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -116,6 +117,21 @@ func lintRepo(root string) ([]finding, error) {
 		return nil, err
 	}
 	findings = append(findings, graphFindings...)
+	doorFindings, err := lintFrontDoor(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, doorFindings...)
+	originFindings, err := lintExampleOrigins(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, originFindings...)
+	binFindings, err := lintCommandBinariesIgnored(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, binFindings...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
 			return findings[i].File < findings[j].File
@@ -358,6 +374,52 @@ func lintRepositoryTruth(root string) ([]finding, error) {
 	}}, nil
 }
 
+// lintFrontDoor keeps the README pointing at the deployed docs site.
+//
+// The site is the project's best asset and was, for months, reachable from
+// nowhere: the repo homepage field pointed at pkg.go.dev and the README — the
+// only page a stranger actually lands on — contained zero links to it. Every
+// individual artifact was fine; the path between them did not exist. A
+// published site nobody can navigate to is indistinguishable from no site.
+func lintFrontDoor(root string) ([]finding, error) {
+	// The rule encodes a fact about THIS repository's front door, so it applies
+	// only to this module. repolint is otherwise a general-purpose tree linter
+	// (its own tests run it over synthetic trees), and a rule demanding a
+	// specific README link would fail every one of them.
+	isThisRepo, err := moduleIs(root, frameworkModule)
+	if err != nil || !isThisRepo {
+		return nil, err
+	}
+	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			// A missing README is the strongest version of the failure this
+			// rule exists to prevent, not an exemption from it. Returning nil
+			// here would have let `rm README.md` pass the gate clean.
+			return []finding{{
+				File:    "README.md",
+				Line:    1,
+				Rule:    "front-door-missing",
+				Message: "README.md does not exist — it is the only page a stranger lands on",
+			}}, nil
+		}
+		return nil, err
+	}
+	// The origin the site is actually deployed to, as declared by the Pages
+	// workflow's export base. Kept as a literal here (rather than importing
+	// the site package) so the lint stays a standalone stdlib binary.
+	const siteURL = "https://donaldmurillo.github.io/gofastr"
+	if strings.Contains(string(readme), siteURL) {
+		return nil, nil
+	}
+	return []finding{{
+		File:    "README.md",
+		Line:    1,
+		Rule:    "front-door-missing",
+		Message: "README must link the deployed docs site (" + siteURL + ") — a site nothing links to is unreachable",
+	}}, nil
+}
+
 func latestReleaseMinor(changelog string) string {
 	for _, line := range strings.Split(changelog, "\n") {
 		if !strings.HasPrefix(line, "## [") || strings.HasPrefix(line, "## [Unreleased]") {
@@ -559,4 +621,255 @@ func isGeneratedGo(body []byte) bool {
 	}
 	return bytes.Contains(head, []byte("// Code generated")) ||
 		bytes.Contains(head, []byte("DO NOT EDIT"))
+}
+
+// exampleAbsoluteURLRe finds absolute https URLs written as Go string literals.
+var exampleAbsoluteURLRe = regexp.MustCompile(`(?i)https://([A-Za-z0-9._-]+)`)
+
+// allowedExampleHost reports whether an example app may advertise host as its
+// own public origin or reference it in emitted markup.
+//
+// Reserved documentation domains (RFC 2606 / RFC 6761) are always fine: they
+// are guaranteed never to resolve to a real service, which is exactly what a
+// demo product's canonical URLs should say. Spec and schema hosts are
+// references, not claims about where the app lives. Everything else must be a
+// host the project actually serves from.
+func allowedExampleHost(host string) bool {
+	switch host {
+	case "example.com", "example.net", "example.org",
+		// Loopback in any spelling — "localhost" was allowed while the
+		// equivalent literal address was not, which flagged correct code.
+		"localhost", "127.0.0.1", "::1",
+		"schema.org", "www.schema.org", "www.sitemaps.org", "www.w3.org",
+		"llmstxt.org", "spec.modelcontextprotocol.io", "modelcontextprotocol.io",
+		"pkg.go.dev", "go.dev", "github.com", "donaldmurillo.github.io",
+		"barcode.donaldmurillo.com", "img.shields.io", "keepachangelog.com",
+		"semver.org", "creativecommons.org", "opensource.org", "www.rfc-editor.org":
+		return true
+	}
+	// RFC 2606 reserves the .example TLD as well as the example.{com,net,org}
+	// second-level names, so "notes.example" is as legitimately illustrative as
+	// "notes.example.com".
+	return strings.HasSuffix(host, ".example") ||
+		strings.HasSuffix(host, ".example.com") ||
+		strings.HasSuffix(host, ".example.net") ||
+		strings.HasSuffix(host, ".example.org")
+}
+
+// lintExampleOrigins keeps example apps off hostnames that do not resolve.
+//
+// The site advertised canonical URLs, a sitemap, and an agent card on a domain
+// with no DNS record for months. Fixing that one file by name left the same bug
+// one directory over in the flagship example, on a sibling of the same dead
+// domain — which is the whole lesson: the defect is not a string, it is
+// "an example claims an origin nobody serves". This rule enumerates by that
+// invariant, so the next one fails the build instead of waiting to be noticed.
+//
+// A demo that is not deployed should say so with a reserved documentation
+// domain; a deployed one names the host it actually answers on.
+func lintExampleOrigins(root string) ([]finding, error) {
+	var findings []finding
+	examples := filepath.Join(root, "examples")
+	err := filepath.WalkDir(examples, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			rel = path
+		}
+		seen := map[string]bool{}
+		inBlockComment := false
+		for i, line := range strings.Split(string(body), "\n") {
+			trimmed := strings.TrimSpace(line)
+			// Track /* */ regions. A URL discussed in a block comment is prose
+			// exactly like a // comment, and flagging it made the rule fire on
+			// text that emits nothing.
+			if inBlockComment {
+				if idx := strings.Index(line, "*/"); idx >= 0 {
+					inBlockComment = false
+					line = line[idx+2:]
+				} else {
+					continue
+				}
+			}
+			if idx := strings.Index(line, "/*"); idx >= 0 {
+				if end := strings.Index(line[idx:], "*/"); end < 0 {
+					inBlockComment = true
+				}
+				line = line[:idx]
+			}
+			if strings.HasPrefix(trimmed, "//") {
+				continue // prose, not an emitted URL
+			}
+			// A trailing comment on a code line is prose too — but "//" also
+			// appears inside every URL scheme, so only an unescaped "//" that
+			// is NOT preceded by ":" starts a comment.
+			line = stripTrailingLineComment(line)
+			for _, m := range exampleAbsoluteURLRe.FindAllStringSubmatch(line, -1) {
+				host := m[1]
+				if allowedExampleHost(host) || seen[host] {
+					continue
+				}
+				seen[host] = true
+				findings = append(findings, finding{
+					File:    filepath.ToSlash(rel),
+					Line:    i + 1,
+					Rule:    "example-dead-origin",
+					Message: "example advertises origin " + host + " — use a reserved documentation domain (example.com) for a demo that is not deployed, or a host the project actually serves",
+				})
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return findings, nil
+}
+
+// frameworkModule is this repository's module path.
+const frameworkModule = "github.com/DonaldMurillo/gofastr"
+
+// moduleIs reports whether root's go.mod declares the given module path.
+// Absent or unreadable go.mod means "not this module" rather than an error, so
+// repolint stays usable on trees that are not Go modules at all.
+func moduleIs(root, module string) (bool, error) {
+	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "module") {
+			continue
+		}
+		rest := strings.TrimSpace(trimmed[len("module"):])
+		// `module<TAB>path` is valid go.mod. Requiring a space made the
+		// module never match, silently disabling every rule scoped to it.
+		if rest == "" || rest == trimmed {
+			continue
+		}
+		// `module path // comment` is valid go.mod. Comparing the whole
+		// remainder made the comment part of the path, so the module never
+		// matched and every rule scoped to it silently stopped running — a
+		// gate that disables itself is worse than no gate.
+		if i := strings.Index(rest, "//"); i >= 0 {
+			rest = rest[:i]
+		}
+		return strings.TrimSpace(rest) == module, nil
+	}
+	return false, nil
+}
+
+// stripTrailingLineComment removes a trailing // comment from a line of Go.
+//
+// String literals are tracked, and that is what protects "https://host": a
+// "//" inside a string is content, not a comment, and a URL in Go source is
+// always inside one. An earlier version instead kept any "//" preceded by a
+// colon, on the theory that a URL scheme has one and a comment does not — but
+// a label, `case`, or `default` may be followed immediately by a comment with
+// no space (`default:// note` is valid Go), so that rule left those comments
+// unstripped and let prose inside them read as emitted code.
+func stripTrailingLineComment(line string) string {
+	var quote byte
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if quote != 0 {
+			if c == '\\' && quote != '`' {
+				i++ // skip the escaped character
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' || c == '`' {
+			quote = c
+			continue
+		}
+		if c == '/' && i+1 < len(line) && line[i+1] == '/' {
+			return line[:i]
+		}
+	}
+	return line
+}
+
+// lintCommandBinariesIgnored checks that every cmd/<name> has a root-level
+// .gitignore entry, because `go build ./cmd/<name>` from the repository root
+// drops the binary at /<name>.
+//
+// .gitignore cannot glob a directory listing, so the entries are written out
+// by hand — and a hand-written list of names rots the moment a command is
+// added. It rotted twice: a 12MB embed-demo binary reached a commit that way,
+// and the very change set that added this rule shipped a 3.4MB /mutate
+// untracked, under a comment telling the reader to "enumerate the package dir,
+// not the names". This rule is that enumeration.
+func lintCommandBinariesIgnored(root string) ([]finding, error) {
+	entries, err := os.ReadDir(filepath.Join(root, "cmd"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	body, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	// A missing .gitignore is not "clean" — it ignores nothing, so EVERY
+	// command binary would be untracked. Treating absence as clean was the
+	// rule's worst blind spot: it read the one state where the problem is
+	// total as the one state where there is no problem. body stays nil and
+	// every command falls through to the report below.
+	ignored := map[string]bool{}
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		// Skipping blanks and comments is tidiness, not correctness: neither
+		// can match a command name once the leading "/" is trimmed, so a
+		// mutation removing this line changes no verdict. Mutation testing
+		// reports it as a survivor for that reason — it is equivalent code,
+		// not an untested guard.
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		ignored[strings.TrimPrefix(line, "/")] = true
+	}
+	var out []finding
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if ignored[name] {
+			continue
+		}
+		// A command whose name is also a tracked top-level directory is
+		// covered by the existing `name` + `!name/` pair; treat that as
+		// ignored rather than demanding a duplicate entry.
+		if _, statErr := os.Stat(filepath.Join(root, name)); statErr == nil {
+			continue
+		}
+		out = append(out, finding{
+			File: ".gitignore",
+			Rule: "cmd-binary-not-ignored",
+			Message: "cmd/" + name + " builds to /" + name + " but .gitignore has no entry for it — " +
+				"a `go build ./cmd/" + name + "` from the root leaves an untracked binary",
+		})
+	}
+	return out, nil
 }

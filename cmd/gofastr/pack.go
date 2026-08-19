@@ -1252,13 +1252,53 @@ func packReadRelations(e ast.Expr) []framework.Relation {
 }
 
 // returnValue returns the first expression of the named func's return stmt.
+//
+// A `return <name>` is followed back to the composite literal that `name` was
+// assigned. Once a sidebar had to resolve its auth control per request, its
+// builder stopped being a single `return ui.SidebarConfig{…}` and became
+// `cfg := ui.SidebarConfig{…}` … `return cfg` — at which point this returned
+// an *ast.Ident, every caller's type assertion to *ast.CompositeLit failed,
+// and pack silently reconstructed an empty nav. Silently, because a failed
+// assertion here returns "no nav found", which is indistinguishable from an
+// app that declares none.
 func returnValue(file *ast.File, fn string) ast.Expr {
-	for _, stmt := range funcBody(file, fn) {
-		if ret, ok := stmt.(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
+	body := funcBody(file, fn)
+	for _, stmt := range body {
+		ret, ok := stmt.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) != 1 {
+			continue
+		}
+		ident, ok := ret.Results[0].(*ast.Ident)
+		if !ok {
 			return ret.Results[0]
 		}
+		if lit := assignedLiteral(body, ident.Name); lit != nil {
+			return lit
+		}
+		return ret.Results[0]
 	}
 	return nil
+}
+
+// assignedLiteral finds the composite literal assigned to name in body, taking
+// the LAST assignment so a later rebind wins — the same answer the running
+// program produces.
+func assignedLiteral(body []ast.Stmt, name string) ast.Expr {
+	var found ast.Expr
+	for _, stmt := range body {
+		assign, ok := stmt.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			continue
+		}
+		lhs, ok := assign.Lhs[0].(*ast.Ident)
+		if !ok || lhs.Name != name {
+			continue
+		}
+		if lit, ok := assign.Rhs[0].(*ast.CompositeLit); ok {
+			found = lit
+		}
+	}
+	return found
 }
 
 // packReadSeed reconstructs seed data from stubs.go seedData().

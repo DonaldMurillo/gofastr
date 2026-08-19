@@ -17,6 +17,16 @@ import (
 	"time"
 )
 
+// The storefront's catalog reads open and gates every write behind a
+// permission, and a generated app grants permissions to the admin role alone.
+// A self-registered shopper can therefore browse but not write — which is the
+// posture the blueprint declares, so the write half of the thesis check signs
+// in as the seeded admin. These two values mirror `admin:` in gofastr.yml.
+const (
+	shopAdminEmail    = "admin@shop.example"
+	shopAdminPassword = "change-me-now-123" // not-a-secret: the example's seeded demo account
+)
+
 // startShopfront generates the app from gofastr.yml with the in-tree CLI
 // source, builds the generated binary into a temp dir, boots it on a free
 // port with an isolated SQLite database, and returns the base URL. Each
@@ -54,6 +64,10 @@ func startShopfront(t *testing.T) string {
 	srv.Env = append(os.Environ(),
 		"PORT="+addr,
 		"DATABASE_URL=file:"+filepath.Join(runDir, "shop.db"),
+		// The blueprint seeds an admin, and the seed reads its password from
+		// the environment on a fresh database. Without it the app refuses to
+		// boot rather than come up with an account nobody can log into.
+		"ADMIN_SEED_PASSWORD="+shopAdminPassword,
 	)
 	srv.Stdout, srv.Stderr = io.Discard, io.Discard
 	if err := srv.Start(); err != nil {
@@ -78,7 +92,9 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 
 	base := startShopfront(t)
 
-	client := authedClient(t, base, "flagship@shop.example", "str0ng-passphrase")
+	// The seeded admin, not a fresh registration: this test writes to the
+	// catalog, and catalog writes need `catalog:write`.
+	client := adminClient(t, base)
 
 	// 1) OpenAPI is auth-gated and must describe the same prefixed entity
 	// paths that the live router exposes.
@@ -209,6 +225,23 @@ func TestOrdersOwnerScoped(t *testing.T) {
 	if strings.Contains(resp, "customerEmail") {
 		t.Errorf("anonymous MCP orders_list leaked order rows:\n%.500s", resp)
 	}
+}
+
+// adminClient logs in as the blueprint's seeded admin. It does not register:
+// the account already exists, and registering would produce a shopper without
+// the catalog permissions.
+func adminClient(t *testing.T, base string) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+	creds := fmt.Sprintf(`{"email":%q,"password":%q}`, shopAdminEmail, shopAdminPassword)
+	if code, body := request(t, client, "POST", base+"/auth/login", creds); code >= 400 {
+		t.Fatalf("POST /auth/login as the seeded admin = %d; body=%.300s", code, body)
+	}
+	return client
 }
 
 // authedClient registers a fresh user and logs in via the JSON auth API,

@@ -280,8 +280,9 @@ func registerCategories(app *framework.App) {
 			{Type: framework.RelHasMany, Name: "products", Entity: "products", ForeignKey: "category_id"},
 		},
 		Exposure: &framework.ExposureConfig{
-			CRUD: boolPtr(true),
-			MCP:  true,
+			CRUD:   boolPtr(true),
+			MCP:    true,
+			Access: framework.AccessControl{Create: "catalog:write", Update: "catalog:write", Delete: "catalog:admin"},
 		},
 		Properties: map[string]any{"icon": "folder", "label": "Categories"},
 	})

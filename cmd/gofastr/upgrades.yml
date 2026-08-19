@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.66.0
+through: v0.67.0
 
 releases:
   - version: v0.3.0
@@ -741,3 +741,22 @@ releases:
         breaking: false
         guidance: "A seed row assigning a number to a relation column now fails at generate time naming the @entity.field=value form to use, instead of emitting an app that compiles and then dies at boot. Regenerate any blueprint carrying a numeric foreign key in its seed block."
         detect: "seed:"
+  - version: v0.67.0
+    title: Foreign keys enforced, read gates on every related-row surface
+    notes:
+      - change: "BREAKING: SQLite enforces foreign keys on every DSN"
+        breaking: true
+        guidance: "Every DSN opened through the sqlite3 driver name now gets _pragma=foreign_keys(1). AutoMigrate has always emitted FOREIGN KEY clauses and SQLite has always ignored them, so an app that accumulated rows pointing at nothing will see those writes fail now. Deleting a parent while children reference it also fails: AutoMigrate declares no ON DELETE action and entity.Relation cannot express one, so delete children first. Set _pragma=foreign_keys(0) in the DSN while you clean the data up. Postgres already enforced all of this. One case to check first: an entity declaring the same column as both Scope.OwnerField and a relation has a FOREIGN KEY that older AutoMigrate wrote and that the framework violates on every create, because the owner value comes from the auth table rather than the related entity. This release stops emitting it but cannot remove it from an existing table, so that database needs the opt-out until the table is rebuilt without the key."
+        detect: "sql\\.Open\\(\"sqlite3\""
+      - change: "BREAKING: the in-house gofastr/sqlite engine is removed"
+        breaking: true
+        guidance: "Import github.com/DonaldMurillo/gofastr/sqlite/stdlib and open sqlite3 instead of gofastr-sqlite. The stdlib package is unchanged and is what every app already imports; only the from-scratch engine behind the gofastr-sqlite driver name is gone. It was a test-only cross check against modernc.org/sqlite, which is real SQLite compiled to Go, so the cross check only ever reported bugs in the local engine."
+        detect: "gofastr/sqlite\""
+      - change: "BREAKING: server-rendered screens check the entity read gate"
+        breaking: true
+        guidance: "framework/ui/resource's List, Table, Detail and the pre-filled edit Form read rows directly and never entered the route middleware, so a screen served rows the same entity's REST route answered 401 or 403 for. They now render an access notice instead. A screen that rendered for anonymous visitors because of this gap goes blank until its entity declares the posture you want: a blank read: in the access block opens reads while keeping writes gated."
+        detect: "framework/ui/resource"
+      - change: "BREAKING: ?include= and ?rel.field= honour the target's read posture"
+        breaking: true
+        guidance: "Both read another entity's rows through the parent's route and neither consulted that entity's own posture, so an include returned rows the target refuses to serve and a nested filter changed the row count with a guessed value. Both now resolve the target and refuse with 403 when the caller may not read it. Owner- and tenant-scoped targets are refused on the nested-filter path outright, because an EXISTS clause counts rows without selecting them and cannot narrow them to the caller's own; filter on that entity's own list route instead. The detector points at your relation declarations: every one of them is reachable by ?include= and ?rel.field=, so check that each target entity declares the read posture you actually want."
+        detect: "Relations:\\s*\\[\\]"

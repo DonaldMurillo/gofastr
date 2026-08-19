@@ -60,8 +60,15 @@ entities:
         foreign_key: author_id
 
   - name: posts
-    # public demo content — see "Default CRUD authentication" in the security docs
-    public: true
+    # A blog's posts are public to READ and nothing else. `public: true` would
+    # also hand anonymous callers create/update/delete on every row — the
+    # exposure `gofastr generate` warns about — so reads are opened with a
+    # blank `read:` and every write stays behind a real permission.
+    access:
+      read:
+      create: posts:write
+      update: posts:write
+      delete: posts:admin
     crud: true
     mcp: true
     soft_delete: true
@@ -100,8 +107,13 @@ entities:
         foreign_key: post_id
 
   - name: comments
-    # public demo content — see "Default CRUD authentication" in the security docs
-    public: true
+    # Readable by anyone; writing is gated. Same reason as posts above:
+    # `public: true` grants anonymous DELETE, not just read.
+    access:
+      read:
+      create: comments:write
+      update: comments:write
+      delete: comments:admin
     crud: true
     mcp: true
     indices:

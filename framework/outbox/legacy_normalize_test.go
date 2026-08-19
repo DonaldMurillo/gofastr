@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
-	gosqlite "github.com/DonaldMurillo/gofastr/sqlite"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // openPureOutbox opens a fresh pure-sqlite DB + Outbox so the normalizer's
 // dialect path (the one that matters for legacy timestamps) is exercised.
 func openPureOutbox(t *testing.T) (*sql.DB, *Outbox) {
 	t.Helper()
-	db, err := gosqlite.Open()
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("open pure sqlite: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)

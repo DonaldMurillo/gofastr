@@ -11,9 +11,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -29,7 +31,12 @@ func main() {
 	// Load .env before anything reads the environment — the DB (and
 	// its DATABASE_URL) opens before NewApp's own dotenv auto-load
 	// would run. Existing process env always wins over the files.
-	_ = dotenv.LoadAndApply(".env.local", ".env")
+	//
+	// framework.DefaultDotEnvPaths(), not a hardcoded pair: dotenv.Apply
+	// never overwrites an existing variable, so loading a SHORTER list
+	// here would pin .env's DATABASE_URL and NewApp's higher-precedence
+	// .env.<APP_ENV> could no longer win.
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		log.Fatal(err)
@@ -73,6 +80,13 @@ func main() {
 	site := uiapp.NewApp(appName)
 	RegisterGenerated(fwApp, site, db)
 	fwApp.WithSeed(func(ctx context.Context) error {
+		// Resolve the bootstrap admin (created by the earlier-registered
+		// admin seed hook) so the demo rows are owned by them; a fresh
+		// signup then starts with an empty workspace and adds its own.
+		// CreateOne stamps the owner column from this user.
+		if u, _, err := auth.NewEntityUserStore(db, "auth_users").FindByEmail(ctx, "admin@shop.example"); err == nil && u != nil {
+			ctx = handler.SetUser(ctx, u)
+		}
 		for _, s := range seedData() {
 			ch, err := fwApp.CrudHandler(s.Entity)
 			if err != nil {

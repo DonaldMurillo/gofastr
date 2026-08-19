@@ -42,6 +42,10 @@ func nullFKWorld(t *testing.T) (*sql.DB, *entity.Entity, *entity.Entity, *stubRe
 	authorsEnt := entity.Define("authors", entity.EntityConfig{
 		Name: "authors", Table: "authors",
 		Fields: []schema.Field{{Name: "name", Type: schema.String}},
+		// Same reason posts is Public below: an include is a read of THIS
+		// entity, so an anonymous request now needs it to be readable. The
+		// fixture tests NULL-FK include mechanics, not the session gate.
+		Exposure: &entity.ExposureConfig{Public: true},
 	})
 	postsEnt := entity.Define("posts", entity.EntityConfig{Name: "posts", Table: "posts",
 		Fields: []schema.Field{

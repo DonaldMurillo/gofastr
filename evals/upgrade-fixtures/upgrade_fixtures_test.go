@@ -295,7 +295,27 @@ func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 	cmd := exec.Command(bin)
 	cmd.Env = append(os.Environ(),
 		"PORT="+addr,
-		"DATABASE_URL=file:"+dbPath,
+		// foreign_keys(0), deliberately, and this is the upgrade story for a
+		// whole class of existing database rather than a convenience for the
+		// test.
+		//
+		// This app declares tasks.user_id as BOTH Scope.OwnerField and a
+		// relation to `users`, so pre-v0.67 AutoMigrate wrote
+		// `FOREIGN KEY (user_id) REFERENCES users(id)` into the table. The
+		// framework then stamps that column from the session identity, which
+		// lives in auth_users — and `users` is empty by design here (see
+		// fixtures/manifest.yml). The constraint was therefore one the
+		// framework violated on every create, and SQLite silently tolerated it
+		// because foreign keys were off.
+		//
+		// v0.67 stops EMITTING that constraint, but it cannot remove one
+		// already baked into a table: SQLite has no DROP CONSTRAINT and
+		// AutoMigrate has no table-rebuild path. An existing database in this
+		// shape therefore needs the documented escape hatch until its owner
+		// rebuilds the table. That is exactly what this DSN is, and this
+		// fixture is where that upgrade path is proven to work rather than
+		// merely described.
+		"DATABASE_URL=file:"+dbPath+"?_pragma=foreign_keys(0)",
 		// Stable dev secret so the app boots deterministically (dev_mode is on).
 		"JWT_SECRET=upgrade-fixture-test-secret-32chars-min!!",
 		"GOFASTR_DEV_MCP=0",

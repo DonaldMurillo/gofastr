@@ -237,7 +237,7 @@ func TestBackendCapabilityMapCommandsAreReal(t *testing.T) {
 // empty-table-header rule on whatever route serves the doc.
 //
 // This exists because that is exactly how it was found: a table in
-// sqlite-engine.md whose first header cell was blank failed the site's
+// sqlite-driver.md whose first header cell was blank failed the site's
 // full axe crawl, which takes ~11 minutes and only runs in the browser-e2e
 // job. The defect is a string in a markdown file; it does not need a browser
 // to detect, and waiting eleven minutes for a headless Chrome to tell you a

@@ -25,11 +25,30 @@ import (
 	"github.com/DonaldMurillo/gofastr/examples/meridian/entities"
 )
 
+// siteOrigin is the public origin Meridian declares to crawlers and agents:
+// og:url, the sitemap's BaseURL, the SDK docs base, and every per-page
+// canonical and JSON-LD URL.
+//
+// Meridian is a demonstration product that is not deployed anywhere, so the
+// default is a domain under example.com — IANA-reserved for exactly this, and
+// unmistakably illustrative. It used to be "meridian.gofastr.dev", which does
+// not resolve (NXDOMAIN): a flagship example emitting canonical URLs on a dead
+// host teaches the shape wrong and would send any crawler that trusted it
+// nowhere. A real deployment overrides this at build time:
+//
+//	-ldflags "-X 'main.siteOrigin=https://meridian.example.net'"
+var siteOrigin = "https://meridian.example.com"
+
 func main() {
 	// Load .env before anything reads the environment — the DB (and
 	// its DATABASE_URL) opens before NewApp's own dotenv auto-load
 	// would run. Existing process env always wins over the files.
-	_ = dotenv.LoadAndApply(".env.local", ".env")
+	//
+	// framework.DefaultDotEnvPaths(), not a hardcoded pair: dotenv.Apply
+	// never overwrites an existing variable, so loading a SHORTER list here
+	// would pin .env's DATABASE_URL and NewApp's higher-precedence
+	// .env.<APP_ENV> could no longer win.
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		log.Fatal(err)
@@ -85,9 +104,9 @@ func main() {
 		uihost.WithAppIcon(appIconPNG()),
 		uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile("static/app.css")),
 		uihost.WithDescription("Meridian is the revenue console for modern SaaS — customers, subscriptions, invoices, and live MRR in one calm place."),
-		uihost.WithOpenGraph(uihost.OG{Title: "Meridian — billing that runs itself", URL: "https://meridian.gofastr.dev", Type: "website"}),
+		uihost.WithOpenGraph(uihost.OG{Title: "Meridian — billing that runs itself", URL: siteOrigin, Type: "website"}),
 		uihost.WithSitemap(uihost.SitemapConfig{
-			BaseURL:      "https://meridian.gofastr.dev",
+			BaseURL:      siteOrigin,
 			ExcludePaths: []string{"/app", "/admin", "/login", "/signup"},
 		}),
 		uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/app", "/admin", "/__gofastr/"}}),
@@ -100,7 +119,7 @@ func main() {
 	if err := sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
 		Registry:     fwApp.Registry,
 		Artifacts:    sdkDistFS(),
-		BaseURL:      "https://meridian.gofastr.dev",
+		BaseURL:      siteOrigin,
 		APIPrefix:    apiPrefix,
 		HasAPITokens: true,
 		IncludeGated: true,
