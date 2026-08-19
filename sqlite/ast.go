@@ -174,6 +174,13 @@ func (s *CreateTableStmt) statementNode() {}
 type TableConstraint struct {
 	Type    ConstraintType
 	Columns []string
+	// RefTable / RefCols carry the target of a table-level
+	// `FOREIGN KEY (col) REFERENCES target(id)`. That is the form
+	// framework/migrate emits, so it is the form most foreign keys in a
+	// gofastr database actually take; the inline column `REFERENCES`
+	// spelling lands in ColumnConstraint instead.
+	RefTable string
+	RefCols  []string
 }
 type ColumnDefAST struct {
 	Name        string
@@ -201,6 +208,12 @@ const (
 	ConstraintDefault
 	ConstraintCheck
 	ConstraintForeignKey
+	// ConstraintNone is a constraint that parsed and carries no meaning — a
+	// bare `NULL`, which SQLite's grammar allows and which says only that the
+	// column is nullable, as it already is. Appended LAST on purpose: the
+	// zero value of this type is ConstraintPrimaryKey, so a "nothing here"
+	// sentinel must never be the zero value.
+	ConstraintNone
 )
 
 // ============================================================================

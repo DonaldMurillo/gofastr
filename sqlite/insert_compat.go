@@ -54,7 +54,7 @@ func (e *Engine) executeInsertWithConflict(s *InsertStmt, params []Value, tableI
 				// See https://www.sqlite.org/lang_conflict.html
 				seen := map[int64]bool{}
 				for {
-					cid, _, conflict, err := e.findInsertConflict(tableInfo, rowValues, nil, 0)
+					cid, conflictVals, conflict, err := e.findInsertConflict(tableInfo, rowValues, nil, 0)
 					if err != nil {
 						return nil, err
 					}
@@ -62,6 +62,20 @@ func (e *Engine) executeInsertWithConflict(s *InsertStmt, params []Value, tableI
 						break
 					}
 					seen[cid] = true
+					// REPLACE deletes the conflicting row and writes the new
+					// one in the SAME statement, and SQLite evaluates
+					// immediate foreign keys at statement end — so this is a
+					// parent-side UPDATE, not a delete. Checking it as a
+					// delete refused every REPLACE of a referenced parent,
+					// including the ordinary case where the replacement keeps
+					// the same key and no child is ever orphaned. The
+					// parent-update check refuses exactly the case that does
+					// orphan one: a replacement that MOVES the referenced key,
+					// which happens when the conflict is on a secondary UNIQUE
+					// column and the new row's primary key differs.
+					if err := e.checkForeignKeyParentUpdate(tableInfo, conflictVals, rowValues); err != nil {
+						return nil, err
+					}
 					if err := e.btree.Delete(tableInfo.RootPage, cid); err != nil {
 						return nil, err
 					}
@@ -84,6 +98,12 @@ func (e *Engine) executeInsertWithConflict(s *InsertStmt, params []Value, tableI
 					return nil, &engineError{"UNIQUE constraint failed"}
 				}
 				if err := e.checkForeignKeyInsert(tableInfo, updated); err != nil {
+					return nil, err
+				}
+				// DO UPDATE rewrites an existing row, so it can move a
+				// referenced key out from under children just as a plain
+				// UPDATE can — the child-side check above does not see that.
+				if err := e.checkForeignKeyParentUpdate(tableInfo, conflictRow, updated); err != nil {
 					return nil, err
 				}
 				if err := e.btree.Insert(tableInfo.RootPage, conflictRowID, valuesToRecord(updated)); err != nil {
@@ -291,7 +311,12 @@ func (e *Engine) findInsertConflict(
 				}
 			}
 			if rowsConflict(tableInfo, existing, candidate, constraint.Columns) {
-				return rowid, existing, true, nil
+				// COPY: `existing` is derived from the scanning cursor's
+				// reused Record, so it must not outlive this iteration. The
+				// same invariant a delete-path bug was traced to. Safe today
+				// only by accident — every caller happened to stop scanning —
+				// and both callers below now keep the row across more work.
+				return rowid, append([]Value(nil), existing...), true, nil
 			}
 		}
 	}

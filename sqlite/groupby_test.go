@@ -139,8 +139,11 @@ func TestAggregateNoGroupBy(t *testing.T) {
 	if r.Rows[0][0].IntVal != 3 {
 		t.Fatalf("expected COUNT=3, got %d", r.Rows[0][0].IntVal)
 	}
-	if r.Rows[0][1].FloatVal != 60.0 {
-		t.Fatalf("expected SUM=60, got %f", r.Rows[0][1].FloatVal)
+	// SUM of integers is an INTEGER in SQLite, so read the numeric value
+	// rather than one storage class's field — asserting on FloatVal alone
+	// passed while SUM returned a float for integer input.
+	if v, ok := r.Rows[0][1].AsFloat64(); !ok || v != 60.0 {
+		t.Fatalf("expected SUM=60, got %v", r.Rows[0][1])
 	}
 	if r.Rows[0][2].FloatVal != 20.0 {
 		t.Fatalf("expected AVG=20, got %f", r.Rows[0][2].FloatVal)
@@ -304,14 +307,14 @@ func TestGroupByWithNulls(t *testing.T) {
 	if !r.Rows[0][0].IsNull() {
 		t.Fatalf("expected NULL group first, got %v", r.Rows[0][0])
 	}
-	if r.Rows[0][1].FloatVal != 30.0 {
-		t.Fatalf("expected NULL group SUM=30, got %f", r.Rows[0][1].FloatVal)
+	if v, ok := r.Rows[0][1].AsFloat64(); !ok || v != 30.0 {
+		t.Fatalf("expected NULL group SUM=30, got %v", r.Rows[0][1])
 	}
 	if r.Rows[1][0].TextVal != "a" {
 		t.Fatalf("expected 'a' group second, got %v", r.Rows[1][0])
 	}
-	if r.Rows[1][1].FloatVal != 30.0 {
-		t.Fatalf("expected 'a' group SUM=30, got %f", r.Rows[1][1].FloatVal)
+	if v, ok := r.Rows[1][1].AsFloat64(); !ok || v != 30.0 {
+		t.Fatalf("expected 'a' group SUM=30, got %v", r.Rows[1][1])
 	}
 }
 

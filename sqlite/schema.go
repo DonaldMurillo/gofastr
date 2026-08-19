@@ -305,10 +305,14 @@ func ApplyAffinity(v Value, affinity ColumnAffinity) Value {
 		}
 
 	case AffinityBlob:
-		if v.Type == DataTypeText {
-			// TEXT to BLOB
-			return BlobValue([]byte(v.TextVal))
-		}
+		// SQLite's BLOB (a.k.a. NONE) affinity performs NO conversion at all:
+		// "a column with affinity BLOB does not prefer one storage class over
+		// another and no attempt is made to coerce data"
+		// (https://www.sqlite.org/datatype3.html#type_affinity). Converting
+		// TEXT to BLOB here meant text stored in an untyped or BLOB-declared
+		// column came back as a blob, which then compared unequal to
+		// everything — visible first as foreign keys refusing rows real
+		// SQLite accepts.
 
 	case AffinityNumeric:
 		// NUMERIC affinity stores a value as INTEGER when it can be
@@ -452,8 +456,28 @@ func BuildTableInfo(stmt *CreateTableStmt, rootPage int) *TableInfo {
 		info.PrimaryKey = -1
 	}
 	for _, constraint := range stmt.TableConstraints {
-		if constraint.Type == ConstraintUnique || constraint.Type == ConstraintPrimaryKey {
+		switch constraint.Type {
+		case ConstraintUnique, ConstraintPrimaryKey:
 			info.UniqueConstraints = append(info.UniqueConstraints, append([]string(nil), constraint.Columns...))
+		case ConstraintForeignKey:
+			// The constraint names its column; FromCol is an index into
+			// info.Columns, so resolve the name rather than assuming a
+			// position. A name that matches nothing is dropped instead of
+			// producing an out-of-range index the enforcement path would
+			// panic on.
+			if len(constraint.Columns) != 1 {
+				continue
+			}
+			for i, col := range info.Columns {
+				if strings.EqualFold(col.Name, constraint.Columns[0]) {
+					info.ForeignKeys = append(info.ForeignKeys, ForeignKeyInfo{
+						FromCol: i,
+						ToTable: constraint.RefTable,
+						ToCols:  append([]string(nil), constraint.RefCols...),
+					})
+					break
+				}
+			}
 		}
 	}
 

@@ -13,11 +13,26 @@ import (
 // Engine is the SQL execution engine.
 // It coordinates between the pager, B-tree, schema, and parser.
 type Engine struct {
-	pager       PagerInterface
-	btree       BTreeInterface
-	schema      *Schema
-	txnSnap     *txnSnapshot
-	stmtCache   map[string]Statement
+	pager     PagerInterface
+	btree     BTreeInterface
+	schema    *Schema
+	txnSnap   *txnSnapshot
+	stmtCache map[string]Statement
+	// fkEnforced mirrors PRAGMA foreign_keys, and the pragma now reports and
+	// controls it. It used to report 0 while the engine enforced
+	// unconditionally and to ignore its SET form entirely — so code gating on
+	// the pragma read "off" from a connection that refused every dangling
+	// write, and code turning enforcement off got no error and no effect.
+	//
+	// The default is ON, which is a deliberate divergence from SQLite, whose
+	// default is off: the driver this framework ships turns enforcement on for
+	// every application DSN, so an engine defaulting off would disagree with
+	// every app that uses it.
+	fkEnforced bool
+	// poolShared marks an engine handed to database/sql through OpenConnector,
+	// where one engine backs every connection in the pool and a pragma is
+	// therefore database-wide rather than per-connection.
+	poolShared  bool
 	stmtCacheMu sync.RWMutex
 }
 
@@ -61,10 +76,11 @@ type CursorInterface interface {
 // NewEngine creates a new execution engine.
 func NewEngine(pager PagerInterface, btree BTreeInterface) *Engine {
 	return &Engine{
-		pager:     pager,
-		btree:     btree,
-		schema:    NewSchema(),
-		stmtCache: make(map[string]Statement, 64),
+		pager:      pager,
+		btree:      btree,
+		schema:     NewSchema(),
+		stmtCache:  make(map[string]Statement, 64),
+		fkEnforced: true,
 	}
 }
 
@@ -250,10 +266,17 @@ func (e *Engine) SaveSchema() error {
 			// can re-parse. Without this, file-backed databases lose
 			// dynamic defaults on reopen and NOT NULL inserts fail.
 			if c.DefaultExpr != nil {
-				if src := FormatExpr(c.DefaultExpr); src != "" {
-					cd.DefaultExpr = src
-					cd.HasDefault = true
+				src := FormatExpr(c.DefaultExpr)
+				if src == "" {
+					// Dropping it here would reopen the database with a
+					// column that has no default at all. Statements written
+					// against the declared schema would then behave
+					// differently after a restart than before it, which is
+					// worse than refusing to save.
+					return &engineError{"cannot persist default for " + ti.Name + "." + c.Name}
 				}
+				cd.DefaultExpr = src
+				cd.HasDefault = true
 			}
 			d.Columns = append(d.Columns, cd)
 		}
@@ -265,9 +288,13 @@ func (e *Engine) SaveSchema() error {
 	for _, ii := range e.schema.indexes {
 		id := indexData{Name: ii.Name, Table: ii.TableName, RootPage: ii.RootPage, Unique: ii.Unique, SQL: ii.SQL, Columns: ii.Columns}
 		if ii.WhereExpr != nil {
-			if src := FormatExpr(ii.WhereExpr); src != "" {
-				id.Where = src
+			src := FormatExpr(ii.WhereExpr)
+			if src == "" {
+				// See executeCreateIndex: a dropped predicate reads back as a
+				// full index, not as an absent one.
+				return &engineError{"cannot persist partial index predicate for " + ii.Name}
 			}
+			id.Where = src
 		} else if ii.Where != "" {
 			// Legacy/unparsed source retained verbatim.
 			id.Where = ii.Where
@@ -427,54 +454,19 @@ func (e *Engine) executeMutation(stmt Statement, s Statement, params []Value) (*
 	case *DeleteStmt:
 		return e.executeDelete(s, params)
 	case *CreateTableStmt:
-		res, err := e.executeCreateTable(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeCreateTable(s))
 	case *CreateIndexStmt:
-		res, err := e.executeCreateIndex(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeCreateIndex(s))
 	case *DropTableStmt:
-		res, err := e.executeDropTable(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeDropTable(s))
 	case *DropIndexStmt:
-		res, err := e.executeDropIndex(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeDropIndex(s))
 	case *AlterAddColumnStmt:
-		res, err := e.executeAlterAddColumn(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeAlterAddColumn(s))
 	case *AlterRenameTableStmt:
-		res, err := e.executeAlterRenameTable(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeAlterRenameTable(s))
 	case *AlterRenameColumnStmt:
-		res, err := e.executeAlterRenameColumn(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeAlterRenameColumn(s))
 	case *PragmaStmt:
 		return e.executePragma(s)
 	case *VacuumStmt:
@@ -482,22 +474,33 @@ func (e *Engine) executeMutation(stmt Statement, s Statement, params []Value) (*
 	case *ReindexStmt:
 		return &Result{}, nil
 	case *CreateViewStmt:
-		res, err := e.executeCreateView(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeCreateView(s))
 	case *DropViewStmt:
-		res, err := e.executeDropView(s)
-		if err == nil {
-			e.invalidateStmtCache()
-			e.SaveSchema()
-		}
-		return res, err
+		return e.persistSchema(e.executeDropView(s))
 	default:
 		return nil, &engineError{"unsupported statement type"}
 	}
+}
+
+// persistSchema finishes a DDL statement: it invalidates the prepared-statement
+// cache and writes the schema out, and it RETURNS the write's error.
+//
+// Every one of these call sites used to discard it — `e.SaveSchema()` with no
+// assignment, ten times over. A DDL statement whose schema write failed
+// therefore reported success, and a file-backed database reopened without the
+// table the caller had just been told it created. Reporting the failure is
+// worse for nobody: the in-memory schema has the change either way, and the
+// caller is the only one who can decide what to do about a database that
+// could not record it.
+func (e *Engine) persistSchema(res *Result, err error) (*Result, error) {
+	if err != nil {
+		return res, err
+	}
+	e.invalidateStmtCache()
+	if err := e.SaveSchema(); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // Result represents the result of executing a statement.
@@ -1113,28 +1116,69 @@ func (e *Engine) computeAggregateRow(rows [][]Value, outputCols []outCol, s *Sel
 	return aggRow
 }
 
+// aggregateKey renders a value into a comparison key for DISTINCT. The type
+// prefix keeps the integer 7 and the text '7' distinct, which is what SQLite's
+// storage classes do.
+func aggregateKey(v Value) string {
+	return formatInt64(int64(v.Type)) + ":" + v.AsText()
+}
+
 // computeAggregate evaluates a single aggregate function over a set of rows.
 func (e *Engine) computeAggregate(fc FunctionCall, rows [][]Value, colIdx int) Value {
 	switch strings.ToUpper(fc.Name) {
 	case "COUNT":
-		if len(fc.Args) == 0 {
+		if fc.Star || len(fc.Args) == 0 {
 			return IntegerValue(int64(len(rows)))
 		}
 		count := 0
+		seen := map[string]bool{}
 		for _, r := range rows {
-			if colIdx < len(r) && !r[colIdx].IsNull() {
-				count++
+			if colIdx >= len(r) || r[colIdx].IsNull() {
+				continue
 			}
+			if fc.Distinct {
+				// COUNT(DISTINCT v) counted every non-NULL row: the DISTINCT
+				// keyword parsed and was then ignored, so the answer was
+				// COUNT(v) under a different name.
+				key := aggregateKey(r[colIdx])
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+			}
+			count++
 		}
 		return IntegerValue(int64(count))
 	case "SUM":
 		var sum float64
+		var intSum int64
+		allInt := true
+		any := false
 		for _, r := range rows {
-			if colIdx < len(r) {
-				if v, ok := r[colIdx].AsFloat64(); ok {
-					sum += v
-				}
+			if colIdx >= len(r) || r[colIdx].IsNull() {
+				continue
 			}
+			v, ok := r[colIdx].AsFloat64()
+			if !ok {
+				continue
+			}
+			any = true
+			sum += v
+			if r[colIdx].Type == DataTypeInteger {
+				intSum += r[colIdx].IntVal
+			} else {
+				allInt = false
+			}
+		}
+		if !any {
+			// SUM over no values is NULL, not 0 — SQLite reserves 0 for
+			// TOTAL(). Returning 0 makes "no rows" indistinguishable from
+			// "rows that sum to zero", which is the difference a caller
+			// checking for an empty result is asking about.
+			return NullValue
+		}
+		if allInt {
+			return IntegerValue(intSum)
 		}
 		return FloatValue(sum)
 	case "AVG":
@@ -1155,28 +1199,33 @@ func (e *Engine) computeAggregate(fc FunctionCall, rows [][]Value, colIdx int) V
 			return NullValue
 		}
 		return FloatValue(sum / float64(count))
-	case "MIN":
-		if len(rows) == 0 {
-			return NullValue
+	case "MIN", "MAX":
+		// NULLs are skipped, not compared. Seeding the running value with the
+		// first row and comparing everything meant a single NULL won every
+		// MIN — NULL sorts before every value — so MIN(v) reported NULL for
+		// any column that had one, which is most nullable columns.
+		want := -1
+		if strings.EqualFold(fc.Name, "MAX") {
+			want = 1
 		}
-		min := rows[0][colIdx]
+		var best Value
+		found := false
 		for _, r := range rows {
-			if colIdx < len(r) && CompareValues(r[colIdx], min) < 0 {
-				min = r[colIdx]
+			if colIdx >= len(r) || r[colIdx].IsNull() {
+				continue
+			}
+			if !found {
+				best, found = r[colIdx], true
+				continue
+			}
+			if cmp := CompareValues(r[colIdx], best); (want < 0 && cmp < 0) || (want > 0 && cmp > 0) {
+				best = r[colIdx]
 			}
 		}
-		return min
-	case "MAX":
-		if len(rows) == 0 {
+		if !found {
 			return NullValue
 		}
-		max := rows[0][colIdx]
-		for _, r := range rows {
-			if colIdx < len(r) && CompareValues(r[colIdx], max) > 0 {
-				max = r[colIdx]
-			}
-		}
-		return max
+		return best
 	default:
 		return NullValue
 	}
@@ -1559,6 +1608,15 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 		if err := e.checkForeignKeyInsert(tableInfo, newRow); err != nil {
 			return nil, err
 		}
+		// checkForeignKeyInsert is the CHILD side — it asks whether this row's
+		// own FK columns still point at something real. The parent side was
+		// missing entirely, so moving a referenced key out from under its
+		// children (UPDATE parent SET id = ...) left them dangling. Only run
+		// it when a referenced key actually changed: an update to any other
+		// column of a parent row is nobody's business.
+		if err := e.checkForeignKeyParentUpdate(tableInfo, row, newRow); err != nil {
+			return nil, err
+		}
 
 		toUpdate = append(toUpdate, struct {
 			rowid  int64
@@ -1612,20 +1670,50 @@ func (e *Engine) executeDelete(s *DeleteStmt, params []Value) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		var count int64
+		// A bare DELETE used to skip foreign keys entirely: this path rebuilds
+		// the table btree wholesale and never consulted them, so emptying a
+		// referenced parent table left every child dangling.
+		//
+		// SQLite checks immediate foreign keys at STATEMENT end, not per row,
+		// so a reference from a row this same statement removes is not a
+		// violation. Every row of this table is going, so a self-reference can
+		// never dangle afterwards — skipSelf tells the check to ignore
+		// children living in this very table. References from OTHER tables
+		// still dangle and are still refused.
+		//
+		// Two passes, deliberately: nothing is touched until every row has
+		// cleared the check, so a statement that reports failure has changed
+		// nothing.
+		//
+		// Honest scope: the damage a one-pass loop would do is not currently
+		// observable through this engine. Index entries dropped before the
+		// refusal leave no visible trace, because UNIQUE enforcement and
+		// lookups both consult the table rather than relying on the index
+		// alone — a one-pass mutant passes every assertion, including
+		// index-shaped ones. The ordering is kept because "do not mutate on a
+		// failing statement" is the right invariant, not because a test can
+		// currently prove it.
+		var rowids []int64
 		for cursor.Next() {
-			rowid, _, err := cursor.Get()
+			rowid, record, err := cursor.Get()
 			if err != nil {
 				cursor.Close()
 				return nil, err
 			}
-			if err := e.deleteFromIndexes(tableName, rowid); err != nil {
+			if err := e.checkForeignKeyDeleteSkipping(tableInfo, rowid, recordToValues(record, tableInfo), tableInfo.Name); err != nil {
 				cursor.Close()
+				return nil, err
+			}
+			rowids = append(rowids, rowid)
+		}
+		cursor.Close()
+		var count int64
+		for _, rowid := range rowids {
+			if err := e.deleteFromIndexes(tableName, rowid); err != nil {
 				return nil, err
 			}
 			count++
 		}
-		cursor.Close()
 		// Recreate the (now-empty) table B-tree root.
 		newRoot, err := e.btree.CreateBTree()
 		if err != nil {
@@ -1677,15 +1765,37 @@ func (e *Engine) executeDelete(s *DeleteStmt, params []Value) (*Result, error) {
 		if !val.IsNull() {
 			if b, ok := val.AsInt64(); ok && b != 0 {
 				toDelete = append(toDelete, rowid)
-				toDeleteRows = append(toDeleteRows, row)
+				// COPY, never the slice itself. The cursor reuses one Record
+				// per scan and Get hands out a pointer into it, so `row`
+				// aliases a buffer the next iteration overwrites. Every
+				// collected row ended up holding the LAST row the scan
+				// visited, and the foreign-key check below then ran against
+				// that row instead of the one being deleted — invisible while
+				// a test table had a single row, and a deleted-parent with
+				// dangling children as soon as it had two.
+				toDeleteRows = append(toDeleteRows, append([]Value(nil), row...))
 			}
 		}
 	}
 
+	// SQLite checks immediate foreign keys at STATEMENT end, so a reference
+	// from a row this same statement removes is not a violation. The bare
+	// DELETE path already applied that rule; this one did not, so
+	// `DELETE FROM t` and `DELETE FROM t WHERE 1=1` — the same operation —
+	// gave different answers on a self-referencing table.
+	//
+	// Two passes for the same reason the bare path uses them: a refusal must
+	// not leave the rows before it already deleted.
+	doomed := make(map[int64]bool, len(toDelete))
+	for _, rowid := range toDelete {
+		doomed[rowid] = true
+	}
 	for i, rowid := range toDelete {
-		if err := e.checkForeignKeyDelete(tableInfo, rowid, toDeleteRows[i]); err != nil {
+		if err := e.checkForeignKeyDeleteExcept(tableInfo, rowid, toDeleteRows[i], "", doomed); err != nil {
 			return nil, err
 		}
+	}
+	for _, rowid := range toDelete {
 		if err := e.btree.Delete(tableInfo.RootPage, rowid); err != nil {
 			return nil, err
 		}
@@ -1805,8 +1915,18 @@ func (e *Engine) executeCreateIndex(s *CreateIndexStmt) (*Result, error) {
 		Unique:    s.Unique,
 	}
 	if s.Where != nil {
+		// A partial index whose predicate cannot be rendered back to source
+		// cannot be persisted, and an unpersisted predicate does not come back
+		// as "no index" — it comes back as a FULL index, which is a stronger
+		// constraint than the one written and makes the column look like a
+		// legal foreign-key target. Refusing the CREATE is the only outcome
+		// that cannot silently change what the schema means.
+		src := FormatExpr(s.Where)
+		if src == "" {
+			return nil, &engineError{"unsupported partial index predicate on " + s.Name}
+		}
 		ii.WhereExpr = s.Where
-		ii.Where = FormatExpr(s.Where)
+		ii.Where = src
 	}
 	e.schema.AddIndex(ii)
 
@@ -1818,13 +1938,77 @@ func (e *Engine) executeCreateIndex(s *CreateIndexStmt) (*Result, error) {
 // ============================================================================
 
 func (e *Engine) executeDropTable(s *DropTableStmt) (*Result, error) {
-	if _, ok := e.schema.GetTable(s.Name); !ok && !s.IfExists {
+	ti, exists := e.schema.GetTable(s.Name)
+	if !exists && !s.IfExists {
 		return nil, &engineError{"no such table: " + s.Name}
+	}
+	// A DROP is a delete of every row, so it is a parent-side operation and
+	// needs the same check DELETE gets. SQLite performs an implicit DELETE
+	// FROM under foreign-key enforcement and refuses when rows are still
+	// referenced; this dropped the table and left the children pointing at a
+	// table that no longer exists, with nothing to ever revisit them.
+	//
+	// Rows of the dropped table cannot themselves dangle afterwards, so
+	// references FROM this table to itself are skipped — the same statement-end
+	// reasoning the bare DELETE path uses.
+	if exists {
+		if err := e.checkDropTableReferences(ti); err != nil {
+			return nil, err
+		}
 	}
 	if !e.schema.DropTable(s.Name) && !s.IfExists {
 		return nil, &engineError{"no such table: " + s.Name}
 	}
 	return &Result{}, nil
+}
+
+// checkDropTableReferences refuses a DROP whose rows other tables still
+// reference. Nothing is scanned when no other table has a foreign key pointing
+// here, so the common case costs a map walk.
+func (e *Engine) checkDropTableReferences(ti *TableInfo) error {
+	referenced := false
+	for _, name := range e.schema.TableNames() {
+		tbl, _ := e.schema.GetTable(name)
+		if strings.EqualFold(tbl.Name, ti.Name) {
+			// Self-references go with the table. Skipping here only avoids a
+			// pointless scan — the per-row check below passes ti.Name as its
+			// skipTable, so a self-reference could not produce an error
+			// anyway. Mutation testing reports the negative direction as a
+			// survivor for that reason: it is equivalent, not untested.
+			continue
+		}
+		for _, fk := range tbl.ForeignKeys {
+			if strings.EqualFold(fk.ToTable, ti.Name) {
+				referenced = true
+				break
+			}
+		}
+		if referenced {
+			break
+		}
+	}
+	// Short-circuit: with no other table pointing here there is nothing a
+	// scan could find. This is a performance guard, not a correctness one —
+	// removing it makes the function slower and changes no verdict, which is
+	// why mutation testing reports it as a survivor.
+	if !referenced {
+		return nil
+	}
+	cursor, err := e.btree.Scan(ti.RootPage)
+	if err != nil {
+		return err
+	}
+	defer cursor.Close()
+	for cursor.Next() {
+		rowid, record, err := cursor.Get()
+		if err != nil {
+			return err
+		}
+		if err := e.checkForeignKeyDeleteSkipping(ti, rowid, recordToValues(record, ti), ti.Name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ============================================================================
@@ -1873,6 +2057,23 @@ func (e *Engine) executeAlterAddColumn(s *AlterAddColumnStmt) (*Result, error) {
 		}
 	}
 	ti.Columns = append(ti.Columns, col)
+	// Carry a REFERENCES on the added column into the table's foreign keys.
+	// The parser reads it; this path used to read only NOT NULL and DEFAULT and
+	// drop it, so the constraint existed in the schema text and enforced
+	// nothing. FromCol is the index just appended.
+	//
+	// SQLite only permits ADD COLUMN with a REFERENCES when the default is
+	// NULL, so existing rows hold NULL and need no backfill check.
+	for _, con := range s.Column.Constraints {
+		if con.Type != ConstraintForeignKey {
+			continue
+		}
+		ti.ForeignKeys = append(ti.ForeignKeys, ForeignKeyInfo{
+			FromCol: len(ti.Columns) - 1,
+			ToTable: con.RefTable,
+			ToCols:  append([]string(nil), con.RefCols...),
+		})
+	}
 	return &Result{}, nil
 }
 
@@ -1885,6 +2086,20 @@ func (e *Engine) executeAlterRenameTable(s *AlterRenameTableStmt) (*Result, erro
 	}
 	if !e.schema.RenameTable(s.OldName, s.NewName) {
 		return nil, &engineError{"no such table: " + s.OldName}
+	}
+	// Every child foreign key naming the old table must follow it. SQLite
+	// rewrites the schema SQL of dependent objects; here the equivalent
+	// in-memory metadata is rewritten. Without this the children kept pointing
+	// at a table that no longer exists, so a rename SQLite treats as routine
+	// made the child direction permanently unwritable — fail-closed, but
+	// unrecoverable without hand-editing the schema.
+	for _, name := range e.schema.TableNames() {
+		tbl, _ := e.schema.GetTable(name)
+		for i, fk := range tbl.ForeignKeys {
+			if strings.EqualFold(fk.ToTable, s.OldName) {
+				tbl.ForeignKeys[i].ToTable = s.NewName
+			}
+		}
 	}
 	return &Result{}, nil
 }
@@ -1913,6 +2128,23 @@ func (e *Engine) executeAlterRenameColumn(s *AlterRenameColumnStmt) (*Result, er
 	// every dependent object; here we rewrite the equivalent in-memory
 	// metadata directly.
 	oldLower := strings.ToLower(s.OldName)
+	// A renamed column may be the TARGET of another table's foreign key, so
+	// every ForeignKeyInfo.ToCols entry naming it has to follow — the same
+	// reasoning as the unique-constraint and index rewrites below, applied to
+	// the one relationship that points in from outside this table.
+	for _, name := range e.schema.TableNames() {
+		tbl, _ := e.schema.GetTable(name)
+		for i, fk := range tbl.ForeignKeys {
+			if !strings.EqualFold(fk.ToTable, ti.Name) {
+				continue
+			}
+			for j, col := range fk.ToCols {
+				if strings.EqualFold(col, s.OldName) {
+					tbl.ForeignKeys[i].ToCols[j] = s.NewName
+				}
+			}
+		}
+	}
 	for i, uc := range ti.UniqueConstraints {
 		for j, col := range uc {
 			if strings.EqualFold(col, s.OldName) {
@@ -2123,12 +2355,79 @@ func (e *Engine) pragmaSynchronous(s *PragmaStmt) (*Result, error) {
 
 func (e *Engine) pragmaForeignKeys(s *PragmaStmt) (*Result, error) {
 	if s.Value != nil {
+		// SQLite makes this pragma a no-op inside a transaction, and the
+		// reason is exactly what happened here once the setter started
+		// working: OFF inside a transaction took effect, survived ROLLBACK,
+		// and left enforcement disabled with no error anywhere — a
+		// rolled-back statement changing durable state. Enforcement is engine
+		// state rather than schema state, so the transaction snapshot does not
+		// carry it; refusing the change is both simpler and what SQLite does.
+		if e.txnSnap != nil {
+			return &Result{}, nil
+		}
+		// Outside a transaction the setter does take effect — and one engine serves every connection in a pool (see OpenConnector), so
+		// this setting is database-wide rather than per-connection as it is in
+		// SQLite. Turning enforcement ON that way is harmless — it is already
+		// the default and strengthening it affects nobody adversely. Turning
+		// it OFF is a side channel: one stray statement on one pooled
+		// connection would silently stop checking foreign keys for every other
+		// connection, with no error anywhere and nothing in the caller's own
+		// code to explain why its writes started succeeding. Refusing is the
+		// only answer that cannot be wrong quietly.
+		if e.poolShared && !pragmaBoolValue(s.Value, e.fkEnforced) {
+			return nil, &engineError{"PRAGMA foreign_keys cannot be disabled on a pooled connection: " +
+				"this engine is shared across the pool, so the setting is not per-connection"}
+		}
+		e.fkEnforced = pragmaBoolValue(s.Value, e.fkEnforced)
 		return &Result{}, nil
+	}
+	v := int64(0)
+	if e.fkEnforced {
+		v = 1
 	}
 	return &Result{
 		Columns: []string{"foreign_keys"},
-		Rows:    [][]Value{{IntegerValue(0)}},
+		Rows:    [][]Value{{IntegerValue(v)}},
 	}, nil
+}
+
+// pragmaBoolValue reads SQLite's boolean pragma spellings: 1/0, on/off,
+// yes/no, true/false. An unrecognised value leaves the setting unchanged,
+// which is what SQLite does.
+//
+// The word forms arrive as a ColumnRef, not a literal — `PRAGMA foreign_keys =
+// OFF` has no quotes, so the parser sees a bare identifier. Reading only
+// LiteralExpr therefore silently ignored the most common spelling there is.
+func pragmaBoolValue(expr Expr, current bool) bool {
+	var word string
+	switch v := expr.(type) {
+	case LiteralExpr:
+		switch v.Type {
+		case DataTypeInteger:
+			return v.IntVal != 0
+		case DataTypeFloat:
+			// `PRAGMA foreign_keys = 1.0` sets it ON in SQLite. Ignoring a
+			// numeric literal because of its storage class is the same
+			// "silently unchanged" failure this function was rewritten to
+			// close, one spelling further along.
+			return v.FloatVal != 0
+		case DataTypeText:
+			word = v.TextVal
+		default:
+			return current
+		}
+	case ColumnRef:
+		word = v.Column
+	default:
+		return current
+	}
+	switch strings.ToLower(strings.TrimSpace(word)) {
+	case "1", "on", "yes", "true":
+		return true
+	case "0", "off", "no", "false":
+		return false
+	}
+	return current
 }
 
 func (e *Engine) pragmaEncoding() (*Result, error) {
@@ -2287,19 +2586,32 @@ func (e *Engine) executeViewSelect(view *ViewInfo, outer *SelectStmt, params []V
 
 // checkForeignKeyInsert validates foreign key constraints on INSERT/UPDATE.
 func (e *Engine) checkForeignKeyInsert(ti *TableInfo, rowValues []Value) error {
+	if !e.fkEnforced {
+		return nil
+	}
 	for _, fk := range ti.ForeignKeys {
 		if fk.FromCol >= len(rowValues) {
 			continue
 		}
-		val := rowValues[fk.FromCol]
-		if val.IsNull() {
-			continue // NULL values pass FK checks
-		}
+		// Resolve the key BEFORE looking at the child value. A mismatch is a
+		// statement that cannot be executed at all, so SQLite raises it even
+		// for a NULL child value and even when the parent table holds the row
+		// — the key is unusable, not unsatisfied. Skipping NULLs first meant a
+		// child row could be written through a foreign key this engine had
+		// already decided it could not evaluate.
 		refTable, ok := e.schema.GetTable(fk.ToTable)
 		if !ok {
 			return &engineError{"foreign key mismatch: no such table: " + fk.ToTable}
 		}
-		found, err := e.rowExists(refTable, fk.ToCols, val)
+		refCol, err := e.fkParentKey(ti, refTable, fk)
+		if err != nil {
+			return err
+		}
+		val := rowValues[fk.FromCol]
+		if val.IsNull() {
+			continue // a NULL child key references nothing and satisfies the constraint
+		}
+		found, err := e.rowExistsAt(refTable, refCol, val)
 		if err != nil {
 			return err
 		}
@@ -2312,15 +2624,48 @@ func (e *Engine) checkForeignKeyInsert(ti *TableInfo, rowValues []Value) error {
 
 // checkForeignKeyDelete checks if deleting a row would violate FK constraints from other tables.
 func (e *Engine) checkForeignKeyDelete(ti *TableInfo, rowid int64, rowValues []Value) error {
+	return e.checkForeignKeyDeleteSkipping(ti, rowid, rowValues, "")
+}
+
+// checkForeignKeyDeleteSkipping is checkForeignKeyDelete with one child table
+// excluded. skipTable names a table whose every row this statement is also
+// removing, so a reference from it cannot survive the statement — SQLite
+// evaluates immediate foreign keys at statement end and would not report it.
+// Empty skipTable checks every referencing table.
+func (e *Engine) checkForeignKeyDeleteSkipping(ti *TableInfo, rowid int64, rowValues []Value, skipTable string) error {
+	return e.checkForeignKeyDeleteExcept(ti, rowid, rowValues, skipTable, nil)
+}
+
+// checkForeignKeyDeleteExcept is the delete-side check with two escapes for
+// rows the same statement is also removing, since SQLite evaluates immediate
+// foreign keys at statement end and a reference from a doomed row cannot
+// survive it.
+//
+// skipTable excludes a whole referencing table (used when every one of its rows
+// is going, as in a bare DELETE). doomed excludes individual rows of THIS table,
+// for a self-referencing table under a WHERE clause.
+func (e *Engine) checkForeignKeyDeleteExcept(ti *TableInfo, rowid int64, rowValues []Value, skipTable string, doomed map[int64]bool) error {
+	if !e.fkEnforced {
+		return nil
+	}
 	// Check all tables that reference this table
 	for _, tblName := range e.schema.TableNames() {
 		tbl, _ := e.schema.GetTable(tblName)
+		if skipTable != "" && strings.EqualFold(tbl.Name, skipTable) {
+			continue
+		}
 		for _, fk := range tbl.ForeignKeys {
 			if !strings.EqualFold(fk.ToTable, ti.Name) {
 				continue
 			}
-			// Check if any row in tbl references the row being deleted
-			if err := e.checkNoChildReference(tbl, fk, ti, rowValues); err != nil {
+			// Check if any row in tbl references the row being deleted.
+			// Rows of THIS table that the same statement also deletes are
+			// excluded — they cannot dangle once the statement completes.
+			var skipRows map[int64]bool
+			if strings.EqualFold(tbl.Name, ti.Name) {
+				skipRows = doomed
+			}
+			if err := e.checkNoChildReference(tbl, fk, ti, rowValues, skipRows); err != nil {
 				return err
 			}
 		}
@@ -2328,16 +2673,58 @@ func (e *Engine) checkForeignKeyDelete(ti *TableInfo, rowid int64, rowValues []V
 	return nil
 }
 
-func (e *Engine) checkNoChildReference(childTable *TableInfo, childFK ForeignKeyInfo, parentTable *TableInfo, parentRow []Value) error {
-	// Get the parent column value being deleted
-	refCol := 0
-	if len(childFK.ToCols) > 0 {
-		refCol = parentTable.ColumnIndex(childFK.ToCols[0])
+// checkForeignKeyParentUpdate refuses an UPDATE that moves a referenced key
+// away from the children pointing at it. It is the UPDATE counterpart of
+// checkForeignKeyDelete: both ask "does anything still reference the OLD
+// value", and both are about this table as a PARENT.
+//
+// A row whose referenced columns are unchanged is skipped, so ordinary column
+// updates on a parent stay free.
+func (e *Engine) checkForeignKeyParentUpdate(ti *TableInfo, oldRow, newRow []Value) error {
+	if !e.fkEnforced {
+		return nil
 	}
-	if refCol < 0 || refCol >= len(parentRow) {
+	for _, tblName := range e.schema.TableNames() {
+		tbl, _ := e.schema.GetTable(tblName)
+		for _, fk := range tbl.ForeignKeys {
+			if !strings.EqualFold(fk.ToTable, ti.Name) {
+				continue
+			}
+			refCol, err := e.fkParentKey(tbl, ti, fk)
+			if err != nil {
+				return err
+			}
+			if refCol >= len(oldRow) || refCol >= len(newRow) {
+				continue
+			}
+			if valueEqual(oldRow[refCol], newRow[refCol]) {
+				continue // the referenced key did not move
+			}
+			if err := e.checkNoChildReference(tbl, fk, ti, oldRow, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) checkNoChildReference(childTable *TableInfo, childFK ForeignKeyInfo, parentTable *TableInfo, parentRow []Value, skipRows map[int64]bool) error {
+	// Which parent column the child points at, and whether it may point at it
+	// at all. A key that cannot be processed is a mismatch on the parent side
+	// too: returning nil here meant a typo'd or non-unique REFERENCES silently
+	// disabled enforcement in the delete direction.
+	refCol, keyErr := e.fkParentKey(childTable, parentTable, childFK)
+	if keyErr != nil {
+		return keyErr
+	}
+	if refCol >= len(parentRow) {
 		return nil
 	}
 	parentVal := parentRow[refCol]
+	parentAffinity := AffinityBlob
+	if refCol < len(parentTable.Columns) {
+		parentAffinity = parentTable.Columns[refCol].Affinity
+	}
 
 	// Scan child table for rows referencing this value
 	cursor, err := e.btree.Scan(childTable.RootPage)
@@ -2348,14 +2735,17 @@ func (e *Engine) checkNoChildReference(childTable *TableInfo, childFK ForeignKey
 
 	fromCol := childFK.FromCol
 	for cursor.Next() {
-		_, record, err := cursor.Get()
+		childRowID, record, err := cursor.Get()
 		if err != nil {
 			return err
+		}
+		if skipRows[childRowID] {
+			continue // this referencing row is going too
 		}
 		vals := recordToValues(record, childTable)
 		if fromCol < len(vals) {
 			childVal := vals[fromCol]
-			if !childVal.IsNull() && valueEqual(childVal, parentVal) {
+			if !childVal.IsNull() && fkValueEqual(childVal, parentVal, parentAffinity) {
 				return &engineError{"foreign key constraint failed"}
 			}
 		}
@@ -2363,19 +2753,113 @@ func (e *Engine) checkNoChildReference(childTable *TableInfo, childFK ForeignKey
 	return nil
 }
 
-// rowExists checks if a row with the given value exists in the referenced columns.
-func (e *Engine) rowExists(ti *TableInfo, cols []string, val Value) (bool, error) {
-	colIdx := 0
-	if len(cols) > 0 {
-		colIdx = ti.ColumnIndex(cols[0])
+// tablePrimaryKeyColumn returns the index of the column a bare
+// `REFERENCES <table>` targets — the parent's PRIMARY KEY — or -1 when the
+// table has none it can name. A composite primary key returns -1: it is
+// declared as a table constraint, so no single column carries the flag, and a
+// single-column foreign key cannot target it anyway.
+func tablePrimaryKeyColumn(ti *TableInfo) int {
+	if ti == nil {
+		return -1
 	}
-	if colIdx < 0 {
-		// If column not found, check rowid (INTEGER PRIMARY KEY)
-		if ti.PrimaryKey >= 0 {
-			colIdx = ti.PrimaryKey
-		} else {
-			return false, nil
+	// INTEGER PRIMARY KEY (the rowid alias) is recorded positionally.
+	if ti.PrimaryKey >= 0 && ti.PrimaryKey < len(ti.Columns) {
+		return ti.PrimaryKey
+	}
+	// Any other single-column PRIMARY KEY — `code TEXT PRIMARY KEY` — is
+	// recorded on the column instead.
+	found := -1
+	for i := range ti.Columns {
+		if !ti.Columns[i].IsPrimaryKey {
+			continue
 		}
+		if found >= 0 {
+			return -1 // more than one: composite, not a single-column target
+		}
+		found = i
+	}
+	return found
+}
+
+// fkTargetIsUnique reports whether a parent column is a legal foreign-key
+// target: SQLite requires the parent key to be the table's primary key or to
+// carry its own UNIQUE constraint, because a key that can repeat cannot
+// identify the row a child points at.
+func (e *Engine) fkTargetIsUnique(parent *TableInfo, colIdx int) bool {
+	if colIdx < 0 || colIdx >= len(parent.Columns) {
+		return false
+	}
+	// INTEGER PRIMARY KEY is the rowid: unique by construction. BuildTableInfo
+	// also records it in UniqueConstraints, so for a table created in this
+	// process the check below would reach the same answer — but the serialized
+	// schema writes unique_constraints with `omitempty`, so a database file
+	// written before that field existed loads with a primary key and no unique
+	// constraints at all. Without this line every foreign key into such a file
+	// would become a mismatch on open.
+	if colIdx == parent.PrimaryKey {
+		return true
+	}
+	name := parent.Columns[colIdx].Name
+	for _, uc := range parent.UniqueConstraints {
+		if len(uc) == 1 && strings.EqualFold(uc[0], name) {
+			return true
+		}
+	}
+	for _, idx := range e.schema.IndexesForTable(parent.Name) {
+		// A PARTIAL unique index does not qualify: it constrains only the
+		// rows matching its predicate, so keys outside it can still repeat.
+		if idx.Unique && idx.Where == "" && len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], name) {
+			return true
+		}
+	}
+	return false
+}
+
+// fkParentKey resolves the parent column a foreign key targets, and refuses
+// the declarations SQLite refuses.
+//
+// SQLite reports "foreign key mismatch" — not a constraint failure — when a
+// foreign key cannot be processed at all: the parent column does not exist,
+// the parent has no primary key for a bare `REFERENCES p` to target, or the
+// named parent column is not unique. The error is raised when the key is
+// USED, not when the table is created, because the parent may be created
+// afterwards.
+//
+// Every foreign-key path resolves its parent column here, both the child side
+// (does this row's value exist upstream) and the parent side (does anything
+// still point at this row). Two paths resolving the column independently is
+// how the parent side ended up enforcing against whichever column happened to
+// be declared first while the child side used the primary key.
+func (e *Engine) fkParentKey(childTable *TableInfo, parent *TableInfo, fk ForeignKeyInfo) (int, error) {
+	mismatch := func() error {
+		child := ""
+		if childTable != nil {
+			child = childTable.Name
+		}
+		return &engineError{fmt.Sprintf("foreign key mismatch - %q referencing %q", child, parent.Name)}
+	}
+	colIdx := -1
+	if len(fk.ToCols) > 0 && fk.ToCols[0] != "" {
+		colIdx = parent.ColumnIndex(fk.ToCols[0])
+	} else {
+		colIdx = tablePrimaryKeyColumn(parent)
+	}
+	// One guard, not two: fkTargetIsUnique already answers false for an
+	// out-of-range column, so a separate `colIdx < 0` return was a second
+	// spelling of the same verdict — mutation testing reported it as a
+	// survivor for exactly that reason.
+	if !e.fkTargetIsUnique(parent, colIdx) {
+		return -1, mismatch()
+	}
+	return colIdx, nil
+}
+
+// rowExistsAt reports whether any row of the parent table holds val in the
+// given column.
+func (e *Engine) rowExistsAt(ti *TableInfo, colIdx int, val Value) (bool, error) {
+	parentAffinity := AffinityBlob
+	if colIdx >= 0 && colIdx < len(ti.Columns) {
+		parentAffinity = ti.Columns[colIdx].Affinity
 	}
 
 	cursor, err := e.btree.Scan(ti.RootPage)
@@ -2390,11 +2874,68 @@ func (e *Engine) rowExists(ti *TableInfo, cols []string, val Value) (bool, error
 			return false, err
 		}
 		vals := recordToValues(record, ti)
-		if colIdx < len(vals) && valueEqual(vals[colIdx], val) {
+		if colIdx < len(vals) && fkValueEqual(val, vals[colIdx], parentAffinity) {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// fkValueEqual compares a child key value against a parent key value the way
+// SQLite does: the PARENT key's affinity is applied to the child value first
+// (SQLite docs §4.2). Without that step a TEXT child column referencing an
+// INTEGER parent key never matched — valueEqual is type-strict — so this
+// engine refused rows real SQLite accepts, and the pure-engine suites
+// validated behavior production does not have.
+func fkValueEqual(childVal, parentVal Value, parentAffinity ColumnAffinity) bool {
+	coerced := ApplyAffinity(childVal, parentAffinity)
+	if valueEqual(coerced, parentVal) {
+		return true
+	}
+	// ApplyAffinity's INTEGER conversion only accepts text that parses as a
+	// strict int64, while SQLite's is looser: a decimal, a leading space, a
+	// plus sign all convert. Rather than widen storage coercion for every
+	// INSERT, compare numerically here — but ONLY when the parent key is
+	// itself numeric. A TEXT parent key compares as text, so '007' and 7 stay
+	// different keys; allowing a numeric fallback there would silently merge
+	// them, which is a false ACCEPT and the one direction that must not move.
+	switch parentVal.Type {
+	case DataTypeInteger, DataTypeFloat:
+	default:
+		return false
+	}
+	cf, ok := numericFloat(coerced)
+	if !ok {
+		return false
+	}
+	pf, ok := numericFloat(parentVal)
+	if !ok {
+		return false
+	}
+	return cf == pf
+}
+
+// numericFloat interprets a value as a number for foreign-key comparison.
+// Blobs are excluded: SQLite never equates a blob with a number, so coercing
+// one would accept references real SQLite refuses.
+func numericFloat(v Value) (float64, bool) {
+	switch v.Type {
+	case DataTypeInteger:
+		return float64(v.IntVal), true
+	case DataTypeFloat:
+		return v.FloatVal, true
+	case DataTypeText:
+		t := strings.TrimSpace(v.TextVal)
+		if t == "" {
+			return 0, false
+		}
+		f, err := strconv.ParseFloat(t, 64)
+		if err != nil {
+			return 0, false
+		}
+		return f, true
+	}
+	return 0, false
 }
 
 // valuesEqual compares two Values for equality.

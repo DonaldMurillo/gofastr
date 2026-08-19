@@ -25,7 +25,7 @@ func Open() (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sql.OpenDB(&sharedConnector{engine: eng}), nil
+	return sql.OpenDB(newSharedConnector(eng)), nil
 }
 
 // OpenFile opens or creates a SQLite database file on disk.
@@ -34,7 +34,7 @@ func OpenFile(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sql.OpenDB(&sharedConnector{engine: eng}), nil
+	return sql.OpenDB(newSharedConnector(eng)), nil
 }
 
 // OpenWithData opens a database from existing data bytes (in-memory).
@@ -52,7 +52,7 @@ func OpenWithData(data []byte) (*sql.DB, error) {
 	}
 	btree := NewBTree(pager)
 	eng := NewEngine(pager, btree)
-	return sql.OpenDB(&sharedConnector{engine: eng}), nil
+	return sql.OpenDB(newSharedConnector(eng)), nil
 }
 
 // RawEngine opens a raw *Engine for direct use without database/sql.
@@ -259,6 +259,21 @@ func CloseDB(db *sql.DB) {
 
 type sqliteDriver struct{}
 
+// newSharedConnector is the ONLY way an engine gets handed to database/sql.
+// Every connection in the resulting pool gets this one engine, so anything the
+// engine treats as per-connection session state is really database-wide state
+// — and it has to know that. See pragmaForeignKeys, which refuses to be turned
+// off through a pool because doing so would disable enforcement for every
+// connection, including ones that never asked.
+//
+// The four call sites (Open, OpenFile, OpenWithData, OpenConnector) all build
+// the same arrangement. Marking the flag at one of them and calling it done is
+// how three of the four would have kept the hole.
+func newSharedConnector(eng *Engine) *sharedConnector {
+	eng.poolShared = true
+	return &sharedConnector{engine: eng}
+}
+
 // OpenConnector builds ONE engine per sql.Open and shares it across every
 // connection in that pool — the same arrangement Open/OpenFile give you
 // directly. database/sql calls this once per sql.Open (driver.DriverContext)
@@ -275,7 +290,7 @@ func (d *sqliteDriver) OpenConnector(name string) (driver.Connector, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sharedConnector{engine: eng}, nil
+	return newSharedConnector(eng), nil
 }
 
 // Open is the legacy driver.Driver entry point. database/sql prefers

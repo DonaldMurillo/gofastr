@@ -984,11 +984,19 @@ func TestMatchLike(t *testing.T) {
 		// Multiple %
 		{"abcdef", "%c%f", true},
 		{"abcdef", "%x%f", false},
+		// LIKE folds ASCII case, and only ASCII case.
+		{"Alpha", "alpha", true},
+		{"alpha", "ALPHA", true},
+		{"Ärger", "ärger", false},
+		{"Hello World", "hello%", true},
+		// `_` steps over a whole character, not a byte.
+		{"é", "_", true},
+		{"éb", "_b", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.s+"/"+tt.pattern, func(t *testing.T) {
-			got := matchLike(tt.s, tt.pattern)
+			got := matchLike(tt.s, tt.pattern, 0)
 			if got != tt.want {
 				t.Errorf("matchLike(%q, %q) = %v, want %v", tt.s, tt.pattern, got, tt.want)
 			}

@@ -72,11 +72,25 @@ func TestPragmaSynchronous(t *testing.T) {
 	}
 }
 
+// This engine enforces foreign keys by DEFAULT, unlike SQLite itself, and the
+// pragma reports that truthfully. The default differs deliberately: the driver
+// this framework ships turns enforcement on for every application DSN, so an
+// engine that defaulted off would disagree with every app using it — and every
+// foreign-key test in this package relies on enforcement without asking for it.
+//
+// This test previously asserted 0 while the engine enforced unconditionally,
+// pinning the contradiction rather than the behaviour: code gating on the
+// pragma read "off" from a connection that refused every dangling write.
 func TestPragmaForeignKeys(t *testing.T) {
 	e := newTestEngine(t)
 	r := exec(t, e, "PRAGMA foreign_keys")
+	if r.Rows[0][0].IntVal != 1 {
+		t.Fatalf("expected 1 (this engine enforces by default), got %d", r.Rows[0][0].IntVal)
+	}
+	exec(t, e, "PRAGMA foreign_keys = OFF")
+	r = exec(t, e, "PRAGMA foreign_keys")
 	if r.Rows[0][0].IntVal != 0 {
-		t.Fatalf("expected 0, got %d", r.Rows[0][0].IntVal)
+		t.Fatalf("after OFF expected 0, got %d", r.Rows[0][0].IntVal)
 	}
 }
 

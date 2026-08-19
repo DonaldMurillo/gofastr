@@ -10,13 +10,21 @@ import (
 // column DEFAULT expressions (CURRENT_TIMESTAMP, datetime('now'), etc.)
 // and partial-index WHERE predicates survive SaveSchema / LoadSchema.
 //
-// The renderer covers the AST forms that are legal in those positions:
+// The renderer covers every AST form that is legal in those positions:
 // literals, column references (including the bare CURRENT_TIMESTAMP /
 // CURRENT_DATE / CURRENT_TIME keywords, which the parser produces as
-// ColumnRef), function calls, unary and binary expressions, and
-// parenthesized expressions. Anything it cannot render returns "" so
-// the caller can fall back to dropping the default rather than writing
-// a value the parser would later reject.
+// ColumnRef), function calls, unary and binary expressions, IS NULL,
+// BETWEEN, IN, LIKE/GLOB, CASE, CAST, rowid, and parenthesized
+// expressions.
+//
+// It returns "" for a form it cannot render, and callers must treat that as
+// a REFUSAL rather than as "no predicate". The distinction is not academic:
+// `IS NOT NULL` was one of the unhandled forms, so a partial unique index
+// declared with it persisted an empty predicate — and an empty predicate is
+// how the schema spells a FULL unique index. The index came back as a
+// stronger constraint than the one written, and a foreign key pointing at
+// its column was accepted as if the column were unique. Silently rendering
+// nothing is the failure mode this comment exists to prevent.
 func FormatExpr(expr Expr) string {
 	if expr == nil {
 		return ""
@@ -61,9 +69,118 @@ func FormatExpr(expr Expr) string {
 			return ""
 		}
 		return left + " " + op + " " + right
+	case IsNullExpr:
+		inner := FormatExpr(e.Expr)
+		if inner == "" {
+			return ""
+		}
+		if e.Negate {
+			return inner + " IS NOT NULL"
+		}
+		return inner + " IS NULL"
+	case BetweenExpr:
+		inner := FormatExpr(e.Expr)
+		low := FormatExpr(e.Low)
+		high := FormatExpr(e.High)
+		if inner == "" || low == "" || high == "" {
+			return ""
+		}
+		if e.Negate {
+			return inner + " NOT BETWEEN " + low + " AND " + high
+		}
+		return inner + " BETWEEN " + low + " AND " + high
+	case InExpr:
+		// A subquery has no source text to recover here, and rendering the
+		// list without it would change the predicate's meaning.
+		if e.Select != nil {
+			return ""
+		}
+		inner := FormatExpr(e.Expr)
+		if inner == "" {
+			return ""
+		}
+		parts := make([]string, 0, len(e.Values))
+		for _, v := range e.Values {
+			rendered := FormatExpr(v)
+			if rendered == "" {
+				return ""
+			}
+			parts = append(parts, rendered)
+		}
+		op := " IN ("
+		if e.Negate {
+			op = " NOT IN ("
+		}
+		return inner + op + strings.Join(parts, ", ") + ")"
+	case LikeExpr:
+		inner := FormatExpr(e.Expr)
+		pattern := FormatExpr(e.Pattern)
+		if inner == "" || pattern == "" {
+			return ""
+		}
+		op := "LIKE"
+		if e.Op == LikeGlob {
+			op = "GLOB"
+		}
+		if e.Negate {
+			op = "NOT " + op
+		}
+		out := inner + " " + op + " " + pattern
+		if e.Escape != nil {
+			esc := FormatExpr(e.Escape)
+			if esc == "" {
+				return ""
+			}
+			out += " ESCAPE " + esc
+		}
+		return out
+	case CaseExpr:
+		return formatCaseExpr(e)
+	case CastExpr:
+		inner := FormatExpr(e.Expr)
+		if inner == "" || e.Type == "" {
+			return ""
+		}
+		return "CAST(" + inner + " AS " + e.Type + ")"
+	case RowIDExpr:
+		return "rowid"
 	default:
+		// ParamExpr and SubqueryExpr deliberately land here: a placeholder has
+		// no value to persist and a subquery has no recoverable source text.
 		return ""
 	}
+}
+
+func formatCaseExpr(e CaseExpr) string {
+	var b strings.Builder
+	b.WriteString("CASE")
+	if e.Operand != nil {
+		operand := FormatExpr(e.Operand)
+		if operand == "" {
+			return ""
+		}
+		b.WriteString(" " + operand)
+	}
+	if len(e.Whens) == 0 {
+		return ""
+	}
+	for _, w := range e.Whens {
+		cond := FormatExpr(w.Condition)
+		result := FormatExpr(w.Result)
+		if cond == "" || result == "" {
+			return ""
+		}
+		b.WriteString(" WHEN " + cond + " THEN " + result)
+	}
+	if e.Else != nil {
+		els := FormatExpr(e.Else)
+		if els == "" {
+			return ""
+		}
+		b.WriteString(" ELSE " + els)
+	}
+	b.WriteString(" END")
+	return b.String()
 }
 
 func formatLiteralExpr(l LiteralExpr) string {

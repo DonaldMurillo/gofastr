@@ -3,6 +3,7 @@ package sqlite
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ExprEval evaluates an expression against a row of values.
@@ -480,10 +481,16 @@ func (e *ExprEval) evalUnary(ex UnaryExpr) (Value, error) {
 func (e *ExprEval) evalFunction(ex FunctionCall) (Value, error) {
 	switch strings.ToUpper(ex.Name) {
 	case "COUNT":
-		if ex.Star {
-			return IntegerValue(1), nil // Caller should handle actual counting
+		// An aggregate's per-row projection is its ARGUMENT's value; the
+		// caller aggregates that column afterwards (see computeAggregate).
+		// MIN/MAX/SUM/AVG below already follow that convention. COUNT did not
+		// — it projected a constant 1 for every row, so by the time the
+		// aggregation ran there were no NULLs left to skip and COUNT(v)
+		// returned the row count, exactly like COUNT(*).
+		if ex.Star || len(ex.Args) == 0 {
+			return IntegerValue(1), nil // COUNT(*) counts rows, not values
 		}
-		return IntegerValue(1), nil
+		return e.Eval(ex.Args[0])
 	case "ABS":
 		if len(ex.Args) == 0 {
 			return NullValue, nil
@@ -741,10 +748,31 @@ func (e *ExprEval) evalLike(ex LikeExpr) (Value, error) {
 		return NullValue, nil
 	}
 
+	// ESCAPE was parsed and then dropped on the floor, so `LIKE '100\%'
+	// ESCAPE '\'` searched for a literal backslash followed by anything —
+	// matching nothing. The framework's own filter layer appends this clause
+	// for every `?field_like=` query (filter.LikeEscapeSuffix), so escaped
+	// search was silently broken on this engine.
+	var escape byte
+	if ex.Escape != nil {
+		escVal, err := e.Eval(ex.Escape)
+		if err != nil {
+			return NullValue, err
+		}
+		if escVal.IsNull() {
+			return NullValue, nil
+		}
+		escText := escVal.AsText()
+		if len(escText) != 1 {
+			return NullValue, &evalError{"ESCAPE expression must be a single character"}
+		}
+		escape = escText[0]
+	}
+
 	var result bool
 	switch ex.Op {
 	case LikeLike:
-		result = matchLike(val.AsText(), pattern.AsText())
+		result = matchLike(val.AsText(), pattern.AsText(), escape)
 	case LikeGlob:
 		result = matchGlob(val.AsText(), pattern.AsText())
 	}
@@ -872,25 +900,37 @@ func (e *ExprEval) evalRowID() (Value, error) {
 
 // matchLike implements SQL LIKE pattern matching.
 // % matches any sequence, _ matches any single character.
-func matchLike(s, pattern string) bool {
-	return matchLikeRecursive(s, pattern)
-}
-
-func matchLikeRecursive(s, pattern string) bool {
+// matchLike implements SQLite's LIKE.
+//
+// Two things it has to get right that a naive matcher does not. Matching is
+// case-insensitive for ASCII — SQLite folds A-Z only, so 'a' LIKE 'A' is true
+// while 'Ä' LIKE 'ä' is not — and this matcher compared bytes directly, so a
+// case-insensitive search on this engine returned only exact-case hits while
+// production returned both. And `escape`, when non-zero, makes the character
+// after it literal, which is how a caller searches for a real '%' or '_'.
+//
+// `_` matches one CHARACTER, not one byte, so it steps over a whole UTF-8
+// sequence.
+func matchLike(s, pattern string, escape byte) bool {
 	for len(pattern) > 0 {
+		if escape != 0 && pattern[0] == escape && len(pattern) > 1 {
+			if len(s) == 0 || !asciiEqualFold(s[0], pattern[1]) {
+				return false
+			}
+			s, pattern = s[1:], pattern[2:]
+			continue
+		}
 		if pattern[0] == '%' {
 			// % matches any sequence (including empty)
 			pattern = pattern[1:]
-			// Skip consecutive %
 			for len(pattern) > 0 && pattern[0] == '%' {
 				pattern = pattern[1:]
 			}
 			if len(pattern) == 0 {
 				return true // trailing % matches everything
 			}
-			// Try matching at every position
 			for i := 0; i <= len(s); i++ {
-				if matchLikeRecursive(s[i:], pattern) {
+				if matchLike(s[i:], pattern, escape) {
 					return true
 				}
 			}
@@ -902,16 +942,29 @@ func matchLikeRecursive(s, pattern string) bool {
 		}
 
 		if pattern[0] == '_' {
-			s = s[1:]
-			pattern = pattern[1:]
-		} else if pattern[0] == s[0] {
-			s = s[1:]
-			pattern = pattern[1:]
+			_, size := utf8.DecodeRuneInString(s)
+			s, pattern = s[size:], pattern[1:]
+		} else if asciiEqualFold(pattern[0], s[0]) {
+			s, pattern = s[1:], pattern[1:]
 		} else {
 			return false
 		}
 	}
 	return len(s) == 0
+}
+
+// asciiEqualFold compares two bytes the way SQLite's default LIKE does: A-Z
+// folds to a-z and nothing else does. Folding the whole Unicode range would
+// make this engine MORE permissive than the one applications run, which for a
+// cross-check is the wrong direction to be wrong in.
+func asciiEqualFold(a, b byte) bool {
+	if a >= 'A' && a <= 'Z' {
+		a += 'a' - 'A'
+	}
+	if b >= 'A' && b <= 'Z' {
+		b += 'a' - 'A'
+	}
+	return a == b
 }
 
 // matchGlob implements SQLite GLOB pattern matching.

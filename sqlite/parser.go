@@ -970,6 +970,31 @@ func (p *Parser) parseCreateTable() (*CreateTableStmt, error) {
 	}
 	stmt.TableConstraints = constraints
 
+	// A FOREIGN KEY naming a column the table does not declare used to build
+	// cleanly and then vanish: BuildTableInfo resolves the constraint's column
+	// by name and dropped it when nothing matched. Silently discarding a
+	// constraint is the posture parseTableForeignKey already rejects for
+	// composite keys — a wrong-but-quiet database is worse than one that will
+	// not open — so refuse here too. Checked after the full element list, so
+	// a constraint may still be written before the column it names.
+	for _, con := range constraints {
+		if con.Type != ConstraintForeignKey {
+			continue
+		}
+		for _, want := range con.Columns {
+			found := false
+			for _, col := range cols {
+				if strings.EqualFold(col.Name, want) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, p.errorf("FOREIGN KEY names column %q, which table %q does not declare", want, stmt.Name)
+			}
+		}
+	}
+
 	return stmt, nil
 }
 
@@ -1015,6 +1040,9 @@ func (p *Parser) parseColumnDef() (ColumnDefAST, error) {
 		if err != nil {
 			return ColumnDefAST{}, err
 		}
+		if con.Type == ConstraintNone {
+			continue // parsed, carries nothing to record
+		}
 		col.Constraints = append(col.Constraints, con)
 	}
 
@@ -1029,8 +1057,11 @@ func (p *Parser) isColumnConstraintStart() bool {
 		TokenAUTOINCREMENT:
 		return true
 	case TokenNULL:
-		// NOT NULL, not bare NULL
-		return false
+		// A bare NULL is a legal column constraint in SQLite's grammar
+		// (`ccons ::= NULL`) and it appears in generated DDL, notably right
+		// after a REFERENCES clause. Returning false here ended the element
+		// loop and failed the whole CREATE TABLE.
+		return true
 	}
 	// Handle CONSTRAINT as identifier
 	if p.curIsIdent() && strings.EqualFold(p.cur.Value, "CONSTRAINT") {
@@ -1068,6 +1099,12 @@ func (p *Parser) parseTypeName() (string, error) {
 
 func (p *Parser) parseColumnConstraint() (ColumnConstraint, error) {
 	switch p.cur.Type {
+	case TokenNULL:
+		// Bare NULL: legal and meaningless — the column is nullable already.
+		// Consumed so the element loop advances; no constraint is recorded.
+		p.advance()
+		return ColumnConstraint{Type: ConstraintNone}, nil
+
 	case TokenPRIMARY:
 		p.advance()
 		if _, err := p.expect(TokenKEY); err != nil {
@@ -1133,6 +1170,11 @@ func (p *Parser) parseColumnConstraint() (ColumnConstraint, error) {
 				return ColumnConstraint{}, err
 			}
 			con.RefCols = cols
+		}
+		// An inline REFERENCES carries the same trailing clauses a table
+		// constraint does — see skipForeignKeyTrailers.
+		if err := p.skipForeignKeyTrailers(); err != nil {
+			return ColumnConstraint{}, err
 		}
 		return con, nil
 

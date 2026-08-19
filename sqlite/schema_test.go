@@ -410,10 +410,26 @@ func TestApplyAffinityText(t *testing.T) {
 }
 
 func TestApplyAffinityBlob(t *testing.T) {
-	// TEXT → BLOB
-	result := ApplyAffinity(TextValue("hello"), AffinityBlob)
-	if result.Type != DataTypeBlob {
-		t.Errorf("ApplyAffinity(TextValue(hello), BLOB) = %v, want blob", result)
+	// BLOB affinity — SQLite calls it NONE — converts NOTHING: "a column with
+	// affinity BLOB does not prefer one storage class over another and no
+	// attempt is made to coerce data"
+	// (https://www.sqlite.org/datatype3.html#type_affinity). Verified against
+	// the shipped driver: `CREATE TABLE t (a BLOB)` then inserting 'hello'
+	// gives `typeof(a) = text`, not blob.
+	//
+	// This test used to assert the opposite and pinned a real bug: text stored
+	// in a BLOB-declared or untyped column came back as a blob, which compared
+	// unequal to everything and made foreign keys refuse rows real SQLite
+	// accepts.
+	for _, v := range []Value{
+		TextValue("hello"),
+		IntegerValue(7),
+		FloatValue(1.5),
+		BlobValue([]byte("hello")),
+	} {
+		if got := ApplyAffinity(v, AffinityBlob); got.Type != v.Type {
+			t.Errorf("ApplyAffinity(%v, BLOB) changed the type to %v — NONE affinity must not coerce", v, got.Type)
+		}
 	}
 }
 
