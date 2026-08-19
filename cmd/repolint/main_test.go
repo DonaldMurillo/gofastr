@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -277,4 +278,303 @@ require github.com/other/thing v1.2.3
 			t.Errorf("unexpected finding on a clean go.mod: %+v", f)
 		}
 	}
+}
+
+// The site is the project's best asset and was unreachable from the repo for
+// months — homepage field pointing at pkg.go.dev, zero README links. This rule
+// keeps the path open. Its missing-file branch matters as much as its
+// missing-link branch: an early version returned "no findings" for a deleted
+// README, so `rm README.md` passed the gate clean.
+func TestLintFrontDoor(t *testing.T) {
+	const siteURL = "https://donaldmurillo.github.io/gofastr"
+
+	t.Run("README linking the site is clean", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
+		writeRepoFile(t, root, "README.md", "# Project\n\n[Docs]("+siteURL+"/)\n")
+		findings, err := lintFrontDoor(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Fatalf("want no findings, got %v", findings)
+		}
+	})
+
+	t.Run("README without the site link is flagged", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
+		writeRepoFile(t, root, "README.md", "# Project\n\nNo link here.\n")
+		findings, err := lintFrontDoor(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 1 || findings[0].Rule != "front-door-missing" {
+			t.Fatalf("want one front-door-missing finding, got %v", findings)
+		}
+	})
+
+	t.Run("absent README is flagged, not skipped", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
+		findings, err := lintFrontDoor(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 1 || findings[0].Rule != "front-door-missing" {
+			t.Fatalf("a missing README must fail the gate, not pass it; got %v", findings)
+		}
+	})
+}
+
+// The dead-origin defect was fixed once by name (examples/site) and survived
+// one directory over in examples/meridian, on a sibling of the same
+// non-resolving domain. This rule enumerates by the invariant instead: an
+// example may only advertise an origin that is reserved-for-documentation or
+// actually served.
+func TestLintExampleOrigins(t *testing.T) {
+	cases := []struct {
+		name    string
+		source  string
+		flagged bool
+	}{
+		{"reserved second-level domain", `var o = "https://meridian.example.com"`, false},
+		{"reserved TLD", `var o = "https://notes.example"`, false},
+		{"the deployed site", `var o = "https://donaldmurillo.github.io/gofastr"`, false},
+		{"a schema reference", `var o = "https://schema.org/Article"`, false},
+		{"a domain nobody serves", `var o = "https://meridian.gofastr.dev"`, true},
+		{"someone else's host", `var o = "https://acme-billing.io"`, true},
+		{"prose in a line comment is not an emitted URL", `// once used https://gofastr.dev here`, false},
+		{"prose in a block comment is not an emitted URL", "/*\nonce used https://gofastr.dev here\n*/", false},
+		{"a trailing comment on a code line is prose", `var o = "https://notes.example" // was https://gofastr.dev`, false},
+		{"loopback by address is legitimate", `var o = "https://127.0.0.1:8080"`, false},
+		{"an uppercase scheme is still a URL", `var o = "HTTPS://meridian.gofastr.dev"`, true},
+		{"a // inside an earlier string must not hide a later URL", `var a = "x // y"; var o = "https://meridian.gofastr.dev"`, true},
+		// A label, `case`, or `default` may be followed immediately by a
+		// comment with no space — `default:// note` is valid Go. The comment
+		// stripper used to treat any `//` preceded by a colon as a URL scheme
+		// and leave the line intact, so prose in such a comment was read as an
+		// emitted URL. Real URLs never need that rule: they live in string
+		// literals, which the stripper skips.
+		{"prose in a comment glued to a colon is not an emitted URL",
+			"func f() {\n\tswitch 1 {\n\tdefault:// once used https://gofastr.dev here\n\t}\n}", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeRepoFile(t, root, filepath.Join("examples", "demo", "main.go"), "package main\n\n"+tc.source+"\n")
+			findings, err := lintExampleOrigins(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(findings) > 0; got != tc.flagged {
+				t.Fatalf("flagged=%v, want %v (findings: %v)", got, tc.flagged, findings)
+			}
+		})
+	}
+
+	t.Run("test files are exempt", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, filepath.Join("examples", "demo", "main_test.go"), "package main\n\nvar o = \"https://meridian.gofastr.dev\"\n")
+		findings, err := lintExampleOrigins(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Fatalf("test fixtures may name any host; got %v", findings)
+		}
+	})
+}
+
+func writeRepoFile(t *testing.T, root, rel, body string) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The rule is about this repository's front door, so it must stay silent on
+// any other module — repolint's own tests lint synthetic trees, and a rule
+// that demanded a specific README link everywhere would fail all of them.
+// A trailing comment on the module line is valid go.mod. Parsing it as part of
+// the path made the module never match, which silently disabled every rule
+// scoped to this repository — the rule would report "clean" for the exact
+// reason it should have reported a finding.
+func TestLintFrontDoorSurvivesACommentOnTheModuleLine(t *testing.T) {
+	root := t.TempDir()
+	writeRepoFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr // the framework\n\ngo 1.26.3\n")
+	writeRepoFile(t, root, "README.md", "# Project\n\nNo link here.\n")
+	findings, err := lintFrontDoor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("a trailing comment on the module line disabled the rule; got %v", findings)
+	}
+}
+
+// `module<TAB>path` is valid go.mod. Requiring a space made the module never
+// match, which silently disabled every rule scoped to this repository.
+func TestLintFrontDoorSurvivesATabAfterModule(t *testing.T) {
+	root := t.TempDir()
+	writeRepoFile(t, root, "go.mod", "module\tgithub.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
+	writeRepoFile(t, root, "README.md", "# Project\n\nNo link here.\n")
+	findings, err := lintFrontDoor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("a tab after `module` disabled the rule; got %v", findings)
+	}
+}
+
+func TestLintFrontDoorIgnoresOtherModules(t *testing.T) {
+	root := t.TempDir()
+	writeRepoFile(t, root, "go.mod", "module example.com/other\n\ngo 1.26.3\n")
+	findings, err := lintFrontDoor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("front-door rule must not apply outside this module; got %v", findings)
+	}
+}
+
+// Every cmd/<name> builds to /<name> at the repository root, and .gitignore
+// cannot glob a directory listing — so the entries are hand-written and rot
+// whenever a command is added. This rule is the enumeration the .gitignore
+// comment claims to be.
+func TestLintCommandBinariesIgnored(t *testing.T) {
+	t.Run("a command with no ignore entry is flagged", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, filepath.Join("cmd", "newtool", "main.go"), "package main\n\nfunc main() {}\n")
+		writeRepoFile(t, root, ".gitignore", "/dist\n/othertool\n")
+		findings, err := lintCommandBinariesIgnored(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 1 {
+			t.Fatalf("findings = %v, want exactly one for cmd/newtool", findings)
+		}
+		if !strings.Contains(findings[0].Message, "newtool") {
+			t.Errorf("the finding should name the command, got %q", findings[0].Message)
+		}
+	})
+
+	t.Run("a command with an ignore entry is clean", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, filepath.Join("cmd", "newtool", "main.go"), "package main\n\nfunc main() {}\n")
+		writeRepoFile(t, root, ".gitignore", "/dist\n/newtool\n")
+		findings, err := lintCommandBinariesIgnored(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Errorf("findings = %v, want none", findings)
+		}
+	})
+
+	t.Run("a command sharing a name with a tracked directory is clean", func(t *testing.T) {
+		// e.g. cmd/kiln alongside a top-level kiln/ package: the existing
+		// `kiln` + `!kiln/` pair covers it and a duplicate entry would be noise.
+		root := t.TempDir()
+		writeRepoFile(t, root, filepath.Join("cmd", "kiln", "main.go"), "package main\n\nfunc main() {}\n")
+		writeRepoFile(t, root, filepath.Join("kiln", "doc.go"), "package kiln\n")
+		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		findings, err := lintCommandBinariesIgnored(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Errorf("findings = %v, want none", findings)
+		}
+	})
+
+	t.Run("no cmd directory is not an error", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		findings, err := lintCommandBinariesIgnored(root)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		// Assert the findings too: checking only err meant a rule that
+		// invented findings for a repo with no commands could not fail here.
+		if len(findings) != 0 {
+			t.Errorf("findings = %v, want none for a repo with no cmd/", findings)
+		}
+	})
+
+	// A repo with no .gitignore at all cannot be ignoring anything, so every
+	// command binary is untracked. Reading that as "clean" was the rule's
+	// most consequential blind spot: it is exactly the state a fresh
+	// checkout-turned-scratch-repo is in.
+	t.Run("a missing .gitignore flags every command", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n\nfunc main() {}\n")
+		writeRepoFile(t, root, filepath.Join("cmd", "two", "main.go"), "package main\n\nfunc main() {}\n")
+		findings, err := lintCommandBinariesIgnored(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 2 {
+			t.Fatalf("findings = %v, want one per command", findings)
+		}
+	})
+
+	// Only directories under cmd/ are commands. A stray file there is not one,
+	// and flagging it would demand a .gitignore entry for something that never
+	// builds to a binary.
+	// The two error arms: an unreadable cmd/ and an unreadable .gitignore must
+	// FAIL, not read as clean. Silently passing on an I/O error is how a lint
+	// reports a green tree it never actually inspected.
+	t.Run("an unreadable cmd directory is an error, not a clean result", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("running as root: permission bits do not restrict reads")
+		}
+		root := t.TempDir()
+		writeRepoFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n")
+		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		cmdDir := filepath.Join(root, "cmd")
+		if err := os.Chmod(cmdDir, 0o000); err != nil {
+			t.Skipf("cannot drop permissions: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(cmdDir, 0o755) })
+		if _, err := lintCommandBinariesIgnored(root); err == nil {
+			t.Error("an unreadable cmd/ reported no findings and no error — the rule passed on a tree it could not read")
+		}
+	})
+
+	t.Run("an unreadable .gitignore is an error, not a clean result", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("running as root: permission bits do not restrict reads")
+		}
+		root := t.TempDir()
+		writeRepoFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n")
+		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		gi := filepath.Join(root, ".gitignore")
+		if err := os.Chmod(gi, 0o000); err != nil {
+			t.Skipf("cannot drop permissions: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(gi, 0o644) })
+		if _, err := lintCommandBinariesIgnored(root); err == nil {
+			t.Error("an unreadable .gitignore reported no error — the rule cannot know what is ignored")
+		}
+	})
+
+	t.Run("a stray file under cmd is not a command", func(t *testing.T) {
+		root := t.TempDir()
+		writeRepoFile(t, root, filepath.Join("cmd", "README.md"), "# commands\n")
+		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		findings, err := lintCommandBinariesIgnored(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Errorf("findings = %v, want none — cmd/README.md is not a command", findings)
+		}
+	})
 }

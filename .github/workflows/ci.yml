@@ -235,6 +235,45 @@ jobs:
             -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
             $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
 
+      - name: Race detector (concurrency packages)
+        # The recurring defect class in this repo's release history is
+        # concurrency — queue claim/lease fencing, per-consumer outbox
+        # cursors, fanout subscriber queues — and until now no gate could
+        # see a data race at all: -race was a local RACE=1 opt-in in
+        # scripts/test-all.sh and appeared nowhere in CI. Every one of those
+        # bugs was found by an audit reading code, never by a test.
+        #
+        # Scoped to the packages that actually coordinate goroutines rather
+        # than -race over ./..., which would roughly double the whole suite
+        # to re-prove thread-safety for packages that never spawn. Add a
+        # package here when it grows a goroutine, a lease, or a shared
+        # cursor. Whole set runs in ~90s.
+        #
+        # The `framework` root package is deliberately NOT in this list even
+        # though it spawns goroutines (app.go, health.go, the process-module
+        # supervisor). It also holds chromedp browser e2e tests and
+        # supervisor timing tests whose deadlines do not reliably absorb race
+        # instrumentation: TestSupervisor_* has been observed flaking under
+        # -race while passing repeatedly in isolation, and one full-package
+        # -race run also timed out TestUIE2E_OwnerScope_CrossUserIsolation
+        # (not reproducible on every machine — it is load-dependent, so expect
+        # it to bite hardest on a 2-core runner). That is slowdown, not a data
+        # race, but a gate that goes red for timing teaches people to ignore
+        # it.
+        #
+        # This exclusion is meant to be temporary: the goroutine-heaviest code
+        # in the repo (app.go, health.go, the process-module supervisor) is the
+        # part with no race gate. Covering it needs the browser and timing
+        # suites split into their own package first.
+        run: |
+          go test -race -timeout=15m \
+            ./battery/queue/... ./battery/cache/... \
+            ./framework/outbox/... ./framework/fanout/... ./core/fanout/... \
+            ./framework/cron/... ./framework/event/... ./framework/hook/... \
+            ./framework/ratelimit/... ./framework/lifecycle/... \
+            ./framework/slowquery/... ./core/stream/... \
+            ./framework/uihost/...
+
       - name: Nested module (battery/print/chromepdf)
         # battery/print/chromepdf is its own go module: a nested module that
         # isolates the chromedp/cdproto dependency surface from the print

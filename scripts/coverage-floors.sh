@@ -74,6 +74,7 @@ FLOORS="
 ./battery/storage/ 79.8
 ./battery/webhook/ 82.9
 ./cmd/check-embed/embedcheck/ 78.0
+./cmd/mutate/guardmut/ 96.3
 ./cmd/repolint/ 76.7
 ./codegen/ 77.4
 ./core-ui/app/ 87.1

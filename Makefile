@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -216,6 +216,19 @@ lint: vet repo-lint
 
 repo-lint:
 	go run ./cmd/repolint .
+
+# Break every guard in a package one at a time and report the ones no test
+# notices. A survivor is a guard nothing distinguishes — usually a test whose
+# fixture trips several refusal conditions at once, so removing any one of them
+# changes nothing. Seven such tests were found by hand in a single review cycle
+# before this existed.
+#
+# Costs one full test run per mutant, so it is aimed at a package, not the repo:
+#     make mutate PKG=./sqlite/
+#     go run ./cmd/mutate -file engine.go -run TestForeignKey ./sqlite/
+PKG ?= ./sqlite/
+mutate:
+	go run ./cmd/mutate $(PKG)
 
 generate:
 	@echo "Use: go run ./cmd/gofastr generate --from=<blueprint.yml>"
