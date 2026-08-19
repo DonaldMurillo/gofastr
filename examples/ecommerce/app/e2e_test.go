@@ -12,11 +12,22 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func TestE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + boots the binary")
+	}
+	// The seeded admin's password lives in the generated .env, not in
+	// committed source. Load it before the server child inherits the
+	// environment: the app refuses to boot on a fresh database when
+	// ADMIN_SEED_PASSWORD is missing, whether or not this test logs in.
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+	if os.Getenv("ADMIN_SEED_PASSWORD") == "" {
+		t.Setenv("ADMIN_SEED_PASSWORD", "e2e-seed-admin-pw")
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "app")

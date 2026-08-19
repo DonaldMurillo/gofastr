@@ -3635,6 +3635,15 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	// The cookie-jar login client (and its net/url + net/http/cookiejar imports)
 	// is only emitted when there's a gated screen AND a seeded admin to log in as.
 	needsAuthClient := len(gated) > 0 && adminEmail != "" && adminPass != ""
+	// Whether the APP seeds an admin at boot, which is a different question
+	// from whether this TEST logs in. An app with a seeded admin refuses to
+	// start on a fresh database without ADMIN_SEED_PASSWORD, so the test has to
+	// supply one even when it never authenticates. Gating the environment
+	// preamble on needsAuthClient meant a blueprint with a seeded admin and no
+	// gated screen generated a test that could not boot its own app: it passed
+	// wherever the gitignored .env happened to exist and failed on every fresh
+	// checkout, which is the worst place for the difference to show up.
+	adminSeeded := bp.App.Auth.Enabled && adminEmail != "" && adminPass != ""
 	target, hasTarget := blueprintE2EWritableTarget(bp)
 	crud := hasTarget && needsAuthClient // the lifecycle needs an authed client
 	// The generated e2e test boots against the blueprint's declared driver.
@@ -3674,26 +3683,34 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 		seen[imp] = true
 		b.WriteString("\t\"" + imp + "\"\n")
 	}
-	if needsAuthClient {
+	if adminSeeded {
 		b.WriteString("\n\t\"github.com/DonaldMurillo/gofastr/core/dotenv\"\n")
 		b.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 	}
 	b.WriteString(")\n\n")
 	b.WriteString("func TestE2E(t *testing.T) {\n")
 	b.WriteString("\tif testing.Short() { t.Skip(\"builds + boots the binary\") }\n")
-	if needsAuthClient {
+	if adminSeeded {
 		b.WriteString("\t// The seeded admin's password lives in the generated .env, not in\n")
 		b.WriteString("\t// committed source. Load it before the server child inherits the\n")
-		b.WriteString("\t// environment (it needs ADMIN_SEED_PASSWORD to seed the account).\n")
+		b.WriteString("\t// environment: the app refuses to boot on a fresh database when\n")
+		b.WriteString("\t// ADMIN_SEED_PASSWORD is missing, whether or not this test logs in.\n")
 		b.WriteString("\t_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)\n")
-		b.WriteString("\tadminPass := os.Getenv(\"ADMIN_SEED_PASSWORD\")\n")
-		b.WriteString("\tif adminPass == \"\" {\n")
-		b.WriteString("\t\t// Fresh checkout: the gitignored .env is absent. The child seeds\n")
-		b.WriteString("\t\t// the admin from whatever ADMIN_SEED_PASSWORD it inherits, so a\n")
-		b.WriteString("\t\t// test-local value keeps the suite self-contained.\n")
-		b.WriteString("\t\tadminPass = \"e2e-seed-admin-pw\"\n")
-		b.WriteString("\t\tt.Setenv(\"ADMIN_SEED_PASSWORD\", adminPass)\n")
-		b.WriteString("\t}\n")
+		if needsAuthClient {
+			b.WriteString("\tadminPass := os.Getenv(\"ADMIN_SEED_PASSWORD\")\n")
+			b.WriteString("\tif adminPass == \"\" {\n")
+			b.WriteString("\t\t// Fresh checkout: the gitignored .env is absent. The child seeds\n")
+			b.WriteString("\t\t// the admin from whatever ADMIN_SEED_PASSWORD it inherits, so a\n")
+			b.WriteString("\t\t// test-local value keeps the suite self-contained.\n")
+			b.WriteString("\t\tadminPass = \"e2e-seed-admin-pw\"\n")
+			b.WriteString("\t\tt.Setenv(\"ADMIN_SEED_PASSWORD\", adminPass)\n")
+			b.WriteString("\t}\n")
+		} else {
+			// No login here, so no adminPass variable to declare and leave unused.
+			b.WriteString("\tif os.Getenv(\"ADMIN_SEED_PASSWORD\") == \"\" {\n")
+			b.WriteString("\t\tt.Setenv(\"ADMIN_SEED_PASSWORD\", \"e2e-seed-admin-pw\")\n")
+			b.WriteString("\t}\n")
+		}
 	}
 	b.WriteString("\tdir := t.TempDir()\n")
 	b.WriteString("\tbin := filepath.Join(dir, \"app\")\n")

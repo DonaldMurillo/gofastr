@@ -119,7 +119,14 @@ func bootSeededStorefront(t *testing.T) string {
 	addr := e2eFreeAddr(t)
 	srv := exec.Command(bin)
 	srv.Dir = dir
-	srv.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(dir, "guard.db"))
+	// guard.db is a fresh file every run, so the blueprint's admin seed runs
+	// and the app refuses to boot without a password for it.
+	seedPw := os.Getenv("ADMIN_SEED_PASSWORD")
+	if seedPw == "" {
+		seedPw = "guard-seed-admin-pw"
+	}
+	srv.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(dir, "guard.db"),
+		"ADMIN_SEED_PASSWORD="+seedPw)
 	srv.Stdout, srv.Stderr = nil, nil
 	if err := srv.Start(); err != nil {
 		t.Fatalf("start: %v", err)
