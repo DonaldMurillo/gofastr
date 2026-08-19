@@ -414,6 +414,50 @@ entity registers — the auth battery self-migrates `auth_users` — and
 trusting the column name there meant any column of that table could be
 predicated on. `?include=` has always refused the same shape.
 
+A nested filter is also refused whenever the target entity declares
+`Scope.OwnerField` or `Scope.MultiTenant`, even for a caller who may read that
+entity. The filter compiles to an `EXISTS` clause that counts rows without
+selecting them, so it cannot scope them to the caller, and the resulting row
+count would confirm values in other owners' or tenants' rows one guess at a
+time. A caller holding a cross-owner or cross-tenant grant is exempt, since
+they can already list the target wholesale. See
+[access control](access-control.md).
+
+Both gates are HTTP-only. An in-process caller — a typed repo passing
+`ListOptions.NestedFilters`, or `ApplyIncludes` outside a request — is server
+code acting on its own authority, and neither gate runs for it. `Hidden` and
+`NoQuery` still do, because those describe the data rather than the caller. A
+host that forwards a user-influenced relation or field into a typed query
+rebuilds the oracle the HTTP gate closes, the same way forwarding a
+user-influenced filter would; validate the spec first, or serve the request
+through the HTTP surface.
+
+### Foreign keys on writes are not permission-checked
+
+Read paths carry the target entity's posture: an `?include=` or a nested
+filter is refused when the caller may not read the related entity. Write
+paths do not. A create or update that sets a relation column — `order_id`,
+`author_id` — stores whatever id the body supplies, and nothing asks
+whether the caller may read the row it names or whether that row is theirs.
+A caller can attach their own row to another owner's parent.
+
+Two gaps sat behind that sentence. One is closed:
+
+- **Existence IS checked.** `AutoMigrate` emits a `FOREIGN KEY` clause for
+  every declared relation, and both dialects now enforce it. PostgreSQL
+  always did. SQLite honours the constraint only when `PRAGMA foreign_keys`
+  is on — off by default in every driver — so every DSN opened through the
+  `sqlite3` driver name defaults to `_pragma=foreign_keys(1)`. An id naming
+  no row is rejected on both. (`_pragma=foreign_keys(0)` opts out.)
+- **Permission is NOT checked.** Nothing consults the target entity's
+  `Exposure.Access` or `Scope` on the write path. A caller who may not read
+  a row can still point their own row at it, so long as the id exists.
+
+So a fabricated id now fails; a real id belonging to someone else still
+succeeds. An entity whose relation columns must not be retargeted needs a
+`BeforeCreate`/`BeforeUpdate` hook that validates them against the caller —
+see [hooks and transactions](hooks-and-transactions.md).
+
 Blueprint screens are checked at generate time, because several of them
 reach the database without passing through the HTTP filter parser: an
 `entity_list` `search:` or `filters:`, a `stat_card` `source.filter` or

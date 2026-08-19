@@ -43,17 +43,127 @@ func (ch *CrudHandler) permissionForOp(op crudOp) string {
 // requires to read this entity. It answers true when the entity declares no
 // read permission.
 //
-// The HTTP CRUD routes enforce this through requirePermission. Any OTHER
-// surface that reads the same rows — a server-rendered table, an island
-// endpoint, a report — has to enforce it too, or it becomes a second door
-// to data the API refuses to serve. Exported for exactly that: see
-// resource.Config.TableHandler.
+// This answers RBAC ONLY. It is not the whole read posture and is almost never
+// what a new caller wants: a default-posture entity (no OwnerField, no Access,
+// no Public) declares no read permission, so this returns true for an anonymous
+// caller while GET /api/<entity> answers 401.
+//
+// Prefer CanReadScoped, or CanReadRecordScoped for a single record. Those are
+// what framework/ui/resource gates on, including its island handler. CanRead
+// survives there only as the compatibility fallback for a custom DataSource
+// written before CanReadScoped existed — load-bearing, not dead. Reach for it
+// directly only when you specifically want the RBAC question in isolation.
 func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 	perm := ch.permissionForOp(opRead)
 	if perm == "" {
 		return true
 	}
 	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName()})
+}
+
+// CanReadScoped reports whether ctx may read this entity's rows: the baseline
+// session requirement, owner scoping, tenant scoping, and RBAC, as a boolean
+// with no HTTP response written.
+//
+// It answers the STRICTER of itself and requireScope(opRead) wherever the two
+// could differ. In particular it does not honour owner.AllowCrossOwner, which
+// the in-process requireOwnerContext does and the HTTP route's RequireOwner
+// does not: that marker is exported, so a host could apply it to a request
+// context, and a rendering surface trusting the looser answer would show rows
+// the REST route refuses. Read scoping is still a separate implementation of
+// one rule and will drift if edited without its counterpart.
+//
+// It is COLLECTION-level: the RBAC check asks about the entity, not a specific
+// record id, so a resource-aware Decider that denies one row is not consulted.
+// Use it to decide whether a caller may see a listing. For a single record,
+// the record's own read must still go through the CRUD route or an equivalent
+// per-id check.
+//
+// CanRead alone answers only the RBAC question, which is not the whole read
+// posture. Auto-CRUD is secure by default: an entity declaring no OwnerField,
+// no Access, and no Public requires a session for every operation, and that
+// rule lives in requireAuthenticated rather than in Access. A surface that
+// gated on CanRead alone therefore served every row of a default-posture
+// entity to anonymous callers while GET /api/<entity> answered 401 — which is
+// exactly what generated list screens did.
+//
+// Use this from any surface that renders the same rows outside the CRUD routes
+// (a server-rendered table, an island fragment, a report). See
+// framework/ui/resource.
+func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
+	return ch.canReadScopedRecord(ctx, "")
+}
+
+// CanReadRecordScoped is CanReadScoped for ONE record.
+//
+// The difference matters only when a resource-aware Decider is installed
+// (access.WithDecider): the decider is asked about access.Ref{Type, ID}, so it
+// can allow the listing and deny an individual row — "member may read project
+// 42" is the whole point of that seam. The HTTP read-one route already passes
+// r.PathValue("id") into the check; a screen rendering the same record with the
+// collection-level predicate would show a row the API refuses by id.
+//
+// Pass the record id for a detail or edit view. With no decider installed this
+// answers exactly what CanReadScoped answers.
+func (ch *CrudHandler) CanReadRecordScoped(ctx context.Context, id string) bool {
+	return ch.canReadScopedRecord(ctx, id)
+}
+
+func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool {
+	cfg := ch.Entity.Config
+	// Baseline session requirement — the boolean mirror of requireAuthenticated.
+	if cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public {
+		if _, ok := handler.GetUser(ctx); !ok {
+			return false
+		}
+	}
+	// Deliberately NOT requireOwnerContext: that honours owner.AllowCrossOwner,
+	// and the HTTP route's RequireOwner does not. The divergence used to be
+	// unreachable trivia; three rendering surfaces now trust this boolean, so a
+	// host applying the exported marker to a request context would make screens
+	// render rows the REST route refuses. Answer the stricter of the two.
+	if field := cfg.Scope.OwnerField; field != "" {
+		if _, ok := owner.Get(ctx); !ok {
+			return false
+		}
+	}
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return false
+	}
+	perm := ch.permissionForOp(opRead)
+	if perm == "" {
+		return true
+	}
+	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+}
+
+// canReadEntityGate answers the part of the read posture that is a GATE rather
+// than a row filter: the baseline session requirement and RBAC.
+//
+// Owner and tenant are deliberately excluded. They scope WHICH rows a caller
+// sees, and the eager loaders already apply them per node
+// (applyRelatedOwnerScope / applyRelatedTenantScope), so a missing owner or
+// tenant yields zero rows rather than a refusal — the framework's existing,
+// tested fail-closed behavior. Folding them in here would convert that
+// filtering into a 403 and change the answer for callers who are legitimately
+// scoped to nothing.
+//
+// Use this ONLY where the row scoping is provably applied separately. Today
+// that is exactly one caller: the include gate, whose eager loaders call
+// applyRelatedOwnerScope and applyRelatedTenantScope per node. Nested filters
+// looked like the same case and are not — their EXISTS subquery emits no owner
+// or tenant predicate, so choosing this gate there left a live count oracle
+// over rows the target's own route refuses. If you are reaching for this
+// predicate, first find the code that applies owner and tenant for your path;
+// if you cannot point at it, you want CanReadScoped.
+func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
+	cfg := ch.Entity.Config
+	if cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public {
+		if _, ok := handler.GetUser(ctx); !ok {
+			return false
+		}
+	}
+	return ch.CanRead(ctx)
 }
 
 // requirePermission enforces EntityConfig.Access for op. When the entity

@@ -405,6 +405,18 @@ func writeIncludeError(w http.ResponseWriter, surface string, err error) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	var forbidden *includeForbiddenError
+	if errors.As(err, &forbidden) {
+		// The refusal the target entity's own list route would give for an
+		// RBAC or session failure. It is not byte-for-byte parity in every
+		// posture: an owner-scoped target skips the session check here (see
+		// canReadEntityGate), so an anonymous include answers 200 with an
+		// empty relation where the target's own route answers 401. Nothing
+		// leaks either way — the owner scope matches no row — but the two
+		// status codes differ.
+		writeJSONError(w, http.StatusForbidden, forbidden.Error())
+		return
+	}
 	log.Printf("crud: %s include failed: %v", surface, err)
 	writeJSONError(w, http.StatusInternalServerError, "internal server error")
 }
@@ -423,7 +435,34 @@ func writeIncludeError(w http.ResponseWriter, surface string, err error) {
 // from the request's owner extractor; if no owner is in context, the
 // scope predicate becomes `owner_field = ""` which matches no real row.
 func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]any, nodes []*IncludeNode) error {
-	if len(rows) == 0 || len(nodes) == 0 {
+	if len(nodes) == 0 {
+		return nil
+	}
+	// An include is a read of ANOTHER entity's rows, so that entity's posture
+	// governs it. Every other guard hanging off Target — the Hidden scrub,
+	// owner scope, tenant scope, soft delete — was already applied here, but
+	// Exposure.Access was not: `GET /api/posts?include=author` returned whole
+	// rows of an entity whose own route answers 403, and
+	// `?include=comments.author` dumped the entire table in one request.
+	//
+	// Enforced only for a request arriving over HTTP. The in-process callers
+	// of this function — the programmatic API and typed repos — are trusted
+	// server-side code running with no session by design, exactly as the
+	// baseline session gate is an HTTP-only concern (requireAuthenticated)
+	// while owner and tenant scoping, which are data scoping, apply to both.
+	// Checked before any load and at every depth, so a nested segment cannot
+	// reach past a readable parent.
+	if _, overHTTP := ctx.Value(realRequestKey{}).(*http.Request); overHTTP {
+		if err := ch.checkIncludeReadable(ctx, nodes); err != nil {
+			return err
+		}
+	}
+	// Only AFTER the posture check. Returning early on an empty parent made the
+	// answer depend on whether the table happened to have rows: the same
+	// request answered 200 while empty and 403 once a row existed, which is a
+	// table-emptiness oracle and disagreed with the nested-filter check, which
+	// refuses before it queries anything.
+	if len(rows) == 0 {
 		return nil
 	}
 	pkKey := ch.convertKey(ch.PrimaryKey)
@@ -766,6 +805,20 @@ func applyRelatedOwnerScope(ctx context.Context, node *IncludeNode) {
 	if ownerField == "" {
 		return
 	}
+	// Cross-owner callers see every row on the routes (ApplyOwnerScope and its
+	// update/delete siblings all branch on this pair). Without the same branch
+	// here, an include for that posture silently returned a near-empty relation
+	// rather than the rows the caller is entitled to — the identical defect
+	// applyRelatedTenantScope had for tenants, fixed alongside this one.
+	//
+	// The grant is read from the TARGET entity, because these are the target's
+	// rows: a probe handler is the same shape the include gate uses.
+	if owner.IsCrossOwner(ctx) {
+		return
+	}
+	if probe := (&CrudHandler{Entity: node.Target}); probe.crossOwnerReadGranted(ctx) {
+		return
+	}
 	// Always AND the context-derived owner predicate, even when the node
 	// already carries a filter on the owner field. On the HTTP path
 	// node.Filters comes from the attacker-controlled
@@ -802,6 +855,14 @@ func applyRelatedTenantScope(ctx context.Context, node *IncludeNode) {
 		return
 	}
 	if !node.Target.Config.Scope.MultiTenant {
+		return
+	}
+	// Cross-tenant callers see every tenant's rows on the routes
+	// (RequireTenant and ApplyTenantScope both branch on this). Without the
+	// same branch here, an include for that posture silently returned an empty
+	// relation rather than the rows the caller is entitled to — fail-closed,
+	// but contradicting the documented contract.
+	if tenant.IsCrossTenant(ctx) {
 		return
 	}
 	node.Filters = append([]filter.ParsedFilter{{
@@ -851,4 +912,35 @@ func (ch *CrudHandler) wireConverterFor(targetName string) func(string) string {
 		}
 		return ch.convertKeyRaw(k)
 	}
+}
+
+// includeForbiddenError marks an include whose target entity the caller may not
+// read. Carried as a distinct type so the HTTP layer answers 403 naming the
+// entity, rather than the generic 500 every other include failure gets.
+type includeForbiddenError struct{ Entity string }
+
+func (e *includeForbiddenError) Error() string {
+	return "access denied: include targets entity " + e.Entity + ", which you may not read"
+}
+
+// checkIncludeReadable walks the include forest and refuses any node whose
+// target entity fails the same read posture its own list route enforces.
+//
+// The check is recursive because include paths are: `comments.author` reaches
+// `author` through a `comments` the caller legitimately reads, so permitting
+// the first segment says nothing about the second.
+func (ch *CrudHandler) checkIncludeReadable(ctx context.Context, nodes []*IncludeNode) error {
+	for _, node := range nodes {
+		if node == nil || node.Target == nil {
+			continue
+		}
+		target := &CrudHandler{Entity: node.Target, DB: ch.DB, Registry: ch.Registry}
+		if !target.canReadEntityGate(ctx) {
+			return &includeForbiddenError{Entity: node.Target.GetName()}
+		}
+		if err := ch.checkIncludeReadable(ctx, node.Children); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -317,6 +317,83 @@ The framework does **not** auto-generate permission strings from
 entity declarations. Pick a convention (`posts:read`, `posts:write`,
 …) and apply it consistently.
 
+## Surfaces other than the CRUD routes
+
+The CRUD routes enforce every gate for the entity they serve. Two things do
+NOT inherit that automatically, and both have to check for themselves:
+
+1. **Another surface reading the same rows** — a server-rendered screen, an
+   island fragment, a report, an export. It never enters the route middleware,
+   so it is a second door to the same data.
+2. **The same route reaching a DIFFERENT entity.** `?include=rel` eager-loads
+   the related entity's rows and `?rel.field=` filters across it, so the
+   *related* entity's posture governs, not the one in the path. The framework
+   enforces this for you; anything else that walks a relation must do the same.
+
+   The two are not enforced identically, because they read differently:
+
+   - **`?include=rel`** answers 403 when you may not read the target, at every
+     depth. When you may read it, the rows come back scoped: owner- and
+     tenant-scoped targets return the rows you are entitled to, which for a
+     caller with no owner is *none* — a 200 with an empty relation rather than
+     a refusal. Soft-deleted rows never appear.
+   - **`?rel.field=`** compiles to an `EXISTS` clause that counts rows without
+     selecting them, so it cannot scope them to you. It therefore answers 403
+     both when you may not read the target AND whenever the target declares
+     `Scope.OwnerField` or `Scope.MultiTenant` — **even if you can read it** —
+     because the resulting row count would otherwise confirm values in other
+     owners' or tenants' rows one guess at a time. The exception is a caller
+     holding a cross-owner or cross-tenant grant, who can already list the
+     target wholesale and learns nothing from the count. To filter by a scoped
+     entity's field, query that entity's own list route and filter the parent
+     by the ids it returns.
+
+Use `CrudHandler.CanReadScoped(ctx)`. It answers the whole read posture as a
+boolean, with no HTTP response written:
+
+```go
+if !crudHandler.CanReadScoped(ctx) {
+    return ui.Callout(ui.CalloutConfig{Title: "Not available", Variant: ui.StatusWarning},
+        render.Text("You do not have permission to view this."))
+}
+```
+
+It covers, in order: the **baseline session requirement** that auto-CRUD
+applies to any entity declaring no `OwnerField`, no `Access`, and no `Public`;
+owner scoping (`Scope.OwnerField`); tenant scoping; and finally RBAC
+(`Exposure.Access`).
+
+`CanRead(ctx)` answers only the RBAC question. That is not the whole posture:
+an entity in the default secure-by-default shape declares no `Access` at all, so
+`CanRead` returns true for an anonymous caller while `GET /api/<entity>` answers
+401. A surface gated on `CanRead` alone therefore rendered every row of a
+default-posture entity to anonymous visitors. Prefer `CanReadScoped` unless you
+specifically want the RBAC-only question.
+
+For a single record — a detail page, an edit form — use
+`CanReadRecordScoped(ctx, id)` instead. It asks the same question about a
+specific row, which matters when a resource-aware `Decider` allows the listing
+and denies one record; the collection-level predicate would render a row the
+read-one route refuses.
+
+A custom `DataSource` that implements neither predicate is ungated: the
+interface guarantees only the three read methods, so a computed report or
+search index has no posture to consult. A custom source fronting real entity
+rows must implement `CanReadScoped` itself.
+
+`framework/ui/resource` calls these for you, so generated screens
+inherit the check — on `List`, `Table`, `Detail`, and the pre-filled edit
+`Form` for the screen's own entity, and separately on the RELATED entity
+behind relation labels, reverse-relation sections, and dashboard aggregates.
+A relation to an entity the caller may not read renders muted (an em dash),
+never the raw foreign key — a bare id is useless to a reader and discloses an
+internal identifier. A reverse-relation section the caller may not read is
+omitted entirely rather than replaced with a notice, because a notice on a
+public page tells every visitor which entities exist.
+
+`battery/admin` does not go through `ui/resource`; it enforces its own admin
+gate.
+
 ## Common mistakes
 
 - **Forgetting `WithPolicy`.** Every check fails closed. If
@@ -330,6 +407,9 @@ entity declarations. Pick a convention (`posts:read`, `posts:write`,
   hooks — strings should be data, not code.
 - **Trusting client-supplied roles.** Roles come from your auth
   layer; never from a request header or body the user controls.
+- **Gating a screen on `CanRead` instead of `CanReadScoped`.** The
+  RBAC-only check passes for an anonymous caller on a default-posture
+  entity, so the screen serves rows the JSON route refuses.
 
 
 ## Persistent grants (GrantStore)
