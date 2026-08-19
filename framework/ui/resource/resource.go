@@ -236,10 +236,27 @@ func (c Config) relationLabels(ctx context.Context) map[string]map[string]string
 		if rel.Crud == nil {
 			continue
 		}
+		// A nil map marks the column REDACTED: present, so the renderer knows
+		// this is a relation, but with no labels to show. Leaving it absent
+		// instead made the cell fall through and print the raw foreign key —
+		// a bare UUID where a name belongs, which is both useless to a reader
+		// and an unnecessary disclosure of internal ids.
+		if !canReadCrud(ctx, rel.Crud) {
+			out[col] = nil
+			continue
+		}
 		// WithReadHooks: the DISPLAY value becomes the visible label on the
 		// grid and detail page, so it must show the mask. Only the id is used
 		// for lookup, and a picker submits the id — so redacting the label
 		// cannot write a masked value back.
+		// Limit 1000: label resolution loads the whole related table once per
+		// render, so it is bounded. The visible consequence is that a relation
+		// pointing past row 1000 — or at a row this query filters out — finds
+		// no label, and format() falls through to printing the raw foreign key.
+		// That is an id of an entity the caller may already read (the gated
+		// case takes the nil-map path above and renders muted), so it is a
+		// legibility limit, not a disclosure. Raise it, or resolve labels by
+		// the ids actually on the page, if a large relation needs naming.
 		rows, err := rel.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Limit: 1000})
 		if err != nil {
 			continue
@@ -283,8 +300,103 @@ func (c Config) queryFilters(q url.Values, search string) []filter.ParsedFilter 
 	return filters
 }
 
+// canRead reports whether ctx may read this resource's rows, using the same
+// entity RBAC the JSON list route enforces.
+//
+// TableHandler has consulted this since the island surface shipped. The
+// server-rendered screens did not, and that gap was a live data leak: a
+// generated app whose entity declared `access: {read: users:read}` answered
+// 403 on GET /api/users and 200 — with every row's email in the HTML — on the
+// GET /users screen the same blueprint generated. Route middleware never runs
+// for a screen render, so the check has to live here, at the read itself.
+//
+// canReadCrud is canRead for a crud handle that is not this Config's own — a
+// RELATED entity's handler. Relation labels, reverse-relation lists, and
+// dashboard aggregates all read rows belonging to another entity, and that
+// entity's posture governs them, not the screen's.
+//
+// Gating the screen's own entity was not enough: a screen for an open entity
+// that displays a relation column to a gated one served the gated entity's
+// display values to anonymous callers — the same leak, one hop out.
+func canReadCrud(ctx context.Context, handle any) bool {
+	if handle == nil {
+		return false
+	}
+	if g, ok := handle.(interface {
+		CanReadScoped(context.Context) bool
+	}); ok {
+		return g.CanReadScoped(ctx)
+	}
+	if g, ok := handle.(interface {
+		CanRead(context.Context) bool
+	}); ok {
+		return g.CanRead(ctx)
+	}
+	return true
+}
+
+// canReadRecord is canRead for a single record. A resource-aware Decider can
+// allow the listing and deny one row; rendering a detail or edit view with the
+// collection-level answer would show a record GET /api/<entity>/{id} refuses.
+func (c Config) canReadRecord(ctx context.Context, id string) bool {
+	if id == "" {
+		return c.canRead(ctx)
+	}
+	if g, ok := c.Crud.(interface {
+		CanReadRecordScoped(context.Context, string) bool
+	}); ok {
+		return g.CanReadRecordScoped(ctx, id)
+	}
+	return c.canRead(ctx)
+}
+
+// A resource whose Crud implements neither predicate is ungated. That is a
+// deliberate compatibility choice, not an oversight: DataSource guarantees only
+// the three read methods, so a custom lister (an in-memory table, a search
+// index, a computed report) has no posture to consult, and refusing it would
+// break every such screen. A custom source that fronts real entity rows must
+// implement CanReadScoped itself — neither this method nor canReadCrud can
+// enforce that contract for it. Generated resources always pass a
+// *crud.CrudHandler, which implements both predicates.
+func (c Config) canRead(ctx context.Context) bool {
+	// CanReadScoped covers the whole read posture: owner and tenant scoping,
+	// the baseline session requirement that auto-CRUD applies to any entity
+	// declaring no OwnerField/Access/Public, and RBAC. Gating on CanRead alone
+	// checked only the last of those, so a default-posture entity — the shape
+	// `gofastr init` and most blueprints produce — answered 401 on
+	// GET /api/<entity> and rendered every row on its generated screen.
+	if g, ok := c.Crud.(interface {
+		CanReadScoped(context.Context) bool
+	}); ok {
+		return g.CanReadScoped(ctx)
+	}
+	if g, ok := c.Crud.(interface {
+		CanRead(context.Context) bool
+	}); ok {
+		return g.CanRead(ctx)
+	}
+	return true
+}
+
+// AccessDeniedTitle is the heading a screen renders in place of rows the caller
+// may not read. Exported so a test in another package can detect the notice by
+// a shared symbol rather than by copying the prose — the integration gate that
+// checks for an over-tight guard grepped this wording, which nothing else
+// pinned, so rephrasing the callout would have made that check pass vacuously.
+const AccessDeniedTitle = "Not available"
+
+// accessDenied is what a screen renders instead of rows the caller may not
+// read. It deliberately names no data.
+func (c Config) accessDenied() render.HTML {
+	return ui.Callout(ui.CalloutConfig{Title: AccessDeniedTitle, Variant: ui.StatusWarning},
+		render.Text("You do not have permission to view "+strings.ToLower(c.Title)+"."))
+}
+
 // List renders the entity list screen.
 func (c Config) List(ctx context.Context) render.HTML {
+	if !c.canRead(ctx) {
+		return c.accessDenied()
+	}
 	q := appui.QueryFromContext(ctx)
 	search := strings.TrimSpace(q.Get("q"))
 	total, _ := c.Crud.CountAll(ctx, crud.ListOptions{Filters: c.queryFilters(q, search)})
@@ -337,6 +449,9 @@ func (c Config) List(ctx context.Context) render.HTML {
 // by List (initial SSR) and TableHandler (island RPC responses), so a
 // sort/page swap returns exactly the HTML the initial render painted.
 func (c Config) Table(ctx context.Context) render.HTML {
+	if !c.canRead(ctx) {
+		return c.accessDenied()
+	}
 	return c.table(ctx, -1)
 }
 
@@ -464,12 +579,18 @@ func (c Config) TableHandler() http.HandlerFunc {
 				return
 			}
 		}
-		// The entity's RBAC — the same permission the JSON list route
+		// The entity's full read posture — the same gates the JSON list route
 		// enforces. Without this the island answers 200 for rows
-		// GET /api/<entity> answers 403 for.
-		if g, ok := c.Crud.(interface {
-			CanRead(context.Context) bool
-		}); ok && !g.CanRead(r.Context()) {
+		// GET /api/<entity> answers 401/403 for.
+		//
+		// Not CanRead: that answers RBAC only, so a default-posture entity
+		// (no OwnerField, no Access, no Public) passed it while its JSON route
+		// answered 401. Table() re-checks the full posture and would render
+		// the notice, but a fragment endpoint must refuse with a STATUS rather
+		// than serve a rendered notice into a table slot — so the check
+		// belongs here too, and the two shapes are deliberate: 403 for the
+		// fragment, an in-page notice for the screen.
+		if !c.canRead(r.Context()) {
 			http.Error(w, "access denied", http.StatusForbidden)
 			return
 		}
@@ -544,6 +665,9 @@ func relationFacetOptions(m map[string]string) []ui.FacetOption {
 
 // Detail renders the single-record detail screen.
 func (c Config) Detail(ctx context.Context, id string) render.HTML {
+	if !c.canReadRecord(ctx, id) {
+		return c.accessDenied()
+	}
 	// WithReadHooks: this row is rendered to an end user, so it must show
 	// whatever an AfterGet redaction shows, not the stored value.
 	row, err := c.Crud.GetOne(crud.WithReadHooks(ctx), id, nil)
@@ -595,9 +719,20 @@ func (c Config) Detail(ctx context.Context, id string) render.HTML {
 // relatedList renders one reverse-relation section: the related entity's rows
 // where ForeignKey == this record's id, as a compact table under a heading.
 func (c Config) relatedList(ctx context.Context, rl RelatedList, id string) render.HTML {
+	// The rows belong to the RELATED entity, so its posture decides — a detail
+	// page for an open record must not become a window onto a gated one.
+	if !canReadCrud(ctx, rl.Crud) {
+		// Render nothing. This is a SECTION of someone else's detail page, not
+		// a page the caller asked for: a permission callout on a public
+		// product page told every anonymous shopper that "order items" exist
+		// and that they are forbidden — noise to a reader and a free schema
+		// hint to anyone else. Absence is the honest presentation.
+		return ""
+	}
 	// WithReadHooks: these rows are rendered to an end user, same as List and
-	// Detail. relatedRelationLabels and the dashboard aggregates below stay
-	// raw on purpose — they resolve ids and compute over stored values.
+	// Detail. relatedRelationLabels now runs read hooks and is
+	// posture-gated like this call; only the dashboard aggregates below stay
+	// raw, because they compute over stored values rather than display them.
 	rows, err := rl.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
 		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
 		Limit:   10,
@@ -644,6 +779,10 @@ func relatedRelationLabels(ctx context.Context, rels map[string]Relation) map[st
 		if rel.Crud == nil {
 			continue
 		}
+		if !canReadCrud(ctx, rel.Crud) {
+			out[col] = nil
+			continue
+		}
 		// WithReadHooks: the DISPLAY value becomes the visible label on the
 		// grid and detail page, so it must show the mask. Only the id is used
 		// for lookup, and a picker submits the id — so redacting the label
@@ -673,6 +812,11 @@ func relatedRelationLabels(ctx context.Context, rels map[string]Relation) map[st
 // It submits as an island: data-fui-rpc posts/puts JSON to the entity's
 // auto-CRUD endpoint, then SPA-navigates back to the list/detail on success.
 func (c Config) Form(ctx context.Context, id string) render.HTML {
+	// An edit form pre-fills from the record, so it is a read of that row —
+	// checked per id, not per collection.
+	if id != "" && !c.canReadRecord(ctx, id) {
+		return c.accessDenied()
+	}
 	edit := id != ""
 	var row map[string]any
 	if edit {
@@ -833,7 +977,8 @@ func truthy(s string) bool {
 func format(f Field, raw any, rel map[string]map[string]string) render.HTML {
 	val := cell(raw)
 	if labels, ok := rel[f.Key]; ok {
-		if val == "" {
+		// nil = the caller may not read this relation (see relationLabels).
+		if labels == nil || val == "" {
 			return muted()
 		}
 		if l, ok := labels[val]; ok {
@@ -974,6 +1119,12 @@ func (r Registry) StatValue(ctx context.Context, entity, agg, field, filterStr, 
 	if !ok || c.Crud == nil {
 		return "—"
 	}
+	// A dashboard stat is a read of the entity's rows, so the entity's posture
+	// governs it. An ungated aggregate leaks counts and sums over data the
+	// caller cannot list.
+	if !canReadCrud(ctx, c.Crud) {
+		return "—"
+	}
 	var filters []filter.ParsedFilter
 	if filterStr != "" {
 		if i := strings.IndexByte(filterStr, '='); i > 0 {
@@ -1010,6 +1161,20 @@ type kvPair struct {
 func (r Registry) groupCounts(ctx context.Context, entity, groupBy string) []kvPair {
 	c, ok := r[entity]
 	if !ok || c.Crud == nil {
+		return nil
+	}
+	// groupCounts returns the DISTINCT VALUES of groupBy alongside their
+	// counts, so an ungated grouping over a gated entity publishes that
+	// column's contents, not just a total.
+	//
+	// A denial is reported as "no data", the same as an empty result. That is
+	// the intended presentation: charts sit on dashboards beside content the
+	// caller CAN see, and a chart that announced "you may not view invoices"
+	// would tell a visitor which entities exist — the same disclosure that
+	// made relatedList stop rendering a callout. The tradeoff is that an
+	// operator debugging an empty chart cannot tell denial from emptiness
+	// without checking the entity's posture.
+	if !canReadCrud(ctx, c.Crud) {
 		return nil
 	}
 	rows, err := c.Crud.ListAll(ctx, crud.ListOptions{Limit: 100000})

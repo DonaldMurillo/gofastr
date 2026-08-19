@@ -20,6 +20,11 @@ type gatedSource struct {
 
 func (g *gatedSource) CanRead(context.Context) bool { return g.canRead }
 
+// The production type (*crud.CrudHandler) implements BOTH predicates, and
+// canRead/canReadCrud prefer CanReadScoped. A stub offering only the narrow one
+// would exercise the fallback branch instead of the path real apps take.
+func (g *gatedSource) CanReadScoped(context.Context) bool { return g.canRead }
+
 func islandConfig(src DataSource) Config {
 	return Config{
 		Entity:   "secrets",
@@ -118,5 +123,32 @@ func TestIslandAllowsUngatedDataSource(t *testing.T) {
 	cfg := islandConfig(&stubSource{rows: []map[string]any{{"id": "s-1", "name": "Ada"}}})
 	if rr := islandRequest(t, cfg, "member"); rr.Code != http.StatusOK {
 		t.Errorf("ungated source got %d, want 200", rr.Code)
+	}
+}
+
+// The island fragment must consult the FULL read posture, not RBAC alone.
+// A default-posture entity (no OwnerField, no Access, no Public) passes the
+// RBAC-only check while its JSON route answers 401, so gating on CanRead let
+// the fragment serve rows the API refuses.
+//
+// This test exists partly because the fix was silently reverted once: a
+// mutation-testing restore of an older file copy took it out, and nothing
+// failed.
+func TestIslandHandlerUsesFullReadPosture(t *testing.T) {
+	src := &defaultPostureSource{stubSource: stubSource{rows: []map[string]any{
+		{"id": "s1", "name": "session-required"},
+	}}}
+	cfg := islandConfig(src)
+
+	// A SIGNED-IN caller: the handler's own session check passes, so the only
+	// thing that can refuse is the posture check. With an anonymous caller the
+	// session check answers 401 first and the two predicates are
+	// indistinguishable — which is why this case, not that one, is the test.
+	rr := islandRequest(t, cfg, struct{ ID string }{ID: "u1"})
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("island fragment = %d for a signed-in caller, want 403 — the scoped posture refuses even though the RBAC-only check passes", rr.Code)
+	}
+	if strings.Contains(rr.Body.String(), "session-required") {
+		t.Errorf("island fragment served a row the JSON route refuses:\n%s", rr.Body.String())
 	}
 }
