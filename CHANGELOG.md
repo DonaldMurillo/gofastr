@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-08-19
+
 ### Added
 
 - **`make mutate` finds guards no test distinguishes.** It breaks each
