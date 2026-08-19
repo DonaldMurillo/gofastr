@@ -264,14 +264,14 @@ func TestRestoreSetRefusesNewMutantsOnceStopping(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := rs.add(path, original); err != nil {
+	if err := rs.addAndWrite(path, original, []byte("package p // mutated\n")); err != nil {
 		t.Fatalf("add before stopping should succeed: %v", err)
 	}
 	rs.stop()
 	if !rs.stopped() {
 		t.Error("stop() did not mark the set as stopping")
 	}
-	if err := rs.add(filepath.Join(dir, "b.go"), original); err == nil {
+	if err := rs.addAndWrite(filepath.Join(dir, "b.go"), original, []byte("package p // mutated\n")); err == nil {
 		t.Error("a mutant was registered after the run began stopping — it could land after the restore")
 	}
 
@@ -302,7 +302,7 @@ func TestRestoreSetIsSafeUnderConcurrentUse(t *testing.T) {
 			p := filepath.Join(dir, fmt.Sprintf("f%d.go", n))
 			_ = os.WriteFile(p, []byte("package p\n"), 0o644)
 			for j := 0; j < 50; j++ {
-				if err := rs.add(p, []byte("package p\n")); err == nil {
+				if err := rs.addAndWrite(p, []byte("package p\n"), []byte("package p // m\n")); err == nil {
 					rs.remove(p)
 				}
 			}

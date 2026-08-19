@@ -205,11 +205,7 @@ func runMutant(path string, original []byte, g guardmut.Guard, pkg, run, moduleR
 	if err != nil {
 		return 0, err
 	}
-	if err := pending.add(path, original); err != nil {
-		return 0, err
-	}
-	if err := writeVerified(path, original, mutated); err != nil {
-		pending.remove(path)
+	if err := pending.addAndWrite(path, original, mutated); err != nil {
 		return 0, fmt.Errorf("%s: %w", g, err)
 	}
 	defer func() {
@@ -399,11 +395,22 @@ func newRestoreSet() *restoreSet { return &restoreSet{files: map[string][]byte{}
 // add registers a file about to be mutated. It refuses once the run is
 // stopping, which is what keeps a write from landing after the signal
 // handler has already restored everything.
-func (r *restoreSet) add(path string, original []byte) error {
+//
+// The write happens HERE, under the same mutex, and that is the point.
+// Registering the file and then writing it as two steps left a window: a
+// caller past the registration could still be inside its write when the signal
+// handler restored the tree and called os.Exit, so the mutant landed on disk
+// AFTER the restore and stayed there. Holding the lock across both makes the
+// two orderings the only ones possible — either the write completes and
+// runAll undoes it, or stopping is already set and the write never happens.
+func (r *restoreSet) addAndWrite(path string, original, mutated []byte) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.stopping {
 		return errors.New("run is stopping; refusing to write another mutant")
+	}
+	if err := writeVerified(path, original, mutated); err != nil {
+		return err
 	}
 	r.files[path] = original
 	return nil
