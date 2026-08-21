@@ -212,13 +212,26 @@ in-process eager load is scoped even though no posture was consulted. Only
 entity. It is subject to the same posture check, and to one additional rule.
 
 Filtering across a relation whose target declares `Scope.OwnerField` or
-`Scope.MultiTenant` is **refused with 403**, for every caller except one that
-may already read every row of that target. The filter compiles to an `EXISTS`
-clause that counts rows without selecting them, so it cannot narrow them to the
-caller — and the resulting row count would otherwise confirm values in other
-owners' or other tenants' rows, one guess at a time. To filter by a scoped
-entity's field, query that entity's own list route (which scopes correctly) and
-filter the parent by the ids it returns.
+`Scope.MultiTenant` narrows the subquery to your own rows. The filter compiles
+to an `EXISTS` clause that counts rows without selecting them, so it cannot
+narrow them by selecting; instead it carries the same owner and tenant
+predicates the include and eager paths apply. The result is that
+`?comments.body=x` counts exactly the comments you could list yourself:
+
+```
+GET /api/posts?comments.body=my+note      → your posts with that comment
+GET /api/posts?comments.body=their+note   → 0 rows, identical to a value
+                                            that exists nowhere
+```
+
+A guess that matches another owner's row is indistinguishable from a guess that
+matches nothing, so the row count is not an oracle. A caller holding a
+cross-owner or cross-tenant grant gets no predicate on that axis, because they
+can already list the target wholesale — and the axes are independent, so a
+cross-owner grant does not lift the tenant narrowing.
+
+Earlier releases refused this shape outright for any scoped target, which closed
+the oracle but also refused an owner filtering their own rows.
 
 Soft-deleted rows never match a nested filter, matching every other read
 surface.

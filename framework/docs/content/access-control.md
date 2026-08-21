@@ -338,15 +338,15 @@ NOT inherit that automatically, and both have to check for themselves:
      caller with no owner is *none* — a 200 with an empty relation rather than
      a refusal. Soft-deleted rows never appear.
    - **`?rel.field=`** compiles to an `EXISTS` clause that counts rows without
-     selecting them, so it cannot scope them to you. It therefore answers 403
-     both when you may not read the target AND whenever the target declares
-     `Scope.OwnerField` or `Scope.MultiTenant` — **even if you can read it** —
-     because the resulting row count would otherwise confirm values in other
-     owners' or tenants' rows one guess at a time. The exception is a caller
-     holding a cross-owner or cross-tenant grant, who can already list the
-     target wholesale and learns nothing from the count. To filter by a scoped
-     entity's field, query that entity's own list route and filter the parent
-     by the ids it returns.
+     selecting them, so it cannot narrow them by selecting. It answers 403 when
+     you may not read the target, and for a target you may read it carries your
+     owner and tenant predicates into the subquery — so it counts exactly the
+     rows that target's own list route would serve you, and no others. A guess
+     that matches another owner's row reads the same as a guess that matches
+     nothing. A caller holding a cross-owner or cross-tenant grant gets no
+     predicate for that axis, since they can already list the target wholesale.
+     The axes are independent: a cross-owner grant narrows nothing on the
+     tenant axis, and vice versa.
 
 Use `CrudHandler.CanReadScoped(ctx)`. It answers the whole read posture as a
 boolean, with no HTTP response written:

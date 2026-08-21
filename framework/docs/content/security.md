@@ -414,14 +414,15 @@ entity registers — the auth battery self-migrates `auth_users` — and
 trusting the column name there meant any column of that table could be
 predicated on. `?include=` has always refused the same shape.
 
-A nested filter is also refused whenever the target entity declares
-`Scope.OwnerField` or `Scope.MultiTenant`, even for a caller who may read that
-entity. The filter compiles to an `EXISTS` clause that counts rows without
-selecting them, so it cannot scope them to the caller, and the resulting row
-count would confirm values in other owners' or tenants' rows one guess at a
-time. A caller holding a cross-owner or cross-tenant grant is exempt, since
-they can already list the target wholesale. See
-[access control](access-control.md).
+A nested filter on a target that declares `Scope.OwnerField` or
+`Scope.MultiTenant` carries the caller's owner and tenant predicates into the
+`EXISTS` subquery. The clause counts rows without selecting them, so without
+those predicates it counts every row in the target table and the parent's row
+count confirms values in other owners' or tenants' rows one guess at a time.
+The predicates come from the same builder the include and eager paths use, so
+the three surfaces answer alike. A caller holding a cross-owner or cross-tenant
+grant gets no predicate on that axis, since they can already list the target
+wholesale; the axes are independent. See [access control](access-control.md).
 
 Both gates are HTTP-only. An in-process caller — a typed repo passing
 `ListOptions.NestedFilters`, or `ApplyIncludes` outside a request — is server

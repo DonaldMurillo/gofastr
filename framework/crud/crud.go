@@ -524,8 +524,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		// Filtering across a relation reads that relation's rows, so its
 		// entity's posture applies — without this the row count is an oracle
-		// for values in a column the related entity refuses to serve.
-		if err := ch.checkNestedFiltersReadable(r.Context(), nested); err != nil {
+		// for values in a column the related entity refuses to serve. This
+		// call both refuses the targets the caller may not read and narrows
+		// the ones they may to their own rows; the `nested` slice is mutated
+		// in place, and every downstream sink (count, data, cursor, stream)
+		// reads the same slice.
+		if err := ch.scopeNestedFiltersForCaller(r.Context(), nested); err != nil {
 			writeIncludeError(w, "list", err)
 			return
 		}
