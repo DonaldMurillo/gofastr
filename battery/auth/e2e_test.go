@@ -289,7 +289,7 @@ func TestE2E_SessionPersistence(t *testing.T) {
 	}
 
 	// Same cookie works for multiple requests
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		resp, body, _ := app.doRequest("GET", "/auth/me", nil, []*http.Cookie{cookie})
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("me request %d: expected 200, got %d: %v", i+1, resp.StatusCode, body)

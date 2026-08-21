@@ -30,6 +30,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -258,12 +259,7 @@ func (b *Battery) authorized(ctx context.Context) bool {
 		return false
 	}
 	want := b.adminRole()
-	for _, role := range rh.GetRoles() {
-		if role == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(rh.GetRoles(), want)
 }
 
 // adminRole returns the configured admin role, defaulting to "admin".

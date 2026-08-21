@@ -276,10 +276,10 @@ func registerOrderItems(app *framework.App) {
 			{Name: "user_id", Type: schema.String},
 			{Name: "order_id", Type: schema.Relation, Required: true, To: "orders"},
 			{Name: "product_id", Type: schema.Relation, Required: true, To: "products"},
-			{Name: "product_name", Type: schema.String, Required: true, Max: floatPtr(200)},
-			{Name: "quantity", Type: schema.Int, Required: true, Min: floatPtr(1)},
-			{Name: "unit_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-			{Name: "total_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "product_name", Type: schema.String, Required: true, Max: new(float64(200))},
+			{Name: "quantity", Type: schema.Int, Required: true, Min: new(float64(1))},
+			{Name: "unit_price", Type: schema.Decimal, Required: true, Min: new(float64(0))},
+			{Name: "total_price", Type: schema.Decimal, Required: true, Min: new(float64(0))},
 		},
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: "order_id"},
@@ -289,7 +289,7 @@ func registerOrderItems(app *framework.App) {
 			OwnerField: "user_id",
 		},
 		Exposure: &framework.ExposureConfig{
-			CRUD: boolPtr(true),
+			CRUD: new(true),
 			MCP:  true,
 		},
 	})

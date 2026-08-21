@@ -93,7 +93,7 @@ func TestMetrics_ConcurrentRegisterAndScrape(t *testing.T) {
 			m.RegisterCollector(fmt.Sprintf("churn%d", i%8), func(w io.Writer) { w.Write([]byte("churn 1\n")) })
 		}
 	}()
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
 	}

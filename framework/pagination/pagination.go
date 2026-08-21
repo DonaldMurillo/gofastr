@@ -103,10 +103,7 @@ func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
 		return cursor, limit, 0
 	}
 
-	page := parseIntDefault(r, "page", 1)
-	if page < 1 {
-		page = 1
-	}
+	page := max(parseIntDefault(r, "page", 1), 1)
 	offset = OffsetForPage(page, limit)
 	return cursor, limit, offset
 }

@@ -18,7 +18,7 @@ import (
 // path that did not, so a server-pushed island bringing in a styled
 // component rendered unstyled.
 func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {
-	var cssHits int32
+	var cssHits atomic.Int32
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {
 		<-r.Context().Done()
 	})
 	mux.HandleFunc("/css/sse-probe.css", func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&cssHits, 1)
+		cssHits.Add(1)
 		w.Header().Set("Content-Type", "text/css")
 		w.Write([]byte(`body{}`))
 	})
@@ -87,7 +87,7 @@ func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {
 	if !hasLink {
 		t.Error("SSE island swap did not load component CSS: no <link data-fui-style=\"sse-probe\"> after a swap that introduced [data-fui-comp=\"sse-probe\"] — scanAndLoadCSS is missing from the SSE swap path")
 	}
-	if atomic.LoadInt32(&cssHits) == 0 {
+	if cssHits.Load() == 0 {
 		t.Error("SSE island swap did not fetch /css/sse-probe.css — component CSS never requested")
 	}
 }

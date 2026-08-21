@@ -41,7 +41,7 @@ func TestNonceRoundTrip(t *testing.T) {
 func TestNonceIDsAreUnique(t *testing.T) {
 	now := time.Now()
 	seen := map[string]bool{}
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		tok, err := MintNonce(testNonceKey, "dash", "u", "https://acme.com", nil, time.Minute, now)
 		if err != nil {
 			t.Fatalf("MintNonce: %v", err)

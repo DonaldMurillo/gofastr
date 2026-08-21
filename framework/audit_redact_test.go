@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"testing"
 
@@ -140,9 +141,7 @@ func TestAudit_RedactFiresOnDelete(t *testing.T) {
 			// passes the live response payload through Redact, so a
 			// mutation would leak into the API response too.
 			out := make(map[string]any, len(row))
-			for k, v := range row {
-				out[k] = v
-			}
+			maps.Copy(out, row)
 			if id, ok := out["id"].(string); ok {
 				deleteCalls++
 				sawEntity = entityName
@@ -227,7 +226,7 @@ func TestAudit_IDsDoNotCollideUnderConcurrency(t *testing.T) {
 
 		const N = 60
 		errs := make(chan error, N)
-		for i := 0; i < N; i++ {
+		for i := range N {
 			go func(n int) {
 				resp := ta.Post("/posts", map[string]any{"title": fmt.Sprintf("p%d", n)})
 				if resp.Status() != http.StatusCreated {
@@ -237,7 +236,7 @@ func TestAudit_IDsDoNotCollideUnderConcurrency(t *testing.T) {
 				errs <- nil
 			}(i)
 		}
-		for i := 0; i < N; i++ {
+		for range N {
 			if err := <-errs; err != nil {
 				t.Fatalf("concurrent post failed (audit PK collision?): %v", err)
 			}

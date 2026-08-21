@@ -260,12 +260,12 @@ func TestSecurity_PanicInPushUpdate(t *testing.T) {
 	defer cancelCh1()
 
 	// Fill the channel buffer (size 64).
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		mgr.PushUpdate(island.IslandUpdate{IslandID: fmt.Sprintf("fill-%d", i), HTML: "x"}, "panic-sess")
 	}
 
 	// Drain to keep test fast.
-	for i := 0; i < 64; i++ {
+	for range 64 {
 		<-ch
 	}
 
@@ -455,10 +455,8 @@ func TestSecurity_ConcurrentRender_SameIsland(t *testing.T) {
 	isl := island.NewIsland("shared-render", tc)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			defer func() {
 				if r := recover(); r != nil {
 					t.Errorf("SECURITY: [concurrency] concurrent Render panicked: %v", r)
@@ -468,7 +466,7 @@ func TestSecurity_ConcurrentRender_SameIsland(t *testing.T) {
 			if !strings.Contains(out, "data-island") {
 				t.Errorf("SECURITY: [concurrency] render output missing data-island attribute")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	t.Logf("NOTE: 100 concurrent Renders completed safely (Render called %d times)", tc.Count())

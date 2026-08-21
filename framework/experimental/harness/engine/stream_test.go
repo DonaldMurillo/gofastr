@@ -20,8 +20,7 @@ func TestCollectStreamTextOnly(t *testing.T) {
 	stream <- provider.StreamEvent{Kind: provider.KindStop, FinishReason: "stop"}
 	close(stream)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sub := bus.Subscribe(ctx)
 	originator := ids.NewClientID()
 

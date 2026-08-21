@@ -110,12 +110,12 @@ func registerEntities(app *framework.App) {
 	// renders a supplier relationship picker (a <select> of suppliers).
 	app.Entity("suppliers", entity.EntityConfig{
 		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true, Max: f64(120)},
+			{Name: "name", Type: schema.String, Required: true, Max: new(float64(120))},
 		},
 	})
 	app.Entity("products", entity.EntityConfig{
 		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true, Max: f64(120)},
+			{Name: "name", Type: schema.String, Required: true, Max: new(float64(120))},
 			{Name: "price", Type: schema.Float},
 			{Name: "in_stock", Type: schema.Bool},
 			{Name: "category", Type: schema.Enum, Values: []string{"tools", "parts", "accessories"}, Default: "tools"},
@@ -132,8 +132,8 @@ func registerEntities(app *framework.App) {
 	//gofastr:allow(GOFASTR1901) a back-office customer list is staff-wide by design, every signed-in user here IS staff, so there is no per-user row to scope to. An app where customers own their own record sets Scope.OwnerField instead.
 	app.Entity("customers", entity.EntityConfig{
 		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true, Max: f64(120)},
-			{Name: "email", Type: schema.String, Required: true, Max: f64(200)},
+			{Name: "name", Type: schema.String, Required: true, Max: new(float64(120))},
+			{Name: "email", Type: schema.String, Required: true, Max: new(float64(200))},
 			{Name: "vip", Type: schema.Bool},
 		},
 	})
@@ -175,7 +175,8 @@ func seed(db *sql.DB) {
 	db.Exec(`INSERT INTO customers (id, name, email, vip) VALUES (lower(hex(randomblob(16))), 'Alan Turing', 'alan@example.com', 0)`)
 }
 
-func f64(v float64) *float64 { return &v }
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }
 
 // ----- demo auth ------------------------------------------------------------
 

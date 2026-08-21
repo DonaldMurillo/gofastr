@@ -15,8 +15,7 @@ func TestRedisStart_AutoReclaimStranded(t *testing.T) {
 	q := NewRedisQueue(r, "autoreclaim")
 	q.SetVisibilityTimeout(30 * time.Millisecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Enqueue then dequeue, puts the job into the processing hash but
 	// never Ack/Nack so it simulates a crashed worker.

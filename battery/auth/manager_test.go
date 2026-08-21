@@ -418,7 +418,7 @@ func TestLogin_TimingSafe_NoEnumerationByResponseTime(t *testing.T) {
 	const samples = 5
 
 	var existSum, missingSum time.Duration
-	for i := 0; i < samples; i++ {
+	for range samples {
 		existSum += measure(t, r, "existing@example.com", "wrongpassword")
 		missingSum += measure(t, r, "missing@example.com", "anypassword")
 	}

@@ -154,18 +154,17 @@ func TestMemoryQueue_NackExhaustedDropsJob(t *testing.T) {
 // must be synchronised.
 func TestDBQueue_RegisterHandlerNoRaceWithWorker(t *testing.T) {
 	_, q := openDBQueueOpts(t, WithWorkers(2))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	q.RegisterHandler("seed", func(_ context.Context, _ Job) error { return nil })
 	q.Start(ctx)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < 50; j++ {
+			for j := range 50 {
 				q.RegisterHandler("t", func(_ context.Context, _ Job) error { return nil })
 				q.SetLeaseTimeout(time.Duration(j+1) * time.Second)
 				_ = q.Enqueue(ctx, Job{Type: "t"})

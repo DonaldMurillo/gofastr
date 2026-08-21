@@ -187,8 +187,8 @@ func remoteAddr(r *http.Request, trustXFF bool) string {
 	if trustXFF {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			// First entry is the client; subsequent entries are proxies.
-			if comma := strings.IndexByte(xff, ','); comma >= 0 {
-				return truncateString(strings.TrimSpace(xff[:comma]), maxPathLen)
+			if before, _, ok := strings.Cut(xff, ","); ok {
+				return truncateString(strings.TrimSpace(before), maxPathLen)
 			}
 			return truncateString(strings.TrimSpace(xff), maxPathLen)
 		}

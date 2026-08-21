@@ -22,7 +22,7 @@ func TestGroupRouterRaceFreeInit(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	const N = 50
-	for i := 0; i < N; i++ {
+	for i := range N {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

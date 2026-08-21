@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -135,7 +135,7 @@ func percentile(ds []time.Duration, p float64) time.Duration {
 	}
 	s := make([]time.Duration, len(ds))
 	copy(s, ds)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	slices.Sort(s)
 	idx := int(float64(len(s)-1) * p / 100)
 	return s[idx]
 }
@@ -216,9 +216,7 @@ func TestGate_TransportLatencySaturated(t *testing.T) {
 		failures int
 	)
 	for range concurrency {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			local := make([]time.Duration, 0, callsPerWorker)
 			<-start
 			for range callsPerWorker {
@@ -237,7 +235,7 @@ func TestGate_TransportLatencySaturated(t *testing.T) {
 			mu.Lock()
 			lat = append(lat, local...)
 			mu.Unlock()
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

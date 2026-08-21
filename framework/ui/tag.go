@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -92,9 +93,7 @@ func Tag(cfg TagConfig) render.HTML {
 			"type":                "button",
 			"class":               "ui-tag__dismiss",
 		}
-		for k, val := range cfg.DismissAttrs {
-			attrs[k] = val
-		}
+		maps.Copy(attrs, cfg.DismissAttrs)
 		// SVG × icon: kept aria-hidden so the aria-label is the
 		// single announced name.
 		body = append(body, render.Tag("button", flattenAttrs(attrs),
@@ -127,8 +126,6 @@ func Tag(cfg TagConfig) render.HTML {
 // map[string]string render.Tag expects (same type, different alias).
 func flattenAttrs(in html.Attrs) map[string]string {
 	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }

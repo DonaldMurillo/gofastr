@@ -37,7 +37,7 @@ func parseSSEEvents(stream string) []sseEvent {
 		cur = sseEvent{}
 		dataLines = nil
 	}
-	for _, line := range strings.Split(stream, "\n") {
+	for line := range strings.SplitSeq(stream, "\n") {
 		if line == "" {
 			dispatch()
 			continue

@@ -1,6 +1,8 @@
 package apiversions
 
 import (
+	"slices"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -75,18 +77,11 @@ func ApplyToEntityConfig(base entity.EntityConfig, ps *ProjectionSet, version st
 }
 
 func shouldInclude(fieldName string, p *Projection) bool {
-	for _, ex := range p.Exclude {
-		if ex == fieldName {
-			return false
-		}
+	if slices.Contains(p.Exclude, fieldName) {
+		return false
 	}
 	if len(p.Include) > 0 {
-		for _, inc := range p.Include {
-			if inc == fieldName {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(p.Include, fieldName)
 	}
 	return true
 }

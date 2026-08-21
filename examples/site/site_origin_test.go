@@ -85,7 +85,7 @@ func TestSiteOriginIsNotAPlaceholder(t *testing.T) {
 // and this test would still pass.
 func commandLinesOnly(b []byte) []byte {
 	var out []byte
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
 		}

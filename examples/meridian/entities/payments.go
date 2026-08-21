@@ -271,7 +271,7 @@ func registerPayments(app *framework.App) {
 	app.Entity("payments", framework.EntityConfig{Fields: []schema.Field{
 		{Name: "invoice_id", Type: schema.Relation, Required: true, To: "invoices"},
 		{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
-		{Name: "amount", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+		{Name: "amount", Type: schema.Decimal, Required: true, Min: new(float64(0))},
 		{Name: "method", Type: schema.Enum, Default: "card", Values: []string{"card", "ach", "wire"}},
 		{Name: "status", Type: schema.Enum, Default: "succeeded", Values: []string{"succeeded", "failed", "refunded"}},
 		{Name: "user_id", Type: schema.String, Hidden: true},
@@ -279,7 +279,7 @@ func registerPayments(app *framework.App) {
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "invoice", Entity: "invoices", ForeignKey: "invoice_id"},
 			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
-		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Payments"},
+		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: new(true), MCP: true}, Properties: map[string]any{"label": "Payments"},
 	})
 	_ = Payments{}
 }

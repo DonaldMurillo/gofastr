@@ -2,6 +2,7 @@ package noderender
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -99,9 +100,7 @@ func withoutActionAttrs(props map[string]any) map[string]any {
 		// these, and rewriting every props map would be pure garbage.
 		if out == nil {
 			out = make(map[string]any, len(props))
-			for k2, v2 := range props {
-				out[k2] = v2
-			}
+			maps.Copy(out, props)
 		}
 		delete(out, k)
 	}
@@ -215,13 +214,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 
 	// --- text elements --------------------------------------------
 	case "heading":
-		level := propInt(props, "level", 1)
-		if level < 1 {
-			level = 1
-		}
-		if level > 6 {
-			level = 6
-		}
+		level := min(max(propInt(props, "level", 1), 1), 6)
 		text := propString(props, "text")
 		body := children
 		if text != "" {
@@ -636,9 +629,7 @@ func attrAllowed(name string) bool {
 }
 
 func mergeInto(dst, src map[string]string) {
-	for k, v := range src {
-		dst[k] = v
-	}
+	maps.Copy(dst, src)
 }
 
 // --- prop accessors (unchanged) --------------------------------------

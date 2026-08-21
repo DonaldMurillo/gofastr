@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -89,10 +90,5 @@ func TestApp_RoutinesFS_EndToEndOnSQLite(t *testing.T) {
 }
 
 func containsName(xs []string, want string) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, want)
 }

@@ -50,8 +50,7 @@ func legacyLeaseOutbox(t *testing.T, claimedUntil time.Time) (*Outbox, chan stru
 func TestLegacyActiveLeaseNotReclaimed(t *testing.T) {
 	o, called := legacyLeaseOutbox(t, time.Now().UTC().Add(time.Hour))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	stop := o.StartRelay(ctx)
 	defer stop()
 
@@ -66,8 +65,7 @@ func TestLegacyActiveLeaseNotReclaimed(t *testing.T) {
 func TestLegacyExpiredLeaseDelivers(t *testing.T) {
 	o, called := legacyLeaseOutbox(t, time.Now().UTC().Add(-time.Hour))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	stop := o.StartRelay(ctx)
 	defer stop()
 

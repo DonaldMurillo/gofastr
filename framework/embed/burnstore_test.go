@@ -61,7 +61,7 @@ func burnStoreContract(t *testing.T, name string, mk func(t *testing.T) BurnStor
 
 	t.Run(name+"/distinct nonces are independent", func(t *testing.T) {
 		s := mk(t)
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			id := fmt.Sprintf("n%d", i)
 			got, replay, err := s.Burn(ctx, id, "grant-"+id, time.Now().Add(time.Hour))
 			if err != nil || replay || got != "grant-"+id {
@@ -81,7 +81,7 @@ func burnStoreContract(t *testing.T, name string, mk func(t *testing.T) BurnStor
 		grants := make([]string, racers)
 		var wg sync.WaitGroup
 		start := make(chan struct{})
-		for i := 0; i < racers; i++ {
+		for i := range racers {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()

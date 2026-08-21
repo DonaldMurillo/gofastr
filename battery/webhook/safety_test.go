@@ -236,7 +236,7 @@ func TestStop_CancelsInflightHTTPRequest(t *testing.T) {
 // invariant that newID never returns the all-zero ID, which would be the
 // observable symptom of an unchecked rand.Read error.
 func TestNewID_NotAllZero(t *testing.T) {
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		if newID() == "00000000000000000000000000000000" {
 			t.Fatalf("newID returned all-zero id on iteration %d", i)
 		}
@@ -298,9 +298,9 @@ func TestSubscribe_HonorsPausedFlag(t *testing.T) {
 // ----- Publish to a paused subscriber does not deliver ----------------------
 
 func TestPublish_SkipsPausedSubscribers(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -319,7 +319,7 @@ func TestPublish_SkipsPausedSubscribers(t *testing.T) {
 		t.Fatalf("expected zero queued for paused subscriber, got %d", queued)
 	}
 	time.Sleep(50 * time.Millisecond)
-	if c := atomic.LoadInt32(&calls); c != 0 {
+	if c := calls.Load(); c != 0 {
 		t.Fatalf("paused subscriber must not receive deliveries; got %d calls", c)
 	}
 }

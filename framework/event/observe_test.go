@@ -99,14 +99,12 @@ func TestEmitIsConcurrencySafeWithAnObserver(t *testing.T) {
 	bus.On("tick", func(ctx context.Context, e Event) error { return nil })
 
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 32 {
+		wg.Go(func() {
 			if err := bus.Emit(context.Background(), Event{Type: "tick"}); err != nil {
 				t.Errorf("emit: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

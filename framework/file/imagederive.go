@@ -156,7 +156,7 @@ func isRasterDataURL(s string) bool {
 	if len(s) <= len(prefix) {
 		return false
 	}
-	for i := 0; i < len(prefix); i++ {
+	for i := range len(prefix) {
 		c := s[i]
 		if c >= 'A' && c <= 'Z' {
 			c += 'a' - 'A'

@@ -659,7 +659,7 @@ func TestEnterOnNonSlashSubmitsImmediately(t *testing.T) {
 func TestArrowStillScrollsWhenPopupInactive(t *testing.T) {
 	tui := newSnapshotTUI()
 	// fill scrollback so we have something to scroll past
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		tui.scrollback = append(tui.scrollback, "filler")
 	}
 	tui.input = []rune("hello world") // not a slash command
@@ -852,7 +852,7 @@ func TestMultilineInput_EnterStillSubmits(t *testing.T) {
 // without depending on wall time.
 func TestSpinnerFrameCycles(t *testing.T) {
 	frames := []rune{}
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		frames = append(frames, spinnerGlyph(i))
 	}
 	// At least 8 distinct frames (Braille set has 10).

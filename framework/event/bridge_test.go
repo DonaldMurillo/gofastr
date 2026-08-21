@@ -140,9 +140,9 @@ func TestBridgeMarshalFailureSkipsPublish(t *testing.T) {
 		atomic.AddInt64(&aLocal, 1)
 		return nil
 	})
-	var bRemote int64
+	var bRemote atomic.Int64
 	busB.On("bad", func(context.Context, event.Event) error {
-		atomic.AddInt64(&bRemote, 1)
+		bRemote.Add(1)
 		return nil
 	})
 
@@ -156,7 +156,7 @@ func TestBridgeMarshalFailureSkipsPublish(t *testing.T) {
 	waitCounter(t, &aLocal, 1, "local emit on A")
 	// Remote must NOT have been published (marshal failed), so B stays 0.
 	time.Sleep(120 * time.Millisecond)
-	if got := atomic.LoadInt64(&bRemote); got != 0 {
+	if got := bRemote.Load(); got != 0 {
 		t.Fatalf("marshal-failed event was delivered to remote bus B (%d times); publish should have been skipped", got)
 	}
 }
@@ -232,7 +232,7 @@ func TestBridgeEmitDoesNotBlockOnStalledFanout(t *testing.T) {
 	// Emit far more than the queue depth while the backend is stalled; none
 	// of these should block.
 	start := time.Now()
-	for i := 0; i < 600; i++ {
+	for range 600 {
 		if err := bus.Emit(context.Background(), event.Event{Type: "x"}); err != nil {
 			close(release)
 			stop()

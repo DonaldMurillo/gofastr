@@ -39,21 +39,21 @@ func TestScopeNestedFiltersForCaller_ScopedTargets(t *testing.T) {
 	// TestScopeNestedFiltersForCallerStillRefusesUnreadableTargets.
 	ownerScoped := gateEntity(t, "notes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	multiTenant := gateEntity(t, "tnotes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{MultiTenant: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	plain := gateEntity(t, "pnotes", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 
 	reg := stubRegistry{byName: map[string]*entity.Entity{
 		"notes": ownerScoped, "tnotes": multiTenant, "pnotes": plain,
 	}}
 	parent := gateEntity(t, "boards", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	ch := &CrudHandler{Entity: parent, Registry: &reg}
 
@@ -154,13 +154,13 @@ func TestScopeNestedFiltersForCaller_ScopedTargets(t *testing.T) {
 func TestScopeNestedFiltersForCallerStillRefusesUnreadableTargets(t *testing.T) {
 	gated := gateEntity(t, "secrets", entity.EntityConfig{
 		Exposure: &entity.ExposureConfig{
-			CRUD:   boolPtrGate(true),
+			CRUD:   new(true),
 			Access: entity.AccessControl{Read: "secrets:read"},
 		},
 	})
 	reg := stubRegistry{byName: map[string]*entity.Entity{"secrets": gated}}
 	parent := gateEntity(t, "boards", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	ch := &CrudHandler{Entity: parent, Registry: &reg}
 	nf := []nestedFilter{{
@@ -237,7 +237,8 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 	}
 }
 
-func boolPtrGate(b bool) *bool { return &b }
+//go:fix inline
+func boolPtrGate(b bool) *bool { return new(b) }
 
 // Relation.Entity is the registry key; the SQL must name the resolved target's
 // table. resolvedTable falls back to the key only when no target resolved,
@@ -296,11 +297,11 @@ func TestBuildExistsSubqueryHidesSoftDeletedInEveryShape(t *testing.T) {
 func TestRelatedScopeHelpersHonourCrossScopeMarkers(t *testing.T) {
 	ownerTarget := gateEntity(t, "onotes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 	tenantTarget := gateEntity(t, "tnotes2", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{MultiTenant: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 
 	prev := owner.GetExtractor()
@@ -341,12 +342,12 @@ func TestRelatedScopeHelpersHonourCrossScopeMarkers(t *testing.T) {
 func TestCheckIncludeReadableRecursesAndRefuses(t *testing.T) {
 	gated := gateEntity(t, "secrets", entity.EntityConfig{
 		Exposure: &entity.ExposureConfig{
-			CRUD:   boolPtrGate(true),
+			CRUD:   new(true),
 			Access: entity.AccessControl{Read: "secrets:read"},
 		},
 	})
 	open := gateEntity(t, "opens", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	ch := &CrudHandler{Entity: open}
 
@@ -407,7 +408,7 @@ func TestWriteIncludeErrorStatusMapping(t *testing.T) {
 // node, the defensive paths every caller relies on.
 func TestRelatedScopeHelpersNoOpWhenUnscoped(t *testing.T) {
 	plain := gateEntity(t, "plain", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	node := &IncludeNode{Target: plain}
 	applyRelatedOwnerScope(context.Background(), node)
@@ -432,12 +433,12 @@ func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
 	target := gateEntity(t, "notes", entity.EntityConfig{
 		Table:    "note_rows",
 		Scope:    &entity.ScopeConfig{SoftDelete: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 		Fields:   []schema.Field{{Name: "body", Type: schema.String}},
 	})
 	reg := stubRegistry{byName: map[string]*entity.Entity{"notes": target}}
 	parent := gateEntity(t, "boards", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
 		},
@@ -472,18 +473,18 @@ func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
 func TestEagerScopeFiltersExemptCrossScopeCallers(t *testing.T) {
 	ownerScoped := gateEntity(t, "notes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	tenantScoped := gateEntity(t, "tnotes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{MultiTenant: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	granted := gateEntity(t, "gnotes", entity.EntityConfig{
 		Scope: &entity.ScopeConfig{
 			OwnerField:     "owner_id",
 			CrossOwnerRead: "notes:read:all",
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 
 	prev := owner.GetExtractor()

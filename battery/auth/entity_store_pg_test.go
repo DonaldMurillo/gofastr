@@ -59,7 +59,7 @@ func openPGForBattery(t *testing.T) *sql.DB {
 		t.Fatalf("open pg: %v", err)
 	}
 	db.SetMaxOpenConns(1)
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		if err := db.PingContext(ctx); err == nil {
 			cancel()

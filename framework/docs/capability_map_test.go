@@ -207,7 +207,7 @@ func TestBackendCapabilityMapCommandsAreReal(t *testing.T) {
 	valid := map[string]bool{}
 	caseRe := regexp.MustCompile(`case ((?:"[a-z]+",? ?)+):`)
 	for _, m := range caseRe.FindAllStringSubmatch(string(main), -1) {
-		for _, name := range strings.Split(m[1], ",") {
+		for name := range strings.SplitSeq(m[1], ",") {
 			valid[strings.Trim(strings.TrimSpace(name), `"`)] = true
 		}
 	}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -221,9 +222,7 @@ func renderEl(tag string, attrs map[string]string, children ...render.HTML) rend
 
 func cloneAttrs(attrs map[string]string) map[string]string {
 	out := make(map[string]string, len(attrs)+3)
-	for k, v := range attrs {
-		out[k] = v
-	}
+	maps.Copy(out, attrs)
 	return out
 }
 

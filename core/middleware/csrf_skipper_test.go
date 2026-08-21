@@ -107,12 +107,12 @@ func TestCSRFSkipper_ConcurrentAddAndSkip(t *testing.T) {
 	skipper := NewCSRFSkipper()
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			skipper.Add("/p" + string(rune('0'+(i%10))) + "/")
 		}
 		close(done)
 	}()
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		skipper.Skip(httptest.NewRequest(http.MethodPost, "/p3/foo", nil))
 	}
 	<-done

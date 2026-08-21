@@ -36,6 +36,7 @@ import (
 	"context"
 	"errors"
 	"hash/fnv"
+	"slices"
 	"sync"
 )
 
@@ -249,12 +250,7 @@ func bucket(salt, key, subject string) int {
 }
 
 func containsString(xs []string, s string) bool {
-	for _, x := range xs {
-		if x == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, s)
 }
 
 // ----- package-level default ------------------------------------------------

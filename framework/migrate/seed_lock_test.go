@@ -95,10 +95,10 @@ func TestRunSeeds_AdvisoryLockSerializesAcrossReplicas(t *testing.T) {
 		t.Logf("clear ledger (ok if absent): %v", err)
 	}
 
-	var seedCalls int64
+	var seedCalls atomic.Int64
 	reg := simpleRegistry{
 		"seed_lock_sentinel": seededEntityBuilder("seed_lock_sentinel", func(ctx context.Context, db *sql.DB) error {
-			atomic.AddInt64(&seedCalls, 1)
+			seedCalls.Add(1)
 			// INSERT ON CONFLICT keeps the Seed idempotent if both replicas
 			// DO end up running it (defense in depth, the lock should
 			// already prevent this, but a Seed that crashes mid-flight is
@@ -134,7 +134,7 @@ func TestRunSeeds_AdvisoryLockSerializesAcrossReplicas(t *testing.T) {
 	// The Seed body ran at most once. With the lock it's exactly once; the
 	// assertion documents "no double-run", which is the contract. (Either
 	// replica may win, that's fine.)
-	if got := atomic.LoadInt64(&seedCalls); got != 1 {
+	if got := seedCalls.Load(); got != 1 {
 		t.Fatalf("Seed body executed %d times, want exactly 1 (ledger + advisory lock)", got)
 	}
 
@@ -153,7 +153,7 @@ func TestRunSeeds_AdvisoryLockSerializesAcrossReplicas(t *testing.T) {
 			t.Fatalf("follow-up RunSeeds error: %v", err)
 		}
 	}
-	if got := atomic.LoadInt64(&seedCalls); got != 1 {
+	if got := seedCalls.Load(); got != 1 {
 		t.Fatalf("Seed body executed %d times after follow-up, want still 1 (ledger short-circuit)", got)
 	}
 }

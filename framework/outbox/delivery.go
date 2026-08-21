@@ -260,14 +260,14 @@ func (o *Outbox) sweepParents(ctx context.Context) error {
 
 // joinPlaceholders joins placeholder tokens with ", " for an IN list.
 func joinPlaceholders(ph []string) string {
-	out := ""
+	var out strings.Builder
 	for i, p := range ph {
 		if i > 0 {
-			out += ", "
+			out.WriteString(", ")
 		}
-		out += p
+		out.WriteString(p)
 	}
-	return out
+	return out.String()
 }
 
 // purgeExpired deletes fully-settled (dispatched) parent rows and their

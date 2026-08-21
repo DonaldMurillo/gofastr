@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -82,9 +83,7 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		inputAttrs["aria-invalid"] = "true"
 		inputAttrs["aria-describedby"] = cfg.ID + "-error"
 	}
-	for k, v := range cfg.ExtraAttrs {
-		inputAttrs[k] = v
-	}
+	maps.Copy(inputAttrs, cfg.ExtraAttrs)
 	// Protect critical attrs from Attrs override.
 	inputAttrs["type"] = "password"
 	inputAttrs["name"] = cfg.Name

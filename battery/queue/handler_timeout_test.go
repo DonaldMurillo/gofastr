@@ -40,8 +40,7 @@ func TestDBQueueHandlerTimeoutCancelsCtx(t *testing.T) {
 		t.Fatalf("enqueue: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go q.Start(ctx)
 
 	select {

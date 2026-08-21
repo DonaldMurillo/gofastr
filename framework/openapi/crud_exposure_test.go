@@ -10,7 +10,9 @@ import (
 
 // boolPtr is local to the test file; the framework's own helper lives in
 // package framework and importing it here would be a cycle.
-func boolPtr(b bool) *bool { return &b }
+//
+//go:fix inline
+func boolPtr(b bool) *bool { return new(b) }
 
 // An entity that opted out of auto-CRUD must not appear in the spec. The
 // router refuses every generated path for it (404), so advertising them
@@ -22,7 +24,7 @@ func TestCRUDDisabledEntityEmitsNoPaths(t *testing.T) {
 	off := entity.Define("secrets", entity.EntityConfig{
 		Table:    "secrets",
 		Fields:   []schema.Field{{Name: "value", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
+		Exposure: &entity.ExposureConfig{CRUD: new(false)},
 	}.WithTimestamps(false))
 	on := entity.Define("posts", entity.EntityConfig{
 		Table:  "posts",
@@ -72,7 +74,7 @@ func TestCRUDDisabledEntityKeepsSchema(t *testing.T) {
 	off := entity.Define("secrets", entity.EntityConfig{
 		Table:    "secrets",
 		Fields:   []schema.Field{{Name: "value", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
+		Exposure: &entity.ExposureConfig{CRUD: new(false)},
 	}.WithTimestamps(false))
 
 	doc := EntityOpenAPI(reg(off), "Test", "1.0.0").Build()
@@ -97,7 +99,7 @@ func TestCRUDDisabledEntityKeepsEndpoints(t *testing.T) {
 	off := entity.Define("secrets", entity.EntityConfig{
 		Table:    "secrets",
 		Fields:   []schema.Field{{Name: "value", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)},
+		Exposure: &entity.ExposureConfig{CRUD: new(false)},
 		Endpoints: []entity.Endpoint{{
 			Method:      "POST",
 			Path:        "reveal",

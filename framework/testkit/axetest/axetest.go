@@ -154,7 +154,7 @@ func NewTabContext(browser context.Context, timeout time.Duration) (context.Cont
 // known-benign "unhandled node event *dom.EventAdoptedStyleSheetsModified"
 // noise [Prepare]'s constructed-stylesheet freeze triggers on every page,
 // it would otherwise interleave with audit/test output on stderr.
-func filteredErrorf(format string, args ...interface{}) {
+func filteredErrorf(format string, args ...any) {
 	if strings.Contains(fmt.Sprintf(format, args...), "unhandled node event") {
 		return
 	}

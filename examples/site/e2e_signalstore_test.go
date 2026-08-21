@@ -58,7 +58,7 @@ func (s *consoleErrSink) addEntry(source, text, url string) {
 }
 
 func (s *consoleErrSink) listen(ctx context.Context) {
-	chromedp.ListenTarget(ctx, func(ev interface{}) {
+	chromedp.ListenTarget(ctx, func(ev any) {
 		switch e := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
 			if e.Type == "error" {

@@ -53,7 +53,7 @@ func WorkspaceMetrics(root string) (sourceLines, testLines, directDeps int) {
 		return sourceLines, testLines, 0
 	}
 	inBlock := false
-	for _, line := range strings.Split(string(goMod), "\n") {
+	for line := range strings.SplitSeq(string(goMod), "\n") {
 		line = strings.TrimSpace(line)
 		switch {
 		case line == "require (":

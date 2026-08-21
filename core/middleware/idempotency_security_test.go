@@ -180,7 +180,7 @@ func (s *recordingStore) Finish(ctx context.Context, key, fingerprint string, re
 func TestMemoryStore_MaxEntriesEvictsOldest(t *testing.T) {
 	s := NewMemoryIdempotencyStore(time.Hour, WithMemoryStoreMaxEntries(3))
 	ctx := context.Background()
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		key := fmt.Sprintf("k%d", i)
 		_, _, _ = s.Begin(ctx, key, "fp")
 		// micro-spacing so createdAt differs deterministically
@@ -382,7 +382,7 @@ func runReclaimOneWinner(t *testing.T, s IdempotencyStore, key string, reseed fu
 	const iters = 60
 	for iter := range iters {
 		reseed()
-		var fresh int64
+		var fresh atomic.Int64
 		unexpected := make(chan error, racers)
 		var wg sync.WaitGroup
 		start := make(chan struct{})
@@ -395,7 +395,7 @@ func runReclaimOneWinner(t *testing.T, s IdempotencyStore, key string, reseed fu
 				_, ok, err := s.Begin(ctx, key, fp)
 				switch {
 				case err == nil && !ok:
-					atomic.AddInt64(&fresh, 1)
+					fresh.Add(1)
 				case errors.Is(err, ErrInFlight), errors.Is(err, ErrFingerprintMismatch):
 					// Expected: lost the race to another claimant, or a
 					// sibling won under a different fingerprint.
@@ -430,7 +430,7 @@ func runReclaimOneWinner(t *testing.T, s IdempotencyStore, key string, reseed fu
 		if firstUnexpected != nil {
 			t.Fatalf("F4 iter %d: unexpected Begin error (only ErrInFlight/ErrFingerprintMismatch expected): %v", iter, firstUnexpected)
 		}
-		if f := atomic.LoadInt64(&fresh); f != 1 {
+		if f := fresh.Load(); f != 1 {
 			t.Fatalf("F4 iter %d: expected exactly ONE fresh claimant (the reclaim path must run AND must not delete a fresh claim), got %d", iter, f)
 		}
 	}

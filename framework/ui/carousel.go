@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -141,9 +142,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	if cfg.Loop {
 		attrs["data-fui-carousel-loop"] = "true"
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 
 	// VirtualScroll prep: figure out the inline window.
 	virtualWindow := 0

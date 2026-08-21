@@ -260,7 +260,7 @@ func TestAllKeysCoversAllPackageConstants(t *testing.T) {
 			t.Errorf("AllKeys() lists %q %d times", k, n)
 		}
 	}
-	_ = reflect.TypeOf(Key(""))
+	_ = reflect.TypeFor[Key]()
 }
 
 func TestHumanize(t *testing.T) {

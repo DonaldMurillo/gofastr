@@ -173,20 +173,11 @@ func TestE2EJSONLDArticleAndBreadcrumb(t *testing.T) {
 func snippet(body, marker string) string {
 	i := strings.Index(body, marker)
 	if i < 0 {
-		end := len(body)
-		if end > 400 {
-			end = 400
-		}
+		end := min(len(body), 400)
 		return "(marker not found) " + body[:end]
 	}
-	start := i - 80
-	if start < 0 {
-		start = 0
-	}
-	end := i + 200
-	if end > len(body) {
-		end = len(body)
-	}
+	start := max(i-80, 0)
+	end := min(i+200, len(body))
 	return body[start:end]
 }
 

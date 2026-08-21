@@ -100,7 +100,7 @@ func TestTabsFirstButtonActive(t *testing.T) {
 // panel) for each tab index, keyed off the wrapper's data-active.
 func TestTabsActiveHighlightFollowsSignal(t *testing.T) {
 	css := tabsStyle.Entry().CSSFor(style.Theme{})
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		btnRule := fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-fui-tab-index="%d"]`, i, i)
 		if !strings.Contains(css, btnRule) {
 			t.Errorf("missing active-button rule for tab %d (highlight won't move):\n%s", i, btnRule)

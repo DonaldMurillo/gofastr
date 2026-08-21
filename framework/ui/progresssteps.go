@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -102,9 +103,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	if cfg.ID != "" {
 		navAttrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		navAttrs[k] = v
-	}
+	maps.Copy(navAttrs, cfg.ExtraAttrs)
 
 	items := make([]render.HTML, 0, len(cfg.Steps))
 	for i, s := range cfg.Steps {

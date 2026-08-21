@@ -198,7 +198,7 @@ func TestSort_RepeatedFieldBounded(t *testing.T) {
 	t.Run("many_distinct_combos", func(t *testing.T) {
 		// Mix of asc/desc on allowed fields, still over the cap.
 		var q []string
-		for i := 0; i < 5000; i++ {
+		for range 5000 {
 			q = append(q, "sort=title", "sort=-title", "sort=status", "sort=-status")
 		}
 		req := httptest.NewRequest(http.MethodGet, "/?"+strings.Join(q, "&"), nil)

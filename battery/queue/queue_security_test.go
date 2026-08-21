@@ -245,7 +245,7 @@ func TestMemoryDequeueKeepsSkippedUnderLoad(t *testing.T) {
 	const cap = 1024 // backlog size (ex-old-channel-capacity)
 
 	// Seed the store with a backlog of non-matching jobs.
-	for i := 0; i < cap; i++ {
+	for i := range cap {
 		if err := q.Enqueue(ctx, Job{ID: fmtID(i), Type: "sms"}); err != nil {
 			t.Fatalf("seed enqueue %d: %v", i, err)
 		}
@@ -257,7 +257,7 @@ func TestMemoryDequeueKeepsSkippedUnderLoad(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < cap*4; i++ {
+		for i := range cap * 4 {
 			if err := q.Enqueue(ctx, Job{ID: "p" + strconv.Itoa(i), Type: "sms"}); err == nil {
 				produced.Add(1)
 			}
@@ -266,7 +266,7 @@ func TestMemoryDequeueKeepsSkippedUnderLoad(t *testing.T) {
 
 	// Drain looking for an absent type: every job is RPop'd into skipped and
 	// must be re-enqueued. Run it repeatedly to widen the race window.
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		if _, err := q.Dequeue(ctx, "email"); !errors.Is(err, ErrNoJob) && err != nil {
 			t.Fatalf("filtered dequeue: %v", err)
 		}

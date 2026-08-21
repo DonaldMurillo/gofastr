@@ -44,9 +44,9 @@ func TestRBAC_ConcurrentGrant(t *testing.T) {
 	t.Parallel()
 	if os.Getenv("GOFASTR_SUB_GRANT") == "1" {
 		rp := access.NewRolePolicy()
-		for round := 0; round < 20; round++ {
+		for round := range 20 {
 			var wg sync.WaitGroup
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				wg.Add(1)
 				go func(n int) {
 					defer wg.Done()
@@ -70,12 +70,12 @@ func TestRBAC_ConcurrentRevoke(t *testing.T) {
 	t.Parallel()
 	if os.Getenv("GOFASTR_SUB_REVOKE") == "1" {
 		rp := access.NewRolePolicy()
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			rp.Grant("worker", access.Permission(fmt.Sprintf("perm:%d", i)))
 		}
-		for round := 0; round < 20; round++ {
+		for range 20 {
 			var wg sync.WaitGroup
-			for i := 0; i < 50; i++ {
+			for i := range 50 {
 				wg.Add(1)
 				go func(n int) {
 					defer wg.Done()
@@ -104,7 +104,7 @@ func TestRBAC_ConcurrentGrantRevokeWithReads(t *testing.T) {
 	ctx := access.WithRoles(access.WithPolicy(context.Background(), rp), []string{"worker"})
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(3)
 		go func(n int) {
 			defer wg.Done()

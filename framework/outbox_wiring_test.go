@@ -193,7 +193,7 @@ func TestOutbox_UpdateAndDeleteDeliver(t *testing.T) {
 			event.EntityDeleted: false,
 		}
 		deadline := time.After(3 * time.Second)
-		for n := 0; n < 3; n++ {
+		for n := range 3 {
 			select {
 			case e := <-durable:
 				want[e.Type] = true

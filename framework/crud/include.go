@@ -339,7 +339,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		{"_like", filter.OpLike}, {"_in", filter.OpIn},
 	}
 	var out []filter.ParsedFilter
-	for _, kv := range strings.Split(raw, ",") {
+	for kv := range strings.SplitSeq(raw, ",") {
 		kv = strings.TrimSpace(kv)
 		if kv == "" {
 			continue
@@ -352,8 +352,8 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		field := key
 		op := filter.OpEq
 		for _, s := range suffixes {
-			if strings.HasSuffix(key, s.suffix) {
-				field = strings.TrimSuffix(key, s.suffix)
+			if before, ok := strings.CutSuffix(key, s.suffix); ok {
+				field = before
 				op = s.op
 				break
 			}
@@ -377,8 +377,8 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			if n := strings.Count(value, "|") + 1; n > maxScopedINEntries {
 				return nil, fmt.Errorf("include %q: scoped IN list on %q has %d entries (max %d)", pathForErrors, field, n, maxScopedINEntries)
 			}
-			vals := strings.Split(value, "|")
-			for _, v := range vals {
+			vals := strings.SplitSeq(value, "|")
+			for v := range vals {
 				out = append(out, filter.ParsedFilter{Field: field, Op: filter.OpIn, Value: v}.Coerced(colType[field]))
 			}
 		} else {
@@ -413,8 +413,7 @@ func writeIncludeError(w http.ResponseWriter, surface string, err error) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var forbidden *includeForbiddenError
-	if errors.As(err, &forbidden) {
+	if forbidden, ok := errors.AsType[*includeForbiddenError](err); ok {
 		// The refusal the target entity's own list route would give for an
 		// RBAC or session failure. It is not byte-for-byte parity in every
 		// posture: an owner-scoped target skips the session check here (see

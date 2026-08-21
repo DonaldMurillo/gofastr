@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -100,8 +101,8 @@ func (r *Router) layoutChainFor(screen *Screen) []LayoutLayer {
 		chain = append(chain, LayoutLayer{Layout: def})
 		seen[def] = true
 	}
-	for i := len(groups) - 1; i >= 0; i-- {
-		g := groups[i]
+	for i, g := range slices.Backward(groups) {
+
 		eff := g.layout
 		if i == 0 && screen.Layout != nil {
 			// Innermost level: the screen's layout (set by group.Screen to

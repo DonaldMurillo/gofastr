@@ -511,19 +511,19 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 	// carry preserves search + active facets across sort-header and pagination
 	// links (which are <a> navigations, not the toolbar form) so those actions
 	// never silently drop the current filter set.
-	carry := ""
+	var carry strings.Builder
 	if search != "" {
-		carry += "q=" + url.QueryEscape(search) + "&"
+		carry.WriteString("q=" + url.QueryEscape(search) + "&")
 	}
 	for _, ff := range c.Filters {
 		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
-			carry += url.QueryEscape(ff.Key) + "=" + url.QueryEscape(v) + "&"
+			carry.WriteString(url.QueryEscape(ff.Key) + "=" + url.QueryEscape(v) + "&")
 		}
 	}
 	dt := ui.DataTableConfig{
 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
 		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
-		SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
+		SortHrefPattern: "?" + carry.String() + "sort=%s&dir=%s",
 		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: 2},
 	}
 	if c.IslandPath != "" {
@@ -533,7 +533,7 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 		dt.IslandEndpoint = c.IslandPath
 	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
-		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
+		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry.String() + "p=%d"}
 	}
 	return ui.DataTable(dt)
 }

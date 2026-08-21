@@ -25,7 +25,7 @@ func TestTimeoutRaceShutdownVsSetter(t *testing.T) {
 		return nil
 	})
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		lc := lifecycle.New()
 		if err := lc.RegisterDrainer(blocker); err != nil {
 			t.Fatalf("RegisterDrainer: %v", err)

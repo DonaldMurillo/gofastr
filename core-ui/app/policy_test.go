@@ -197,10 +197,8 @@ func TestRenderAlt_FactoryPerRequest(t *testing.T) {
 	a.RegisterScreen(app.NewScreen("/", &homeComp{}).WithPolicy(pol), nil)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			res, err := a.RenderPageResult(context.Background(), "/")
 			if err != nil {
 				t.Errorf("err: %v", err)
@@ -209,7 +207,7 @@ func TestRenderAlt_FactoryPerRequest(t *testing.T) {
 			if res.Kind != app.DecisionRenderAlt {
 				t.Errorf("want RenderAlt, got %v", res.Kind)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -262,15 +260,15 @@ func TestRenderAlt_FactoryConcurrentAcrossScreens(t *testing.T) {
 	})
 
 	a := app.NewApp("t")
-	for i := 0; i < numScreens; i++ {
+	for i := range numScreens {
 		path := "/s" + string(rune('0'+i))
 		a.RegisterScreen(app.NewScreen(path, &homeComp{}).WithPolicy(pol), nil)
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < numScreens; i++ {
+	for i := range numScreens {
 		path := "/s" + string(rune('0'+i))
-		for j := 0; j < requestsPerScreen; j++ {
+		for range requestsPerScreen {
 			wg.Add(1)
 			go func(p string) {
 				defer wg.Done()

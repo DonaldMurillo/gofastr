@@ -202,7 +202,7 @@ func TestRequestIDUnique(t *testing.T) {
 		mu.Unlock()
 	}))
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
@@ -233,7 +233,7 @@ func TestLoggingOutput(t *testing.T) {
 	}
 
 	// Should be valid JSON
-	var entry map[string]interface{}
+	var entry map[string]any
 	if err := json.Unmarshal([]byte(output), &entry); err != nil {
 		t.Fatalf("output is not valid JSON: %s\nraw: %q", err, output)
 	}
@@ -451,14 +451,12 @@ func TestTimeoutConcurrentRequests(t *testing.T) {
 	}))
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 20 {
+		wg.Go(func() {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			rec := httptest.NewRecorder()
 			m.ServeHTTP(rec, req)
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -487,14 +485,12 @@ func TestTimeoutHeaderRaceAfterTimeout(t *testing.T) {
 	}))
 
 	var wg sync.WaitGroup
-	for i := 0; i < 30; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 30 {
+		wg.Go(func() {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			rec := httptest.NewRecorder()
 			m.ServeHTTP(rec, req)
-		}()
+		})
 	}
 	wg.Wait()
 }

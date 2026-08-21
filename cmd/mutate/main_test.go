@@ -295,27 +295,25 @@ func TestRestoreSetIsSafeUnderConcurrentUse(t *testing.T) {
 	rs := newRestoreSet()
 	dir := t.TempDir()
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
 			p := filepath.Join(dir, fmt.Sprintf("f%d.go", n))
 			_ = os.WriteFile(p, []byte("package p\n"), 0o644)
-			for j := 0; j < 50; j++ {
+			for range 50 {
 				if err := rs.addAndWrite(p, []byte("package p\n"), []byte("package p // m\n")); err == nil {
 					rs.remove(p)
 				}
 			}
 		}(i)
 	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for j := 0; j < 50; j++ {
+	wg.Go(func() {
+		for range 50 {
 			rs.runAll()
 			_ = rs.stopped()
 		}
-	}()
+	})
 	wg.Wait()
 }
 

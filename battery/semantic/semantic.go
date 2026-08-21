@@ -56,7 +56,7 @@ type Filter struct {
 type Query struct {
 	Text      string  `json:"text"`
 	K         int     `json:"k,omitempty"`
-	Filter    Filter  `json:"filter,omitempty"`
+	Filter    Filter  `json:"filter"`
 	Hybrid    bool    `json:"hybrid,omitempty"`
 	MMRLambda float64 `json:"mmr_lambda,omitempty"`
 	Rerank    bool    `json:"rerank,omitempty"`

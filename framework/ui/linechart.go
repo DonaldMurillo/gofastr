@@ -147,9 +147,10 @@ func LineChart(cfg LineChartConfig) render.HTML {
 			y := plotH - ((v - min) / span * plotH)
 			pts = append(pts, ftoa(x)+","+ftoa(y))
 		}
-		pathD := "M" + pts[0]
+		var pathD strings.Builder
+		pathD.WriteString("M" + pts[0])
 		for j := 1; j < len(pts); j++ {
-			pathD += " L" + pts[j]
+			pathD.WriteString(" L" + pts[j])
 		}
 
 		seriesCls := "ui-line-chart__line"
@@ -158,7 +159,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		}
 
 		if s.Area {
-			areaD := pathD + " L" + ftoa(plotW) + "," + ftoa(plotH) +
+			areaD := pathD.String() + " L" + ftoa(plotW) + "," + ftoa(plotH) +
 				" L0," + ftoa(plotH) + " Z"
 			areaCls := "ui-line-chart__area"
 			if isPalette {
@@ -178,7 +179,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		}
 
 		sb.WriteString(`<path d="`)
-		sb.WriteString(pathD)
+		sb.WriteString(pathD.String())
 		sb.WriteString(`" class="`)
 		sb.WriteString(seriesCls)
 		sb.WriteString(`"`)

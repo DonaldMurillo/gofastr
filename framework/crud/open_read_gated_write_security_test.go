@@ -39,7 +39,7 @@ func setupOpenReadGatedWriteHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	ent := entity.Define("posts", entity.EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Exposure: &entity.ExposureConfig{
-			CRUD: boolPtrTest(true),
+			CRUD: new(true),
 			Access: entity.AccessControl{
 				Read:   "", // deliberately open
 				Create: "posts:write",
@@ -52,7 +52,8 @@ func setupOpenReadGatedWriteHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	return NewCrudHandler(ent, db).WithJSONCase(CaseSnake), db
 }
 
-func boolPtrTest(b bool) *bool { return &b }
+//go:fix inline
+func boolPtrTest(b bool) *bool { return new(b) }
 
 // The read half of the contract: anonymous List must succeed, because that is
 // the entire point of declaring a blank Read.

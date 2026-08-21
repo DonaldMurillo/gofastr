@@ -59,7 +59,7 @@ func TestBrokerJSValidatesEntry(t *testing.T) {
 	}
 	// The frame src must be built from the validated value, never the raw
 	// manifest field.
-	for _, line := range strings.Split(js, "\n") {
+	for line := range strings.SplitSeq(js, "\n") {
 		if strings.Contains(line, `setAttribute("src"`) && !strings.Contains(line, "entry") {
 			t.Errorf("iframe src set from something other than the validated entry: %q", strings.TrimSpace(line))
 		}

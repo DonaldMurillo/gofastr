@@ -253,7 +253,7 @@ func TestUndoUnwindsHistory(t *testing.T) {
 	}
 
 	// Undo three times.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		r := h.tools.Undo(t.Context(), protocol.UndoArgs{})
 		if !r.OK {
 			t.Fatalf("undo %d: %+v", i, r)
@@ -528,7 +528,7 @@ func TestFullBlogScenario(t *testing.T) {
 	h.addEntity(t, &world.Entity{
 		Name: "posts",
 		Fields: []world.Field{
-			{Name: "title", Type: "string", Required: true, Max: floatPtr(200)},
+			{Name: "title", Type: "string", Required: true, Max: new(float64(200))},
 			{Name: "body", Type: "text"},
 			{Name: "slug", Type: "string"},
 			{Name: "status", Type: "enum", Values: []string{"draft", "published"}, Default: "draft"},
@@ -618,7 +618,8 @@ func TestFullBlogScenario(t *testing.T) {
 	}
 }
 
-func floatPtr(f float64) *float64 { return &f }
+//go:fix inline
+func floatPtr(f float64) *float64 { return new(f) }
 
 // --- (13) framework primitives still produce OpenAPI ----------------
 

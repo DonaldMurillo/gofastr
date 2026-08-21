@@ -46,7 +46,7 @@ func TestEntityConfigResolvedGroupsAreCanonical(t *testing.T) {
 		t.Fatalf("resolved groups must always be populated: %+v", zero.Config)
 	}
 
-	typ := reflect.TypeOf(EntityConfig{})
+	typ := reflect.TypeFor[EntityConfig]()
 	for _, removed := range []string{
 		"SoftDelete", "MultiTenant", "TenantField", "CRUD", "MCP",
 		"CursorField", "CursorFields", "MaxListLimit", "OwnerField",
@@ -148,7 +148,7 @@ func TestEntityDeclarationRejectsConflictingFlatAndGroupedJSON(t *testing.T) {
 }
 
 func TestEntityConfigTimestampsUsesPointerTriState(t *testing.T) {
-	field, ok := reflect.TypeOf(EntityConfig{}).FieldByName("Timestamps")
+	field, ok := reflect.TypeFor[EntityConfig]().FieldByName("Timestamps")
 	if !ok {
 		t.Fatal("EntityConfig.Timestamps is missing")
 	}

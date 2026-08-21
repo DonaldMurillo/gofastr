@@ -126,7 +126,6 @@ func BenchmarkDSLParse(b *testing.B) {
 		"in-list": `posts.where(status in ["draft","published","archived"]).limit(100)`,
 	}
 	for name, q := range cases {
-		q := q
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {

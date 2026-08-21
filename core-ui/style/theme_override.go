@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -64,9 +65,7 @@ func AllThemeOverrides() map[string]Theme {
 	themeOverrideMu.Lock()
 	defer themeOverrideMu.Unlock()
 	out := make(map[string]Theme, len(themeOverrides))
-	for k, v := range themeOverrides {
-		out[k] = v
-	}
+	maps.Copy(out, themeOverrides)
 	return out
 }
 

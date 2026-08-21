@@ -225,11 +225,11 @@ CREATE TABLE posts (
 func TestResolveNestedFiltersCarriesNoCallerScope(t *testing.T) {
 	target := gateEntity(t, "notes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	reg := stubRegistry{byName: map[string]*entity.Entity{"notes": target}}
 	parent := gateEntity(t, "boards", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
 		},

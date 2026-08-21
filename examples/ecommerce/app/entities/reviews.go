@@ -270,9 +270,9 @@ func registerReviews(app *framework.App) {
 	app.Entity("reviews", framework.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "product_id", Type: schema.Relation, Required: true, To: "products"},
-			{Name: "author_name", Type: schema.String, Required: true, Max: floatPtr(100)},
-			{Name: "rating", Type: schema.Int, Required: true, Max: floatPtr(5), Min: floatPtr(1)},
-			{Name: "title", Type: schema.String, Max: floatPtr(200)},
+			{Name: "author_name", Type: schema.String, Required: true, Max: new(float64(100))},
+			{Name: "rating", Type: schema.Int, Required: true, Max: new(float64(5)), Min: new(float64(1))},
+			{Name: "title", Type: schema.String, Max: new(float64(200))},
 			{Name: "body", Type: schema.Text},
 			{Name: "verified", Type: schema.Bool, Default: false},
 		},
@@ -280,7 +280,7 @@ func registerReviews(app *framework.App) {
 			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: "product_id"},
 		},
 		Exposure: &framework.ExposureConfig{
-			CRUD:   boolPtr(true),
+			CRUD:   new(true),
 			MCP:    true,
 			Access: framework.AccessControl{Create: "reviews:write", Update: "reviews:write", Delete: "reviews:admin"},
 		},

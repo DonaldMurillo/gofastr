@@ -20,6 +20,7 @@
 package datexport
 
 import (
+	"maps"
 	"sort"
 	"sync"
 	"testing"
@@ -292,9 +293,7 @@ func AllIdentityResolvers() map[IdentityKind]DataIdentityResolver {
 	mu.RLock()
 	defer mu.RUnlock()
 	out := make(map[IdentityKind]DataIdentityResolver, len(resolvers))
-	for k, v := range resolvers {
-		out[k] = v
-	}
+	maps.Copy(out, resolvers)
 	return out
 }
 

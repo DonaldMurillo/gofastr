@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -113,12 +114,7 @@ func groupSelected(g string, groups []string) bool {
 	if len(groups) == 0 {
 		return true
 	}
-	for _, gg := range groups {
-		if gg == g {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(groups, g)
 }
 
 // selectedMigrations returns the registered migrations whose group is among the

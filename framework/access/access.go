@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -68,9 +69,7 @@ func (rp *RolePolicy) Capabilities() []Permission {
 		capabilities = append(capabilities, capability)
 	}
 	rp.mu.RUnlock()
-	sort.Slice(capabilities, func(i, j int) bool {
-		return capabilities[i] < capabilities[j]
-	})
+	slices.Sort(capabilities)
 	return capabilities
 }
 
@@ -122,9 +121,7 @@ func (rp *RolePolicy) prepareGrants(permissions []Permission) ([]Permission, err
 	}
 	strict := rp.strictCapabilities
 	rp.mu.RUnlock()
-	sort.Slice(registered, func(i, j int) bool {
-		return registered[i] < registered[j]
-	})
+	slices.Sort(registered)
 
 	registeredSet := make(map[Permission]struct{}, len(registered))
 	for _, capability := range registered {

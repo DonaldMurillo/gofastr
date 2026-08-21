@@ -180,11 +180,8 @@ func flushSplit(sb *strings.Builder, removed, added []string) {
 	if len(removed) == 0 && len(added) == 0 {
 		return
 	}
-	n := len(removed)
-	if len(added) > n {
-		n = len(added)
-	}
-	for i := 0; i < n; i++ {
+	n := max(len(added), len(removed))
+	for i := range n {
 		sb.WriteString(`<div class="ui-diff-viewer__row">`)
 		// Left column: removed (or empty).
 		sb.WriteString(`<div class="ui-diff-viewer__cell ui-diff-viewer__cell--remove">`)

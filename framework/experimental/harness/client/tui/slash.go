@@ -11,6 +11,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -176,12 +177,7 @@ func (t *TUI) popupAcceptsEnter() bool {
 	if len(names) == 0 {
 		return false
 	}
-	for _, n := range names {
-		if n == input {
-			return false // exact match, let Enter submit
-		}
-	}
-	return true
+	return !slices.Contains(names, input)
 }
 
 // dispatchLocalSlash returns true when the command was fully handled
@@ -218,10 +214,7 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 			if b.ArgsHelp != "" {
 				line += " " + b.ArgsHelp
 			}
-			pad := 18 - runeLen(line)
-			if pad < 1 {
-				pad = 1
-			}
+			pad := max(18-runeLen(line), 1)
 			line += strings.Repeat(" ", pad) + b.Description
 			lines = append(lines, line)
 		}

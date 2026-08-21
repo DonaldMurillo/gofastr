@@ -160,12 +160,12 @@ func TestCallGateConcurrentSafe(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			s.SetCallGate(func(name string) error { return nil })
 		}
 	}()
 
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		s.CallTool(context.Background(), "hot", nil)
 	}
 	<-done

@@ -225,7 +225,7 @@ func TestE2E_NewFeatures(t *testing.T) {
 		t.Run("composite_cursor_walks_all_rows", func(t *testing.T) {
 			seen := map[string]bool{}
 			cursor := ""
-			for i := 0; i < 10; i++ { // 10 iterations is enough; will break early
+			for i := range 10 { // 10 iterations is enough; will break early
 				code, body := env.get(t, "/posts?cursor="+cursor+"&limit=2")
 				if code != http.StatusOK {
 					t.Fatalf("page %d: %d %s", i, code, body)

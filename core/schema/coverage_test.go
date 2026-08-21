@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-func fp(v float64) *float64 { return &v }
+//go:fix inline
+func fp(v float64) *float64 { return new(v) }
 
 type stringerT struct{ s string }
 
@@ -131,10 +132,10 @@ func TestValidateString(t *testing.T) {
 	if err := validateString(Field{Required: true}, ""); err == nil {
 		t.Error("required empty")
 	}
-	if err := validateString(Field{Min: fp(3)}, "ab"); err == nil {
+	if err := validateString(Field{Min: new(float64(3))}, "ab"); err == nil {
 		t.Error("min")
 	}
-	if err := validateString(Field{Max: fp(2)}, "abc"); err == nil {
+	if err := validateString(Field{Max: new(float64(2))}, "abc"); err == nil {
 		t.Error("max")
 	}
 	if err := validateString(Field{Pattern: "("}, "x"); err == nil {
@@ -143,7 +144,7 @@ func TestValidateString(t *testing.T) {
 	if err := validateString(Field{Pattern: "^a$"}, "b"); err == nil {
 		t.Error("pattern mismatch")
 	}
-	if err := validateString(Field{Pattern: "^a$", Min: fp(1), Max: fp(1)}, "a"); err != nil {
+	if err := validateString(Field{Pattern: "^a$", Min: new(float64(1)), Max: new(float64(1))}, "a"); err != nil {
 		t.Errorf("valid: %v", err)
 	}
 }
@@ -152,13 +153,13 @@ func TestValidateInt(t *testing.T) {
 	if err := validateField(Field{Type: Int}, "x"); err == nil {
 		t.Error("non-int")
 	}
-	if err := validateField(Field{Type: Int, Min: fp(5)}, 4); err == nil {
+	if err := validateField(Field{Type: Int, Min: new(float64(5))}, 4); err == nil {
 		t.Error("below min")
 	}
-	if err := validateField(Field{Type: Int, Max: fp(5)}, 6); err == nil {
+	if err := validateField(Field{Type: Int, Max: new(float64(5))}, 6); err == nil {
 		t.Error("above max")
 	}
-	if err := validateField(Field{Type: Int, Min: fp(1), Max: fp(10)}, 5); err != nil {
+	if err := validateField(Field{Type: Int, Min: new(float64(1)), Max: new(float64(10))}, 5); err != nil {
 		t.Errorf("valid: %v", err)
 	}
 }
@@ -173,13 +174,13 @@ func TestValidateFloat(t *testing.T) {
 	if err := validateField(Field{Type: Float}, math.NaN()); err == nil {
 		t.Error("nan")
 	}
-	if err := validateField(Field{Type: Float, Min: fp(1)}, 0.5); err == nil {
+	if err := validateField(Field{Type: Float, Min: new(float64(1))}, 0.5); err == nil {
 		t.Error("below min")
 	}
-	if err := validateField(Field{Type: Float, Max: fp(1)}, 1.5); err == nil {
+	if err := validateField(Field{Type: Float, Max: new(float64(1))}, 1.5); err == nil {
 		t.Error("above max")
 	}
-	if err := validateField(Field{Type: Float, Min: fp(0), Max: fp(2)}, 1.0); err != nil {
+	if err := validateField(Field{Type: Float, Min: new(float64(0)), Max: new(float64(2))}, 1.0); err != nil {
 		t.Errorf("valid: %v", err)
 	}
 }
@@ -200,27 +201,27 @@ func TestValidateDecimal(t *testing.T) {
 	if err := validateField(Field{Type: Decimal}, "1e999"); err == nil {
 		t.Error("overflow (ParseFloat err) rejected")
 	}
-	if err := validateField(Field{Type: Decimal, Min: fp(10)}, "5"); err == nil {
+	if err := validateField(Field{Type: Decimal, Min: new(float64(10))}, "5"); err == nil {
 		t.Error("below min")
 	}
-	if err := validateField(Field{Type: Decimal, Max: fp(10)}, "15"); err == nil {
+	if err := validateField(Field{Type: Decimal, Max: new(float64(10))}, "15"); err == nil {
 		t.Error("above max")
 	}
 	// NaN bound -> SetFloat64 returns nil -> fail closed.
-	if err := validateField(Field{Type: Decimal, Min: fp(math.NaN())}, "5"); err == nil {
+	if err := validateField(Field{Type: Decimal, Min: new(math.NaN())}, "5"); err == nil {
 		t.Error("NaN min should fail closed")
 	}
-	if err := validateField(Field{Type: Decimal, Max: fp(math.NaN())}, "5"); err == nil {
+	if err := validateField(Field{Type: Decimal, Max: new(math.NaN())}, "5"); err == nil {
 		t.Error("NaN max should fail closed")
 	}
-	if err := validateField(Field{Type: Decimal, Min: fp(0), Max: fp(100)}, "12.50"); err != nil {
+	if err := validateField(Field{Type: Decimal, Min: new(float64(0)), Max: new(float64(100))}, "12.50"); err != nil {
 		t.Errorf("valid: %v", err)
 	}
 	// The regex (not the parser) is what fails non-finite literals closed.
 	// ParseFloat/big.Rat would otherwise accept these and let them slip past
 	// the Min/Max bounds. Guard the property explicitly.
 	for _, bad := range []string{"NaN", "nan", "Inf", "inf", "Infinity", "+Inf", "0x1p4"} {
-		if err := validateField(Field{Type: Decimal, Max: fp(1)}, bad); err == nil {
+		if err := validateField(Field{Type: Decimal, Max: new(float64(1))}, bad); err == nil {
 			t.Errorf("SECURITY: decimal %q must be rejected (bypasses bounds)", bad)
 		}
 	}
@@ -400,11 +401,11 @@ func TestValidateAllAndPartial(t *testing.T) {
 
 func TestJSONSchema_EveryFieldType(t *testing.T) {
 	fields := []Field{
-		{Name: "s", Type: String, Required: true, Min: fp(1), Max: fp(5), Pattern: "^.*$"},
-		{Name: "txt", Type: Text, Min: fp(1), Max: fp(5), Pattern: "^.*$"},
-		{Name: "i", Type: Int, Min: fp(0), Max: fp(9)},
-		{Name: "f", Type: Float, Min: fp(0), Max: fp(9)},
-		{Name: "d", Type: Decimal, Min: fp(0), Max: fp(9)},
+		{Name: "s", Type: String, Required: true, Min: new(float64(1)), Max: new(float64(5)), Pattern: "^.*$"},
+		{Name: "txt", Type: Text, Min: new(float64(1)), Max: new(float64(5)), Pattern: "^.*$"},
+		{Name: "i", Type: Int, Min: new(float64(0)), Max: new(float64(9))},
+		{Name: "f", Type: Float, Min: new(float64(0)), Max: new(float64(9))},
+		{Name: "d", Type: Decimal, Min: new(float64(0)), Max: new(float64(9))},
 		{Name: "b", Type: Bool},
 		{Name: "e", Type: Enum, Values: []string{"a"}},
 		{Name: "u", Type: UUID},

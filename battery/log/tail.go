@@ -53,10 +53,7 @@ func tailFileWithWindow(path string, maxLines int, window int64) ([]map[string]a
 	}
 
 	// Seek to (size - window), or 0 if the file is smaller.
-	offset := info.Size() - window
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(info.Size()-window, 0)
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("log: tail seek %s: %w", path, err)
 	}

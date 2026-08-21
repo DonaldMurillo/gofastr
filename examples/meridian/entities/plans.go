@@ -259,12 +259,12 @@ func extractPlansRecord(ev framework.Event, entityName string) (*Plans, bool) {
 // registerPlans registers the "plans" entity with app.
 func registerPlans(app *framework.App) {
 	app.Entity("plans", framework.EntityConfig{Fields: []schema.Field{
-		{Name: "name", Type: schema.String, Required: true, Max: floatPtr(80)},
-		{Name: "slug", Type: schema.String, Required: true, Unique: true, Max: floatPtr(80)},
-		{Name: "price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+		{Name: "name", Type: schema.String, Required: true, Max: new(float64(80))},
+		{Name: "slug", Type: schema.String, Required: true, Unique: true, Max: new(float64(80))},
+		{Name: "price", Type: schema.Decimal, Required: true, Min: new(float64(0))},
 		{Name: "interval", Type: schema.Enum, Default: "month", Values: []string{"month", "year"}},
 		{Name: "active", Type: schema.Bool, Default: true},
-	}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Plans"},
+	}, Exposure: &framework.ExposureConfig{CRUD: new(true), MCP: true}, Properties: map[string]any{"label": "Plans"},
 	})
 	_ = Plans{}
 }
