@@ -7,6 +7,98 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Row-level read scoping.** `Exposure.ReadScope` narrows WHICH rows a caller
+  may read. `Exposure.Access.Read` only decided WHETHER an entity was readable,
+  so an entity was readable in full or not at all, and the most ordinary
+  content posture there is had no declaration: anonymous visitors see published
+  rows, signed-in editors see drafts. Three shipped example blueprints served
+  their own draft and unapproved rows to anonymous callers, each with a
+  `KNOWN EXPOSURE` comment saying so. A read scope carries predicates on the
+  entity's own columns plus the permission that lifts them; a blank
+  `unrestricted` means any signed-in caller reads everything, which is a weak
+  posture and is documented as one. Predicates AND together and there is no OR
+  form yet. Fields are checked at registration against the same rules defaults
+  are, and a predicate on a `Hidden` column is refused because it would leak
+  that column through the row set. One builder feeds every read: list data and
+  count, get, cursor, stream, the in-process API, typed queries, the upsert
+  read-back, and the include and eager loaders at every depth. A row outside
+  the scope answers 404 rather than 403, so the caller does not learn it
+  exists. Writes are deliberately not filtered: a caller with write-but-not-read
+  can still update or delete a row they cannot see, and `RETURNING` on an
+  upsert is not filterable without changing write semantics. Declared in a
+  blueprint as `read_scope:`, which survives the pack round-trip; every level
+  of it goes through the unknown-key check, because a typo in a security
+  posture must fail the build rather than be ignored.
+
+- **`gofastr migrate repair` rebuilds a table carrying a stale owner-column
+  foreign key.** Releases before v0.67 emitted `FOREIGN KEY (owner_col)
+  REFERENCES target(id)` for an entity declaring one column as both
+  `Scope.OwnerField` and a relation. The framework stamps that column from the
+  session identity, which lives in `auth_users`, so the key referenced a table
+  where no matching row will ever exist and every create violated it. SQLite
+  did not enforce keys, so it stayed invisible; Postgres always rejected it.
+  v0.67 turned enforcement on and stopped emitting the clause, but neither
+  helps a database that already has one, and SQLite has no `DROP CONSTRAINT`.
+  The command reports by default and rewrites under `--apply`, naming every
+  table before it touches one. The replacement DDL is the original minus the
+  offending clause rather than a fresh `CREATE TABLE` built from the entity
+  declaration, so columns, defaults, and constraints the declaration no longer
+  mentions survive; indices and triggers are replayed. Other foreign keys keep
+  enforcing, and a composite key that merely includes the owner column is left
+  alone. `AutoMigrate` warns at boot naming the table and the command, because
+  the failure otherwise surfaces as a bare constraint error on every create
+  with nothing pointing at the cause.
+
+- **The race detector covers the `framework` root package.** It holds `app.go`,
+  `health.go`, and the process-module supervisor, the goroutine-heaviest code
+  in the repo, and it was the one package the gate excluded. The exclusion was
+  never about a data race: two suites whose deadlines do not absorb race
+  instrumentation lived there, and they moved to `framework/uie2e` (chromedp)
+  and `framework/processmoduletest` (the supervisor scenarios). The root
+  package runs 22s under `-race`, down from 48s before the split.
+
+### Fixed
+
+- **A nested filter refused an owner filtering their own rows.**
+  `?rel.field=` compiles to an `EXISTS` clause that counts rows without
+  selecting them, so it could not narrow them by selecting, and the previous
+  fix refused the shape outright for every owner-scoped or multi-tenant
+  target. That closed the count oracle and took the ordinary case with it. The
+  subquery now carries the caller's owner and tenant predicates, built by the
+  same code the include and eager paths use, so the three surfaces cannot
+  drift into three different answers. A caller holding a cross-scope grant
+  gets no predicate on that axis, and the axes stay independent.
+
+- **A list filter narrowed the total but not the rows.** `filter.ApplyToQuery`
+  reached the count query and not the data query, so `?field=value` returned
+  the whole table under a correct-looking total. Nothing asserted that a filter
+  narrows the ROWS, so the entire crud suite stayed green; an admin battery
+  test one package over was what caught it. The two queries are now pinned
+  against each other.
+
+- **`repolint` stopped reading a file at a `/*` that was not a comment.** A
+  `/*` inside a line comment or a string literal opened a block comment that
+  never closed, so every later line went unscanned and the rule reported clean.
+  A lint that stops reading reports the same "no findings" as a lint that read
+  everything. Comments are recognised in one lexical pass now, tracking line
+  comments, block comments, and all four string forms, with raw-string and
+  block-comment state carried across the newline.
+
+- **`make mutate` mis-parsed a pattern matching several packages.** `go list`
+  prints one record per package and the parser read every line after the first
+  as a file name, so `./framework/...` turned the second package's directory
+  into a file and the run died with an error naming neither the wildcard nor
+  the rule it broke. A multi-package pattern is refused with the directories it
+  matched.
+
+- **Three gates measured the developer's own environment.** The `gofastr
+  migrate` dotenv-precedence tests asserted file precedence without clearing
+  the process environment they consult first, so a developer with an exported
+  `DATABASE_URL` ran them against a different database than CI did.
+
+
 ## [0.67.0] - 2026-08-19
 
 ### Added
